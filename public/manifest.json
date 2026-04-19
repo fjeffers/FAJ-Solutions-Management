@@ -1,0 +1,9 @@
+{
+  "name": "FAJ Payments",
+  "short_name": "FAJ",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0D7377",
+  "background_color": "#FFF8E7",
+  "icons": []
+}

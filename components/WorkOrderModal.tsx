@@ -1,21 +1,33 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   X, Hash, User, FileText, Calendar, DollarSign,
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
+  Phone, Mail, HelpCircle, Plus, Trash2,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, PayType, WorkOrderStatus } from '@/lib/types';
+import type { WorkOrder, Contractor, PayType, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType } from '@/lib/types';
 import { PAY_TYPES, WO_STATUSES, SERVICE_TYPES } from '@/lib/types';
 import { fmtMoney } from '@/lib/utils';
 
-type Tab = 'details' | 'pay' | 'site' | 'schedule' | 'scope';
+type Tab = 'details' | 'pay' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions';
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-  { key: 'details',  label: 'Details',  icon: <Hash size={13} /> },
-  { key: 'pay',      label: 'Pay',      icon: <DollarSign size={13} /> },
-  { key: 'site',     label: 'Site',     icon: <MapPin size={13} /> },
-  { key: 'schedule', label: 'Schedule', icon: <Clock size={13} /> },
-  { key: 'scope',    label: 'Scope',    icon: <ClipboardList size={13} /> },
+  { key: 'details',   label: 'Details',   icon: <Hash size={13} /> },
+  { key: 'pay',       label: 'Pay',       icon: <DollarSign size={13} /> },
+  { key: 'site',      label: 'Site',      icon: <MapPin size={13} /> },
+  { key: 'schedule',  label: 'Schedule',  icon: <Clock size={13} /> },
+  { key: 'scope',     label: 'Scope',     icon: <ClipboardList size={13} /> },
+  { key: 'contacts',  label: 'Contacts',  icon: <Phone size={13} /> },
+  { key: 'questions', label: 'Questions', icon: <HelpCircle size={13} /> },
 ];
+
+function newQAItem(label = '', type: QuestionFieldType = 'text'): CustomQAItem {
+  return {
+    id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    label,
+    type,
+    answer: null,
+  };
+}
 
 const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
   'Open':        { bg: 'rgba(13,115,119,0.1)',   color: 'var(--teal)' },
@@ -38,11 +50,12 @@ function calcTotal(f: Partial<WorkOrder>): number {
 type Props = {
   item: WorkOrder | null;
   contractors: Contractor[];
+  questionTemplates: QuestionTemplate[];
   onSave: (w: Partial<WorkOrder>) => void;
   onClose: () => void;
 };
 
-export default function WorkOrderModal({ item, contractors, onSave, onClose }: Props) {
+export default function WorkOrderModal({ item, contractors, questionTemplates, onSave, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? '',
@@ -69,10 +82,38 @@ export default function WorkOrderModal({ item, contractors, onSave, onClose }: P
     deliverables:    item?.deliverables    ?? '',
     service_type:    item?.service_type    ?? '',
     required_skills: item?.required_skills ?? '',
+    poc_name:        item?.poc_name        ?? '',
+    poc_phone:       item?.poc_phone       ?? '',
+    poc_email:       item?.poc_email       ?? '',
+    support_contact: item?.support_contact ?? '',
   });
+  const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? []);
 
   const set = (k: keyof WorkOrder, v: string | number | null) =>
     setForm((f) => ({ ...f, [k]: v }));
+
+  const applyTemplate = (templateId: string) => {
+    const tpl = questionTemplates.find((t) => t.id === templateId);
+    if (!tpl) return;
+    setCustomQA(tpl.questions.map((q) => ({
+      id: `${q.id}-${Date.now()}`,
+      label: q.label,
+      type: q.type,
+      answer: null,
+    })));
+  };
+
+  const addCustomQuestion = () =>
+    setCustomQA((q) => [...q, newQAItem()]);
+
+  const updateQALabel = (id: string, label: string) =>
+    setCustomQA((qs) => qs.map((q) => q.id === id ? { ...q, label } : q));
+
+  const updateQAType = (id: string, type: QuestionFieldType) =>
+    setCustomQA((qs) => qs.map((q) => q.id === id ? { ...q, type } : q));
+
+  const removeQA = (id: string) =>
+    setCustomQA((qs) => qs.filter((q) => q.id !== id));
 
   const computed = calcTotal(form);
   const canSave = !!(form.wo_number?.trim() && form.contractor_name?.trim());
@@ -81,7 +122,12 @@ export default function WorkOrderModal({ item, contractors, onSave, onClose }: P
     if (!canSave) return;
     const payload: Partial<WorkOrder> = {
       ...form,
-      total_amount: form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
+      total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
+      poc_name:        form.poc_name        || null,
+      poc_phone:       form.poc_phone       || null,
+      poc_email:       form.poc_email       || null,
+      support_contact: form.support_contact || null,
+      custom_qa:       customQA.filter((q) => q.label.trim()),
     };
     onSave({ ...item, ...payload });
   };
@@ -367,41 +413,5 @@ export default function WorkOrderModal({ item, contractors, onSave, onClose }: P
           </div>
         )}
 
-        {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 28, paddingTop: 20, borderTop: '1px solid #eee' }}>
-          <div style={{ fontSize: 13, color: '#666' }}>
-            Total: <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: "'Cormorant Garamond', serif", fontSize: 20 }}>
-              {fmtMoney(form.pay_type === 'Fixed' ? (Number(form.total_amount) || 0) : computed)}
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!canSave} style={{ opacity: canSave ? 1 : 0.5 }}>
-              {item ? 'Save Changes' : 'Create Work Order'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PF({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-        {icon} {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function TotalPreview({ label, value }: { label: string; value: number }) {
-  return (
-    <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg, rgba(13,115,119,0.06) 0%, rgba(201,169,97,0.06) 100%)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}>{label}</span>
-      <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 26, fontWeight: 600, color: value > 0 ? 'var(--teal)' : '#aaa' }}>{fmtMoney(value)}</span>
-    </div>
-  );
-}
+        {/* ── CONTACTS TAB ── */}
+        {tab === 'contacts

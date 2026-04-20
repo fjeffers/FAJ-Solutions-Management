@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Sparkles } from 'lucide-react';
-import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask } from '@/lib/types';
+import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask, CustomQAItem } from '@/lib/types';
 import ContractorPortal from '@/components/ContractorPortal';
 
 export default function ContractorPage() {
@@ -115,6 +115,11 @@ export default function ContractorPage() {
     return urlData.publicUrl;
   };
 
+  const saveCustomQA = async (woId: string, qa: CustomQAItem[]) => {
+    await supabase.from('work_orders').update({ custom_qa: qa }).eq('id', woId);
+    // Local state already updated in ContractorPortal — no full reload needed
+  };
+
   const submitForReview = async (woId: string, woNumber: string, closeoutNotes: string, fileUrls: string[]) => {
     if (!contractor) return;
     const now = new Date().toISOString();
@@ -165,14 +170,4 @@ export default function ContractorPage() {
       submissions={submissions}
       timeLogs={timeLogs}
       signatures={signatures}
-      onUpdateStatus={updateWoStatus}
-      onCheckIn={checkIn}
-      onCheckOut={checkOut}
-      onSaveSignature={saveSignature}
-      onSaveTasks={saveTasks}
-      onUploadFile={uploadFile}
-      onSubmitForReview={submitForReview}
-      onLogout={handleLogout}
-    />
-  );
-}
+      onUpdateStatus={updat

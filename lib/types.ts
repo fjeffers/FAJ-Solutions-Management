@@ -112,6 +112,13 @@ export type WorkOrder = {
   closeout_notes: string | null;
   submitted_at: string | null;
 
+  // POC + custom Q&A (migration-006)
+  poc_name: string | null;
+  poc_phone: string | null;
+  poc_email: string | null;
+  support_contact: string | null;
+  custom_qa: CustomQAItem[] | null;
+
   created_at: string;
   updated_at: string;
 };
@@ -133,8 +140,4 @@ export type Payment = {
   amount: number;
   method: string;
   notes: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-// ─── Contractor Portal ─────────────────────────────────────────
+  created_

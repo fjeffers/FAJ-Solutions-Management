@@ -7,7 +7,7 @@ import {
   Send, Check,
 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
-import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask } from '@/lib/types';
+import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask, CustomQAItem } from '@/lib/types';
 import SignaturePad from './SignaturePad';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ function calcDuration(inAt: string, outAt: string): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-type WOSection = 'overview' | 'tasks' | 'timelog' | 'files' | 'signoff';
+type WOSection = 'overview' | 'qa' | 'tasks' | 'timelog' | 'files' | 'signoff';
 
 // ─── WOCard ───────────────────────────────────────────────────────────────────
 
@@ -77,6 +77,7 @@ function WOCard({
   onSaveTasks: (woId: string, tasks: WoTask[]) => Promise<void>;
   onUploadFile: (woId: string, file: File) => Promise<string | null>;
   onSubmitForReview: (woId: string, woNumber: string, notes: string, fileUrls: string[]) => Promise<void>;
+  onSaveCustomQA: (woId: string, qa: CustomQAItem[]) => Promise<void>;
 }) {
   const [expanded, setExpanded]         = useState(false);
   const [activeSection, setActiveSection] = useState<WOSection>('overview');
@@ -92,6 +93,7 @@ function WOCard({
   const [submitting, setSubmitting]     = useState(false);
   const [clocking, setClocking]         = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [qaItems, setQaItems] = useState<CustomQAItem[]>(() => wo.custom_qa ?? []);
 
   const cfg          = STATUS_CONFIG[wo.wo_status] ?? STATUS_CONFIG['Open'];
   const isEditable   = !['Approved', 'Paid'].includes(wo.wo_status);
@@ -110,8 +112,10 @@ function WOCard({
   };
 
   // Section tab labels
+  const hasSiteInfo = !!(wo.poc_name || wo.poc_phone || wo.poc_email || wo.support_contact || (wo.custom_qa && wo.custom_qa.length > 0));
   const SECTIONS_DATA: { id: WOSection; label: string }[] = [
     { id: 'overview', label: 'Overview' },
+    ...(hasSiteInfo ? [{ id: 'qa' as WOSection, label: 'Questions' }] : []),
     { id: 'tasks',    label: `Tasks ${completedCt}/${tasks.length}` },
     { id: 'timelog',  label: 'Time' },
     { id: 'files',    label: uploadedFiles.length + allPrevFiles.length > 0 ? `Files (${uploadedFiles.length + allPrevFiles.length})` : 'Files' },
@@ -169,6 +173,12 @@ function WOCard({
     setClocking(true);
     await onCheckOut(wo.id);
     setClocking(false);
+  };
+
+  const handleQAAnswer = async (id: string, answer: string) => {
+    const updated = qaItems.map((q) => (q.id === id ? { ...q, answer } : q));
+    setQaItems(updated);
+    await onSaveCustomQA(wo.id, updated);
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -484,6 +494,119 @@ function WOCard({
             </div>
           )}
 
+          {/* Q&A / SITE INFO */}
+          {activeSection === 'qa' && (
+            <div>
+              {/* POC Contact Cards */}
+              {(wo.poc_name || wo.poc_phone || wo.poc_email || wo.support_contact) && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Site Contacts</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {wo.poc_name && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 10, background: '#fafafa', border: '1px solid #f0f0f0' }}>
+                        <span style={{ fontSize: 11, color: '#aaa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>POC Name</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#333' }}>{wo.poc_name}</span>
+                      </div>
+                    )}
+                    {wo.poc_phone && (
+                      <a href={`tel:${wo.poc_phone}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.05)', border: '1px solid rgba(13,115,119,0.12)', textDecoration: 'none' }}>
+                        <span style={{ fontSize: 11, color: '#aaa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Phone</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--teal)' }}>{wo.poc_phone} →</span>
+                      </a>
+                    )}
+                    {wo.poc_email && (
+                      <a href={`mailto:${wo.poc_email}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.05)', border: '1px solid rgba(13,115,119,0.12)', textDecoration: 'none' }}>
+                        <span style={{ fontSize: 11, color: '#aaa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Email</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--teal)' }}>{wo.poc_email} →</span>
+                      </a>
+                    )}
+                    {wo.support_contact && (
+                      <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(201,169,97,0.08)', border: '1px solid rgba(201,169,97,0.2)' }}>
+                        <div style={{ fontSize: 11, color: '#b8944a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Support Contact</div>
+                        <div style={{ fontSize: 13, color: '#333', lineHeight: 1.5 }}>{wo.support_contact}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Q&A */}
+              {qaItems.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>
+                    Questions — fill in on site
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {qaItems.map((q) => (
+                      <div key={q.id}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>
+                          {q.label}
+                        </div>
+                        {q.type === 'yes_no' ? (
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {(['Yes', 'No'] as const).map((opt) => (
+                              <button
+                                key={opt}
+                                onClick={() => handleQAAnswer(q.id, opt)}
+                                style={{
+                                  flex: 1, padding: '11px', border: 'none', borderRadius: 10, cursor: 'pointer',
+                                  fontWeight: 700, fontSize: 14, transition: 'all 0.15s',
+                                  background: q.answer === opt
+                                    ? (opt === 'Yes' ? '#047857' : '#b91c1c')
+                                    : '#f5f5f5',
+                                  color: q.answer === opt ? 'white' : '#666',
+                                  boxShadow: q.answer === opt ? '0 3px 10px rgba(0,0,0,0.15)' : 'none',
+                                }}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+                        ) : q.type === 'textarea' ? (
+                          <textarea
+                            value={q.answer ?? ''}
+                            onChange={(e) => setQaItems((qs) => qs.map((item) => item.id === q.id ? { ...item, answer: e.target.value } : item))}
+                            onBlur={(e) => handleQAAnswer(q.id, e.target.value)}
+                            placeholder="Enter answer..."
+                            style={{
+                              width: '100%', minHeight: 90, padding: '10px 12px', borderRadius: 10,
+                              border: '1.5px solid #e5e7eb', fontSize: 14, fontFamily: 'inherit',
+                              resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+                              color: q.answer ? '#1a1a1a' : '#aaa',
+                            }}
+                          />
+                        ) : (
+                          <input
+                            type={q.type === 'number' ? 'number' : 'text'}
+                            value={q.answer ?? ''}
+                            onChange={(e) => setQaItems((qs) => qs.map((item) => item.id === q.id ? { ...item, answer: e.target.value } : item))}
+                            onBlur={(e) => handleQAAnswer(q.id, e.target.value)}
+                            placeholder="Enter answer..."
+                            style={{
+                              width: '100%', padding: '11px 14px', borderRadius: 10,
+                              border: '1.5px solid #e5e7eb', fontSize: 14, fontFamily: 'inherit',
+                              outline: 'none', boxSizing: 'border-box',
+                              color: q.answer ? '#1a1a1a' : '#aaa',
+                            }}
+                          />
+                        )}
+                        {q.answer && (
+                          <div style={{ fontSize: 10, color: '#047857', marginTop: 4, fontWeight: 700 }}>✓ Saved</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!hasSiteInfo && (
+                <div style={{ textAlign: 'center', padding: '28px 0', color: '#ccc', fontSize: 13 }}>
+                  No questions or contacts on this work order
+                </div>
+              )}
+            </div>
+          )}
+
           {/* SIGN OFF */}
           {activeSection === 'signoff' && (
             <div>
@@ -599,6 +722,7 @@ export default function ContractorPortal({
   onSaveTasks: (woId: string, tasks: WoTask[]) => Promise<void>;
   onUploadFile: (woId: string, file: File) => Promise<string | null>;
   onSubmitForReview: (woId: string, woNumber: string, notes: string, fileUrls: string[]) => Promise<void>;
+  onSaveCustomQA: (woId: string, qa: CustomQAItem[]) => Promise<void>;
   onLogout: () => void;
 }) {
   const [tab, setTab] = useState<'jobs' | 'payments'>('jobs');
@@ -635,141 +759,4 @@ export default function ContractorPortal({
 
         {/* Summary pills */}
         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 14px' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Active</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'white' }}>{activeJobs.length}</div>
-          </div>
-          <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 14px' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Total Billed</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'white' }}>{fmtMoney(totalBilled)}</div>
-          </div>
-          <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 14px' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Paid Out</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'rgba(201,233,97,0.95)' }}>{fmtMoney(totalPaid)}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Tabs ── */}
-      <div style={{ display: 'flex', background: 'white', borderBottom: '1px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 10 }}>
-        {(['jobs', 'payments'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{ flex: 1, padding: '14px 0', fontSize: 12, fontWeight: 700, letterSpacing: 0.5, border: 'none', cursor: 'pointer', background: 'none', color: tab === t ? 'var(--teal)' : '#999', borderBottom: tab === t ? '2px solid var(--teal)' : '2px solid transparent', textTransform: 'uppercase' }}
-          >
-            {t === 'jobs' ? `Jobs (${workOrders.length})` : `Payments (${payments.length})`}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Content ── */}
-      <div style={{ padding: '20px 16px 40px' }}>
-
-        {/* JOBS TAB */}
-        {tab === 'jobs' && (
-          <>
-            {activeJobs.length === 0 && completedJobs.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
-                <AlertCircle size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No jobs assigned yet</div>
-                <div style={{ fontSize: 13 }}>{"You'll see your work orders here once FAJ Solutions assigns them."}</div>
-              </div>
-            )}
-
-            {activeJobs.length > 0 && (
-              <>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 14 }}>Active Jobs</div>
-                {activeJobs.map((wo) => (
-                  <WOCard
-                    key={wo.id}
-                    wo={wo}
-                    submissions={submissions.filter((s) => s.wo_id === wo.id)}
-                    woTimeLogs={timeLogs.filter((l) => l.wo_id === wo.id)}
-                    woSignature={signatures.find((s) => s.wo_id === wo.id)}
-                    onUpdateStatus={onUpdateStatus}
-                    onCheckIn={onCheckIn}
-                    onCheckOut={onCheckOut}
-                    onSaveSignature={onSaveSignature}
-                    onSaveTasks={onSaveTasks}
-                    onUploadFile={onUploadFile}
-                    onSubmitForReview={onSubmitForReview}
-                  />
-                ))}
-              </>
-            )}
-
-            {completedJobs.length > 0 && (
-              <>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 2, textTransform: 'uppercase', margin: '24px 0 14px' }}>Completed</div>
-                {completedJobs.map((wo) => (
-                  <WOCard
-                    key={wo.id}
-                    wo={wo}
-                    submissions={submissions.filter((s) => s.wo_id === wo.id)}
-                    woTimeLogs={timeLogs.filter((l) => l.wo_id === wo.id)}
-                    woSignature={signatures.find((s) => s.wo_id === wo.id)}
-                    onUpdateStatus={onUpdateStatus}
-                    onCheckIn={onCheckIn}
-                    onCheckOut={onCheckOut}
-                    onSaveSignature={onSaveSignature}
-                    onSaveTasks={onSaveTasks}
-                    onUploadFile={onUploadFile}
-                    onSubmitForReview={onSubmitForReview}
-                  />
-                ))}
-              </>
-            )}
-          </>
-        )}
-
-        {/* PAYMENTS TAB */}
-        {tab === 'payments' && (
-          <>
-            {payments.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
-                <DollarSign size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No payments recorded yet</div>
-                <div style={{ fontSize: 13 }}>Your payment history will appear here.</div>
-              </div>
-            ) : (
-              <>
-                {/* Summary card */}
-                <div style={{ background: 'white', borderRadius: 14, padding: '16px 18px', marginBottom: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <span style={{ fontSize: 13, color: '#666' }}>Total Billed</span>
-                    <span style={{ fontSize: 14, fontWeight: 700 }}>{fmtMoney(totalBilled)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <span style={{ fontSize: 13, color: '#666' }}>Total Paid</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#047857' }}>{fmtMoney(totalPaid)}</span>
-                  </div>
-                  <div style={{ height: 1, background: '#f0f0f0', margin: '10px 0' }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 13, color: '#666' }}>Outstanding</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: totalBilled - totalPaid > 0 ? '#b91c1c' : '#047857' }}>{fmtMoney(totalBilled - totalPaid)}</span>
-                  </div>
-                </div>
-
-                {/* Payment list */}
-                {payments.map((p) => (
-                  <div key={p.id} style={{ background: 'white', borderRadius: 12, padding: '14px 16px', marginBottom: 10, boxShadow: '0 1px 8px rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{fmtDate(p.payment_date)}</div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 700 }}>#{p.wo_number}</span>
-                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: p.method === 'Zelle' ? 'rgba(107,45,139,0.1)' : 'rgba(13,115,119,0.08)', color: p.method === 'Zelle' ? '#6B2D8B' : 'var(--teal)', fontWeight: 700 }}>{p.method}</span>
-                      </div>
-                      {p.notes && <div style={{ fontSize: 11, color: '#aaa', marginTop: 3 }}>{p.notes}</div>}
-                    </div>
-                    <div style={{ fontSize: 17, fontWeight: 700, color: '#047857' }}>{fmtMoney(Number(p.amount))}</div>
-                  </div>
-                ))}
-              </>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+          <div style={{ flex: 1, background: 'rgba(255,255,255,0.

@@ -146,7 +146,9 @@ export default function StatementView({ contractors, workOrders, payments, selec
                     <td style={{ padding: '10px 10px', color: '#777', fontSize: 12 }}>{fmtDate(j.end_date)}</td>
                     <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 600 }}>{fmtMoney(Number(j.total_amount))}</td>
                     <td style={{ padding: '10px 10px', textAlign: 'right' }}>
-                      <span className={`chip chip-${j.payment_status}`} style={{ fontSize: 10 }}>{j.payment_status === 'paid' ? 'Paid' : j.payment_status === 'partial' ? 'Partial' : 'Pending'}</span>
+                      <span className={`chip chip-${j.payment_status}`} style={{ fontSize: 10 }}>
+                        {j.payment_status === 'paid' ? 'Paid' : j.payment_status === 'partial' ? 'Partial' : 'Pending'}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -204,4 +206,7 @@ function SR({ label, value, accent, warning }: { label: string; value: string; a
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <span style={{ fontSize: 13, color: '#666' }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 700, color: warning ? '#b91c1c' : accent ? '#047857' : 'var(--ink)', fontFamily: "'Cormorant Garamond', serif" }}>{value}</
+      <span style={{ fontSize: 14, fontWeight: 700, color: warning ? '#b91c1c' : accent ? '#047857' : 'var(--ink)', fontFamily: 'Cormorant Garamond, serif' }}>{value}</span>
+    </div>
+  );
+}

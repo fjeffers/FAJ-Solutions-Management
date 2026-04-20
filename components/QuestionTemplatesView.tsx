@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { Plus, Edit2, Trash2, X, GripVertical, ChevronDown } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Plus, Edit2, Trash2, X, GripVertical, ChevronDown, Paperclip, Upload } from 'lucide-react';
 import type { QuestionTemplate, QuestionField, QuestionFieldType } from '@/lib/types';
 
 const FIELD_TYPES: { value: QuestionFieldType; label: string }[] = [
@@ -20,21 +20,36 @@ function newField(): QuestionField {
   };
 }
 
+function fileName(url: string): string {
+  try {
+    const parts = decodeURIComponent(url).split('/');
+    const raw = parts[parts.length - 1];
+    return raw.replace(/^\d+-/, ''); // strip leading timestamp prefix
+  } catch {
+    return 'attachment';
+  }
+}
+
 // ─── Template Edit Modal ──────────────────────────────────────────────────────
 
 function TemplateModal({
   template,
   onSave,
   onClose,
+  onUploadAttachment,
 }: {
   template: Partial<QuestionTemplate> | null;
-  onSave: (t: { name: string; questions: QuestionField[] }) => void;
+  onSave: (t: { name: string; questions: QuestionField[]; attachment_url: string | null }) => void;
   onClose: () => void;
+  onUploadAttachment: (file: File) => Promise<string | null>;
 }) {
-  const [name, setName] = useState(template?.name ?? '');
+  const [name, setName]           = useState(template?.name ?? '');
   const [questions, setQuestions] = useState<QuestionField[]>(
     template?.questions?.length ? template.questions : [newField()]
   );
+  const [attachmentUrl, setAttachmentUrl] = useState<string | null>(template?.attachment_url ?? null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef              = useRef<HTMLInputElement>(null);
 
   const addQuestion = () => setQuestions((q) => [...q, newField()]);
 
@@ -43,6 +58,16 @@ function TemplateModal({
 
   const removeQuestion = (id: string) =>
     setQuestions((qs) => qs.filter((q) => q.id !== id));
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const url = await onUploadAttachment(file);
+    if (url) setAttachmentUrl(url);
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const canSave = name.trim() && questions.some((q) => q.label.trim());
 
@@ -61,7 +86,7 @@ function TemplateModal({
         </div>
 
         {/* Template name */}
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 20 }}>
           <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
             Template Name *
           </label>
@@ -74,27 +99,70 @@ function TemplateModal({
           />
         </div>
 
+        {/* Vendor attachment */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            Vendor Paperwork (optional)
+          </label>
+          {attachmentUrl ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', border: '1.5px solid rgba(13,115,119,0.15)' }}>
+              <Paperclip size={14} color="var(--teal)" />
+              <a
+                href={attachmentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ flex: 1, fontSize: 13, color: 'var(--teal)', fontWeight: 600, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {fileName(attachmentUrl)}
+              </a>
+              <button onClick={() => setAttachmentUrl(null)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#aaa' }}>
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                style={{
+                  width: '100%', padding: '12px', border: '2px dashed #e5e7eb',
+                  borderRadius: 10, background: uploading ? '#fafafa' : 'white',
+                  cursor: uploading ? 'wait' : 'pointer',
+                  fontSize: 13, color: '#888',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}
+              >
+                <Upload size={14} />
+                {uploading ? 'Uploading...' : 'Upload PDF, Word doc, or image'}
+              </button>
+              <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
+                Contractors will see a download link in their portal when this template is applied to a work order.
+              </div>
+            </>
+          )}
+        </div>
+
         {/* Questions */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase' }}>
               Questions ({questions.length})
             </label>
-            <button
-              onClick={addQuestion}
-              className="btn btn-ghost"
-              style={{ padding: '5px 12px', fontSize: 11 }}
-            >
+            <button onClick={addQuestion} className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }}>
               <Plus size={12} /> Add Question
             </button>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {questions.map((q, i) => (
-              <div key={q.id} style={{
-                padding: '14px 16px', borderRadius: 10,
-                background: '#fafafa', border: '1.5px solid #e5e7eb',
-              }}>
+              <div key={q.id} style={{ padding: '14px 16px', borderRadius: 10, background: '#fafafa', border: '1.5px solid #e5e7eb' }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', paddingTop: 10, color: '#ccc', flexShrink: 0 }}>
                     <GripVertical size={14} />
@@ -155,7 +223,11 @@ function TemplateModal({
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button
             className="btn btn-primary"
-            onClick={() => onSave({ name: name.trim(), questions: questions.filter((q) => q.label.trim()) })}
+            onClick={() => onSave({
+              name: name.trim(),
+              questions: questions.filter((q) => q.label.trim()),
+              attachment_url: attachmentUrl,
+            })}
             disabled={!canSave}
             style={{ opacity: canSave ? 1 : 0.5 }}
           >
@@ -173,14 +245,16 @@ export default function QuestionTemplatesView({
   templates,
   onSave,
   onDelete,
+  onUploadAttachment,
 }: {
   templates: QuestionTemplate[];
-  onSave: (id: string | null, data: { name: string; questions: QuestionField[] }) => Promise<void>;
+  onSave: (id: string | null, data: { name: string; questions: QuestionField[]; attachment_url: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onUploadAttachment: (file: File) => Promise<string | null>;
 }) {
   const [editing, setEditing] = useState<Partial<QuestionTemplate> | null | false>(false);
 
-  const handleSave = async (data: { name: string; questions: QuestionField[] }) => {
+  const handleSave = async (data: { name: string; questions: QuestionField[]; attachment_url: string | null }) => {
     const id = editing && 'id' in editing ? editing.id ?? null : null;
     await onSave(id ?? null, data);
     setEditing(false);
@@ -195,81 +269,4 @@ export default function QuestionTemplatesView({
           <div>
             <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Question Templates</h1>
             <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>
-              Create reusable question sets for different vendors or job types. Apply them to work orders so contractors can fill in the answers on site.
-            </p>
-          </div>
-          <button className="btn btn-primary" onClick={() => setEditing({})}>
-            <Plus size={14} /> New Template
-          </button>
-        </div>
-      </div>
-
-      {/* Template cards */}
-      {templates.length === 0 ? (
-        <div className="glass card" style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>{'?'}</div>
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No templates yet</div>
-          <div style={{ fontSize: 13, marginBottom: 20 }}>
-            Create your first template for things like AT&T jobs, Spectrum installs, or a standard site inspection checklist.
-          </div>
-          <button className="btn btn-primary" onClick={() => setEditing({})}>
-            <Plus size={14} /> Create First Template
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gap: 12 }}>
-          {templates.map((t) => (
-            <div key={t.id} className="glass card">
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{t.name}</div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {t.questions.slice(0, 6).map((q) => (
-                      <span key={q.id} style={{
-                        padding: '2px 10px', borderRadius: 20, fontSize: 11,
-                        background: 'rgba(13,115,119,0.08)', color: 'var(--teal)', fontWeight: 600,
-                      }}>
-                        {q.label}
-                      </span>
-                    ))}
-                    {t.questions.length > 6 && (
-                      <span style={{ fontSize: 11, color: '#aaa', padding: '2px 4px' }}>
-                        +{t.questions.length - 6} more
-                      </span>
-                    )}
-                    {t.questions.length === 0 && (
-                      <span style={{ fontSize: 11, color: '#ccc' }}>No questions yet</span>
-                    )}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                  <div style={{ textAlign: 'center', marginRight: 8 }}>
-                    <div style={{ fontSize: 11, color: '#aaa', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Questions</div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--teal)' }}>{t.questions.length}</div>
-                  </div>
-                  <button className="icon-btn" onClick={() => setEditing(t)}><Edit2 size={15} /></button>
-                  <button
-                    className="icon-btn"
-                    style={{ color: '#b91c1c' }}
-                    onClick={() => { if (confirm(`Delete template "${t.name}"?`)) onDelete(t.id); }}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Modal */}
-      {editing !== false && (
-        <TemplateModal
-          template={editing}
-          onSave={handleSave}
-          onClose={() => setEditing(false)}
-        />
-      )}
-    </div>
-  );
-}
+              Create reusable question sets for different 

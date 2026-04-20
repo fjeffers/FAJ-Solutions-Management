@@ -119,6 +119,9 @@ export type WorkOrder = {
   support_contact: string | null;
   custom_qa: CustomQAItem[] | null;
 
+  // Vendor attachment (migration-007)
+  attachment_url: string | null;
+
   created_at: string;
   updated_at: string;
 };
@@ -136,8 +139,4 @@ export type Payment = {
   user_id: string;
   wo_number: string;
   contractor_name: string;
-  payment_date: string;
-  amount: number;
-  method: string;
-  notes: string | null;
-  created_
+  payment_date: strin

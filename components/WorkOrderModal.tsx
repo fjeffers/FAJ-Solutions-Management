@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
   X, Hash, User, FileText, Calendar, DollarSign,
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
-  Phone, Mail, HelpCircle, Plus, Trash2,
+  Phone, Mail, HelpCircle, Plus, Trash2, Paperclip,
 } from 'lucide-react';
 import type { WorkOrder, Contractor, PayType, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType } from '@/lib/types';
 import { PAY_TYPES, WO_STATUSES, SERVICE_TYPES } from '@/lib/types';
@@ -86,6 +86,7 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
     poc_phone:       item?.poc_phone       ?? '',
     poc_email:       item?.poc_email       ?? '',
     support_contact: item?.support_contact ?? '',
+    attachment_url:  item?.attachment_url  ?? null,
   });
   const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? []);
 
@@ -101,6 +102,8 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
       type: q.type,
       answer: null,
     })));
+    // Copy the template's vendor attachment to the work order
+    if (tpl.attachment_url) set('attachment_url', tpl.attachment_url);
   };
 
   const addCustomQuestion = () =>
@@ -128,6 +131,7 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
       poc_email:       form.poc_email       || null,
       support_contact: form.support_contact || null,
       custom_qa:       customQA.filter((q) => q.label.trim()),
+      attachment_url:  form.attachment_url  || null,
     };
     onSave({ ...item, ...payload });
   };
@@ -408,10 +412,4 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
             </PF>
             <PF label="Required Skills / Certifications" icon={<Wrench size={13} />}>
               <input className="input" value={form.required_skills ?? ''} onChange={(e) => set('required_skills', e.target.value)} placeholder="e.g. BICSI, OSHA 10, Network+, Fiber Splice" />
-              <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>Comma-separated list of required skills or certifications.</div>
-            </PF>
-          </div>
-        )}
-
-        {/* ── CONTACTS TAB ── */}
-        {tab === 'contacts
+    

@@ -138,6 +138,8 @@ export default function HomePage() {
       poc_email:       w.poc_email       ?? null,
       support_contact: w.support_contact ?? null,
       custom_qa:       w.custom_qa       ?? [],
+      // Vendor attachment (migration-007)
+      attachment_url:  w.attachment_url  ?? null,
     };
     if (w.id) { await supabase.from('work_orders').update(payload).eq('id', w.id); }
     else       { await supabase.from('work_orders').insert({ ...payload, user_id: user.id }); }
@@ -173,19 +175,19 @@ export default function HomePage() {
 
   const saveTemplate = async (
     id: string | null,
-    data: { name: string; questions: QuestionTemplate['questions'] },
+    data: { name: string; questions: QuestionTemplate['questions']; attachment_url: string | null },
   ) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     if (id) {
       await supabase
         .from('question_templates')
-        .update({ name: data.name, questions: data.questions, updated_at: new Date().toISOString() })
+        .update({ name: data.name, questions: data.questions, attachment_url: data.attachment_url, updated_at: new Date().toISOString() })
         .eq('id', id);
     } else {
       await supabase
         .from('question_templates')
-        .insert({ name: data.name, questions: data.questions, user_id: user.id });
+        .insert({ name: data.name, questions: data.questions, attachment_url: data.attachment_url, user_id: user.id });
     }
     loadAll();
   };
@@ -193,6 +195,16 @@ export default function HomePage() {
   const deleteTemplate = async (id: string) => {
     await supabase.from('question_templates').delete().eq('id', id);
     loadAll();
+  };
+
+  const uploadTemplateAttachment = async (file: File): Promise<string | null> => {
+    const path = `templates/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
+    const { data, error } = await supabase.storage
+      .from('deliverables')
+      .upload(path, file, { upsert: false });
+    if (error || !data) { console.error('Upload error:', error); return null; }
+    const { data: urlData } = supabase.storage.from('deliverables').getPublicUrl(data.path);
+    return urlData.publicUrl;
   };
 
   // ── Nav / Auth ─────────────────────────────────────────────────────────────
@@ -256,12 +268,4 @@ export default function HomePage() {
           <div className="serif" style={{ fontSize: 20, fontWeight: 600, color: 'white', lineHeight: 1.2 }}>Business Manager</div>
         </div>
 
-        <div style={{ fontSize: 9, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '4px 18px 4px', marginTop: 4 }}>OPERATIONS</div>
-        <NI k="dashboard"   icon={<BarChart3 size={15} />}      label="Dashboard" />
-        <NI k="workorders"  icon={<Briefcase size={15} />}      label="Work Orders" />
-        <NI k="payments"    icon={<CreditCard size={15} />}     label="Payments" />
-        <NI k="contractors" icon={<Users size={15} />}          label="Contractors" />
-
-        <div style={{ fontSize: 9, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 18px 4px' }}>REPORTS & TAX</div>
-        <NI k="statements"  icon={<FileText size={15} />}       label="Statements" />
-        <NI k="1099"        icon={<TrendingUp size={15} 
+        <div style={{ fontSize: 9, letterSpacing: 2, color: 'rgba(255,2

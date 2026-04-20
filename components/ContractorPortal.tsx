@@ -2,9 +2,9 @@
 import { useState, useRef } from 'react';
 import {
   MapPin, Clock, DollarSign, ChevronDown, ChevronUp,
-  LogOut, Sparkles, AlertCircle, ListChecks, Timer,
+  LogOut, Sparkles, AlertCircle, Timer,
   Paperclip, PenLine, FileText, Upload, CheckCircle2,
-  Send, Check,
+  Send, Check, ListChecks,
 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask, CustomQAItem } from '@/lib/types';
@@ -112,7 +112,7 @@ function WOCard({
   };
 
   // Section tab labels
-  const hasSiteInfo = !!(wo.poc_name || wo.poc_phone || wo.poc_email || wo.support_contact || (wo.custom_qa && wo.custom_qa.length > 0));
+  const hasSiteInfo = !!(wo.poc_name || wo.poc_phone || wo.poc_email || wo.support_contact || wo.attachment_url || (wo.custom_qa && wo.custom_qa.length > 0));
   const SECTIONS_DATA: { id: WOSection; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     ...(hasSiteInfo ? [{ id: 'qa' as WOSection, label: 'Questions' }] : []),
@@ -497,6 +497,29 @@ function WOCard({
           {/* Q&A / SITE INFO */}
           {activeSection === 'qa' && (
             <div>
+              {/* Vendor paperwork download — most important, shown first */}
+              {wo.attachment_url && (
+                <a
+                  href={wo.attachment_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18,
+                    padding: '14px 16px', borderRadius: 12, textDecoration: 'none',
+                    background: 'linear-gradient(135deg, rgba(201,169,97,0.12) 0%, rgba(201,169,97,0.06) 100%)',
+                    border: '1.5px solid rgba(201,169,97,0.3)',
+                  }}
+                >
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(201,169,97,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Paperclip size={18} color="#b8944a" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#b8944a', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Vendor Paperwork</div>
+                    <div style={{ fontSize: 13, color: '#333', fontWeight: 600 }}>Tap to open & download →</div>
+                  </div>
+                </a>
+              )}
+
               {/* POC Contact Cards */}
               {(wo.poc_name || wo.poc_phone || wo.poc_email || wo.support_contact) && (
                 <div style={{ marginBottom: 20 }}>
@@ -736,27 +759,4 @@ export default function ContractorPortal({
     <div style={{ minHeight: '100vh', background: 'var(--bg)', maxWidth: 640, margin: '0 auto' }}>
 
       {/* ── Header ── */}
-      <div style={{ background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', padding: '20px 20px 24px', color: 'white' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Sparkles size={16} color="var(--gold-light)" />
-            <span className="display" style={{ fontSize: 11, color: 'var(--gold-light)', fontWeight: 700, letterSpacing: 2 }}>FAJ SOLUTIONS</span>
-          </div>
-          <button
-            onClick={onLogout}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
-          >
-            <LogOut size={12} /> Sign Out
-          </button>
-        </div>
-
-        <div className="serif" style={{ fontSize: 28, fontWeight: 600, color: 'white', marginBottom: 2 }}>
-          {contractor.name}
-        </div>
-        {contractor.business_name && (
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>{contractor.business_name}</div>
-        )}
-
-        {/* Summary pills */}
-        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <div style={{ flex: 1, background: 'rgba(255,255,255,0.
+      <div style={{ background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d

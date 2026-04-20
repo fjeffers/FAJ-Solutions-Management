@@ -40,6 +40,10 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   const loadAll = async () => {
+    // Auth guard: redirect to login if session is gone client-side
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.replace('/login'); return; }
+
     const [cRes, wRes, pRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),
       supabase.from('work_orders').select('*').order('wo_number'),
@@ -127,8 +131,8 @@ export default function HomePage() {
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <div className="no-print" id="mobile-header" style={{ display: 'none', position: 'sticky', top: 0, zIndex: 50, padding: '12px 16px', background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Sparkles size={16} color="#E4CC8F" />
-          <span className="display" style={{ fontSize: 12, color: '#E4CC8F', fontWeight: 700 }}>FAJ SOLUTIONS</span>
+          <Sparkles size={16} color="var(--gold-light)" />
+          <span className="display" style={{ fontSize: 12, color: 'var(--gold-light)', fontWeight: 700 }}>FAJ SOLUTIONS</span>
         </div>
         <button onClick={() => setMobileNavOpen(!mobileNavOpen)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
           {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
@@ -138,8 +142,8 @@ export default function HomePage() {
       <aside className="no-print glass-dark sidebar-desktop" style={{ width: 250, padding: '24px 16px', position: 'sticky', top: 0, height: '100vh', flexDirection: 'column', gap: 2, ...(mobileNavOpen ? { display: 'flex', position: 'fixed', zIndex: 40, width: 260 } : {}) }}>
         <div style={{ padding: '0 12px 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <Sparkles size={20} color="#E4CC8F" />
-            <div className="display" style={{ fontSize: 13, color: '#E4CC8F', fontWeight: 700 }}>FAJ</div>
+            <Sparkles size={20} color="var(--gold-light)" />
+            <div className="display" style={{ fontSize: 13, color: 'var(--gold-light)', fontWeight: 700 }}>FAJ</div>
           </div>
           <div className="serif" style={{ fontSize: 20, fontWeight: 600, color: 'white', lineHeight: 1.2 }}>Business Manager</div>
         </div>
@@ -154,7 +158,7 @@ export default function HomePage() {
         <NI k="w9" icon={<ClipboardCheck size={15} />} label="W-9 Manager" />
         <NI k="quickbooks" icon={<BookOpen size={15} />} label="QuickBooks" />
         <div style={{ marginTop: 'auto', padding: '16px 12px 0', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-          <button className="btn btn-ghost" onClick={handleLogout} style={{ width: '100%', color: '#E4CC8F', borderColor: '#E4CC8F', justifyContent: 'center' }}>
+          <button className="btn btn-ghost" onClick={handleLogout} style={{ width: '100%', color: 'var(--gold-light)', borderColor: 'var(--gold-light)', justifyContent: 'center' }}>
             <LogOut size={14} /> Sign Out
           </button>
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textAlign: 'center', marginTop: 10, letterSpacing: 1 }}>CLOUD SYNCED · FAJ SOLUTIONS</div>

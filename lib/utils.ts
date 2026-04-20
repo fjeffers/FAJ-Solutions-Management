@@ -6,7 +6,9 @@ export function fmtMoney(n: number): string {
 
 export function fmtDate(d: string | null | undefined): string {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // Append time to prevent UTC midnight from shifting to the previous day in US timezones
+  const normalized = d.length === 10 ? `${d}T00:00:00` : d;
+  return new Date(normalized).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export function enrichWorkOrders(workOrders: WorkOrder[], payments: Payment[]): EnrichedWorkOrder[] {

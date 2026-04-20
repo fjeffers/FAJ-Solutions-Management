@@ -269,4 +269,89 @@ export default function QuestionTemplatesView({
           <div>
             <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Question Templates</h1>
             <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>
-              Create reusable question sets for different 
+              Create reusable question sets for different vendors or job types. Attach vendor paperwork so contractors can download it on site.
+            </p>
+          </div>
+          <button className="btn btn-primary" onClick={() => setEditing({})}>
+            <Plus size={14} /> New Template
+          </button>
+        </div>
+      </div>
+
+      {/* Template cards */}
+      {templates.length === 0 ? (
+        <div className="glass card" style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>{'?'}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No templates yet</div>
+          <div style={{ fontSize: 13, marginBottom: 20 }}>
+            Create your first template for things like AT&T jobs, Spectrum installs, or a standard site inspection checklist.
+          </div>
+          <button className="btn btn-primary" onClick={() => setEditing({})}>
+            <Plus size={14} /> Create First Template
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 12 }}>
+          {templates.map((t) => (
+            <div key={t.id} className="glass card">
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 17, fontWeight: 700 }}>{t.name}</div>
+                    {t.attachment_url && (
+                      <a
+                        href={t.attachment_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(201,169,97,0.12)', color: '#b8944a', textDecoration: 'none' }}
+                      >
+                        <Paperclip size={10} /> {fileName(t.attachment_url)}
+                      </a>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {t.questions.slice(0, 6).map((q) => (
+                      <span key={q.id} style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, background: 'rgba(13,115,119,0.08)', color: 'var(--teal)', fontWeight: 600 }}>
+                        {q.label}
+                      </span>
+                    ))}
+                    {t.questions.length > 6 && (
+                      <span style={{ fontSize: 11, color: '#aaa', padding: '2px 4px' }}>+{t.questions.length - 6} more</span>
+                    )}
+                    {t.questions.length === 0 && (
+                      <span style={{ fontSize: 11, color: '#ccc' }}>No questions yet</span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{ textAlign: 'center', marginRight: 8 }}>
+                    <div style={{ fontSize: 11, color: '#aaa', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>Questions</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--teal)' }}>{t.questions.length}</div>
+                  </div>
+                  <button className="icon-btn" onClick={() => setEditing(t)}><Edit2 size={15} /></button>
+                  <button
+                    className="icon-btn"
+                    style={{ color: '#b91c1c' }}
+                    onClick={() => { if (confirm(`Delete template "${t.name}"?`)) onDelete(t.id); }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal */}
+      {editing !== false && (
+        <TemplateModal
+          template={editing}
+          onSave={handleSave}
+          onClose={() => setEditing(false)}
+          onUploadAttachment={onUploadAttachment}
+        />
+      )}
+    </div>
+  );
+}

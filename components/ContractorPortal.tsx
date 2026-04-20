@@ -65,6 +65,7 @@ function WOCard({
   onSaveTasks,
   onUploadFile,
   onSubmitForReview,
+  onSaveCustomQA,
 }: {
   wo: WorkOrder;
   submissions: DeliverableSubmission[];
@@ -759,4 +760,166 @@ export default function ContractorPortal({
     <div style={{ minHeight: '100vh', background: 'var(--bg)', maxWidth: 640, margin: '0 auto' }}>
 
       {/* ── Header ── */}
-      <div style={{ background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d
+      <div style={{ background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', padding: '20px 20px 24px', color: 'white' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={16} color="var(--gold-light)" />
+            <span className="display" style={{ fontSize: 11, color: 'var(--gold-light)', fontWeight: 700, letterSpacing: 2 }}>FAJ SOLUTIONS</span>
+          </div>
+          <button
+            onClick={onLogout}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+          >
+            <LogOut size={12} /> Sign Out
+          </button>
+        </div>
+
+        <div className="serif" style={{ fontSize: 28, fontWeight: 600, color: 'white', marginBottom: 2 }}>
+          {contractor.name}
+        </div>
+        {contractor.business_name && (
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>{contractor.business_name}</div>
+        )}
+
+        {/* Summary pills */}
+        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+          <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 14px' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Active</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'white' }}>{activeJobs.length}</div>
+          </div>
+          <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 14px' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Total Billed</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'white' }}>{fmtMoney(totalBilled)}</div>
+          </div>
+          <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '10px 14px' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Paid Out</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'rgba(201,233,97,0.95)' }}>{fmtMoney(totalPaid)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div style={{ display: 'flex', background: 'white', borderBottom: '1px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 10 }}>
+        {(['jobs', 'payments'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{ flex: 1, padding: '14px 0', fontSize: 12, fontWeight: 700, letterSpacing: 0.5, border: 'none', cursor: 'pointer', background: 'none', color: tab === t ? 'var(--teal)' : '#999', borderBottom: tab === t ? '2px solid var(--teal)' : '2px solid transparent', textTransform: 'uppercase' }}
+          >
+            {t === 'jobs' ? `Jobs (${workOrders.length})` : `Payments (${payments.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Content ── */}
+      <div style={{ padding: '20px 16px 40px' }}>
+
+        {/* JOBS TAB */}
+        {tab === 'jobs' && (
+          <>
+            {activeJobs.length === 0 && completedJobs.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
+                <AlertCircle size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No jobs assigned yet</div>
+                <div style={{ fontSize: 13 }}>{"You'll see your work orders here once FAJ Solutions assigns them."}</div>
+              </div>
+            )}
+
+            {activeJobs.length > 0 && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 14 }}>Active Jobs</div>
+                {activeJobs.map((wo) => (
+                  <WOCard
+                    key={wo.id}
+                    wo={wo}
+                    submissions={submissions.filter((s) => s.wo_id === wo.id)}
+                    woTimeLogs={timeLogs.filter((l) => l.wo_id === wo.id)}
+                    woSignature={signatures.find((s) => s.wo_id === wo.id)}
+                    onUpdateStatus={onUpdateStatus}
+                    onCheckIn={onCheckIn}
+                    onCheckOut={onCheckOut}
+                    onSaveSignature={onSaveSignature}
+                    onSaveTasks={onSaveTasks}
+                    onUploadFile={onUploadFile}
+                    onSubmitForReview={onSubmitForReview}
+                    onSaveCustomQA={onSaveCustomQA}
+                  />
+                ))}
+              </>
+            )}
+
+            {completedJobs.length > 0 && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 2, textTransform: 'uppercase', margin: '24px 0 14px' }}>Completed</div>
+                {completedJobs.map((wo) => (
+                  <WOCard
+                    key={wo.id}
+                    wo={wo}
+                    submissions={submissions.filter((s) => s.wo_id === wo.id)}
+                    woTimeLogs={timeLogs.filter((l) => l.wo_id === wo.id)}
+                    woSignature={signatures.find((s) => s.wo_id === wo.id)}
+                    onUpdateStatus={onUpdateStatus}
+                    onCheckIn={onCheckIn}
+                    onCheckOut={onCheckOut}
+                    onSaveSignature={onSaveSignature}
+                    onSaveTasks={onSaveTasks}
+                    onUploadFile={onUploadFile}
+                    onSubmitForReview={onSubmitForReview}
+                    onSaveCustomQA={onSaveCustomQA}
+                  />
+                ))}
+              </>
+            )}
+          </>
+        )}
+
+        {/* PAYMENTS TAB */}
+        {tab === 'payments' && (
+          <>
+            {payments.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
+                <DollarSign size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No payments recorded yet</div>
+                <div style={{ fontSize: 13 }}>Your payment history will appear here.</div>
+              </div>
+            ) : (
+              <>
+                {/* Summary card */}
+                <div style={{ background: 'white', borderRadius: 14, padding: '16px 18px', marginBottom: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ fontSize: 13, color: '#666' }}>Total Billed</span>
+                    <span style={{ fontSize: 14, fontWeight: 700 }}>{fmtMoney(totalBilled)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ fontSize: 13, color: '#666' }}>Total Paid</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#047857' }}>{fmtMoney(totalPaid)}</span>
+                  </div>
+                  <div style={{ height: 1, background: '#f0f0f0', margin: '10px 0' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, color: '#666' }}>Outstanding</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: totalBilled - totalPaid > 0 ? '#b91c1c' : '#047857' }}>{fmtMoney(totalBilled - totalPaid)}</span>
+                  </div>
+                </div>
+
+                {/* Payment list */}
+                {payments.map((p) => (
+                  <div key={p.id} style={{ background: 'white', borderRadius: 12, padding: '14px 16px', marginBottom: 10, boxShadow: '0 1px 8px rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{fmtDate(p.payment_date)}</div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 700 }}>#{p.wo_number}</span>
+                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: p.method === 'Zelle' ? 'rgba(107,45,139,0.1)' : 'rgba(13,115,119,0.08)', color: p.method === 'Zelle' ? '#6B2D8B' : 'var(--teal)', fontWeight: 700 }}>{p.method}</span>
+                      </div>
+                      {p.notes && <div style={{ fontSize: 11, color: '#aaa', marginTop: 3 }}>{p.notes}</div>}
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: '#047857' }}>{fmtMoney(Number(p.amount))}</div>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

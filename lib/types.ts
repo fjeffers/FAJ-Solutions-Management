@@ -139,4 +139,88 @@ export type Payment = {
   user_id: string;
   wo_number: string;
   contractor_name: string;
-  payment_date: strin
+  payment_date: string;
+  amount: number;
+  method: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ─── Question Templates ───────────────────────────────────────────────────────
+
+export type QuestionFieldType = 'text' | 'number' | 'yes_no' | 'textarea';
+
+export type QuestionField = {
+  id: string;
+  label: string;
+  type: QuestionFieldType;
+  placeholder?: string | null;
+  required?: boolean;
+};
+
+export type QuestionTemplate = {
+  id: string;
+  user_id: string;
+  name: string;
+  questions: QuestionField[];
+  attachment_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CustomQAItem = {
+  id: string;
+  label: string;
+  type: QuestionFieldType;
+  answer: string | null;
+};
+
+// ─── Contractor Portal ────────────────────────────────────────────────────────
+
+export type WoTask = {
+  id: string;
+  category: 'Prep' | 'On Site' | 'Post';
+  label: string;
+  completed: boolean;
+  completed_at: string | null;
+};
+
+export type TimeLog = {
+  id: string;
+  wo_id: string;
+  wo_number: string;
+  contractor_name: string;
+  checked_in_at: string | null;
+  checked_out_at: string | null;
+  created_at: string;
+};
+
+export type Signature = {
+  id: string;
+  wo_id: string;
+  wo_number: string;
+  contractor_name: string;
+  signer_name: string | null;
+  signature_data: string;
+  signed_at: string;
+};
+
+export type DeliverableSubmission = {
+  id: string;
+  wo_id: string;
+  wo_number: string;
+  contractor_name: string;
+  notes: string | null;
+  file_urls: string[];
+  submitted_at: string;
+};
+
+export type PaymentMethod =
+  | 'Cash' | 'Check' | 'Zelle' | 'Venmo' | 'CashApp'
+  | 'PayPal' | 'Bank Transfer' | 'Credit Card' | 'Other';
+
+export const PAYMENT_METHODS: PaymentMethod[] = [
+  'Cash', 'Check', 'Zelle', 'Venmo', 'CashApp',
+  'PayPal', 'Bank Transfer', 'Credit Card', 'Other',
+];

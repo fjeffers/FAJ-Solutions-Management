@@ -1,15 +1,33 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, FileText, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, FileText, CheckCircle, XCircle, Send } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
 import type { Contractor, EnrichedWorkOrder } from '@/lib/types';
 
 export default function ContractorsView({ contractors, workOrders, onAdd, onEdit, onDelete, onViewStatement }: {
   contractors: Contractor[]; workOrders: EnrichedWorkOrder[];
   onAdd: () => void; onEdit: (c: Contractor) => void; onDelete: (id: string) => void; onViewStatement: (name: string) => void;
 }) {
+  const supabase = createClient();
   const [search, setSearch] = useState('');
+  const [inviting, setInviting] = useState<string | null>(null);
+  const [inviteSent, setInviteSent] = useState<string | null>(null);
   const filtered = contractors.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()));
+
+  const handleInvite = async (c: Contractor) => {
+    if (!c.email) { alert('This contractor has no email on file. Add their email first.'); return; }
+    setInviting(c.id);
+    const origin = window.location.origin;
+    const { error } = await supabase.auth.signInWithOtp({
+      email: c.email,
+      options: { emailRedirectTo: `${origin}/contractor` },
+    });
+    setInviting(null);
+    if (error) { alert(`Failed to send invite: ${error.message}`); return; }
+    setInviteSent(c.id);
+    setTimeout(() => setInviteSent(null), 4000);
+  };
 
   return (
     <div>
@@ -68,6 +86,16 @@ export default function ContractorsView({ contractors, workOrders, onAdd, onEdit
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 11 }} onClick={() => onViewStatement(c.name)}><FileText size={12} /> Statement</button>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 12px', fontSize: 11, color: inviteSent === c.id ? '#047857' : undefined }}
+                    onClick={() => handleInvite(c)}
+                    disabled={inviting === c.id}
+                    title={c.email ? `Send portal invite to ${c.email}` : 'No email on file'}
+                  >
+                    <Send size={12} />
+                    {inviting === c.id ? 'Sending...' : inviteSent === c.id ? '✓ Sent!' : 'Invite'}
+                  </button>
                   <button className="icon-btn" onClick={() => onEdit(c)}><Edit2 size={15} /></button>
                   <button className="icon-btn" style={{ color: '#b91c1c' }} onClick={() => { if (confirm(`Delete ${c.name}?`)) onDelete(c.id); }}><Trash2 size={15} /></button>
                 </div>

@@ -412,4 +412,166 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
             </PF>
             <PF label="Required Skills / Certifications" icon={<Wrench size={13} />}>
               <input className="input" value={form.required_skills ?? ''} onChange={(e) => set('required_skills', e.target.value)} placeholder="e.g. BICSI, OSHA 10, Network+, Fiber Splice" />
-    
+              <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>Comma-separated list of required skills or certifications.</div>
+            </PF>
+          </div>
+        )}
+
+        {/* ── CONTACTS TAB ── */}
+        {tab === 'contacts' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
+              Pre-fill site contact info so the contractor knows who to reach when they arrive.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="POC Name" icon={<User size={13} />}>
+                <input className="input" value={form.poc_name ?? ''} onChange={(e) => set('poc_name', e.target.value)} placeholder="e.g. John Smith" />
+              </PF>
+              <PF label="POC Phone" icon={<Phone size={13} />}>
+                <input className="input" value={form.poc_phone ?? ''} onChange={(e) => set('poc_phone', e.target.value)} placeholder="e.g. (555) 555-5555" />
+              </PF>
+            </div>
+            <PF label="POC Email" icon={<Mail size={13} />}>
+              <input className="input" type="email" value={form.poc_email ?? ''} onChange={(e) => set('poc_email', e.target.value)} placeholder="e.g. john.smith@client.com" />
+            </PF>
+            <PF label="Support Contact" icon={<User size={13} />}>
+              <input className="input" value={form.support_contact ?? ''} onChange={(e) => set('support_contact', e.target.value)} placeholder="Who from support will help? e.g. Mike (FAJ), AT&T NOC: 800-555-0100" />
+            </PF>
+          </div>
+        )}
+
+        {/* ── QUESTIONS TAB ── */}
+        {tab === 'questions' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Template picker */}
+            {questionTemplates.length > 0 && (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                    Apply a Template
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <select
+                      className="select input"
+                      defaultValue=""
+                      onChange={(e) => { if (e.target.value) applyTemplate(e.target.value); }}
+                    >
+                      <option value="">Select template to apply...</option>
+                      {questionTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name} ({t.questions.length} questions)</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Vendor attachment (copied from template or manually set) */}
+            {form.attachment_url && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(201,169,97,0.08)', border: '1.5px solid rgba(201,169,97,0.2)' }}>
+                <Paperclip size={14} color="#b8944a" />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#b8944a', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Vendor Paperwork</div>
+                  <a href={form.attachment_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#b8944a', fontWeight: 600, textDecoration: 'none' }}>
+                    View / Download →
+                  </a>
+                </div>
+                <button onClick={() => set('attachment_url', null)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc' }}>
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
+            {/* Question list */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                  Questions on this WO ({customQA.length})
+                </label>
+                <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }} onClick={addCustomQuestion}>
+                  <Plus size={12} /> Add Question
+                </button>
+              </div>
+
+              {customQA.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '32px 0', color: '#ccc', fontSize: 13, border: '2px dashed #e5e7eb', borderRadius: 10 }}>
+                  {questionTemplates.length > 0
+                    ? 'Apply a template above or add questions manually'
+                    : 'Add questions manually, or create templates in Settings'}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {customQA.map((q, i) => (
+                    <div key={q.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, background: '#fafafa', border: '1px solid #e5e7eb' }}>
+                      <span style={{ fontSize: 11, color: '#ccc', fontWeight: 700, width: 20, textAlign: 'center' }}>{i + 1}</span>
+                      <input
+                        className="input"
+                        value={q.label}
+                        onChange={(e) => updateQALabel(q.id, e.target.value)}
+                        placeholder="Question label"
+                        style={{ flex: 1, fontSize: 13 }}
+                      />
+                      <div style={{ position: 'relative', width: 120 }}>
+                        <select
+                          className="select input"
+                          value={q.type}
+                          onChange={(e) => updateQAType(q.id, e.target.value as QuestionFieldType)}
+                          style={{ fontSize: 11, paddingRight: 24 }}
+                        >
+                          <option value="text">Short Text</option>
+                          <option value="textarea">Long Text</option>
+                          <option value="number">Number</option>
+                          <option value="yes_no">Yes / No</option>
+                        </select>
+                        <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                      </div>
+                      <button onClick={() => removeQA(q.id)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc' }}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 28, paddingTop: 20, borderTop: '1px solid #eee' }}>
+          <div style={{ fontSize: 13, color: '#666' }}>
+            Total: <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: "'Cormorant Garamond', serif", fontSize: 20 }}>
+              {fmtMoney(form.pay_type === 'Fixed' ? (Number(form.total_amount) || 0) : computed)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!canSave} style={{ opacity: canSave ? 1 : 0.5 }}>
+              {item ? 'Save Changes' : 'Create Work Order'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PF({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+        {icon} {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function TotalPreview({ label, value }: { label: string; value: number }) {
+  return (
+    <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg, rgba(13,115,119,0.06) 0%, rgba(201,169,97,0.06) 100%)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}>{label}</span>
+      <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 26, fontWeight: 600, color: value > 0 ? 'var(--teal)' : '#aaa' }}>{fmtMoney(value)}</span>
+    </div>
+  );
+}

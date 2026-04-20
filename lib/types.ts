@@ -107,6 +107,11 @@ export type WorkOrder = {
   service_type: string | null;
   required_skills: string | null; // Comma-separated
 
+  // Contractor portal fields (migration-005)
+  wo_tasks: WoTask[] | null;
+  closeout_notes: string | null;
+  submitted_at: string | null;
+
   created_at: string;
   updated_at: string;
 };
@@ -132,11 +137,4 @@ export type Payment = {
   updated_at: string;
 };
 
-export type PaymentMethod =
-  | 'Cash' | 'Check' | 'Zelle' | 'Venmo' | 'CashApp'
-  | 'PayPal' | 'Bank Transfer' | 'Credit Card' | 'Other';
-
-export const PAYMENT_METHODS: PaymentMethod[] = [
-  'Cash', 'Check', 'Zelle', 'Venmo', 'CashApp',
-  'PayPal', 'Bank Transfer', 'Credit Card', 'Other',
-];
+// ─── Contractor Portal ─────────────────────────────────────────

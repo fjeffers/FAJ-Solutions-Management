@@ -38,18 +38,86 @@ export type Contractor = {
   updated_at: string;
 };
 
+// ─── Work Order ────────────────────────────────────────────────────────────────
+
+export type WorkOrderStatus =
+  | 'Open'
+  | 'Assigned'
+  | 'In Progress'
+  | 'Work Done'
+  | 'Approved'
+  | 'Paid';
+
+export const WO_STATUSES: WorkOrderStatus[] = [
+  'Open', 'Assigned', 'In Progress', 'Work Done', 'Approved', 'Paid',
+];
+
+export type PayType = 'Fixed' | 'Hourly' | 'Per Device' | 'Blended';
+
+export const PAY_TYPES: PayType[] = ['Fixed', 'Hourly', 'Per Device', 'Blended'];
+
+export const SERVICE_TYPES: string[] = [
+  'Network / IT',
+  'Low Voltage',
+  'Electrical',
+  'Installation',
+  'Maintenance',
+  'Audio / Visual',
+  'Security / Surveillance',
+  'Telecommunications',
+  'Construction',
+  'Other',
+];
+
 export type WorkOrder = {
   id: string;
   user_id: string;
   wo_number: string;
+  title: string | null;
   contractor_name: string;
-  description: string | null;
+
+  // FieldNation status
+  wo_status: WorkOrderStatus;
+
+  // Pay
+  pay_type: PayType;
+  total_amount: number;           // Always stored (calculated for non-fixed types)
+  hourly_rate: number | null;     // Hourly + Blended
+  hours_worked: number | null;    // Hourly + Blended
+  per_device_rate: number | null; // Per Device
+  device_count: number | null;    // Per Device
+  blended_base: number | null;    // Blended fixed base amount
+
+  // Site / Location
+  site_name: string | null;
+  site_address: string | null;
+  site_city: string | null;
+  site_state: string | null;
+  site_zip: string | null;
+
+  // Schedule
   start_date: string | null;
+  start_time: string | null;      // "HH:MM" 24h
   end_date: string | null;
-  total_amount: number;
+  end_time: string | null;        // "HH:MM" 24h
+
+  // Scope
+  description: string | null;
+  deliverables: string | null;    // Newline-separated checklist items
+  service_type: string | null;
+  required_skills: string | null; // Comma-separated
+
   created_at: string;
   updated_at: string;
 };
+
+export type EnrichedWorkOrder = WorkOrder & {
+  paid: number;
+  remaining: number;
+  payment_status: 'paid' | 'partial' | 'pending';
+};
+
+// ─── Payment ──────────────────────────────────────────────────────────────────
 
 export type Payment = {
   id: string;
@@ -62,12 +130,6 @@ export type Payment = {
   notes: string | null;
   created_at: string;
   updated_at: string;
-};
-
-export type EnrichedWorkOrder = WorkOrder & {
-  paid: number;
-  remaining: number;
-  status: 'paid' | 'partial' | 'pending';
 };
 
 export type PaymentMethod =

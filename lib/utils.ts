@@ -17,9 +17,9 @@ export function enrichWorkOrders(workOrders: WorkOrder[], payments: Payment[]): 
       .filter((p) => p.wo_number === w.wo_number)
       .reduce((s, p) => s + Number(p.amount), 0);
     const remaining = Number(w.total_amount) - paid;
-    const status: EnrichedWorkOrder['status'] =
+    const payment_status: EnrichedWorkOrder['payment_status'] =
       remaining <= 0 ? 'paid' : paid > 0 ? 'partial' : 'pending';
-    return { ...w, paid, remaining, status };
+    return { ...w, paid, remaining, payment_status };
   });
 }
 

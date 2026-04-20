@@ -64,9 +64,9 @@ export default function HomePage() {
     const paid = enrichedWOs.reduce((s, w) => s + w.paid, 0);
     return {
       total, paid, remaining: total - paid,
-      paidCount: enrichedWOs.filter((w) => w.status === 'paid').length,
-      partialCount: enrichedWOs.filter((w) => w.status === 'partial').length,
-      pendingCount: enrichedWOs.filter((w) => w.status === 'pending').length,
+      paidCount: enrichedWOs.filter((w) => w.payment_status === 'paid').length,
+      partialCount: enrichedWOs.filter((w) => w.payment_status === 'partial').length,
+      pendingCount: enrichedWOs.filter((w) => w.payment_status === 'pending').length,
       jobCount: enrichedWOs.length,
     };
   }, [enrichedWOs]);
@@ -91,7 +91,36 @@ export default function HomePage() {
   const saveWorkOrder = async (w: Partial<WorkOrder>) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const payload = { wo_number: w.wo_number!, contractor_name: w.contractor_name!, description: w.description ?? null, start_date: w.start_date || null, end_date: w.end_date || null, total_amount: Number(w.total_amount) };
+    const payload = {
+      wo_number:       w.wo_number!,
+      contractor_name: w.contractor_name!,
+      title:           w.title           ?? null,
+      description:     w.description     ?? null,
+      start_date:      w.start_date      || null,
+      end_date:        w.end_date        || null,
+      total_amount:    Number(w.total_amount),
+      // FieldNation status & pay
+      wo_status:       w.wo_status       ?? 'Open',
+      pay_type:        w.pay_type        ?? 'Fixed',
+      hourly_rate:     w.hourly_rate     ?? null,
+      hours_worked:    w.hours_worked    ?? null,
+      per_device_rate: w.per_device_rate ?? null,
+      device_count:    w.device_count    ?? null,
+      blended_base:    w.blended_base    ?? null,
+      // Site
+      site_name:       w.site_name       ?? null,
+      site_address:    w.site_address    ?? null,
+      site_city:       w.site_city       ?? null,
+      site_state:      w.site_state      ?? null,
+      site_zip:        w.site_zip        ?? null,
+      // Schedule times
+      start_time:      w.start_time      ?? null,
+      end_time:        w.end_time        ?? null,
+      // Scope
+      deliverables:    w.deliverables    ?? null,
+      service_type:    w.service_type    ?? null,
+      required_skills: w.required_skills ?? null,
+    };
     if (w.id) { await supabase.from('work_orders').update(payload).eq('id', w.id); }
     else { await supabase.from('work_orders').insert({ ...payload, user_id: user.id }); }
     loadAll();

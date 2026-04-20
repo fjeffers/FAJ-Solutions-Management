@@ -2,13 +2,22 @@
 import { useMemo } from 'react';
 import { TrendingUp, Clock, CheckCircle, AlertCircle, Briefcase, CreditCard } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
-import type { EnrichedWorkOrder, Payment } from '@/lib/types';
+import type { EnrichedWorkOrder, Payment, WorkOrderStatus } from '@/lib/types';
+
+const WO_STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
+  'Open':        { bg: 'rgba(13,115,119,0.12)', color: '#0D7377' },
+  'Assigned':    { bg: 'rgba(245,158,11,0.15)', color: '#b45309' },
+  'In Progress': { bg: 'rgba(249,115,22,0.15)', color: '#c2410c' },
+  'Work Done':   { bg: 'rgba(99,102,241,0.15)', color: '#4338ca' },
+  'Approved':    { bg: 'rgba(16,185,129,0.15)', color: '#047857' },
+  'Paid':        { bg: 'rgba(5,150,105,0.2)',   color: '#065f46' },
+};
 
 type Stats = { total: number; paid: number; remaining: number; paidCount: number; partialCount: number; pendingCount: number; jobCount: number };
 
 export default function DashboardView({ stats, workOrders, payments, onView }: { stats: Stats; workOrders: EnrichedWorkOrder[]; payments: Payment[]; onView: (v: string) => void }) {
   const recentPayments = [...payments].slice(0, 5);
-  const urgentJobs = workOrders.filter((w) => w.status !== 'paid').slice(0, 5);
+  const urgentJobs = workOrders.filter((w) => w.payment_status !== 'paid').slice(0, 5);
   const pct = stats.total > 0 ? Math.round((stats.paid / stats.total) * 100) : 0;
 
   return (
@@ -59,12 +68,17 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
             urgentJobs.map((j) => (
               <div key={j.id} className="row-hover" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--teal)' }}>WO#{j.wo_number}</div>
-                  <div style={{ fontSize: 12, color: '#888' }}>{j.contractor_name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--teal)' }}>WO#{j.wo_number}</span>
+                    {(() => { const sc = WO_STATUS_COLORS[j.wo_status] ?? WO_STATUS_COLORS['Open']; return (
+                      <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sc.bg, color: sc.color }}>{j.wo_status}</span>
+                    ); })()}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{j.contractor_name}{j.title ? ` · ${j.title}` : ''}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{fmtMoney(j.remaining)}</div>
-                  <span className={`chip chip-${j.status}`} style={{ fontSize: 10 }}>{j.status}</span>
+                  <span className={`chip chip-${j.payment_status}`} style={{ fontSize: 10, marginTop: 3 }}>{j.payment_status}</span>
                 </div>
               </div>
             ))

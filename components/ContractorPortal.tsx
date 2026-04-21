@@ -216,7 +216,7 @@ function WOCard({
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 14, boxShadow: '0 2px 16px rgba(0,0,0,0.08)', border: '1px solid #e0e4ea' }}>
+    <div style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 14, boxShadow: '0 8px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3)', border: '1px solid rgba(200,168,75,0.18)' }}>
 
       {/* ── DARK HEADER (always visible, tap to expand) ── */}
       <div
@@ -295,17 +295,19 @@ function WOCard({
 
       {/* ── SECTION TABS ── */}
       {expanded && (
-        <div style={{ display: 'flex', background: '#f8fafc', borderBottom: '1px solid #e0e4ea', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', background: '#0d2240', borderBottom: '1px solid rgba(200,168,75,0.15)', overflowX: 'auto' }}>
           {SECTIONS_DATA.map((sec) => (
             <button
               key={sec.id}
               onClick={(e) => { e.stopPropagation(); setActiveSection(sec.id); }}
               style={{
-                flex: '0 0 auto', padding: '10px 14px', border: 'none', cursor: 'pointer',
-                background: activeSection === sec.id ? 'white' : 'transparent',
-                fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
-                color: activeSection === sec.id ? '#0d2d4a' : '#90a4ae',
-                borderBottom: activeSection === sec.id ? '2px solid #0d2d4a' : '2px solid transparent',
+                flex: '0 0 auto', padding: '11px 15px', border: 'none', cursor: 'pointer',
+                background: 'transparent',
+                fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', letterSpacing: 0.8,
+                color: activeSection === sec.id ? '#c8a84b' : 'rgba(255,255,255,0.35)',
+                borderBottom: activeSection === sec.id ? '2px solid #c8a84b' : '2px solid transparent',
+                textTransform: 'uppercase' as const,
+                transition: 'color 0.15s',
               }}
             >
               {sec.label}
@@ -316,7 +318,7 @@ function WOCard({
 
       {/* ── SECTION CONTENT ── */}
       {expanded && (
-        <div style={{ background: '#f4f6f9', padding: '12px' }}>
+        <div style={{ background: '#f7f8fa', padding: '12px' }}>
 
           {/* ── OVERVIEW ── */}
           {activeSection === 'overview' && (
@@ -807,22 +809,22 @@ function WOCard({
 
       {/* ── FOOTER ACTIONS ── */}
       {expanded && isEditable && (
-        <div style={{ padding: '14px 14px', borderTop: '2px solid #f0f4f8', background: 'white' }}>
+        <div style={{ padding: '14px', borderTop: '1px solid rgba(200,168,75,0.15)', background: '#0a1929' }}>
           {wo.wo_status === 'Assigned' && (
             <button onClick={handleStartJob} disabled={updating}
-              style={{ width: '100%', padding: '14px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #0d2d4a 0%, #1a5276 100%)', color: 'white', fontWeight: 800, fontSize: 15, cursor: updating ? 'not-allowed' : 'pointer', opacity: updating ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, letterSpacing: 0.3 }}>
+              style={{ width: '100%', padding: '15px', borderRadius: 12, border: '1px solid rgba(200,168,75,0.4)', background: 'linear-gradient(135deg, #b8870e 0%, #c8a84b 40%, #e8c96d 55%, #c8a84b 70%, #9a6e0a 100%)', color: '#0a1929', fontWeight: 900, fontSize: 14, letterSpacing: 1, textTransform: 'uppercase' as const, cursor: updating ? 'not-allowed' : 'pointer', opacity: updating ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 20px rgba(200,168,75,0.3), inset 0 1px 0 rgba(255,255,255,0.3)' }}>
               <ListChecks size={16} />
               {updating ? 'Updating...' : 'Start Job'}
             </button>
           )}
           {wo.wo_status === 'In Progress' && (
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 8 }}>Closeout Notes</div>
+              <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, textTransform: 'uppercase' as const, marginBottom: 8 }}>Closeout Notes</div>
               <textarea value={closeoutNotes} onChange={(e) => setCloseoutNotes(e.target.value)}
                 placeholder="Summarize work completed, issues found, equipment installed..."
-                style={{ width: '100%', minHeight: 72, padding: '10px 12px', borderRadius: 10, border: '1.5px solid #e0e4ea', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' as const, marginBottom: 10 }} />
+                style={{ width: '100%', minHeight: 72, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', color: 'white', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' as const, marginBottom: 10 }} />
               <button onClick={handleSubmitForReview} disabled={submitting}
-                style={{ width: '100%', padding: '14px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #0d2d4a 0%, #1a5276 100%)', color: 'white', fontWeight: 800, fontSize: 15, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                style={{ width: '100%', padding: '15px', borderRadius: 12, border: '1px solid rgba(200,168,75,0.4)', background: 'linear-gradient(135deg, #b8870e 0%, #c8a84b 40%, #e8c96d 55%, #c8a84b 70%, #9a6e0a 100%)', color: '#0a1929', fontWeight: 900, fontSize: 14, letterSpacing: 1, textTransform: 'uppercase' as const, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 20px rgba(200,168,75,0.3), inset 0 1px 0 rgba(255,255,255,0.3)' }}>
                 <Send size={15} />{submitting ? 'Submitting...' : 'Submit for Review'}
               </button>
             </div>
@@ -864,53 +866,66 @@ export default function ContractorPortal({
   const totalBilled   = workOrders.reduce((s, w) => s + Number(w.total_amount), 0);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f6f9', maxWidth: 640, margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #060f1e 0%, #0a1929 40%, #0d2240 100%)', maxWidth: 640, margin: '0 auto' }}>
 
-      {/* ── Header ── */}
-      <div style={{ background: 'linear-gradient(135deg, #0d2d4a 0%, #1a5276 100%)', padding: '20px 20px 24px', color: 'white' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      {/* ── Luxury Header ── */}
+      <div style={{ padding: '0 18px', position: 'relative' as const, overflow: 'hidden' }}>
+        {/* Subtle gold shimmer line at very top */}
+        <div style={{ height: 2, background: 'linear-gradient(90deg, transparent 0%, #c8a84b 35%, #f0d060 50%, #c8a84b 65%, transparent 100%)', marginBottom: 0 }} />
+
+        {/* Top bar: brand + sign out */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 18, paddingBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Sparkles size={16} color="#c8a84b" />
-            <span style={{ fontSize: 11, color: '#c8a84b', fontWeight: 700, letterSpacing: 2 }}>FAJ SOLUTIONS</span>
+            <Sparkles size={14} color="#c8a84b" />
+            <span style={{ fontSize: 10, color: '#c8a84b', fontWeight: 800, letterSpacing: 3, textTransform: 'uppercase' as const }}>FAJ Solutions</span>
           </div>
           <button
             onClick={onLogout}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 13px', borderRadius: 20, border: '1px solid rgba(200,168,75,0.35)', background: 'rgba(200,168,75,0.08)', color: 'rgba(200,168,75,0.85)', cursor: 'pointer', fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}
           >
-            <LogOut size={12} /> Sign Out
+            <LogOut size={11} color="#c8a84b" /> Sign Out
           </button>
         </div>
 
-        <div style={{ fontSize: 26, fontWeight: 700, color: 'white', marginBottom: 2 }}>
-          {contractor.name}
+        {/* Name + business */}
+        <div style={{ paddingBottom: 20 }}>
+          <div style={{ fontSize: 30, fontWeight: 900, color: 'white', letterSpacing: -0.5, lineHeight: 1.1, marginBottom: 4 }}>
+            {contractor.name}
+          </div>
+          {contractor.business_name && (
+            <div style={{ fontSize: 13, color: 'rgba(200,168,75,0.75)', fontWeight: 600, letterSpacing: 0.3 }}>{contractor.business_name}</div>
+          )}
         </div>
-        {contractor.business_name && (
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>{contractor.business_name}</div>
-        )}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <div style={{ flex: 1, background: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 14px' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 2 }}>Active</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'white' }}>{activeJobs.length}</div>
-          </div>
-          <div style={{ flex: 1, background: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 14px' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 2 }}>Total Billed</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'white' }}>{fmtMoney(totalBilled)}</div>
-          </div>
-          <div style={{ flex: 1, background: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 14px' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 2 }}>Paid Out</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#86efac' }}>{fmtMoney(totalPaid)}</div>
-          </div>
+        {/* Stat tiles — glass with gold border */}
+        <div style={{ display: 'flex', gap: 10, paddingBottom: 22 }}>
+          {[
+            { label: 'Active Jobs',    value: String(activeJobs.length),    color: 'white',   large: true },
+            { label: 'Total Billed',   value: fmtMoney(totalBilled),        color: 'white',   large: false },
+            { label: 'Paid Out',       value: fmtMoney(totalPaid),          color: '#86efac', large: false },
+          ].map(({ label, value, color, large }) => (
+            <div key={label} style={{ flex: 1, borderRadius: 14, border: '1px solid rgba(200,168,75,0.2)', background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(8px)', padding: '12px 14px', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize: 9, color: 'rgba(200,168,75,0.6)', fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase' as const, marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: large ? 26 : 17, fontWeight: 900, color, letterSpacing: large ? -1 : -0.3 }}>{value}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ── Tabs ── */}
-      <div style={{ display: 'flex', background: 'white', borderBottom: '1px solid #e0e4ea', position: 'sticky', top: 0, zIndex: 10 }}>
+      {/* ── Luxury Tab Bar ── */}
+      <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderTop: '1px solid rgba(200,168,75,0.12)', borderBottom: '1px solid rgba(255,255,255,0.06)', position: 'sticky', top: 0, zIndex: 10, backdropFilter: 'blur(12px)' }}>
         {(['jobs', 'payments'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            style={{ flex: 1, padding: '14px 0', fontSize: 12, fontWeight: 700, letterSpacing: 0.5, border: 'none', cursor: 'pointer', background: 'none', color: tab === t ? '#0d2d4a' : '#90a4ae', borderBottom: tab === t ? '2px solid #0d2d4a' : '2px solid transparent', textTransform: 'uppercase' as const }}
+            style={{
+              flex: 1, padding: '13px 0', fontSize: 11, fontWeight: 800, letterSpacing: 1.5,
+              border: 'none', cursor: 'pointer', background: 'none',
+              color: tab === t ? '#c8a84b' : 'rgba(255,255,255,0.35)',
+              borderBottom: tab === t ? '2px solid #c8a84b' : '2px solid transparent',
+              textTransform: 'uppercase' as const,
+              transition: 'color 0.2s',
+            }}
           >
             {t === 'jobs' ? `Jobs (${workOrders.length})` : `Payments (${payments.length})`}
           </button>
@@ -918,22 +933,26 @@ export default function ContractorPortal({
       </div>
 
       {/* Content */}
-      <div style={{ padding: '16px 14px 40px' }}>
+      <div style={{ padding: '16px 14px 48px' }}>
 
         {/* JOBS TAB */}
         {tab === 'jobs' && (
           <>
             {activeJobs.length === 0 && completedJobs.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#90a4ae' }}>
-                <AlertCircle size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No jobs assigned yet</div>
-                <div style={{ fontSize: 13 }}>{"You'll see your work orders here once FAJ Solutions assigns them."}</div>
+              <div style={{ textAlign: 'center', padding: '70px 20px', color: 'rgba(255,255,255,0.3)' }}>
+                <AlertCircle size={32} style={{ marginBottom: 12, opacity: 0.3 }} color="rgba(200,168,75,0.4)" />
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: 'rgba(255,255,255,0.5)' }}>No jobs assigned yet</div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)' }}>{"You'll see your work orders here once FAJ Solutions assigns them."}</div>
               </div>
             )}
 
             {activeJobs.length > 0 && (
               <>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 2, textTransform: 'uppercase' as const, marginBottom: 12 }}>Active Jobs</div>
+                <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(200,168,75,0.7)', letterSpacing: 2.5, textTransform: 'uppercase' as const, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 1, background: 'rgba(200,168,75,0.2)' }} />
+                  Active Jobs
+                  <div style={{ flex: 1, height: 1, background: 'rgba(200,168,75,0.2)' }} />
+                </div>
                 {activeJobs.map((wo) => (
                   <WOCard
                     key={wo.id}
@@ -956,7 +975,11 @@ export default function ContractorPortal({
 
             {completedJobs.length > 0 && (
               <>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 2, textTransform: 'uppercase' as const, margin: '24px 0 12px' }}>Completed</div>
+                <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.25)', letterSpacing: 2.5, textTransform: 'uppercase' as const, margin: '24px 0 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.08)' }} />
+                  Completed
+                  <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.08)' }} />
+                </div>
                 {completedJobs.map((wo) => (
                   <WOCard
                     key={wo.id}
@@ -983,28 +1006,28 @@ export default function ContractorPortal({
         {tab === 'payments' && (
           <div>
             {payments.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#90a4ae' }}>
-                <DollarSign size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No payments recorded</div>
-                <div style={{ fontSize: 13 }}>Payments will appear here once processed.</div>
+              <div style={{ textAlign: 'center', padding: '70px 20px' }}>
+                <DollarSign size={32} style={{ marginBottom: 12, opacity: 0.3 }} color="#c8a84b" />
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: 'rgba(255,255,255,0.5)' }}>No payments recorded</div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)' }}>Payments will appear here once processed.</div>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {payments.map((p) => (
-                  <div key={p.id} style={{ background: 'white', borderRadius: 10, overflow: 'hidden', border: '1px solid #e0e4ea' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px' }}>
+                  <div key={p.id} style={{ borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(6px)', boxShadow: '0 4px 20px rgba(0,0,0,0.25)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px' }}>
                       <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a2e' }}>WO #{p.wo_number}</div>
-                        <div style={{ fontSize: 11, color: '#90a4ae', marginTop: 2 }}>{fmtDate(p.payment_date)} · {p.method}</div>
-                        {p.notes && <div style={{ fontSize: 11, color: '#546e7a', marginTop: 2 }}>{p.notes}</div>}
+                        <div style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.9)' }}>WO #{p.wo_number}</div>
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 3, letterSpacing: 0.2 }}>{fmtDate(p.payment_date)} {'\u00b7'} {p.method}</div>
+                        {p.notes && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{p.notes}</div>}
                       </div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: '#2e7d32' }}>{fmtMoney(Number(p.amount))}</div>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: '#86efac', letterSpacing: -0.5 }}>{fmtMoney(Number(p.amount))}</div>
                     </div>
                   </div>
                 ))}
-                <div style={{ background: 'white', borderRadius: 10, border: '1px solid #c8e6c9', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#2e7d32', textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Total Paid</span>
-                  <span style={{ fontSize: 20, fontWeight: 800, color: '#2e7d32' }}>{fmtMoney(totalPaid)}</span>
+                <div style={{ borderRadius: 14, border: '1px solid rgba(200,168,75,0.3)', background: 'rgba(200,168,75,0.07)', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, boxShadow: '0 0 24px rgba(200,168,75,0.08)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: 'rgba(200,168,75,0.8)', textTransform: 'uppercase' as const, letterSpacing: 1.5 }}>Total Paid</span>
+                  <span style={{ fontSize: 22, fontWeight: 900, color: '#86efac', letterSpacing: -0.5 }}>{fmtMoney(totalPaid)}</span>
                 </div>
               </div>
             )}

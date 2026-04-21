@@ -1,15 +1,16 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   X, Hash, User, FileText, Calendar, DollarSign,
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
   Phone, Mail, HelpCircle, Plus, Trash2, Paperclip,
+  Upload, Camera, FolderOpen,
 } from 'lucide-react';
 import type { WorkOrder, Contractor, PayType, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType } from '@/lib/types';
 import { PAY_TYPES, WO_STATUSES, SERVICE_TYPES } from '@/lib/types';
 import { fmtMoney } from '@/lib/utils';
 
-type Tab = 'details' | 'pay' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions';
+type Tab = 'details' | 'pay' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents';
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'details',   label: 'Details',   icon: <Hash size={13} /> },
   { key: 'pay',       label: 'Pay',       icon: <DollarSign size={13} /> },
@@ -18,6 +19,7 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'scope',     label: 'Scope',     icon: <ClipboardList size={13} /> },
   { key: 'contacts',  label: 'Contacts',  icon: <Phone size={13} /> },
   { key: 'questions', label: 'Questions', icon: <HelpCircle size={13} /> },
+  { key: 'documents', label: 'Documents', icon: <FolderOpen size={13} /> },
 ];
 
 function newQAItem(label = '', type: QuestionFieldType = 'text'): CustomQAItem {
@@ -54,10 +56,15 @@ type Props = {
   onSave: (w: Partial<WorkOrder>) => void;
   onClose: () => void;
   onSaveTemplate?: (name: string, questions: CustomQAItem[]) => Promise<void>;
+  onUploadDoc?: (file: File) => Promise<string | null>;
 };
 
-export default function WorkOrderModal({ item, contractors, questionTemplates, onSave, onClose, onSaveTemplate }: Props) {
+export default function WorkOrderModal({ item, contractors, questionTemplates, onSave, onClose, onSaveTemplate, onUploadDoc }: Props) {
   const [tab, setTab] = useState<Tab>('details');
+  const [docUploading, setDocUploading] = useState(false);
+  const [docUploadError, setDocUploadError] = useState<string | null>(null);
+  const docFileRef = useRef<HTMLInputElement>(null);
+  const photoFileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? '',
     title:           item?.title           ?? '',
@@ -533,6 +540,152 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
             {/* Save as Template row */}
             {customQA.filter((q) => q.label.trim()).length > 0 && onSaveTemplate && (
               <SaveAsTemplateRow questions={customQA} onSaveTemplate={onSaveTemplate} />
+            )}
+          </div>
+        )}
+
+        {/* ── DOCUMENTS TAB ── */}
+        {tab === 'documents' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
+              Attach documents, photos, or vendor paperwork. Contractors will see and can download these in their portal.
+            </div>
+
+            {/* Hidden file inputs */}
+            <input
+              ref={docFileRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file || !onUploadDoc) return;
+                setDocUploading(true);
+                setDocUploadError(null);
+                const url = await onUploadDoc(file);
+                if (url) set('attachment_url', url);
+                else setDocUploadError('Upload failed — try again');
+                setDocUploading(false);
+                if (docFileRef.current) docFileRef.current.value = '';
+              }}
+            />
+            <input
+              ref={photoFileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file || !onUploadDoc) return;
+                setDocUploading(true);
+                setDocUploadError(null);
+                const url = await onUploadDoc(file);
+                if (url) set('attachment_url', url);
+                else setDocUploadError('Upload failed — try again');
+                setDocUploading(false);
+                if (photoFileRef.current) photoFileRef.current.value = '';
+              }}
+            />
+
+            {/* Upload buttons */}
+            {onUploadDoc && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => docFileRef.current?.click()}
+                  disabled={docUploading}
+                  style={{
+                    padding: '18px 12px', border: '2px dashed rgba(13,115,119,0.35)', borderRadius: 12,
+                    background: 'rgba(13,115,119,0.04)', cursor: docUploading ? 'not-allowed' : 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                    color: 'var(--teal)', fontFamily: 'Lato, sans-serif',
+                    opacity: docUploading ? 0.6 : 1,
+                  }}
+                >
+                  <Upload size={22} color="var(--teal)" />
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{docUploading ? 'Uploading…' : 'Upload Document'}</span>
+                  <span style={{ fontSize: 10, color: '#aaa' }}>PDF, Word, Excel, Image</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => photoFileRef.current?.click()}
+                  disabled={docUploading}
+                  style={{
+                    padding: '18px 12px', border: '2px dashed rgba(201,169,97,0.4)', borderRadius: 12,
+                    background: 'rgba(201,169,97,0.05)', cursor: docUploading ? 'not-allowed' : 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                    color: '#b8944a', fontFamily: 'Lato, sans-serif',
+                    opacity: docUploading ? 0.6 : 1,
+                  }}
+                >
+                  <Camera size={22} color="#b8944a" />
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{docUploading ? 'Uploading…' : 'Take / Add Photo'}</span>
+                  <span style={{ fontSize: 10, color: '#aaa' }}>Opens camera or gallery</span>
+                </button>
+              </div>
+            )}
+
+            {docUploadError && (
+              <div style={{ fontSize: 12, color: '#b91c1c', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 8 }}>
+                {docUploadError}
+              </div>
+            )}
+
+            {/* Current attachment */}
+            {form.attachment_url ? (
+              <div style={{ border: '1.5px solid rgba(201,169,97,0.3)', borderRadius: 12, overflow: 'hidden' }}>
+                <div style={{ padding: '10px 14px', background: 'rgba(201,169,97,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#b8944a', textTransform: 'uppercase', letterSpacing: 0.5 }}>Attached Document</span>
+                  <button onClick={() => set('attachment_url', null)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#aaa', display: 'flex', alignItems: 'center' }}>
+                    <X size={14} />
+                  </button>
+                </div>
+                {/* Image preview or doc link */}
+                {/\.(png|jpe?g|gif|webp)(\?|$)/i.test(form.attachment_url) ? (
+                  <div style={{ position: 'relative' }}>
+                    <img src={form.attachment_url} alt="Attachment" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', display: 'block' }} />
+                    <a href={form.attachment_url} target="_blank" rel="noopener noreferrer"
+                      style={{ position: 'absolute', bottom: 8, right: 8, padding: '4px 10px', background: 'rgba(0,0,0,0.55)', color: 'white', borderRadius: 6, fontSize: 11, fontWeight: 700, textDecoration: 'none' }}>
+                      Open full size →
+                    </a>
+                  </div>
+                ) : (
+                  <div style={{ padding: '14px' }}>
+                    <a href={form.attachment_url} target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: '#1565c0' }}>
+                      <Paperclip size={16} color="#b8944a" />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>View / Download Document</div>
+                        <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, wordBreak: 'break-all' }}>
+                          {form.attachment_url.split('/').pop()?.split('?')[0] ?? 'document'}
+                        </div>
+                      </div>
+                    </a>
+                  </div>
+                )}
+                {onUploadDoc && (
+                  <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(201,169,97,0.15)' }}>
+                    <button
+                      type="button"
+                      onClick={() => docFileRef.current?.click()}
+                      disabled={docUploading}
+                      style={{ fontSize: 12, color: 'var(--teal)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Upload size={12} /> Replace with new file
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : !onUploadDoc ? (
+              <div style={{ padding: '10px 14px' }}>
+                <PF label="Document URL" icon={<Paperclip size={13} />}>
+                  <input className="input" value={form.attachment_url ?? ''} onChange={(e) => set('attachment_url', e.target.value || null)} placeholder="https://..." />
+                </PF>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: '#b0bec5', fontSize: 13 }}>
+                No document attached yet. Use the buttons above to upload.
+              </div>
             )}
           </div>
         )}

@@ -207,6 +207,16 @@ export default function HomePage() {
     return urlData.publicUrl;
   };
 
+  const uploadWoDocument = async (file: File): Promise<string | null> => {
+    const path = `wo-docs/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
+    const { data, error } = await supabase.storage
+      .from('deliverables')
+      .upload(path, file, { upsert: false });
+    if (error || !data) { console.error('Upload error:', error); return null; }
+    const { data: urlData } = supabase.storage.from('deliverables').getPublicUrl(data.path);
+    return urlData.publicUrl;
+  };
+
   // ── Nav / Auth ─────────────────────────────────────────────────────────────
 
   const handleLogout = async () => {
@@ -381,6 +391,7 @@ export default function HomePage() {
               attachment_url: null,
             });
           }}
+          onUploadDoc={uploadWoDocument}
         />
       )}
       {modal?.type === 'contractor' && (

@@ -523,6 +523,7 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
                           <option value="textarea">Long Text</option>
                           <option value="number">Number</option>
                           <option value="yes_no">Yes / No</option>
+                          <option value="photo">Photo</option>
                         </select>
                         <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                       </div>

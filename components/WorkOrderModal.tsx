@@ -53,9 +53,10 @@ type Props = {
   questionTemplates: QuestionTemplate[];
   onSave: (w: Partial<WorkOrder>) => void;
   onClose: () => void;
+  onSaveTemplate?: (name: string, questions: CustomQAItem[]) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, contractors, questionTemplates, onSave, onClose }: Props) {
+export default function WorkOrderModal({ item, contractors, questionTemplates, onSave, onClose, onSaveTemplate }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? '',
@@ -407,13 +408,22 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
               <textarea className="input" rows={3} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Describe the work to be performed..." />
             </PF>
             <PF label="Deliverables" icon={<ClipboardList size={13} />}>
-              <textarea className="input" rows={5} value={form.deliverables ?? ''} onChange={(e) => set('deliverables', e.target.value)} placeholder={"One item per line:\nInstall 24-port patch panel\nLabel all cables\nTest all connections\nClean up workspace"} />
-              <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>Enter one deliverable per line — each becomes a checklist item.</div>
+              <textarea className="input" rows={5} value={form.deliverables ?? ''} onChange={(e) => set('deliverables', e.target.value)} placeholder={"One item per line:\nInstall 24-port patch panel\nLabel all cables\nTest all drops"} />
             </PF>
-            <PF label="Required Skills / Certifications" icon={<Wrench size={13} />}>
-              <input className="input" value={form.required_skills ?? ''} onChange={(e) => set('required_skills', e.target.value)} placeholder="e.g. BICSI, OSHA 10, Network+, Fiber Splice" />
-              <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>Comma-separated list of required skills or certifications.</div>
-            </PF>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Service Type" icon={<Wrench size={13} />}>
+                <div style={{ position: 'relative' }}>
+                  <select className="select input" value={form.service_type ?? ''} onChange={(e) => set('service_type', e.target.value)}>
+                    <option value="">Select type</option>
+                    {SERVICE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                </div>
+              </PF>
+              <PF label="Required Skills">
+                <input className="input" value={form.required_skills ?? ''} onChange={(e) => set('required_skills', e.target.value)} placeholder="e.g. Cat6, fiber, CCTV" />
+              </PF>
+            </div>
           </div>
         )}
 
@@ -421,21 +431,21 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
         {tab === 'contacts' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
-              Pre-fill site contact info so the contractor knows who to reach when they arrive.
+              Point of contact at the job site. Contractors will see this info in their portal.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <PF label="POC Name" icon={<User size={13} />}>
-                <input className="input" value={form.poc_name ?? ''} onChange={(e) => set('poc_name', e.target.value)} placeholder="e.g. John Smith" />
+                <input className="input" value={form.poc_name ?? ''} onChange={(e) => set('poc_name', e.target.value)} placeholder="e.g. Lisa Roak-Tincani" />
               </PF>
               <PF label="POC Phone" icon={<Phone size={13} />}>
-                <input className="input" value={form.poc_phone ?? ''} onChange={(e) => set('poc_phone', e.target.value)} placeholder="e.g. (555) 555-5555" />
+                <input className="input" value={form.poc_phone ?? ''} onChange={(e) => set('poc_phone', e.target.value)} placeholder="(555) 000-0000" />
               </PF>
             </div>
             <PF label="POC Email" icon={<Mail size={13} />}>
-              <input className="input" type="email" value={form.poc_email ?? ''} onChange={(e) => set('poc_email', e.target.value)} placeholder="e.g. john.smith@client.com" />
+              <input className="input" value={form.poc_email ?? ''} onChange={(e) => set('poc_email', e.target.value)} placeholder="poc@client.com" />
             </PF>
-            <PF label="Support Contact" icon={<User size={13} />}>
-              <input className="input" value={form.support_contact ?? ''} onChange={(e) => set('support_contact', e.target.value)} placeholder="Who from support will help? e.g. Mike (FAJ), AT&T NOC: 800-555-0100" />
+            <PF label="Support / Dispatch Contact">
+              <input className="input" value={form.support_contact ?? ''} onChange={(e) => set('support_contact', e.target.value)} placeholder="e.g. NOC: 1-800-555-0100" />
             </PF>
           </div>
         )}
@@ -445,123 +455,165 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Template picker */}
             {questionTemplates.length > 0 && (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                    Apply a Template
-                  </label>
+              <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+                  Load from Template
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {questionTemplates.map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      onClick={() => applyTemplate(tpl.id)}
+                      style={{
+                        padding: '6px 14px', borderRadius: 20, border: '1.5px solid rgba(13,115,119,0.3)',
+                        background: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                        color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 6,
+                      }}
+                    >
+                      {tpl.attachment_url && <Paperclip size={11} />}
+                      {tpl.name}
+                      <span style={{ fontSize: 10, color: '#aaa' }}>({tpl.questions.length})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Vendor attachment (from template or WO) */}
+            {form.attachment_url && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(201,169,97,0.08)', border: '1.5px solid rgba(201,169,97,0.2)' }}>
+                <Paperclip size={13} color="#b8944a" />
+                <a href={form.attachment_url} target="_blank" rel="noopener noreferrer"
+                  style={{ flex: 1, fontSize: 13, color: '#b8944a', fontWeight: 600, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Vendor Paperwork attached
+                </a>
+                <button onClick={() => set('attachment_url', null)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#aaa' }}>
+                  <X size={13} />
+                </button>
+              </div>
+            )}
+
+            {/* Q list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {customQA.map((q, i) => (
+                <div key={q.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', borderRadius: 10, background: '#fafafa', border: '1.5px solid #e5e7eb' }}>
+                  <input
+                    className="input"
+                    value={q.label}
+                    onChange={(e) => updateQALabel(q.id, e.target.value)}
+                    placeholder={`Question ${i + 1} label`}
+                    style={{ flex: 1, fontSize: 13 }}
+                  />
                   <div style={{ position: 'relative' }}>
                     <select
                       className="select input"
-                      defaultValue=""
-                      onChange={(e) => { if (e.target.value) applyTemplate(e.target.value); }}
+                      value={q.type}
+                      onChange={(e) => updateQAType(q.id, e.target.value as QuestionFieldType)}
+                      style={{ fontSize: 12, width: 130 }}
                     >
-                      <option value="">Select template to apply...</option>
-                      {questionTemplates.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.questions.length} questions)</option>
-                      ))}
+                      <option value="text">Short Text</option>
+                      <option value="textarea">Long Text</option>
+                      <option value="number">Number</option>
+                      <option value="yes_no">Yes / No</option>
+                      <option value="photo">Photo</option>
                     </select>
-                    <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                    <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                   </div>
+                  <button onClick={() => removeQA(q.id)} style={{ padding: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc' }}>
+                    <X size={14} />
+                  </button>
                 </div>
-              </div>
-            )}
-
-            {/* Vendor attachment (copied from template or manually set) */}
-            {form.attachment_url && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(201,169,97,0.08)', border: '1.5px solid rgba(201,169,97,0.2)' }}>
-                <Paperclip size={14} color="#b8944a" />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#b8944a', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Vendor Paperwork</div>
-                  <a href={form.attachment_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#b8944a', fontWeight: 600, textDecoration: 'none' }}>
-                    View / Download →
-                  </a>
-                </div>
-                <button onClick={() => set('attachment_url', null)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc' }}>
-                  <X size={12} />
-                </button>
-              </div>
-            )}
-
-            {/* Question list */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                  Questions on this WO ({customQA.length})
-                </label>
-                <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }} onClick={addCustomQuestion}>
-                  <Plus size={12} /> Add Question
-                </button>
-              </div>
-
-              {customQA.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '32px 0', color: '#ccc', fontSize: 13, border: '2px dashed #e5e7eb', borderRadius: 10 }}>
-                  {questionTemplates.length > 0
-                    ? 'Apply a template above or add questions manually'
-                    : 'Add questions manually, or create templates in Settings'}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {customQA.map((q, i) => (
-                    <div key={q.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, background: '#fafafa', border: '1px solid #e5e7eb' }}>
-                      <span style={{ fontSize: 11, color: '#ccc', fontWeight: 700, width: 20, textAlign: 'center' }}>{i + 1}</span>
-                      <input
-                        className="input"
-                        value={q.label}
-                        onChange={(e) => updateQALabel(q.id, e.target.value)}
-                        placeholder="Question label"
-                        style={{ flex: 1, fontSize: 13 }}
-                      />
-                      <div style={{ position: 'relative', width: 120 }}>
-                        <select
-                          className="select input"
-                          value={q.type}
-                          onChange={(e) => updateQAType(q.id, e.target.value as QuestionFieldType)}
-                          style={{ fontSize: 11, paddingRight: 24 }}
-                        >
-                          <option value="text">Short Text</option>
-                          <option value="textarea">Long Text</option>
-                          <option value="number">Number</option>
-                          <option value="yes_no">Yes / No</option>
-                          <option value="photo">Photo</option>
-                        </select>
-                        <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
-                      </div>
-                      <button onClick={() => removeQA(q.id)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc' }}>
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              ))}
             </div>
+
+            <button onClick={addCustomQuestion} className="btn btn-ghost" style={{ alignSelf: 'flex-start', fontSize: 12, padding: '7px 14px' }}>
+              <Plus size={13} /> Add Question
+            </button>
+
+            {/* Save as Template row */}
+            {customQA.filter((q) => q.label.trim()).length > 0 && onSaveTemplate && (
+              <SaveAsTemplateRow questions={customQA} onSaveTemplate={onSaveTemplate} />
+            )}
           </div>
         )}
 
-        {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 28, paddingTop: 20, borderTop: '1px solid #eee' }}>
-          <div style={{ fontSize: 13, color: '#666' }}>
-            Total: <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: "'Cormorant Garamond', serif", fontSize: 20 }}>
-              {fmtMoney(form.pay_type === 'Fixed' ? (Number(form.total_amount) || 0) : computed)}
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!canSave} style={{ opacity: canSave ? 1 : 0.5 }}>
-              {item ? 'Save Changes' : 'Create Work Order'}
-            </button>
-          </div>
+        {/* ── FOOTER ── */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 20, marginTop: 8, borderTop: '1px solid #eee' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={!canSave}
+            style={{ opacity: canSave ? 1 : 0.5 }}
+          >
+            {item ? 'Save Changes' : 'Create Work Order'}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
+// ─── Save as Template Row ─────────────────────────────────────────────────────
+
+function SaveAsTemplateRow({
+  questions,
+  onSaveTemplate,
+}: {
+  questions: CustomQAItem[];
+  onSaveTemplate: (name: string, questions: CustomQAItem[]) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSaveTemplate(name.trim(), questions);
+    setSaving(false);
+    setSaved(true);
+    setName('');
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  return (
+    <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(13,115,119,0.05)', border: '1.5px dashed rgba(13,115,119,0.2)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
+        Save as Template
+      </div>
+      {saved ? (
+        <div style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600 }}>✓ Template saved!</div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Template name (e.g. AT&T Jobs)"
+            style={{ flex: 1, fontSize: 13 }}
+          />
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={!name.trim() || saving}
+            style={{ opacity: name.trim() && !saving ? 1 : 0.5, whiteSpace: 'nowrap', fontSize: 12 }}
+          >
+            {saving ? 'Saving...' : 'Save Template'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Field Pair helper ────────────────────────────────────────────────────────
+
 function PF({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
       <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-        {icon} {label}
+        {icon}{label}
       </label>
       {children}
     </div>
@@ -570,9 +622,9 @@ function PF({ label, icon, children }: { label: string; icon?: React.ReactNode; 
 
 function TotalPreview({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg, rgba(13,115,119,0.06) 0%, rgba(201,169,97,0.06) 100%)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}>{label}</span>
-      <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 26, fontWeight: 600, color: value > 0 ? 'var(--teal)' : '#aaa' }}>{fmtMoney(value)}</span>
+    <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', border: '1.5px solid rgba(13,115,119,0.15)', textAlign: 'right' }}>
+      <div style={{ fontSize: 11, color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--teal)' }}>{fmtMoney(value)}</div>
     </div>
   );
 }

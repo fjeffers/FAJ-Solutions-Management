@@ -182,3 +182,18 @@ export default function ContractorPage() {
     />
   );
 }
+eStatus}
+      onCheckIn={checkIn}
+      onCheckOut={checkOut}
+      onSaveSignature={saveSignature}
+      onSaveTasks={saveTasks}
+      onUploadFile={uploadFile}
+      onSubmitForReview={submitForReview}
+      onSaveCustomQA={saveCustomQA}
+    />
+  );
+}
+ut={handleLogout}
+    />
+  );
+}

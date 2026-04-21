@@ -265,7 +265,6 @@ export default function QuestionTemplatesView({
     <div>
       {/* Page header */}
       <div style={{ marginBottom: 28 }}>
-        <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>SETTINGS</div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Question Templates</h1>
@@ -300,12 +299,8 @@ export default function QuestionTemplatesView({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                     <div style={{ fontSize: 17, fontWeight: 700 }}>{t.name}</div>
                     {t.attachment_url && (
-                      <a
-                        href={t.attachment_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(201,169,97,0.12)', color: '#b8944a', textDecoration: 'none' }}
-                      >
+                      <a href={t.attachment_url} target="_blank" rel="noopener noreferrer"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(201,169,97,0.12)', color: '#b8944a', textDecoration: 'none' }}>
                         <Paperclip size={10} /> {fileName(t.attachment_url)}
                       </a>
                     )}
@@ -316,12 +311,8 @@ export default function QuestionTemplatesView({
                         {q.label}
                       </span>
                     ))}
-                    {t.questions.length > 6 && (
-                      <span style={{ fontSize: 11, color: '#aaa', padding: '2px 4px' }}>+{t.questions.length - 6} more</span>
-                    )}
-                    {t.questions.length === 0 && (
-                      <span style={{ fontSize: 11, color: '#ccc' }}>No questions yet</span>
-                    )}
+                    {t.questions.length > 6 && <span style={{ fontSize: 11, color: '#aaa', padding: '2px 4px' }}>+{t.questions.length - 6} more</span>}
+                    {t.questions.length === 0 && <span style={{ fontSize: 11, color: '#ccc' }}>No questions yet</span>}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
@@ -330,11 +321,8 @@ export default function QuestionTemplatesView({
                     <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--teal)' }}>{t.questions.length}</div>
                   </div>
                   <button className="icon-btn" onClick={() => setEditing(t)}><Edit2 size={15} /></button>
-                  <button
-                    className="icon-btn"
-                    style={{ color: '#b91c1c' }}
-                    onClick={() => { if (confirm(`Delete template "${t.name}"?`)) onDelete(t.id); }}
-                  >
+                  <button className="icon-btn" style={{ color: '#b91c1c' }}
+                    onClick={() => { if (confirm('Delete template "' + t.name + '"?')) onDelete(t.id); }}>
                     <Trash2 size={15} />
                   </button>
                 </div>

@@ -208,5 +208,6 @@ function SR({ label, value, accent, warning }: { label: string; value: string; a
       <span style={{ fontSize: 13, color: '#666' }}>{label}</span>
       <span style={{ fontSize: 14, fontWeight: 700, color: warning ? '#b91c1c' : accent ? '#047857' : 'var(--ink)', fontFamily: 'Cormorant Garamond, serif' }}>{value}</span>
     </div>
+
   );
 }

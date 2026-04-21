@@ -108,35 +108,22 @@ export default function LoginPage() {
           <form onSubmit={handleMagicLink}>
             <div style={{ marginBottom: 20 }}>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 6 }}>YOUR EMAIL</label>
-              <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus placeholder="Enter your email address" />
+              <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus placeholder="you@example.com" />
             </div>
             {error && <div style={{ padding: 10, background: 'rgba(239,68,68,0.1)', color: '#b91c1c', borderRadius: 8, fontSize: 13, marginBottom: 14 }}>{error}</div>}
             <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }}>
-              <Mail size={14} />
-              {loading ? 'Sending...' : 'Send Login Link'}
+              {loading ? 'Sending link...' : 'Send Magic Link'}
             </button>
-            <div style={{ fontSize: 12, color: '#999', textAlign: 'center', marginTop: 12 }}>
-              {"We'll email you a one-click sign-in link. No password needed."}
-            </div>
           </form>
         )}
 
         {mode === 'magic' && sent && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(13,115,119,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-              <Mail size={24} color="var(--teal)" />
-            </div>
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Check your email</div>
-            <div style={{ fontSize: 13, color: '#666', lineHeight: 1.6 }}>
-              We sent a login link to <strong>{email}</strong>.<br />Click it to sign in instantly.
-            </div>
-            <button onClick={() => setSent(false)} style={{ marginTop: 20, fontSize: 12, color: 'var(--teal)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-              Send again
-            </button>
+            <Mail size={32} color="var(--teal)" style={{ marginBottom: 12 }} />
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>Check your email</div>
+            <div style={{ fontSize: 13, color: '#666' }}>We sent a magic link to <strong>{email}</strong></div>
           </div>
         )}
-
-        <div style={{ marginTop: 20, fontSize: 11, color: '#999', textAlign: 'center' }}>FAJ Solutions</div>
       </div>
     </div>
   );

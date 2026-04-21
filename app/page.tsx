@@ -268,56 +268,125 @@ export default function HomePage() {
           <div className="serif" style={{ fontSize: 20, fontWeight: 600, color: 'white', lineHeight: 1.2 }}>Business Manager</div>
         </div>
 
-        <div style={{ fontSize: 9, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '4px 18px 4px', marginTop: 4 }}>OPERATIONS</div>
-        <NI k="dashboard"   icon={<BarChart3 size={15} />}      label="Dashboard" />
-        <NI k="workorders"  icon={<Briefcase size={15} />}      label="Work Orders" />
-        <NI k="payments"    icon={<CreditCard size={15} />}     label="Payments" />
-        <NI k="contractors" icon={<Users size={15} />}          label="Contractors" />
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '0 12px', marginBottom: 6, textTransform: 'uppercase' }}>Main</div>
+          <NI k="dashboard"   icon={<BarChart3 size={15} />}    label="Dashboard" />
+          <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
+          <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
+          <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Reports</div>
+          <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
+          <NI k="1099"        icon={<ClipboardCheck size={15} />} label="1099s" />
+          <NI k="w9"          icon={<BookOpen size={15} />}     label="W-9s" />
+          <NI k="quickbooks"  icon={<TrendingUp size={15} />}   label="QuickBooks" />
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Settings</div>
+          <NI k="settings"    icon={<Settings size={15} />}     label="Templates" />
+        </nav>
 
-        <div style={{ fontSize: 9, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 18px 4px' }}>REPORTS & TAX</div>
-        <NI k="statements"  icon={<FileText size={15} />}       label="Statements" />
-        <NI k="1099"        icon={<TrendingUp size={15} />}     label="1099 Summary" />
-        <NI k="w9"          icon={<ClipboardCheck size={15} />} label="W-9 Manager" />
-        <NI k="quickbooks"  icon={<BookOpen size={15} />}       label="QuickBooks" />
-
-        <div style={{ fontSize: 9, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 18px 4px' }}>CONFIGURE</div>
-        <NI k="settings"    icon={<Settings size={15} />}       label="Templates" />
-
-        <div style={{ marginTop: 'auto', padding: '16px 12px 0', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-          <button className="btn btn-ghost" onClick={handleLogout} style={{ width: '100%', color: 'var(--gold-light)', borderColor: 'var(--gold-light)', justifyContent: 'center' }}>
-            <LogOut size={14} /> Sign Out
-          </button>
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textAlign: 'center', marginTop: 10, letterSpacing: 1 }}>CLOUD SYNCED · FAJ SOLUTIONS</div>
-        </div>
+        <button
+          onClick={handleLogout}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13, fontWeight: 600, width: '100%', marginTop: 8 }}
+        >
+          <LogOut size={14} /> Sign Out
+        </button>
       </aside>
 
-      {/* Main content */}
-      <main className="main-content" style={{ flex: 1, padding: '32px 40px', overflow: 'auto', minWidth: 0 }}>
-        {view === 'dashboard'   && <DashboardView stats={stats} workOrders={enrichedWOs} payments={payments} onView={(v) => setView(v as View)} />}
-        {view === 'workorders'  && <WorkOrdersView workOrders={enrichedWOs} stats={stats} onAdd={() => setModal({ type: 'wo', item: null })} onEdit={(w) => setModal({ type: 'wo', item: w })} onDelete={deleteWorkOrder} />}
-        {view === 'payments'    && <PaymentsView payments={payments} workOrders={workOrders} onAdd={() => setModal({ type: 'payment', item: null })} onEdit={(p) => setModal({ type: 'payment', item: p })} onDelete={deletePayment} />}
-        {view === 'contractors' && <ContractorsView contractors={contractors} workOrders={enrichedWOs} onAdd={() => setModal({ type: 'contractor', item: null })} onEdit={(c) => setModal({ type: 'contractor', item: c })} onDelete={deleteContractor} onViewStatement={(name) => { setSelectedContractor(name); setView('statements'); }} />}
-        {view === 'statements'  && <StatementView contractors={contractors} workOrders={enrichedWOs} payments={payments} selected={selectedContractor} setSelected={setSelectedContractor} />}
-        {view === '1099'        && <TenNinetyNineView contractors={contractors} payments={payments} year={taxYear} setYear={setTaxYear} />}
-        {view === 'w9'          && <W9View contractors={contractors} onEdit={(c) => setModal({ type: 'contractor', item: c })} />}
-        {view === 'quickbooks'  && <QuickBooksView payments={payments} workOrders={workOrders} contractors={contractors} />}
-        {view === 'settings'    && <QuestionTemplatesView templates={questionTemplates} onSave={saveTemplate} onDelete={deleteTemplate} onUploadAttachment={uploadTemplateAttachment} />}
+      {/* ── Main Content ── */}
+      <main style={{ flex: 1, overflow: 'auto', background: '#f7f8fa' }}>
+        {view === 'dashboard' && (
+          <DashboardView
+            stats={stats}
+            workOrders={enrichedWOs}
+            payments={payments}
+            onView={(v) => setView(v as typeof view)}
+          />
+        )}
+        {view === 'workorders' && (
+          <WorkOrdersView
+            workOrders={enrichedWOs}
+            stats={stats}
+            onAdd={() => setModal({ type: 'wo', item: null })}
+            onEdit={(w) => setModal({ type: 'wo', item: w })}
+            onDelete={deleteWorkOrder}
+          />
+        )}
+        {view === 'payments' && (
+          <PaymentsView
+            payments={payments}
+            workOrders={workOrders}
+            onAdd={() => setModal({ type: 'payment', item: null })}
+            onEdit={(p) => setModal({ type: 'payment', item: p })}
+            onDelete={deletePayment}
+          />
+        )}
+        {view === 'contractors' && (
+          <ContractorsView
+            contractors={contractors}
+            workOrders={enrichedWOs}
+            onAdd={() => setModal({ type: 'contractor', item: null })}
+            onEdit={(c) => setModal({ type: 'contractor', item: c })}
+            onDelete={deleteContractor}
+            onViewStatement={(name) => { setSelectedContractor(name); setView('statements'); }}
+          />
+        )}
+        {view === 'statements' && (
+          <StatementView
+            contractors={contractors}
+            workOrders={enrichedWOs}
+            payments={payments}
+            selected={selectedContractor}
+            setSelected={setSelectedContractor}
+          />
+        )}
+        {view === '1099' && (
+          <TenNinetyNineView
+            contractors={contractors}
+            payments={payments}
+            year={taxYear}
+            setYear={setTaxYear}
+          />
+        )}
+        {view === 'w9' && (
+          <W9View contractors={contractors} onEdit={(c) => setModal({ type: 'contractor', item: c })} />
+        )}
+        {view === 'quickbooks' && (
+          <QuickBooksView
+            workOrders={workOrders}
+            payments={payments}
+            contractors={contractors}
+          />
+        )}
+        {view === 'settings' && (
+          <QuestionTemplatesView
+            templates={questionTemplates}
+            onSave={saveTemplate}
+            onDelete={deleteTemplate}
+            onUploadAttachment={uploadTemplateAttachment}
+          />
+        )}
       </main>
 
-      {/* Modals */}
-      {modal?.type === 'contractor' && (
-        <ContractorModal
-          item={modal.item}
-          onSave={async (c) => { await saveContractor(c); setModal(null); }}
-          onClose={() => setModal(null)}
-        />
-      )}
+      {/* ── Modals ── */}
       {modal?.type === 'wo' && (
         <WorkOrderModal
           item={modal.item}
           contractors={contractors}
           questionTemplates={questionTemplates}
-          onSave={async (w) => { await saveWorkOrder(w); setModal(null); }}
+          onSave={(w) => { saveWorkOrder(w); setModal(null); }}
+          onClose={() => setModal(null)}
+          onSaveTemplate={async (name, qaItems) => {
+            await saveTemplate(null, {
+              name,
+              questions: qaItems.map((q) => ({ id: q.id, label: q.label, type: q.type })),
+              attachment_url: null,
+            });
+          }}
+        />
+      )}
+      {modal?.type === 'contractor' && (
+        <ContractorModal
+          item={modal.item}
+          onSave={(c) => { saveContractor(c); setModal(null); }}
           onClose={() => setModal(null)}
         />
       )}
@@ -326,7 +395,7 @@ export default function HomePage() {
           item={modal.item}
           workOrders={workOrders}
           contractors={contractors}
-          onSave={async (p) => { await savePayment(p); setModal(null); }}
+          onSave={(p) => { savePayment(p); setModal(null); }}
           onClose={() => setModal(null)}
         />
       )}

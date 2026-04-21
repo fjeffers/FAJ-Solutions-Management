@@ -149,7 +149,7 @@ export type Payment = {
 
 // ─── Question Templates ───────────────────────────────────────────────────────
 
-export type QuestionFieldType = 'text' | 'number' | 'yes_no' | 'textarea';
+export type QuestionFieldType = 'text' | 'number' | 'yes_no' | 'textarea' | 'photo';
 
 export type QuestionField = {
   id: string;

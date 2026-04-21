@@ -8,6 +8,7 @@ const FIELD_TYPES: { value: QuestionFieldType; label: string }[] = [
   { value: 'textarea', label: 'Long Text'  },
   { value: 'number',   label: 'Number'     },
   { value: 'yes_no',   label: 'Yes / No'   },
+  { value: 'photo',    label: 'Photo'      },
 ];
 
 function newField(): QuestionField {

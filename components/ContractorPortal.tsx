@@ -4,7 +4,7 @@ import {
   MapPin, Clock, DollarSign, ChevronDown, ChevronUp,
   LogOut, Sparkles, AlertCircle, Timer,
   Paperclip, PenLine, FileText, Upload, CheckCircle2,
-  Send, Check, ListChecks,
+  Send, Check, ListChecks, Camera,
 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask, CustomQAItem } from '@/lib/types';
@@ -93,7 +93,12 @@ function WOCard({
   const [updating, setUpdating]           = useState(false);
   const [submitting, setSubmitting]       = useState(false);
   const [clocking, setClocking]           = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef    = useRef<HTMLInputElement>(null);
+  const cameraInputRef  = useRef<HTMLInputElement>(null);   // site photo (camera)
+  const vendorInputRef  = useRef<HTMLInputElement>(null);   // vendor docs
+  const photoInputRef   = useRef<HTMLInputElement>(null);   // Q&A photo questions
+  const activePhotoQaId = useRef<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState<string | null>(null);
   const [qaItems, setQaItems] = useState<CustomQAItem[]>(() => wo.custom_qa ?? []);
 
   const cfg          = STATUS_CONFIG[wo.wo_status] ?? STATUS_CONFIG['Open'];
@@ -142,7 +147,24 @@ function WOCard({
     const url = await onUploadFile(wo.id, file);
     if (url) setUploadedFiles((prev) => [...prev, url]);
     setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    const ref = e.target;
+    if (ref) ref.value = '';
+  };
+
+  const handleQAPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const qId = activePhotoQaId.current;
+    if (!file || !qId) return;
+    setPhotoUploading(qId);
+    const url = await onUploadFile(wo.id, file);
+    if (url) {
+      const updated = qaItems.map((item) => item.id === qId ? { ...item, answer: url } : item);
+      setQaItems(updated);
+      await onSaveCustomQA(wo.id, updated);
+    }
+    setPhotoUploading(null);
+    activePhotoQaId.current = null;
+    if (photoInputRef.current) photoInputRef.current.value = '';
   };
 
   const handleStartJob = async () => {
@@ -510,11 +532,20 @@ function WOCard({
             <div>
               {isEditable && (
                 <>
-                  <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
-                  <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
-                    style={{ width: '100%', padding: '12px', border: '2px dashed #cfd8dc', borderRadius: 8, background: 'white', cursor: 'pointer', fontSize: 13, color: '#78909c', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
-                    <Upload size={14} />{uploading ? 'Uploading...' : 'Upload Photo or File'}
-                  </button>
+                  {/* hidden inputs — camera, vendor docs */}
+                  <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
+                  <input ref={fileInputRef}   type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }} onChange={handleFileChange} />
+                  <input ref={vendorInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }} onChange={handleFileChange} />
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <button onClick={() => cameraInputRef.current?.click()} disabled={uploading}
+                      style={{ flex: 1, padding: '12px 8px', border: '2px dashed #0D7377', borderRadius: 8, background: 'rgba(13,115,119,0.04)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#0D7377', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <Camera size={15} />{uploading ? 'Uploading…' : 'Take Site Photo'}
+                    </button>
+                    <button onClick={() => vendorInputRef.current?.click()} disabled={uploading}
+                      style={{ flex: 1, padding: '12px 8px', border: '2px dashed #cfd8dc', borderRadius: 8, background: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#546e7a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <Upload size={14} />Vendor Doc
+                    </button>
+                  </div>
                 </>
               )}
               {uploadedFiles.length > 0 && (
@@ -625,11 +656,31 @@ function WOCard({
                         ) : q.type === 'textarea' ? (
                           <textarea value={q.answer ?? ''} onChange={(e) => setQaItems((qs) => qs.map((item) => item.id === q.id ? { ...item, answer: e.target.value } : item))} onBlur={(e) => handleQAAnswer(q.id, e.target.value)} placeholder="Enter answer..."
                             style={{ width: '100%', minHeight: 80, padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e0e4ea', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
+                        ) : q.type === 'photo' ? (
+                          <>
+                            <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleQAPhoto} />
+                            {q.answer ? (
+                              <div style={{ position: 'relative' }}>
+                                <img src={q.answer} alt="Site photo" style={{ width: '100%', borderRadius: 8, border: '1px solid #e0e4ea', maxHeight: 220, objectFit: 'cover', display: 'block' }} />
+                                <button onClick={() => { activePhotoQaId.current = q.id; photoInputRef.current?.click(); }}
+                                  style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.55)', border: 'none', borderRadius: 6, color: 'white', fontSize: 11, fontWeight: 700, padding: '4px 10px', cursor: 'pointer' }}>
+                                  Retake
+                                </button>
+                              </div>
+                            ) : (
+                              <button onClick={() => { activePhotoQaId.current = q.id; photoInputRef.current?.click(); }} disabled={photoUploading === q.id}
+                                style={{ width: '100%', padding: '22px 12px', border: '2px dashed #b0bec5', borderRadius: 10, background: '#fafafa', cursor: 'pointer', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 6, color: '#546e7a' }}>
+                                <Camera size={26} color="#90a4ae" />
+                                <span style={{ fontSize: 13, fontWeight: 700 }}>{photoUploading === q.id ? 'Uploading…' : 'Tap to Take Photo'}</span>
+                                <span style={{ fontSize: 11, color: '#b0bec5' }}>Opens camera · also accepts gallery</span>
+                              </button>
+                            )}
+                          </>
                         ) : (
                           <input type={q.type === 'number' ? 'number' : 'text'} value={q.answer ?? ''} onChange={(e) => setQaItems((qs) => qs.map((item) => item.id === q.id ? { ...item, answer: e.target.value } : item))} onBlur={(e) => handleQAAnswer(q.id, e.target.value)} placeholder="Enter answer..."
                             style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #e0e4ea', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }} />
                         )}
-                        {q.answer && <div style={{ fontSize: 10, color: '#2e7d32', marginTop: 4, fontWeight: 700 }}>✓ Saved</div>}
+                        {q.answer && q.type !== 'photo' && <div style={{ fontSize: 10, color: '#2e7d32', marginTop: 4, fontWeight: 700 }}>✓ Saved</div>}
                       </div>
                     ))}
                   </div>
@@ -860,48 +911,36 @@ export default function ContractorPortal({
 
         {/* PAYMENTS TAB */}
         {tab === 'payments' && (
-          <>
+          <div>
             {payments.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: '#90a4ae' }}>
                 <DollarSign size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No payments recorded yet</div>
-                <div style={{ fontSize: 13 }}>Your payment history will appear here.</div>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No payments recorded</div>
+                <div style={{ fontSize: 13 }}>Payments will appear here once processed.</div>
               </div>
             ) : (
-              <>
-                <div style={{ background: 'white', border: '1px solid #e0e4ea', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, color: '#546e7a' }}>Total Billed</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>{fmtMoney(totalBilled)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, color: '#546e7a' }}>Total Paid</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#2e7d32' }}>{fmtMoney(totalPaid)}</span>
-                  </div>
-                  <div style={{ height: 1, background: '#f0f4f8', margin: '8px 0' }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 13, color: '#546e7a' }}>Outstanding</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: totalBilled - totalPaid > 0 ? '#b91c1c' : '#2e7d32' }}>{fmtMoney(totalBilled - totalPaid)}</span>
-                  </div>
-                </div>
-
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {payments.map((p) => (
-                  <div key={p.id} style={{ background: 'white', border: '1px solid #e0e4ea', borderRadius: 10, padding: '12px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3, color: '#1a1a2e' }}>{fmtDate(p.payment_date)}</div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, color: '#0D7377', fontWeight: 700 }}>#{p.wo_number}</span>
-                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: p.method === 'Zelle' ? 'rgba(107,45,139,0.1)' : 'rgba(13,115,119,0.08)', color: p.method === 'Zelle' ? '#6B2D8B' : '#0D7377', fontWeight: 700 }}>{p.method}</span>
+                  <div key={p.id} style={{ background: 'white', borderRadius: 10, overflow: 'hidden', border: '1px solid #e0e4ea' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px' }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a2e' }}>WO #{p.wo_number}</div>
+                        <div style={{ fontSize: 11, color: '#90a4ae', marginTop: 2 }}>{fmtDate(p.payment_date)} · {p.method}</div>
+                        {p.notes && <div style={{ fontSize: 11, color: '#546e7a', marginTop: 2 }}>{p.notes}</div>}
                       </div>
-                      {p.notes && <div style={{ fontSize: 11, color: '#90a4ae', marginTop: 3 }}>{p.notes}</div>}
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#2e7d32' }}>{fmtMoney(Number(p.amount))}</div>
                     </div>
-                    <div style={{ fontSize: 17, fontWeight: 700, color: '#2e7d32' }}>{fmtMoney(Number(p.amount))}</div>
                   </div>
                 ))}
-              </>
+                <div style={{ background: 'white', borderRadius: 10, border: '1px solid #c8e6c9', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#2e7d32', textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Total Paid</span>
+                  <span style={{ fontSize: 20, fontWeight: 800, color: '#2e7d32' }}>{fmtMoney(totalPaid)}</span>
+                </div>
+              </div>
             )}
-          </>
+          </div>
         )}
+
       </div>
     </div>
   );

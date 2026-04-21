@@ -180,7 +180,7 @@ export type CustomQAItem = {
 
 export type WoTask = {
   id: string;
-  category: 'Prep' | 'On Site' | 'Post';
+  category: 'Pre Visit' | 'On Site' | 'Post Site' | 'Prep' | 'Post'; // legacy: Prep→Pre Visit, Post→Post Site
   label: string;
   completed: boolean;
   completed_at: string | null;
@@ -219,7 +219,6 @@ export type DeliverableSubmission = {
 export type PaymentMethod =
   | 'Cash' | 'Check' | 'Zelle' | 'Venmo' | 'CashApp'
   | 'PayPal' | 'Bank Transfer' | 'Credit Card' | 'Other';
-
 export const PAYMENT_METHODS: PaymentMethod[] = [
   'Cash', 'Check', 'Zelle', 'Venmo', 'CashApp',
   'PayPal', 'Bank Transfer', 'Credit Card', 'Other',

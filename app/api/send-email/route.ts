@@ -8,12 +8,11 @@ import {
 } from '@/lib/email-templates';
 import type { WorkOrder, Payment, Contractor } from '@/lib/types';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-const FROM    = process.env.FROM_EMAIL    ?? 'FAJ Solutions <support@fajsolutions.com>';
+const FROM     = process.env.FROM_EMAIL     ?? 'FAJ Solutions <support@fajsolutions.com>';
 const REPLY_TO = process.env.REPLY_TO_EMAIL ?? 'support@fajsolutions.com';
 
 export async function POST(req: NextRequest) {
+  const resend = new Resend(process.env.RESEND_API_KEY);
   try {
     const body = await req.json();
     const { type, to, subject, data } = body as {

@@ -140,6 +140,8 @@ export default function HomePage() {
       custom_qa:       w.custom_qa       ?? [],
       // Vendor attachment (migration-007)
       attachment_url:  w.attachment_url  ?? null,
+      // Admin documents (migration-008)
+      doc_urls:        w.doc_urls        ?? [],
     };
     if (w.id) { await supabase.from('work_orders').update(payload).eq('id', w.id); }
     else       { await supabase.from('work_orders').insert({ ...payload, user_id: user.id }); }
@@ -315,6 +317,7 @@ export default function HomePage() {
           <WorkOrdersView
             workOrders={enrichedWOs}
             stats={stats}
+            contractors={contractors}
             onAdd={() => setModal({ type: 'wo', item: null })}
             onEdit={(w) => setModal({ type: 'wo', item: w })}
             onDelete={deleteWorkOrder}

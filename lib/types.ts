@@ -122,6 +122,9 @@ export type WorkOrder = {
   // Vendor attachment (migration-007)
   attachment_url: string | null;
 
+  // Admin documents & photos (migration-008)
+  doc_urls: string[] | null;
+
   created_at: string;
   updated_at: string;
 };

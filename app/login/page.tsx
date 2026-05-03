@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Sparkles, Mail } from 'lucide-react';
+import Link from 'next/link';
 
 type Mode = 'password' | 'magic';
 
@@ -101,6 +102,11 @@ export default function LoginPage() {
             <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }}>
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
+            <div style={{ textAlign: 'center', marginTop: 14 }}>
+              <Link href="/reset-password" style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 600, textDecoration: 'none' }}>
+                Forgot password?
+              </Link>
+            </div>
           </form>
         )}
 

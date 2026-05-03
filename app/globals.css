@@ -207,6 +207,28 @@ body {
   .main-content { padding: 16px !important; }
 }
 
+/* ── Dark mode ── */
+html.dark {
+  --teal: #14b8b8;
+  --teal-dark: #0e8a8d;
+  --gold: #E4CC8F;
+  --gold-light: #F0DDA8;
+  --ivory: #1a1a2e;
+  --ink: #e8e8e8;
+}
+html.dark body { background: #111827; color: var(--ink); }
+html.dark .glass { background: rgba(30,30,50,0.75); border-color: rgba(201,169,97,0.15); }
+html.dark .glass-dark { background: linear-gradient(135deg, #1a2332 0%, #111827 100%); }
+html.dark .card { background: #1f2937; }
+html.dark .input, html.dark .select, html.dark textarea.input { background: #1f2937; border-color: rgba(20,184,184,0.25); color: var(--ink); }
+html.dark .filter-chip { background: rgba(30,30,50,0.6); border-color: rgba(20,184,184,0.2); color: var(--ink); }
+html.dark .modal-content { background: #1f2937; color: var(--ink); }
+html.dark .nav-btn { color: rgba(255,255,255,0.6); }
+html.dark .nav-btn:hover { background: rgba(255,255,255,0.05); color: white; }
+html.dark .nav-btn.active { background: rgba(201,169,97,0.15); }
+html.dark .icon-btn { color: #aaa; }
+html.dark .icon-btn:hover { background: rgba(20,184,184,0.1); color: var(--teal); }
+
 @media print {
   .no-print { display: none !important; }
   body { background: white; }

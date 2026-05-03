@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders } from '@/lib/utils';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
+import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, EnrichedWorkOrder } from '@/lib/types';
 import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
+  Search, Moon, Sun, Download,
 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -21,9 +23,13 @@ import W9View from '@/components/W9View';
 import QuickBooksView from '@/components/QuickBooksView';
 import QuestionTemplatesView from '@/components/QuestionTemplatesView';
 import PayablesView from '@/components/PayablesView';
+import GlobalSearch from '@/components/GlobalSearch';
 import ContractorModal from '@/components/ContractorModal';
 import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
+import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export1099CSV } from '@/lib/export';
+import { logAudit } from '@/lib/audit';
+import { notifyContractor } from '@/lib/notify';
 
 type View =
   | 'dashboard' | 'workorders' | 'payments' | 'payables' | 'contractors'
@@ -38,8 +44,10 @@ type Modal =
 export default function HomePage() {
   const router = useRouter();
   const supabase = createClient();
+  const { dark, toggle: toggleDark } = useDarkMode();
   const [view, setView] = useState<View>('dashboard');
   const [modal, setModal] = useState<Modal>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [selectedContractor, setSelectedContractor] = useState<string | null>(null);
   const [taxYear, setTaxYear] = useState<number>(new Date().getFullYear());
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -100,13 +108,20 @@ export default function HomePage() {
       account_number:      c.account_number      || null,
       account_type:        c.account_type        || null,
     };
-    if (c.id) { await supabase.from('contractors').update(payload).eq('id', c.id); }
-    else       { await supabase.from('contractors').insert({ ...payload, user_id: user.id }); }
+    if (c.id) {
+      await supabase.from('contractors').update(payload).eq('id', c.id);
+      logAudit({ action: 'update', entityType: 'contractor', entityId: c.id, entityLabel: c.name ?? '' });
+    } else {
+      await supabase.from('contractors').insert({ ...payload, user_id: user.id });
+      logAudit({ action: 'create', entityType: 'contractor', entityLabel: c.name ?? '' });
+    }
     loadAll();
   };
 
   const deleteContractor = async (id: string) => {
+    const c = contractors.find((x) => x.id === id);
     await supabase.from('contractors').delete().eq('id', id);
+    logAudit({ action: 'delete', entityType: 'contractor', entityId: id, entityLabel: c?.name ?? '' });
     loadAll();
   };
 
@@ -151,13 +166,29 @@ export default function HomePage() {
       // Admin documents (migration-008)
       doc_urls:        w.doc_urls        ?? [],
     };
-    if (w.id) { await supabase.from('work_orders').update(payload).eq('id', w.id); }
-    else       { await supabase.from('work_orders').insert({ ...payload, user_id: user.id }); }
+    if (w.id) {
+      await supabase.from('work_orders').update(payload).eq('id', w.id);
+      logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}` });
+      // Notify contractor on status change
+      const prev = workOrders.find((x) => x.id === w.id);
+      if (prev && prev.wo_status !== w.wo_status) {
+        const c = contractors.find((x) => x.name === w.contractor_name);
+        if (c?.email) notifyContractor({ type: 'status_change', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined, status: w.wo_status ?? '' });
+      }
+    } else {
+      await supabase.from('work_orders').insert({ ...payload, user_id: user.id });
+      logAudit({ action: 'create', entityType: 'work_order', entityLabel: `WO#${w.wo_number}` });
+      // Notify contractor of assignment
+      const c = contractors.find((x) => x.name === w.contractor_name);
+      if (c?.email) notifyContractor({ type: 'wo_assigned', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined });
+    }
     loadAll();
   };
 
   const deleteWorkOrder = async (id: string) => {
+    const wo = workOrders.find((x) => x.id === id);
     await supabase.from('work_orders').delete().eq('id', id);
+    logAudit({ action: 'delete', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
     loadAll();
   };
 
@@ -171,13 +202,23 @@ export default function HomePage() {
       payment_date: p.payment_date!, amount: Number(p.amount),
       method: p.method || 'Check', notes: p.notes ?? null,
     };
-    if (p.id) { await supabase.from('payments').update(payload).eq('id', p.id); }
-    else       { await supabase.from('payments').insert({ ...payload, user_id: user.id }); }
+    if (p.id) {
+      await supabase.from('payments').update(payload).eq('id', p.id);
+      logAudit({ action: 'update', entityType: 'payment', entityId: p.id, entityLabel: `WO#${p.wo_number} — ${p.contractor_name}` });
+    } else {
+      await supabase.from('payments').insert({ ...payload, user_id: user.id });
+      logAudit({ action: 'create', entityType: 'payment', entityLabel: `WO#${p.wo_number} — ${p.contractor_name} — $${p.amount}` });
+      // Notify contractor of payment
+      const c = contractors.find((x) => x.name === p.contractor_name);
+      if (c?.email) notifyContractor({ type: 'payment_recorded', contractor_email: c.email, contractor_name: c.name, wo_number: p.wo_number!, amount: Number(p.amount) });
+    }
     loadAll();
   };
 
   const deletePayment = async (id: string) => {
+    const p = payments.find((x) => x.id === id);
     await supabase.from('payments').delete().eq('id', id);
+    logAudit({ action: 'delete', entityType: 'payment', entityId: id, entityLabel: `WO#${p?.wo_number ?? ''} — ${p?.contractor_name ?? ''}` });
     loadAll();
   };
 
@@ -257,6 +298,14 @@ export default function HomePage() {
 
   useInactivityLogout(handleLogout);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(true); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const navigate = (key: View) => { setView(key); setMobileNavOpen(false); };
 
   const NI = ({ k, icon, label }: { k: View; icon: React.ReactNode; label: string }) => (
@@ -326,6 +375,37 @@ export default function HomePage() {
           <NI k="settings"    icon={<Settings size={15} />}     label="Templates" />
         </nav>
 
+        {/* Utility buttons */}
+        <div style={{ display: 'flex', gap: 6, padding: '8px 12px', marginTop: 8 }}>
+          <button
+            onClick={() => setSearchOpen(true)}
+            title="Search (Ctrl+K)"
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+          >
+            <Search size={13} /> Search
+          </button>
+          <button
+            onClick={toggleDark}
+            title="Toggle dark mode"
+            style={{ padding: '8px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          >
+            {dark ? <Sun size={13} /> : <Moon size={13} />}
+          </button>
+          <button
+            onClick={() => {
+              if (view === 'workorders') exportWorkOrdersCSV(enrichedWOs);
+              else if (view === 'payments') exportPaymentsCSV(payments);
+              else if (view === 'contractors') exportContractorsCSV(contractors);
+              else if (view === '1099') export1099CSV(contractors, payments, taxYear);
+              else exportWorkOrdersCSV(enrichedWOs);
+            }}
+            title="Export CSV"
+            style={{ padding: '8px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          >
+            <Download size={13} />
+          </button>
+        </div>
+
         <button
           onClick={handleLogout}
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13, fontWeight: 600, width: '100%', marginTop: 8 }}
@@ -334,8 +414,23 @@ export default function HomePage() {
         </button>
       </aside>
 
+      {/* ── Global Search ── */}
+      <GlobalSearch
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        workOrders={enrichedWOs}
+        contractors={contractors}
+        payments={payments}
+        onSelect={(r) => {
+          setSearchOpen(false);
+          if (r.type === 'wo') { setView('workorders'); setModal({ type: 'wo', item: r.data }); }
+          else if (r.type === 'contractor') { setView('contractors'); setModal({ type: 'contractor', item: r.data }); }
+          else if (r.type === 'payment') { setView('payments'); setModal({ type: 'payment', item: r.data }); }
+        }}
+      />
+
       {/* ── Main Content ── */}
-      <main style={{ flex: 1, overflow: 'auto', background: '#f7f8fa' }}>
+      <main style={{ flex: 1, overflow: 'auto' }}>
         {view === 'dashboard' && (
           <DashboardView
             stats={stats}

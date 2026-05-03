@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Sparkles } from 'lucide-react';
 import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask, CustomQAItem } from '@/lib/types';
+import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import ContractorPortal from '@/components/ContractorPortal';
 
 export default function ContractorPage() {
@@ -146,6 +147,8 @@ export default function ContractorPage() {
     router.push('/login');
     router.refresh();
   };
+
+  useInactivityLogout(handleLogout);
 
   // ── Loading / guard ───────────────────────────────────────────────────────
 

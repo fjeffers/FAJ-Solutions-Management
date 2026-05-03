@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders } from '@/lib/utils';
-import type { Contractor, WorkOrder, Payment, QuestionTemplate } from '@/lib/types';
+import type { Contractor, WorkOrder, Payment, QuestionTemplate, EnrichedWorkOrder } from '@/lib/types';
 import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,

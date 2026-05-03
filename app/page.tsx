@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders } from '@/lib/utils';
+import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, EnrichedWorkOrder } from '@/lib/types';
 import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
@@ -253,6 +254,8 @@ export default function HomePage() {
     router.push('/login');
     router.refresh();
   };
+
+  useInactivityLogout(handleLogout);
 
   const navigate = (key: View) => { setView(key); setMobileNavOpen(false); };
 

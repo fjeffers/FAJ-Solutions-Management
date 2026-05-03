@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, DollarSign, Wrench } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
@@ -27,13 +27,14 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 };
 
 export default function WorkOrdersView({
-  workOrders, stats, onAdd, onEdit, onDelete, contractors,
+  workOrders, stats, onAdd, onEdit, onDelete, onDuplicate, contractors,
 }: {
   workOrders: EnrichedWorkOrder[];
   stats: Stats;
   onAdd: () => void;
   onEdit: (w: EnrichedWorkOrder) => void;
   onDelete: (id: string) => void;
+  onDuplicate: (w: EnrichedWorkOrder) => void;
   contractors: Contractor[];
 }) {
   const [search, setSearch] = useState('');
@@ -127,7 +128,7 @@ export default function WorkOrdersView({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} />)}
+          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} />)}
         </div>
       )}
 
@@ -141,11 +142,13 @@ function WOCard({
   onEdit,
   onDelete,
   onSend,
+  onDuplicate,
 }: {
   w: EnrichedWorkOrder;
   onEdit: (w: EnrichedWorkOrder) => void;
   onDelete: (id: string) => void;
   onSend: (w: EnrichedWorkOrder) => void;
+  onDuplicate: (w: EnrichedWorkOrder) => void;
 }) {
   const sm = WO_STATUS_META[w.wo_status] ?? WO_STATUS_META['Open'];
   const pm = PAY_META[w.payment_status] ?? PAY_META['pending'];
@@ -205,6 +208,7 @@ function WOCard({
               <Send size={11} /> Send WO
             </button>
             <button className="icon-btn" onClick={() => onEdit(w)} title="Edit"><Edit2 size={14} /></button>
+            <button className="icon-btn" onClick={() => onDuplicate(w)} title="Duplicate"><Copy size={14} /></button>
             <button
               className="icon-btn"
               style={{ color: '#b91c1c' }}

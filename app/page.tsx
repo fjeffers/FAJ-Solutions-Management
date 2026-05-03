@@ -91,6 +91,12 @@ export default function HomePage() {
       tax_id: c.tax_id ?? null, tax_id_type: c.tax_id_type ?? null,
       address: c.address ?? null, city: c.city ?? null, state: c.state ?? null, zip: c.zip ?? null,
       w9_received: c.w9_received ?? false, zelle_phone: c.zelle_phone ?? null,
+      // Direct Deposit (migration-009)
+      bank_name:           c.bank_name           || null,
+      account_holder_name: c.account_holder_name || null,
+      routing_number:      c.routing_number      || null,
+      account_number:      c.account_number      || null,
+      account_type:        c.account_type        || null,
     };
     if (c.id) { await supabase.from('contractors').update(payload).eq('id', c.id); }
     else       { await supabase.from('contractors').insert({ ...payload, user_id: user.id }); }

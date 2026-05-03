@@ -34,6 +34,14 @@ export type Contractor = {
   zip: string | null;
   w9_received: boolean;
   zelle_phone: string | null;
+
+  // Direct Deposit / ACH (migration-009)
+  bank_name: string | null;
+  account_holder_name: string | null;
+  routing_number: string | null;
+  account_number: string | null;
+  account_type: 'checking' | 'savings' | null;
+
   created_at: string;
   updated_at: string;
 };
@@ -221,8 +229,8 @@ export type DeliverableSubmission = {
 
 export type PaymentMethod =
   | 'Cash' | 'Check' | 'Zelle' | 'Venmo' | 'CashApp'
-  | 'PayPal' | 'Bank Transfer' | 'Credit Card' | 'Other';
+  | 'PayPal' | 'Direct Deposit' | 'Bank Transfer' | 'Credit Card' | 'Other';
 export const PAYMENT_METHODS: PaymentMethod[] = [
   'Cash', 'Check', 'Zelle', 'Venmo', 'CashApp',
-  'PayPal', 'Bank Transfer', 'Credit Card', 'Other',
+  'PayPal', 'Direct Deposit', 'Bank Transfer', 'Credit Card', 'Other',
 ];

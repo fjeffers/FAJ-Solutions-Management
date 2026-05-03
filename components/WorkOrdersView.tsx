@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
@@ -27,7 +27,7 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 };
 
 export default function WorkOrdersView({
-  workOrders, stats, onAdd, onEdit, onDelete, onDuplicate, contractors,
+  workOrders, stats, onAdd, onEdit, onDelete, onDuplicate, onPay, contractors,
 }: {
   workOrders: EnrichedWorkOrder[];
   stats: Stats;
@@ -35,6 +35,7 @@ export default function WorkOrdersView({
   onEdit: (w: EnrichedWorkOrder) => void;
   onDelete: (id: string) => void;
   onDuplicate: (w: EnrichedWorkOrder) => void;
+  onPay: (w: EnrichedWorkOrder) => void;
   contractors: Contractor[];
 }) {
   const [search, setSearch] = useState('');
@@ -128,7 +129,7 @@ export default function WorkOrdersView({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} />)}
+          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} />)}
         </div>
       )}
 
@@ -143,12 +144,14 @@ function WOCard({
   onDelete,
   onSend,
   onDuplicate,
+  onPay,
 }: {
   w: EnrichedWorkOrder;
   onEdit: (w: EnrichedWorkOrder) => void;
   onDelete: (id: string) => void;
   onSend: (w: EnrichedWorkOrder) => void;
   onDuplicate: (w: EnrichedWorkOrder) => void;
+  onPay: (w: EnrichedWorkOrder) => void;
 }) {
   const sm = WO_STATUS_META[w.wo_status] ?? WO_STATUS_META['Open'];
   const pm = PAY_META[w.payment_status] ?? PAY_META['pending'];
@@ -207,6 +210,21 @@ function WOCard({
             >
               <Send size={11} /> Send WO
             </button>
+            {w.remaining > 0 && (
+              <button
+                title="Record Payment"
+                onClick={() => onPay(w)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', borderRadius: 8, border: '1.5px solid rgba(4,120,87,0.35)',
+                  background: 'rgba(4,120,87,0.07)', cursor: 'pointer',
+                  fontSize: 11, fontWeight: 700, color: '#047857',
+                  fontFamily: 'Lato, sans-serif',
+                }}
+              >
+                <DollarSign size={11} /> Pay
+              </button>
+            )}
             <button className="icon-btn" onClick={() => onEdit(w)} title="Edit"><Edit2 size={14} /></button>
             <button className="icon-btn" onClick={() => onDuplicate(w)} title="Duplicate"><Copy size={14} /></button>
             <button

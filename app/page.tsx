@@ -7,7 +7,7 @@ import { enrichWorkOrders } from '@/lib/utils';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate } from '@/lib/types';
 import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
-  LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings,
+  LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -19,18 +19,19 @@ import TenNinetyNineView from '@/components/TenNinetyNineView';
 import W9View from '@/components/W9View';
 import QuickBooksView from '@/components/QuickBooksView';
 import QuestionTemplatesView from '@/components/QuestionTemplatesView';
+import PayablesView from '@/components/PayablesView';
 import ContractorModal from '@/components/ContractorModal';
 import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
 
 type View =
-  | 'dashboard' | 'workorders' | 'payments' | 'contractors'
+  | 'dashboard' | 'workorders' | 'payments' | 'payables' | 'contractors'
   | 'statements' | '1099' | 'w9' | 'quickbooks' | 'settings';
 
 type Modal =
   | { type: 'contractor'; item: Contractor | null }
   | { type: 'wo'; item: WorkOrder | null }
-  | { type: 'payment'; item: Payment | null }
+  | { type: 'payment'; item: Payment | null; prefill?: Partial<Payment> }
   | null;
 
 export default function HomePage() {
@@ -179,6 +180,26 @@ export default function HomePage() {
     loadAll();
   };
 
+  const handlePayWO = (w: EnrichedWorkOrder) => {
+    const contractor = contractors.find((c) => c.name === w.contractor_name);
+    const method = contractor?.routing_number && contractor?.account_number
+      ? 'Direct Deposit'
+      : contractor?.zelle_phone
+      ? 'Zelle'
+      : 'Check';
+    setModal({
+      type: 'payment',
+      item: null,
+      prefill: {
+        wo_number: w.wo_number,
+        contractor_name: w.contractor_name,
+        amount: w.remaining,
+        method,
+        payment_date: new Date().toISOString().split('T')[0],
+      },
+    });
+  };
+
   // ── Question Templates ─────────────────────────────────────────────────────
 
   const saveTemplate = async (
@@ -291,6 +312,7 @@ export default function HomePage() {
           <NI k="dashboard"   icon={<BarChart3 size={15} />}    label="Dashboard" />
           <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
           <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
+          <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
           <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Reports</div>
           <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
@@ -333,6 +355,7 @@ export default function HomePage() {
               const { id, created_at, updated_at, paid, remaining, payment_status, ...copy } = w;
               setModal({ type: 'wo', item: { ...copy, wo_number: '' } as WorkOrder });
             }}
+            onPay={handlePayWO}
           />
         )}
         {view === 'payments' && (
@@ -342,6 +365,13 @@ export default function HomePage() {
             onAdd={() => setModal({ type: 'payment', item: null })}
             onEdit={(p) => setModal({ type: 'payment', item: p })}
             onDelete={deletePayment}
+          />
+        )}
+        {view === 'payables' && (
+          <PayablesView
+            workOrders={enrichedWOs}
+            contractors={contractors}
+            onPay={handlePayWO}
           />
         )}
         {view === 'contractors' && (
@@ -419,6 +449,7 @@ export default function HomePage() {
       {modal?.type === 'payment' && (
         <PaymentModal
           item={modal.item}
+          prefill={modal.prefill}
           workOrders={workOrders}
           contractors={contractors}
           onSave={(p) => { savePayment(p); setModal(null); }}

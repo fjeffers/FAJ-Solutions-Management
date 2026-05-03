@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/FAJ Project/faj-payments/**)",
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Read(//d/FAJ Project//**)",
+      "Read(//d/FAJ Project/**)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(node_modules/.bin/tsc --noEmit --listFiles)",
+      "Bash(curl -s http://localhost:3000/api/send-email -X POST -H 'Content-Type: application/json' -d '{\"type\":\"work_order\",\"to\":\"fajsolutions@gmail.com\",\"subject\":\"Test WO Email\",\"data\":{\"workOrder\":{\"wo_number\":\"TEST-001\",\"contractor_name\":\"Test Contractor\",\"wo_status\":\"Open\",\"pay_type\":\"Fixed\",\"total_amount\":500,\"title\":\"Test Job\",\"description\":\"Testing the email system.\",\"site_name\":null,\"site_address\":null,\"site_city\":null,\"site_state\":null,\"site_zip\":null,\"start_date\":null,\"start_time\":null,\"end_date\":null,\"end_time\":null,\"deliverables\":null,\"service_type\":null,\"required_skills\":null,\"poc_name\":null,\"poc_phone\":null,\"poc_email\":null}}}')",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(curl -s http://localhost:3000/api/send-email -X POST -H 'Content-Type: application/json' -d '{\"type\":\"work_order\",\"to\":\"fajsolutions@gmail.com\",\"subject\":\"Test — FAJ Work Order Email\",\"data\":{\"workOrder\":{\"wo_number\":\"TEST-001\",\"contractor_name\":\"Test Contractor\",\"wo_status\":\"Open\",\"pay_type\":\"Fixed\",\"total_amount\":500,\"title\":\"Test Job\",\"description\":\"Testing the Resend email integration.\",\"site_name\":null,\"site_address\":null,\"site_city\":null,\"site_state\":null,\"site_zip\":null,\"start_date\":null,\"start_time\":null,\"end_date\":null,\"end_time\":null,\"deliverables\":null,\"service_type\":null,\"required_skills\":null,\"poc_name\":null,\"poc_phone\":null,\"poc_email\":null}}}')",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(git merge *)",
+      "mcp__ba044cc9-e950-46a2-a6c4-2a584346b49c__list_teams",
+      "mcp__ba044cc9-e950-46a2-a6c4-2a584346b49c__list_projects",
+      "mcp__ba044cc9-e950-46a2-a6c4-2a584346b49c__list_deployments",
+      "mcp__ba044cc9-e950-46a2-a6c4-2a584346b49c__get_deployment_build_logs",
+      "Bash(npx vercel *)",
+      "Bash(git commit -m 'feat: duplicate work order button on WO cards *)",
+      "Bash(git commit -m 'feat: Direct Deposit — store contractor ACH banking info *)"
+    ]
+  }
+}

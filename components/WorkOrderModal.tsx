@@ -150,7 +150,7 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 660 }}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
@@ -177,15 +177,15 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid #eee' }}>
+        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid #eee', overflowX: 'auto', flexWrap: 'wrap' }}>
           {TABS.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '9px 16px', border: 'none', background: 'none', cursor: 'pointer',
-              fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 12,
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '9px 12px', border: 'none', background: 'none', cursor: 'pointer',
+              fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 11,
               color: tab === t.key ? 'var(--teal)' : '#999',
               borderBottom: tab === t.key ? '2px solid var(--teal)' : '2px solid transparent',
-              marginBottom: -1, transition: 'all 0.2s',
+              marginBottom: -1, transition: 'all 0.2s', whiteSpace: 'nowrap',
             }}>
               {t.icon} {t.label}
             </button>

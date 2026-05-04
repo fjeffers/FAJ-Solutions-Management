@@ -5,6 +5,7 @@ import {
   LogOut, AlertCircle, Timer, Paperclip, PenLine,
   FileText, Upload, CheckCircle2, Send, Check, ListChecks,
   Camera, Phone, Mail, Sparkles, Briefcase, CreditCard, Menu, X,
+  BarChart3, Users, ClipboardCheck, BookOpen, TrendingUp,
 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask, CustomQAItem } from '@/lib/types';
@@ -737,8 +738,8 @@ export default function ContractorPortal({
   onSaveCustomQA: (woId: string, qa: CustomQAItem[]) => Promise<void>;
   onLogout: () => void;
 }) {
-  type Tab = 'jobs' | 'payments' | 'statement' | 'w9';
-  const [tab, setTab] = useState<Tab>('jobs');
+  type Tab = 'dashboard' | 'jobs' | 'payments' | 'contractors' | 'statement' | '1099' | 'w9' | 'quickbooks';
+  const [tab, setTab] = useState<Tab>('dashboard');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const myJobs        = workOrders.filter((w) => w.contractor_name === contractor.name);
@@ -748,6 +749,10 @@ export default function ContractorPortal({
   const totalEarned   = myJobs.reduce((s, w) => s + Number(w.total_amount), 0);
   const totalPaid     = myPayments.reduce((s, p) => s + Number(p.amount), 0);
   const totalOwing    = totalEarned - totalPaid;
+  const collectionRate = totalEarned > 0 ? Math.round((totalPaid / totalEarned) * 100) : 0;
+  const paidJobs      = myJobs.filter((w) => w.wo_status === 'Paid').length;
+  const partialJobs   = myPayments.length > 0 ? myJobs.filter((w) => { const p = myPayments.filter((pm) => pm.wo_number === w.wo_number).reduce((s, pm) => s + Number(pm.amount), 0); return p > 0 && p < Number(w.total_amount); }).length : 0;
+  const pendingJobs   = myJobs.length - paidJobs - partialJobs;
 
   const navigate = (t: Tab) => { setTab(t); setMobileNavOpen(false); };
 
@@ -788,33 +793,17 @@ export default function ContractorPortal({
           <div className="serif" style={{ fontSize: 20, fontWeight: 600, color: 'white', lineHeight: 1.2 }}>Contractor Portal</div>
         </div>
 
-        {/* Contractor info */}
-        <div style={{ padding: '0 12px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'white', lineHeight: 1.3 }}>{contractor.name}</div>
-          {contractor.business_name && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{contractor.business_name}</div>}
-          <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-            <div>
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const }}>Active</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: 'white' }}>{activeJobs.length}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const }}>Earned</div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gold-light)' }}>{fmtMoney(totalEarned)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const }}>Paid</div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: '#6ee7b7' }}>{fmtMoney(totalPaid)}</div>
-            </div>
-          </div>
-        </div>
-
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '0 12px', marginBottom: 6, textTransform: 'uppercase' }}>Main</div>
-          <NavBtn k="jobs"      icon={<Briefcase size={15} />}    label={`Work Orders (${myJobs.length})`} />
-          <NavBtn k="payments"  icon={<DollarSign size={15} />}   label="Payment History" />
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Reports</div>
-          <NavBtn k="statement" icon={<FileText size={15} />}     label="Statement" />
-          <NavBtn k="w9"        icon={<CreditCard size={15} />}   label="W-9 Info" />
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '0 12px', marginBottom: 6, textTransform: 'uppercase' }}>Operations</div>
+          <NavBtn k="dashboard"  icon={<BarChart3 size={15} />}      label="Dashboard" />
+          <NavBtn k="jobs"       icon={<Briefcase size={15} />}      label="Work Orders" />
+          <NavBtn k="payments"   icon={<CreditCard size={15} />}     label="Payments" />
+          <NavBtn k="contractors" icon={<Users size={15} />}         label="Contractors" />
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Reports &amp; Tax</div>
+          <NavBtn k="statement"  icon={<FileText size={15} />}      label="Statements" />
+          <NavBtn k="1099"       icon={<ClipboardCheck size={15} />} label="1099 Summary" />
+          <NavBtn k="w9"         icon={<BookOpen size={15} />}       label="W-9 Manager" />
+          <NavBtn k="quickbooks" icon={<TrendingUp size={15} />}     label="QuickBooks" />
         </nav>
 
         <button
@@ -827,7 +816,93 @@ export default function ContractorPortal({
 
       {/* ── Main Content ── */}
       <main style={{ flex: 1, overflow: 'auto', background: '#f7f8fa' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '20px 16px 48px' }}>
+      <div style={{ padding: '20px 24px 48px' }}>
+
+        {/* DASHBOARD */}
+        {tab === 'dashboard' && (
+          <div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: 'var(--teal)', textTransform: 'uppercase' as const, marginBottom: 4 }}>OVERVIEW</div>
+              <h1 className="serif" style={{ fontSize: 28, fontWeight: 600, color: '#1a1a2e', margin: 0 }}>Dashboard</h1>
+              <div style={{ fontSize: 13, color: '#90a4ae', marginTop: 4 }}>Your business at a glance</div>
+            </div>
+
+            {/* Stats cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+              {[
+                { label: 'TOTAL BILLED', value: fmtMoney(totalEarned), color: '#1a1a2e' },
+                { label: 'TOTAL PAID', value: fmtMoney(totalPaid), color: '#1a1a2e' },
+                { label: 'OUTSTANDING', value: fmtMoney(totalOwing), color: totalOwing > 0 ? '#b91c1c' : '#1a1a2e' },
+                { label: 'COLLECTION RATE', value: `${collectionRate}%`, color: '#1a1a2e' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="glass" style={{ padding: '16px 18px', borderRadius: 12 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: 'var(--teal)', textTransform: 'uppercase' as const, marginBottom: 8 }}>{label}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Job status cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
+              <div style={{ background: '#e8f5e9', borderRadius: 12, padding: '20px', textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: '#2e7d32' }}>{paidJobs}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#2e7d32', letterSpacing: 1, textTransform: 'uppercase' as const }}>Paid Jobs</div>
+              </div>
+              <div style={{ background: '#fff8e1', borderRadius: 12, padding: '20px', textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: '#f57f17' }}>{partialJobs}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#f57f17', letterSpacing: 1, textTransform: 'uppercase' as const }}>Partial</div>
+              </div>
+              <div style={{ background: '#fce4ec', borderRadius: 12, padding: '20px', textAlign: 'center' }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: '#c62828' }}>{pendingJobs}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#c62828', letterSpacing: 1, textTransform: 'uppercase' as const }}>Pending</div>
+              </div>
+            </div>
+
+            {/* Outstanding Jobs + Recent Payments */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div className="glass" style={{ borderRadius: 12, padding: '18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertCircle size={14} color="var(--teal)" />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e' }}>Outstanding Jobs</span>
+                  </div>
+                  <button onClick={() => setTab('jobs')} style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', background: 'none', border: '1px solid var(--teal)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>View All</button>
+                </div>
+                {activeJobs.length > 0 ? activeJobs.slice(0, 3).map((wo) => (
+                  <div key={wo.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f0f4f8' }}>
+                    <div>
+                      <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#0D7377' }}>#{wo.wo_number}</span>
+                      <span style={{ fontSize: 12, color: '#546e7a', marginLeft: 8 }}>{wo.title || wo.service_type || 'Work Order'}</span>
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e' }}>{fmtMoney(Number(wo.total_amount))}</span>
+                  </div>
+                )) : (
+                  <div style={{ textAlign: 'center', padding: '20px 0', color: '#90a4ae', fontSize: 13 }}>All jobs paid!</div>
+                )}
+              </div>
+              <div className="glass" style={{ borderRadius: 12, padding: '18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CreditCard size={14} color="var(--teal)" />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e' }}>Recent Payments</span>
+                  </div>
+                  <button onClick={() => setTab('payments')} style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', background: 'none', border: '1px solid var(--teal)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>View All</button>
+                </div>
+                {myPayments.length > 0 ? myPayments.slice(0, 3).map((p) => (
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f0f4f8' }}>
+                    <div>
+                      <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#0D7377' }}>#{p.wo_number}</span>
+                      <span style={{ fontSize: 11, color: '#90a4ae', marginLeft: 8 }}>{fmtDate(p.payment_date)}</span>
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#2e7d32' }}>{fmtMoney(Number(p.amount))}</span>
+                  </div>
+                )) : (
+                  <div style={{ textAlign: 'center', padding: '20px 0', color: '#90a4ae', fontSize: 13 }}>No payments yet.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* JOBS TAB */}
         {tab === 'jobs' && (
@@ -1081,6 +1156,131 @@ export default function ContractorPortal({
                   ⚠ You will receive a 1099-NEC for this tax year (earnings ≥ $600)
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* CONTRACTORS TAB */}
+        {tab === 'contractors' && (
+          <div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: 'var(--teal)', textTransform: 'uppercase' as const, marginBottom: 4 }}>PROFILE</div>
+              <h1 className="serif" style={{ fontSize: 28, fontWeight: 600, color: '#1a1a2e', margin: 0 }}>Contractor Info</h1>
+            </div>
+            <div className="glass" style={{ borderRadius: 12, padding: '20px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg, #0D7377, #0a5a5d)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, color: 'white' }}>
+                  {contractor.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#1a1a2e' }}>{contractor.name}</div>
+                  {contractor.business_name && <div style={{ fontSize: 13, color: '#0D7377', fontWeight: 600 }}>{contractor.business_name}</div>}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {contractor.email && (
+                  <div style={{ padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8ecf0' }}>
+                    <div style={{ fontSize: 10, color: '#90a4ae', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>Email</div>
+                    <div style={{ fontSize: 13, color: '#1a1a2e', fontWeight: 600 }}>{contractor.email}</div>
+                  </div>
+                )}
+                {contractor.phone && (
+                  <div style={{ padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8ecf0' }}>
+                    <div style={{ fontSize: 10, color: '#90a4ae', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>Phone</div>
+                    <div style={{ fontSize: 13, color: '#1a1a2e', fontWeight: 600 }}>{contractor.phone}</div>
+                  </div>
+                )}
+                {(contractor.address || contractor.city) && (
+                  <div style={{ padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8ecf0', gridColumn: 'span 2' }}>
+                    <div style={{ fontSize: 10, color: '#90a4ae', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>Address</div>
+                    <div style={{ fontSize: 13, color: '#1a1a2e', lineHeight: 1.5 }}>
+                      {contractor.address && <div>{contractor.address}</div>}
+                      {(contractor.city || contractor.state || contractor.zip) && <div>{[contractor.city, contractor.state, contractor.zip].filter(Boolean).join(', ')}</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <div className="glass" style={{ borderRadius: 12, padding: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#1a1a2e' }}>{myJobs.length}</div>
+                <div style={{ fontSize: 11, color: '#90a4ae', fontWeight: 600 }}>Total Jobs</div>
+              </div>
+              <div className="glass" style={{ borderRadius: 12, padding: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#2e7d32' }}>{fmtMoney(totalPaid)}</div>
+                <div style={{ fontSize: 11, color: '#90a4ae', fontWeight: 600 }}>Total Paid</div>
+              </div>
+              <div className="glass" style={{ borderRadius: 12, padding: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: totalOwing > 0 ? '#b91c1c' : '#2e7d32' }}>{fmtMoney(totalOwing)}</div>
+                <div style={{ fontSize: 11, color: '#90a4ae', fontWeight: 600 }}>Outstanding</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 1099 TAB */}
+        {tab === '1099' && (
+          <div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: 'var(--teal)', textTransform: 'uppercase' as const, marginBottom: 4 }}>TAX DOCUMENTS</div>
+              <h1 className="serif" style={{ fontSize: 28, fontWeight: 600, color: '#1a1a2e', margin: 0 }}>1099 Summary</h1>
+              <div style={{ fontSize: 13, color: '#90a4ae', marginTop: 4 }}>Tax year {new Date().getFullYear()}</div>
+            </div>
+            <div className="glass" style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0 }}>
+                <div style={{ padding: '20px', textAlign: 'center', borderRight: '1px solid #e8ecf0' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 6 }}>Total Earned</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: '#1a1a2e' }}>{fmtMoney(totalEarned)}</div>
+                </div>
+                <div style={{ padding: '20px', textAlign: 'center', borderRight: '1px solid #e8ecf0' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 6 }}>Total Paid</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: '#2e7d32' }}>{fmtMoney(totalPaid)}</div>
+                </div>
+                <div style={{ padding: '20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 6 }}>1099 Status</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: totalEarned >= 600 ? '#f57f17' : '#2e7d32' }}>
+                    {totalEarned >= 600 ? '1099-NEC Required' : 'Under Threshold'}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {totalEarned >= 600 && (
+              <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 12, padding: '16px', fontSize: 13, color: '#f57f17', fontWeight: 600, lineHeight: 1.6 }}>
+                Your earnings exceed $600 for this tax year. You will receive a 1099-NEC form for tax filing purposes.
+              </div>
+            )}
+            {myJobs.length > 0 && (
+              <div className="glass" style={{ borderRadius: 12, overflow: 'hidden', marginTop: 16 }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8ecf0' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1, textTransform: 'uppercase' as const }}>Earnings Breakdown</div>
+                </div>
+                {myJobs.map((wo, idx) => (
+                  <div key={wo.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: idx < myJobs.length - 1 ? '1px solid #f0f4f8' : 'none' }}>
+                    <div>
+                      <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#0D7377' }}>#{wo.wo_number}</span>
+                      <span style={{ fontSize: 12, color: '#546e7a', marginLeft: 8 }}>{wo.title || wo.service_type || 'Work Order'}</span>
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>{fmtMoney(Number(wo.total_amount))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* QUICKBOOKS TAB */}
+        {tab === 'quickbooks' && (
+          <div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: 'var(--teal)', textTransform: 'uppercase' as const, marginBottom: 4 }}>ACCOUNTING</div>
+              <h1 className="serif" style={{ fontSize: 28, fontWeight: 600, color: '#1a1a2e', margin: 0 }}>QuickBooks</h1>
+            </div>
+            <div className="glass" style={{ borderRadius: 12, padding: '40px 20px', textAlign: 'center' }}>
+              <TrendingUp size={40} color="#90a4ae" style={{ marginBottom: 12, opacity: 0.4 }} />
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#546e7a', marginBottom: 6 }}>QuickBooks Integration</div>
+              <div style={{ fontSize: 13, color: '#90a4ae', lineHeight: 1.6, maxWidth: 400, margin: '0 auto' }}>
+                Your payment and earnings data is synced with QuickBooks by your administrator. Contact FAJ Solutions for any accounting questions.
+              </div>
             </div>
           </div>
         )}

@@ -24,6 +24,14 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError(error.message); setLoading(false); return; }
 
+    // Admin always goes to the dashboard, regardless of contractor records
+    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+    if (adminEmail && email.toLowerCase() === adminEmail.toLowerCase()) {
+      router.push('/');
+      router.refresh();
+      return;
+    }
+
     // Detect if this user is a contractor → send to contractor portal
     const { data: contractor } = await supabase
       .from('contractors')
@@ -40,16 +48,18 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     const origin = window.location.origin;
-    // Detect role first (best-effort — may not exist yet if first invite)
-    const { data: contractor } = await supabase
-      .from('contractors')
-      .select('name')
-      .eq('email', email)
-      .maybeSingle();
+    // Admin always goes to the dashboard
+    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+    const isAdmin = adminEmail && email.toLowerCase() === adminEmail.toLowerCase();
 
-    const redirectTo = contractor
-      ? `${origin}/contractor`
-      : `${origin}/`;
+    // Detect role (best-effort — may not exist yet if first invite)
+    const { data: contractor } = !isAdmin
+      ? await supabase.from('contractors').select('name').eq('email', email).maybeSingle()
+      : { data: null };
+
+    const redirectTo = isAdmin || !contractor
+      ? `${origin}/`
+      : `${origin}/contractor`;
 
     const { error } = await supabase.auth.signInWithOtp({
       email,

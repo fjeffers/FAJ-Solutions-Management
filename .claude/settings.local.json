@@ -25,7 +25,12 @@
       "mcp__ba044cc9-e950-46a2-a6c4-2a584346b49c__get_deployment_build_logs",
       "Bash(npx vercel *)",
       "Bash(git commit -m 'feat: duplicate work order button on WO cards *)",
-      "Bash(git commit -m 'feat: Direct Deposit — store contractor ACH banking info *)"
+      "Bash(git commit -m 'feat: Direct Deposit — store contractor ACH banking info *)",
+      "Bash(npx --yes sharp-cli -i public/icons/icon.svg -o public/icons/icon-192.png resize 192 192)",
+      "Bash(npx sharp-cli *)",
+      "Bash(npx next *)",
+      "Bash(git rm *)",
+      "Bash(git stash *)"
     ]
   }
 }

@@ -4,7 +4,7 @@ import {
   MapPin, Clock, DollarSign, ChevronDown, ChevronUp,
   LogOut, AlertCircle, Timer, Paperclip, PenLine,
   FileText, Upload, CheckCircle2, Send, Check, ListChecks,
-  Camera, Phone, Mail, Sparkles,
+  Camera, Phone, Mail, Sparkles, Briefcase, CreditCard, Menu, X,
 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Contractor, WorkOrder, Payment, DeliverableSubmission, TimeLog, Signature, WoTask, CustomQAItem } from '@/lib/types';
@@ -738,6 +738,7 @@ export default function ContractorPortal({
   onLogout: () => void;
 }) {
   const [tab, setTab] = useState<'jobs' | 'statement'>('jobs');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const myJobs        = workOrders.filter((w) => w.contractor_name === contractor.name);
   const activeJobs    = myJobs.filter((w) => !['Approved', 'Paid'].includes(w.wo_status));
@@ -747,67 +748,82 @@ export default function ContractorPortal({
   const totalPaid     = myPayments.reduce((s, p) => s + Number(p.amount), 0);
   const totalOwing    = totalEarned - totalPaid;
 
+  const navigate = (t: 'jobs' | 'statement') => { setTab(t); setMobileNavOpen(false); };
+
+  const NavBtn = ({ k, icon, label }: { k: 'jobs' | 'statement'; icon: React.ReactNode; label: string }) => (
+    <button className={`nav-btn ${tab === k ? 'active' : ''}`} onClick={() => navigate(k)}>
+      {icon} {label}
+    </button>
+  );
+
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f6f9', maxWidth: 640, margin: '0 auto' }}>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
 
-      {/* ── Header ── */}
-      <div style={{ background: 'white', borderBottom: '1px solid #e8ecf0', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        {/* Teal accent bar */}
-        <div style={{ height: 4, background: 'linear-gradient(90deg, #0D7377, #0a9396)' }} />
-        <div style={{ padding: '14px 18px 16px' }}>
-          {/* Top row: brand + sign out */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Sparkles size={13} color="#0D7377" />
-              <span style={{ fontSize: 10, color: '#0D7377', fontWeight: 800, letterSpacing: 2.5, textTransform: 'uppercase' as const }}>FAJ Solutions</span>
-            </div>
-            <button onClick={onLogout}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 20, border: '1px solid #e0e4ea', background: 'white', color: '#546e7a', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
-              <LogOut size={11} color="#546e7a" /> Sign Out
-            </button>
-          </div>
-          {/* Contractor name */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: '#1a1a2e', letterSpacing: -0.3, lineHeight: 1.1 }}>{contractor.name}</div>
-            {contractor.business_name && <div style={{ fontSize: 13, color: '#0D7377', fontWeight: 600, marginTop: 3 }}>{contractor.business_name}</div>}
-          </div>
-          {/* Summary chips */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1, background: '#f4f6f9', borderRadius: 10, padding: '10px 12px', border: '1px solid #e8ecf0' }}>
-              <div style={{ fontSize: 9, fontWeight: 800, color: '#90a4ae', letterSpacing: 1.5, textTransform: 'uppercase' as const, marginBottom: 3 }}>Active</div>
-              <div style={{ fontSize: 22, fontWeight: 900, color: '#1a1a2e' }}>{activeJobs.length}</div>
-            </div>
-            <div style={{ flex: 1, background: '#f4f6f9', borderRadius: 10, padding: '10px 12px', border: '1px solid #e8ecf0' }}>
-              <div style={{ fontSize: 9, fontWeight: 800, color: '#90a4ae', letterSpacing: 1.5, textTransform: 'uppercase' as const, marginBottom: 3 }}>Earned</div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: '#1a1a2e' }}>{fmtMoney(totalEarned)}</div>
-            </div>
-            <div style={{ flex: 1, background: '#f0fdf4', borderRadius: 10, padding: '10px 12px', border: '1px solid #c8e6c9' }}>
-              <div style={{ fontSize: 9, fontWeight: 800, color: '#2e7d32', letterSpacing: 1.5, textTransform: 'uppercase' as const, marginBottom: 3 }}>Paid</div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: '#2e7d32' }}>{fmtMoney(totalPaid)}</div>
-            </div>
-          </div>
+      {/* Mobile header */}
+      <div
+        className="no-print"
+        id="mobile-header"
+        style={{ display: 'none', position: 'sticky', top: 0, zIndex: 50, padding: '12px 16px', background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white', alignItems: 'center', justifyContent: 'space-between' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Sparkles size={16} color="var(--gold-light)" />
+          <span className="display" style={{ fontSize: 12, color: 'var(--gold-light)', fontWeight: 700 }}>FAJ SOLUTIONS</span>
         </div>
-
-        {/* Tab bar */}
-        <div style={{ display: 'flex', borderTop: '1px solid #e8ecf0' }}>
-          {(['jobs', 'statement'] as const).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              style={{
-                flex: 1, padding: '13px 0', fontSize: 12, fontWeight: 800, letterSpacing: 1,
-                border: 'none', cursor: 'pointer', background: 'none',
-                color: tab === t ? '#0D7377' : '#90a4ae',
-                borderBottom: tab === t ? '3px solid #0D7377' : '3px solid transparent',
-                textTransform: 'uppercase' as const,
-                transition: 'color 0.2s',
-              }}>
-              {t === 'jobs' ? `Work Orders (${myJobs.length})` : 'Statement'}
-            </button>
-          ))}
-        </div>
+        <button onClick={() => setMobileNavOpen(!mobileNavOpen)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
+          {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
       </div>
 
-      {/* ── Content ── */}
-      <div style={{ padding: '14px 14px 48px' }}>
+      {/* Sidebar */}
+      <aside
+        className="no-print glass-dark sidebar-desktop"
+        style={{ width: 250, padding: '24px 16px', position: 'sticky', top: 0, height: '100vh', flexDirection: 'column', gap: 2, ...(mobileNavOpen ? { display: 'flex', position: 'fixed', zIndex: 40, width: 260 } : {}) }}
+      >
+        <div style={{ padding: '0 12px 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <Sparkles size={20} color="var(--gold-light)" />
+            <div className="display" style={{ fontSize: 13, color: 'var(--gold-light)', fontWeight: 700 }}>FAJ</div>
+          </div>
+          <div className="serif" style={{ fontSize: 20, fontWeight: 600, color: 'white', lineHeight: 1.2 }}>Contractor Portal</div>
+        </div>
+
+        {/* Contractor info */}
+        <div style={{ padding: '0 12px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'white', lineHeight: 1.3 }}>{contractor.name}</div>
+          {contractor.business_name && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{contractor.business_name}</div>}
+          <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const }}>Active</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'white' }}>{activeJobs.length}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const }}>Earned</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gold-light)' }}>{fmtMoney(totalEarned)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const }}>Paid</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#6ee7b7' }}>{fmtMoney(totalPaid)}</div>
+            </div>
+          </div>
+        </div>
+
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '0 12px', marginBottom: 6, textTransform: 'uppercase' }}>Navigation</div>
+          <NavBtn k="jobs"      icon={<Briefcase size={15} />}   label={`Work Orders (${myJobs.length})`} />
+          <NavBtn k="statement" icon={<CreditCard size={15} />}  label="Statement" />
+        </nav>
+
+        <button
+          onClick={onLogout}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 13, fontWeight: 600, width: '100%', marginTop: 8 }}
+        >
+          <LogOut size={14} /> Sign Out
+        </button>
+      </aside>
+
+      {/* ── Main Content ── */}
+      <main style={{ flex: 1, overflow: 'auto', background: '#f7f8fa' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: '20px 16px 48px' }}>
 
         {/* JOBS TAB */}
         {tab === 'jobs' && (
@@ -943,6 +959,7 @@ export default function ContractorPortal({
         )}
 
       </div>
+      </main>
     </div>
   );
 }

@@ -737,7 +737,8 @@ export default function ContractorPortal({
   onSaveCustomQA: (woId: string, qa: CustomQAItem[]) => Promise<void>;
   onLogout: () => void;
 }) {
-  const [tab, setTab] = useState<'jobs' | 'statement'>('jobs');
+  type Tab = 'jobs' | 'payments' | 'statement' | 'w9';
+  const [tab, setTab] = useState<Tab>('jobs');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const myJobs        = workOrders.filter((w) => w.contractor_name === contractor.name);
@@ -748,9 +749,9 @@ export default function ContractorPortal({
   const totalPaid     = myPayments.reduce((s, p) => s + Number(p.amount), 0);
   const totalOwing    = totalEarned - totalPaid;
 
-  const navigate = (t: 'jobs' | 'statement') => { setTab(t); setMobileNavOpen(false); };
+  const navigate = (t: Tab) => { setTab(t); setMobileNavOpen(false); };
 
-  const NavBtn = ({ k, icon, label }: { k: 'jobs' | 'statement'; icon: React.ReactNode; label: string }) => (
+  const NavBtn = ({ k, icon, label }: { k: Tab; icon: React.ReactNode; label: string }) => (
     <button className={`nav-btn ${tab === k ? 'active' : ''}`} onClick={() => navigate(k)}>
       {icon} {label}
     </button>
@@ -808,9 +809,12 @@ export default function ContractorPortal({
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '0 12px', marginBottom: 6, textTransform: 'uppercase' }}>Navigation</div>
-          <NavBtn k="jobs"      icon={<Briefcase size={15} />}   label={`Work Orders (${myJobs.length})`} />
-          <NavBtn k="statement" icon={<CreditCard size={15} />}  label="Statement" />
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '0 12px', marginBottom: 6, textTransform: 'uppercase' }}>Main</div>
+          <NavBtn k="jobs"      icon={<Briefcase size={15} />}    label={`Work Orders (${myJobs.length})`} />
+          <NavBtn k="payments"  icon={<DollarSign size={15} />}   label="Payment History" />
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Reports</div>
+          <NavBtn k="statement" icon={<FileText size={15} />}     label="Statement" />
+          <NavBtn k="w9"        icon={<CreditCard size={15} />}   label="W-9 Info" />
         </nav>
 
         <button
@@ -955,6 +959,129 @@ export default function ContractorPortal({
               </div>
             )}
 
+          </div>
+        )}
+
+        {/* PAYMENTS TAB */}
+        {tab === 'payments' && (
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1a1a2e', margin: 0 }}>Payment History</h2>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#2e7d32', background: '#e8f5e9', padding: '4px 12px', borderRadius: 20 }}>
+                {fmtMoney(totalPaid)} received
+              </span>
+            </div>
+            {myPayments.length > 0 ? (
+              myPayments.map((p) => {
+                const wo = myJobs.find((w) => w.wo_number === p.wo_number);
+                return (
+                  <div key={p.id} style={{ background: 'white', border: '1px solid #e8ecf0', borderRadius: 12, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#0D7377', background: '#e0f2f1', padding: '2px 8px', borderRadius: 4 }}>WO #{p.wo_number}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#90a4ae' }}>{fmtDate(p.payment_date)}</span>
+                        </div>
+                        {wo && <div style={{ fontSize: 13, color: '#546e7a', marginBottom: 4 }}>{wo.title || wo.service_type || 'Work Order'}</div>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: '#0D7377', padding: '2px 10px', borderRadius: 20 }}>{p.method}</span>
+                          {p.notes && <span style={{ fontSize: 11, color: '#90a4ae' }}>{p.notes}</span>}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: '#2e7d32', flexShrink: 0, marginLeft: 16 }}>{fmtMoney(Number(p.amount))}</div>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div style={{ textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: 12, border: '1px solid #e8ecf0', color: '#90a4ae' }}>
+                <DollarSign size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#546e7a', marginBottom: 6 }}>No payments yet</div>
+                <div style={{ fontSize: 13 }}>Payments will appear here once processed.</div>
+              </div>
+            )}
+            {totalOwing > 0 && (
+              <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 12, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#f57f17', textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Outstanding Balance</span>
+                <span style={{ fontSize: 20, fontWeight: 900, color: '#e65100' }}>{fmtMoney(totalOwing)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* W-9 TAB */}
+        {tab === 'w9' && (
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1a1a2e', margin: '0 0 4px' }}>W-9 Information</h2>
+
+            <div style={{ background: 'white', border: '1px solid #e8ecf0', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 16px 10px', background: '#0D7377' }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.7)', letterSpacing: 2, textTransform: 'uppercase' as const }}>Tax Information</div>
+              </div>
+              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8ecf0' }}>
+                  <span style={{ fontSize: 11, color: '#90a4ae', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Legal Name</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>{contractor.name}</span>
+                </div>
+                {contractor.business_name && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8ecf0' }}>
+                    <span style={{ fontSize: 11, color: '#90a4ae', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Business Name</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>{contractor.business_name}</span>
+                  </div>
+                )}
+                {contractor.entity_type && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8ecf0' }}>
+                    <span style={{ fontSize: 11, color: '#90a4ae', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Entity Type</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e' }}>{contractor.entity_type}</span>
+                  </div>
+                )}
+                {contractor.tax_id && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8ecf0' }}>
+                    <span style={{ fontSize: 11, color: '#90a4ae', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{contractor.tax_id_type === 'SSN' ? 'SSN' : 'EIN'}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a2e', fontFamily: 'monospace' }}>***-**-{contractor.tax_id.slice(-4)}</span>
+                  </div>
+                )}
+                {(contractor.address || contractor.city) && (
+                  <div style={{ padding: '10px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e8ecf0' }}>
+                    <div style={{ fontSize: 11, color: '#90a4ae', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>Address</div>
+                    <div style={{ fontSize: 13, color: '#1a1a2e', lineHeight: 1.5 }}>
+                      {contractor.address && <div>{contractor.address}</div>}
+                      {(contractor.city || contractor.state || contractor.zip) && (
+                        <div>{[contractor.city, contractor.state, contractor.zip].filter(Boolean).join(', ')}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, background: contractor.w9_received ? '#e8f5e9' : '#fff3e0', border: `1px solid ${contractor.w9_received ? '#c8e6c9' : '#ffe082'}` }}>
+                  <span style={{ fontSize: 11, color: contractor.w9_received ? '#2e7d32' : '#f57f17', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>W-9 Status</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: contractor.w9_received ? '#2e7d32' : '#e65100' }}>
+                    {contractor.w9_received ? 'Received ✓' : 'Not on File'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 1099 Summary */}
+            <div style={{ background: 'white', border: '1px solid #e8ecf0', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 16px 8px', borderBottom: '1px solid #f0f4f8' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#90a4ae', textTransform: 'uppercase' as const, letterSpacing: 1 }}>1099 Summary — {new Date().getFullYear()}</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+                <div style={{ padding: '14px 16px', borderRight: '1px solid #e8ecf0', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#90a4ae', letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 4 }}>Total Earned</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#1a1a2e' }}>{fmtMoney(totalEarned)}</div>
+                </div>
+                <div style={{ padding: '14px 16px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#90a4ae', letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 4 }}>Total Paid</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#2e7d32' }}>{fmtMoney(totalPaid)}</div>
+                </div>
+              </div>
+              {totalEarned >= 600 && (
+                <div style={{ padding: '10px 16px', background: '#fff8e1', borderTop: '1px solid #ffe082', fontSize: 12, color: '#f57f17', fontWeight: 600 }}>
+                  ⚠ You will receive a 1099-NEC for this tax year (earnings ≥ $600)
+                </div>
+              )}
+            </div>
           </div>
         )}
 

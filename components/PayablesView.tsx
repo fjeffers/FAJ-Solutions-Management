@@ -1,6 +1,6 @@
 'use client';
 import { useMemo } from 'react';
-import { DollarSign, Landmark, Smartphone } from 'lucide-react';
+import { DollarSign, Landmark, Smartphone, Plus } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
 import type { EnrichedWorkOrder, Contractor, WorkOrderStatus } from '@/lib/types';
 
@@ -17,10 +17,12 @@ export default function PayablesView({
   workOrders,
   contractors,
   onPay,
+  onQuickPay,
 }: {
   workOrders: EnrichedWorkOrder[];
   contractors: Contractor[];
   onPay: (w: EnrichedWorkOrder) => void;
+  onQuickPay: () => void;
 }) {
   const groups = useMemo(() => {
     const openWOs = workOrders.filter((w) => w.remaining > 0);
@@ -49,14 +51,19 @@ export default function PayablesView({
           <div>
             <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Payables</h1>
             <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>
-              {groups.length} contractor{groups.length !== 1 ? 's' : ''} ·{' '}
+              {groups.length} contractor{groups.length !== 1 ? 's' : ''} ·{" "}
               <span style={{ color: '#b91c1c', fontWeight: 600 }}>{fmtMoney(grandTotal)} total outstanding</span>
             </p>
           </div>
-          {/* Grand total tile */}
-          <div style={{ padding: '12px 20px', borderRadius: 10, background: 'rgba(185,28,28,0.06)', border: '1.5px solid rgba(185,28,28,0.15)', textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: '#b91c1c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total Owed</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: '#b91c1c', fontFamily: 'Lato, sans-serif' }}>{fmtMoney(grandTotal)}</div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button className="btn btn-primary" onClick={onQuickPay}>
+              <Plus size={14} /> Quick Pay
+            </button>
+            {/* Grand total tile */}
+            <div style={{ padding: '12px 20px', borderRadius: 10, background: 'rgba(185,28,28,0.06)', border: '1.5px solid rgba(185,28,28,0.15)', textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: '#b91c1c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total Owed</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: '#b91c1c', fontFamily: 'Lato, sans-serif' }}>{fmtMoney(grandTotal)}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -99,8 +106,8 @@ function ContractorGroup({
               <Landmark size={11} color="var(--teal)" />
               <span style={{ fontWeight: 600, color: 'var(--teal)' }}>Direct Deposit</span>
               {contractor?.bank_name && <span>· {contractor.bank_name}</span>}
-              <span>· {contractor?.account_type ?? 'checking'} ···· {contractor?.account_number?.slice(-4)}</span>
-              <span>· RTN {contractor?.routing_number}</span>
+              <span>· {contractor?.account_type ?? 'checking'} ·�··· {contractor?.account_number?.slice(-4)}</span>
+              <span>» RTN {contractor?.routing_number}</span>
             </div>
           )}
           {!hasBanking && hasZelle && (

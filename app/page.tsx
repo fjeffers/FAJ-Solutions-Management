@@ -476,10 +476,14 @@ export default function HomePage() {
           <ContractorsView
             contractors={contractors}
             workOrders={enrichedWOs}
+            payments={payments}
             onAdd={() => setModal({ type: 'contractor', item: null })}
             onEdit={(c) => setModal({ type: 'contractor', item: c })}
             onDelete={deleteContractor}
             onViewStatement={(name) => { setSelectedContractor(name); setView('statements'); }}
+            onAddJob={(_prefill) => setModal({ type: 'wo', item: null })}
+            onAddPayment={(prefill) => setModal({ type: 'payment', item: null, prefill })}
+            onEditPayment={(p) => setModal({ type: 'payment', item: p })}
           />
         )}
         {view === 'statements' && (

@@ -112,19 +112,32 @@ export default function ContractorsView({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                  <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 11 }} onClick={() => handleInvite(c)} disabled={inviting === c.id} title={c.email ? `Send portal invite to ${c.email}` : 'No email on file'}>
-                    <Send size={12} />{inviting === c.id ? 'Sending…' : inviteSent === c.id ? '✓ Sent!' : 'Invite'}
+                  <button
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 12px', fontSize: 12, gap: 4, display: 'flex', alignItems: 'center' }}
+                    disabled={inviting === c.id}
+                    onClick={() => handleInvite(c)}
+                  >
+                    {inviting === c.id ? 'Sending…' : inviteSent === c.id ? '✓ Sent!' : <><Send size={12} /> Invite</>}
                   </button>
-                  <button className="icon-btn" onClick={() => onEdit(c)}><Edit2 size={15} /></button>
-                  <button className="icon-btn" style={{ color: '#b91c1c' }} onClick={() => { if (confirm(`Delete ${c.name}?`)) onDelete(c.id); }}><Trash2 size={15} /></button>
-                  <ChevronRight size={16} color="#aaa" />
+                  <button className="icon-btn" onClick={() => onEdit(c)}><Edit2 size={14} /></button>
+                  <button className="icon-btn" style={{ color: '#b91c1c' }}
+                    onClick={() => { if (confirm('Delete ' + c.name + '?')) onDelete(c.id); }}>
+                    <Trash2 size={14} />
+                  </button>
+                  <ChevronRight size={16} color="#ccc" />
                 </div>
               </div>
             </div>
           );
         })}
-        {filtered.length === 0 && <div style={{ textAlign: 'center', padding: '40px 0', color: '#aaa' }}>No contractors found</div>}
       </div>
+
+      {filtered.length === 0 && (
+        <div className="glass card" style={{ textAlign: 'center', padding: '48px 24px', color: '#aaa' }}>
+          {search ? 'No contractors match your search.' : 'No contractors yet — add your first one.'}
+        </div>
+      )}
     </div>
   );
 }
@@ -133,7 +146,7 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
   return (
     <div style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 11, color: '#aaa', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontWeight: 700, fontSize: 15, color: color || '#1a1a2e' }}>{value}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: color ?? '#1a1a1a' }}>{value}</div>
     </div>
   );
 }

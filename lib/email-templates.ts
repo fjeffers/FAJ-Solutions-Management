@@ -322,3 +322,70 @@ export function accountantSummaryEmail(
 
   return base(`${year} Contractor Payment Summary`, body);
 }
+
+// ─── Portal Invite ────────────────────────────────────────────────────────────
+
+export type PortalWOSummary = {
+  wo_number: string;
+  title?: string | null;
+  start_date?: string | null;
+  start_time?: string | null;
+  site_address?: string | null;
+  site_city?: string | null;
+  site_state?: string | null;
+};
+
+export function portalInviteEmail(
+  contractorName: string,
+  portalUrl: string,
+  workOrders: PortalWOSummary[],
+): string {
+  const woRows = workOrders.map((wo) => {
+    const site = [wo.site_address, wo.site_city, wo.site_state].filter(Boolean).join(', ');
+    const schedule = [
+      wo.start_date ? fmtDate(wo.start_date) : null,
+      wo.start_time ?? null,
+    ].filter(Boolean).join(' ');
+    return `
+    <div style="padding:14px 16px;border-radius:8px;background:#fafafa;border:1px solid #eee;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="font-size:12px;font-weight:800;color:${TEAL};font-family:'Segoe UI',sans-serif;">
+          WO #${wo.wo_number}
+        </span>
+        ${wo.title ? `<span style="font-size:13px;font-weight:600;color:#333;">${wo.title}</span>` : ''}
+      </div>
+      ${schedule ? `<div style="font-size:12px;color:#666;margin-bottom:2px;">📅 ${schedule}</div>` : ''}
+      ${site    ? `<div style="font-size:12px;color:#666;">📍 ${site}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const body = `
+    <div style="font-size:15px;color:#333;line-height:1.8;margin-bottom:24px;">
+      Hi <strong>${contractorName}</strong>,<br /><br />
+      You have work orders assigned to you. Click the button below to view your
+      job details, confirm your schedule, and accept each work order.
+    </div>
+
+    ${workOrders.length > 0 ? section('Your Upcoming Jobs', woRows) : ''}
+
+    <div style="text-align:center;margin:32px 0 24px;">
+      <a
+        href="${portalUrl}"
+        style="display:inline-block;padding:16px 36px;
+               background:linear-gradient(135deg,#0D7377 0%,#0a5a5d 100%);
+               color:white;text-decoration:none;border-radius:10px;
+               font-size:15px;font-weight:700;letter-spacing:0.4px;
+               box-shadow:0 4px 14px rgba(13,115,119,0.35);">
+        ✓ View &amp; Accept My Work Orders
+      </a>
+    </div>
+
+    <div style="background:rgba(13,115,119,0.06);border-radius:10px;padding:16px;
+                font-size:12px;color:#888;text-align:center;line-height:1.7;">
+      No login required — your link is unique to you.<br />
+      Bookmark it to check back anytime.
+    </div>
+  `;
+
+  return base('Your Work Orders — FAJ Solutions', body);
+}

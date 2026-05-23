@@ -21,7 +21,7 @@ import StatementView from '@/components/StatementView';
 import TenNinetyNineView from '@/components/TenNinetyNineView';
 import W9View from '@/components/W9View';
 import QuickBooksView from '@/components/QuickBooksView';
-import QuestionTemplatesView from '@/components/QuestionTemplatesView';
+import SettingsView from '@/components/SettingsView';
 import PayablesView from '@/components/PayablesView';
 import GlobalSearch from '@/components/GlobalSearch';
 import ContractorModal from '@/components/ContractorModal';
@@ -29,7 +29,7 @@ import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
 import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export1099CSV } from '@/lib/export';
 import { logAudit } from '@/lib/audit';
-import { notifyContractor } from '@/lib/notify';
+import { notifyContractor, sendPortalLink } from '@/lib/notify';
 
 type View =
   | 'dashboard' | 'workorders' | 'payments' | 'payables' | 'contractors'
@@ -134,6 +134,14 @@ export default function HomePage() {
       wo_number:       w.wo_number!,
       contractor_name: w.contractor_name!,
       title:           w.title           ?? null,
+      source_platform: w.source_platform ?? 'Internal',
+      external_wo_id:  w.external_wo_id  ?? null,
+      customer_name:   w.customer_name   ?? null,
+      project_name:    w.project_name    ?? null,
+      client_reference: w.client_reference ?? null,
+      buyer_company:   w.buyer_company   ?? null,
+      assignment_type: w.assignment_type ?? 'Internal',
+      priority:        w.priority        ?? 'Normal',
       description:     w.description     ?? null,
       start_date:      w.start_date      || null,
       end_date:        w.end_date        || null,
@@ -145,14 +153,28 @@ export default function HomePage() {
       per_device_rate: w.per_device_rate ?? null,
       device_count:    w.device_count    ?? null,
       blended_base:    w.blended_base    ?? null,
+      expense_budget:  w.expense_budget  ?? null,
+      travel_amount:   w.travel_amount   ?? null,
+      bonus_amount:    w.bonus_amount    ?? null,
       site_name:       w.site_name       ?? null,
       site_address:    w.site_address    ?? null,
       site_city:       w.site_city       ?? null,
       site_state:      w.site_state      ?? null,
       site_zip:        w.site_zip        ?? null,
+      schedule_type:   w.schedule_type   ?? 'Exact Time',
       start_time:      w.start_time      ?? null,
       end_time:        w.end_time        ?? null,
+      time_zone:       w.time_zone       ?? null,
       deliverables:    w.deliverables    ?? null,
+      deliverable_instructions: w.deliverable_instructions ?? null,
+      tools_required:  w.tools_required  ?? null,
+      parts_materials: w.parts_materials ?? null,
+      access_instructions: w.access_instructions ?? null,
+      parking_instructions: w.parking_instructions ?? null,
+      check_in_required: w.check_in_required ?? true,
+      check_out_required: w.check_out_required ?? true,
+      signature_required: w.signature_required ?? false,
+      photo_required:  w.photo_required  ?? false,
       service_type:    w.service_type    ?? null,
       required_skills: w.required_skills ?? null,
       // POC + custom Q&A (migration-006)
@@ -183,6 +205,29 @@ export default function HomePage() {
       if (c?.email) notifyContractor({ type: 'wo_assigned', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined });
     }
     loadAll();
+  };
+
+  const handleSendPortal = async (w: EnrichedWorkOrder) => {
+    const contractor = contractors.find((c) => c.name === w.contractor_name);
+    if (!contractor?.email || !contractor.portal_token) return;
+    const portalUrl = `${window.location.origin}/portal/${contractor.portal_token}`;
+    const contractorWOs = workOrders
+      .filter((wo) => wo.contractor_name === contractor.name && wo.wo_status !== 'Paid')
+      .map((wo) => ({
+        wo_number: wo.wo_number,
+        title: wo.title,
+        start_date: wo.start_date,
+        start_time: wo.start_time,
+        site_address: wo.site_address,
+        site_city: wo.site_city,
+        site_state: wo.site_state,
+      }));
+    await sendPortalLink({
+      contractor_email: contractor.email,
+      contractor_name: contractor.name,
+      portal_url: portalUrl,
+      work_orders: contractorWOs,
+    });
   };
 
   const deleteWorkOrder = async (id: string) => {
@@ -372,7 +417,7 @@ export default function HomePage() {
           <NI k="w9"          icon={<BookOpen size={15} />}     label="W-9s" />
           <NI k="quickbooks"  icon={<TrendingUp size={15} />}   label="QuickBooks" />
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Settings</div>
-          <NI k="settings"    icon={<Settings size={15} />}     label="Templates" />
+          <NI k="settings"    icon={<Settings size={15} />}     label="Settings" />
         </nav>
 
         {/* Utility buttons */}
@@ -454,6 +499,7 @@ export default function HomePage() {
               setModal({ type: 'wo', item: { ...copy, wo_number: '' } as WorkOrder });
             }}
             onPay={handlePayWO}
+            onSendPortal={handleSendPortal}
           />
         )}
         {view === 'payments' && (
@@ -515,7 +561,7 @@ export default function HomePage() {
           />
         )}
         {view === 'settings' && (
-          <QuestionTemplatesView
+          <SettingsView
             templates={questionTemplates}
             onSave={saveTemplate}
             onDelete={deleteTemplate}
@@ -530,6 +576,7 @@ export default function HomePage() {
           item={modal.item}
           contractors={contractors}
           questionTemplates={questionTemplates}
+          payments={payments}
           onSave={(w) => { saveWorkOrder(w); setModal(null); }}
           onClose={() => setModal(null)}
           onSaveTemplate={async (name, qaItems) => {
@@ -540,6 +587,8 @@ export default function HomePage() {
             });
           }}
           onUploadDoc={uploadWoDocument}
+          onSavePayment={savePayment}
+          onDeletePayment={deletePayment}
         />
       )}
       {modal?.type === 'contractor' && (
@@ -555,6 +604,7 @@ export default function HomePage() {
           prefill={modal.prefill}
           workOrders={workOrders}
           contractors={contractors}
+          payments={payments}
           onSave={(p) => { savePayment(p); setModal(null); }}
           onClose={() => setModal(null)}
         />

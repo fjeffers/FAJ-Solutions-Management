@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
@@ -27,7 +27,7 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 };
 
 export default function WorkOrdersView({
-  workOrders, stats, onAdd, onEdit, onDelete, onDuplicate, onPay, contractors,
+  workOrders, stats, onAdd, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
 }: {
   workOrders: EnrichedWorkOrder[];
   stats: Stats;
@@ -36,6 +36,7 @@ export default function WorkOrdersView({
   onDelete: (id: string) => void;
   onDuplicate: (w: EnrichedWorkOrder) => void;
   onPay: (w: EnrichedWorkOrder) => void;
+  onSendPortal: (w: EnrichedWorkOrder) => Promise<void>;
   contractors: Contractor[];
 }) {
   const [search, setSearch] = useState('');
@@ -129,7 +130,7 @@ export default function WorkOrdersView({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} />)}
+          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} />)}
         </div>
       )}
 
@@ -145,6 +146,8 @@ function WOCard({
   onSend,
   onDuplicate,
   onPay,
+  onSendPortal,
+  contractors,
 }: {
   w: EnrichedWorkOrder;
   onEdit: (w: EnrichedWorkOrder) => void;
@@ -152,11 +155,17 @@ function WOCard({
   onSend: (w: EnrichedWorkOrder) => void;
   onDuplicate: (w: EnrichedWorkOrder) => void;
   onPay: (w: EnrichedWorkOrder) => void;
+  onSendPortal: (w: EnrichedWorkOrder) => Promise<void>;
+  contractors: Contractor[];
 }) {
+  const [portalSending, setPortalSending] = useState(false);
+  const [portalSent,    setPortalSent]    = useState(false);
   const sm = WO_STATUS_META[w.wo_status] ?? WO_STATUS_META['Open'];
   const pm = PAY_META[w.payment_status] ?? PAY_META['pending'];
   const siteLabel = [w.site_city, w.site_state].filter(Boolean).join(', ');
   const hasSchedule = w.start_date || w.start_time;
+  const contractor  = contractors.find((c) => c.name === w.contractor_name);
+  const canSendPortal = !!(contractor?.email && contractor?.portal_token);
 
   return (
     <div
@@ -210,6 +219,40 @@ function WOCard({
             >
               <Send size={11} /> Send WO
             </button>
+            {canSendPortal && (
+              <button
+                title="Send contractor their portal link"
+                disabled={portalSending || portalSent}
+                onClick={async () => {
+                  setPortalSending(true);
+                  await onSendPortal(w);
+                  setPortalSending(false);
+                  setPortalSent(true);
+                  setTimeout(() => setPortalSent(false), 4000);
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', borderRadius: 8,
+                  border: portalSent
+                    ? '1.5px solid rgba(4,120,87,0.35)'
+                    : '1.5px solid rgba(99,102,241,0.35)',
+                  background: portalSent
+                    ? 'rgba(4,120,87,0.07)'
+                    : 'rgba(99,102,241,0.07)',
+                  cursor: portalSending ? 'wait' : 'pointer',
+                  fontSize: 11, fontWeight: 700,
+                  color: portalSent ? '#047857' : '#4338ca',
+                  fontFamily: 'Lato, sans-serif',
+                  opacity: portalSending ? 0.6 : 1,
+                }}
+              >
+                {portalSent ? (
+                  <><CalendarDays size={11} /> Sent!</>
+                ) : (
+                  <><CalendarDays size={11} /> {portalSending ? '…' : 'Portal'}</>
+                )}
+              </button>
+            )}
             {w.remaining > 0 && (
               <button
                 title="Record Payment"

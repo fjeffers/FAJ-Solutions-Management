@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const body = await req.json();
-  const { type, contractor_email, contractor_name, wo_number, title, status, amount } = body;
+  const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders } = body;
 
   if (!contractor_email) {
     return NextResponse.json({ error: 'No contractor email' }, { status: 400 });
@@ -51,6 +52,16 @@ export async function POST(req: NextRequest) {
         <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
       </div>
     `;
+  } else if (type === 'portal_link') {
+    const woCount = Array.isArray(work_orders) ? work_orders.length : 0;
+    subject = `Your Work Orders from FAJ Solutions`;
+    html = portalInviteEmail(
+      contractor_name,
+      portal_url ?? '',
+      (work_orders ?? []) as PortalWOSummary[],
+    );
+    // Update subject to mention WO count if available
+    if (woCount > 0) subject = `You have ${woCount} work order${woCount !== 1 ? 's' : ''} from FAJ Solutions`;
   } else {
     return NextResponse.json({ error: 'Unknown notification type' }, { status: 400 });
   }

@@ -247,11 +247,13 @@ export default function QuestionTemplatesView({
   onSave,
   onDelete,
   onUploadAttachment,
+  embedded,
 }: {
   templates: QuestionTemplate[];
   onSave: (id: string | null, data: { name: string; questions: QuestionField[]; attachment_url: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onUploadAttachment: (file: File) => Promise<string | null>;
+  embedded?: boolean;
 }) {
   const [editing, setEditing] = useState<Partial<QuestionTemplate> | null | false>(false);
 
@@ -263,7 +265,8 @@ export default function QuestionTemplatesView({
 
   return (
     <div>
-      {/* Page header */}
+      {/* Page header — hidden when embedded inside SettingsView */}
+      {!embedded && (
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
@@ -277,6 +280,16 @@ export default function QuestionTemplatesView({
           </button>
         </div>
       </div>
+      )}
+
+      {/* When embedded, show a compact "New Template" button row */}
+      {embedded && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '16px 28px 0' }}>
+          <button className="btn btn-primary" onClick={() => setEditing({})}>
+            <Plus size={14} /> New Template
+          </button>
+        </div>
+      )}
 
       {/* Template cards */}
       {templates.length === 0 ? (
@@ -332,10 +345,9 @@ export default function QuestionTemplatesView({
         </div>
       )}
 
-      {/* Modal */}
       {editing !== false && (
         <TemplateModal
-          template={editing}
+          template={editing ?? null}
           onSave={handleSave}
           onClose={() => setEditing(false)}
           onUploadAttachment={onUploadAttachment}

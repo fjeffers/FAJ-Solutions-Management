@@ -35,6 +35,9 @@ export type Contractor = {
   w9_received: boolean;
   zelle_phone: string | null;
 
+  // Contractor portal (migration-011)
+  portal_token: string | null;
+
   // Direct Deposit / ACH (migration-009)
   bank_name: string | null;
   account_holder_name: string | null;
@@ -132,6 +135,33 @@ export type WorkOrder = {
 
   // Admin documents & photos (migration-008)
   doc_urls: string[] | null;
+
+  // Contractor portal (migration-011)
+  acknowledged_at: string | null;
+
+  // Extended WO fields (migration-010)
+  source_platform: string | null;
+  external_wo_id: string | null;
+  customer_name: string | null;
+  project_name: string | null;
+  client_reference: string | null;
+  buyer_company: string | null;
+  assignment_type: string | null;
+  priority: string | null;
+  expense_budget: number | null;
+  travel_amount: number | null;
+  bonus_amount: number | null;
+  schedule_type: string | null;
+  time_zone: string | null;
+  deliverable_instructions: string | null;
+  tools_required: string | null;
+  parts_materials: string | null;
+  access_instructions: string | null;
+  parking_instructions: string | null;
+  check_in_required: boolean;
+  check_out_required: boolean;
+  signature_required: boolean;
+  photo_required: boolean;
 
   created_at: string;
   updated_at: string;
@@ -233,4 +263,23 @@ export type PaymentMethod =
 export const PAYMENT_METHODS: PaymentMethod[] = [
   'Cash', 'Check', 'Zelle', 'Venmo', 'CashApp',
   'PayPal', 'Direct Deposit', 'Bank Transfer', 'Credit Card', 'Other',
+];
+
+
+// â”€â”€â”€ WorkOrderModal dropdown constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export const WORK_ORDER_SOURCES: string[] = [
+  'Internal', 'FieldNation', 'WorkMarket', 'Thumbtack', 'CrowdSource', 'Direct', 'Other',
+];
+
+export const ASSIGNMENT_TYPES: string[] = [
+  'Internal', 'Subcontract', 'Employee', 'Independent Contractor', 'Direct', 'Other',
+];
+
+export const WORK_ORDER_PRIORITIES: string[] = [
+  'Low', 'Normal', 'High', 'Critical', 'Emergency',
+];
+
+export const SCHEDULE_TYPES: string[] = [
+  'Exact Time', 'Time Window', 'Day', 'Flexible', 'On Demand',
 ];

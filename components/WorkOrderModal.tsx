@@ -3,23 +3,35 @@ import { useState, useRef } from 'react';
 import {
   X, Hash, User, FileText, Calendar, DollarSign,
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
-  Phone, Mail, HelpCircle, Plus, Trash2, Paperclip,
-  Upload, Camera, FolderOpen,
+  Phone, Mail, HelpCircle, Plus, Paperclip,
+  Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
+  CreditCard, Trash2, CheckCircle2,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, PayType, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType } from '@/lib/types';
-import { PAY_TYPES, WO_STATUSES, SERVICE_TYPES } from '@/lib/types';
-import { fmtMoney } from '@/lib/utils';
+import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment } from '@/lib/types';
+import {
+  ASSIGNMENT_TYPES,
+  PAY_TYPES,
+  PAYMENT_METHODS,
+  SCHEDULE_TYPES,
+  SERVICE_TYPES,
+  WO_STATUSES,
+  WORK_ORDER_PRIORITIES,
+  WORK_ORDER_SOURCES,
+} from '@/lib/types';
+import { fmtMoney, fmtDate } from '@/lib/utils';
 
-type Tab = 'details' | 'pay' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents';
+type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents';
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-  { key: 'details',   label: 'Details',   icon: <Hash size={13} /> },
-  { key: 'pay',       label: 'Pay',       icon: <DollarSign size={13} /> },
-  { key: 'site',      label: 'Site',      icon: <MapPin size={13} /> },
-  { key: 'schedule',  label: 'Schedule',  icon: <Clock size={13} /> },
-  { key: 'scope',     label: 'Scope',     icon: <ClipboardList size={13} /> },
-  { key: 'contacts',  label: 'Contacts',  icon: <Phone size={13} /> },
-  { key: 'questions', label: 'Questions', icon: <HelpCircle size={13} /> },
-  { key: 'documents', label: 'Documents', icon: <FolderOpen size={13} /> },
+  { key: 'details',    label: 'Details',    icon: <Hash size={13} /> },
+  { key: 'marketplace', label: 'Marketplace', icon: <Briefcase size={13} /> },
+  { key: 'pay',        label: 'Pay',        icon: <DollarSign size={13} /> },
+  { key: 'payments',   label: 'Payments',   icon: <CreditCard size={13} /> },
+  { key: 'site',       label: 'Site',       icon: <MapPin size={13} /> },
+  { key: 'schedule',   label: 'Schedule',   icon: <Clock size={13} /> },
+  { key: 'scope',      label: 'Scope',      icon: <ClipboardList size={13} /> },
+  { key: 'contacts',   label: 'Contacts',   icon: <Phone size={13} /> },
+  { key: 'questions',  label: 'Questions',  icon: <HelpCircle size={13} /> },
+  { key: 'documents',  label: 'Documents',  icon: <FolderOpen size={13} /> },
 ];
 
 function newQAItem(label = '', type: QuestionFieldType = 'text'): CustomQAItem {
@@ -30,6 +42,70 @@ function newQAItem(label = '', type: QuestionFieldType = 'text'): CustomQAItem {
     answer: null,
   };
 }
+
+const BUILT_IN_QA_PACKETS: {
+  id: string;
+  name: string;
+  detail: string;
+  questions: { label: string; type: QuestionFieldType }[];
+  requirements: Partial<Pick<WorkOrder, 'signature_required' | 'photo_required' | 'check_in_required' | 'check_out_required'>>;
+}[] = [
+  {
+    id: 'completion-report',
+    name: 'Completion Report',
+    detail: 'Completion notes, materials, delays, charges, photos, and customer signoff.',
+    requirements: {
+      signature_required: true,
+      photo_required: true,
+      check_in_required: true,
+      check_out_required: true,
+    },
+    questions: [
+      { label: 'Scope of work completed', type: 'textarea' },
+      { label: 'Inventory or inspection notes, including missing or damaged equipment', type: 'textarea' },
+      { label: 'Detailed work completed', type: 'textarea' },
+      { label: 'Materials used', type: 'textarea' },
+      { label: 'Additional charges', type: 'textarea' },
+      { label: 'Total time onsite', type: 'text' },
+      { label: 'Customer contact name', type: 'text' },
+      { label: 'Site or store number', type: 'text' },
+      { label: 'PO or SO number', type: 'text' },
+      { label: 'Printer test page attached if applicable', type: 'yes_no' },
+      { label: 'Port maps, certifications, or reports attached if applicable', type: 'yes_no' },
+      { label: 'Installed hardware photos uploaded', type: 'yes_no' },
+      { label: 'Completion call details', type: 'textarea' },
+      { label: 'Delays or blockers', type: 'textarea' },
+      { label: 'Incidental charges and receipt details', type: 'textarea' },
+      { label: 'Relevant job notes or onsite interactions', type: 'textarea' },
+      { label: 'Installation feedback', type: 'textarea' },
+      { label: 'Completion photo', type: 'photo' },
+    ],
+  },
+  {
+    id: 'pac-pssa-timesheet',
+    name: 'PAC PSSA Timesheet',
+    detail: 'Hyatt House teardown counts, technician, arrival, and onsite confirmation.',
+    requirements: {
+      signature_required: true,
+      check_in_required: true,
+      check_out_required: true,
+    },
+    questions: [
+      { label: 'Technician name', type: 'text' },
+      { label: 'Dispatch date', type: 'text' },
+      { label: 'Arrival time', type: 'text' },
+      { label: 'Site point of contact', type: 'text' },
+      { label: 'Actual count - laptops', type: 'number' },
+      { label: 'Actual count - laptop power adapters', type: 'number' },
+      { label: 'Actual count - Cradlepoint router', type: 'number' },
+      { label: 'Actual count - mice', type: 'number' },
+      { label: 'Any missing or damaged items', type: 'textarea' },
+      { label: 'Teardown complete', type: 'yes_no' },
+      { label: 'Site left clean and secured', type: 'yes_no' },
+      { label: 'Final site photo', type: 'photo' },
+    ],
+  },
+];
 
 const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
   'Open':        { bg: 'rgba(13,115,119,0.1)',   color: 'var(--teal)' },
@@ -53,13 +129,16 @@ type Props = {
   item: WorkOrder | null;
   contractors: Contractor[];
   questionTemplates: QuestionTemplate[];
+  payments?: Payment[];
   onSave: (w: Partial<WorkOrder>) => void;
   onClose: () => void;
   onSaveTemplate?: (name: string, questions: CustomQAItem[]) => Promise<void>;
   onUploadDoc?: (file: File) => Promise<string | null>;
+  onSavePayment?: (p: Partial<Payment>) => Promise<void>;
+  onDeletePayment?: (id: string) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, contractors, questionTemplates, onSave, onClose, onSaveTemplate, onUploadDoc }: Props) {
+export default function WorkOrderModal({ item, contractors, questionTemplates, payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
@@ -69,6 +148,14 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
     wo_number:       item?.wo_number       ?? '',
     title:           item?.title           ?? '',
     contractor_name: item?.contractor_name ?? '',
+    source_platform: item?.source_platform ?? 'Internal',
+    external_wo_id:  item?.external_wo_id  ?? '',
+    customer_name:   item?.customer_name   ?? '',
+    project_name:    item?.project_name    ?? '',
+    client_reference: item?.client_reference ?? '',
+    buyer_company:   item?.buyer_company   ?? '',
+    assignment_type: item?.assignment_type ?? 'Internal',
+    priority:        item?.priority        ?? 'Normal',
     wo_status:       item?.wo_status       ?? 'Open',
     pay_type:        item?.pay_type        ?? 'Fixed',
     total_amount:    item?.total_amount    ?? 0,
@@ -77,17 +164,31 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
     per_device_rate: item?.per_device_rate ?? null,
     device_count:    item?.device_count    ?? null,
     blended_base:    item?.blended_base    ?? null,
+    expense_budget:  item?.expense_budget  ?? null,
+    travel_amount:   item?.travel_amount   ?? null,
+    bonus_amount:    item?.bonus_amount    ?? null,
     site_name:       item?.site_name       ?? '',
     site_address:    item?.site_address    ?? '',
     site_city:       item?.site_city       ?? '',
     site_state:      item?.site_state      ?? '',
     site_zip:        item?.site_zip        ?? '',
+    schedule_type:   item?.schedule_type   ?? 'Exact Time',
     start_date:      item?.start_date      ?? '',
     start_time:      item?.start_time      ?? '',
     end_date:        item?.end_date        ?? '',
     end_time:        item?.end_time        ?? '',
+    time_zone:       item?.time_zone       ?? '',
     description:     item?.description     ?? '',
     deliverables:    item?.deliverables    ?? '',
+    deliverable_instructions: item?.deliverable_instructions ?? '',
+    tools_required:  item?.tools_required  ?? '',
+    parts_materials: item?.parts_materials ?? '',
+    access_instructions: item?.access_instructions ?? '',
+    parking_instructions: item?.parking_instructions ?? '',
+    check_in_required: item?.check_in_required ?? true,
+    check_out_required: item?.check_out_required ?? true,
+    signature_required: item?.signature_required ?? false,
+    photo_required:  item?.photo_required  ?? false,
     service_type:    item?.service_type    ?? '',
     required_skills: item?.required_skills ?? '',
     poc_name:        item?.poc_name        ?? '',
@@ -99,7 +200,20 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
   const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? []);
   const [docUrls, setDocUrls] = useState<string[]>(() => item?.doc_urls ?? []);
 
-  const set = (k: keyof WorkOrder, v: string | number | null) =>
+  // ── Payments tab state ────────────────────────────────────────────────────
+  const [showPayForm, setShowPayForm] = useState(false);
+  const [payLoading, setPayLoading] = useState(false);
+  const defaultNewPay = (): Partial<Payment> => ({
+    wo_number: item?.wo_number ?? '',
+    contractor_name: item?.contractor_name ?? '',
+    payment_date: new Date().toISOString().split('T')[0],
+    amount: 0,
+    method: 'Check',
+    notes: '',
+  });
+  const [newPay, setNewPay] = useState<Partial<Payment>>(defaultNewPay);
+
+  const set = (k: keyof WorkOrder, v: string | number | boolean | null) =>
     setForm((f) => ({ ...f, [k]: v }));
 
   const applyTemplate = (templateId: string) => {
@@ -113,6 +227,16 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
     })));
     // Copy the template's vendor attachment to the work order
     if (tpl.attachment_url) set('attachment_url', tpl.attachment_url);
+  };
+
+  const applyBuiltInPacket = (packetId: string) => {
+    const packet = BUILT_IN_QA_PACKETS.find((p) => p.id === packetId);
+    if (!packet) return;
+    setCustomQA(packet.questions.map((q) => newQAItem(q.label, q.type)));
+    setForm((current) => ({
+      ...current,
+      ...packet.requirements,
+    }));
   };
 
   const addCustomQuestion = () =>
@@ -130,11 +254,33 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
   const computed = calcTotal(form);
   const canSave = !!(form.wo_number?.trim() && form.contractor_name?.trim());
 
+  // Derived payment totals for this WO (must come after `computed`)
+  const woPayments = payments.filter(
+    (p) => p.wo_number === item?.wo_number && p.contractor_name === item?.contractor_name
+  );
+  const totalPaid   = woPayments.reduce((s, p) => s + Number(p.amount), 0);
+  const woTotal     = computed > 0 ? computed : Number(form.total_amount) || 0;
+  const woRemaining = Math.max(0, woTotal - totalPaid);
+
   const handleSave = () => {
     if (!canSave) return;
     const payload: Partial<WorkOrder> = {
       ...form,
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
+      external_wo_id:  form.external_wo_id  || null,
+      customer_name:   form.customer_name   || null,
+      project_name:    form.project_name    || null,
+      client_reference: form.client_reference || null,
+      buyer_company:   form.buyer_company   || null,
+      expense_budget:  form.expense_budget  ?? null,
+      travel_amount:   form.travel_amount   ?? null,
+      bonus_amount:    form.bonus_amount    ?? null,
+      time_zone:       form.time_zone       || null,
+      deliverable_instructions: form.deliverable_instructions || null,
+      tools_required:  form.tools_required  || null,
+      parts_materials: form.parts_materials || null,
+      access_instructions: form.access_instructions || null,
+      parking_instructions: form.parking_instructions || null,
       poc_name:        form.poc_name        || null,
       poc_phone:       form.poc_phone       || null,
       poc_email:       form.poc_email       || null,
@@ -231,6 +377,69 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
                   <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                 </div>
               </PF>
+            </div>
+          </div>
+        )}
+
+        {/* ── MARKETPLACE TAB ── */}
+        {tab === 'marketplace' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Source" icon={<Briefcase size={13} />}>
+                <div style={{ position: 'relative' }}>
+                  <select className="select input" value={form.source_platform ?? 'Internal'} onChange={(e) => set('source_platform', e.target.value)}>
+                    {WORK_ORDER_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                </div>
+              </PF>
+              <PF label="External WO / Assignment ID" icon={<Hash size={13} />}>
+                <input className="input" value={form.external_wo_id ?? ''} onChange={(e) => set('external_wo_id', e.target.value)} placeholder="e.g. FN-123456, WM-98765" />
+              </PF>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Customer / Client">
+                <input className="input" value={form.customer_name ?? ''} onChange={(e) => set('customer_name', e.target.value)} placeholder="End customer or client" />
+              </PF>
+              <PF label="Buyer / MSP">
+                <input className="input" value={form.buyer_company ?? ''} onChange={(e) => set('buyer_company', e.target.value)} placeholder="Buyer, MSP, or dispatch company" />
+              </PF>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Project / Campaign">
+                <input className="input" value={form.project_name ?? ''} onChange={(e) => set('project_name', e.target.value)} placeholder="Rollout, refresh, service call..." />
+              </PF>
+              <PF label="Client Reference">
+                <input className="input" value={form.client_reference ?? ''} onChange={(e) => set('client_reference', e.target.value)} placeholder="Ticket, PO, store, or billing code" />
+              </PF>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Assignment Type">
+                <div style={{ position: 'relative' }}>
+                  <select className="select input" value={form.assignment_type ?? 'Internal'} onChange={(e) => set('assignment_type', e.target.value)}>
+                    {ASSIGNMENT_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                </div>
+              </PF>
+              <PF label="Priority" icon={<ShieldCheck size={13} />}>
+                <div style={{ position: 'relative' }}>
+                  <select className="select input" value={form.priority ?? 'Normal'} onChange={(e) => set('priority', e.target.value)}>
+                    {WORK_ORDER_PRIORITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                </div>
+              </PF>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+              <RequirementToggle label="Check-in required" checked={!!form.check_in_required} onChange={(v) => set('check_in_required', v)} />
+              <RequirementToggle label="Check-out required" checked={!!form.check_out_required} onChange={(v) => set('check_out_required', v)} />
+              <RequirementToggle label="Signature required" checked={!!form.signature_required} onChange={(v) => set('signature_required', v)} />
+              <RequirementToggle label="Photos required" checked={!!form.photo_required} onChange={(v) => set('photo_required', v)} />
             </div>
           </div>
         )}
@@ -345,6 +554,18 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
                 <TotalPreview label="Total (Base + Overtime)" value={computed} />
               </div>
             )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <PF label="Expense Budget">
+                <MoneyInput value={form.expense_budget} onChange={(v) => set('expense_budget', v)} />
+              </PF>
+              <PF label="Travel Amount">
+                <MoneyInput value={form.travel_amount} onChange={(v) => set('travel_amount', v)} />
+              </PF>
+              <PF label="Bonus Amount">
+                <MoneyInput value={form.bonus_amount} onChange={(v) => set('bonus_amount', v)} />
+              </PF>
+            </div>
           </div>
         )}
 
@@ -385,6 +606,19 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
             <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
               Set the date and time window for when the work should be performed.
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Schedule Type">
+                <div style={{ position: 'relative' }}>
+                  <select className="select input" value={form.schedule_type ?? 'Exact Time'} onChange={(e) => set('schedule_type', e.target.value)}>
+                    {SCHEDULE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                </div>
+              </PF>
+              <PF label="Time Zone">
+                <input className="input" value={form.time_zone ?? ''} onChange={(e) => set('time_zone', e.target.value)} placeholder="e.g. America/New_York" />
+              </PF>
+            </div>
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>Start</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 16 }}>
@@ -419,6 +653,25 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
             <PF label="Deliverables" icon={<ClipboardList size={13} />}>
               <textarea className="input" rows={5} value={form.deliverables ?? ''} onChange={(e) => set('deliverables', e.target.value)} placeholder={"One item per line:\nInstall 24-port patch panel\nLabel all cables\nTest all drops"} />
             </PF>
+            <PF label="Closeout / Deliverable Instructions">
+              <textarea className="input" rows={3} value={form.deliverable_instructions ?? ''} onChange={(e) => set('deliverable_instructions', e.target.value)} placeholder="Photos, serials, test results, notes, signoff requirements..." />
+            </PF>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Tools Required">
+                <textarea className="input" rows={3} value={form.tools_required ?? ''} onChange={(e) => set('tools_required', e.target.value)} placeholder="Ladder, toner, laptop, PPE..." />
+              </PF>
+              <PF label="Parts / Materials">
+                <textarea className="input" rows={3} value={form.parts_materials ?? ''} onChange={(e) => set('parts_materials', e.target.value)} placeholder="Parts provided, bring materials, pickup notes..." />
+              </PF>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Access Instructions">
+                <textarea className="input" rows={3} value={form.access_instructions ?? ''} onChange={(e) => set('access_instructions', e.target.value)} placeholder="Badge, lockbox, store manager, check-in desk..." />
+              </PF>
+              <PF label="Parking / Site Notes">
+                <textarea className="input" rows={3} value={form.parking_instructions ?? ''} onChange={(e) => set('parking_instructions', e.target.value)} placeholder="Loading dock, paid parking, rear entrance..." />
+              </PF>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <PF label="Service Type" icon={<Wrench size={13} />}>
                 <div style={{ position: 'relative' }}>
@@ -462,6 +715,38 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
         {/* ── QUESTIONS TAB ── */}
         {tab === 'questions' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Built-in packets */}
+            <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+                Built-in Paperwork
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                {BUILT_IN_QA_PACKETS.map((packet) => (
+                  <button
+                    key={packet.id}
+                    onClick={() => applyBuiltInPacket(packet.id)}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      border: '1.5px solid rgba(13,115,119,0.22)',
+                      background: 'white',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 5,
+                    }}
+                  >
+                    <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <FileText size={14} /> {packet.name}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#667085', lineHeight: 1.45 }}>{packet.detail}</span>
+                    <span style={{ fontSize: 10, color: '#98a2b3', fontWeight: 700 }}>{packet.questions.length} questions</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Template picker */}
             {questionTemplates.length > 0 && (
               <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10 }}>
@@ -542,6 +827,147 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, o
             {/* Save as Template row */}
             {customQA.filter((q) => q.label.trim()).length > 0 && onSaveTemplate && (
               <SaveAsTemplateRow questions={customQA} onSaveTemplate={onSaveTemplate} />
+            )}
+          </div>
+        )}
+
+        {/* ── PAYMENTS TAB ── */}
+        {tab === 'payments' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* Summary tiles */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <SummaryTile label="Total" value={fmtMoney(woTotal)} color="#1a1a1a" />
+              <SummaryTile label="Paid" value={fmtMoney(totalPaid)} color="#047857" />
+              <SummaryTile label="Remaining" value={fmtMoney(woRemaining)} color={woRemaining > 0 ? '#b91c1c' : '#047857'} />
+            </div>
+
+            {/* Payment history */}
+            {woPayments.length === 0 && !showPayForm && (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: '#aaa', fontSize: 13 }}>
+                No payments recorded for this work order yet.
+              </div>
+            )}
+
+            {woPayments.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {woPayments.map((p) => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: '#fafafa', border: '1.5px solid #e5e7eb', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                      <CheckCircle2 size={16} color="#047857" />
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: '#047857' }}>{fmtMoney(Number(p.amount))}</div>
+                        <div style={{ fontSize: 11, color: '#888' }}>
+                          {fmtDate(p.payment_date)} · {p.method}
+                          {p.notes && <span> · {p.notes}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    {onDeletePayment && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm('Delete this payment?')) return;
+                          await onDeletePayment(p.id);
+                        }}
+                        style={{ padding: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc', flexShrink: 0 }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Inline log-payment form */}
+            {showPayForm ? (
+              <div style={{ padding: '16px 18px', borderRadius: 12, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 14 }}>
+                  Log Payment
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <PF label="Date *" icon={<Calendar size={13} />}>
+                    <input
+                      className="input"
+                      type="date"
+                      value={newPay.payment_date ?? ''}
+                      onChange={(e) => setNewPay((p) => ({ ...p, payment_date: e.target.value }))}
+                    />
+                  </PF>
+                  <PF label="Amount *" icon={<DollarSign size={13} />}>
+                    <input
+                      className="input"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={newPay.amount || ''}
+                      placeholder={woRemaining > 0 ? String(woRemaining) : '0.00'}
+                      onChange={(e) => setNewPay((p) => ({ ...p, amount: Number(e.target.value) }))}
+                    />
+                  </PF>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <PF label="Method" icon={<CreditCard size={13} />}>
+                    <div style={{ position: 'relative' }}>
+                      <select
+                        className="select input"
+                        value={newPay.method ?? 'Check'}
+                        onChange={(e) => setNewPay((p) => ({ ...p, method: e.target.value }))}
+                      >
+                        {PAYMENT_METHODS.map((m) => <option key={m}>{m}</option>)}
+                      </select>
+                      <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                    </div>
+                  </PF>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <PF label="Notes">
+                    <input
+                      className="input"
+                      value={newPay.notes ?? ''}
+                      onChange={(e) => setNewPay((p) => ({ ...p, notes: e.target.value }))}
+                      placeholder="Optional note..."
+                    />
+                  </PF>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-ghost" onClick={() => { setShowPayForm(false); setNewPay(defaultNewPay()); }} style={{ flex: 1, justifyContent: 'center' }}>
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    disabled={payLoading || !newPay.amount || Number(newPay.amount) <= 0 || !newPay.payment_date}
+                    style={{ flex: 2, justifyContent: 'center', opacity: (!newPay.amount || Number(newPay.amount) <= 0 || !newPay.payment_date) ? 0.5 : 1 }}
+                    onClick={async () => {
+                      if (!onSavePayment || !newPay.amount || Number(newPay.amount) <= 0 || !newPay.payment_date) return;
+                      setPayLoading(true);
+                      await onSavePayment({
+                        ...newPay,
+                        wo_number: item?.wo_number ?? '',
+                        contractor_name: item?.contractor_name ?? '',
+                      });
+                      setPayLoading(false);
+                      setShowPayForm(false);
+                      setNewPay(defaultNewPay());
+                    }}
+                  >
+                    {payLoading ? 'Saving…' : 'Record Payment'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              onSavePayment && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setNewPay((p) => ({ ...p, amount: woRemaining > 0 ? woRemaining : 0 }));
+                    setShowPayForm(true);
+                  }}
+                  style={{ alignSelf: 'flex-start' }}
+                >
+                  <Plus size={14} /> Log Payment
+                </button>
+              )
             )}
           </div>
         )}
@@ -805,6 +1231,42 @@ function TotalPreview({ label, value }: { label: string; value: number }) {
     <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', border: '1.5px solid rgba(13,115,119,0.15)', textAlign: 'right' }}>
       <div style={{ fontSize: 11, color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--teal)' }}>{fmtMoney(value)}</div>
+    </div>
+  );
+}
+
+function MoneyInput({ value, onChange }: { value: number | null | undefined; onChange: (value: number | null) => void }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa', fontSize: 14 }}>$</span>
+      <input
+        className="input"
+        type="number"
+        step="0.01"
+        min="0"
+        style={{ paddingLeft: 24 }}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+        placeholder="0.00"
+      />
+    </div>
+  );
+}
+
+function RequirementToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: checked ? 'rgba(13,115,119,0.07)' : '#fafafa', border: `1.5px solid ${checked ? 'rgba(13,115,119,0.22)' : '#e5e7eb'}`, cursor: 'pointer' }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span style={{ fontSize: 12, color: checked ? 'var(--teal)' : '#555', fontWeight: 700 }}>{label}</span>
+    </label>
+  );
+}
+
+function SummaryTile({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ padding: '14px 16px', borderRadius: 10, background: '#fafafa', border: '1.5px solid #e5e7eb', textAlign: 'center' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: 'Lato, sans-serif' }}>{value}</div>
     </div>
   );
 }

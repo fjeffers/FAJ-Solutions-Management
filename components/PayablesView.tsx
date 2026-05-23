@@ -2,15 +2,12 @@
 import { useMemo } from 'react';
 import { DollarSign, Landmark, Smartphone, Plus } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
-import type { EnrichedWorkOrder, Contractor, WorkOrderStatus } from '@/lib/types';
+import type { EnrichedWorkOrder, Contractor } from '@/lib/types';
 
-const WO_STATUS_META: Record<WorkOrderStatus, { bg: string; color: string }> = {
-  'Open':        { bg: 'rgba(13,115,119,0.09)',  color: '#0D7377' },
-  'Assigned':    { bg: 'rgba(245,158,11,0.12)',  color: '#b45309' },
-  'In Progress': { bg: 'rgba(249,115,22,0.12)',  color: '#c2410c' },
-  'Work Done':   { bg: 'rgba(99,102,241,0.12)',  color: '#4338ca' },
-  'Approved':    { bg: 'rgba(16,185,129,0.12)',  color: '#047857' },
-  'Paid':        { bg: 'rgba(5,150,105,0.15)',   color: '#065f46' },
+const PAYMENT_STATUS_META: Record<string, { bg: string; color: string; label: string }> = {
+  pending: { bg: 'rgba(245,158,11,0.12)', color: '#b45309', label: 'Unpaid'  },
+  partial: { bg: 'rgba(99,102,241,0.12)', color: '#4338ca', label: 'Partial' },
+  paid:    { bg: 'rgba(5,150,105,0.15)',  color: '#065f46', label: 'Paid'    },
 };
 
 export default function PayablesView({
@@ -51,7 +48,7 @@ export default function PayablesView({
           <div>
             <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Payables</h1>
             <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>
-              {groups.length} contractor{groups.length !== 1 ? 's' : ''} ·{" "}
+              {groups.length} contractor{groups.length !== 1 ? 's' : ''} Â·{" "}
               <span style={{ color: '#b91c1c', fontWeight: 600 }}>{fmtMoney(grandTotal)} total outstanding</span>
             </p>
           </div>
@@ -70,7 +67,7 @@ export default function PayablesView({
 
       {groups.length === 0 ? (
         <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>
-          All contractors are paid up — no outstanding balances.
+          All contractors are paid up â no outstanding balances.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -105,9 +102,9 @@ function ContractorGroup({
             <div style={{ fontSize: 12, color: '#555', marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
               <Landmark size={11} color="var(--teal)" />
               <span style={{ fontWeight: 600, color: 'var(--teal)' }}>Direct Deposit</span>
-              {contractor?.bank_name && <span>· {contractor.bank_name}</span>}
-              <span>· {contractor?.account_type ?? 'checking'} ·�··· {contractor?.account_number?.slice(-4)}</span>
-              <span>» RTN {contractor?.routing_number}</span>
+              {contractor?.bank_name && <span>Â· {contractor.bank_name}</span>}
+              <span>Â· {contractor?.account_type ?? 'checking'} Â··Â·Â·Â· {contractor?.account_number?.slice(-4)}</span>
+              <span>Â» RTN {contractor?.routing_number}</span>
             </div>
           )}
           {!hasBanking && hasZelle && (
@@ -140,18 +137,18 @@ function ContractorGroup({
         </thead>
         <tbody>
           {wos.map((w) => {
-            const sm = WO_STATUS_META[w.wo_status] ?? WO_STATUS_META['Open'];
+            const pm = PAYMENT_STATUS_META[w.payment_status] ?? PAYMENT_STATUS_META['pending'];
             return (
               <tr key={w.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
                 <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--teal)', whiteSpace: 'nowrap' }}>
                   #{w.wo_number}
                 </td>
                 <td style={{ padding: '12px 16px', color: '#555' }}>
-                  {w.title || <span style={{ color: '#ccc' }}>—</span>}
+                  {w.title || <span style={{ color: '#ccc' }}>â</span>}
                 </td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sm.bg, color: sm.color, whiteSpace: 'nowrap' }}>
-                    {w.wo_status}
+                  <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: pm.bg, color: pm.color, whiteSpace: 'nowrap' }}>
+                    {pm.label}
                   </span>
                 </td>
                 <td style={{ padding: '12px 16px', textAlign: 'right', color: '#555' }}>
@@ -199,8 +196,13 @@ function ContractorGroup({
 
 function TH(align: 'left' | 'right'): React.CSSProperties {
   return {
-    padding: '8px 16px', textAlign: align,
-    fontSize: 10, fontWeight: 700, letterSpacing: 1,
-    color: '#888', textTransform: 'uppercase', whiteSpace: 'nowrap',
+    padding: '10px 16px',
+    textAlign: align,
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 1,
+    color: '#888',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
   };
 }

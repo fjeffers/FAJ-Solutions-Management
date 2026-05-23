@@ -237,6 +237,20 @@ export default function HomePage() {
     loadAll();
   };
 
+  const handleArchive = async (id: string) => {
+    const wo = workOrders.find((x) => x.id === id);
+    await supabase.from('work_orders').update({ archived_at: new Date().toISOString() }).eq('id', id);
+    logAudit({ action: 'archive', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
+    loadAll();
+  };
+
+  const handleUnarchive = async (id: string) => {
+    const wo = workOrders.find((x) => x.id === id);
+    await supabase.from('work_orders').update({ archived_at: null }).eq('id', id);
+    logAudit({ action: 'unarchive', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
+    loadAll();
+  };
+
   // ── Payments ───────────────────────────────────────────────────────────────
 
   const savePayment = async (p: Partial<Payment>) => {
@@ -493,13 +507,15 @@ export default function HomePage() {
             onEdit={(w) => setModal({ type: 'wo', item: w })}
             onDelete={deleteWorkOrder}
             onDuplicate={(w) => {
-              // Strip identity fields so saveWorkOrder does an INSERT, not UPDATE
+              // Strip identity + computed fields so saveWorkOrder does an INSERT, not UPDATE
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const { id, created_at, updated_at, paid, remaining, payment_status, ...copy } = w;
+              const { id, created_at, updated_at, paid, remaining, payment_status, archived_at, ...copy } = w;
               setModal({ type: 'wo', item: { ...copy, wo_number: '' } as WorkOrder });
             }}
             onPay={handlePayWO}
             onSendPortal={handleSendPortal}
+            onArchive={handleArchive}
+            onUnarchive={handleUnarchive}
           />
         )}
         {view === 'payments' && (

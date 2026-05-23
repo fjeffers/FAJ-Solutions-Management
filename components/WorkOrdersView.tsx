@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
@@ -28,6 +28,7 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 
 export default function WorkOrdersView({
   workOrders, stats, onAdd, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
+  onArchive, onUnarchive,
 }: {
   workOrders: EnrichedWorkOrder[];
   stats: Stats;
@@ -38,13 +39,19 @@ export default function WorkOrdersView({
   onPay: (w: EnrichedWorkOrder) => void;
   onSendPortal: (w: EnrichedWorkOrder) => Promise<void>;
   contractors: Contractor[];
+  onArchive: (id: string) => void;
+  onUnarchive: (id: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const [woStatusFilter, setWoStatusFilter] = useState<'all' | WorkOrderStatus>('all');
   const [emailPayload, setEmailPayload] = useState<EmailPayload | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const archivedCount = workOrders.filter((w) => w.archived_at !== null).length;
 
   const sorted = sortByWO(workOrders);
   const filtered = sorted.filter((w) => {
+    if (!showArchived && w.archived_at !== null) return false;
     const q = search.toLowerCase();
     const matchSearch =
       w.wo_number.includes(search) ||
@@ -86,7 +93,25 @@ export default function WorkOrdersView({
               <span style={{ color: '#047857', fontWeight: 600 }}>{fmtMoney(stats.paid)} collected</span>
             </p>
           </div>
-          <button className="btn btn-primary" onClick={onAdd}><Plus size={14} /> New Work Order</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {archivedCount > 0 && (
+              <button
+                onClick={() => setShowArchived(!showArchived)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '9px 16px', borderRadius: 8,
+                  border: '1.5px solid rgba(109,40,217,0.3)',
+                  background: showArchived ? 'rgba(109,40,217,0.1)' : 'rgba(109,40,217,0.05)',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                  color: '#6d28d9', fontFamily: 'Lato, sans-serif',
+                }}
+              >
+                <Archive size={13} />
+                {showArchived ? 'Hide Archived' : `Archived (${archivedCount})`}
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={onAdd}><Plus size={14} /> New Work Order</button>
+          </div>
         </div>
       </div>
 
@@ -130,7 +155,7 @@ export default function WorkOrdersView({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} />)}
+          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} />)}
         </div>
       )}
 
@@ -148,6 +173,8 @@ function WOCard({
   onPay,
   onSendPortal,
   contractors,
+  onArchive,
+  onUnarchive,
 }: {
   w: EnrichedWorkOrder;
   onEdit: (w: EnrichedWorkOrder) => void;
@@ -157,6 +184,8 @@ function WOCard({
   onPay: (w: EnrichedWorkOrder) => void;
   onSendPortal: (w: EnrichedWorkOrder) => Promise<void>;
   contractors: Contractor[];
+  onArchive: (id: string) => void;
+  onUnarchive: (id: string) => void;
 }) {
   const [portalSending, setPortalSending] = useState(false);
   const [portalSent,    setPortalSent]    = useState(false);
@@ -167,17 +196,33 @@ function WOCard({
   const contractor  = contractors.find((c) => c.name === w.contractor_name);
   const canSendPortal = !!(contractor?.email && contractor?.portal_token);
 
+  const isArchived = w.archived_at !== null;
+
   return (
     <div
       style={{
         background: 'white',
         borderRadius: 12,
-        border: '1px solid #e5e7eb',
+        border: isArchived ? '1px solid rgba(109,40,217,0.25)' : '1px solid #e5e7eb',
         overflow: 'hidden',
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
         display: 'flex',
+        flexDirection: 'column',
+        opacity: isArchived ? 0.82 : 1,
       }}
     >
+      {/* Archived banner */}
+      {isArchived && (
+        <div style={{
+          background: 'rgba(109,40,217,0.1)', borderBottom: '1px solid rgba(109,40,217,0.2)',
+          padding: '4px 16px', display: 'flex', alignItems: 'center', gap: 6,
+          fontSize: 10, fontWeight: 800, color: '#6d28d9', letterSpacing: 0.5, textTransform: 'uppercase',
+        }}>
+          <Archive size={10} /> Archived
+        </div>
+      )}
+
+      <div style={{ display: 'flex' }}>
       {/* Status accent bar */}
       <div style={{ width: 4, background: sm.accent, flexShrink: 0 }} />
 
@@ -270,6 +315,25 @@ function WOCard({
             )}
             <button className="icon-btn" onClick={() => onEdit(w)} title="Edit"><Edit2 size={14} /></button>
             <button className="icon-btn" onClick={() => onDuplicate(w)} title="Duplicate"><Copy size={14} /></button>
+            {isArchived ? (
+              <button
+                className="icon-btn"
+                title="Restore from archive"
+                style={{ color: '#6d28d9' }}
+                onClick={() => onUnarchive(w.id)}
+              >
+                <ArchiveRestore size={14} />
+              </button>
+            ) : (
+              <button
+                className="icon-btn"
+                title="Archive"
+                style={{ color: '#6d28d9' }}
+                onClick={() => onArchive(w.id)}
+              >
+                <Archive size={14} />
+              </button>
+            )}
             <button
               className="icon-btn"
               style={{ color: '#b91c1c' }}
@@ -324,6 +388,7 @@ function WOCard({
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

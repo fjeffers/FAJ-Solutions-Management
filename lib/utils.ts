@@ -22,6 +22,10 @@ export function getStatus(wo: WorkOrder, payments: Payment[]): 'paid' | 'partial
 
 export function sortByWO<T extends WorkOrder>(wos: T[]): T[] {
   return [...wos].sort((a, b) => {
+    // Newest first by created_at
+    if (a.created_at && b.created_at) {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
     const na = parseInt(a.wo_number, 10);
     const nb = parseInt(b.wo_number, 10);
     if (!isNaN(na) && !isNaN(nb)) return nb - na;

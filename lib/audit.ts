@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/client';
 
-type AuditAction = 'create' | 'update' | 'delete';
+type AuditAction = 'create' | 'update' | 'delete' | 'archive' | 'unarchive';
 type EntityType = 'work_order' | 'payment' | 'contractor';
 
 export async function logAudit(params: {

@@ -163,6 +163,9 @@ export type WorkOrder = {
   signature_required: boolean;
   photo_required: boolean;
 
+  // Soft-archive (migration-013)
+  archived_at: string | null;
+
   created_at: string;
   updated_at: string;
 };

@@ -8,12 +8,10 @@ interface Props {
   onStatusUpdate: (woId: string, status: string) => Promise<void>;
 }
 
+// Note: 'In Progress' → 'Work Done' is handled by PortalWorkDoneGate (requires requirement validation)
 const NEXT_STATUSES: Record<string, { label: string; next: string; emoji: string; color: string }[]> = {
   Assigned: [
-    { label: 'Start Work',   next: 'In Progress', emoji: '▶',  color: '#B45309' },
-  ],
-  'In Progress': [
-    { label: 'Mark Work Done', next: 'Work Done', emoji: '✓', color: '#047857' },
+    { label: 'Start Work', next: 'In Progress', emoji: '▶', color: '#B45309' },
   ],
 };
 

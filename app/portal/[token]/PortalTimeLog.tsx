@@ -214,8 +214,8 @@ export default function PortalTimeLog({
             </div>
             <div>
               <div style={valueStyle}>{fmtTime(travel.timestamp)}</div>
-              {arrivedAt && (
-                <div style={coordStyle}>Travel: {fmtDuration(travel.timestamp!, arrivedAt)}</div>
+              {arrived.timestamp && (
+                <div style={coordStyle}>Travel: {fmtDuration(travel.timestamp!, arrived.timestamp)}</div>
               )}
             </div>
           </div>

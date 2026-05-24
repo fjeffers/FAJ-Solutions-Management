@@ -207,6 +207,10 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
     return [];
   });
   const [contractorToAdd, setContractorToAdd] = useState<string>('');
+  // Lead tech: who is responsible for deliverables / closeout
+  const [leadContractorName, setLeadContractorName] = useState<string | null>(
+    () => item?.lead_contractor_name ?? null
+  );
 
   // ── Payments tab state ────────────────────────────────────────────────────
   const [showPayForm, setShowPayForm] = useState(false);
@@ -275,7 +279,12 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
     const next = contractorNames.filter((n) => n !== name);
     setContractorNames(next);
     set('contractor_name', next[0] ?? '');
+    // If the lead is removed, reset to first remaining (or null if none)
+    if (leadContractorName === name) setLeadContractorName(next[0] ?? null);
   };
+
+  // Resolved lead: explicit choice, else first contractor
+  const resolvedLead = leadContractorName ?? contractorNames[0] ?? null;
 
   // Derived payment totals for this WO (must come after `computed`)
   const woPayments = payments.filter(
@@ -299,6 +308,10 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
       ...form,
       contractor_name:  finalNames[0] ?? form.contractor_name ?? '',
       contractor_names: finalNames.length > 0 ? finalNames : null,
+      // Only persist lead when 2+ contractors; for single contractor it's implicit
+      lead_contractor_name: finalNames.length >= 2
+        ? (leadContractorName ?? finalNames[0] ?? null)
+        : null,
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
       external_wo_id:  form.external_wo_id  || null,
       customer_name:   form.customer_name   || null,
@@ -385,25 +398,73 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
             <PF label="Contractors *" icon={<User size={13} />}>
               {/* Chip list */}
               {contractorNames.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                  {contractorNames.map((name, idx) => (
-                    <span key={name} style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,
-                      background: idx === 0 ? 'rgba(13,115,119,0.1)' : 'rgba(0,0,0,0.06)',
-                      color: idx === 0 ? 'var(--teal)' : '#555',
-                      border: idx === 0 ? '1px solid rgba(13,115,119,0.25)' : '1px solid rgba(0,0,0,0.1)',
-                    }}>
-                      {idx === 0 && <span style={{ fontSize: 9, opacity: 0.7 }}>PRIMARY</span>}
-                      {name}
-                      <button onClick={() => removeContractor(name)} style={{
-                        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                        display: 'flex', alignItems: 'center', color: 'inherit', opacity: 0.6,
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  {contractorNames.map((name) => {
+                    const isLead = name === resolvedLead;
+                    const isMulti = contractorNames.length >= 2;
+                    return (
+                      <div key={name} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '6px 10px', borderRadius: 10,
+                        background: isLead ? 'rgba(13,115,119,0.08)' : 'rgba(0,0,0,0.04)',
+                        border: isLead ? '1px solid rgba(13,115,119,0.25)' : '1px solid rgba(0,0,0,0.1)',
                       }}>
-                        <X size={11} />
-                      </button>
-                    </span>
-                  ))}
+                        {/* Lead radio — only show when 2+ contractors */}
+                        {isMulti && (
+                          <button
+                            onClick={() => setLeadContractorName(name)}
+                            title={isLead ? 'Lead tech' : 'Set as lead tech'}
+                            style={{
+                              width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+                              border: isLead ? '2px solid var(--teal)' : '2px solid #ccc',
+                              background: isLead ? 'var(--teal)' : 'white',
+                              cursor: 'pointer', padding: 0, display: 'flex',
+                              alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            {isLead && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'white', display: 'block' }} />}
+                          </button>
+                        )}
+
+                        {/* Name */}
+                        <span style={{
+                          flex: 1, fontSize: 13, fontWeight: 700,
+                          color: isLead ? 'var(--teal)' : '#555',
+                        }}>
+                          {name}
+                        </span>
+
+                        {/* Role badge */}
+                        {isMulti ? (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
+                            padding: '2px 7px', borderRadius: 999,
+                            background: isLead ? 'rgba(13,115,119,0.15)' : 'rgba(0,0,0,0.08)',
+                            color: isLead ? 'var(--teal)' : '#888',
+                          }}>
+                            {isLead ? 'LEAD' : 'ASSISTANT'}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 10, color: '#aaa', fontWeight: 600 }}>PRIMARY</span>
+                        )}
+
+                        {/* Remove */}
+                        <button onClick={() => removeContractor(name)} style={{
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          display: 'flex', alignItems: 'center', color: '#aaa', opacity: 0.7,
+                          flexShrink: 0,
+                        }}>
+                          <X size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {/* Helper hint when multi-contractor */}
+                  {contractorNames.length >= 2 && (
+                    <div style={{ fontSize: 11, color: '#9ca3af', paddingLeft: 2 }}>
+                      🔵 Lead tech handles deliverables, photos & closeout. Assistant tech checks in/out only.
+                    </div>
+                  )}
                 </div>
               )}
               {/* Add dropdown */}

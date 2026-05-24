@@ -189,6 +189,8 @@ export default function HomePage() {
       doc_urls:        w.doc_urls        ?? [],
       // Multi-contractor (migration-014)
       contractor_names: w.contractor_names ?? null,
+      // Lead / Assistant tech (migration-017)
+      lead_contractor_name: w.lead_contractor_name ?? null,
     };
     if (w.id) {
       await supabase.from('work_orders').update(payload).eq('id', w.id);

@@ -5,16 +5,19 @@ import AcknowledgeButton from './AcknowledgeButton';
 import PortalStatusButton from './PortalStatusButton';
 import PortalTasks from './PortalTasks';
 import PortalQA from './PortalQA';
-import PortalCloseout from './PortalCloseout';
+import PortalWorkDoneGate from './PortalWorkDoneGate';
 import PortalUpload from './PortalUpload';
 import PortalTimeLog from './PortalTimeLog';
 import type { WorkOrder, Contractor } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// RPC returns WorkOrder rows augmented with a computed is_lead flag
+type PortalWorkOrder = WorkOrder & { is_lead: boolean };
+
 type PortalData = {
   contractor: Contractor;
-  work_orders: WorkOrder[];
+  work_orders: PortalWorkOrder[];
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -75,6 +78,8 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
   if (error || !data) return notFound();
 
   const { contractor, work_orders } = data as PortalData;
+  // Pre-compute isLead per WO for ergonomic use below
+  const woIsLead = (wo: PortalWorkOrder) => wo.is_lead !== false;
 
   async function handleAcknowledge(woId: string) {
     'use server';
@@ -169,7 +174,8 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {pending.map((wo) => (
                 <WOCard key={wo.id} wo={wo} token={token}
-                  onAcknowledge={handleAcknowledge} onStatusUpdate={handleStatusUpdate} isNew />
+                  onAcknowledge={handleAcknowledge} onStatusUpdate={handleStatusUpdate}
+                  isNew isLead={woIsLead(wo)} />
               ))}
             </div>
           </div>
@@ -187,7 +193,8 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {accepted.map((wo) => (
                 <WOCard key={wo.id} wo={wo} token={token}
-                  onAcknowledge={handleAcknowledge} onStatusUpdate={handleStatusUpdate} isNew={false} />
+                  onAcknowledge={handleAcknowledge} onStatusUpdate={handleStatusUpdate}
+                  isNew={false} isLead={woIsLead(wo)} />
               ))}
             </div>
           </div>
@@ -218,13 +225,14 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
 // ─── Work Order Card ──────────────────────────────────────────────────────────
 
 function WOCard({
-  wo, token, onAcknowledge, onStatusUpdate, isNew,
+  wo, token, onAcknowledge, onStatusUpdate, isNew, isLead,
 }: {
   wo: WorkOrder;
   token: string;
   onAcknowledge: (woId: string) => Promise<void>;
   onStatusUpdate: (woId: string, status: string) => Promise<void>;
   isNew: boolean;
+  isLead: boolean;
 }) {
   const site = [wo.site_address, wo.site_city, wo.site_state, wo.site_zip]
     .filter(Boolean).join(', ');
@@ -268,6 +276,20 @@ function WOCard({
 
       {/* Card body */}
       <div style={{ padding: '16px 20px' }}>
+
+        {/* ── Role badge (only shown on multi-tech jobs) ── */}
+        {wo.contractor_names && wo.contractor_names.length >= 2 && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 14,
+            padding: '5px 12px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+            background: isLead ? 'rgba(13,115,119,0.1)' : 'rgba(99,102,241,0.1)',
+            color: isLead ? '#0D7377' : '#4338ca',
+            border: isLead ? '1px solid rgba(13,115,119,0.2)' : '1px solid rgba(99,102,241,0.2)',
+          }}>
+            <span>{isLead ? '⭐' : '🔧'}</span>
+            <span>{isLead ? 'Lead Technician' : 'Assistant Technician'}</span>
+          </div>
+        )}
 
         {/* ── Schedule ── */}
         {timeStr && (
@@ -334,8 +356,8 @@ function WOCard({
           </InfoRow>
         )}
 
-        {/* ── Deliverables ── */}
-        {deliverableList.length > 0 && (
+        {/* ── Deliverables (lead only) ── */}
+        {isLead && deliverableList.length > 0 && (
           <InfoRow icon="✅" label="Deliverables">
             <ul style={{ margin: 0, padding: '0 0 0 16px' }}>
               {deliverableList.map((d, i) => (
@@ -345,8 +367,8 @@ function WOCard({
           </InfoRow>
         )}
 
-        {/* ── Deliverable Instructions ── */}
-        {wo.deliverable_instructions && (
+        {/* ── Deliverable Instructions (lead only) ── */}
+        {isLead && wo.deliverable_instructions && (
           <InfoRow icon="📌" label="Deliverable Instructions">
             <div style={{ fontSize: 13, color: '#444', lineHeight: 1.65, whiteSpace: 'pre-line' }}>
               {wo.deliverable_instructions}
@@ -372,8 +394,8 @@ function WOCard({
           </InfoRow>
         )}
 
-        {/* ── Photo Required badge ── */}
-        {wo.photo_required && (
+        {/* ── Photo Required badge (lead only) ── */}
+        {isLead && wo.photo_required && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
             background: 'rgba(245,158,11,0.08)', borderRadius: 10,
@@ -473,7 +495,8 @@ function WOCard({
         {/* ── New WO: show Q&A fields as a preview, then acknowledge ── */}
         {isNew ? (
           <>
-            {wo.custom_qa && wo.custom_qa.length > 0 && (
+            {/* Q&A preview badges — lead only (assistant doesn't need to fill these in) */}
+            {isLead && wo.custom_qa && wo.custom_qa.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
                   Required Info on Site
@@ -493,7 +516,7 @@ function WOCard({
             <AcknowledgeButton woId={wo.id} woNumber={wo.wo_number} onAcknowledge={onAcknowledge} />
           </>
         ) : (
-          /* ── Accepted WO: full interactive sections ── */
+          /* ── Accepted WO ── */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {/* Accepted banner */}
             <div style={{
@@ -509,70 +532,102 @@ function WOCard({
               }</span>
             </div>
 
-            {/* Status progression */}
-            <PortalStatusButton
-              woId={wo.id}
-              woNumber={wo.wo_number}
-              currentStatus={wo.wo_status}
-              onStatusUpdate={onStatusUpdate}
-            />
-
-            {/* Time & travel log */}
-            <Divider />
-            <PortalTimeLog
-              woId={wo.id}
-              token={token}
-              travelStartAt={wo.travel_start_at}
-              travelStartLat={wo.travel_start_lat}
-              travelStartLng={wo.travel_start_lng}
-              arrivedAt={wo.arrived_at}
-              arrivedLat={wo.arrived_lat}
-              arrivedLng={wo.arrived_lng}
-              checkedInAt={wo.checked_in_at}
-              checkedOutAt={wo.checked_out_at}
-            />
-
-            {/* Interactive sections — only show if there is content */}
-            {wo.wo_tasks && wo.wo_tasks.length > 0 && (
+            {/* ── LEAD TECH: full interactive workflow ── */}
+            {isLead && (
               <>
+                {/* Status progression — Start Work only (Work Done is gated below) */}
+                <PortalStatusButton
+                  woId={wo.id}
+                  woNumber={wo.wo_number}
+                  currentStatus={wo.wo_status}
+                  onStatusUpdate={onStatusUpdate}
+                />
+
+                {/* Time & travel log */}
                 <Divider />
-                <PortalTasks
+                <PortalTimeLog
                   woId={wo.id}
                   token={token}
-                  tasks={wo.wo_tasks}
+                  travelStartAt={wo.travel_start_at}
+                  travelStartLat={wo.travel_start_lat}
+                  travelStartLng={wo.travel_start_lng}
+                  arrivedAt={wo.arrived_at}
+                  arrivedLat={wo.arrived_lat}
+                  arrivedLng={wo.arrived_lng}
+                  checkedInAt={wo.checked_in_at}
+                  checkedOutAt={wo.checked_out_at}
+                />
+
+                {/* Tasks checklist */}
+                {wo.wo_tasks && wo.wo_tasks.length > 0 && (
+                  <>
+                    <Divider />
+                    <PortalTasks
+                      woId={wo.id}
+                      token={token}
+                      tasks={wo.wo_tasks}
+                    />
+                  </>
+                )}
+
+                {/* Q&A */}
+                {wo.custom_qa && wo.custom_qa.length > 0 && (
+                  <>
+                    <Divider />
+                    <PortalQA
+                      woId={wo.id}
+                      token={token}
+                      qa={wo.custom_qa}
+                    />
+                  </>
+                )}
+
+                {/* Photo upload */}
+                <Divider />
+                <PortalUpload
+                  woId={wo.id}
+                  token={token}
+                  initialUrls={
+                    (wo.doc_urls ?? []).filter((u) => {
+                      const seg = u.split('/').pop() ?? '';
+                      return /^\d{13}\./.test(seg); // only portal-uploaded (Date.now() prefix)
+                    })
+                  }
+                />
+
+                {/* Work Done gate (requires closeout notes + photos) */}
+                <Divider />
+                <PortalWorkDoneGate
+                  woId={wo.id}
+                  woNumber={wo.wo_number}
+                  token={token}
+                  currentStatus={wo.wo_status}
+                  initialNotes={wo.closeout_notes ?? ''}
+                  photoRequired={wo.photo_required ?? false}
+                  signatureRequired={wo.signature_required ?? false}
+                  onStatusUpdate={onStatusUpdate}
                 />
               </>
             )}
 
-            {wo.custom_qa && wo.custom_qa.length > 0 && (
+            {/* ── ASSISTANT TECH: check-in / check-out only ── */}
+            {!isLead && (
               <>
                 <Divider />
-                <PortalQA
+                <PortalTimeLog
                   woId={wo.id}
                   token={token}
-                  qa={wo.custom_qa}
+                  travelStartAt={wo.travel_start_at}
+                  travelStartLat={wo.travel_start_lat}
+                  travelStartLng={wo.travel_start_lng}
+                  arrivedAt={wo.arrived_at}
+                  arrivedLat={wo.arrived_lat}
+                  arrivedLng={wo.arrived_lng}
+                  checkedInAt={wo.checked_in_at}
+                  checkedOutAt={wo.checked_out_at}
                 />
               </>
             )}
-
-            <Divider />
-            <PortalUpload
-              woId={wo.id}
-              token={token}
-              initialUrls={
-                (wo.doc_urls ?? []).filter((u) => {
-                  const seg = u.split('/').pop() ?? '';
-                  return /^\d{13}\./.test(seg); // only portal-uploaded (Date.now() prefix)
-                })
-              }
-            />
-
-            <Divider />
-            <PortalCloseout
-              woId={wo.id}
-              token={token}
-              initialNotes={wo.closeout_notes ?? ''}
-            />
           </div>
         )}
       </div>

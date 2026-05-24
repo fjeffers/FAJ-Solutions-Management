@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No contractor email' }, { status: 400 });
   }
 
-  const from = process.env.FROM_EMAIL || 'FAJ Solutions <noreply@fajsolutions.com>';
+  const from = process.env.FROM_EMAIL || 'FAJ Solutions <support@fajsolutions.com>';
   let subject = '';
   let html = '';
 

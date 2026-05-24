@@ -130,6 +130,9 @@ export type WorkOrder = {
   support_contact: string | null;
   custom_qa: CustomQAItem[] | null;
 
+  // Multi-contacts (migration-019)
+  contacts: SiteContact[] | null;
+
   // Vendor attachment (migration-007)
   attachment_url: string | null;
 
@@ -234,6 +237,14 @@ export type CustomQAItem = {
   label: string;
   type: QuestionFieldType;
   answer: string | null;
+};
+
+export type SiteContact = {
+  id: string;
+  label: string;   // e.g. "Site Manager", "NOC", "Security"
+  name: string;
+  phone: string;
+  email: string;
 };
 
 // ─── Contractor Portal ────────────────────────────────────────────────────────

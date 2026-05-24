@@ -191,6 +191,8 @@ export default function HomePage() {
       poc_email:       w.poc_email       ?? null,
       support_contact: w.support_contact ?? null,
       custom_qa:       w.custom_qa       ?? [],
+      // Multi-contacts (migration-019)
+      contacts:        w.contacts        ?? [],
       // Vendor attachment (migration-007)
       attachment_url:  w.attachment_url  ?? null,
       // Admin documents (migration-008)

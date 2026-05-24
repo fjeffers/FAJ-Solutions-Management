@@ -7,7 +7,7 @@ import {
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
   CreditCard, Trash2, CheckCircle2, Timer,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment } from '@/lib/types';
+import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact } from '@/lib/types';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import {
   ASSIGNMENT_TYPES,
@@ -201,6 +201,16 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
     attachment_url:  item?.attachment_url  ?? null,
   });
   const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? []);
+
+  // ── Multi-contacts ─────────────────────────────────────────────────────────
+  const [contacts, setContacts] = useState<SiteContact[]>(() => item?.contacts ?? []);
+  const addContact = () => setContacts((cs) => [
+    ...cs,
+    { id: crypto.randomUUID(), label: '', name: '', phone: '', email: '' },
+  ]);
+  const removeContact = (id: string) => setContacts((cs) => cs.filter((c) => c.id !== id));
+  const updateContact = (id: string, field: keyof SiteContact, value: string) =>
+    setContacts((cs) => cs.map((c) => c.id === id ? { ...c, [field]: value } : c));
   const [docUrls, setDocUrls] = useState<string[]>(() => item?.doc_urls ?? []);
 
   // ── Multi-contractor ───────────────────────────────────────────────────────
@@ -337,6 +347,7 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
       custom_qa:       customQA.filter((q) => q.label.trim()),
       attachment_url:  form.attachment_url  || null,
       doc_urls:        docUrls,
+      contacts:        contacts.filter((c) => c.name.trim() || c.phone.trim() || c.email.trim()),
     };
     onSave({ ...item, ...payload });
   };
@@ -730,12 +741,24 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
               </PF>
             </div>
             {form.site_address && form.site_city && (
-              <a
-                href={`https://maps.google.com/?q=${encodeURIComponent([form.site_address, form.site_city, form.site_state, form.site_zip].filter(Boolean).join(', '))}`}
-                target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: 12, color: 'var(--teal)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <MapPin size={12} /> Open in Google Maps →
-              </a>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <iframe
+                  key={[form.site_address, form.site_city, form.site_state, form.site_zip].join(',')}
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent([form.site_address, form.site_city, form.site_state, form.site_zip].filter(Boolean).join(', '))}&output=embed&z=15`}
+                  width="100%"
+                  height="200"
+                  style={{ border: 'none', borderRadius: 8 }}
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  title="Address map preview"
+                />
+                <a
+                  href={`https://maps.google.com/?q=${encodeURIComponent([form.site_address, form.site_city, form.site_state, form.site_zip].filter(Boolean).join(', '))}`}
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: 'var(--teal)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <MapPin size={12} /> Open in Google Maps →
+                </a>
+              </div>
             )}
           </div>
         )}
@@ -862,22 +885,84 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
         {tab === 'contacts' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
-              Point of contact at the job site. Contractors will see this info in their portal.
+              Add all site contacts. Contractors will see this info in their portal.
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <PF label="POC Name" icon={<User size={13} />}>
-                <input className="input" value={form.poc_name ?? ''} onChange={(e) => set('poc_name', e.target.value)} placeholder="e.g. Lisa Roak-Tincani" />
-              </PF>
-              <PF label="POC Phone" icon={<Phone size={13} />}>
-                <input className="input" value={form.poc_phone ?? ''} onChange={(e) => set('poc_phone', e.target.value)} placeholder="(555) 000-0000" />
-              </PF>
-            </div>
-            <PF label="POC Email" icon={<Mail size={13} />}>
-              <input className="input" value={form.poc_email ?? ''} onChange={(e) => set('poc_email', e.target.value)} placeholder="poc@client.com" />
-            </PF>
-            <PF label="Support / Dispatch Contact">
-              <input className="input" value={form.support_contact ?? ''} onChange={(e) => set('support_contact', e.target.value)} placeholder="e.g. NOC: 1-800-555-0100" />
-            </PF>
+
+            {contacts.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: '#aaa', fontSize: 13 }}>
+                No contacts yet — click "Add Contact" to get started.
+              </div>
+            )}
+
+            {contacts.map((c, i) => (
+              <div key={c.id} style={{
+                border: '1px solid #e5e5e5',
+                borderRadius: 10,
+                padding: '14px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                background: '#fafafa',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, textTransform: 'uppercase' }}>
+                    Contact {i + 1}
+                  </span>
+                  <button
+                    className="icon-btn"
+                    onClick={() => removeContact(c.id)}
+                    style={{ color: '#b91c1c' }}
+                    title="Remove contact"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <PF label="Role / Label">
+                    <input
+                      className="input"
+                      value={c.label}
+                      onChange={(e) => updateContact(c.id, 'label', e.target.value)}
+                      placeholder="e.g. Site Manager, NOC, Security"
+                    />
+                  </PF>
+                  <PF label="Name" icon={<User size={13} />}>
+                    <input
+                      className="input"
+                      value={c.name}
+                      onChange={(e) => updateContact(c.id, 'name', e.target.value)}
+                      placeholder="Full name"
+                    />
+                  </PF>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <PF label="Phone" icon={<Phone size={13} />}>
+                    <input
+                      className="input"
+                      value={c.phone}
+                      onChange={(e) => updateContact(c.id, 'phone', e.target.value)}
+                      placeholder="(555) 000-0000"
+                    />
+                  </PF>
+                  <PF label="Email" icon={<Mail size={13} />}>
+                    <input
+                      className="input"
+                      value={c.email}
+                      onChange={(e) => updateContact(c.id, 'email', e.target.value)}
+                      placeholder="contact@example.com"
+                    />
+                  </PF>
+                </div>
+              </div>
+            ))}
+
+            <button
+              className="btn btn-ghost"
+              onClick={addContact}
+              style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+            >
+              <Plus size={14} /> Add Contact
+            </button>
           </div>
         )}
 

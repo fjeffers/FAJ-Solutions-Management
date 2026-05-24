@@ -408,8 +408,37 @@ function WOCard({
           </div>
         )}
 
-        {/* ── POC ── */}
-        {(wo.poc_name || wo.poc_phone) && (
+        {/* ── Site Contacts (multi-contact, migration-019) ── */}
+        {wo.contacts && wo.contacts.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#0D7377', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>
+              📋 Site Contacts
+            </div>
+            {wo.contacts.map((c) => (
+              <div key={c.id} style={{ border: '1px solid rgba(13,115,119,0.18)', borderRadius: 10, padding: '10px 14px', background: 'rgba(13,115,119,0.03)' }}>
+                {c.label && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#0D7377', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                    {c.label}
+                  </div>
+                )}
+                {c.name && <div style={{ fontSize: 14, fontWeight: 600, color: '#1a3a3a' }}>{c.name}</div>}
+                <div style={{ display: 'flex', gap: 16, marginTop: c.name ? 4 : 0, flexWrap: 'wrap' }}>
+                  {c.phone && (
+                    <a href={`tel:${c.phone}`} style={{ fontSize: 13, color: '#0D7377', textDecoration: 'none', fontWeight: 600 }}>
+                      📞 {c.phone}
+                    </a>
+                  )}
+                  {c.email && (
+                    <a href={`mailto:${c.email}`} style={{ fontSize: 13, color: '#0D7377', textDecoration: 'none' }}>
+                      ✉️ {c.email}
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (wo.poc_name || wo.poc_phone) ? (
+          /* Legacy single-POC fallback */
           <InfoRow icon="👤" label="Point of Contact">
             {wo.poc_name  && <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{wo.poc_name}</div>}
             {wo.poc_phone && (
@@ -419,7 +448,7 @@ function WOCard({
             )}
             {wo.poc_email && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{wo.poc_email}</div>}
           </InfoRow>
-        )}
+        ) : null}
 
         {/* ── Support Contact ── */}
         {wo.support_contact && (

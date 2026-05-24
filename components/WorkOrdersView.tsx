@@ -72,10 +72,13 @@ export default function WorkOrdersView({
   }, {} as Record<WorkOrderStatus, number>);
 
   const openSendModal = (w: EnrichedWorkOrder) => {
-    const contractor = contractors.find((c) => c.name === w.contractor_name);
+    const names = w.contractor_names?.length ? w.contractor_names : [w.contractor_name].filter(Boolean);
+    const emails = names
+      .map((name) => contractors.find((c) => c.name === name)?.email)
+      .filter(Boolean) as string[];
     setEmailPayload({
       type: 'work_order',
-      to: contractor?.email ?? '',
+      to: emails.join(', '),
       subject: `Work Order #${w.wo_number}${w.title ? ` — ${w.title}` : ''}`,
       data: { workOrder: w },
     });

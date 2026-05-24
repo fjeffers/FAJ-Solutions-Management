@@ -129,6 +129,7 @@ function calcTotal(f: Partial<WorkOrder>): number {
 
 type Props = {
   item: WorkOrder | null;
+  nextWoNumber?: string;
   contractors: Contractor[];
   questionTemplates: QuestionTemplate[];
   payments?: Payment[];
@@ -140,14 +141,14 @@ type Props = {
   onDeletePayment?: (id: string) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, contractors, questionTemplates, payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, contractors, questionTemplates, payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
   const docFileRef = useRef<HTMLInputElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<Partial<WorkOrder>>({
-    wo_number:       item?.wo_number       ?? '',
+    wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
     title:           item?.title           ?? '',
     contractor_name: item?.contractor_name ?? '',
     source_platform: item?.source_platform ?? 'Internal',
@@ -392,6 +393,9 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
             <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 16 }}>
               <PF label="WO # *" icon={<Hash size={13} />}>
                 <input className="input" value={form.wo_number ?? ''} onChange={(e) => set('wo_number', e.target.value)} placeholder="e.g. 1001" autoFocus />
+                {!item && nextWoNumber && (
+                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3 }}>Auto-suggested: #{nextWoNumber}</div>
+                )}
               </PF>
               <PF label="Job Title" icon={<FileText size={13} />}>
                 <input className="input" value={form.title ?? ''} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Network cable installation" />
@@ -783,23 +787,49 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
         {/* ── SCOPE TAB ── */}
         {tab === 'scope' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <PF label="Scope of Work / Description" icon={<FileText size={13} />}>
-              <textarea className="input" rows={3} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Describe the work to be performed..." />
+
+            {/* Service Description / SOW */}
+            <PF label="Service Description / Scope of Work" icon={<FileText size={13} />}>
+              <textarea className="input" rows={4} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Describe the work to be performed..." />
             </PF>
-            <PF label="Deliverables" icon={<ClipboardList size={13} />}>
-              <textarea className="input" rows={5} value={form.deliverables ?? ''} onChange={(e) => set('deliverables', e.target.value)} placeholder={"One item per line:\nInstall 24-port patch panel\nLabel all cables\nTest all drops"} />
-            </PF>
-            <PF label="Closeout / Deliverable Instructions">
-              <textarea className="input" rows={3} value={form.deliverable_instructions ?? ''} onChange={(e) => set('deliverable_instructions', e.target.value)} placeholder="Photos, serials, test results, notes, signoff requirements..." />
-            </PF>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <PF label="Tools Required">
-                <textarea className="input" rows={3} value={form.tools_required ?? ''} onChange={(e) => set('tools_required', e.target.value)} placeholder="Ladder, toner, laptop, PPE..." />
-              </PF>
-              <PF label="Parts / Materials">
-                <textarea className="input" rows={3} value={form.parts_materials ?? ''} onChange={(e) => set('parts_materials', e.target.value)} placeholder="Parts provided, bring materials, pickup notes..." />
-              </PF>
+
+            {/* Deliverables + Closeout in one card */}
+            <div style={{ border: '1.5px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ClipboardList size={13} style={{ color: 'var(--teal, #0D7377)' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 }}>Deliverables &amp; Closeout Instructions</span>
+              </div>
+              <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>Deliverables</div>
+                  <textarea className="input" rows={4} value={form.deliverables ?? ''} onChange={(e) => set('deliverables', e.target.value)} placeholder={"One item per line:\nInstall 24-port patch panel\nLabel all cables\nTest all drops"} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>Closeout / Deliverable Instructions</div>
+                  <textarea className="input" rows={3} value={form.deliverable_instructions ?? ''} onChange={(e) => set('deliverable_instructions', e.target.value)} placeholder="Photos, serials, test results, notes, signoff requirements..." />
+                </div>
+              </div>
             </div>
+
+            {/* Tools + Parts in one card */}
+            <div style={{ border: '1.5px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Wrench size={13} style={{ color: 'var(--teal, #0D7377)' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 }}>Tools &amp; Materials</span>
+              </div>
+              <div style={{ padding: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>Tools Required</div>
+                  <textarea className="input" rows={3} value={form.tools_required ?? ''} onChange={(e) => set('tools_required', e.target.value)} placeholder="Ladder, toner, laptop, PPE..." />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>Parts / Materials</div>
+                  <textarea className="input" rows={3} value={form.parts_materials ?? ''} onChange={(e) => set('parts_materials', e.target.value)} placeholder="Parts provided, bring materials, pickup notes..." />
+                </div>
+              </div>
+            </div>
+
+            {/* Access + Parking */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <PF label="Access Instructions">
                 <textarea className="input" rows={3} value={form.access_instructions ?? ''} onChange={(e) => set('access_instructions', e.target.value)} placeholder="Badge, lockbox, store manager, check-in desk..." />
@@ -808,6 +838,8 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
                 <textarea className="input" rows={3} value={form.parking_instructions ?? ''} onChange={(e) => set('parking_instructions', e.target.value)} placeholder="Loading dock, paid parking, rear entrance..." />
               </PF>
             </div>
+
+            {/* Service Type + Required Skills */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <PF label="Service Type" icon={<Wrench size={13} />}>
                 <div style={{ position: 'relative' }}>
@@ -822,6 +854,7 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
                 <input className="input" value={form.required_skills ?? ''} onChange={(e) => set('required_skills', e.target.value)} placeholder="e.g. Cat6, fiber, CCTV" />
               </PF>
             </div>
+
           </div>
         )}
 

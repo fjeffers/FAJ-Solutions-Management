@@ -78,6 +78,14 @@ export default function HomePage() {
 
   const enrichedWOs = useMemo(() => enrichWorkOrders(workOrders, payments), [workOrders, payments]);
 
+  // Auto-suggest next WO number for new work orders
+  const nextWoNumber = useMemo(() => {
+    const nums = workOrders
+      .map((w) => parseInt(w.wo_number ?? '', 10))
+      .filter((n) => !isNaN(n));
+    return nums.length > 0 ? String(Math.max(...nums) + 1) : '1001';
+  }, [workOrders]);
+
   const stats = useMemo(() => {
     const total = enrichedWOs.reduce((s, w) => s + Number(w.total_amount), 0);
     const paid  = enrichedWOs.reduce((s, w) => s + w.paid, 0);
@@ -607,6 +615,7 @@ export default function HomePage() {
       {modal?.type === 'wo' && (
         <WorkOrderModal
           item={modal.item}
+          nextWoNumber={modal.item ? undefined : nextWoNumber}
           contractors={contractors}
           questionTemplates={questionTemplates}
           payments={payments}

@@ -260,7 +260,7 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
     setCustomQA((qs) => qs.filter((q) => q.id !== id));
 
   const computed = calcTotal(form);
-  const canSave = !!(form.wo_number?.trim() && contractorNames.length > 0);
+  const canSave = !!(form.wo_number?.trim() && (contractorNames.length > 0 || contractorToAdd.trim()));
 
   const addContractor = () => {
     const name = contractorToAdd.trim();
@@ -287,10 +287,18 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
 
   const handleSave = () => {
     if (!canSave) return;
+    // Auto-add any contractor still pending in the dropdown (user selected but didn't click "+ Add")
+    let finalNames = [...contractorNames];
+    const pending = contractorToAdd.trim();
+    if (pending && !contractorNames.includes(pending)) {
+      finalNames = [...contractorNames, pending];
+      setContractorNames(finalNames);
+      setContractorToAdd('');
+    }
     const payload: Partial<WorkOrder> = {
       ...form,
-      contractor_name:  contractorNames[0] ?? form.contractor_name ?? '',
-      contractor_names: contractorNames.length > 0 ? contractorNames : null,
+      contractor_name:  finalNames[0] ?? form.contractor_name ?? '',
+      contractor_names: finalNames.length > 0 ? finalNames : null,
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
       external_wo_id:  form.external_wo_id  || null,
       customer_name:   form.customer_name   || null,

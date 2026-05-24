@@ -169,6 +169,16 @@ export type WorkOrder = {
   // Soft-archive (migration-013)
   archived_at: string | null;
 
+  // Time & GPS tracking (migration-016)
+  checked_in_at:    string | null;
+  checked_out_at:   string | null;
+  travel_start_at:  string | null;
+  travel_start_lat: number | null;
+  travel_start_lng: number | null;
+  arrived_at:       string | null;
+  arrived_lat:      number | null;
+  arrived_lng:      number | null;
+
   created_at: string;
   updated_at: string;
 };

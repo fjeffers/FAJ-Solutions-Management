@@ -3,6 +3,11 @@ import { revalidatePath } from 'next/cache';
 import { notFound } from 'next/navigation';
 import AcknowledgeButton from './AcknowledgeButton';
 import PortalStatusButton from './PortalStatusButton';
+import PortalTasks from './PortalTasks';
+import PortalQA from './PortalQA';
+import PortalCloseout from './PortalCloseout';
+import PortalUpload from './PortalUpload';
+import PortalTimeLog from './PortalTimeLog';
 import type { WorkOrder, Contractor } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -50,10 +55,15 @@ function statusBadge(wo: WorkOrder) {
   );
 }
 
+// ─── Divider ──────────────────────────────────────────────────────────────────
+
+function Divider() {
+  return <div style={{ height: 1, background: '#f0f0f0', margin: '12px 0' }} />;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function PortalPage({ params }: { params: Promise<{ token: string }> }) {
-  // Next.js 15+ — params is a Promise and must be awaited
   const { token } = await params;
 
   const supabase = createClient(
@@ -66,7 +76,6 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
 
   const { contractor, work_orders } = data as PortalData;
 
-  // ── Server action: contractor acknowledges a WO ──
   async function handleAcknowledge(woId: string) {
     'use server';
     const sb = createClient(
@@ -74,8 +83,6 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
     await sb.rpc('acknowledge_work_order', { p_wo_id: woId, p_token: token });
-
-    // Notify Fred that the contractor accepted
     const wo = work_orders.find((w) => w.id === woId);
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
@@ -90,12 +97,10 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
           title: wo?.title ?? null,
         }),
       });
-    } catch { /* non-blocking — don't fail the acknowledge if email errors */ }
-
+    } catch { /* non-blocking */ }
     revalidatePath(`/portal/${token}`);
   }
 
-  // ── Server action: contractor updates WO status ──
   async function handleStatusUpdate(woId: string, status: string) {
     'use server';
     const sb = createClient(
@@ -103,8 +108,6 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
     await sb.rpc('update_portal_wo_status', { p_wo_id: woId, p_token: token, p_status: status });
-
-    // Notify Fred of the status change
     const wo = work_orders.find((w) => w.id === woId);
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
@@ -121,12 +124,11 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
         }),
       });
     } catch { /* non-blocking */ }
-
     revalidatePath(`/portal/${token}`);
   }
 
-  const pending   = work_orders.filter((w) => !w.acknowledged_at);
-  const accepted  = work_orders.filter((w) =>  w.acknowledged_at);
+  const pending  = work_orders.filter((w) => !w.acknowledged_at);
+  const accepted = work_orders.filter((w) =>  w.acknowledged_at);
 
   return (
     <div style={{
@@ -134,7 +136,7 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
       background: 'linear-gradient(160deg, #f0fafa 0%, #f7f8fa 60%)',
       fontFamily: "'Segoe UI', Arial, Helvetica, sans-serif",
     }}>
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{
         background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)',
         padding: '24px 20px 20px',
@@ -152,10 +154,10 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
         </div>
       </div>
 
-      {/* ── Content ── */}
+      {/* Content */}
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 16px 48px' }}>
 
-        {/* ── Pending / New jobs ── */}
+        {/* New / pending jobs */}
         {pending.length > 0 && (
           <div style={{ marginBottom: 32 }}>
             <div style={{
@@ -173,7 +175,7 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
           </div>
         )}
 
-        {/* ── Accepted jobs ── */}
+        {/* Accepted jobs */}
         {accepted.length > 0 && (
           <div style={{ marginBottom: 32 }}>
             <div style={{
@@ -191,7 +193,7 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
           </div>
         )}
 
-        {/* ── Empty state ── */}
+        {/* Empty state */}
         {work_orders.length === 0 && (
           <div style={{
             textAlign: 'center', padding: '60px 20px',
@@ -206,7 +208,7 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
         )}
 
         <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', marginTop: 32 }}>
-          FAJ Solutions · Questions? Contact your dispatcher.
+          FAJ Solutions · Questions? Contact support@fajsolutions.net
         </div>
       </div>
     </div>
@@ -226,12 +228,10 @@ function WOCard({
 }) {
   const site = [wo.site_address, wo.site_city, wo.site_state, wo.site_zip]
     .filter(Boolean).join(', ');
-
   const startDate = fmtDate(wo.start_date);
   const startTime = fmtTime(wo.start_time);
   const endTime   = fmtTime(wo.end_time);
   const timeStr   = [startDate, startTime, endTime ? `– ${endTime}` : null].filter(Boolean).join(' · ');
-
   const deliverableList = wo.deliverables
     ? wo.deliverables.split('\n').filter(Boolean)
     : [];
@@ -249,11 +249,8 @@ function WOCard({
         padding: '14px 20px',
         background: isNew ? 'rgba(13,115,119,0.06)' : '#fafafa',
         borderBottom: '1px solid #f0f0f0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-        flexWrap: 'wrap',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, flexWrap: 'wrap',
       }}>
         <div>
           <div style={{ fontSize: 11, color: '#0D7377', fontWeight: 700, letterSpacing: 1, marginBottom: 2 }}>
@@ -262,6 +259,9 @@ function WOCard({
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>
             {wo.title || `Work Order #${wo.wo_number}`}
           </div>
+          {wo.customer_name && (
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{wo.customer_name}</div>
+          )}
         </div>
         {statusBadge(wo)}
       </div>
@@ -269,78 +269,115 @@ function WOCard({
       {/* Card body */}
       <div style={{ padding: '16px 20px' }}>
 
-        {/* Date / time */}
+        {/* ── Schedule ── */}
         {timeStr && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
-            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>📅</span>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>Schedule</div>
-              <div style={{ fontSize: 14, color: '#333', fontWeight: 600 }}>{timeStr}</div>
-            </div>
-          </div>
+          <InfoRow icon="📅" label="Schedule">
+            <div style={{ fontSize: 14, color: '#333', fontWeight: 600 }}>{timeStr}</div>
+            {wo.schedule_type && wo.schedule_type !== 'Exact Time' && (
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{wo.schedule_type}</div>
+            )}
+          </InfoRow>
         )}
 
-        {/* Address */}
+        {/* ── Site Address ── */}
         {site && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
-            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>📍</span>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>Site Address</div>
-              <div style={{ fontSize: 14, color: '#333' }}>
-                {wo.site_name && <div style={{ fontWeight: 600 }}>{wo.site_name}</div>}
-                <div>{[wo.site_address, wo.site_city, wo.site_state].filter(Boolean).join(', ')}</div>
-                {wo.site_zip && <div style={{ color: '#888' }}>{wo.site_zip}</div>}
-              </div>
-              {/* Maps link */}
-              <a
-                href={`https://maps.google.com/?q=${encodeURIComponent(site)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'inline-block', marginTop: 6, fontSize: 12, color: '#0D7377',
-                  fontWeight: 600, textDecoration: 'none',
-                }}
-              >
-                Open in Maps ↗
-              </a>
+          <InfoRow icon="📍" label="Site Address">
+            {wo.site_name && <div style={{ fontWeight: 600, fontSize: 14, color: '#333' }}>{wo.site_name}</div>}
+            <div style={{ fontSize: 13, color: '#444' }}>
+              {[wo.site_address, wo.site_city, wo.site_state].filter(Boolean).join(', ')}
+              {wo.site_zip && <span style={{ color: '#888' }}> {wo.site_zip}</span>}
+            </div>
+            <a
+              href={`https://maps.google.com/?q=${encodeURIComponent(site)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'inline-block', marginTop: 5, fontSize: 12, color: '#0D7377', fontWeight: 600, textDecoration: 'none' }}
+            >
+              Open in Maps ↗
+            </a>
+          </InfoRow>
+        )}
+
+        {/* ── Parking ── */}
+        {wo.parking_instructions && (
+          <InfoRow icon="🅿️" label="Parking">
+            <div style={{ fontSize: 13, color: '#444', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+              {wo.parking_instructions}
+            </div>
+          </InfoRow>
+        )}
+
+        {/* ── Access Instructions ── */}
+        {wo.access_instructions && (
+          <div style={{
+            padding: '10px 14px',
+            background: 'rgba(59,130,246,0.06)',
+            borderRadius: 10,
+            border: '1px solid rgba(59,130,246,0.12)',
+            marginBottom: 12,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#1D4ED8', marginBottom: 4, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              🔑 Access Instructions
+            </div>
+            <div style={{ fontSize: 13, color: '#1e3a5f', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+              {wo.access_instructions}
             </div>
           </div>
         )}
 
-        {/* Description */}
+        {/* ── Description ── */}
         {wo.description && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
-            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>📝</span>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>Description</div>
-              <div style={{ fontSize: 13, color: '#444', lineHeight: 1.65, whiteSpace: 'pre-line' }}>
-                {wo.description}
-              </div>
+          <InfoRow icon="📝" label="Description">
+            <div style={{ fontSize: 13, color: '#444', lineHeight: 1.65, whiteSpace: 'pre-line' }}>
+              {wo.description}
             </div>
-          </div>
+          </InfoRow>
         )}
 
-        {/* Deliverables / checklist */}
+        {/* ── Deliverables ── */}
         {deliverableList.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
-            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✅</span>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>Deliverables</div>
-              <ul style={{ margin: 0, padding: '0 0 0 16px' }}>
-                {deliverableList.map((d, i) => (
-                  <li key={i} style={{ fontSize: 13, color: '#444', marginBottom: 4 }}>{d}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
+          <InfoRow icon="✅" label="Deliverables">
+            <ul style={{ margin: 0, padding: '0 0 0 16px' }}>
+              {deliverableList.map((d, i) => (
+                <li key={i} style={{ fontSize: 13, color: '#444', marginBottom: 4 }}>{d}</li>
+              ))}
+            </ul>
+          </InfoRow>
         )}
 
-        {/* Photo requirement */}
+        {/* ── Deliverable Instructions ── */}
+        {wo.deliverable_instructions && (
+          <InfoRow icon="📌" label="Deliverable Instructions">
+            <div style={{ fontSize: 13, color: '#444', lineHeight: 1.65, whiteSpace: 'pre-line' }}>
+              {wo.deliverable_instructions}
+            </div>
+          </InfoRow>
+        )}
+
+        {/* ── Tools Required ── */}
+        {wo.tools_required && (
+          <InfoRow icon="🔧" label="Tools Required">
+            <div style={{ fontSize: 13, color: '#444', lineHeight: 1.65, whiteSpace: 'pre-line' }}>
+              {wo.tools_required}
+            </div>
+          </InfoRow>
+        )}
+
+        {/* ── Parts / Materials ── */}
+        {wo.parts_materials && (
+          <InfoRow icon="📦" label="Parts / Materials">
+            <div style={{ fontSize: 13, color: '#444', lineHeight: 1.65, whiteSpace: 'pre-line' }}>
+              {wo.parts_materials}
+            </div>
+          </InfoRow>
+        )}
+
+        {/* ── Photo Required badge ── */}
         {wo.photo_required && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-            background: 'rgba(245,158,11,0.08)', borderRadius: 10, border: '1px solid rgba(245,158,11,0.2)',
-            marginBottom: 12,
+            background: 'rgba(245,158,11,0.08)', borderRadius: 10,
+            border: '1px solid rgba(245,158,11,0.2)', marginBottom: 12,
           }}>
             <span style={{ fontSize: 16 }}>📷</span>
             <div style={{ fontSize: 13, color: '#92400e', fontWeight: 600 }}>
@@ -349,59 +386,38 @@ function WOCard({
           </div>
         )}
 
-        {/* Custom Q&A fields (shows labels only as a reference) */}
-        {wo.custom_qa && wo.custom_qa.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
-            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>📋</span>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
-                Required Info on Site
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {wo.custom_qa.map((q) => (
-                  <span key={q.id} style={{
-                    padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                    background: 'rgba(13,115,119,0.08)', color: '#0D7377',
-                  }}>
-                    {q.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Access instructions */}
-        {wo.access_instructions && (
-          <div style={{
-            padding: '10px 14px', background: 'rgba(59,130,246,0.06)',
-            borderRadius: 10, border: '1px solid rgba(59,130,246,0.12)', marginBottom: 12,
-          }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#1D4ED8', marginBottom: 4, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-              🔑 Access Instructions
-            </div>
-            <div style={{ fontSize: 13, color: '#1e3a5f', lineHeight: 1.6 }}>{wo.access_instructions}</div>
-          </div>
-        )}
-
-        {/* POC */}
+        {/* ── POC ── */}
         {(wo.poc_name || wo.poc_phone) && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
-            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>👤</span>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>Point of Contact</div>
-              {wo.poc_name  && <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{wo.poc_name}</div>}
-              {wo.poc_phone && (
-                <a href={`tel:${wo.poc_phone}`} style={{ fontSize: 13, color: '#0D7377', textDecoration: 'none', fontWeight: 600 }}>
-                  {wo.poc_phone}
-                </a>
-              )}
-              {wo.poc_email && <div style={{ fontSize: 12, color: '#888' }}>{wo.poc_email}</div>}
+          <InfoRow icon="👤" label="Point of Contact">
+            {wo.poc_name  && <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{wo.poc_name}</div>}
+            {wo.poc_phone && (
+              <a href={`tel:${wo.poc_phone}`} style={{ fontSize: 13, color: '#0D7377', textDecoration: 'none', fontWeight: 600 }}>
+                {wo.poc_phone}
+              </a>
+            )}
+            {wo.poc_email && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{wo.poc_email}</div>}
+          </InfoRow>
+        )}
+
+        {/* ── Support Contact ── */}
+        {wo.support_contact && (
+          <div style={{
+            padding: '10px 14px',
+            background: 'rgba(13,115,119,0.06)',
+            borderRadius: 10,
+            border: '1px solid rgba(13,115,119,0.15)',
+            marginBottom: 12,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#0D7377', marginBottom: 4, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              📞 Support Contact
+            </div>
+            <div style={{ fontSize: 13, color: '#1a3a3a', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+              {wo.support_contact}
             </div>
           </div>
         )}
 
-        {/* Vendor attachment */}
+        {/* ── Vendor attachment ── */}
         {wo.attachment_url && (
           <a
             href={wo.attachment_url}
@@ -410,7 +426,7 @@ function WOCard({
             style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
               background: 'rgba(201,169,97,0.1)', borderRadius: 10,
-              border: '1px solid rgba(201,169,97,0.25)', marginBottom: 16,
+              border: '1px solid rgba(201,169,97,0.25)', marginBottom: 12,
               textDecoration: 'none', color: '#b8944a', fontWeight: 600, fontSize: 13,
             }}
           >
@@ -419,16 +435,72 @@ function WOCard({
           </a>
         )}
 
-        {/* ── Acknowledge / status buttons ── */}
+        {/* ── Admin documents ── */}
+        {wo.doc_urls && wo.doc_urls.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+              📄 Job Documents
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {wo.doc_urls.map((url, i) => {
+                const name = url.split('/').pop() ?? `Document ${i + 1}`;
+                const isImg = /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(url);
+                return (
+                  <a
+                    key={i}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '8px 12px', borderRadius: 8,
+                      background: '#f9fafb', border: '1px solid #e5e7eb',
+                      textDecoration: 'none', color: '#374151', fontSize: 13,
+                    }}
+                  >
+                    <span>{isImg ? '🖼️' : '📄'}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {name}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>View ↗</span>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── New WO: show Q&A fields as a preview, then acknowledge ── */}
         {isNew ? (
-          <AcknowledgeButton woId={wo.id} woNumber={wo.wo_number} onAcknowledge={onAcknowledge} />
+          <>
+            {wo.custom_qa && wo.custom_qa.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
+                  Required Info on Site
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {wo.custom_qa.map((q) => (
+                    <span key={q.id} style={{
+                      padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                      background: 'rgba(13,115,119,0.08)', color: '#0D7377',
+                    }}>
+                      {q.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <AcknowledgeButton woId={wo.id} woNumber={wo.wo_number} onAcknowledge={onAcknowledge} />
+          </>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          /* ── Accepted WO: full interactive sections ── */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {/* Accepted banner */}
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
               background: 'rgba(4,120,87,0.08)', borderRadius: 10,
               border: '1px solid rgba(4,120,87,0.15)', color: '#047857',
-              fontSize: 13, fontWeight: 700,
+              fontSize: 13, fontWeight: 700, marginBottom: 16,
             }}>
               <span>✓</span>
               <span>Accepted{wo.acknowledged_at
@@ -436,15 +508,95 @@ function WOCard({
                 : ''
               }</span>
             </div>
-            {/* Status progression buttons for accepted WOs */}
+
+            {/* Status progression */}
             <PortalStatusButton
               woId={wo.id}
               woNumber={wo.wo_number}
               currentStatus={wo.wo_status}
               onStatusUpdate={onStatusUpdate}
             />
+
+            {/* Time & travel log */}
+            <Divider />
+            <PortalTimeLog
+              woId={wo.id}
+              token={token}
+              travelStartAt={wo.travel_start_at}
+              travelStartLat={wo.travel_start_lat}
+              travelStartLng={wo.travel_start_lng}
+              arrivedAt={wo.arrived_at}
+              arrivedLat={wo.arrived_lat}
+              arrivedLng={wo.arrived_lng}
+              checkedInAt={wo.checked_in_at}
+              checkedOutAt={wo.checked_out_at}
+            />
+
+            {/* Interactive sections — only show if there is content */}
+            {wo.wo_tasks && wo.wo_tasks.length > 0 && (
+              <>
+                <Divider />
+                <PortalTasks
+                  woId={wo.id}
+                  token={token}
+                  tasks={wo.wo_tasks}
+                />
+              </>
+            )}
+
+            {wo.custom_qa && wo.custom_qa.length > 0 && (
+              <>
+                <Divider />
+                <PortalQA
+                  woId={wo.id}
+                  token={token}
+                  qa={wo.custom_qa}
+                />
+              </>
+            )}
+
+            <Divider />
+            <PortalUpload
+              woId={wo.id}
+              token={token}
+              initialUrls={
+                (wo.doc_urls ?? []).filter((u) => {
+                  const seg = u.split('/').pop() ?? '';
+                  return /^\d{13}\./.test(seg); // only portal-uploaded (Date.now() prefix)
+                })
+              }
+            />
+
+            <Divider />
+            <PortalCloseout
+              woId={wo.id}
+              token={token}
+              initialNotes={wo.closeout_notes ?? ''}
+            />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── InfoRow helper ───────────────────────────────────────────────────────────
+
+function InfoRow({
+  icon, label, children,
+}: {
+  icon: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
+      <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 3 }}>
+          {label}
+        </div>
+        {children}
       </div>
     </div>
   );

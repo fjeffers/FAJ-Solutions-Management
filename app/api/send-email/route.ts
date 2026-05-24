@@ -56,9 +56,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Unknown email type' }, { status: 400 });
     }
 
+    const toList = to.split(',').map((e) => e.trim()).filter(Boolean);
     const { data: sent, error } = await resend.emails.send({
       from:     FROM,
-      to,
+      to:       toList.length === 1 ? toList[0] : toList,
       replyTo:  REPLY_TO,
       subject,
       html,

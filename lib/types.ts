@@ -247,6 +247,17 @@ export type SiteContact = {
   email: string;
 };
 
+// ─── Deliverable Templates ────────────────────────────────────────────────────
+
+export type DeliverableTemplate = {
+  id: string;
+  user_id: string;
+  name: string;
+  items: string[];
+  created_at: string;
+  updated_at: string;
+};
+
 // ─── Contractor Portal ────────────────────────────────────────────────────────
 
 export type WoTask = {

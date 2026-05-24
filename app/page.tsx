@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders } from '@/lib/utils';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
-import type { Contractor, WorkOrder, Payment, QuestionTemplate, EnrichedWorkOrder } from '@/lib/types';
+import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder } from '@/lib/types';
 import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
@@ -55,22 +55,25 @@ export default function HomePage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [questionTemplates, setQuestionTemplates] = useState<QuestionTemplate[]>([]);
+  const [deliverableTemplates, setDeliverableTemplates] = useState<DeliverableTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadAll = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return; }
 
-    const [cRes, wRes, pRes, tRes] = await Promise.all([
+    const [cRes, wRes, pRes, tRes, dtRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),
       supabase.from('work_orders').select('*').order('wo_number'),
       supabase.from('payments').select('*').order('payment_date', { ascending: false }),
       supabase.from('question_templates').select('*').order('created_at', { ascending: false }),
+      supabase.from('deliverable_templates').select('*').order('created_at', { ascending: false }),
     ]);
     if (cRes.data) setContractors(cRes.data);
     if (wRes.data) setWorkOrders(wRes.data);
     if (pRes.data) setPayments(pRes.data);
     if (tRes.data) setQuestionTemplates(tRes.data as QuestionTemplate[]);
+    if (dtRes.data) setDeliverableTemplates(dtRes.data as DeliverableTemplate[]);
     setLoading(false);
   };
 
@@ -354,6 +357,32 @@ export default function HomePage() {
     loadAll();
   };
 
+  // ── Deliverable Templates ──────────────────────────────────────────────────
+
+  const saveDeliverableTemplate = async (
+    id: string | null,
+    data: { name: string; items: string[] },
+  ) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    if (id) {
+      await supabase
+        .from('deliverable_templates')
+        .update({ name: data.name, items: data.items, updated_at: new Date().toISOString() })
+        .eq('id', id);
+    } else {
+      await supabase
+        .from('deliverable_templates')
+        .insert({ name: data.name, items: data.items, user_id: user.id });
+    }
+    loadAll();
+  };
+
+  const deleteDeliverableTemplate = async (id: string) => {
+    await supabase.from('deliverable_templates').delete().eq('id', id);
+    loadAll();
+  };
+
   const uploadTemplateAttachment = async (file: File): Promise<string | null> => {
     const path = `templates/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
     const { data, error } = await supabase.storage
@@ -609,6 +638,9 @@ export default function HomePage() {
             onSave={saveTemplate}
             onDelete={deleteTemplate}
             onUploadAttachment={uploadTemplateAttachment}
+            deliverableTemplates={deliverableTemplates}
+            onSaveDeliverable={saveDeliverableTemplate}
+            onDeleteDeliverable={deleteDeliverableTemplate}
           />
         )}
       </main>
@@ -620,6 +652,7 @@ export default function HomePage() {
           nextWoNumber={modal.item ? undefined : nextWoNumber}
           contractors={contractors}
           questionTemplates={questionTemplates}
+          deliverableTemplates={deliverableTemplates}
           payments={payments}
           onSave={(w) => { saveWorkOrder(w); setModal(null); }}
           onClose={() => setModal(null)}

@@ -1,9 +1,10 @@
 'use client';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Lock, CheckCircle2, ClipboardList } from 'lucide-react';
+import { Lock, CheckCircle2, ClipboardList, CheckSquare } from 'lucide-react';
 import QuestionTemplatesView from './QuestionTemplatesView';
-import type { QuestionTemplate } from '@/lib/types';
+import DeliverableTemplatesView from './DeliverableTemplatesView';
+import type { QuestionTemplate, DeliverableTemplate } from '@/lib/types';
 
 interface Props {
   templates: QuestionTemplate[];
@@ -13,9 +14,12 @@ interface Props {
   ) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onUploadAttachment: (file: File) => Promise<string | null>;
+  deliverableTemplates: DeliverableTemplate[];
+  onSaveDeliverable: (id: string | null, data: { name: string; items: string[] }) => Promise<void>;
+  onDeleteDeliverable: (id: string) => Promise<void>;
 }
 
-export default function SettingsView({ templates, onSave, onDelete, onUploadAttachment }: Props) {
+export default function SettingsView({ templates, onSave, onDelete, onUploadAttachment, deliverableTemplates, onSaveDeliverable, onDeleteDeliverable }: Props) {
   const supabase = createClient();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -116,7 +120,7 @@ export default function SettingsView({ templates, onSave, onDelete, onUploadAtta
       </div>
 
       {/* ── Question Templates ── */}
-      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 28 }}>
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(13,115,119,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ClipboardList size={16} color="var(--teal)" />
@@ -132,6 +136,28 @@ export default function SettingsView({ templates, onSave, onDelete, onUploadAtta
             onSave={onSave}
             onDelete={onDelete}
             onUploadAttachment={onUploadAttachment}
+            embedded
+          />
+        </div>
+      </div>
+
+      {/* ── Deliverable Templates ── */}
+      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(13,115,119,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CheckSquare size={16} color="var(--teal)" />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Deliverable Templates</h2>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>Reusable checklists applied to work order deliverables</div>
+          </div>
+        </div>
+        <div style={{ padding: '0' }}>
+          <DeliverableTemplatesView
+            templates={deliverableTemplates}
+            onSave={onSaveDeliverable}
+            onDelete={onDeleteDeliverable}
+            embedded
           />
         </div>
       </div>

@@ -5,9 +5,9 @@ import {
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
   Phone, Mail, HelpCircle, Plus, Paperclip,
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
-  CreditCard, Trash2, CheckCircle2, Timer,
+  CreditCard, Trash2, CheckCircle2, Timer, Printer,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact } from '@/lib/types';
+import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate } from '@/lib/types';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import {
   ASSIGNMENT_TYPES,
@@ -20,6 +20,7 @@ import {
   WORK_ORDER_SOURCES,
 } from '@/lib/types';
 import { fmtMoney, fmtDate } from '@/lib/utils';
+import { printSignOffSheet } from '@/lib/signoff';
 
 type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents';
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -132,6 +133,7 @@ type Props = {
   nextWoNumber?: string;
   contractors: Contractor[];
   questionTemplates: QuestionTemplate[];
+  deliverableTemplates?: DeliverableTemplate[];
   payments?: Payment[];
   onSave: (w: Partial<WorkOrder>) => void;
   onClose: () => void;
@@ -141,7 +143,7 @@ type Props = {
   onDeletePayment?: (id: string) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, nextWoNumber, contractors, questionTemplates, payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
@@ -824,7 +826,27 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
               </div>
               <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>Deliverables</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280' }}>Deliverables</div>
+                    {deliverableTemplates.length > 0 && (
+                      <div style={{ position: 'relative' }}>
+                        <select
+                          className="input"
+                          style={{ fontSize: 11, padding: '3px 8px', height: 'auto', cursor: 'pointer', color: 'var(--teal)', fontWeight: 600 }}
+                          value=""
+                          onChange={(e) => {
+                            const t = deliverableTemplates.find((dt) => dt.id === e.target.value);
+                            if (t) set('deliverables', t.items.join('\n'));
+                          }}
+                        >
+                          <option value="" disabled>Apply template…</option>
+                          {deliverableTemplates.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
                   <textarea className="input" rows={4} value={form.deliverables ?? ''} onChange={(e) => set('deliverables', e.target.value)} placeholder={"One item per line:\nInstall 24-port patch panel\nLabel all cables\nTest all drops"} />
                 </div>
                 <div>
@@ -1236,6 +1258,29 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
         {/* ── DOCUMENTS TAB ── */}
         {tab === 'documents' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* ── Sign-Off Sheet ── */}
+            <div style={{ border: '1.5px solid rgba(13,115,119,0.25)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 14px', background: 'rgba(13,115,119,0.06)', borderBottom: '1px solid rgba(13,115,119,0.12)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Printer size={14} style={{ color: 'var(--teal, #0D7377)' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 }}>Client Sign-Off Sheet</span>
+              </div>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
+                  Print a sign-off sheet for the client to review and sign.<br />
+                  Includes WO details, scope, deliverables checklist, and signature lines.
+                </div>
+                <button
+                  className="btn btn-ghost"
+                  style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, whiteSpace: 'nowrap' }}
+                  disabled={!item}
+                  onClick={() => item && printSignOffSheet(item)}
+                >
+                  <Printer size={14} />
+                  Print Sign-Off Sheet
+                </button>
+              </div>
+            </div>
 
             {/* ── Section 1: Vendor Paperwork (single, from template) ── */}
             <div>

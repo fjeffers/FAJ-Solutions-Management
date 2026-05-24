@@ -883,6 +883,8 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
                       <option value="number">Number</option>
                       <option value="yes_no">Yes / No</option>
                       <option value="photo">Photo</option>
+                      <option value="document">Document Upload</option>
+                      <option value="signature">Signature</option>
                     </select>
                     <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                   </div>

@@ -302,6 +302,7 @@ export default function PortalTimeLog({
       {error && (
         <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{error}</div>
       )}
+  
     </div>
   );
 }

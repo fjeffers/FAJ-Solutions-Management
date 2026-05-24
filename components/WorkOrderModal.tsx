@@ -5,9 +5,10 @@ import {
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
   Phone, Mail, HelpCircle, Plus, Paperclip,
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
-  CreditCard, Trash2, CheckCircle2,
+  CreditCard, Trash2, CheckCircle2, Timer,
 } from 'lucide-react';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment } from '@/lib/types';
+import WOTimeLogs from '@/components/WOTimeLogs';
 import {
   ASSIGNMENT_TYPES,
   PAY_TYPES,
@@ -20,12 +21,13 @@ import {
 } from '@/lib/types';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 
-type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents';
+type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents';
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'details',    label: 'Details',    icon: <Hash size={13} /> },
   { key: 'marketplace', label: 'Marketplace', icon: <Briefcase size={13} /> },
   { key: 'pay',        label: 'Pay',        icon: <DollarSign size={13} /> },
   { key: 'payments',   label: 'Payments',   icon: <CreditCard size={13} /> },
+  { key: 'timelog',    label: 'Time Logs',  icon: <Timer size={13} /> },
   { key: 'site',       label: 'Site',       icon: <MapPin size={13} /> },
   { key: 'schedule',   label: 'Schedule',   icon: <Clock size={13} /> },
   { key: 'scope',      label: 'Scope',      icon: <ClipboardList size={13} /> },
@@ -1106,6 +1108,11 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
               )
             )}
           </div>
+        )}
+
+        {/* ── TIME LOGS TAB ── */}
+        {tab === 'timelog' && (
+          <WOTimeLogs woId={item?.id} />
         )}
 
         {/* ── DOCUMENTS TAB ── */}

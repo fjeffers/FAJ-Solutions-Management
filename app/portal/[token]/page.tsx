@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import { notFound } from 'next/navigation';
 import AcknowledgeButton from './AcknowledgeButton';
+import PortalStatusButton from './PortalStatusButton';
 import type { WorkOrder, Contractor } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -70,6 +71,54 @@ export default async function PortalPage({ params }: { params: { token: string }
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
     await sb.rpc('acknowledge_work_order', { p_wo_id: woId, p_token: params.token });
+
+    // Notify Fred that the contractor accepted
+    const wo = work_orders.find((w) => w.id === woId);
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+    try {
+      await fetch(`${baseUrl}/api/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'contractor_accepted',
+          contractor_name: contractor.name,
+          wo_number: wo?.wo_number ?? woId,
+          title: wo?.title ?? null,
+        }),
+      });
+    } catch { /* non-blocking — don't fail the acknowledge if email errors */ }
+
+    revalidatePath(`/portal/${params.token}`);
+  }
+
+  // ── Server action: contractor updates WO status ──
+  async function handleStatusUpdate(woId: string, status: string) {
+    'use server';
+    const sb = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    );
+    await sb.rpc('update_portal_wo_status', { p_wo_id: woId, p_token: params.token, p_status: status });
+
+    // Notify Fred of the status change
+    const wo = work_orders.find((w) => w.id === woId);
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+    try {
+      await fetch(`${baseUrl}/api/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'contractor_status_update',
+          contractor_name: contractor.name,
+          wo_number: wo?.wo_number ?? woId,
+          title: wo?.title ?? null,
+          status,
+        }),
+      });
+    } catch { /* non-blocking */ }
+
     revalidatePath(`/portal/${params.token}`);
   }
 
@@ -114,7 +163,8 @@ export default async function PortalPage({ params }: { params: { token: string }
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {pending.map((wo) => (
-                <WOCard key={wo.id} wo={wo} token={params.token} onAcknowledge={handleAcknowledge} isNew />
+                <WOCard key={wo.id} wo={wo} token={params.token}
+                  onAcknowledge={handleAcknowledge} onStatusUpdate={handleStatusUpdate} isNew />
               ))}
             </div>
           </div>
@@ -131,7 +181,8 @@ export default async function PortalPage({ params }: { params: { token: string }
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {accepted.map((wo) => (
-                <WOCard key={wo.id} wo={wo} token={params.token} onAcknowledge={handleAcknowledge} isNew={false} />
+                <WOCard key={wo.id} wo={wo} token={params.token}
+                  onAcknowledge={handleAcknowledge} onStatusUpdate={handleStatusUpdate} isNew={false} />
               ))}
             </div>
           </div>
@@ -162,11 +213,12 @@ export default async function PortalPage({ params }: { params: { token: string }
 // ─── Work Order Card ──────────────────────────────────────────────────────────
 
 function WOCard({
-  wo, token, onAcknowledge, isNew,
+  wo, token, onAcknowledge, onStatusUpdate, isNew,
 }: {
   wo: WorkOrder;
   token: string;
   onAcknowledge: (woId: string) => Promise<void>;
+  onStatusUpdate: (woId: string, status: string) => Promise<void>;
   isNew: boolean;
 }) {
   const site = [wo.site_address, wo.site_city, wo.site_state, wo.site_zip]
@@ -364,21 +416,30 @@ function WOCard({
           </a>
         )}
 
-        {/* ── Acknowledge button ── */}
+        {/* ── Acknowledge / status buttons ── */}
         {isNew ? (
           <AcknowledgeButton woId={wo.id} woNumber={wo.wo_number} onAcknowledge={onAcknowledge} />
         ) : (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
-            background: 'rgba(4,120,87,0.08)', borderRadius: 10,
-            border: '1px solid rgba(4,120,87,0.15)', color: '#047857',
-            fontSize: 13, fontWeight: 700,
-          }}>
-            <span>✓</span>
-            <span>Accepted{wo.acknowledged_at
-              ? ` on ${new Date(wo.acknowledged_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-              : ''
-            }</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
+              background: 'rgba(4,120,87,0.08)', borderRadius: 10,
+              border: '1px solid rgba(4,120,87,0.15)', color: '#047857',
+              fontSize: 13, fontWeight: 700,
+            }}>
+              <span>✓</span>
+              <span>Accepted{wo.acknowledged_at
+                ? ` on ${new Date(wo.acknowledged_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                : ''
+              }</span>
+            </div>
+            {/* Status progression buttons for accepted WOs */}
+            <PortalStatusButton
+              woId={wo.id}
+              woNumber={wo.wo_number}
+              currentStatus={wo.wo_status}
+              onStatusUpdate={onStatusUpdate}
+            />
           </div>
         )}
       </div>

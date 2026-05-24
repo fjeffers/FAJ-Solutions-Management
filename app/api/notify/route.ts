@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 
+const OWNER_EMAIL = 'fajsolutions@gmail.com';
+
+// Types that go to the owner (Fred), not the contractor
+const OWNER_TYPES = new Set(['contractor_accepted', 'contractor_status_update']);
+
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const body = await req.json();
   const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders } = body;
 
-  if (!contractor_email) {
+  // Contractor email only required for contractor-facing notification types
+  if (!OWNER_TYPES.has(type) && !contractor_email) {
     return NextResponse.json({ error: 'No contractor email' }, { status: 400 });
   }
 
@@ -62,14 +68,37 @@ export async function POST(req: NextRequest) {
     );
     // Update subject to mention WO count if available
     if (woCount > 0) subject = `You have ${woCount} work order${woCount !== 1 ? 's' : ''} from FAJ Solutions`;
+  } else if (type === 'contractor_accepted') {
+    // Contractor accepted a WO — notify Fred
+    subject = `✅ ${contractor_name} accepted WO #${wo_number}`;
+    html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <h2 style="color:#047857;">Work Order Accepted</h2>
+        <p><strong>${contractor_name}</strong> has accepted Work Order <strong>#${wo_number}</strong>${title ? ` — ${title}` : ''}.</p>
+        <p style="color:#888;font-size:12px;">— FAJ Solutions Contractor Portal</p>
+      </div>
+    `;
+  } else if (type === 'contractor_status_update') {
+    // Contractor updated WO status — notify Fred
+    subject = `🔄 ${contractor_name} updated WO #${wo_number} → ${status}`;
+    html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <h2 style="color:#0D7377;">Work Order Status Update</h2>
+        <p><strong>${contractor_name}</strong> updated Work Order <strong>#${wo_number}</strong>${title ? ` — ${title}` : ''} to: <strong>${status}</strong></p>
+        <p style="color:#888;font-size:12px;">— FAJ Solutions Contractor Portal</p>
+      </div>
+    `;
   } else {
     return NextResponse.json({ error: 'Unknown notification type' }, { status: 400 });
   }
 
+  // Owner-facing types go to Fred; all others go to the contractor
+  const to = OWNER_TYPES.has(type) ? OWNER_EMAIL : contractor_email;
+
   try {
     await resend.emails.send({
       from,
-      to: contractor_email,
+      to,
       subject,
       html,
       replyTo: process.env.REPLY_TO_EMAIL || undefined,

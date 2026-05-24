@@ -22,8 +22,14 @@ export async function proxy(request: NextRequest) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login');
-  const isApiRoute = request.nextUrl.pathname.startsWith('/api');
+  const { pathname } = request.nextUrl;
+
+  const isAuthRoute   = pathname.startsWith('/login');
+  const isApiRoute    = pathname.startsWith('/api');
+  const isPortalRoute = pathname.startsWith('/portal');
+
+  // Portal is public — contractors access it via a signed token link, no session required
+  if (isPortalRoute) return response;
 
   if (!user && !isAuthRoute && !isApiRoute) {
     const url = request.nextUrl.clone();

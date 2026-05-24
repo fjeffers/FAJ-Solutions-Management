@@ -1,8 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, Send, ChevronRight } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, ChevronRight } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
-import { createClient } from '@/lib/supabase/client';
 import type { Contractor, EnrichedWorkOrder, Payment } from '@/lib/types';
 import ContractorDetailView from './ContractorDetailView';
 
@@ -20,24 +19,10 @@ export default function ContractorsView({
   onAddPayment: (prefill?: { contractor_name: string; wo_number?: string }) => void;
   onEditPayment: (p: Payment) => void;
 }) {
-  const supabase = createClient();
   const [search, setSearch] = useState('');
-  const [inviting, setInviting] = useState<string | null>(null);
-  const [inviteSent, setInviteSent] = useState<string | null>(null);
   const [selected, setSelected] = useState<Contractor | null>(null);
 
   const filtered = contractors.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()));
-
-  const handleInvite = async (c: Contractor) => {
-    if (!c.email) { alert('This contractor has no email on file. Add their email first.'); return; }
-    setInviting(c.id);
-    const origin = window.location.origin;
-    const { error } = await supabase.auth.signInWithOtp({ email: c.email, options: { emailRedirectTo: `${origin}/contractor` } });
-    setInviting(null);
-    if (error) { alert(`Failed to send invite: ${error.message}`); return; }
-    setInviteSent(c.id);
-    setTimeout(() => setInviteSent(null), 4000);
-  };
 
   if (selected) {
     return (
@@ -112,14 +97,6 @@ export default function ContractorsView({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                  <button
-                    className="btn btn-ghost"
-                    style={{ padding: '6px 12px', fontSize: 12, gap: 4, display: 'flex', alignItems: 'center' }}
-                    disabled={inviting === c.id}
-                    onClick={() => handleInvite(c)}
-                  >
-                    {inviting === c.id ? 'Sending…' : inviteSent === c.id ? '✓ Sent!' : <><Send size={12} /> Invite</>}
-                  </button>
                   <button className="icon-btn" onClick={() => onEdit(c)}><Edit2 size={14} /></button>
                   <button className="icon-btn" style={{ color: '#b91c1c' }}
                     onClick={() => { if (confirm('Delete ' + c.name + '?')) onDelete(c.id); }}>

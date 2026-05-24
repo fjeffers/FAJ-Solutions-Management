@@ -53,9 +53,12 @@ export default function WorkOrdersView({
   const filtered = sorted.filter((w) => {
     if (!showArchived && w.archived_at !== null) return false;
     const q = search.toLowerCase();
+    const allNames = (w.contractor_names && w.contractor_names.length > 0)
+      ? w.contractor_names
+      : [w.contractor_name];
     const matchSearch =
       w.wo_number.includes(search) ||
-      w.contractor_name.toLowerCase().includes(q) ||
+      allNames.some((n) => n.toLowerCase().includes(q)) ||
       (w.title ?? '').toLowerCase().includes(q) ||
       (w.service_type ?? '').toLowerCase().includes(q) ||
       (w.site_city ?? '').toLowerCase().includes(q);
@@ -350,7 +353,11 @@ function WOCard({
           {w.title && (
             <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{w.title}</div>
           )}
-          <div style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>{w.contractor_name}</div>
+          <div style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>
+            {(w.contractor_names && w.contractor_names.length > 1)
+              ? w.contractor_names.join(' · ')
+              : w.contractor_name}
+          </div>
         </div>
 
         {/* ── Row 3: Meta chips ── */}

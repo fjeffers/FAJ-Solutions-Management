@@ -163,6 +163,9 @@ export type WorkOrder = {
   signature_required: boolean;
   photo_required: boolean;
 
+  // Multi-contractor (migration-014)
+  contractor_names: string[] | null;
+
   // Soft-archive (migration-013)
   archived_at: string | null;
 

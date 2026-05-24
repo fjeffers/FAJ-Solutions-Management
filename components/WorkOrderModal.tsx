@@ -200,6 +200,14 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
   const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? []);
   const [docUrls, setDocUrls] = useState<string[]>(() => item?.doc_urls ?? []);
 
+  // ── Multi-contractor ───────────────────────────────────────────────────────
+  const [contractorNames, setContractorNames] = useState<string[]>(() => {
+    if (item?.contractor_names && item.contractor_names.length > 0) return item.contractor_names;
+    if (item?.contractor_name) return [item.contractor_name];
+    return [];
+  });
+  const [contractorToAdd, setContractorToAdd] = useState<string>('');
+
   // ── Payments tab state ────────────────────────────────────────────────────
   const [showPayForm, setShowPayForm] = useState(false);
   const [payLoading, setPayLoading] = useState(false);
@@ -252,7 +260,22 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
     setCustomQA((qs) => qs.filter((q) => q.id !== id));
 
   const computed = calcTotal(form);
-  const canSave = !!(form.wo_number?.trim() && form.contractor_name?.trim());
+  const canSave = !!(form.wo_number?.trim() && contractorNames.length > 0);
+
+  const addContractor = () => {
+    const name = contractorToAdd.trim();
+    if (!name || contractorNames.includes(name)) return;
+    const next = [...contractorNames, name];
+    setContractorNames(next);
+    setContractorToAdd('');
+    if (next.length === 1) set('contractor_name', name);
+  };
+
+  const removeContractor = (name: string) => {
+    const next = contractorNames.filter((n) => n !== name);
+    setContractorNames(next);
+    set('contractor_name', next[0] ?? '');
+  };
 
   // Derived payment totals for this WO (must come after `computed`)
   const woPayments = payments.filter(
@@ -266,6 +289,8 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
     if (!canSave) return;
     const payload: Partial<WorkOrder> = {
       ...form,
+      contractor_name:  contractorNames[0] ?? form.contractor_name ?? '',
+      contractor_names: contractorNames.length > 0 ? contractorNames : null,
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
       external_wo_id:  form.external_wo_id  || null,
       customer_name:   form.customer_name   || null,
@@ -295,7 +320,7 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
   const statusStyle = STATUS_COLORS[form.wo_status as WorkOrderStatus] ?? STATUS_COLORS['Open'];
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
@@ -349,13 +374,53 @@ export default function WorkOrderModal({ item, contractors, questionTemplates, p
                 <input className="input" value={form.title ?? ''} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Network cable installation" />
               </PF>
             </div>
-            <PF label="Contractor *" icon={<User size={13} />}>
-              <div style={{ position: 'relative' }}>
-                <select className="select input" value={form.contractor_name ?? ''} onChange={(e) => set('contractor_name', e.target.value)}>
-                  <option value="">Select contractor</option>
-                  {contractors.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                </select>
-                <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+            <PF label="Contractors *" icon={<User size={13} />}>
+              {/* Chip list */}
+              {contractorNames.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  {contractorNames.map((name, idx) => (
+                    <span key={name} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                      background: idx === 0 ? 'rgba(13,115,119,0.1)' : 'rgba(0,0,0,0.06)',
+                      color: idx === 0 ? 'var(--teal)' : '#555',
+                      border: idx === 0 ? '1px solid rgba(13,115,119,0.25)' : '1px solid rgba(0,0,0,0.1)',
+                    }}>
+                      {idx === 0 && <span style={{ fontSize: 9, opacity: 0.7 }}>PRIMARY</span>}
+                      {name}
+                      <button onClick={() => removeContractor(name)} style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                        display: 'flex', alignItems: 'center', color: 'inherit', opacity: 0.6,
+                      }}>
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Add dropdown */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <select className="select input" value={contractorToAdd}
+                    onChange={(e) => setContractorToAdd(e.target.value)}
+                    style={{ paddingRight: 32 }}>
+                    <option value="">
+                      {contractorNames.length === 0 ? 'Select contractor' : 'Add another tech…'}
+                    </option>
+                    {contractors
+                      .filter((c) => !contractorNames.includes(c.name))
+                      .map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                </div>
+                <button onClick={addContractor} disabled={!contractorToAdd} style={{
+                  padding: '0 14px', borderRadius: 8, border: 'none', cursor: contractorToAdd ? 'pointer' : 'not-allowed',
+                  background: contractorToAdd ? 'var(--teal)' : '#ddd', color: '#fff',
+                  fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4,
+                  opacity: contractorToAdd ? 1 : 0.5,
+                }}>
+                  <Plus size={13} /> Add
+                </button>
               </div>
             </PF>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>

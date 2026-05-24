@@ -187,6 +187,8 @@ export default function HomePage() {
       attachment_url:  w.attachment_url  ?? null,
       // Admin documents (migration-008)
       doc_urls:        w.doc_urls        ?? [],
+      // Multi-contractor (migration-014)
+      contractor_names: w.contractor_names ?? null,
     };
     if (w.id) {
       await supabase.from('work_orders').update(payload).eq('id', w.id);
@@ -208,26 +210,39 @@ export default function HomePage() {
   };
 
   const handleSendPortal = async (w: EnrichedWorkOrder) => {
-    const contractor = contractors.find((c) => c.name === w.contractor_name);
-    if (!contractor?.email || !contractor.portal_token) return;
-    const portalUrl = `${window.location.origin}/portal/${contractor.portal_token}`;
-    const contractorWOs = workOrders
-      .filter((wo) => wo.contractor_name === contractor.name && wo.wo_status !== 'Paid')
-      .map((wo) => ({
-        wo_number: wo.wo_number,
-        title: wo.title,
-        start_date: wo.start_date,
-        start_time: wo.start_time,
-        site_address: wo.site_address,
-        site_city: wo.site_city,
-        site_state: wo.site_state,
-      }));
-    await sendPortalLink({
-      contractor_email: contractor.email,
-      contractor_name: contractor.name,
-      portal_url: portalUrl,
-      work_orders: contractorWOs,
-    });
+    // Collect all names on this WO (multi-contractor or fall back to primary)
+    const names: string[] = (w.contractor_names && w.contractor_names.length > 0)
+      ? w.contractor_names
+      : (w.contractor_name ? [w.contractor_name] : []);
+
+    for (const name of names) {
+      const contractor = contractors.find((c) => c.name === name);
+      if (!contractor?.email || !contractor.portal_token) continue;
+      const portalUrl = `${window.location.origin}/portal/${contractor.portal_token}`;
+      // Each tech only sees WOs they're assigned to (by contractor_name match)
+      const contractorWOs = workOrders
+        .filter((wo) => {
+          const assignedNames: string[] = (wo.contractor_names && wo.contractor_names.length > 0)
+            ? wo.contractor_names
+            : (wo.contractor_name ? [wo.contractor_name] : []);
+          return assignedNames.includes(contractor.name) && wo.wo_status !== 'Paid';
+        })
+        .map((wo) => ({
+          wo_number: wo.wo_number,
+          title: wo.title,
+          start_date: wo.start_date,
+          start_time: wo.start_time,
+          site_address: wo.site_address,
+          site_city: wo.site_city,
+          site_state: wo.site_state,
+        }));
+      await sendPortalLink({
+        contractor_email: contractor.email,
+        contractor_name: contractor.name,
+        portal_url: portalUrl,
+        work_orders: contractorWOs,
+      });
+    }
   };
 
   const deleteWorkOrder = async (id: string) => {

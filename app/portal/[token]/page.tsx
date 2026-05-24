@@ -52,13 +52,16 @@ function statusBadge(wo: WorkOrder) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function PortalPage({ params }: { params: { token: string } }) {
+export default async function PortalPage({ params }: { params: Promise<{ token: string }> }) {
+  // Next.js 15+ — params is a Promise and must be awaited
+  const { token } = await params;
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
 
-  const { data, error } = await supabase.rpc('get_portal_data', { p_token: params.token });
+  const { data, error } = await supabase.rpc('get_portal_data', { p_token: token });
   if (error || !data) return notFound();
 
   const { contractor, work_orders } = data as PortalData;
@@ -70,7 +73,7 @@ export default async function PortalPage({ params }: { params: { token: string }
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
-    await sb.rpc('acknowledge_work_order', { p_wo_id: woId, p_token: params.token });
+    await sb.rpc('acknowledge_work_order', { p_wo_id: woId, p_token: token });
 
     // Notify Fred that the contractor accepted
     const wo = work_orders.find((w) => w.id === woId);
@@ -89,7 +92,7 @@ export default async function PortalPage({ params }: { params: { token: string }
       });
     } catch { /* non-blocking — don't fail the acknowledge if email errors */ }
 
-    revalidatePath(`/portal/${params.token}`);
+    revalidatePath(`/portal/${token}`);
   }
 
   // ── Server action: contractor updates WO status ──
@@ -99,7 +102,7 @@ export default async function PortalPage({ params }: { params: { token: string }
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
-    await sb.rpc('update_portal_wo_status', { p_wo_id: woId, p_token: params.token, p_status: status });
+    await sb.rpc('update_portal_wo_status', { p_wo_id: woId, p_token: token, p_status: status });
 
     // Notify Fred of the status change
     const wo = work_orders.find((w) => w.id === woId);
@@ -119,7 +122,7 @@ export default async function PortalPage({ params }: { params: { token: string }
       });
     } catch { /* non-blocking */ }
 
-    revalidatePath(`/portal/${params.token}`);
+    revalidatePath(`/portal/${token}`);
   }
 
   const pending   = work_orders.filter((w) => !w.acknowledged_at);
@@ -163,7 +166,7 @@ export default async function PortalPage({ params }: { params: { token: string }
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {pending.map((wo) => (
-                <WOCard key={wo.id} wo={wo} token={params.token}
+                <WOCard key={wo.id} wo={wo} token={token}
                   onAcknowledge={handleAcknowledge} onStatusUpdate={handleStatusUpdate} isNew />
               ))}
             </div>
@@ -181,7 +184,7 @@ export default async function PortalPage({ params }: { params: { token: string }
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {accepted.map((wo) => (
-                <WOCard key={wo.id} wo={wo} token={params.token}
+                <WOCard key={wo.id} wo={wo} token={token}
                   onAcknowledge={handleAcknowledge} onStatusUpdate={handleStatusUpdate} isNew={false} />
               ))}
             </div>

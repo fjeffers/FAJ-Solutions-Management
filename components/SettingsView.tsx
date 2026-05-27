@@ -43,7 +43,7 @@ export default function SettingsView({ templates, onSave, onDelete, onUploadAtta
   };
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 960, margin: '0 auto' }}>
+    <div className="view-inner" style={{ maxWidth: 960, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>SETTINGS</div>

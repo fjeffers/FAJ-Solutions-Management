@@ -40,7 +40,7 @@ export default function PayablesView({
   const grandTotal = groups.reduce((s, g) => s + g.total, 0);
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 960, margin: '0 auto' }}>
+    <div className="view-inner" style={{ maxWidth: 960, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>PAYABLES</div>

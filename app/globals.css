@@ -185,6 +185,8 @@ body {
 
 .gold-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); margin: 24px 0; }
 
+.view-inner { padding: 28px 32px; }
+
 .icon-btn {
   padding: 8px;
   border: none;
@@ -199,12 +201,35 @@ body {
 }
 .icon-btn:hover { background: rgba(13,115,119,0.08); color: var(--teal); }
 
+/* ── App root layout ── */
+#mobile-header { display: none; }
+
+.app-root {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+}
+
 .sidebar-desktop { display: flex; }
 
 @media (max-width: 768px) {
+  .app-root { flex-direction: column !important; }
   .sidebar-desktop { display: none !important; }
-  #mobile-header { display: flex !important; }
-  .main-content { padding: 16px !important; }
+  #mobile-header { display: flex !important; width: 100%; }
+  .main-content { padding: 0 !important; }
+
+  /* Tighten inner view padding for small screens */
+  .view-inner { padding: 16px !important; }
+
+  /* Modal full-screen on mobile */
+  .modal-overlay { padding: 0 !important; align-items: flex-end !important; }
+  .modal-content { border-radius: 20px 20px 0 0 !important; max-height: 95vh !important; padding: 24px 20px !important; }
+
+  /* KPI stats grid: 2 cols on phone */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Filter chips: wrap nicely */
+  .filter-chips { flex-wrap: wrap; gap: 8px !important; }
 }
 
 /* ── Dark mode ── */

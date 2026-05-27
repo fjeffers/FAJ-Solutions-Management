@@ -57,7 +57,7 @@ export default function QuickBooksView({ payments, workOrders, contractors }: { 
   }, [filtered]);
 
   return (
-    <div>
+    <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ marginBottom: 28 }}>
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>EXPORTS</div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>

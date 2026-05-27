@@ -240,7 +240,7 @@ export default function HomePage() {
           const assignedNames: string[] = (wo.contractor_names && wo.contractor_names.length > 0)
             ? wo.contractor_names
             : (wo.contractor_name ? [wo.contractor_name] : []);
-          return assignedNames.includes(contractor.name) && wo.wo_status !== 'Paid';
+          return assignedNames.includes(contractor.name) && wo.wo_status !== 'Paid' && wo.wo_status !== 'Approved';
         })
         .map((wo) => ({
           wo_number: wo.wo_number,
@@ -445,12 +445,12 @@ export default function HomePage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      {/* Mobile header */}
+    <div className="app-root">
+      {/* Mobile header — hidden on desktop via CSS, shown on mobile via media query */}
       <div
         className="no-print"
         id="mobile-header"
-        style={{ display: 'none', position: 'sticky', top: 0, zIndex: 50, padding: '12px 16px', background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white', alignItems: 'center', justifyContent: 'space-between' }}
+        style={{ position: 'sticky', top: 0, zIndex: 50, padding: '12px 16px', background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white', alignItems: 'center', justifyContent: 'space-between' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Sparkles size={16} color="var(--gold-light)" />
@@ -545,7 +545,7 @@ export default function HomePage() {
       />
 
       {/* ── Main Content ── */}
-      <main style={{ flex: 1, overflow: 'auto' }}>
+      <main className="main-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
         {view === 'dashboard' && (
           <DashboardView
             stats={stats}

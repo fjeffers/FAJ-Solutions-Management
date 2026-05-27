@@ -16,7 +16,7 @@ export default function W9View({ contractors, onEdit }: { contractors: Contracto
   };
 
   return (
-    <div>
+    <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ marginBottom: 28 }}>
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>COMPLIANCE</div>
         <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>W-9 Manager</h1>

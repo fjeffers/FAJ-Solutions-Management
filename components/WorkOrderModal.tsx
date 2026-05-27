@@ -1063,7 +1063,39 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
               </div>
             )}
 
-            {/* Q list */}
+            {/* ── Contractor Responses (read-only) ── */}
+            {customQA.some((q) => q.answer !== null && q.answer !== undefined && String(q.answer).trim() !== '') && (
+              <div style={{ padding: '14px 16px', background: 'rgba(16,185,129,0.05)', borderRadius: 10, border: '1.5px solid rgba(16,185,129,0.25)' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#047857', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>
+                  ✓ Contractor Responses
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {customQA.filter((q) => q.answer !== null && q.answer !== undefined && String(q.answer).trim() !== '').map((q) => (
+                    <div key={q.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.3 }}>{q.label}</div>
+                      {(q.type === 'photo' || q.type === 'document' || q.type === 'signature') && String(q.answer).startsWith('http') ? (
+                        /\.(png|jpe?g|gif|webp)(\?|$)/i.test(String(q.answer)) || q.type === 'photo' || q.type === 'signature' ? (
+                          <a href={String(q.answer)} target="_blank" rel="noopener noreferrer">
+                            <img src={String(q.answer)} alt={q.label} style={{ maxWidth: 200, maxHeight: 140, borderRadius: 6, border: '1px solid #e5e7eb', objectFit: 'cover' }} />
+                          </a>
+                        ) : (
+                          <a href={String(q.answer)} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 13, color: '#1565c0', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            📎 View Uploaded File
+                          </a>
+                        )
+                      ) : (
+                        <div style={{ fontSize: 14, color: '#1a1a1a', background: 'white', padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', lineHeight: 1.5 }}>
+                          {String(q.answer)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Q list — question definitions editor */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {customQA.map((q, i) => (
                 <div key={q.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', borderRadius: 10, background: '#fafafa', border: '1.5px solid #e5e7eb' }}>

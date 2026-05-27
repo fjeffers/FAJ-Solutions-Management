@@ -85,7 +85,7 @@ export default function WorkOrdersView({
   };
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
+    <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* ── Header ── */}
       <div style={{ marginBottom: 28 }}>
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>WORK ORDERS</div>
@@ -206,6 +206,7 @@ function WOCard({
 
   return (
     <div
+      onClick={() => onEdit(w)}
       style={{
         background: 'white',
         borderRadius: 12,
@@ -215,7 +216,11 @@ function WOCard({
         display: 'flex',
         flexDirection: 'column',
         opacity: isArchived ? 0.82 : 1,
+        cursor: 'pointer',
+        transition: 'box-shadow 0.2s, border-color 0.2s',
       }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px rgba(13,115,119,0.15)'; (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(13,115,119,0.3)'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'; (e.currentTarget as HTMLDivElement).style.borderColor = isArchived ? 'rgba(109,40,217,0.25)' : '#e5e7eb'; }}
     >
       {/* Archived banner */}
       {isArchived && (
@@ -255,8 +260,8 @@ function WOCard({
             </span>
           </div>
 
-          {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          {/* Action buttons — stopPropagation prevents card-level onClick from firing */}
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
             <button
               title="Send Work Order"
               onClick={() => onSend(w)}

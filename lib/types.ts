@@ -364,12 +364,13 @@ export type ParsedNetviewFields = {
   client_reference: string; // Site ID
   external_wo_id: string;   // Ticket Number
   start_date: string | null;
+  total_amount?: number;    // Google Sheets imports carry an amount; email imports don't
 };
 
 export type ImportQueueItem = {
   id: string;
   user_id: string;
-  source: 'netview_smartsheet';
+  source: 'netview_smartsheet' | 'google_sheets' | 'google_docs';
   external_dedupe_key: string;
   parsed_fields: ParsedNetviewFields;
   raw_snippet: string | null;

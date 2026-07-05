@@ -12,6 +12,7 @@ import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
   Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox,
+  ChevronDown,
 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -55,6 +56,41 @@ function viewFromUrl(): View {
   return VIEWS.includes(v as View) ? (v as View) : 'dashboard';
 }
 
+// Collapsible sidebar section. Open/closed state is owned by HomePage and
+// persisted to localStorage so the layout survives refreshes.
+function NavSection({ title, open, onToggle, badge, children }: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  badge?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <button
+        onClick={onToggle}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)',
+          padding: '8px 12px 6px', textTransform: 'uppercase',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {title}
+          {!open && badge != null && badge > 0 && (
+            <span style={{ background: 'var(--teal)', color: 'white', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px', letterSpacing: 0 }}>
+              {badge}
+            </span>
+          )}
+        </span>
+        <ChevronDown size={12} style={{ transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
+      </button>
+      {open && <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{children}</div>}
+    </div>
+  );
+}
+
 type Modal =
   | { type: 'contractor'; item: Contractor | null }
   | { type: 'wo'; item: WorkOrder | null; prefill?: Partial<WorkOrder> }
@@ -81,6 +117,19 @@ export default function HomePage() {
   }, []);
   const [modal, setModal] = useState<Modal>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  // Sidebar sections default to open; user's collapse choices persist across visits.
+  // Safe to read localStorage in the initializer — the loading screen renders first,
+  // so server and client markup match at hydration time.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem('faj-nav-open') ?? '{}'); } catch { return {}; }
+  });
+  const sectionOpen = (k: string) => openSections[k] !== false;
+  const toggleSection = (k: string) => setOpenSections((prev) => {
+    const next = { ...prev, [k]: !(prev[k] !== false) };
+    try { localStorage.setItem('faj-nav-open', JSON.stringify(next)); } catch { /* private mode */ }
+    return next;
+  });
   const [selectedContractor, setSelectedContractor] = useState<string | null>(null);
   const [taxYear, setTaxYear] = useState<number>(new Date().getFullYear());
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -187,6 +236,11 @@ export default function HomePage() {
   }, []);
 
   const enrichedWOs = useMemo(() => enrichWorkOrders(workOrders, payments), [workOrders, payments]);
+
+  const pendingImportCount = useMemo(
+    () => importQueue.filter((i) => i.status === 'pending').length,
+    [importQueue],
+  );
 
   // Auto-suggest next WO number for new work orders
   const nextWoNumber = useMemo(() => {
@@ -755,47 +809,59 @@ export default function HomePage() {
           <div className="serif" style={{ fontSize: 20, fontWeight: 600, color: 'white', lineHeight: 1.2 }}>Business Manager</div>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '0 12px', marginBottom: 6, textTransform: 'uppercase' }}>Main</div>
-          <NI k="dashboard"   icon={<BarChart3 size={15} />}    label="Dashboard" />
-          <NI k="financials"  icon={<TrendingUp size={15} />}   label="Financials" />
-          <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
-          <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
-          <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
-          <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
-          <NI k="contractor-analytics" icon={<Award size={15} />} label="Performance" />
-          <NI k="scheduling" icon={<Calendar size={15} />} label="Scheduling" />
-          <NI k="dispatch" icon={<Map size={15} />} label="Dispatch Map" />
-          <NI k="materials" icon={<Package size={15} />} label="Materials" />
-          <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
-          <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
-            <Inbox size={15} /> Import
-            {importQueue.filter((i) => i.status === 'pending').length > 0 && (
-              <span style={{
-                background: 'var(--teal)', color: 'white', borderRadius: 999,
-                fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4,
-              }}>
-                {importQueue.filter((i) => i.status === 'pending').length}
-              </span>
-            )}
-          </button>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Reports</div>
-          <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
-          <NI k="1099"        icon={<ClipboardCheck size={15} />} label="1099s" />
-          <NI k="w9"          icon={<BookOpen size={15} />}     label="W-9s" />
-          <NI k="quickbooks"  icon={<TrendingUp size={15} />}   label="QuickBooks" />
-          <a
-            className="nav-btn"
-            href={NETVIEW_FORM_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Opens NetView's vendor payment form in a new tab. Tip: open a NetView work order and use 'Submit to Netview' there to get the form pre-filled."
-            style={{ textDecoration: 'none' }}
+        <nav style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
+          <NavSection title="Main" open={sectionOpen('main')} onToggle={() => toggleSection('main')}>
+            <NI k="dashboard"   icon={<BarChart3 size={15} />}    label="Dashboard" />
+            <NI k="financials"  icon={<TrendingUp size={15} />}   label="Financials" />
+            <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
+            <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
+            <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
+          </NavSection>
+          <NavSection
+            title="Field Ops"
+            open={sectionOpen('fieldops')}
+            onToggle={() => toggleSection('fieldops')}
+            badge={pendingImportCount}
           >
-            <FileText size={15} /> NetView Invoice
-          </a>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Settings</div>
-          <NI k="settings"    icon={<Settings size={15} />}     label="Settings" />
+            <NI k="scheduling" icon={<Calendar size={15} />} label="Scheduling" />
+            <NI k="dispatch" icon={<Map size={15} />} label="Dispatch Map" />
+            <NI k="materials" icon={<Package size={15} />} label="Materials" />
+            <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
+            <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
+              <Inbox size={15} /> Import
+              {pendingImportCount > 0 && (
+                <span style={{
+                  background: 'var(--teal)', color: 'white', borderRadius: 999,
+                  fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4,
+                }}>
+                  {pendingImportCount}
+                </span>
+              )}
+            </button>
+          </NavSection>
+          <NavSection title="Contractors" open={sectionOpen('contractors')} onToggle={() => toggleSection('contractors')}>
+            <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
+            <NI k="contractor-analytics" icon={<Award size={15} />} label="Performance" />
+          </NavSection>
+          <NavSection title="Reports" open={sectionOpen('reports')} onToggle={() => toggleSection('reports')}>
+            <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
+            <NI k="1099"        icon={<ClipboardCheck size={15} />} label="1099s" />
+            <NI k="w9"          icon={<BookOpen size={15} />}     label="W-9s" />
+            <NI k="quickbooks"  icon={<TrendingUp size={15} />}   label="QuickBooks" />
+            <a
+              className="nav-btn"
+              href={NETVIEW_FORM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Opens NetView's vendor payment form in a new tab. Tip: open a NetView work order and use 'Submit to Netview' there to get the form pre-filled."
+              style={{ textDecoration: 'none' }}
+            >
+              <FileText size={15} /> NetView Invoice
+            </a>
+          </NavSection>
+          <NavSection title="Settings" open={sectionOpen('settings')} onToggle={() => toggleSection('settings')}>
+            <NI k="settings"    icon={<Settings size={15} />}     label="Settings" />
+          </NavSection>
         </nav>
 
         {/* Utility buttons */}
@@ -891,6 +957,7 @@ export default function HomePage() {
             connection={gmailConnection}
             onApprove={approveImportItem}
             onReject={rejectImportItem}
+            onImported={loadAll}
           />
         )}
         {view === 'workorders' && (

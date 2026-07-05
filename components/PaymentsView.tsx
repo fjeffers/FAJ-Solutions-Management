@@ -1,6 +1,6 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, TrendingUp, DollarSign, Users, CreditCard } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, TrendingUp, DollarSign, Users, CreditCard, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Payment, WorkOrder } from '@/lib/types';
 import WOPaymentHistoryModal from './WOPaymentHistoryModal';
@@ -22,10 +22,12 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDelete }: {
+export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDelete, qboConnected = false, onSyncPayment }: {
   payments: Payment[]; workOrders: WorkOrder[];
   onAdd: () => void; onEdit: (p: Payment) => void; onDelete: (id: string) => void;
+  qboConnected?: boolean; onSyncPayment?: (id: string) => Promise<void>;
 }) {
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [methodFilter, setMethodFilter] = useState('all');
   const [contractorFilter, setContractorFilter] = useState('all');
@@ -222,7 +224,24 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
                   </td>
                   <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 700, color: '#047857', whiteSpace: 'nowrap' }}>{fmtMoney(Number(p.amount))}</td>
                   <td style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', gap: 4 }}>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      {qboConnected && onSyncPayment && (
+                        p.qbo_synced_at ? (
+                          <span title="Synced to QuickBooks" style={{ color: '#047857', display: 'flex' }}><CheckCircle2 size={14} /></span>
+                        ) : (
+                          <button
+                            className="icon-btn"
+                            title="Sync to QuickBooks"
+                            disabled={syncingId === p.id}
+                            onClick={async () => {
+                              setSyncingId(p.id);
+                              try { await onSyncPayment(p.id); } finally { setSyncingId(null); }
+                            }}
+                          >
+                            <RefreshCw size={14} className={syncingId === p.id ? 'spin' : ''} />
+                          </button>
+                        )
+                      )}
                       <button className="icon-btn" onClick={() => onEdit(p)}><Edit2 size={14} /></button>
                       <button className="icon-btn" style={{ color: '#b91c1c' }} onClick={() => { if (confirm('Delete this payment?')) onDelete(p.id); }}><Trash2 size={14} /></button>
                     </div>

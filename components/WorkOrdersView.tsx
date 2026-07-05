@@ -1,8 +1,8 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO } from '@/lib/utils';
-import type { EnrichedWorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
+import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
 
@@ -27,12 +27,13 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 };
 
 export default function WorkOrdersView({
-  workOrders, stats, onAdd, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
+  workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   onArchive, onUnarchive,
 }: {
   workOrders: EnrichedWorkOrder[];
   stats: Stats;
   onAdd: () => void;
+  onAddFromAI: (fields: Partial<WorkOrder>) => void;
   onEdit: (w: EnrichedWorkOrder) => void;
   onDelete: (id: string) => void;
   onDuplicate: (w: EnrichedWorkOrder) => void;
@@ -42,6 +43,7 @@ export default function WorkOrdersView({
   onArchive: (id: string) => void;
   onUnarchive: (id: string) => void;
 }) {
+  const [aiOpen, setAiOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [woStatusFilter, setWoStatusFilter] = useState<'all' | WorkOrderStatus>('all');
   const [emailPayload, setEmailPayload] = useState<EmailPayload | null>(null);
@@ -116,10 +118,18 @@ export default function WorkOrdersView({
                 {showArchived ? 'Hide Archived' : `Archived (${archivedCount})`}
               </button>
             )}
+            <button className="btn btn-ghost" onClick={() => setAiOpen(true)}><Sparkles size={14} /> Generate with AI</button>
             <button className="btn btn-primary" onClick={onAdd}><Plus size={14} /> New Work Order</button>
           </div>
         </div>
       </div>
+
+      {aiOpen && (
+        <AIGenerateModal
+          onClose={() => setAiOpen(false)}
+          onGenerated={(fields) => { setAiOpen(false); onAddFromAI(fields); }}
+        />
+      )}
 
       {/* ── Search + Filter ── */}
       <div className="glass card" style={{ marginBottom: 20, padding: '14px 16px' }}>
@@ -415,5 +425,75 @@ function MetaChip({ icon, label }: { icon: React.ReactNode; label: string }) {
       <span style={{ color: '#aaa' }}>{icon}</span>
       {label}
     </span>
+  );
+}
+
+function AIGenerateModal({
+  onClose, onGenerated,
+}: {
+  onClose: () => void;
+  onGenerated: (fields: Partial<WorkOrder>) => void;
+}) {
+  const [prompt, setPrompt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const generate = async () => {
+    if (!prompt.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_description: prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || 'Generation failed'); return; }
+      const r = data.result;
+      onGenerated({
+        title: r.title || undefined,
+        description: r.scope_of_work || r.description || undefined,
+        deliverable_instructions: r.special_instructions || undefined,
+        tools_required: r.tools_required || undefined,
+        site_name: r.site_name || undefined,
+        priority: r.priority ? r.priority.charAt(0).toUpperCase() + r.priority.slice(1) : undefined,
+      });
+    } catch {
+      setError('Could not reach the AI service — try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={onClose}>
+      <div className="glass card" style={{ width: 480, maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15 }}>
+            <Sparkles size={16} color="var(--gold)" /> Generate Work Order with AI
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
+        </div>
+        <p style={{ fontSize: 12, color: '#888', margin: '0 0 12px' }}>
+          Describe the job in plain English — I&apos;ll draft the title, description, and details for you to review.
+        </p>
+        <textarea
+          className="input"
+          rows={4}
+          autoFocus
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="e.g. Install a new security camera in the training room at the Wendy's on Main St, needs cat6 cabling run from the wiring closet..."
+        />
+        {error && <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={generate} disabled={loading || !prompt.trim()}>
+            {loading ? 'Generating…' : 'Generate'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

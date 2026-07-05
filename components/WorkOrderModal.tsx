@@ -5,10 +5,11 @@ import {
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
   Phone, Mail, HelpCircle, Plus, Paperclip,
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
-  CreditCard, Trash2, CheckCircle2, Timer, Printer,
+  CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare,
 } from 'lucide-react';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate } from '@/lib/types';
 import WOTimeLogs from '@/components/WOTimeLogs';
+import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import {
   ASSIGNMENT_TYPES,
   PAY_TYPES,
@@ -21,10 +22,14 @@ import {
 } from '@/lib/types';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { printSignOffSheet } from '@/lib/signoff';
+import { buildNetviewFormUrl } from '@/lib/netview-payroll';
+import { createClient } from '@/lib/supabase/client';
 
-type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents';
+type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents' | 'chat';
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'details',    label: 'Details',    icon: <Hash size={13} /> },
+  { key: 'documents',  label: 'Documents',  icon: <FolderOpen size={13} /> },
+  { key: 'chat',       label: 'Chat',       icon: <MessageSquare size={13} /> },
   { key: 'marketplace', label: 'Marketplace', icon: <Briefcase size={13} /> },
   { key: 'pay',        label: 'Pay',        icon: <DollarSign size={13} /> },
   { key: 'payments',   label: 'Payments',   icon: <CreditCard size={13} /> },
@@ -34,7 +39,6 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'scope',      label: 'Scope',      icon: <ClipboardList size={13} /> },
   { key: 'contacts',   label: 'Contacts',   icon: <Phone size={13} /> },
   { key: 'questions',  label: 'Questions',  icon: <HelpCircle size={13} /> },
-  { key: 'documents',  label: 'Documents',  icon: <FolderOpen size={13} /> },
 ];
 
 function newQAItem(label = '', type: QuestionFieldType = 'text'): CustomQAItem {
@@ -131,6 +135,7 @@ function calcTotal(f: Partial<WorkOrder>): number {
 type Props = {
   item: WorkOrder | null;
   nextWoNumber?: string;
+  prefill?: Partial<WorkOrder>;
   contractors: Contractor[];
   questionTemplates: QuestionTemplate[];
   deliverableTemplates?: DeliverableTemplate[];
@@ -143,7 +148,7 @@ type Props = {
   onDeletePayment?: (id: string) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, nextWoNumber, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
@@ -201,6 +206,10 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
     poc_email:       item?.poc_email       ?? '',
     support_contact: item?.support_contact ?? '',
     attachment_url:  item?.attachment_url  ?? null,
+    // AI-generated prefill values (see WorkOrdersView's "Generate with AI") only apply in
+    // create mode, and only override the specific fields they set — everything else above
+    // keeps its normal default.
+    ...(!item ? prefill : {}),
   });
   const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? []);
 
@@ -214,6 +223,9 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
   const updateContact = (id: string, field: keyof SiteContact, value: string) =>
     setContacts((cs) => cs.map((c) => c.id === id ? { ...c, [field]: value } : c));
   const [docUrls, setDocUrls] = useState<string[]>(() => item?.doc_urls ?? []);
+  const docImgCount = docUrls.filter(u => /\.(png|jpe?g|gif|webp)/i.test(u)).length;
+  const docFileCount = docUrls.length - docImgCount;
+  const hasDocFiles = docUrls.length > 0;
 
   // ── Multi-contractor ───────────────────────────────────────────────────────
   const [contractorNames, setContractorNames] = useState<string[]>(() => {
@@ -385,7 +397,7 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid #eee', overflowX: 'auto', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid #eee', overflowX: 'auto', flexWrap: 'nowrap' }}>
           {TABS.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               display: 'flex', alignItems: 'center', gap: 5,
@@ -393,9 +405,16 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
               fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 11,
               color: tab === t.key ? 'var(--teal)' : '#999',
               borderBottom: tab === t.key ? '2px solid var(--teal)' : '2px solid transparent',
-              marginBottom: -1, transition: 'all 0.2s', whiteSpace: 'nowrap',
+              marginBottom: -1, transition: 'all 0.2s', whiteSpace: 'nowrap', flexShrink: 0,
             }}>
               {t.icon} {t.label}
+              {t.key === 'documents' && docUrls.length > 0 && (
+                <span style={{
+                  background: 'var(--teal)', color: 'white', borderRadius: 999,
+                  fontSize: 9, fontWeight: 800, padding: '1px 5px', lineHeight: 1.6,
+                  marginLeft: 2,
+                }}>{docUrls.length}</span>
+              )}
             </button>
           ))}
         </div>
@@ -531,6 +550,36 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
                 </div>
               </PF>
             </div>
+
+            {/* ── Documents quick-access banner ── */}
+            <button
+              type="button"
+              onClick={() => setTab('documents')}
+              style={{
+                width: '100%', padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
+                background: hasDocFiles ? 'rgba(13,115,119,0.07)' : 'rgba(0,0,0,0.03)',
+                border: hasDocFiles ? '1.5px solid rgba(13,115,119,0.25)' : '1.5px solid rgba(0,0,0,0.08)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                fontFamily: 'Lato, sans-serif', transition: 'background 0.15s',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <FolderOpen size={16} color={hasDocFiles ? 'var(--teal)' : '#bbb'} />
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: hasDocFiles ? 'var(--teal)' : '#aaa' }}>
+                    {hasDocFiles ? `${docUrls.length} document${docUrls.length === 1 ? '' : 's'} attached` : 'No documents attached'}
+                  </div>
+                  {hasDocFiles && (
+                    <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                      {docImgCount} photo{docImgCount !== 1 ? 's' : ''}, {docFileCount} file{docFileCount !== 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)' }}>
+                View Documents
+              </div>
+            </button>
           </div>
         )}
 
@@ -719,6 +768,10 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
                 <MoneyInput value={form.bonus_amount} onChange={(v) => set('bonus_amount', v)} />
               </PF>
             </div>
+
+            {form.source_platform === 'netview' && item && (
+              <NetviewSubmitButton wo={item} contractors={contractors} />
+            )}
           </div>
         )}
 
@@ -1287,6 +1340,11 @@ export default function WorkOrderModal({ item, nextWoNumber, contractors, questi
           <WOTimeLogs woId={item?.id} />
         )}
 
+        {/* ── CHAT TAB ── */}
+        {tab === 'chat' && (
+          <WorkOrderChatPanel woNumber={item?.wo_number} />
+        )}
+
         {/* ── DOCUMENTS TAB ── */}
         {tab === 'documents' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -1552,6 +1610,35 @@ function SaveAsTemplateRow({
 }
 
 // ─── Field Pair helper ────────────────────────────────────────────────────────
+
+function NetviewSubmitButton({ wo, contractors }: { wo: WorkOrder; contractors: Contractor[] }) {
+  const [loading, setLoading] = useState(false);
+
+  const openForm = async () => {
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const contractor = contractors.find((c) => c.name === wo.contractor_name) ?? null;
+      window.open(buildNetviewFormUrl(wo, contractor, user?.email ?? ''), '_blank');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#1D4ED8', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>Netview Payroll</div>
+      <div style={{ fontSize: 12, color: '#555', marginBottom: 10, lineHeight: 1.5 }}>
+        Opens Netview&apos;s vendor payment form pre-filled from this work order. Review and submit it yourself —
+        the full invoice must still be emailed to Payroll@TeamNetview.com per Netview&apos;s own instructions.
+      </div>
+      <button type="button" className="btn btn-ghost" disabled={loading} onClick={openForm} style={{ fontSize: 12 }}>
+        {loading ? 'Opening…' : 'Submit to Netview'}
+      </button>
+    </div>
+  );
+}
 
 function PF({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (

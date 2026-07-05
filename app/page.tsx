@@ -4,19 +4,27 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders } from '@/lib/utils';
+import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
-import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder } from '@/lib/types';
+import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, Quote, ImportQueueItem, GmailConnection, QuickBooksConnection } from '@/lib/types';
 import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
-  Search, Moon, Sun, Download,
+  Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox,
 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
+import FinancialDashboardView from '@/components/FinancialDashboardView';
 import WorkOrdersView from '@/components/WorkOrdersView';
 import PaymentsView from '@/components/PaymentsView';
 import ContractorsView from '@/components/ContractorsView';
+import ContractorAnalyticsView from '@/components/ContractorAnalyticsView';
+import SchedulingView from '@/components/SchedulingView';
+import DispatchMapView from '@/components/DispatchMapView';
+import MaterialsView from '@/components/MaterialsView';
+import QuotesView from '@/components/QuotesView';
+import ImportQueueView from '@/components/ImportQueueView';
 import StatementView from '@/components/StatementView';
 import TenNinetyNineView from '@/components/TenNinetyNineView';
 import W9View from '@/components/W9View';
@@ -32,12 +40,13 @@ import { logAudit } from '@/lib/audit';
 import { notifyContractor, sendPortalLink } from '@/lib/notify';
 
 type View =
-  | 'dashboard' | 'workorders' | 'payments' | 'payables' | 'contractors'
+  | 'dashboard' | 'financials' | 'workorders' | 'payments' | 'payables' | 'contractors'
+  | 'contractor-analytics' | 'scheduling' | 'dispatch' | 'materials' | 'quotes' | 'import-queue'
   | 'statements' | '1099' | 'w9' | 'quickbooks' | 'settings';
 
 type Modal =
   | { type: 'contractor'; item: Contractor | null }
-  | { type: 'wo'; item: WorkOrder | null }
+  | { type: 'wo'; item: WorkOrder | null; prefill?: Partial<WorkOrder> }
   | { type: 'payment'; item: Payment | null; prefill?: Partial<Payment> }
   | null;
 
@@ -56,24 +65,43 @@ export default function HomePage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [questionTemplates, setQuestionTemplates] = useState<QuestionTemplate[]>([]);
   const [deliverableTemplates, setDeliverableTemplates] = useState<DeliverableTemplate[]>([]);
+  const [contractorTimeLogs, setContractorTimeLogs] = useState<ContractorTimeLog[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [importQueue, setImportQueue] = useState<ImportQueueItem[]>([]);
+  const [gmailConnection, setGmailConnection] = useState<GmailConnection | null>(null);
+  const [qboConnection, setQboConnection] = useState<QuickBooksConnection | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadAll = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return; }
 
-    const [cRes, wRes, pRes, tRes, dtRes] = await Promise.all([
+    const [cRes, wRes, pRes, tRes, dtRes, ctlRes, matRes, qRes, iqRes, gcRes, qboRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),
       supabase.from('work_orders').select('*').order('wo_number'),
       supabase.from('payments').select('*').order('payment_date', { ascending: false }),
       supabase.from('question_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('deliverable_templates').select('*').order('created_at', { ascending: false }),
+      supabase.from('contractor_time_logs').select('*').order('updated_at', { ascending: false }),
+      supabase.from('materials').select('*').order('name'),
+      supabase.from('quotes').select('*').order('created_at', { ascending: false }),
+      supabase.from('import_queue').select('*').order('created_at', { ascending: false }),
+      // Explicit column list — refresh_token/access_token are excluded from browser SELECT by RLS anyway.
+      supabase.from('gmail_connections').select('id, user_id, connected_email, last_polled_at, created_at').maybeSingle(),
+      supabase.from('quickbooks_connections').select('id, user_id, realm_id, company_name, environment, default_expense_account_id, default_expense_account_name, default_payment_account_id, default_payment_account_name, connected_at, created_at').maybeSingle(),
     ]);
     if (cRes.data) setContractors(cRes.data);
     if (wRes.data) setWorkOrders(wRes.data);
     if (pRes.data) setPayments(pRes.data);
     if (tRes.data) setQuestionTemplates(tRes.data as QuestionTemplate[]);
     if (dtRes.data) setDeliverableTemplates(dtRes.data as DeliverableTemplate[]);
+    if (ctlRes.data) setContractorTimeLogs(ctlRes.data as ContractorTimeLog[]);
+    if (matRes.data) setMaterials(matRes.data as Material[]);
+    if (qRes.data) setQuotes(qRes.data as Quote[]);
+    if (iqRes.data) setImportQueue(iqRes.data as ImportQueueItem[]);
+    setGmailConnection((gcRes.data as GmailConnection | null) ?? null);
+    setQboConnection((qboRes.data as QuickBooksConnection | null) ?? null);
     setLoading(false);
   };
 
@@ -141,6 +169,22 @@ export default function HomePage() {
   const saveWorkOrder = async (w: Partial<WorkOrder>) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+
+    // Geocode the site address once and persist it, rather than re-geocoding on every map load.
+    const prevWO = w.id ? workOrders.find((x) => x.id === w.id) : null;
+    const addressChanged = !prevWO
+      || prevWO.site_address !== (w.site_address ?? null)
+      || prevWO.site_city    !== (w.site_city    ?? null)
+      || prevWO.site_state   !== (w.site_state   ?? null);
+    let siteLat = prevWO?.site_lat ?? null;
+    let siteLng = prevWO?.site_lng ?? null;
+    if (w.site_address && (addressChanged || siteLat == null)) {
+      const fullAddress = [w.site_address, w.site_city, w.site_state, w.site_zip].filter(Boolean).join(', ');
+      const coords = await geocodeAddress(fullAddress);
+      siteLat = coords?.lat ?? null;
+      siteLng = coords?.lng ?? null;
+    }
+
     const payload = {
       wo_number:       w.wo_number!,
       contractor_name: w.contractor_name!,
@@ -172,6 +216,8 @@ export default function HomePage() {
       site_city:       w.site_city       ?? null,
       site_state:      w.site_state      ?? null,
       site_zip:        w.site_zip        ?? null,
+      site_lat:        siteLat,
+      site_lng:        siteLng,
       schedule_type:   w.schedule_type   ?? 'Exact Time',
       start_time:      w.start_time      ?? null,
       end_time:        w.end_time        ?? null,
@@ -264,6 +310,15 @@ export default function HomePage() {
     const wo = workOrders.find((x) => x.id === id);
     await supabase.from('work_orders').delete().eq('id', id);
     logAudit({ action: 'delete', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
+    loadAll();
+  };
+
+  // Lightweight partial-field patch (unlike saveWorkOrder, which expects a full form payload).
+  // Used by Scheduling and Dispatch Map for drag-drop updates.
+  const updateWorkOrderFields = async (id: string, patch: Partial<WorkOrder>) => {
+    await supabase.from('work_orders').update(patch).eq('id', id);
+    const wo = workOrders.find((x) => x.id === id);
+    logAudit({ action: 'update', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
     loadAll();
   };
 
@@ -403,6 +458,108 @@ export default function HomePage() {
     return urlData.publicUrl;
   };
 
+  // ── Materials ──────────────────────────────────────────────────────────────
+
+  const saveMaterial = async (m: Partial<Material>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const payload = {
+      name: m.name!, description: m.description ?? null, category: m.category ?? null,
+      unit: m.unit || 'each', stock_quantity: Number(m.stock_quantity ?? 0),
+      low_stock_threshold: m.low_stock_threshold ?? null, unit_cost: Number(m.unit_cost ?? 0),
+      supplier: m.supplier ?? null, sku: m.sku ?? null, location: m.location ?? null, notes: m.notes ?? null,
+    };
+    if (m.id) {
+      await supabase.from('materials').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', m.id);
+    } else {
+      await supabase.from('materials').insert({ ...payload, user_id: user.id });
+    }
+    loadAll();
+  };
+
+  const deleteMaterial = async (id: string) => {
+    await supabase.from('materials').delete().eq('id', id);
+    loadAll();
+  };
+
+  // ── Quotes ─────────────────────────────────────────────────────────────────
+
+  const saveQuote = async (q: Partial<Quote>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const payload = {
+      quote_number: q.quote_number!, client_name: q.client_name ?? null, client_email: q.client_email ?? null,
+      client_phone: q.client_phone ?? null, title: q.title ?? null, description: q.description ?? null,
+      line_items: q.line_items ?? [], subtotal: Number(q.subtotal ?? 0), tax_rate: Number(q.tax_rate ?? 0),
+      tax_amount: Number(q.tax_amount ?? 0), total: Number(q.total ?? 0), status: q.status ?? 'draft',
+      valid_until: q.valid_until || null, notes: q.notes ?? null,
+    };
+    if (q.id) {
+      await supabase.from('quotes').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', q.id);
+    } else {
+      await supabase.from('quotes').insert({ ...payload, user_id: user.id });
+    }
+    loadAll();
+  };
+
+  const deleteQuote = async (id: string) => {
+    await supabase.from('quotes').delete().eq('id', id);
+    loadAll();
+  };
+
+  const acceptQuote = async (q: Quote) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: newWO } = await supabase.from('work_orders').insert({
+      user_id: user.id,
+      wo_number: nextWoNumber,
+      contractor_name: '',
+      title: q.title ?? null,
+      customer_name: q.client_name ?? null,
+      description: q.description ?? null,
+      total_amount: Number(q.total),
+      pay_type: 'Fixed',
+      wo_status: 'Open',
+      source_platform: 'Internal',
+      assignment_type: 'Internal',
+      priority: 'Normal',
+      schedule_type: 'Exact Time',
+    }).select('id').single();
+    if (newWO) {
+      await supabase.from('quotes').update({
+        status: 'accepted', accepted_at: new Date().toISOString(), work_order_id: newWO.id,
+      }).eq('id', q.id);
+    }
+    loadAll();
+  };
+
+  // ── Import Queue ───────────────────────────────────────────────────────────
+
+  const approveImportItem = async (id: string) => {
+    await fetch(`/api/import-queue/${id}/approve`, { method: 'POST' });
+    loadAll();
+  };
+
+  const rejectImportItem = async (id: string) => {
+    await fetch(`/api/import-queue/${id}/reject`, { method: 'POST' });
+    loadAll();
+  };
+
+  // ── QuickBooks ─────────────────────────────────────────────────────────────
+
+  const syncPaymentToQuickBooks = async (paymentId: string) => {
+    const res = await fetch('/api/quickbooks/sync-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payment_id: paymentId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'QuickBooks sync failed');
+    }
+    loadAll();
+  };
+
   // ── Nav / Auth ─────────────────────────────────────────────────────────────
 
   const handleLogout = async () => {
@@ -477,10 +634,27 @@ export default function HomePage() {
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '0 12px', marginBottom: 6, textTransform: 'uppercase' }}>Main</div>
           <NI k="dashboard"   icon={<BarChart3 size={15} />}    label="Dashboard" />
+          <NI k="financials"  icon={<TrendingUp size={15} />}   label="Financials" />
           <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
           <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
           <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
           <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
+          <NI k="contractor-analytics" icon={<Award size={15} />} label="Performance" />
+          <NI k="scheduling" icon={<Calendar size={15} />} label="Scheduling" />
+          <NI k="dispatch" icon={<Map size={15} />} label="Dispatch Map" />
+          <NI k="materials" icon={<Package size={15} />} label="Materials" />
+          <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
+          <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
+            <Inbox size={15} /> Import
+            {importQueue.filter((i) => i.status === 'pending').length > 0 && (
+              <span style={{
+                background: 'var(--teal)', color: 'white', borderRadius: 999,
+                fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4,
+              }}>
+                {importQueue.filter((i) => i.status === 'pending').length}
+              </span>
+            )}
+          </button>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Reports</div>
           <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
           <NI k="1099"        icon={<ClipboardCheck size={15} />} label="1099s" />
@@ -554,12 +728,44 @@ export default function HomePage() {
             onView={(v) => setView(v as typeof view)}
           />
         )}
+        {view === 'financials' && (
+          <FinancialDashboardView workOrders={enrichedWOs} />
+        )}
+        {view === 'contractor-analytics' && (
+          <ContractorAnalyticsView contractors={contractors} workOrders={enrichedWOs} />
+        )}
+        {view === 'scheduling' && (
+          <SchedulingView workOrders={enrichedWOs} contractors={contractors} onUpdateWO={updateWorkOrderFields} />
+        )}
+        {view === 'dispatch' && (
+          <DispatchMapView
+            workOrders={enrichedWOs}
+            contractors={contractors}
+            contractorTimeLogs={contractorTimeLogs}
+            onUpdateWO={updateWorkOrderFields}
+          />
+        )}
+        {view === 'materials' && (
+          <MaterialsView materials={materials} onSave={saveMaterial} onDelete={deleteMaterial} />
+        )}
+        {view === 'quotes' && (
+          <QuotesView quotes={quotes} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} />
+        )}
+        {view === 'import-queue' && (
+          <ImportQueueView
+            items={importQueue}
+            connection={gmailConnection}
+            onApprove={approveImportItem}
+            onReject={rejectImportItem}
+          />
+        )}
         {view === 'workorders' && (
           <WorkOrdersView
             workOrders={enrichedWOs}
             stats={stats}
             contractors={contractors}
             onAdd={() => setModal({ type: 'wo', item: null })}
+            onAddFromAI={(fields) => setModal({ type: 'wo', item: null, prefill: fields })}
             onEdit={(w) => setModal({ type: 'wo', item: w })}
             onDelete={deleteWorkOrder}
             onDuplicate={(w) => {
@@ -581,6 +787,8 @@ export default function HomePage() {
             onAdd={() => setModal({ type: 'payment', item: null })}
             onEdit={(p) => setModal({ type: 'payment', item: p })}
             onDelete={deletePayment}
+            qboConnected={!!qboConnection?.default_expense_account_id}
+            onSyncPayment={syncPaymentToQuickBooks}
           />
         )}
         {view === 'payables' && (
@@ -630,6 +838,8 @@ export default function HomePage() {
             workOrders={workOrders}
             payments={payments}
             contractors={contractors}
+            connection={qboConnection}
+            onReloaded={loadAll}
           />
         )}
         {view === 'settings' && (
@@ -650,6 +860,7 @@ export default function HomePage() {
         <WorkOrderModal
           item={modal.item}
           nextWoNumber={modal.item ? undefined : nextWoNumber}
+          prefill={modal.prefill}
           contractors={contractors}
           questionTemplates={questionTemplates}
           deliverableTemplates={deliverableTemplates}

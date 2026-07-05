@@ -40,6 +40,24 @@ export function exportContractorsCSV(contractors: Contractor[]) {
   downloadCSV(`contractors-${new Date().toISOString().split('T')[0]}.csv`, [header, ...rows]);
 }
 
+export function exportFinancialSummaryCSV(
+  monthly: { month: string; committed: number; paid: number; outstanding: number; jobCount: number }[],
+  byContractor: { name: string; committed: number; paid: number; outstanding: number; jobCount: number }[],
+) {
+  const monthlyHeader = ['Month', 'Jobs', 'Committed', 'Paid', 'Outstanding'];
+  const monthlyRows = monthly.map((m) => [
+    m.month, String(m.jobCount), fmtMoney(m.committed), fmtMoney(m.paid), fmtMoney(m.outstanding),
+  ]);
+  const contractorHeader = ['Contractor', 'Jobs', 'Committed', 'Paid', 'Outstanding'];
+  const contractorRows = byContractor.map((c) => [
+    c.name, String(c.jobCount), fmtMoney(c.committed), fmtMoney(c.paid), fmtMoney(c.outstanding),
+  ]);
+  downloadCSV(`financial-summary-${new Date().toISOString().split('T')[0]}.csv`, [
+    ['Monthly Summary'], monthlyHeader, ...monthlyRows,
+    [], ['By Contractor'], contractorHeader, ...contractorRows,
+  ]);
+}
+
 export function export1099CSV(contractors: Contractor[], payments: Payment[], year: number) {
   const yearPayments = payments.filter((p) => p.payment_date?.startsWith(String(year)));
   const totals = new Map<string, number>();

@@ -8,6 +8,7 @@ import PortalQA from './PortalQA';
 import PortalWorkDoneGate from './PortalWorkDoneGate';
 import PortalUpload from './PortalUpload';
 import PortalTimeLog from './PortalTimeLog';
+import PortalChat from './PortalChat';
 import type { WorkOrder, Contractor } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -560,6 +561,9 @@ function WOCard({
                 : ''
               }</span>
             </div>
+
+            <PortalChat token={token} woNumber={wo.wo_number} />
+            <Divider />
 
             {/* ── LEAD TECH: full interactive workflow ── */}
             {isLead && (

@@ -1,4 +1,4 @@
-import type { WorkOrder } from '@/lib/types';
+import type { WorkOrder, Quote } from '@/lib/types';
 
 /**
  * Opens a new browser window with a print-ready Work Order Sign-Off Sheet
@@ -374,6 +374,108 @@ export function printSignOffSheet(wo: WorkOrder) {
   <div class="footer">
     <span>FAJ Solutions — Field Services Management</span>
     <span>Printed: ${today} &nbsp;|&nbsp; WO# ${escHtml(wo.wo_number)}</span>
+  </div>
+
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=850,height=1100');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  }
+}
+
+/**
+ * Opens a new browser window with a print-ready Quote sheet and triggers the print dialog.
+ * Mirrors printSignOffSheet's pattern — no PDF library dependency, relies on the browser's
+ * native "Save as PDF" print destination.
+ */
+export function printQuoteSheet(q: Quote) {
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const validUntil = q.valid_until
+    ? new Date(q.valid_until + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : null;
+
+  const rows = (q.line_items ?? []).map((li) => `
+    <tr>
+      <td>${escHtml(li.description)}</td>
+      <td style="text-align:center">${li.quantity}</td>
+      <td style="text-align:right">$${Number(li.rate).toFixed(2)}</td>
+      <td style="text-align:right">$${(Number(li.quantity) * Number(li.rate)).toFixed(2)}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quote ${escHtml(q.quote_number)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #1a1a1a; padding: 0.6in; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0D7377; padding-bottom: 16px; margin-bottom: 24px; }
+    .brand { font-size: 20pt; font-weight: 700; color: #0D7377; }
+    .quote-num { font-size: 13pt; font-weight: 700; text-align: right; }
+    .meta { color: #666; font-size: 9pt; margin-top: 4px; }
+    .section { margin-bottom: 20px; }
+    .label { font-size: 8pt; font-weight: 700; letter-spacing: 0.5px; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background: #0D7377; color: white; text-align: left; padding: 8px 10px; font-size: 9pt; }
+    th:nth-child(2), th:nth-child(3), th:nth-child(4) { text-align: right; }
+    th:nth-child(2) { text-align: center; }
+    td { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 10pt; }
+    .totals { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .totals table { width: 260px; }
+    .totals td { border: none; padding: 4px 10px; }
+    .totals .grand { font-weight: 700; font-size: 13pt; color: #0D7377; border-top: 2px solid #0D7377; }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; font-size: 8pt; color: #999; }
+    @media print { .footer { position: fixed; bottom: 0.4in; left: 0.6in; right: 0.6in; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">FAJ SOLUTIONS</div>
+      <div class="meta">fajsolutions@gmail.com</div>
+    </div>
+    <div>
+      <div class="quote-num">Quote ${escHtml(q.quote_number)}</div>
+      <div class="meta">Issued ${today}${validUntil ? ` · Valid until ${validUntil}` : ''}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Prepared For</div>
+    <div>${escHtml(q.client_name)}</div>
+    ${q.client_email ? `<div class="meta">${escHtml(q.client_email)}</div>` : ''}
+    ${q.client_phone ? `<div class="meta">${escHtml(q.client_phone)}</div>` : ''}
+  </div>
+
+  ${q.title ? `<div class="section"><div class="label">Title</div><div>${escHtml(q.title)}</div></div>` : ''}
+  ${q.description ? `<div class="section"><div class="label">Scope of Work</div><div>${escHtml(q.description)}</div></div>` : ''}
+
+  <table>
+    <thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <div class="totals">
+    <table>
+      <tr><td>Subtotal</td><td style="text-align:right">$${Number(q.subtotal).toFixed(2)}</td></tr>
+      ${Number(q.tax_rate) > 0 ? `<tr><td>Tax (${q.tax_rate}%)</td><td style="text-align:right">$${Number(q.tax_amount).toFixed(2)}</td></tr>` : ''}
+      <tr class="grand"><td>Total</td><td style="text-align:right">$${Number(q.total).toFixed(2)}</td></tr>
+    </table>
+  </div>
+
+  ${q.notes ? `<div class="section"><div class="label">Notes</div><div>${escHtml(q.notes)}</div></div>` : ''}
+
+  <div class="footer">
+    <span>FAJ Solutions — Field Services Management</span>
+    <span>Printed: ${today} &nbsp;|&nbsp; ${escHtml(q.quote_number)}</span>
   </div>
 
   <script>

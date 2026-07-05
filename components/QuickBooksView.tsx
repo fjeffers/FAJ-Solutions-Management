@@ -1,12 +1,87 @@
 'use client';
-import { useState, useMemo } from 'react';
-import { Printer } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Printer, Link as LinkIcon, CheckCircle2 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
-import type { Payment, WorkOrder, Contractor } from '@/lib/types';
+import type { Payment, WorkOrder, Contractor, QuickBooksConnection, QuickBooksAccount } from '@/lib/types';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-export default function QuickBooksView({ payments, workOrders, contractors }: { payments: Payment[]; workOrders: WorkOrder[]; contractors: Contractor[] }) {
+function QuickBooksConnectionPanel({ connection, onReloaded }: { connection: QuickBooksConnection | null; onReloaded: () => void }) {
+  const [accounts, setAccounts] = useState<QuickBooksAccount[]>([]);
+  const [expenseId, setExpenseId] = useState(connection?.default_expense_account_id ?? '');
+  const [paymentId, setPaymentId] = useState(connection?.default_payment_account_id ?? '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!connection) return;
+    fetch('/api/quickbooks/accounts').then((r) => r.json()).then((d) => { if (d.accounts) setAccounts(d.accounts); });
+  }, [connection]);
+
+  const saveMapping = async () => {
+    const expense = accounts.find((a) => a.id === expenseId);
+    const payment = accounts.find((a) => a.id === paymentId);
+    if (!expense || !payment) return;
+    setSaving(true);
+    try {
+      await fetch('/api/quickbooks/save-mapping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expense_account_id: expense.id, expense_account_name: expense.name,
+          payment_account_id: payment.id, payment_account_name: payment.name,
+        }),
+      });
+      onReloaded();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="glass card no-print" style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: connection ? 16 : 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <LinkIcon size={16} color={connection ? '#047857' : '#aaa'} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>
+              {connection ? `Connected: ${connection.company_name} (${connection.environment})` : 'QuickBooks not connected'}
+            </div>
+            {connection && !connection.default_expense_account_id && (
+              <div style={{ fontSize: 11, color: '#b45309' }}>Set your account mapping below before syncing payments.</div>
+            )}
+          </div>
+        </div>
+        <a href="/api/integrations/quickbooks/connect" className="btn btn-primary" style={{ textDecoration: 'none' }}>
+          {connection ? 'Reconnect' : 'Connect QuickBooks'}
+        </a>
+      </div>
+
+      {connection && accounts.length > 0 && (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Expense Account</label>
+            <select className="select input" value={expenseId} onChange={(e) => setExpenseId(e.target.value)} style={{ minWidth: 200 }}>
+              <option value="">Select…</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Payment (Bank) Account</label>
+            <select className="select input" value={paymentId} onChange={(e) => setPaymentId(e.target.value)} style={{ minWidth: 200 }}>
+              <option value="">Select…</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <button className="btn btn-ghost" disabled={saving || !expenseId || !paymentId} onClick={saveMapping}>
+            {connection.default_expense_account_id ? <CheckCircle2 size={13} /> : null} {saving ? 'Saving…' : 'Save Mapping'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function QuickBooksView({ payments, workOrders, contractors, connection, onReloaded }: { payments: Payment[]; workOrders: WorkOrder[]; contractors: Contractor[]; connection: QuickBooksConnection | null; onReloaded: () => void }) {
   const now = new Date();
   const [range, setRange] = useState<'year' | 'quarter' | 'month'>('year');
   const [year, setYear] = useState(now.getFullYear());
@@ -68,6 +143,8 @@ export default function QuickBooksView({ payments, workOrders, contractors }: { 
           <button className="btn btn-gold no-print" onClick={() => window.print()}><Printer size={14} /> Print / Export PDF</button>
         </div>
       </div>
+
+      <QuickBooksConnectionPanel connection={connection} onReloaded={onReloaded} />
 
       <div className="glass card no-print" style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>

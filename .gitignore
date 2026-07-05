@@ -5,3 +5,4 @@ node_modules
 *.tsbuildinfo
 next-env.d.ts
 .claude/worktrees/
+faj-payments-source.zip

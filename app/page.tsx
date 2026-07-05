@@ -56,6 +56,16 @@ function viewFromUrl(): View {
   return VIEWS.includes(v as View) ? (v as View) : 'dashboard';
 }
 
+// Which sidebar dropdown each view lives under — used to auto-open the right
+// section when navigating (including via search, dashboard links, or the URL).
+const SECTION_OF_VIEW: Record<View, string> = {
+  dashboard: 'main', financials: 'main', workorders: 'main', payments: 'main', payables: 'main',
+  scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', 'import-queue': 'fieldops',
+  contractors: 'contractors', 'contractor-analytics': 'contractors',
+  statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
+  settings: 'settings',
+};
+
 // Collapsible sidebar section. Open/closed state is owned by HomePage and
 // persisted to localStorage so the layout survives refreshes.
 function NavSection({ title, open, onToggle, badge, children }: {
@@ -107,29 +117,26 @@ export default function HomePage() {
   const [view, setViewState] = useState<View>(viewFromUrl);
   const setView = (v: View) => {
     setViewState(v);
+    setOpenSection(SECTION_OF_VIEW[v]);
     const url = v === 'dashboard' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
     window.history.pushState(null, '', url);
   };
   useEffect(() => {
-    const onPop = () => setViewState(viewFromUrl());
+    const onPop = () => {
+      const v = viewFromUrl();
+      setViewState(v);
+      setOpenSection(SECTION_OF_VIEW[v]);
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const [modal, setModal] = useState<Modal>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  // Sidebar sections default to open; user's collapse choices persist across visits.
-  // Safe to read localStorage in the initializer — the loading screen renders first,
-  // so server and client markup match at hydration time.
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
-    if (typeof window === 'undefined') return {};
-    try { return JSON.parse(localStorage.getItem('faj-nav-open') ?? '{}'); } catch { return {}; }
-  });
-  const sectionOpen = (k: string) => openSections[k] !== false;
-  const toggleSection = (k: string) => setOpenSections((prev) => {
-    const next = { ...prev, [k]: !(prev[k] !== false) };
-    try { localStorage.setItem('faj-nav-open', JSON.stringify(next)); } catch { /* private mode */ }
-    return next;
-  });
+  // Dropdown-style nav: one section open at a time; the section holding the
+  // current view opens automatically, clicking a header toggles it.
+  const [openSection, setOpenSection] = useState<string | null>(() => SECTION_OF_VIEW[viewFromUrl()]);
+  const sectionOpen = (k: string) => openSection === k;
+  const toggleSection = (k: string) => setOpenSection((prev) => (prev === k ? null : k));
   const [selectedContractor, setSelectedContractor] = useState<string | null>(null);
   const [taxYear, setTaxYear] = useState<number>(new Date().getFullYear());
   const [mobileNavOpen, setMobileNavOpen] = useState(false);

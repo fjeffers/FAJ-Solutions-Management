@@ -38,11 +38,21 @@ import PaymentModal from '@/components/PaymentModal';
 import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export1099CSV } from '@/lib/export';
 import { logAudit } from '@/lib/audit';
 import { notifyContractor, sendPortalLink } from '@/lib/notify';
+import { toastError, toastSuccess } from '@/lib/toast';
+import Toaster from '@/components/Toaster';
 
-type View =
-  | 'dashboard' | 'financials' | 'workorders' | 'payments' | 'payables' | 'contractors'
-  | 'contractor-analytics' | 'scheduling' | 'dispatch' | 'materials' | 'quotes' | 'import-queue'
-  | 'statements' | '1099' | 'w9' | 'quickbooks' | 'settings';
+const VIEWS = [
+  'dashboard', 'financials', 'workorders', 'payments', 'payables', 'contractors',
+  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'import-queue',
+  'statements', '1099', 'w9', 'quickbooks', 'settings',
+] as const;
+type View = (typeof VIEWS)[number];
+
+function viewFromUrl(): View {
+  if (typeof window === 'undefined') return 'dashboard';
+  const v = new URLSearchParams(window.location.search).get('view');
+  return VIEWS.includes(v as View) ? (v as View) : 'dashboard';
+}
 
 type Modal =
   | { type: 'contractor'; item: Contractor | null }
@@ -54,7 +64,20 @@ export default function HomePage() {
   const router = useRouter();
   const supabase = createClient();
   const { dark, toggle: toggleDark } = useDarkMode();
-  const [view, setView] = useState<View>('dashboard');
+  // View lives in the URL (?view=...) so refresh, bookmarks, and back/forward work.
+  // Safe to initialize from the URL: the loading screen renders identically on
+  // server and client, so there's no hydration mismatch.
+  const [view, setViewState] = useState<View>(viewFromUrl);
+  const setView = (v: View) => {
+    setViewState(v);
+    const url = v === 'dashboard' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
+    window.history.pushState(null, '', url);
+  };
+  useEffect(() => {
+    const onPop = () => setViewState(viewFromUrl());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [modal, setModal] = useState<Modal>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedContractor, setSelectedContractor] = useState<string | null>(null);
@@ -73,14 +96,29 @@ export default function HomePage() {
   const [qboConnection, setQboConnection] = useState<QuickBooksConnection | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadAll = async () => {
+  // Core data every view needs — loaded before first paint.
+  const loadCore = async (): Promise<boolean> => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.replace('/login'); return; }
+    if (!user) { router.replace('/login'); return false; }
 
-    const [cRes, wRes, pRes, tRes, dtRes, ctlRes, matRes, qRes, iqRes, gcRes, qboRes] = await Promise.all([
+    const [cRes, wRes, pRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),
       supabase.from('work_orders').select('*').order('wo_number'),
       supabase.from('payments').select('*').order('payment_date', { ascending: false }),
+    ]);
+    if (cRes.data) setContractors(cRes.data);
+    if (wRes.data) setWorkOrders(wRes.data);
+    if (pRes.data) setPayments(pRes.data);
+    const failed = [cRes.error && 'contractors', wRes.error && 'work orders', pRes.error && 'payments'].filter(Boolean);
+    if (failed.length > 0) {
+      toastError(`Couldn't load ${failed.join(', ')}. Check your connection and refresh.`);
+    }
+    return true;
+  };
+
+  // Everything else — loaded right after first paint so startup stays fast.
+  const loadSecondary = async () => {
+    const [tRes, dtRes, ctlRes, matRes, qRes, iqRes, gcRes, qboRes] = await Promise.all([
       supabase.from('question_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('deliverable_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('contractor_time_logs').select('*').order('updated_at', { ascending: false }),
@@ -91,9 +129,6 @@ export default function HomePage() {
       supabase.from('gmail_connections').select('id, user_id, connected_email, last_polled_at, created_at').maybeSingle(),
       supabase.from('quickbooks_connections').select('id, user_id, realm_id, company_name, environment, default_expense_account_id, default_expense_account_name, default_payment_account_id, default_payment_account_name, connected_at, created_at').maybeSingle(),
     ]);
-    if (cRes.data) setContractors(cRes.data);
-    if (wRes.data) setWorkOrders(wRes.data);
-    if (pRes.data) setPayments(pRes.data);
     if (tRes.data) setQuestionTemplates(tRes.data as QuestionTemplate[]);
     if (dtRes.data) setDeliverableTemplates(dtRes.data as DeliverableTemplate[]);
     if (ctlRes.data) setContractorTimeLogs(ctlRes.data as ContractorTimeLog[]);
@@ -102,10 +137,53 @@ export default function HomePage() {
     if (iqRes.data) setImportQueue(iqRes.data as ImportQueueItem[]);
     setGmailConnection((gcRes.data as GmailConnection | null) ?? null);
     setQboConnection((qboRes.data as QuickBooksConnection | null) ?? null);
-    setLoading(false);
+    const failed = [
+      tRes.error && 'templates', dtRes.error && 'deliverable templates', ctlRes.error && 'time logs',
+      matRes.error && 'materials', qRes.error && 'quotes', iqRes.error && 'import queue',
+    ].filter(Boolean);
+    if (failed.length > 0) {
+      toastError(`Couldn't load ${failed.join(', ')}. Check your connection and refresh.`);
+    }
   };
 
-  useEffect(() => { loadAll(); }, []);
+  const loadAll = async () => {
+    const ok = await loadCore();
+    if (ok) await loadSecondary();
+  };
+
+  useEffect(() => {
+    (async () => {
+      const ok = await loadCore();
+      if (!ok) return;
+      setLoading(false);       // paint the app as soon as core data is in
+      loadSecondary();         // fill in the rest in the background
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep this tab in sync when data changes elsewhere (another tab, phone,
+  // portal check-ins, cron email imports). Requires migration-028.
+  // Events are debounced so a burst of writes triggers a single reload.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { loadAll(); }, 600);
+    };
+    const channel = supabase
+      .channel('app-data-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_orders' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contractors' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'import_queue' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contractor_time_logs' }, refresh)
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const enrichedWOs = useMemo(() => enrichWorkOrders(workOrders, payments), [workOrders, payments]);
 
@@ -148,18 +226,22 @@ export default function HomePage() {
       account_type:        c.account_type        || null,
     };
     if (c.id) {
-      await supabase.from('contractors').update(payload).eq('id', c.id);
+      const { error } = await supabase.from('contractors').update(payload).eq('id', c.id);
+      if (error) { toastError(`Couldn't save contractor: ${error.message}`); return; }
       logAudit({ action: 'update', entityType: 'contractor', entityId: c.id, entityLabel: c.name ?? '' });
     } else {
-      await supabase.from('contractors').insert({ ...payload, user_id: user.id });
+      const { error } = await supabase.from('contractors').insert({ ...payload, user_id: user.id });
+      if (error) { toastError(`Couldn't save contractor: ${error.message}`); return; }
       logAudit({ action: 'create', entityType: 'contractor', entityLabel: c.name ?? '' });
     }
+    toastSuccess('Contractor saved');
     loadAll();
   };
 
   const deleteContractor = async (id: string) => {
     const c = contractors.find((x) => x.id === id);
-    await supabase.from('contractors').delete().eq('id', id);
+    const { error } = await supabase.from('contractors').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete contractor: ${error.message}`); return; }
     logAudit({ action: 'delete', entityType: 'contractor', entityId: id, entityLabel: c?.name ?? '' });
     loadAll();
   };
@@ -252,7 +334,8 @@ export default function HomePage() {
       lead_contractor_name: w.lead_contractor_name ?? null,
     };
     if (w.id) {
-      await supabase.from('work_orders').update(payload).eq('id', w.id);
+      const { error } = await supabase.from('work_orders').update(payload).eq('id', w.id);
+      if (error) { toastError(`Couldn't save WO#${w.wo_number}: ${error.message}`); return; }
       logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}` });
       // Notify contractor on status change
       const prev = workOrders.find((x) => x.id === w.id);
@@ -261,12 +344,14 @@ export default function HomePage() {
         if (c?.email) notifyContractor({ type: 'status_change', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined, status: w.wo_status ?? '' });
       }
     } else {
-      await supabase.from('work_orders').insert({ ...payload, user_id: user.id });
+      const { error } = await supabase.from('work_orders').insert({ ...payload, user_id: user.id });
+      if (error) { toastError(`Couldn't save WO#${w.wo_number}: ${error.message}`); return; }
       logAudit({ action: 'create', entityType: 'work_order', entityLabel: `WO#${w.wo_number}` });
       // Notify contractor of assignment
       const c = contractors.find((x) => x.name === w.contractor_name);
       if (c?.email) notifyContractor({ type: 'wo_assigned', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined });
     }
+    toastSuccess(`Work order #${w.wo_number} saved`);
     loadAll();
   };
 
@@ -297,18 +382,24 @@ export default function HomePage() {
           site_city: wo.site_city,
           site_state: wo.site_state,
         }));
-      await sendPortalLink({
-        contractor_email: contractor.email,
-        contractor_name: contractor.name,
-        portal_url: portalUrl,
-        work_orders: contractorWOs,
-      });
+      try {
+        await sendPortalLink({
+          contractor_email: contractor.email,
+          contractor_name: contractor.name,
+          portal_url: portalUrl,
+          work_orders: contractorWOs,
+        });
+        toastSuccess(`Portal link sent to ${contractor.name}`);
+      } catch {
+        toastError(`Couldn't send portal link to ${contractor.name}`);
+      }
     }
   };
 
   const deleteWorkOrder = async (id: string) => {
     const wo = workOrders.find((x) => x.id === id);
-    await supabase.from('work_orders').delete().eq('id', id);
+    const { error } = await supabase.from('work_orders').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete WO#${wo?.wo_number ?? ''}: ${error.message}`); return; }
     logAudit({ action: 'delete', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
     loadAll();
   };
@@ -316,22 +407,25 @@ export default function HomePage() {
   // Lightweight partial-field patch (unlike saveWorkOrder, which expects a full form payload).
   // Used by Scheduling and Dispatch Map for drag-drop updates.
   const updateWorkOrderFields = async (id: string, patch: Partial<WorkOrder>) => {
-    await supabase.from('work_orders').update(patch).eq('id', id);
     const wo = workOrders.find((x) => x.id === id);
+    const { error } = await supabase.from('work_orders').update(patch).eq('id', id);
+    if (error) { toastError(`Couldn't update WO#${wo?.wo_number ?? ''}: ${error.message}`); loadAll(); return; }
     logAudit({ action: 'update', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
     loadAll();
   };
 
   const handleArchive = async (id: string) => {
     const wo = workOrders.find((x) => x.id === id);
-    await supabase.from('work_orders').update({ archived_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await supabase.from('work_orders').update({ archived_at: new Date().toISOString() }).eq('id', id);
+    if (error) { toastError(`Couldn't archive WO#${wo?.wo_number ?? ''}: ${error.message}`); return; }
     logAudit({ action: 'archive', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
     loadAll();
   };
 
   const handleUnarchive = async (id: string) => {
     const wo = workOrders.find((x) => x.id === id);
-    await supabase.from('work_orders').update({ archived_at: null }).eq('id', id);
+    const { error } = await supabase.from('work_orders').update({ archived_at: null }).eq('id', id);
+    if (error) { toastError(`Couldn't unarchive WO#${wo?.wo_number ?? ''}: ${error.message}`); return; }
     logAudit({ action: 'unarchive', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
     loadAll();
   };
@@ -347,21 +441,25 @@ export default function HomePage() {
       method: p.method || 'Check', notes: p.notes ?? null,
     };
     if (p.id) {
-      await supabase.from('payments').update(payload).eq('id', p.id);
+      const { error } = await supabase.from('payments').update(payload).eq('id', p.id);
+      if (error) { toastError(`Couldn't save payment: ${error.message}`); return; }
       logAudit({ action: 'update', entityType: 'payment', entityId: p.id, entityLabel: `WO#${p.wo_number} — ${p.contractor_name}` });
     } else {
-      await supabase.from('payments').insert({ ...payload, user_id: user.id });
+      const { error } = await supabase.from('payments').insert({ ...payload, user_id: user.id });
+      if (error) { toastError(`Couldn't save payment: ${error.message}`); return; }
       logAudit({ action: 'create', entityType: 'payment', entityLabel: `WO#${p.wo_number} — ${p.contractor_name} — $${p.amount}` });
       // Notify contractor of payment
       const c = contractors.find((x) => x.name === p.contractor_name);
       if (c?.email) notifyContractor({ type: 'payment_recorded', contractor_email: c.email, contractor_name: c.name, wo_number: p.wo_number!, amount: Number(p.amount) });
     }
+    toastSuccess(`Payment recorded — WO#${p.wo_number}`);
     loadAll();
   };
 
   const deletePayment = async (id: string) => {
     const p = payments.find((x) => x.id === id);
-    await supabase.from('payments').delete().eq('id', id);
+    const { error } = await supabase.from('payments').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete payment: ${error.message}`); return; }
     logAudit({ action: 'delete', entityType: 'payment', entityId: id, entityLabel: `WO#${p?.wo_number ?? ''} — ${p?.contractor_name ?? ''}` });
     loadAll();
   };
@@ -394,21 +492,21 @@ export default function HomePage() {
   ) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    if (id) {
-      await supabase
-        .from('question_templates')
-        .update({ name: data.name, questions: data.questions, attachment_url: data.attachment_url, updated_at: new Date().toISOString() })
-        .eq('id', id);
-    } else {
-      await supabase
-        .from('question_templates')
-        .insert({ name: data.name, questions: data.questions, attachment_url: data.attachment_url, user_id: user.id });
-    }
+    const { error } = id
+      ? await supabase
+          .from('question_templates')
+          .update({ name: data.name, questions: data.questions, attachment_url: data.attachment_url, updated_at: new Date().toISOString() })
+          .eq('id', id)
+      : await supabase
+          .from('question_templates')
+          .insert({ name: data.name, questions: data.questions, attachment_url: data.attachment_url, user_id: user.id });
+    if (error) { toastError(`Couldn't save template: ${error.message}`); return; }
     loadAll();
   };
 
   const deleteTemplate = async (id: string) => {
-    await supabase.from('question_templates').delete().eq('id', id);
+    const { error } = await supabase.from('question_templates').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete template: ${error.message}`); return; }
     loadAll();
   };
 
@@ -420,21 +518,21 @@ export default function HomePage() {
   ) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    if (id) {
-      await supabase
-        .from('deliverable_templates')
-        .update({ name: data.name, items: data.items, updated_at: new Date().toISOString() })
-        .eq('id', id);
-    } else {
-      await supabase
-        .from('deliverable_templates')
-        .insert({ name: data.name, items: data.items, user_id: user.id });
-    }
+    const { error } = id
+      ? await supabase
+          .from('deliverable_templates')
+          .update({ name: data.name, items: data.items, updated_at: new Date().toISOString() })
+          .eq('id', id)
+      : await supabase
+          .from('deliverable_templates')
+          .insert({ name: data.name, items: data.items, user_id: user.id });
+    if (error) { toastError(`Couldn't save template: ${error.message}`); return; }
     loadAll();
   };
 
   const deleteDeliverableTemplate = async (id: string) => {
-    await supabase.from('deliverable_templates').delete().eq('id', id);
+    const { error } = await supabase.from('deliverable_templates').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete template: ${error.message}`); return; }
     loadAll();
   };
 
@@ -443,7 +541,7 @@ export default function HomePage() {
     const { data, error } = await supabase.storage
       .from('deliverables')
       .upload(path, file, { upsert: false });
-    if (error || !data) { console.error('Upload error:', error); return null; }
+    if (error || !data) { toastError(`Upload failed: ${error?.message ?? 'unknown error'}`); return null; }
     const { data: urlData } = supabase.storage.from('deliverables').getPublicUrl(data.path);
     return urlData.publicUrl;
   };
@@ -453,7 +551,7 @@ export default function HomePage() {
     const { data, error } = await supabase.storage
       .from('deliverables')
       .upload(path, file, { upsert: false });
-    if (error || !data) { console.error('Upload error:', error); return null; }
+    if (error || !data) { toastError(`Upload failed: ${error?.message ?? 'unknown error'}`); return null; }
     const { data: urlData } = supabase.storage.from('deliverables').getPublicUrl(data.path);
     return urlData.publicUrl;
   };
@@ -469,16 +567,16 @@ export default function HomePage() {
       low_stock_threshold: m.low_stock_threshold ?? null, unit_cost: Number(m.unit_cost ?? 0),
       supplier: m.supplier ?? null, sku: m.sku ?? null, location: m.location ?? null, notes: m.notes ?? null,
     };
-    if (m.id) {
-      await supabase.from('materials').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', m.id);
-    } else {
-      await supabase.from('materials').insert({ ...payload, user_id: user.id });
-    }
+    const { error } = m.id
+      ? await supabase.from('materials').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', m.id)
+      : await supabase.from('materials').insert({ ...payload, user_id: user.id });
+    if (error) { toastError(`Couldn't save material: ${error.message}`); return; }
     loadAll();
   };
 
   const deleteMaterial = async (id: string) => {
-    await supabase.from('materials').delete().eq('id', id);
+    const { error } = await supabase.from('materials').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete material: ${error.message}`); return; }
     loadAll();
   };
 
@@ -494,23 +592,23 @@ export default function HomePage() {
       tax_amount: Number(q.tax_amount ?? 0), total: Number(q.total ?? 0), status: q.status ?? 'draft',
       valid_until: q.valid_until || null, notes: q.notes ?? null,
     };
-    if (q.id) {
-      await supabase.from('quotes').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', q.id);
-    } else {
-      await supabase.from('quotes').insert({ ...payload, user_id: user.id });
-    }
+    const { error } = q.id
+      ? await supabase.from('quotes').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', q.id)
+      : await supabase.from('quotes').insert({ ...payload, user_id: user.id });
+    if (error) { toastError(`Couldn't save quote: ${error.message}`); return; }
     loadAll();
   };
 
   const deleteQuote = async (id: string) => {
-    await supabase.from('quotes').delete().eq('id', id);
+    const { error } = await supabase.from('quotes').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete quote: ${error.message}`); return; }
     loadAll();
   };
 
   const acceptQuote = async (q: Quote) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data: newWO } = await supabase.from('work_orders').insert({
+    const { data: newWO, error } = await supabase.from('work_orders').insert({
       user_id: user.id,
       wo_number: nextWoNumber,
       contractor_name: '',
@@ -525,10 +623,13 @@ export default function HomePage() {
       priority: 'Normal',
       schedule_type: 'Exact Time',
     }).select('id').single();
+    if (error) { toastError(`Couldn't create work order from quote: ${error.message}`); return; }
     if (newWO) {
-      await supabase.from('quotes').update({
+      const { error: qErr } = await supabase.from('quotes').update({
         status: 'accepted', accepted_at: new Date().toISOString(), work_order_id: newWO.id,
       }).eq('id', q.id);
+      if (qErr) toastError(`Work order created, but couldn't mark quote accepted: ${qErr.message}`);
+      else toastSuccess(`Quote accepted — created WO#${nextWoNumber}`);
     }
     loadAll();
   };
@@ -536,26 +637,47 @@ export default function HomePage() {
   // ── Import Queue ───────────────────────────────────────────────────────────
 
   const approveImportItem = async (id: string) => {
-    await fetch(`/api/import-queue/${id}/approve`, { method: 'POST' });
+    try {
+      const res = await fetch(`/api/import-queue/${id}/approve`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toastError(data.error || 'Import approval failed');
+      } else {
+        toastSuccess('Import approved — work order created');
+      }
+    } catch {
+      toastError('Import approval failed — check your connection');
+    }
     loadAll();
   };
 
   const rejectImportItem = async (id: string) => {
-    await fetch(`/api/import-queue/${id}/reject`, { method: 'POST' });
+    try {
+      const res = await fetch(`/api/import-queue/${id}/reject`, { method: 'POST' });
+      if (!res.ok) toastError('Import rejection failed');
+    } catch {
+      toastError('Import rejection failed — check your connection');
+    }
     loadAll();
   };
 
   // ── QuickBooks ─────────────────────────────────────────────────────────────
 
   const syncPaymentToQuickBooks = async (paymentId: string) => {
-    const res = await fetch('/api/quickbooks/sync-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payment_id: paymentId }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      alert(data.error || 'QuickBooks sync failed');
+    try {
+      const res = await fetch('/api/quickbooks/sync-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_id: paymentId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toastError(data.error || 'QuickBooks sync failed');
+      } else {
+        toastSuccess('Payment synced to QuickBooks');
+      }
+    } catch {
+      toastError('QuickBooks sync failed — check your connection');
     }
     loadAll();
   };
@@ -603,6 +725,7 @@ export default function HomePage() {
 
   return (
     <div className="app-root">
+      <Toaster />
       {/* Mobile header — hidden on desktop via CSS, shown on mobile via media query */}
       <div
         className="no-print"

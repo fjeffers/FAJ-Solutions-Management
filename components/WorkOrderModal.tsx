@@ -158,7 +158,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
     title:           item?.title           ?? '',
     contractor_name: item?.contractor_name ?? '',
-    source_platform: item?.source_platform ?? 'Internal',
+    // Normalize legacy lowercase 'netview' (written by the email importer pre-fix)
+    // so the Source dropdown matches its 'NetView' option.
+    source_platform: item?.source_platform?.toLowerCase() === 'netview' ? 'NetView' : (item?.source_platform ?? 'Internal'),
     external_wo_id:  item?.external_wo_id  ?? '',
     customer_name:   item?.customer_name   ?? '',
     project_name:    item?.project_name    ?? '',
@@ -769,7 +771,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               </PF>
             </div>
 
-            {form.source_platform === 'netview' && item && (
+            {form.source_platform?.toLowerCase() === 'netview' && item && (
               <NetviewSubmitButton wo={item} contractors={contractors} />
             )}
           </div>

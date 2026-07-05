@@ -40,6 +40,7 @@ import { logAudit } from '@/lib/audit';
 import { notifyContractor, sendPortalLink } from '@/lib/notify';
 import { toastError, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
+import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 
 const VIEWS = [
   'dashboard', 'financials', 'workorders', 'payments', 'payables', 'contractors',
@@ -783,6 +784,16 @@ export default function HomePage() {
           <NI k="1099"        icon={<ClipboardCheck size={15} />} label="1099s" />
           <NI k="w9"          icon={<BookOpen size={15} />}     label="W-9s" />
           <NI k="quickbooks"  icon={<TrendingUp size={15} />}   label="QuickBooks" />
+          <a
+            className="nav-btn"
+            href={NETVIEW_FORM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Opens NetView's vendor payment form in a new tab. Tip: open a NetView work order and use 'Submit to Netview' there to get the form pre-filled."
+            style={{ textDecoration: 'none' }}
+          >
+            <FileText size={15} /> NetView Invoice
+          </a>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)', padding: '12px 12px 6px', textTransform: 'uppercase' }}>Settings</div>
           <NI k="settings"    icon={<Settings size={15} />}     label="Settings" />
         </nav>

@@ -5,6 +5,9 @@ import type { WorkOrder, Contractor } from '@/lib/types';
 // did not match this form and produced a blank prefill. Do not port those.
 const FORM_BASE = 'https://docs.google.com/forms/d/e/1FAIpQLScnfErr456x8yuRh4sPZeEAugKD5iEFo4TXD5oaAtlp1sjK-A/viewform';
 
+// Blank (un-prefilled) form link for the sidebar shortcut.
+export const NETVIEW_FORM_URL = FORM_BASE;
+
 const ENTRY = {
   invoiceDate:    'entry.270691041',
   serviceDate:    'entry.116346627',

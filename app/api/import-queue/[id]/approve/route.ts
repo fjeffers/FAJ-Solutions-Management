@@ -30,7 +30,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     customer_name: f.customer_name ?? null,
     client_reference: f.client_reference ?? null,
     external_wo_id: f.external_wo_id ?? null,
-    source_platform: 'netview',
+    source_platform: 'NetView',
     start_date: f.start_date ?? null,
     total_amount: 0,
     pay_type: 'Fixed',

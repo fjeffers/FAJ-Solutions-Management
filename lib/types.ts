@@ -489,7 +489,7 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
 // â”€â”€â”€ WorkOrderModal dropdown constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const WORK_ORDER_SOURCES: string[] = [
-  'Internal', 'FieldNation', 'WorkMarket', 'Thumbtack', 'CrowdSource', 'Direct', 'Other',
+  'Internal', 'NetView', 'FieldNation', 'WorkMarket', 'Thumbtack', 'CrowdSource', 'Direct', 'Other',
 ];
 
 export const ASSIGNMENT_TYPES: string[] = [

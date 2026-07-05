@@ -38,6 +38,9 @@ export type Contractor = {
   // Contractor portal (migration-011)
   portal_token: string | null;
 
+  // QuickBooks sync (migration-027)
+  qbo_vendor_id: string | null;
+
   // Direct Deposit / ACH (migration-009)
   bank_name: string | null;
   account_holder_name: string | null;
@@ -111,6 +114,13 @@ export type WorkOrder = {
   start_time: string | null;      // "HH:MM" 24h
   end_date: string | null;
   end_time: string | null;        // "HH:MM" 24h
+
+  // Scheduling calendar assignment (migration-022)
+  scheduled_date: string | null;
+
+  // Dispatch map geocoding (migration-023)
+  site_lat: number | null;
+  site_lng: number | null;
 
   // Scope
   description: string | null;
@@ -208,6 +218,10 @@ export type Payment = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+
+  // QuickBooks sync (migration-027)
+  qbo_synced_at: string | null;
+  qbo_transaction_id: string | null;
 };
 
 // ─── Question Templates ───────────────────────────────────────────────────────
@@ -247,6 +261,147 @@ export type SiteContact = {
   email: string;
 };
 
+// ─── Materials / Inventory (pre-existing table, built outside this repo) ─────
+
+export type Material = {
+  id: string;
+  user_id: string | null;
+  name: string;
+  description: string | null;
+  category: string | null;
+  unit: string | null;
+  stock_quantity: number;
+  low_stock_threshold: number | null;
+  unit_cost: number | null;
+  supplier: string | null;
+  sku: string | null;
+  location: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MaterialUsage = {
+  id: string;
+  user_id: string | null;
+  material_id: string | null;
+  work_order_id: string | null;
+  wo_number: string | null;
+  quantity_used: number;
+  notes: string | null;
+  used_at: string;
+  created_at: string;
+};
+
+// ─── Quotes (pre-existing table, built outside this repo) ────────────────────
+
+export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+
+export type QuoteLineItem = {
+  id: string;
+  description: string;
+  quantity: number;
+  rate: number;
+};
+
+export type Quote = {
+  id: string;
+  user_id: string | null;
+  quote_number: string;
+  client_name: string | null;
+  client_email: string | null;
+  client_phone: string | null;
+  title: string | null;
+  description: string | null;
+  line_items: QuoteLineItem[];
+  subtotal: number;
+  tax_rate: number;
+  tax_amount: number;
+  total: number;
+  status: QuoteStatus;
+  valid_until: string | null;
+  notes: string | null;
+  sent_at: string | null;
+  accepted_at: string | null;
+  work_order_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ─── Work Order Messages (pre-existing table, built outside this repo) ───────
+
+export type MessageSenderRole = 'admin' | 'contractor';
+
+export type WorkOrderMessage = {
+  id: string;
+  user_id: string | null;
+  work_order_id: string; // stores wo_number, per this app's existing wo-linking convention
+  sender_email: string | null;
+  sender_name: string;
+  sender_role: MessageSenderRole;
+  content: string;
+  read_at: string | null;
+  created_at: string;
+};
+
+// ─── Email Import (migration-026) ─────────────────────────────────────────────
+
+export type GmailConnection = {
+  id: string;
+  user_id: string;
+  connected_email: string;
+  last_polled_at: string | null;
+  created_at: string;
+  // refresh_token / access_token intentionally omitted — never selectable by the browser client.
+};
+
+export type ImportQueueStatus = 'pending' | 'approved' | 'rejected';
+
+export type ParsedNetviewFields = {
+  title: string;
+  description: string;
+  customer_name: string;
+  client_reference: string; // Site ID
+  external_wo_id: string;   // Ticket Number
+  start_date: string | null;
+};
+
+export type ImportQueueItem = {
+  id: string;
+  user_id: string;
+  source: 'netview_smartsheet';
+  external_dedupe_key: string;
+  parsed_fields: ParsedNetviewFields;
+  raw_snippet: string | null;
+  status: ImportQueueStatus;
+  created_work_order_id: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+};
+
+// ─── QuickBooks Online sync (migration-027) ───────────────────────────────────
+
+export type QuickBooksConnection = {
+  id: string;
+  user_id: string;
+  realm_id: string;
+  company_name: string | null;
+  environment: 'sandbox' | 'production';
+  default_expense_account_id: string | null;
+  default_expense_account_name: string | null;
+  default_payment_account_id: string | null;
+  default_payment_account_name: string | null;
+  connected_at: string;
+  created_at: string;
+  // refresh_token / access_token intentionally omitted — never selectable by the browser client.
+};
+
+export type QuickBooksAccount = {
+  id: string;
+  name: string;
+  accountType: string;
+};
+
 // ─── Deliverable Templates ────────────────────────────────────────────────────
 
 export type DeliverableTemplate = {
@@ -269,6 +424,23 @@ export type WoTask = {
 };
 
 export type TimeLog = {
+  id: string;
+  wo_id: string;
+  wo_number: string;
+  contractor_name: string;
+  travel_start_at:  string | null;
+  travel_start_lat: number | null;
+  travel_start_lng: number | null;
+  arrived_at:       string | null;
+  arrived_lat:      number | null;
+  arrived_lng:      number | null;
+  checked_in_at:    string | null;
+  checked_out_at:   string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContractorTimeLog = {
   id: string;
   wo_id: string;
   wo_number: string;

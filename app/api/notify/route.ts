@@ -5,12 +5,12 @@ import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 const OWNER_EMAIL = 'fajsolutions@gmail.com';
 
 // Types that go to the owner (Fred), not the contractor
-const OWNER_TYPES = new Set(['contractor_accepted', 'contractor_status_update']);
+const OWNER_TYPES = new Set(['contractor_accepted', 'contractor_status_update', 'import_queue_pending']);
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const body = await req.json();
-  const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders } = body;
+  const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders, count } = body;
 
   // Contractor email only required for contractor-facing notification types
   if (!OWNER_TYPES.has(type) && !contractor_email) {
@@ -86,6 +86,15 @@ export async function POST(req: NextRequest) {
         <h2 style="color:#0D7377;">Work Order Status Update</h2>
         <p><strong>${contractor_name}</strong> updated Work Order <strong>#${wo_number}</strong>${title ? ` — ${title}` : ''} to: <strong>${status}</strong></p>
         <p style="color:#888;font-size:12px;">— FAJ Solutions Contractor Portal</p>
+      </div>
+    `;
+  } else if (type === 'import_queue_pending') {
+    subject = `📥 ${count} new Netview dispatch${count !== 1 ? 'es' : ''} awaiting review`;
+    html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <h2 style="color:#0D7377;">Email Import — Review Needed</h2>
+        <p><strong>${count}</strong> new Netview dispatch email${count !== 1 ? 's were' : ' was'} parsed and ${count !== 1 ? 'are' : 'is'} waiting in your Import Queue for approval before becoming work orders.</p>
+        <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
       </div>
     `;
   } else {

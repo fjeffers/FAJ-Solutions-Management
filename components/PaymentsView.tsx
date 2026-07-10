@@ -52,6 +52,17 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
   const [dateTo, setDateTo] = useState('');
   const dateActive = !!(dateFrom || dateTo);
   const setRange = (from: string, to: string) => { setDateFrom(from); setDateTo(to); };
+  const [woFilter, setWoFilter] = useState('all');
+
+  // Job dropdown options: newest first, labeled "#1042 — Camera install"
+  const woOptions = useMemo(() =>
+    [...workOrders]
+      .sort((a, b) => (parseInt(b.wo_number, 10) || 0) - (parseInt(a.wo_number, 10) || 0))
+      .map((w) => ({
+        wo_number: w.wo_number,
+        label: `#${w.wo_number} — ${w.title || w.site_name || w.customer_name || 'Untitled'}`,
+      })),
+  [workOrders]);
 
   const woMap = useMemo(() => {
     const m = new Map<string, WorkOrder>();
@@ -114,8 +125,15 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
       (wo?.site_name ?? '').toLowerCase().includes(s) || (wo?.site_city ?? '').toLowerCase().includes(s);
     const matchMethod = methodFilter === 'all' || p.method === methodFilter;
     const matchContractor = contractorFilter === 'all' || p.contractor_name === contractorFilter;
-    return matchSearch && matchMethod && matchContractor;
+    const matchWO = woFilter === 'all' || p.wo_number === woFilter;
+    return matchSearch && matchMethod && matchContractor && matchWO;
   });
+
+  // Money summary for the selected job (payments across all dates, not just the range)
+  const selectedWO = woFilter === 'all' ? null : woMap.get(woFilter) ?? null;
+  const selectedWOPaid = woFilter === 'all'
+    ? 0
+    : payments.filter((p) => p.wo_number === woFilter).reduce((s, p) => s + Number(p.amount), 0);
 
   const totalShown = filtered.reduce((s, p) => s + Number(p.amount), 0);
   const uniqueWOs = new Set(dated.map((p) => p.wo_number)).size;
@@ -264,6 +282,20 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
             <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
             <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search contractor, WO#, job title, site, notes..." style={{ paddingLeft: 36 }} />
           </div>
+          <div style={{ flex: '1 1 220px', maxWidth: 340 }}>
+            <select
+              className="select input"
+              value={woFilter}
+              onChange={(e) => setWoFilter(e.target.value)}
+              title="Look up payments for one job"
+              style={{ fontSize: 12 }}
+            >
+              <option value="all">All Jobs</option>
+              {woOptions.map((o) => (
+                <option key={o.wo_number} value={o.wo_number}>{o.label}</option>
+              ))}
+            </select>
+          </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {methods.map((m) => (
               <button key={m} className={'filter-chip ' + (methodFilter === m ? 'active' : '')} onClick={() => setMethodFilter(methodFilter === m && m !== 'all' ? 'all' : m)}>
@@ -272,6 +304,17 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
             ))}
           </div>
         </div>
+        {selectedWO && (
+          <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.05)', border: '1px solid rgba(13,115,119,0.15)', display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
+            <span style={{ fontWeight: 700, color: 'var(--teal)' }}>#{selectedWO.wo_number}{selectedWO.title ? ` — ${selectedWO.title}` : ''}</span>
+            <span>Job total: <strong>{fmtMoney(Number(selectedWO.total_amount))}</strong></span>
+            <span style={{ color: '#047857' }}>Paid: <strong>{fmtMoney(selectedWOPaid)}</strong></span>
+            <span style={{ color: Number(selectedWO.total_amount) - selectedWOPaid > 0 ? '#b91c1c' : '#047857' }}>
+              Remaining: <strong>{fmtMoney(Math.max(0, Number(selectedWO.total_amount) - selectedWOPaid))}</strong>
+            </span>
+            <button style={{ fontSize: 11, color: '#b91c1c', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => setWoFilter('all')}>x Clear</button>
+          </div>
+        )}
         {contractorFilter !== 'all' && (
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, color: '#666' }}>Filtered:</span>

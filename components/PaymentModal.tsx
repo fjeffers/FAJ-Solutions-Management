@@ -4,9 +4,22 @@ import {
   X, CreditCard, Calendar, DollarSign, FileText,
   ExternalLink, CheckCircle2, Smartphone, Landmark,
 } from 'lucide-react';
-import { fmtMoney, sortByWO } from '@/lib/utils';
+import { fmtMoney, sortByWO, contractorShareOfWO } from '@/lib/utils';
 import type { Payment, WorkOrder, Contractor } from '@/lib/types';
 import { PAYMENT_METHODS } from '@/lib/types';
+
+function techsOnWO(w: WorkOrder): string[] {
+  return (w.contractor_names && w.contractor_names.length > 0)
+    ? w.contractor_names
+    : (w.contractor_name ? [w.contractor_name] : []);
+}
+
+// A contractor's usual way of getting paid, from their profile
+function preferredMethod(c: Contractor | undefined): string {
+  if (c?.routing_number && c?.account_number) return 'Direct Deposit';
+  if (c?.zelle_phone) return 'Zelle';
+  return 'Check';
+}
 
 type Props = {
   item: Payment | null;
@@ -37,9 +50,39 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
   const woTotal = Number(selectedWO?.total_amount ?? 0);
   const remaining = woTotal > 0 ? woTotal - totalPaid : null;
 
+  // What this tech is still owed on a WO (their split share minus payments to them)
+  const techRemaining = (w: WorkOrder, tech: string): number => {
+    const share = contractorShareOfWO(w, tech);
+    const paid = payments
+      .filter((p) => p.wo_number === w.wo_number && p.contractor_name === tech && p.id !== item?.id)
+      .reduce((s, p) => s + Number(p.amount), 0);
+    return Math.max(0, share - paid);
+  };
+
+  const handleTechChange = (name: string) => {
+    const c = contractors.find((x) => x.name === name);
+    setForm((f) => ({
+      ...f,
+      contractor_name: name,
+      // New payments default to how this tech usually gets paid; edits keep the recorded method
+      method: item ? f.method : preferredMethod(c),
+    }));
+    setZelleStep('idle');
+  };
+
   const handleWOChange = (wo: string) => {
     const found = workOrders.find((w) => w.wo_number === wo);
-    setForm((f) => ({ ...f, wo_number: wo, contractor_name: found?.contractor_name ?? f.contractor_name ?? '' }));
+    setForm((f) => {
+      // Don't clobber a tech the user already picked; fill from the WO only when empty
+      const contractor_name = f.contractor_name || found?.contractor_name || '';
+      let amount = f.amount;
+      // New payment with no amount yet: prefill what this tech is still owed on the job
+      if (!item && found && contractor_name && (!amount || Number(amount) === 0)) {
+        const rem = techRemaining(found, contractor_name);
+        if (rem > 0) amount = rem;
+      }
+      return { ...f, wo_number: wo, contractor_name, amount };
+    });
   };
 
   const contractor = contractors.find((c) => c.name === form.contractor_name);
@@ -78,6 +121,20 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+          {/* Who — first, so the job list below narrows to their work */}
+          <PF label="Paid To *" icon={<FileText size={14} />}>
+            <select className="select input" value={form.contractor_name ?? ''}
+              onChange={(e) => handleTechChange(e.target.value)} autoFocus>
+              <option value="">Select tech</option>
+              {contractors.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+              {form.contractor_name && !contractors.some((c) => c.name === form.contractor_name) && (
+                <option value={form.contractor_name}>{form.contractor_name}</option>
+              )}
+            </select>
+          </PF>
+
           {/* WO selector */}
           <PF label="Work Order *" icon={<FileText size={14} />}>
             <div style={{ display: 'flex', gap: 0, marginBottom: 8, borderRadius: 8, overflow: 'hidden', border: '1px solid #e0e0e0' }}>
@@ -93,13 +150,36 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
               </button>
             </div>
             {!manualWO ? (
-              <select className="select input" value={form.wo_number ?? ''} onChange={(e) => handleWOChange(e.target.value)} autoFocus>
+              <select className="select input" value={form.wo_number ?? ''} onChange={(e) => handleWOChange(e.target.value)}>
                 <option value="">Select work order</option>
-                {sortByWO(workOrders).map((w) => (
-                  <option key={w.id} value={w.wo_number}>
-                    WO#{w.wo_number} — {w.contractor_name} ({fmtMoney(Number(w.total_amount))})
-                  </option>
-                ))}
+                {(() => {
+                  const tech = form.contractor_name;
+                  const mine = tech ? sortByWO(workOrders.filter((w) => techsOnWO(w).includes(tech))) : [];
+                  const rest = sortByWO(workOrders.filter((w) => !mine.some((m) => m.id === w.id)));
+                  const label = (w: WorkOrder) => `WO#${w.wo_number}${w.title ? ` — ${w.title}` : ` — ${w.contractor_name}`}`;
+                  if (!tech) {
+                    return rest.map((w) => (
+                      <option key={w.id} value={w.wo_number}>{label(w)} ({fmtMoney(Number(w.total_amount))})</option>
+                    ));
+                  }
+                  return [
+                    <optgroup key="mine" label={`${tech}'s jobs`}>
+                      {mine.map((w) => {
+                        const rem = techRemaining(w, tech);
+                        return (
+                          <option key={w.id} value={w.wo_number}>
+                            {label(w)} {rem > 0 ? `(owed ${fmtMoney(rem)})` : '(paid up)'}
+                          </option>
+                        );
+                      })}
+                    </optgroup>,
+                    <optgroup key="rest" label="Other work orders">
+                      {rest.map((w) => (
+                        <option key={w.id} value={w.wo_number}>{label(w)} ({fmtMoney(Number(w.total_amount))})</option>
+                      ))}
+                    </optgroup>,
+                  ];
+                })()}
               </select>
             ) : (
               <input className="input" value={form.wo_number ?? ''}
@@ -180,28 +260,6 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
             </div>
           )}
 
-          {/* Contractor selector — always editable so a payment logged to the
-              wrong tech can be corrected. Techs on the selected WO are listed first. */}
-          <PF label="Paid To *" icon={<FileText size={14} />}>
-            <select className="select input" value={form.contractor_name ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, contractor_name: e.target.value }))}>
-              <option value="">Select contractor</option>
-              {(() => {
-                const woTechs = (selectedWO?.contractor_names && selectedWO.contractor_names.length > 0)
-                  ? selectedWO.contractor_names
-                  : (selectedWO?.contractor_name ? [selectedWO.contractor_name] : []);
-                const others = contractors.map((c) => c.name).filter((n) => !woTechs.includes(n));
-                // Keep the current value selectable even if it's not in either list
-                const current = form.contractor_name && !woTechs.includes(form.contractor_name) && !others.includes(form.contractor_name)
-                  ? [form.contractor_name] : [];
-                return [
-                  ...woTechs.map((n) => <option key={`wo-${n}`} value={n}>{n} — on this WO</option>),
-                  ...current.map((n) => <option key={`cur-${n}`} value={n}>{n}</option>),
-                  ...others.map((n) => <option key={`all-${n}`} value={n}>{n}</option>),
-                ];
-              })()}
-            </select>
-          </PF>
 
           {/* Date */}
           <PF label="Payment Date *" icon={<Calendar size={14} />}>

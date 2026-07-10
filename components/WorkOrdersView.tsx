@@ -450,15 +450,9 @@ function AIGenerateModal({
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Generation failed'); return; }
-      const r = data.result;
-      onGenerated({
-        title: r.title || undefined,
-        description: r.scope_of_work || r.description || undefined,
-        deliverable_instructions: r.special_instructions || undefined,
-        tools_required: r.tools_required || undefined,
-        site_name: r.site_name || undefined,
-        priority: r.priority ? r.priority.charAt(0).toUpperCase() + r.priority.slice(1) : undefined,
-      });
+      // Server already whitelists/sanitizes keys — pass everything through so
+      // address, price, schedule, and contact fields prefill the form.
+      onGenerated(data.result as Partial<WorkOrder>);
     } catch {
       setError('Could not reach the AI service — try again.');
     } finally {
@@ -476,7 +470,7 @@ function AIGenerateModal({
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
         </div>
         <p style={{ fontSize: 12, color: '#888', margin: '0 0 12px' }}>
-          Describe the job in plain English — I&apos;ll draft the title, description, and details for you to review.
+          Paste or describe the job — address, price, date, and contact info are picked up automatically for you to review.
         </p>
         <textarea
           className="input"

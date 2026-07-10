@@ -1,9 +1,25 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, TrendingUp, DollarSign, Users, CreditCard, RefreshCw, CheckCircle2 } from 'lucide-react';
-import { fmtMoney, fmtDate } from '@/lib/utils';
+import { Plus, Search, Edit2, Trash2, TrendingUp, DollarSign, Users, CreditCard, RefreshCw, CheckCircle2, Calendar, Wallet } from 'lucide-react';
+import { fmtMoney, fmtDate, contractorShareOfWO } from '@/lib/utils';
 import type { Payment, WorkOrder } from '@/lib/types';
 import WOPaymentHistoryModal from './WOPaymentHistoryModal';
+
+function isoToday(): string { return new Date().toISOString().split('T')[0]; }
+function isoDaysAgo(days: number): string {
+  const d = new Date(); d.setDate(d.getDate() - days);
+  return d.toISOString().split('T')[0];
+}
+function isoMonthStart(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+// payment_date / start_date are YYYY-MM-DD strings, so string compare is date compare
+function inRange(date: string | null | undefined, from: string, to: string): boolean {
+  if (!date) return false;
+  const d = date.split('T')[0];
+  return (!from || d >= from) && (!to || d <= to);
+}
 
 const MC: Record<string, { bg: string; color: string }> = {
   Zelle: { bg: 'rgba(107,45,139,0.12)', color: '#6B2D8B' },
@@ -32,6 +48,10 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
   const [methodFilter, setMethodFilter] = useState('all');
   const [contractorFilter, setContractorFilter] = useState('all');
   const [viewingWO, setViewingWO] = useState<WorkOrder | null>(null);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const dateActive = !!(dateFrom || dateTo);
+  const setRange = (from: string, to: string) => { setDateFrom(from); setDateTo(to); };
 
   const woMap = useMemo(() => {
     const m = new Map<string, WorkOrder>();
@@ -39,22 +59,53 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
     return m;
   }, [workOrders]);
 
-  const allTotal = payments.reduce((s, p) => s + Number(p.amount), 0);
+  // Date range applies first — every tile, breakdown, and the table follow it.
+  const dated = useMemo(
+    () => payments.filter((p) => !dateActive || inRange(p.payment_date, dateFrom, dateTo)),
+    [payments, dateActive, dateFrom, dateTo],
+  );
+
+  const allTotal = dated.reduce((s, p) => s + Number(p.amount), 0);
   const methods = ['all', ...Array.from(new Set(payments.map((p) => p.method)))];
 
   const byContractor = useMemo(() => {
     const m = new Map<string, number>();
-    payments.forEach((p) => m.set(p.contractor_name, (m.get(p.contractor_name) ?? 0) + Number(p.amount)));
+    dated.forEach((p) => m.set(p.contractor_name, (m.get(p.contractor_name) ?? 0) + Number(p.amount)));
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [payments]);
+  }, [dated]);
 
   const byMethod = useMemo(() => {
     const m = new Map<string, number>();
-    payments.forEach((p) => m.set(p.method, (m.get(p.method) ?? 0) + Number(p.amount)));
+    dated.forEach((p) => m.set(p.method, (m.get(p.method) ?? 0) + Number(p.amount)));
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [payments]);
+  }, [dated]);
 
-  const filtered = payments.filter((p) => {
+  // What's still OWED per tech for work orders scheduled in the range —
+  // answers "how much do I owe everyone on July 10". Share comes from the
+  // per-tech split when set; payments to that tech (any date) count against it.
+  const owedInRange = useMemo(() => {
+    if (!dateActive) return [];
+    const m = new Map<string, number>();
+    for (const w of workOrders) {
+      if (!inRange(w.start_date, dateFrom, dateTo)) continue;
+      const names = (w.contractor_names && w.contractor_names.length > 0)
+        ? w.contractor_names
+        : (w.contractor_name ? [w.contractor_name] : []);
+      for (const name of names) {
+        const share = contractorShareOfWO(w, name);
+        if (share <= 0) continue;
+        const paid = payments
+          .filter((p) => p.wo_number === w.wo_number && p.contractor_name === name)
+          .reduce((s, p) => s + Number(p.amount), 0);
+        const remaining = Math.max(0, share - paid);
+        if (remaining > 0) m.set(name, (m.get(name) ?? 0) + remaining);
+      }
+    }
+    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+  }, [dateActive, dateFrom, dateTo, workOrders, payments]);
+  const owedTotal = owedInRange.reduce((s, [, v]) => s + v, 0);
+
+  const filtered = dated.filter((p) => {
     const s = search.toLowerCase();
     const wo = woMap.get(p.wo_number);
     const matchSearch =
@@ -67,7 +118,7 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
   });
 
   const totalShown = filtered.reduce((s, p) => s + Number(p.amount), 0);
-  const uniqueWOs = new Set(payments.map((p) => p.wo_number)).size;
+  const uniqueWOs = new Set(dated.map((p) => p.wo_number)).size;
   const top = byContractor[0];
   const topM = byMethod[0];
 
@@ -84,6 +135,53 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
         </div>
       </div>
 
+      {/* ── Date lookup ── */}
+      <div className="glass card" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase' }}>
+            <Calendar size={13} /> Date
+          </span>
+          <button className={'filter-chip ' + (dateFrom === isoToday() && dateTo === isoToday() ? 'active' : '')} onClick={() => setRange(isoToday(), isoToday())}>Today</button>
+          <button className={'filter-chip ' + (dateFrom === isoDaysAgo(7) && dateTo === isoToday() ? 'active' : '')} onClick={() => setRange(isoDaysAgo(7), isoToday())}>Last 7 Days</button>
+          <button className={'filter-chip ' + (dateFrom === isoMonthStart() && dateTo === isoToday() ? 'active' : '')} onClick={() => setRange(isoMonthStart(), isoToday())}>This Month</button>
+          <button className={'filter-chip ' + (!dateActive ? 'active' : '')} onClick={() => setRange('', '')}>All Time</button>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input className="input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ width: 150, fontSize: 12, padding: '7px 10px' }} />
+            <span style={{ fontSize: 12, color: '#aaa' }}>to</span>
+            <input className="input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ width: 150, fontSize: 12, padding: '7px 10px' }} />
+          </div>
+          {dateActive && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal)' }}>
+              Showing {dateFrom ? fmtDate(dateFrom) : 'the beginning'} – {dateTo ? fmtDate(dateTo) : 'today'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Owed for jobs in the selected range ── */}
+      {dateActive && (
+        <div className="glass card" style={{ marginBottom: 16, border: '1.5px solid rgba(185,28,28,0.2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: owedInRange.length > 0 ? 12 : 0 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: 1, color: '#b91c1c', textTransform: 'uppercase' }}>
+              <Wallet size={13} /> Still owed for jobs scheduled in this range
+            </span>
+            <span style={{ fontSize: 18, fontWeight: 800, color: owedTotal > 0 ? '#b91c1c' : '#047857' }}>
+              {owedTotal > 0 ? fmtMoney(owedTotal) : 'All paid up ✓'}
+            </span>
+          </div>
+          {owedInRange.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {owedInRange.map(([name, amt]) => (
+                <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ fontWeight: 600, color: '#333' }}>{name}</span>
+                  <span style={{ fontWeight: 700, color: '#b91c1c' }}>{fmtMoney(amt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
         <div className="glass card" style={{ padding: '16px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -97,7 +195,7 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
             <TrendingUp size={14} color="var(--teal)" />
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase' }}>Payments</span>
           </div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#1a1a1a' }}>{payments.length}</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#1a1a1a' }}>{dated.length}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>across {uniqueWOs} work orders</div>
         </div>
         <div className="glass card" style={{ padding: '16px 20px' }}>
@@ -126,7 +224,7 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
         </div>
       </div>
 
-      {payments.length > 0 && (
+      {dated.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, marginBottom: 20 }}>
           <div className="glass card" style={{ padding: '16px 20px' }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase', marginBottom: 12 }}>By Contractor</div>
@@ -252,7 +350,7 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
             {filtered.length > 0 && (
               <tr style={{ background: 'rgba(16,185,129,0.06)', fontWeight: 700, borderTop: '2px solid rgba(16,185,129,0.2)' }}>
                 <td colSpan={5} style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, color: '#555' }}>
-                  {filtered.length < payments.length ? filtered.length + ' of ' + payments.length + ' payments shown' : filtered.length + ' payments'}
+                  {filtered.length < dated.length ? filtered.length + ' of ' + dated.length + ' payments shown' : filtered.length + ' payments'}
                 </td>
                 <td style={{ padding: '12px 16px', textAlign: 'right', color: '#047857', fontSize: 15 }}>{fmtMoney(totalShown)}</td>
                 <td />

@@ -1,8 +1,12 @@
 'use client';
 import { useMemo } from 'react';
 import { DollarSign, Landmark, Smartphone, Plus } from 'lucide-react';
-import { fmtMoney } from '@/lib/utils';
-import type { EnrichedWorkOrder, Contractor } from '@/lib/types';
+import { fmtMoney, contractorShareOfWO } from '@/lib/utils';
+import type { EnrichedWorkOrder, Contractor, Payment } from '@/lib/types';
+
+// One contractor's slice of a work order: their share of the pay, what they've
+// been paid so far on it, and what's still owed to them.
+type PayableRow = EnrichedWorkOrder & { share: number; sharePaid: number; shareRemaining: number };
 
 const PAYMENT_STATUS_META: Record<string, { bg: string; color: string; label: string }> = {
   pending: { bg: 'rgba(245,158,11,0.12)', color: '#b45309', label: 'Unpaid'  },
@@ -13,29 +17,44 @@ const PAYMENT_STATUS_META: Record<string, { bg: string; color: string; label: st
 export default function PayablesView({
   workOrders,
   contractors,
+  payments,
   onPay,
   onQuickPay,
 }: {
   workOrders: EnrichedWorkOrder[];
   contractors: Contractor[];
+  payments: Payment[];
   onPay: (w: EnrichedWorkOrder) => void;
   onQuickPay: () => void;
 }) {
   const groups = useMemo(() => {
-    const openWOs = workOrders.filter((w) => w.remaining > 0);
-    const map = new Map<string, EnrichedWorkOrder[]>();
-    for (const w of openWOs) {
-      map.set(w.contractor_name, [...(map.get(w.contractor_name) ?? []), w]);
+    // Break each WO into per-tech rows so multi-tech jobs show what each tech
+    // is owed (their share from contractor_pay), not just the primary.
+    const map = new Map<string, PayableRow[]>();
+    for (const w of workOrders) {
+      const names = (w.contractor_names && w.contractor_names.length > 0)
+        ? w.contractor_names
+        : (w.contractor_name ? [w.contractor_name] : []);
+      for (const name of names) {
+        const share = contractorShareOfWO(w, name);
+        if (share <= 0) continue;
+        const sharePaid = payments
+          .filter((p) => p.wo_number === w.wo_number && p.contractor_name === name)
+          .reduce((s, p) => s + Number(p.amount), 0);
+        const shareRemaining = Math.max(0, share - sharePaid);
+        if (shareRemaining <= 0) continue;
+        map.set(name, [...(map.get(name) ?? []), { ...w, share, sharePaid, shareRemaining }]);
+      }
     }
     return Array.from(map.entries())
       .map(([name, wos]) => ({
         name,
         wos,
-        total: wos.reduce((s, w) => s + w.remaining, 0),
+        total: wos.reduce((s, w) => s + w.shareRemaining, 0),
         contractor: contractors.find((c) => c.name === name) ?? null,
       }))
       .sort((a, b) => b.total - a.total);
-  }, [workOrders, contractors]);
+  }, [workOrders, contractors, payments]);
 
   const grandTotal = groups.reduce((s, g) => s + g.total, 0);
 
@@ -84,7 +103,7 @@ function ContractorGroup({
   name, wos, total, contractor, onPay,
 }: {
   name: string;
-  wos: EnrichedWorkOrder[];
+  wos: PayableRow[];
   total: number;
   contractor: Contractor | null;
   onPay: (w: EnrichedWorkOrder) => void;
@@ -137,7 +156,9 @@ function ContractorGroup({
         </thead>
         <tbody>
           {wos.map((w) => {
-            const pm = PAYMENT_STATUS_META[w.payment_status] ?? PAYMENT_STATUS_META['pending'];
+            const status = w.sharePaid <= 0 ? 'pending' : 'partial';
+            const pm = PAYMENT_STATUS_META[status];
+            const isSplit = !!(w.contractor_names && w.contractor_names.length >= 2);
             return (
               <tr key={w.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
                 <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--teal)', whiteSpace: 'nowrap' }}>
@@ -150,19 +171,24 @@ function ContractorGroup({
                   <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: pm.bg, color: pm.color, whiteSpace: 'nowrap' }}>
                     {pm.label}
                   </span>
+                  {isSplit && (
+                    <span style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: 'rgba(13,115,119,0.1)', color: 'var(--teal)', whiteSpace: 'nowrap' }}>
+                      their share
+                    </span>
+                  )}
                 </td>
                 <td style={{ padding: '12px 16px', textAlign: 'right', color: '#555' }}>
-                  {fmtMoney(Number(w.total_amount))}
+                  {fmtMoney(w.share)}
                 </td>
                 <td style={{ padding: '12px 16px', textAlign: 'right', color: '#047857', fontWeight: 600 }}>
-                  {fmtMoney(w.paid)}
+                  {fmtMoney(w.sharePaid)}
                 </td>
                 <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: '#b91c1c' }}>
-                  {fmtMoney(w.remaining)}
+                  {fmtMoney(w.shareRemaining)}
                 </td>
                 <td style={{ padding: '12px 16px' }}>
                   <button
-                    onClick={() => onPay(w)}
+                    onClick={() => onPay({ ...w, contractor_name: name, remaining: w.shareRemaining })}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '7px 16px', borderRadius: 8, border: 'none',

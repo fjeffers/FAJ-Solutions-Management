@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO } from './utils';
 import type { WorkOrder, Payment } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -79,6 +79,47 @@ describe('getStatus', () => {
     expect(getStatus(order, [])).toBe('pending');
     expect(getStatus(order, [pay({ amount: 99.99 })])).toBe('partial');
     expect(getStatus(order, [pay({ amount: 100 })])).toBe('paid');
+  });
+});
+
+describe('contractorShareOfWO', () => {
+  it('gives a single tech the full total', () => {
+    const w = wo({ contractor_name: 'Jere', total_amount: 400 });
+    expect(contractorShareOfWO(w, 'Jere')).toBe(400);
+  });
+
+  it('returns 0 for a tech not on the WO', () => {
+    const w = wo({ contractor_name: 'Jere', total_amount: 400 });
+    expect(contractorShareOfWO(w, 'Darnell')).toBe(0);
+  });
+
+  it('uses the pay split when defined', () => {
+    const w = wo({
+      contractor_name: 'Jere', total_amount: 400,
+      contractor_names: ['Jere', 'Darnell'],
+      contractor_pay: { Jere: 250, Darnell: 150 },
+    });
+    expect(contractorShareOfWO(w, 'Jere')).toBe(250);
+    expect(contractorShareOfWO(w, 'Darnell')).toBe(150);
+  });
+
+  it('gives a tech missing from a defined split 0', () => {
+    const w = wo({
+      contractor_name: 'Jere', total_amount: 400,
+      contractor_names: ['Jere', 'Darnell'],
+      contractor_pay: { Jere: 400 },
+    });
+    expect(contractorShareOfWO(w, 'Darnell')).toBe(0);
+  });
+
+  it('falls back to primary-takes-all on multi-tech WOs without a split', () => {
+    const w = wo({
+      contractor_name: 'Jere', total_amount: 400,
+      contractor_names: ['Jere', 'Darnell'],
+      contractor_pay: null,
+    });
+    expect(contractorShareOfWO(w, 'Jere')).toBe(400);
+    expect(contractorShareOfWO(w, 'Darnell')).toBe(0);
   });
 });
 

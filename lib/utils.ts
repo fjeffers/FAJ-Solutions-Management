@@ -47,6 +47,19 @@ export function enrichWorkOrders(workOrders: WorkOrder[], payments: Payment[]): 
   ) as EnrichedWorkOrder[];
 }
 
+// How much of a work order's pay belongs to one contractor.
+// Single tech: the whole total. Multi-tech with a split: their entry (missing entry = 0).
+// Multi-tech without a split: primary contractor carries the full total (legacy behavior).
+export function contractorShareOfWO(wo: WorkOrder, name: string): number {
+  const names = (wo.contractor_names && wo.contractor_names.length > 0)
+    ? wo.contractor_names
+    : (wo.contractor_name ? [wo.contractor_name] : []);
+  if (!names.includes(name)) return 0;
+  if (names.length === 1) return Number(wo.total_amount);
+  if (wo.contractor_pay) return Number(wo.contractor_pay[name] ?? 0);
+  return name === wo.contractor_name ? Number(wo.total_amount) : 0;
+}
+
 export const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
   Open:        { bg: 'rgba(156,163,175,0.2)',  color: '#4B5563' },
   Assigned:    { bg: 'rgba(59,130,246,0.15)',  color: '#1D4ED8' },

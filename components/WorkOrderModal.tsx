@@ -240,6 +240,12 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const [leadContractorName, setLeadContractorName] = useState<string | null>(
     () => item?.lead_contractor_name ?? null
   );
+  // Per-tech pay split (migration-029). Only meaningful with 2+ contractors.
+  const [contractorPay, setContractorPay] = useState<Record<string, number>>(
+    () => item?.contractor_pay ?? {}
+  );
+  const setTechPay = (name: string, amount: number) =>
+    setContractorPay((cp) => ({ ...cp, [name]: amount }));
 
   // ── Payments tab state ────────────────────────────────────────────────────
   const [showPayForm, setShowPayForm] = useState(false);
@@ -310,15 +316,18 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     set('contractor_name', next[0] ?? '');
     // If the lead is removed, reset to first remaining (or null if none)
     if (leadContractorName === name) setLeadContractorName(next[0] ?? null);
+    setContractorPay((cp) => {
+      const { [name]: _removed, ...rest } = cp;
+      return rest;
+    });
   };
 
   // Resolved lead: explicit choice, else first contractor
   const resolvedLead = leadContractorName ?? contractorNames[0] ?? null;
 
-  // Derived payment totals for this WO (must come after `computed`)
-  const woPayments = payments.filter(
-    (p) => p.wo_number === item?.wo_number && p.contractor_name === item?.contractor_name
-  );
+  // Derived payment totals for this WO (must come after `computed`).
+  // Match by WO number only so payments to every tech on a multi-tech job count.
+  const woPayments = payments.filter((p) => p.wo_number === item?.wo_number);
   const totalPaid   = woPayments.reduce((s, p) => s + Number(p.amount), 0);
   const woTotal     = computed > 0 ? computed : Number(form.total_amount) || 0;
   const woRemaining = Math.max(0, woTotal - totalPaid);
@@ -341,6 +350,17 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       lead_contractor_name: finalNames.length >= 2
         ? (leadContractorName ?? finalNames[0] ?? null)
         : null,
+      // Persist the pay split only when 2+ techs and at least one amount entered;
+      // keep only entries for techs still on the WO.
+      contractor_pay: (() => {
+        if (finalNames.length < 2) return null;
+        const pruned: Record<string, number> = {};
+        for (const n of finalNames) {
+          const amt = Number(contractorPay[n]) || 0;
+          if (amt > 0) pruned[n] = amt;
+        }
+        return Object.keys(pruned).length > 0 ? pruned : null;
+      })(),
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
       external_wo_id:  form.external_wo_id  || null,
       customer_name:   form.customer_name   || null,
@@ -488,6 +508,24 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                           <span style={{ fontSize: 10, color: '#aaa', fontWeight: 600 }}>PRIMARY</span>
                         )}
 
+                        {/* Per-tech pay — only when 2+ contractors */}
+                        {isMulti && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                            <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
+                            <input
+                              className="input"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={contractorPay[name] ?? ''}
+                              onChange={(e) => setTechPay(name, e.target.value === '' ? 0 : Number(e.target.value))}
+                              placeholder="0.00"
+                              title={`How much ${name} gets paid on this WO`}
+                              style={{ width: 90, fontSize: 12, padding: '5px 8px', textAlign: 'right' }}
+                            />
+                          </div>
+                        )}
+
                         {/* Remove */}
                         <button onClick={() => removeContractor(name)} style={{
                           background: 'none', border: 'none', cursor: 'pointer', padding: 0,
@@ -499,12 +537,47 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                       </div>
                     );
                   })}
-                  {/* Helper hint when multi-contractor */}
-                  {contractorNames.length >= 2 && (
-                    <div style={{ fontSize: 11, color: '#9ca3af', paddingLeft: 2 }}>
-                      🔵 Lead tech handles deliverables, photos & closeout. Assistant tech checks in/out only.
-                    </div>
-                  )}
+                  {/* Helper hint + pay-split summary when multi-contractor */}
+                  {contractorNames.length >= 2 && (() => {
+                    const assigned = contractorNames.reduce((s, n) => s + (Number(contractorPay[n]) || 0), 0);
+                    const woAmount = computed > 0 ? computed : Number(form.total_amount) || 0;
+                    const matches = Math.abs(assigned - woAmount) < 0.01;
+                    return (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 2, flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 700,
+                            color: assigned === 0 ? '#9ca3af' : matches ? '#047857' : '#b45309',
+                          }}>
+                            {assigned === 0
+                              ? 'No pay split set — full amount goes to the primary tech'
+                              : `Split assigned: ${fmtMoney(assigned)} of ${fmtMoney(woAmount)}${matches ? ' ✓' : ''}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const even = Math.floor((woAmount / contractorNames.length) * 100) / 100;
+                              const next: Record<string, number> = {};
+                              contractorNames.forEach((n, i) => {
+                                // First tech absorbs the rounding remainder so the split always sums to the total
+                                next[n] = i === 0 ? Math.round((woAmount - even * (contractorNames.length - 1)) * 100) / 100 : even;
+                              });
+                              setContractorPay(next);
+                            }}
+                            style={{
+                              fontSize: 11, fontWeight: 700, color: 'var(--teal)', background: 'rgba(13,115,119,0.08)',
+                              border: '1px solid rgba(13,115,119,0.2)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
+                            }}
+                          >
+                            Split evenly
+                          </button>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#9ca3af', paddingLeft: 2 }}>
+                          🔵 Lead tech handles deliverables, photos & closeout. Assistant tech checks in/out only.
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
               {/* Add dropdown */}
@@ -1224,6 +1297,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                         <div style={{ fontWeight: 700, fontSize: 15, color: '#047857' }}>{fmtMoney(Number(p.amount))}</div>
                         <div style={{ fontSize: 11, color: '#888' }}>
                           {fmtDate(p.payment_date)} · {p.method}
+                          {contractorNames.length >= 2 && p.contractor_name && <span> · to <strong>{p.contractor_name}</strong></span>}
                           {p.notes && <span> · {p.notes}</span>}
                         </div>
                       </div>
@@ -1271,6 +1345,26 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                     />
                   </PF>
                 </div>
+                {contractorNames.length >= 2 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <PF label="Pay To *" icon={<User size={13} />}>
+                      <div style={{ position: 'relative' }}>
+                        <select
+                          className="select input"
+                          value={newPay.contractor_name || item?.contractor_name || ''}
+                          onChange={(e) => setNewPay((p) => ({ ...p, contractor_name: e.target.value }))}
+                        >
+                          {contractorNames.map((n) => (
+                            <option key={n} value={n}>
+                              {n}{contractorPay[n] ? ` — ${fmtMoney(contractorPay[n])} on this WO` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                      </div>
+                    </PF>
+                  </div>
+                )}
                 <div style={{ marginBottom: 12 }}>
                   <PF label="Method" icon={<CreditCard size={13} />}>
                     <div style={{ position: 'relative' }}>
@@ -1309,7 +1403,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                       await onSavePayment({
                         ...newPay,
                         wo_number: item?.wo_number ?? '',
-                        contractor_name: item?.contractor_name ?? '',
+                        contractor_name: newPay.contractor_name || item?.contractor_name || '',
                       });
                       setPayLoading(false);
                       setShowPayForm(false);

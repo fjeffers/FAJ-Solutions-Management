@@ -394,6 +394,8 @@ export default function HomePage() {
       contractor_names: w.contractor_names ?? null,
       // Lead / Assistant tech (migration-017)
       lead_contractor_name: w.lead_contractor_name ?? null,
+      // Per-tech pay split (migration-029)
+      contractor_pay: w.contractor_pay ?? null,
     };
     if (w.id) {
       const { error } = await supabase.from('work_orders').update(payload).eq('id', w.id);
@@ -1003,6 +1005,7 @@ export default function HomePage() {
           <PayablesView
             workOrders={enrichedWOs}
             contractors={contractors}
+            payments={payments}
             onPay={handlePayWO}
             onQuickPay={() => setModal({ type: 'payment', item: null })}
           />

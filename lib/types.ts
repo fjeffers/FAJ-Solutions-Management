@@ -182,6 +182,10 @@ export type WorkOrder = {
   // Lead / Assistant tech (migration-017)
   lead_contractor_name: string | null;
 
+  // Per-contractor pay split (migration-029): contractor name -> dollar amount.
+  // Null = no split (single tech, or legacy multi-tech where primary carries the total).
+  contractor_pay: Record<string, number> | null;
+
   // Soft-archive (migration-013)
   archived_at: string | null;
 

@@ -180,18 +180,28 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
             </div>
           )}
 
-          {/* Contractor selector — shown when entering WO# manually */}
-          {manualWO && (
-            <PF label="Contractor *" icon={<FileText size={14} />}>
-              <select className="select input" value={form.contractor_name ?? ''}
-                onChange={(e) => setForm((f) => ({ ...f, contractor_name: e.target.value }))}>
-                <option value="">Select contractor</option>
-                {contractors.map((c) => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-              </select>
-            </PF>
-          )}
+          {/* Contractor selector — always editable so a payment logged to the
+              wrong tech can be corrected. Techs on the selected WO are listed first. */}
+          <PF label="Paid To *" icon={<FileText size={14} />}>
+            <select className="select input" value={form.contractor_name ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, contractor_name: e.target.value }))}>
+              <option value="">Select contractor</option>
+              {(() => {
+                const woTechs = (selectedWO?.contractor_names && selectedWO.contractor_names.length > 0)
+                  ? selectedWO.contractor_names
+                  : (selectedWO?.contractor_name ? [selectedWO.contractor_name] : []);
+                const others = contractors.map((c) => c.name).filter((n) => !woTechs.includes(n));
+                // Keep the current value selectable even if it's not in either list
+                const current = form.contractor_name && !woTechs.includes(form.contractor_name) && !others.includes(form.contractor_name)
+                  ? [form.contractor_name] : [];
+                return [
+                  ...woTechs.map((n) => <option key={`wo-${n}`} value={n}>{n} — on this WO</option>),
+                  ...current.map((n) => <option key={`cur-${n}`} value={n}>{n}</option>),
+                  ...others.map((n) => <option key={`all-${n}`} value={n}>{n}</option>),
+                ];
+              })()}
+            </select>
+          </PF>
 
           {/* Date */}
           <PF label="Payment Date *" icon={<Calendar size={14} />}>
@@ -225,8 +235,8 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
               placeholder="What was this payment for?" />
           </PF>
 
-          {/* Zelle flow */}
-          {isZelle && (
+          {/* Zelle flow — only when recording a new payment; edits don't re-send money */}
+          {isZelle && !item && (
             <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(107,45,139,0.07)', border: '1.5px solid rgba(107,45,139,0.18)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <Smartphone size={14} color="#6B2D8B" />
@@ -290,7 +300,9 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary"
-            disabled={!canSave || (isZelle && zelleStep === 'idle' && !!zelleTarget)}
+            // The Zelle send-first gate only applies when recording a NEW payment —
+            // editing an already-recorded one must always be savable.
+            disabled={!canSave || (!item && isZelle && zelleStep === 'idle' && !!zelleTarget)}
             onClick={() => canSave && onSave(form)}>
             {item ? 'Save Changes' : 'Record Payment'}
           </button>

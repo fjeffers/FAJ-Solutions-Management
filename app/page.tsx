@@ -1088,6 +1088,7 @@ export default function HomePage() {
           onUploadDoc={uploadWoDocument}
           onSavePayment={savePayment}
           onDeletePayment={deletePayment}
+          onEditPayment={(p) => setModal({ type: 'payment', item: p })}
         />
       )}
       {modal?.type === 'contractor' && (

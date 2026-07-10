@@ -5,7 +5,7 @@ import {
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
   Phone, Mail, HelpCircle, Plus, Paperclip,
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
-  CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare,
+  CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2,
 } from 'lucide-react';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate } from '@/lib/types';
 import WOTimeLogs from '@/components/WOTimeLogs';
@@ -146,9 +146,10 @@ type Props = {
   onUploadDoc?: (file: File) => Promise<string | null>;
   onSavePayment?: (p: Partial<Payment>) => Promise<void>;
   onDeletePayment?: (id: string) => Promise<void>;
+  onEditPayment?: (p: Payment) => void;
 };
 
-export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
@@ -1302,17 +1303,29 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                         </div>
                       </div>
                     </div>
-                    {onDeletePayment && (
-                      <button
-                        onClick={async () => {
-                          if (!confirm('Delete this payment?')) return;
-                          await onDeletePayment(p.id);
-                        }}
-                        style={{ padding: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc', flexShrink: 0 }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                      {onEditPayment && (
+                        <button
+                          title="Edit payment"
+                          onClick={() => onEditPayment(p)}
+                          style={{ padding: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#aaa' }}
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                      )}
+                      {onDeletePayment && (
+                        <button
+                          title="Delete payment"
+                          onClick={async () => {
+                            if (!confirm('Delete this payment?')) return;
+                            await onDeletePayment(p.id);
+                          }}
+                          style={{ padding: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

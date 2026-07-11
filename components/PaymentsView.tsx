@@ -5,13 +5,13 @@ import { fmtMoney, fmtDate, contractorOwedOnWO } from '@/lib/utils';
 import type { Payment, WorkOrder, Contractor } from '@/lib/types';
 import WOPaymentHistoryModal from './WOPaymentHistoryModal';
 
-// How a tech gets paid, for the payout sheet
+// How a tech gets paid, for the payout sheet — Zelle first (house default)
 function payMethodLabel(c: Contractor | undefined): string {
+  if (c?.zelle_phone) return `Zelle — ${c.zelle_phone}`;
   if (c?.routing_number && c?.account_number) {
     return `Direct Deposit${c.bank_name ? ` — ${c.bank_name}` : ''} ····${c.account_number.slice(-4)}`;
   }
-  if (c?.zelle_phone) return `Zelle — ${c.zelle_phone}`;
-  return 'Check';
+  return 'Zelle (no number on file)';
 }
 
 function isoToday(): string { return new Date().toISOString().split('T')[0]; }

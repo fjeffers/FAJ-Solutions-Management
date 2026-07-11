@@ -292,7 +292,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     contractor_name: item?.contractor_name ?? '',
     payment_date: new Date().toISOString().split('T')[0],
     amount: 0,
-    method: 'Check',
+    method: 'Zelle',
     notes: '',
   });
   const [newPay, setNewPay] = useState<Partial<Payment>>(defaultNewPay);

@@ -552,11 +552,12 @@ export default function HomePage() {
 
   const handlePayWO = (w: EnrichedWorkOrder) => {
     const contractor = contractors.find((c) => c.name === w.contractor_name);
-    const method = contractor?.routing_number && contractor?.account_number
-      ? 'Direct Deposit'
-      : contractor?.zelle_phone
+    // Zelle is the house default; direct deposit only when Zelle isn't on file
+    const method = contractor?.zelle_phone
       ? 'Zelle'
-      : 'Check';
+      : contractor?.routing_number && contractor?.account_number
+      ? 'Direct Deposit'
+      : 'Zelle';
     setModal({
       type: 'payment',
       item: null,

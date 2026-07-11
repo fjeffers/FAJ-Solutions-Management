@@ -14,11 +14,11 @@ function techsOnWO(w: WorkOrder): string[] {
     : (w.contractor_name ? [w.contractor_name] : []);
 }
 
-// A contractor's usual way of getting paid, from their profile
+// A contractor's usual way of getting paid — Zelle is the house default
 function preferredMethod(c: Contractor | undefined): string {
-  if (c?.routing_number && c?.account_number) return 'Direct Deposit';
   if (c?.zelle_phone) return 'Zelle';
-  return 'Check';
+  if (c?.routing_number && c?.account_number) return 'Direct Deposit';
+  return 'Zelle';
 }
 
 type Props = {
@@ -35,7 +35,7 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
   const defaultForm: Partial<Payment> = {
     wo_number: '', contractor_name: '',
     payment_date: new Date().toISOString().split('T')[0],
-    amount: 0, method: 'Check', notes: '',
+    amount: 0, method: 'Zelle', notes: '',
   };
   const [form, setForm] = useState<Partial<Payment>>(item ?? prefill ?? defaultForm);
   const [zelleStep, setZelleStep] = useState<'idle' | 'ready' | 'confirmed'>('idle');

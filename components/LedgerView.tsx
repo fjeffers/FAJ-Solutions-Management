@@ -17,8 +17,9 @@ export default function LedgerView({
 }) {
   const [contractorFilter, setContractorFilter] = useState('all');
 
+  // Job prices plus mileage reimbursements — the full amount that will go out
   const totalBilled = useMemo(
-    () => workOrders.reduce((s, w) => s + Number(w.total_amount), 0),
+    () => workOrders.reduce((s, w) => s + w.payout_total, 0),
     [workOrders],
   );
 
@@ -67,7 +68,7 @@ export default function LedgerView({
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase' }}>Total Billed — All Jobs</span>
           </div>
           <div style={{ fontSize: 26, fontWeight: 700, color: '#1a1a1a' }}>{fmtMoney(totalBilled)}</div>
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{workOrders.length} work orders</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{workOrders.length} work orders · incl. mileage</div>
         </div>
         <div className="glass card" style={{ padding: '16px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>

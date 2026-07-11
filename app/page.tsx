@@ -260,7 +260,8 @@ export default function HomePage() {
   }, [workOrders]);
 
   const stats = useMemo(() => {
-    const total = enrichedWOs.reduce((s, w) => s + Number(w.total_amount), 0);
+    // payout_total = job price + mileage, so "billed/remaining" match Payables
+    const total = enrichedWOs.reduce((s, w) => s + w.payout_total, 0);
     const paid  = enrichedWOs.reduce((s, w) => s + w.paid, 0);
     return {
       total, paid, remaining: total - paid,
@@ -1004,7 +1005,7 @@ export default function HomePage() {
               // Strip identity + computed fields so saveWorkOrder does an INSERT, not UPDATE.
               // materials_used stays behind too — it records what THAT job consumed.
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const { id, created_at, updated_at, paid, remaining, payment_status, archived_at, materials_used, mileage_logs, ...copy } = w;
+              const { id, created_at, updated_at, paid, remaining, payment_status, payout_total, archived_at, materials_used, mileage_logs, ...copy } = w;
               setModal({ type: 'wo', item: { ...copy, wo_number: '' } as WorkOrder });
             }}
             onPay={handlePayWO}

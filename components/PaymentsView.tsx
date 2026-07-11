@@ -1,7 +1,7 @@
 'use client';
 import { useState, useMemo } from 'react';
 import { Plus, Search, Edit2, Trash2, TrendingUp, DollarSign, Users, CreditCard, RefreshCw, CheckCircle2, Calendar, Wallet, Printer } from 'lucide-react';
-import { fmtMoney, fmtDate, contractorShareOfWO } from '@/lib/utils';
+import { fmtMoney, fmtDate, contractorOwedOnWO } from '@/lib/utils';
 import type { Payment, WorkOrder, Contractor } from '@/lib/types';
 import WOPaymentHistoryModal from './WOPaymentHistoryModal';
 
@@ -112,7 +112,7 @@ export default function PaymentsView({ payments, workOrders, contractors = [], o
         ? w.contractor_names
         : (w.contractor_name ? [w.contractor_name] : []);
       for (const name of names) {
-        const share = contractorShareOfWO(w, name);
+        const share = contractorOwedOnWO(w, name);
         if (share <= 0) continue;
         const paid = payments
           .filter((p) => p.wo_number === w.wo_number && p.contractor_name === name)

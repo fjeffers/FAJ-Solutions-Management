@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal } from './utils';
 import type { WorkOrder, Payment } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -120,6 +120,46 @@ describe('contractorShareOfWO', () => {
     });
     expect(contractorShareOfWO(w, 'Jere')).toBe(400);
     expect(contractorShareOfWO(w, 'Darnell')).toBe(0);
+  });
+});
+
+describe('mileage in owed math', () => {
+  const mileageWO = wo({
+    contractor_name: 'Jere', total_amount: 400,
+    mileage_logs: [
+      { id: 'm1', contractor_name: 'Jere', miles: 50, rate: 0.7, note: null },
+    ],
+  });
+
+  it('payout total includes mileage', () => {
+    expect(woPayoutTotal(mileageWO)).toBeCloseTo(435, 2); // 400 + 50*0.70
+  });
+
+  it('a WO is not "paid" until mileage is covered too', () => {
+    const [e] = enrichWorkOrders([mileageWO], [pay({ amount: 400 })]);
+    expect(e.payment_status).toBe('partial');
+    expect(e.remaining).toBeCloseTo(35, 2);
+    const [f] = enrichWorkOrders([mileageWO], [pay({ amount: 435 })]);
+    expect(f.payment_status).toBe('paid');
+  });
+
+  it('a tech is owed their pay share plus their own mileage only', () => {
+    const splitWO = wo({
+      contractor_name: 'Jere', total_amount: 400,
+      contractor_names: ['Jere', 'Darnell'],
+      contractor_pay: { Jere: 250, Darnell: 150 },
+      mileage_logs: [
+        { id: 'm1', contractor_name: 'Jere', miles: 50, rate: 0.7, note: null },
+        { id: 'm2', contractor_name: 'Darnell', miles: 10, rate: 0.7, note: null },
+      ],
+    });
+    expect(contractorOwedOnWO(splitWO, 'Jere')).toBeCloseTo(285, 2);    // 250 + 35
+    expect(contractorOwedOnWO(splitWO, 'Darnell')).toBeCloseTo(157, 2); // 150 + 7
+  });
+
+  it('no mileage means owed equals the pay share', () => {
+    const plain = wo({ contractor_name: 'Jere', total_amount: 400 });
+    expect(contractorOwedOnWO(plain, 'Jere')).toBe(400);
   });
 });
 

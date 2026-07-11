@@ -366,7 +366,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // Match by WO number only so payments to every tech on a multi-tech job count.
   const woPayments = payments.filter((p) => p.wo_number === item?.wo_number);
   const totalPaid   = woPayments.reduce((s, p) => s + Number(p.amount), 0);
-  const woTotal     = computed > 0 ? computed : Number(form.total_amount) || 0;
+  // Payout includes logged mileage so "remaining" here matches Payables
+  const woTotal     = (computed > 0 ? computed : Number(form.total_amount) || 0) + mileageReimbursement(mileageLogs);
   const woRemaining = Math.max(0, woTotal - totalPaid);
 
   const handleSave = () => {

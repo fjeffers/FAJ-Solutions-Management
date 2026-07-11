@@ -4,7 +4,7 @@ import {
   X, CreditCard, Calendar, DollarSign, FileText,
   ExternalLink, CheckCircle2, Smartphone, Landmark,
 } from 'lucide-react';
-import { fmtMoney, sortByWO, contractorShareOfWO } from '@/lib/utils';
+import { fmtMoney, sortByWO, contractorOwedOnWO } from '@/lib/utils';
 import type { Payment, WorkOrder, Contractor } from '@/lib/types';
 import { PAYMENT_METHODS } from '@/lib/types';
 
@@ -50,9 +50,9 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
   const woTotal = Number(selectedWO?.total_amount ?? 0);
   const remaining = woTotal > 0 ? woTotal - totalPaid : null;
 
-  // What this tech is still owed on a WO (their split share minus payments to them)
+  // What this tech is still owed on a WO (their split share + mileage, minus payments to them)
   const techRemaining = (w: WorkOrder, tech: string): number => {
-    const share = contractorShareOfWO(w, tech);
+    const share = contractorOwedOnWO(w, tech);
     const paid = payments
       .filter((p) => p.wo_number === w.wo_number && p.contractor_name === tech && p.id !== item?.id)
       .reduce((s, p) => s + Number(p.amount), 0);
@@ -106,7 +106,7 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
     if (!form.wo_number || !form.contractor_name || !form.amount) return null;
     const w = workOrders.find((x) => x.wo_number === form.wo_number);
     if (!w) return null;
-    const share = contractorShareOfWO(w, form.contractor_name);
+    const share = contractorOwedOnWO(w, form.contractor_name);
     if (share <= 0) return null;
     const alreadyPaid = payments
       .filter((p) => p.wo_number === form.wo_number && p.contractor_name === form.contractor_name && p.id !== item?.id)

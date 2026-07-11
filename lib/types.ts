@@ -214,6 +214,8 @@ export type EnrichedWorkOrder = WorkOrder & {
   paid: number;
   remaining: number;
   payment_status: 'paid' | 'partial' | 'pending';
+  // Job price + mileage reimbursements — what "paid in full" means for this WO
+  payout_total: number;
 };
 
 // ─── Payment ──────────────────────────────────────────────────────────────────

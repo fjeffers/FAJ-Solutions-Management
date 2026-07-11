@@ -33,7 +33,7 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
       const key = monthKey(w.start_date) ?? monthKey(w.created_at);
       if (!key) continue;
       const row = map.get(key) ?? { committed: 0, paid: 0, outstanding: 0, jobCount: 0 };
-      row.committed += Number(w.total_amount);
+      row.committed += w.payout_total;
       row.paid += w.paid;
       row.outstanding += w.remaining;
       row.jobCount += 1;
@@ -50,7 +50,7 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
     for (const w of workOrders) {
       const name = w.contractor_name || 'Unassigned';
       const row = map.get(name) ?? { committed: 0, paid: 0, outstanding: 0, jobCount: 0 };
-      row.committed += Number(w.total_amount);
+      row.committed += w.payout_total;
       row.paid += w.paid;
       row.outstanding += w.remaining;
       row.jobCount += 1;
@@ -74,7 +74,7 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
   }, [workOrders]);
 
   const totals = useMemo(() => {
-    const committed = workOrders.reduce((s, w) => s + Number(w.total_amount), 0);
+    const committed = workOrders.reduce((s, w) => s + w.payout_total, 0);
     const paid = workOrders.reduce((s, w) => s + w.paid, 0);
     return { committed, paid, outstanding: committed - paid };
   }, [workOrders]);

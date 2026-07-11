@@ -1,4 +1,5 @@
 import type { WorkOrder, EnrichedWorkOrder, Payment, WorkOrderStatus } from './types';
+import { mileageReimbursement, mileageForTech } from './mileage';
 
 export function fmtMoney(n: number | null | undefined): string {
   if (n == null) return '$0.00';
@@ -11,12 +12,18 @@ export function fmtDate(d: string | null | undefined): string {
   return new Date(Number(y), Number(m) - 1, Number(day)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// What the job pays out in total: the job price plus any logged mileage
+// reimbursements. This is the number "paid in full" is measured against.
+export function woPayoutTotal(wo: WorkOrder): number {
+  return Number(wo.total_amount) + mileageReimbursement(wo.mileage_logs);
+}
+
 export function getStatus(wo: WorkOrder, payments: Payment[]): 'paid' | 'partial' | 'pending' {
   const paid = payments
     .filter((p) => p.wo_number === wo.wo_number)
     .reduce((s, p) => s + Number(p.amount), 0);
   if (paid <= 0) return 'pending';
-  if (paid >= wo.total_amount) return 'paid';
+  if (paid >= woPayoutTotal(wo)) return 'paid';
   return 'partial';
 }
 
@@ -39,10 +46,11 @@ export function enrichWorkOrders(workOrders: WorkOrder[], payments: Payment[]): 
       const paid = payments
         .filter((p) => p.wo_number === wo.wo_number)
         .reduce((s, p) => s + Number(p.amount), 0);
-      const remaining = Math.max(0, wo.total_amount - paid);
+      const payout_total = woPayoutTotal(wo);
+      const remaining = Math.max(0, payout_total - paid);
       const payment_status: 'paid' | 'partial' | 'pending' =
-        paid <= 0 ? 'pending' : paid >= wo.total_amount ? 'paid' : 'partial';
-      return { ...wo, paid, remaining, payment_status };
+        paid <= 0 ? 'pending' : paid >= payout_total ? 'paid' : 'partial';
+      return { ...wo, paid, remaining, payment_status, payout_total };
     })
   ) as EnrichedWorkOrder[];
 }
@@ -58,6 +66,12 @@ export function contractorShareOfWO(wo: WorkOrder, name: string): number {
   if (names.length === 1) return Number(wo.total_amount);
   if (wo.contractor_pay) return Number(wo.contractor_pay[name] ?? 0);
   return name === wo.contractor_name ? Number(wo.total_amount) : 0;
+}
+
+// Everything a tech is owed on a WO: their pay share plus their logged mileage.
+// This is what Payables, payment auto-fill, and the overpay check measure against.
+export function contractorOwedOnWO(wo: WorkOrder, name: string): number {
+  return contractorShareOfWO(wo, name) + mileageForTech(wo.mileage_logs, name);
 }
 
 export const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {

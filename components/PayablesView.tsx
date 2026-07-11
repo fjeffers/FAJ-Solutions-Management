@@ -1,7 +1,7 @@
 'use client';
 import { useMemo } from 'react';
 import { DollarSign, Landmark, Smartphone, Plus } from 'lucide-react';
-import { fmtMoney, contractorShareOfWO } from '@/lib/utils';
+import { fmtMoney, contractorOwedOnWO } from '@/lib/utils';
 import type { EnrichedWorkOrder, Contractor, Payment } from '@/lib/types';
 
 // One contractor's slice of a work order: their share of the pay, what they've
@@ -36,7 +36,7 @@ export default function PayablesView({
         ? w.contractor_names
         : (w.contractor_name ? [w.contractor_name] : []);
       for (const name of names) {
-        const share = contractorShareOfWO(w, name);
+        const share = contractorOwedOnWO(w, name);
         if (share <= 0) continue;
         const sharePaid = payments
           .filter((p) => p.wo_number === w.wo_number && p.contractor_name === name)

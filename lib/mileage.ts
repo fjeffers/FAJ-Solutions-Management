@@ -12,6 +12,13 @@ export function totalMiles(logs: MileageLog[] | null | undefined): number {
   return (logs ?? []).reduce((s, l) => s + (Number(l.miles) || 0), 0);
 }
 
+// One tech's mileage reimbursement on a job
+export function mileageForTech(logs: MileageLog[] | null | undefined, name: string): number {
+  return (logs ?? [])
+    .filter((l) => l.contractor_name === name)
+    .reduce((s, l) => s + (Number(l.miles) || 0) * (Number(l.rate) || 0), 0);
+}
+
 // Fleet-wide totals across work orders (e.g. for the Financials view)
 export function mileageAcrossWOs(wos: Pick<WorkOrder, 'mileage_logs'>[]): { miles: number; amount: number } {
   return wos.reduce(

@@ -2,10 +2,20 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Sparkles, Mail } from 'lucide-react';
+import { Sparkles, Mail, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 
 type Mode = 'password' | 'magic';
+
+// Translate Supabase's technical errors into plain English
+function friendlyError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('invalid login credentials')) return "That email and password don't match. Try again, or use \"Forgot password?\" below.";
+  if (m.includes('rate limit')) return 'Too many attempts — wait a minute and try again.';
+  if (m.includes('email not confirmed')) return "This email hasn't been confirmed yet — check your inbox for the confirmation link.";
+  if (m.includes('failed to fetch') || m.includes('network')) return 'Connection problem — check your internet and try again.';
+  return message;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,35 +23,38 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [resent, setResent] = useState(false);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { setError(error.message); setLoading(false); return; }
+    if (error) { setError(friendlyError(error.message)); setLoading(false); return; }
 
     router.push('/');
     router.refresh();
   };
 
-  const handleMagicLink = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendMagicLink = async (): Promise<boolean> => {
     setLoading(true);
     setError(null);
-    const origin = window.location.origin;
-    const redirectTo = `${origin}/`;
-
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirectTo },
+      options: { emailRedirectTo: `${window.location.origin}/` },
     });
-    if (error) { setError(error.message); setLoading(false); return; }
-    setSent(true);
     setLoading(false);
+    if (error) { setError(friendlyError(error.message)); return false; }
+    return true;
+  };
+
+  const handleMagicLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (await sendMagicLink()) setSent(true);
   };
 
   return (
@@ -75,12 +88,48 @@ export default function LoginPage() {
         {mode === 'password' && (
           <form onSubmit={handlePasswordLogin}>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 6 }}>EMAIL</label>
-              <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+              <label htmlFor="login-email" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 6 }}>EMAIL</label>
+              <input
+                id="login-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                className="input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus
+              />
             </div>
             <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 6 }}>PASSWORD</label>
-              <input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <label htmlFor="login-password" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 6 }}>PASSWORD</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="login-password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  className="input"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  style={{ paddingRight: 42 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  style={{
+                    position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', color: '#999',
+                    display: 'flex', alignItems: 'center', padding: 4,
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
             {error && <div style={{ padding: 10, background: 'rgba(239,68,68,0.1)', color: '#b91c1c', borderRadius: 8, fontSize: 13, marginBottom: 14 }}>{error}</div>}
             <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }}>
@@ -97,8 +146,20 @@ export default function LoginPage() {
         {mode === 'magic' && !sent && (
           <form onSubmit={handleMagicLink}>
             <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 6 }}>YOUR EMAIL</label>
-              <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus placeholder="you@example.com" />
+              <label htmlFor="magic-email" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 6 }}>YOUR EMAIL</label>
+              <input
+                id="magic-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                className="input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus
+                placeholder="you@example.com"
+              />
             </div>
             {error && <div style={{ padding: 10, background: 'rgba(239,68,68,0.1)', color: '#b91c1c', borderRadius: 8, fontSize: 13, marginBottom: 14 }}>{error}</div>}
             <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px' }}>
@@ -112,6 +173,31 @@ export default function LoginPage() {
             <Mail size={32} color="var(--teal)" style={{ marginBottom: 12 }} />
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>Check your email</div>
             <div style={{ fontSize: 13, color: '#666' }}>We sent a magic link to <strong>{email}</strong></div>
+            {error && (
+              <div style={{ padding: 10, background: 'rgba(239,68,68,0.1)', color: '#b91c1c', borderRadius: 8, fontSize: 13, marginTop: 14, textAlign: 'left' }}>{error}</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={loading}
+                onClick={async () => {
+                  setResent(false);
+                  if (await sendMagicLink()) setResent(true);
+                }}
+                style={{ fontSize: 12 }}
+              >
+                {loading ? 'Sending…' : resent ? 'Sent again ✓' : "Didn't get it? Resend"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => { setSent(false); setResent(false); setError(null); }}
+                style={{ fontSize: 12 }}
+              >
+                Use a different email
+              </button>
+            </div>
           </div>
         )}
       </div>

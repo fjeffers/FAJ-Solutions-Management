@@ -74,9 +74,10 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
   }, [workOrders]);
 
   const totals = useMemo(() => {
+    const revenue = workOrders.reduce((s, w) => s + Number(w.total_amount), 0);
     const committed = workOrders.reduce((s, w) => s + w.payout_total, 0);
     const paid = workOrders.reduce((s, w) => s + w.paid, 0);
-    return { committed, paid, outstanding: committed - paid };
+    return { revenue, committed, paid, outstanding: committed - paid, profit: revenue - committed };
   }, [workOrders]);
 
   const mileage = useMemo(() => mileageAcrossWOs(workOrders), [workOrders]);
@@ -112,13 +113,18 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
       {/* KPI tiles */}
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
         {[
-          { label: 'Total Committed', value: fmtMoney(totals.committed), color: 'var(--teal)', sub: null },
-          { label: 'Total Paid', value: fmtMoney(totals.paid), color: '#047857', sub: null },
-          { label: 'Total Outstanding', value: fmtMoney(totals.outstanding), color: '#b45309', sub: null },
+          { label: 'Revenue (Billed to Clients)', value: fmtMoney(totals.revenue), color: 'var(--teal)', sub: null },
+          { label: 'Tech Payouts (incl. mileage)', value: fmtMoney(totals.committed), color: '#4338ca', sub: `${fmtMoney(totals.paid)} paid · ${fmtMoney(totals.outstanding)} still owed` },
+          {
+            label: 'Your Profit',
+            value: fmtMoney(totals.profit),
+            color: totals.profit >= 0 ? '#047857' : '#b91c1c',
+            sub: totals.revenue > 0 ? `${Math.round((totals.profit / totals.revenue) * 100)}% margin` : null,
+          },
           {
             label: 'Mileage Logged',
             value: `${mileage.miles.toLocaleString()} mi`,
-            color: '#4338ca',
+            color: '#b45309',
             sub: mileage.miles > 0 ? `${fmtMoney(mileage.amount)} reimbursement value` : 'Log miles in a WO’s Closeout tab',
           },
         ].map((kpi) => (

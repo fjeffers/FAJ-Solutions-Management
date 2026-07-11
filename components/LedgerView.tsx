@@ -65,7 +65,7 @@ export default function LedgerView({
         <div className="glass card" style={{ padding: '16px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <BookOpen size={14} color="var(--teal)" />
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase' }}>Total Billed — All Jobs</span>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase' }}>Total Tech Pay — All Jobs</span>
           </div>
           <div style={{ fontSize: 26, fontWeight: 700, color: '#1a1a1a' }}>{fmtMoney(totalBilled)}</div>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{workOrders.length} work orders · incl. mileage</div>
@@ -123,7 +123,7 @@ export default function LedgerView({
               {/* Opening line: where the balance starts */}
               <tr style={{ borderBottom: '1px solid #f0f0f0', background: 'rgba(13,115,119,0.03)' }}>
                 <td colSpan={5} style={{ padding: '10px 16px', fontSize: 12, fontWeight: 700, color: 'var(--teal)' }}>
-                  STARTING BALANCE — total billed across all jobs
+                  STARTING BALANCE — total tech pay across all jobs
                 </td>
                 <td />
                 <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 800, color: '#1a1a1a', whiteSpace: 'nowrap' }}>{fmtMoney(totalBilled)}</td>

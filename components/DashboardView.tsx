@@ -18,7 +18,9 @@ type Stats = { total: number; paid: number; remaining: number; paidCount: number
 export default function DashboardView({ stats, workOrders, payments, onView }: { stats: Stats; workOrders: EnrichedWorkOrder[]; payments: Payment[]; onView: (v: string) => void }) {
   const recentPayments = [...payments].slice(0, 5);
   const urgentJobs = workOrders.filter((w) => w.payment_status !== 'paid').slice(0, 5);
-  const pct = stats.total > 0 ? Math.round((stats.paid / stats.total) * 100) : 0;
+  // Progress = how much of what techs are owed has been paid out
+  const payoutTotal = stats.paid + stats.remaining;
+  const pct = payoutTotal > 0 ? Math.round((stats.paid / payoutTotal) * 100) : 0;
 
   return (
     <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
@@ -30,10 +32,10 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
 
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
         {[
-          { label: 'Total Billed', value: fmtMoney(stats.total), icon: <Briefcase size={20} color="var(--teal)" />, color: 'var(--teal)' },
-          { label: 'Total Paid', value: fmtMoney(stats.paid), icon: <CheckCircle size={20} color="#047857" />, color: '#047857' },
-          { label: 'Outstanding', value: fmtMoney(stats.remaining), icon: <AlertCircle size={20} color="#b45309" />, color: '#b45309' },
-          { label: 'Collection Rate', value: `${pct}%`, icon: <TrendingUp size={20} color="var(--gold)" />, color: 'var(--gold)' },
+          { label: 'Billed to Clients', value: fmtMoney(stats.total), icon: <Briefcase size={20} color="var(--teal)" />, color: 'var(--teal)' },
+          { label: 'Paid to Techs', value: fmtMoney(stats.paid), icon: <CheckCircle size={20} color="#047857" />, color: '#047857' },
+          { label: 'Owed to Techs', value: fmtMoney(stats.remaining), icon: <AlertCircle size={20} color="#b45309" />, color: '#b45309' },
+          { label: 'Techs Paid', value: `${pct}%`, icon: <TrendingUp size={20} color="var(--gold)" />, color: 'var(--gold)' },
         ].map((kpi) => (
           <div key={kpi.label} className="glass card card-kpi">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>

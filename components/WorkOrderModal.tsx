@@ -366,8 +366,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // Match by WO number only so payments to every tech on a multi-tech job count.
   const woPayments = payments.filter((p) => p.wo_number === item?.wo_number);
   const totalPaid   = woPayments.reduce((s, p) => s + Number(p.amount), 0);
-  // Payout includes logged mileage so "remaining" here matches Payables
-  const woTotal     = (computed > 0 ? computed : Number(form.total_amount) || 0) + mileageReimbursement(mileageLogs);
+  // What actually goes out: tech pay when set (client price otherwise) plus mileage
+  const assignedTechPay = contractorNames.reduce((s, n) => s + (Number(contractorPay[n]) || 0), 0);
+  const woTotal     = (assignedTechPay > 0 ? assignedTechPay : (computed > 0 ? computed : Number(form.total_amount) || 0)) + mileageReimbursement(mileageLogs);
   const woRemaining = Math.max(0, woTotal - totalPaid);
 
   const handleSave = () => {
@@ -388,10 +389,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       lead_contractor_name: finalNames.length >= 2
         ? (leadContractorName ?? finalNames[0] ?? null)
         : null,
-      // Persist the pay split only when 2+ techs and at least one amount entered;
-      // keep only entries for techs still on the WO.
+      // Persist tech pay when at least one amount is entered (single tech or split);
+      // keep only entries for techs still on the WO. Null = legacy "tech gets full price".
       contractor_pay: (() => {
-        if (finalNames.length < 2) return null;
         const pruned: Record<string, number> = {};
         for (const n of finalNames) {
           const amt = Number(contractorPay[n]) || 0;
@@ -550,23 +550,21 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                           <span style={{ fontSize: 10, color: '#aaa', fontWeight: 600 }}>PRIMARY</span>
                         )}
 
-                        {/* Per-tech pay — only when 2+ contractors */}
-                        {isMulti && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                            <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
-                            <input
-                              className="input"
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={contractorPay[name] ?? ''}
-                              onChange={(e) => setTechPay(name, e.target.value === '' ? 0 : Number(e.target.value))}
-                              placeholder="0.00"
-                              title={`How much ${name} gets paid on this WO`}
-                              style={{ width: 90, fontSize: 12, padding: '5px 8px', textAlign: 'right' }}
-                            />
-                          </div>
-                        )}
+                        {/* Per-tech pay — what THIS tech gets (client price stays separate) */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                          <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={contractorPay[name] ?? ''}
+                            onChange={(e) => setTechPay(name, e.target.value === '' ? 0 : Number(e.target.value))}
+                            placeholder="0.00"
+                            title={`How much ${name} gets paid on this WO (leave empty = full client price)`}
+                            style={{ width: 90, fontSize: 12, padding: '5px 8px', textAlign: 'right' }}
+                          />
+                        </div>
 
                         {/* Remove */}
                         <button onClick={() => removeContractor(name)} style={{
@@ -579,44 +577,48 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                       </div>
                     );
                   })}
-                  {/* Helper hint + pay-split summary when multi-contractor */}
-                  {contractorNames.length >= 2 && (() => {
+                  {/* Tech pay vs client price summary — profit at a glance */}
+                  {contractorNames.length >= 1 && (() => {
                     const assigned = contractorNames.reduce((s, n) => s + (Number(contractorPay[n]) || 0), 0);
                     const woAmount = computed > 0 ? computed : Number(form.total_amount) || 0;
-                    const matches = Math.abs(assigned - woAmount) < 0.01;
+                    const profit = woAmount - assigned;
                     return (
                       <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 2, flexWrap: 'wrap' }}>
                           <span style={{
                             fontSize: 11, fontWeight: 700,
-                            color: assigned === 0 ? '#9ca3af' : matches ? '#047857' : '#b45309',
+                            color: assigned === 0 ? '#9ca3af' : profit >= 0 ? '#047857' : '#b45309',
                           }}>
                             {assigned === 0
-                              ? 'No pay split set — full amount goes to the primary tech'
-                              : `Split assigned: ${fmtMoney(assigned)} of ${fmtMoney(woAmount)}${matches ? ' ✓' : ''}`}
+                              ? 'No tech pay set — tech gets the full client price'
+                              : `Techs get ${fmtMoney(assigned)} · Your profit ${fmtMoney(profit)}${profit < 0 ? ' (paying more than the client!)' : ''}`}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const even = Math.floor((woAmount / contractorNames.length) * 100) / 100;
-                              const next: Record<string, number> = {};
-                              contractorNames.forEach((n, i) => {
-                                // First tech absorbs the rounding remainder so the split always sums to the total
-                                next[n] = i === 0 ? Math.round((woAmount - even * (contractorNames.length - 1)) * 100) / 100 : even;
-                              });
-                              setContractorPay(next);
-                            }}
-                            style={{
-                              fontSize: 11, fontWeight: 700, color: 'var(--teal)', background: 'rgba(13,115,119,0.08)',
-                              border: '1px solid rgba(13,115,119,0.2)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
-                            }}
-                          >
-                            Split evenly
-                          </button>
+                          {contractorNames.length >= 2 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const even = Math.floor((woAmount / contractorNames.length) * 100) / 100;
+                                const next: Record<string, number> = {};
+                                contractorNames.forEach((n, i) => {
+                                  // First tech absorbs the rounding remainder so the split always sums to the total
+                                  next[n] = i === 0 ? Math.round((woAmount - even * (contractorNames.length - 1)) * 100) / 100 : even;
+                                });
+                                setContractorPay(next);
+                              }}
+                              style={{
+                                fontSize: 11, fontWeight: 700, color: 'var(--teal)', background: 'rgba(13,115,119,0.08)',
+                                border: '1px solid rgba(13,115,119,0.2)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
+                              }}
+                            >
+                              Split evenly
+                            </button>
+                          )}
                         </div>
-                        <div style={{ fontSize: 11, color: '#9ca3af', paddingLeft: 2 }}>
-                          🔵 Lead tech handles deliverables, photos & closeout. Assistant tech checks in/out only.
-                        </div>
+                        {contractorNames.length >= 2 && (
+                          <div style={{ fontSize: 11, color: '#9ca3af', paddingLeft: 2 }}>
+                            🔵 Lead tech handles deliverables, photos & closeout. Assistant tech checks in/out only.
+                          </div>
+                        )}
                       </>
                     );
                   })()}
@@ -785,7 +787,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
             {/* Fixed */}
             {form.pay_type === 'Fixed' && (
-              <PF label="Total Amount *" icon={<DollarSign size={13} />}>
+              <PF label="Client Price * (what they pay you)" icon={<DollarSign size={13} />}>
                 <input className="input" type="number" step="0.01" min="0"
                   value={form.total_amount ?? ''}
                   onChange={(e) => set('total_amount', Number(e.target.value))}

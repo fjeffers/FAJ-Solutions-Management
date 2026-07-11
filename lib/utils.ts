@@ -12,10 +12,27 @@ export function fmtDate(d: string | null | undefined): string {
   return new Date(Number(y), Number(m) - 1, Number(day)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-// What the job pays out in total: the job price plus any logged mileage
-// reimbursements. This is the number "paid in full" is measured against.
+// The money model: total_amount is what the CLIENT pays FAJ (revenue).
+// contractor_pay records what each tech gets — usually less; the difference
+// is profit. Legacy WOs with no contractor_pay assume techs get the full amount.
+
+// The techs' pay pool for a WO (before mileage)
+export function woTechPayTotal(wo: WorkOrder): number {
+  if (wo.contractor_pay && Object.keys(wo.contractor_pay).length > 0) {
+    return Object.values(wo.contractor_pay).reduce((s, v) => s + (Number(v) || 0), 0);
+  }
+  return Number(wo.total_amount);
+}
+
+// Everything that goes out the door on a WO: tech pay plus mileage.
+// This is the number "paid in full" is measured against.
 export function woPayoutTotal(wo: WorkOrder): number {
-  return Number(wo.total_amount) + mileageReimbursement(wo.mileage_logs);
+  return woTechPayTotal(wo) + mileageReimbursement(wo.mileage_logs);
+}
+
+// What FAJ keeps: client price minus tech pay and mileage
+export function woProfit(wo: WorkOrder): number {
+  return Number(wo.total_amount) - woPayoutTotal(wo);
 }
 
 export function getStatus(wo: WorkOrder, payments: Payment[]): 'paid' | 'partial' | 'pending' {
@@ -63,8 +80,12 @@ export function contractorShareOfWO(wo: WorkOrder, name: string): number {
     ? wo.contractor_names
     : (wo.contractor_name ? [wo.contractor_name] : []);
   if (!names.includes(name)) return 0;
+  // Explicit tech pay wins — for one tech or many (missing entry = 0)
+  if (wo.contractor_pay && Object.keys(wo.contractor_pay).length > 0) {
+    return Number(wo.contractor_pay[name] ?? 0);
+  }
+  // Legacy fallback: no tech pay recorded means the tech gets the client price
   if (names.length === 1) return Number(wo.total_amount);
-  if (wo.contractor_pay) return Number(wo.contractor_pay[name] ?? 0);
   return name === wo.contractor_name ? Number(wo.total_amount) : 0;
 }
 

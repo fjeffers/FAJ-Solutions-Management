@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit } from './utils';
 import type { WorkOrder, Payment } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -120,6 +120,38 @@ describe('contractorShareOfWO', () => {
     });
     expect(contractorShareOfWO(w, 'Jere')).toBe(400);
     expect(contractorShareOfWO(w, 'Darnell')).toBe(0);
+  });
+});
+
+describe('client price vs tech pay', () => {
+  it('a single tech with explicit pay gets that amount; the rest is profit', () => {
+    const w = wo({ contractor_name: 'Jere', total_amount: 500, contractor_pay: { Jere: 300 } });
+    expect(contractorShareOfWO(w, 'Jere')).toBe(300);
+    expect(woPayoutTotal(w)).toBe(300);
+    expect(woProfit(w)).toBe(200);
+  });
+
+  it('a WO is paid when the techs are covered, not the client price', () => {
+    const w = wo({ contractor_name: 'Jere', total_amount: 500, contractor_pay: { Jere: 300 } });
+    const [e] = enrichWorkOrders([w], [pay({ amount: 300 })]);
+    expect(e.payment_status).toBe('paid');
+    expect(e.remaining).toBe(0);
+  });
+
+  it('legacy WO without tech pay: tech gets the full client price, zero profit', () => {
+    const w = wo({ contractor_name: 'Jere', total_amount: 500 });
+    expect(contractorShareOfWO(w, 'Jere')).toBe(500);
+    expect(woProfit(w)).toBe(0);
+  });
+
+  it('profit accounts for mileage as a cost', () => {
+    const w = wo({
+      contractor_name: 'Jere', total_amount: 500,
+      contractor_pay: { Jere: 300 },
+      mileage_logs: [{ id: 'm1', contractor_name: 'Jere', miles: 50, rate: 0.7, note: null }],
+    });
+    expect(woPayoutTotal(w)).toBeCloseTo(335, 2);
+    expect(woProfit(w)).toBeCloseTo(165, 2);
   });
 });
 

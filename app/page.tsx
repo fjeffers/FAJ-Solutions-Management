@@ -260,11 +260,11 @@ export default function HomePage() {
   }, [workOrders]);
 
   const stats = useMemo(() => {
-    // payout_total = job price + mileage, so "billed/remaining" match Payables
-    const total = enrichedWOs.reduce((s, w) => s + w.payout_total, 0);
+    // total = revenue (client prices); paid/remaining track payouts to techs
+    const total = enrichedWOs.reduce((s, w) => s + Number(w.total_amount), 0);
     const paid  = enrichedWOs.reduce((s, w) => s + w.paid, 0);
     return {
-      total, paid, remaining: total - paid,
+      total, paid, remaining: enrichedWOs.reduce((s, w) => s + w.remaining, 0),
       paidCount:    enrichedWOs.filter((w) => w.payment_status === 'paid').length,
       partialCount: enrichedWOs.filter((w) => w.payment_status === 'partial').length,
       pendingCount: enrichedWOs.filter((w) => w.payment_status === 'pending').length,

@@ -8,6 +8,7 @@ import {
 import { fmtMoney } from '@/lib/utils';
 import type { EnrichedWorkOrder } from '@/lib/types';
 import { exportFinancialSummaryCSV } from '@/lib/export';
+import { mileageAcrossWOs } from '@/lib/mileage';
 
 const PIE_COLORS = ['#0D7377', '#C9A961', '#4338ca', '#b45309', '#047857', '#b91c1c', '#6b7280'];
 
@@ -78,6 +79,8 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
     return { committed, paid, outstanding: committed - paid };
   }, [workOrders]);
 
+  const mileage = useMemo(() => mileageAcrossWOs(workOrders), [workOrders]);
+
   return (
     <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ marginBottom: 28, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -109,9 +112,15 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
       {/* KPI tiles */}
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
         {[
-          { label: 'Total Committed', value: fmtMoney(totals.committed), color: 'var(--teal)' },
-          { label: 'Total Paid', value: fmtMoney(totals.paid), color: '#047857' },
-          { label: 'Total Outstanding', value: fmtMoney(totals.outstanding), color: '#b45309' },
+          { label: 'Total Committed', value: fmtMoney(totals.committed), color: 'var(--teal)', sub: null },
+          { label: 'Total Paid', value: fmtMoney(totals.paid), color: '#047857', sub: null },
+          { label: 'Total Outstanding', value: fmtMoney(totals.outstanding), color: '#b45309', sub: null },
+          {
+            label: 'Mileage Logged',
+            value: `${mileage.miles.toLocaleString()} mi`,
+            color: '#4338ca',
+            sub: mileage.miles > 0 ? `${fmtMoney(mileage.amount)} reimbursement value` : 'Log miles in a WO’s Closeout tab',
+          },
         ].map((kpi) => (
           <div key={kpi.label} className="glass card card-kpi">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
@@ -119,6 +128,7 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
               <TrendingUp size={20} color={kpi.color} />
             </div>
             <div className="stat-value" style={{ color: kpi.color }}>{kpi.value}</div>
+            {kpi.sub && <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>{kpi.sub}</div>}
           </div>
         ))}
       </div>

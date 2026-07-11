@@ -7,8 +7,9 @@ import {
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
   CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed } from '@/lib/types';
+import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MileageLog } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
+import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE } from '@/lib/mileage';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import {
@@ -268,6 +269,21 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const removeUsedRow = (id: string) =>
     setMaterialsUsed((rows) => rows.filter((r) => r.id !== id));
 
+  // ── Closeout: mileage ─────────────────────────────────────────────────────
+  const [mileageLogs, setMileageLogs] = useState<MileageLog[]>(() => item?.mileage_logs ?? []);
+  const addMileageRow = () =>
+    setMileageLogs((rows) => [...rows, {
+      id: `ml-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      contractor_name: contractorNames[0] ?? '',
+      miles: 0,
+      rate: DEFAULT_MILEAGE_RATE,
+      note: null,
+    }]);
+  const updateMileageRow = (id: string, patch: Partial<MileageLog>) =>
+    setMileageLogs((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const removeMileageRow = (id: string) =>
+    setMileageLogs((rows) => rows.filter((r) => r.id !== id));
+
   // ── Payments tab state ────────────────────────────────────────────────────
   const [showPayForm, setShowPayForm] = useState(false);
   const [payLoading, setPayLoading] = useState(false);
@@ -384,6 +400,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       })(),
       // Closeout materials (migration-031) — drop unnamed rows
       materials_used: materialsUsed.filter((r) => r.name.trim() !== ''),
+      // Mileage (migration-032) — drop zero-mile rows
+      mileage_logs: mileageLogs.filter((r) => (Number(r.miles) || 0) > 0),
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
       external_wo_id:  form.external_wo_id  || null,
       customer_name:   form.customer_name   || null,
@@ -1386,6 +1404,80 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
             <div style={{ fontSize: 11, color: '#9ca3af' }}>
               Changes apply when you save the work order. Removing a stock row (or lowering its quantity) puts the units back in inventory.
+            </div>
+
+            {/* ── Mileage ── */}
+            <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16, marginTop: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Mileage</div>
+              <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+                Log miles driven for this job — per tech, with a per-mile rate you can adjust
+                (defaults to ${DEFAULT_MILEAGE_RATE.toFixed(2)}/mi).
+              </div>
+
+              {mileageLogs.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                  {mileageLogs.map((r) => (
+                    <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: 'rgba(13,115,119,0.04)', border: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
+                      <div style={{ position: 'relative', flex: '1 1 140px' }}>
+                        <select
+                          className="select input"
+                          value={r.contractor_name}
+                          onChange={(e) => updateMileageRow(r.id, { contractor_name: e.target.value })}
+                          style={{ fontSize: 12, padding: '6px 8px' }}
+                        >
+                          {contractorNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                          {r.contractor_name && !contractorNames.includes(r.contractor_name) && (
+                            <option value={r.contractor_name}>{r.contractor_name}</option>
+                          )}
+                        </select>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#888' }}>
+                        Miles
+                        <input
+                          className="input" type="number" min="0" step="0.1"
+                          value={r.miles || ''}
+                          onChange={(e) => updateMileageRow(r.id, { miles: Number(e.target.value) })}
+                          style={{ width: 72, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
+                        />
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#888' }}>
+                        $/mi
+                        <input
+                          className="input" type="number" min="0" step="0.01"
+                          value={r.rate ?? ''}
+                          onChange={(e) => updateMileageRow(r.id, { rate: Number(e.target.value) })}
+                          style={{ width: 66, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
+                        />
+                      </label>
+                      <input
+                        className="input"
+                        value={r.note ?? ''}
+                        placeholder="Note (e.g. round trip)"
+                        onChange={(e) => updateMileageRow(r.id, { note: e.target.value || null })}
+                        style={{ flex: '1 1 130px', fontSize: 12, padding: '6px 8px' }}
+                      />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#333', minWidth: 64, textAlign: 'right' }}>
+                        {fmtMoney((Number(r.miles) || 0) * (Number(r.rate) || 0))}
+                      </span>
+                      <button type="button" onClick={() => removeMileageRow(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4, flexShrink: 0 }}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <button type="button" className="btn btn-ghost" onClick={addMileageRow} style={{ fontSize: 12 }}>
+                  <Plus size={13} /> Add mileage
+                </button>
+                {mileageLogs.length > 0 && (
+                  <span style={{ fontSize: 12, color: '#555' }}>
+                    <strong>{totalMiles(mileageLogs).toLocaleString()}</strong> miles ·{' '}
+                    <strong style={{ color: 'var(--teal)' }}>{fmtMoney(mileageReimbursement(mileageLogs))}</strong> reimbursement
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         )}

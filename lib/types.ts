@@ -190,6 +190,9 @@ export type WorkOrder = {
   // (stock decremented on save); null material_id = extra item bought for the job.
   materials_used: MaterialUsed[] | null;
 
+  // Mileage logged at closeout (migration-032)
+  mileage_logs: MileageLog[] | null;
+
   // Soft-archive (migration-013)
   archived_at: string | null;
 
@@ -270,6 +273,14 @@ export type SiteContact = {
 };
 
 // ─── Materials / Inventory (pre-existing table, built outside this repo) ─────
+
+export type MileageLog = {
+  id: string;              // row id within the WO (client-generated)
+  contractor_name: string; // who drove
+  miles: number;
+  rate: number;            // dollars per mile
+  note: string | null;     // e.g. "round trip to site"
+};
 
 export type MaterialUsed = {
   id: string;                 // row id within the WO (client-generated)

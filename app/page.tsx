@@ -400,6 +400,8 @@ export default function HomePage() {
       contractor_pay: w.contractor_pay ?? null,
       // Closeout materials (migration-031)
       materials_used: w.materials_used ?? [],
+      // Mileage (migration-032)
+      mileage_logs: w.mileage_logs ?? [],
     };
     if (w.id) {
       const { error } = await supabase.from('work_orders').update(payload).eq('id', w.id);
@@ -1002,7 +1004,7 @@ export default function HomePage() {
               // Strip identity + computed fields so saveWorkOrder does an INSERT, not UPDATE.
               // materials_used stays behind too — it records what THAT job consumed.
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const { id, created_at, updated_at, paid, remaining, payment_status, archived_at, materials_used, ...copy } = w;
+              const { id, created_at, updated_at, paid, remaining, payment_status, archived_at, materials_used, mileage_logs, ...copy } = w;
               setModal({ type: 'wo', item: { ...copy, wo_number: '' } as WorkOrder });
             }}
             onPay={handlePayWO}

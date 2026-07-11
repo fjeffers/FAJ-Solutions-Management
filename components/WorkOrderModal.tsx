@@ -5,9 +5,10 @@ import {
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
   Phone, Mail, HelpCircle, Plus, Paperclip,
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
-  CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2,
+  CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate } from '@/lib/types';
+import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed } from '@/lib/types';
+import { materialsUsedCost } from '@/lib/materials-used';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import {
@@ -25,7 +26,7 @@ import { printSignOffSheet } from '@/lib/signoff';
 import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { createClient } from '@/lib/supabase/client';
 
-type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents' | 'chat';
+type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents' | 'chat' | 'closeout';
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'details',    label: 'Details',    icon: <Hash size={13} /> },
   { key: 'documents',  label: 'Documents',  icon: <FolderOpen size={13} /> },
@@ -39,6 +40,7 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'scope',      label: 'Scope',      icon: <ClipboardList size={13} /> },
   { key: 'contacts',   label: 'Contacts',   icon: <Phone size={13} /> },
   { key: 'questions',  label: 'Questions',  icon: <HelpCircle size={13} /> },
+  { key: 'closeout',   label: 'Closeout',   icon: <Package size={13} /> },
 ];
 
 function newQAItem(label = '', type: QuestionFieldType = 'text'): CustomQAItem {
@@ -147,9 +149,10 @@ type Props = {
   onSavePayment?: (p: Partial<Payment>) => Promise<void>;
   onDeletePayment?: (id: string) => Promise<void>;
   onEditPayment?: (p: Payment) => void;
+  materials?: Material[];
 };
 
-export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, materials = [] }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
@@ -247,6 +250,23 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   );
   const setTechPay = (name: string, amount: number) =>
     setContractorPay((cp) => ({ ...cp, [name]: amount }));
+
+  // ── Closeout: materials used ──────────────────────────────────────────────
+  const [materialsUsed, setMaterialsUsed] = useState<MaterialUsed[]>(() => item?.materials_used ?? []);
+  const addUsedRow = (material_id: string | null) => {
+    const inv = material_id ? materials.find((m) => m.id === material_id) : null;
+    setMaterialsUsed((rows) => [...rows, {
+      id: `mu-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      material_id,
+      name: inv?.name ?? '',
+      quantity: 1,
+      unit_cost: inv?.unit_cost ?? null,
+    }]);
+  };
+  const updateUsedRow = (id: string, patch: Partial<MaterialUsed>) =>
+    setMaterialsUsed((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const removeUsedRow = (id: string) =>
+    setMaterialsUsed((rows) => rows.filter((r) => r.id !== id));
 
   // ── Payments tab state ────────────────────────────────────────────────────
   const [showPayForm, setShowPayForm] = useState(false);
@@ -362,6 +382,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         }
         return Object.keys(pruned).length > 0 ? pruned : null;
       })(),
+      // Closeout materials (migration-031) — drop unnamed rows
+      materials_used: materialsUsed.filter((r) => r.name.trim() !== ''),
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
       external_wo_id:  form.external_wo_id  || null,
       customer_name:   form.customer_name   || null,
@@ -1267,6 +1289,104 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             {customQA.filter((q) => q.label.trim()).length > 0 && onSaveTemplate && (
               <SaveAsTemplateRow questions={customQA} onSaveTemplate={onSaveTemplate} />
             )}
+          </div>
+        )}
+
+        {/* ── CLOSEOUT TAB ── */}
+        {tab === 'closeout' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Materials used on this job</div>
+              <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+                Add anything used that wasn&apos;t already on site — pick from your inventory (stock is deducted
+                automatically when you save) or add an item you bought for the job.
+              </div>
+            </div>
+
+            {/* Add controls */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: '1 1 240px' }}>
+                <select
+                  className="select input"
+                  value=""
+                  onChange={(e) => { if (e.target.value) addUsedRow(e.target.value); }}
+                  style={{ fontSize: 12 }}
+                >
+                  <option value="">+ Add from inventory…</option>
+                  {materials.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.stock_quantity} {m.unit || 'each'} in stock{m.unit_cost ? ` · ${fmtMoney(m.unit_cost)}` : ''})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+              </div>
+              <button type="button" className="btn btn-ghost" onClick={() => addUsedRow(null)} style={{ fontSize: 12 }}>
+                <Plus size={13} /> Other item (bought for job)
+              </button>
+            </div>
+
+            {/* Rows */}
+            {materialsUsed.length === 0 ? (
+              <div style={{ padding: '28px 16px', textAlign: 'center', color: '#aaa', fontSize: 13, border: '1.5px dashed #e5e7eb', borderRadius: 10 }}>
+                Nothing added yet
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {materialsUsed.map((r) => (
+                  <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: r.material_id ? 'rgba(13,115,119,0.04)' : 'rgba(245,158,11,0.05)', border: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, letterSpacing: 0.5, padding: '2px 7px', borderRadius: 999, flexShrink: 0,
+                      background: r.material_id ? 'rgba(13,115,119,0.12)' : 'rgba(245,158,11,0.15)',
+                      color: r.material_id ? 'var(--teal)' : '#92400e',
+                    }}>
+                      {r.material_id ? 'STOCK' : 'EXTRA'}
+                    </span>
+                    <input
+                      className="input"
+                      value={r.name}
+                      readOnly={!!r.material_id}
+                      placeholder="Item name (e.g. wall anchors from Home Depot)"
+                      onChange={(e) => updateUsedRow(r.id, { name: e.target.value })}
+                      style={{ flex: '2 1 180px', fontSize: 13, padding: '7px 10px', background: r.material_id ? 'transparent' : undefined, border: r.material_id ? 'none' : undefined, fontWeight: 600 }}
+                    />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#888' }}>
+                      Qty
+                      <input
+                        className="input" type="number" min="0" step="1"
+                        value={r.quantity || ''}
+                        onChange={(e) => updateUsedRow(r.id, { quantity: Number(e.target.value) })}
+                        style={{ width: 64, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
+                      />
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#888' }}>
+                      $ each
+                      <input
+                        className="input" type="number" min="0" step="0.01"
+                        value={r.unit_cost ?? ''}
+                        placeholder="0.00"
+                        onChange={(e) => updateUsedRow(r.id, { unit_cost: e.target.value === '' ? null : Number(e.target.value) })}
+                        style={{ width: 80, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
+                      />
+                    </label>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#333', minWidth: 70, textAlign: 'right' }}>
+                      {fmtMoney((Number(r.quantity) || 0) * (Number(r.unit_cost) || 0))}
+                    </span>
+                    <button type="button" onClick={() => removeUsedRow(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4, flexShrink: 0 }}>
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', padding: '4px 10px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase' }}>Materials cost</span>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--teal)' }}>{fmtMoney(materialsUsedCost(materialsUsed))}</span>
+                </div>
+              </div>
+            )}
+
+            <div style={{ fontSize: 11, color: '#9ca3af' }}>
+              Changes apply when you save the work order. Removing a stock row (or lowering its quantity) puts the units back in inventory.
+            </div>
           </div>
         )}
 

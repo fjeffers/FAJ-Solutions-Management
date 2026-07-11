@@ -41,6 +41,7 @@ import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export109
 import { logAudit } from '@/lib/audit';
 import { notifyContractor, sendPortalLink } from '@/lib/notify';
 import { toastError, toastSuccess } from '@/lib/toast';
+import { stockAdjustments } from '@/lib/materials-used';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 
@@ -397,6 +398,8 @@ export default function HomePage() {
       lead_contractor_name: w.lead_contractor_name ?? null,
       // Per-tech pay split (migration-029)
       contractor_pay: w.contractor_pay ?? null,
+      // Closeout materials (migration-031)
+      materials_used: w.materials_used ?? [],
     };
     if (w.id) {
       const { error } = await supabase.from('work_orders').update(payload).eq('id', w.id);
@@ -416,6 +419,21 @@ export default function HomePage() {
       const c = contractors.find((x) => x.name === w.contractor_name);
       if (c?.email) notifyContractor({ type: 'wo_assigned', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined });
     }
+    // Sync inventory with the closeout materials: deduct newly used stock,
+    // put back anything removed or reduced. Extra (non-inventory) items skip this.
+    const adjustments = stockAdjustments(prevWO?.materials_used, w.materials_used);
+    for (const [materialId, delta] of adjustments) {
+      const mat = materials.find((m) => m.id === materialId);
+      if (!mat) continue;
+      const newStock = Math.max(0, Number(mat.stock_quantity) - delta);
+      const { error: stockErr } = await supabase
+        .from('materials')
+        .update({ stock_quantity: newStock, updated_at: new Date().toISOString() })
+        .eq('id', materialId);
+      if (stockErr) toastError(`Couldn't update stock for ${mat.name}: ${stockErr.message}`);
+      else if (delta > 0 && newStock === 0) toastError(`${mat.name} is now out of stock`);
+    }
+
     toastSuccess(`Work order #${w.wo_number} saved`);
     loadAll();
   };
@@ -981,9 +999,10 @@ export default function HomePage() {
             onEdit={(w) => setModal({ type: 'wo', item: w })}
             onDelete={deleteWorkOrder}
             onDuplicate={(w) => {
-              // Strip identity + computed fields so saveWorkOrder does an INSERT, not UPDATE
+              // Strip identity + computed fields so saveWorkOrder does an INSERT, not UPDATE.
+              // materials_used stays behind too — it records what THAT job consumed.
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const { id, created_at, updated_at, paid, remaining, payment_status, archived_at, ...copy } = w;
+              const { id, created_at, updated_at, paid, remaining, payment_status, archived_at, materials_used, ...copy } = w;
               setModal({ type: 'wo', item: { ...copy, wo_number: '' } as WorkOrder });
             }}
             onPay={handlePayWO}
@@ -1095,6 +1114,7 @@ export default function HomePage() {
           onSavePayment={savePayment}
           onDeletePayment={deletePayment}
           onEditPayment={(p) => setModal({ type: 'payment', item: p })}
+          materials={materials}
         />
       )}
       {modal?.type === 'contractor' && (

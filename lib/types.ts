@@ -186,6 +186,10 @@ export type WorkOrder = {
   // Null = no split (single tech, or legacy multi-tech where primary carries the total).
   contractor_pay: Record<string, number> | null;
 
+  // Materials used at closeout (migration-031). material_id links to inventory
+  // (stock decremented on save); null material_id = extra item bought for the job.
+  materials_used: MaterialUsed[] | null;
+
   // Soft-archive (migration-013)
   archived_at: string | null;
 
@@ -266,6 +270,14 @@ export type SiteContact = {
 };
 
 // ─── Materials / Inventory (pre-existing table, built outside this repo) ─────
+
+export type MaterialUsed = {
+  id: string;                 // row id within the WO (client-generated)
+  material_id: string | null; // inventory link, or null for an extra/bought item
+  name: string;
+  quantity: number;
+  unit_cost: number | null;
+};
 
 export type Material = {
   id: string;

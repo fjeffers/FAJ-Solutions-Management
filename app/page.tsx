@@ -32,6 +32,7 @@ import W9View from '@/components/W9View';
 import QuickBooksView from '@/components/QuickBooksView';
 import SettingsView from '@/components/SettingsView';
 import PayablesView from '@/components/PayablesView';
+import LedgerView from '@/components/LedgerView';
 import GlobalSearch from '@/components/GlobalSearch';
 import ContractorModal from '@/components/ContractorModal';
 import WorkOrderModal from '@/components/WorkOrderModal';
@@ -44,7 +45,7 @@ import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 
 const VIEWS = [
-  'dashboard', 'financials', 'workorders', 'payments', 'payables', 'contractors',
+  'dashboard', 'financials', 'workorders', 'payments', 'payables', 'ledger', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'import-queue',
   'statements', '1099', 'w9', 'quickbooks', 'settings',
 ] as const;
@@ -59,7 +60,7 @@ function viewFromUrl(): View {
 // Which sidebar dropdown each view lives under — used to auto-open the right
 // section when navigating (including via search, dashboard links, or the URL).
 const SECTION_OF_VIEW: Record<View, string> = {
-  dashboard: 'main', financials: 'main', workorders: 'main', payments: 'main', payables: 'main',
+  dashboard: 'main', financials: 'main', workorders: 'main', payments: 'main', payables: 'main', ledger: 'main',
   scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', 'import-queue': 'fieldops',
   contractors: 'contractors', 'contractor-analytics': 'contractors',
   statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
@@ -825,6 +826,7 @@ export default function HomePage() {
             <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
             <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
             <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
+            <NI k="ledger"      icon={<BookOpen size={15} />}     label="Ledger" />
           </NavSection>
           <NavSection
             title="Field Ops"
@@ -1001,6 +1003,9 @@ export default function HomePage() {
             qboConnected={!!qboConnection?.default_expense_account_id}
             onSyncPayment={syncPaymentToQuickBooks}
           />
+        )}
+        {view === 'ledger' && (
+          <LedgerView workOrders={enrichedWOs} payments={payments} />
         )}
         {view === 'payables' && (
           <PayablesView

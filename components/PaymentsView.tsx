@@ -1,9 +1,18 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, TrendingUp, DollarSign, Users, CreditCard, RefreshCw, CheckCircle2, Calendar, Wallet } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, TrendingUp, DollarSign, Users, CreditCard, RefreshCw, CheckCircle2, Calendar, Wallet, Printer } from 'lucide-react';
 import { fmtMoney, fmtDate, contractorShareOfWO } from '@/lib/utils';
-import type { Payment, WorkOrder } from '@/lib/types';
+import type { Payment, WorkOrder, Contractor } from '@/lib/types';
 import WOPaymentHistoryModal from './WOPaymentHistoryModal';
+
+// How a tech gets paid, for the payout sheet
+function payMethodLabel(c: Contractor | undefined): string {
+  if (c?.routing_number && c?.account_number) {
+    return `Direct Deposit${c.bank_name ? ` — ${c.bank_name}` : ''} ····${c.account_number.slice(-4)}`;
+  }
+  if (c?.zelle_phone) return `Zelle — ${c.zelle_phone}`;
+  return 'Check';
+}
 
 function isoToday(): string { return new Date().toISOString().split('T')[0]; }
 function isoDaysAgo(days: number): string {
@@ -38,8 +47,8 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDelete, qboConnected = false, onSyncPayment }: {
-  payments: Payment[]; workOrders: WorkOrder[];
+export default function PaymentsView({ payments, workOrders, contractors = [], onAdd, onEdit, onDelete, qboConnected = false, onSyncPayment }: {
+  payments: Payment[]; workOrders: WorkOrder[]; contractors?: Contractor[];
   onAdd: () => void; onEdit: (p: Payment) => void; onDelete: (id: string) => void;
   qboConnected?: boolean; onSyncPayment?: (id: string) => Promise<void>;
 }) {
@@ -96,7 +105,7 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
   // per-tech split when set; payments to that tech (any date) count against it.
   const owedInRange = useMemo(() => {
     if (!dateActive) return [];
-    const m = new Map<string, number>();
+    const m = new Map<string, { total: number; jobs: { wo_number: string; title: string; remaining: number }[] }>();
     for (const w of workOrders) {
       if (!inRange(w.start_date, dateFrom, dateTo)) continue;
       const names = (w.contractor_names && w.contractor_names.length > 0)
@@ -109,12 +118,60 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
           .filter((p) => p.wo_number === w.wo_number && p.contractor_name === name)
           .reduce((s, p) => s + Number(p.amount), 0);
         const remaining = Math.max(0, share - paid);
-        if (remaining > 0) m.set(name, (m.get(name) ?? 0) + remaining);
+        if (remaining <= 0) continue;
+        const entry = m.get(name) ?? { total: 0, jobs: [] };
+        entry.total += remaining;
+        entry.jobs.push({ wo_number: w.wo_number, title: w.title ?? '', remaining });
+        m.set(name, entry);
       }
     }
-    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+    return Array.from(m.entries()).sort((a, b) => b[1].total - a[1].total);
   }, [dateActive, dateFrom, dateTo, workOrders, payments]);
-  const owedTotal = owedInRange.reduce((s, [, v]) => s + v, 0);
+  const owedTotal = owedInRange.reduce((s, [, v]) => s + v.total, 0);
+
+  // Opens a clean, printer-ready payout sheet in a new window
+  const printPayoutSheet = () => {
+    const rangeLabel = `${dateFrom ? fmtDate(dateFrom) : 'Beginning'} – ${dateTo ? fmtDate(dateTo) : 'Today'}`;
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const rows = owedInRange.map(([name, info]) => {
+      const c = contractors.find((x) => x.name === name);
+      const jobs = info.jobs.map((j) =>
+        `<div class="job">WO#${esc(j.wo_number)}${j.title ? ` — ${esc(j.title)}` : ''}: ${fmtMoney(j.remaining)}</div>`
+      ).join('');
+      return `<tr>
+        <td><strong>${esc(name)}</strong>${jobs}</td>
+        <td>${esc(payMethodLabel(c))}</td>
+        <td class="amt">${fmtMoney(info.total)}</td>
+        <td class="sig"></td>
+      </tr>`;
+    }).join('');
+    const html = `<!doctype html><html><head><title>Payout Sheet — ${esc(rangeLabel)}</title><style>
+      body { font-family: Georgia, serif; margin: 40px; color: #1a1a1a; }
+      h1 { font-size: 22px; margin: 0 0 2px; } .sub { color: #666; font-size: 13px; margin-bottom: 24px; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th { text-align: left; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #666; border-bottom: 2px solid #1a1a1a; padding: 8px 10px; }
+      td { padding: 10px; border-bottom: 1px solid #ddd; vertical-align: top; }
+      .amt { text-align: right; font-weight: bold; white-space: nowrap; }
+      .sig { width: 140px; border-bottom: 1px solid #ddd; }
+      .job { font-size: 12px; color: #555; margin-top: 3px; font-family: Arial, sans-serif; }
+      tfoot td { border-top: 2px solid #1a1a1a; border-bottom: none; font-weight: bold; font-size: 16px; }
+      .foot { margin-top: 32px; font-size: 11px; color: #999; }
+    </style></head><body>
+      <h1>FAJ Solutions — Payout Sheet</h1>
+      <div class="sub">Jobs scheduled ${esc(rangeLabel)} · printed ${new Date().toLocaleString()}</div>
+      <table>
+        <thead><tr><th>Tech / Jobs</th><th>Pay Method</th><th style="text-align:right">Amount Owed</th><th>Paid ✓ / Ref#</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="2">TOTAL</td><td class="amt">${fmtMoney(owedTotal)}</td><td></td></tr></tfoot>
+      </table>
+      <div class="foot">Generated by FAJ Business Manager</div>
+      <script>window.print()</script>
+    </body></html>`;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+  };
 
   const filtered = dated.filter((p) => {
     const s = search.toLowerCase();
@@ -183,16 +240,28 @@ export default function PaymentsView({ payments, workOrders, onAdd, onEdit, onDe
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: 1, color: '#b91c1c', textTransform: 'uppercase' }}>
               <Wallet size={13} /> Still owed for jobs scheduled in this range
             </span>
-            <span style={{ fontSize: 18, fontWeight: 800, color: owedTotal > 0 ? '#b91c1c' : '#047857' }}>
-              {owedTotal > 0 ? fmtMoney(owedTotal) : 'All paid up ✓'}
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18, fontWeight: 800, color: owedTotal > 0 ? '#b91c1c' : '#047857' }}>
+                {owedTotal > 0 ? fmtMoney(owedTotal) : 'All paid up ✓'}
+              </span>
+              {owedInRange.length > 0 && (
+                <button className="btn btn-ghost" onClick={printPayoutSheet} title="Print a payout sheet for this range" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Printer size={13} /> Print Sheet
+                </button>
+              )}
             </span>
           </div>
           {owedInRange.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {owedInRange.map(([name, amt]) => (
+              {owedInRange.map(([name, info]) => (
                 <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ fontWeight: 600, color: '#333' }}>{name}</span>
-                  <span style={{ fontWeight: 700, color: '#b91c1c' }}>{fmtMoney(amt)}</span>
+                  <span style={{ fontWeight: 600, color: '#333' }}>
+                    {name}
+                    <span style={{ color: '#999', fontWeight: 400, marginLeft: 6, fontSize: 12 }}>
+                      {info.jobs.map((j) => `#${j.wo_number}`).join(', ')}
+                    </span>
+                  </span>
+                  <span style={{ fontWeight: 700, color: '#b91c1c' }}>{fmtMoney(info.total)}</span>
                 </div>
               ))}
             </div>

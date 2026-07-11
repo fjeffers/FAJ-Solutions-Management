@@ -100,6 +100,21 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
     setZelleStep('ready');
   };
 
+  // Non-blocking overpay check: does this payment push the tech past what
+  // they're owed on this WO (their split share, or the WO total if single-tech)?
+  const overpay = (() => {
+    if (!form.wo_number || !form.contractor_name || !form.amount) return null;
+    const w = workOrders.find((x) => x.wo_number === form.wo_number);
+    if (!w) return null;
+    const share = contractorShareOfWO(w, form.contractor_name);
+    if (share <= 0) return null;
+    const alreadyPaid = payments
+      .filter((p) => p.wo_number === form.wo_number && p.contractor_name === form.contractor_name && p.id !== item?.id)
+      .reduce((s, p) => s + Number(p.amount), 0);
+    const over = alreadyPaid + Number(form.amount) - share;
+    return over > 0.009 ? { over, share, alreadyPaid } : null;
+  })();
+
   const canSave = !!(form.wo_number && form.contractor_name && form.amount && Number(form.amount) > 0 && form.payment_date);
   const isZelle = form.method === 'Zelle';
   const isDirectDeposit = form.method === 'Direct Deposit';
@@ -285,6 +300,16 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
               ))}
             </div>
           </PF>
+
+          {/* Overpay warning — informational, never blocks (bonuses/extras are legit) */}
+          {overpay && (
+            <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1.5px solid rgba(245,158,11,0.3)', fontSize: 13, color: '#92400e' }}>
+              <strong>Heads up:</strong> this brings {form.contractor_name} to{' '}
+              <strong>{fmtMoney(overpay.over)} over</strong> their {fmtMoney(overpay.share)} on this work order
+              {overpay.alreadyPaid > 0 ? ` (${fmtMoney(overpay.alreadyPaid)} already paid)` : ''}.
+              Fine if it&apos;s a bonus or expense reimbursement — just making sure it&apos;s not a typo.
+            </div>
+          )}
 
           {/* Notes */}
           <PF label="Notes / Purpose" icon={<FileText size={14} />}>

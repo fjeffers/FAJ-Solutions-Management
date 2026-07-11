@@ -994,6 +994,7 @@ export default function HomePage() {
           <PaymentsView
             payments={payments}
             workOrders={workOrders}
+            contractors={contractors}
             onAdd={() => setModal({ type: 'payment', item: null })}
             onEdit={(p) => setModal({ type: 'payment', item: p })}
             onDelete={deletePayment}

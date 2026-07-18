@@ -357,6 +357,51 @@ export type Quote = {
   updated_at: string;
 };
 
+// ─── Invoices (migration-033) — accounts receivable, client → FAJ ────────────
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'void';
+
+// Same shape as quote lines. Lines added from a work order use id `wo-<uuid>`,
+// which is how work_order_ids is derived on save.
+export type InvoiceLineItem = QuoteLineItem;
+
+export type Invoice = {
+  id: string;
+  user_id: string | null;
+  invoice_number: string;
+  client_name: string | null;
+  client_email: string | null;
+  client_phone: string | null;
+  title: string | null;
+  description: string | null;
+  line_items: InvoiceLineItem[];
+  subtotal: number;
+  tax_rate: number;
+  tax_amount: number;
+  total: number;
+  status: InvoiceStatus;
+  due_date: string | null;
+  notes: string | null;
+  sent_at: string | null;
+  paid_at: string | null;
+  work_order_ids: string[];
+  quote_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InvoicePayment = {
+  id: string;
+  user_id: string | null;
+  invoice_id: string;
+  amount: number;
+  payment_date: string;
+  method: string;
+  reference: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
 // ─── Work Order Messages (pre-existing table, built outside this repo) ───────
 
 export type MessageSenderRole = 'admin' | 'contractor';
@@ -399,7 +444,7 @@ export type ParsedNetviewFields = {
 export type ImportQueueItem = {
   id: string;
   user_id: string;
-  source: 'netview_smartsheet' | 'google_sheets' | 'google_docs';
+  source: 'netview_smartsheet' | 'field_nation' | 'google_sheets' | 'google_docs';
   external_dedupe_key: string;
   parsed_fields: ParsedNetviewFields;
   raw_snippet: string | null;
@@ -505,6 +550,73 @@ export type DeliverableSubmission = {
   notes: string | null;
   file_urls: string[];
   submitted_at: string;
+};
+
+// ─── Network documentation (migration-034) ──────────────────────────────────
+// Port mapping for client sites: a site owns switches and patch panels; each
+// drop is one room/jack record. Port maps are derived from drops app-side.
+
+export type NetworkSite = {
+  id: string;
+  user_id: string;
+  name: string;
+  notes: string | null;
+  /** Template for generated target labels: {room}, {jack}, {jacks} tokens. */
+  label_scheme: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NetworkSwitch = {
+  id: string;
+  user_id: string;
+  site_id: string;
+  name: string;
+  model: string | null;
+  port_count: number;
+  location: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NetworkPatchPanel = {
+  id: string;
+  user_id: string;
+  site_id: string;
+  name: string;
+  port_count: number;
+  location: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NetworkDropStatus = 'active' | 'needs_label' | 'office_closed';
+
+export type NetworkDrop = {
+  id: string;
+  user_id: string;
+  site_id: string;
+  room: string;
+  assigned_to: string | null;
+  side: string | null;
+  area_zone: string | null;
+  item_type: string | null;
+  /** Jack positions on the wall plate, comma-separated (e.g. "A,B,C"). */
+  jacks: string | null;
+  /** Current (legacy) label on the jack. */
+  wall_jack_label: string | null;
+  /** New label the jack should get under the site's label scheme. */
+  target_label: string | null;
+  patch_panel_id: string | null;
+  panel_port: number | null;
+  switch_id: string | null;
+  switch_port: number | null;
+  status: NetworkDropStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type PaymentMethod =

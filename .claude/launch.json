@@ -6,6 +6,30 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "juli-studio",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npx -y http-server C:/Users/fajso/AppData/Local/Temp/claude/D--FAJ-Project-faj-payments/71f3be9f-73f3-4c8c-98d3-84353a0ac93c/scratchpad/live-julis -p 8321 -c-1"],
+      "port": 8321
+    },
+    {
+      "name": "qr-sheet",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npx -y http-server C:/Users/fajso/AppData/Local/Temp/claude/D--FAJ-Project-faj-payments/71f3be9f-73f3-4c8c-98d3-84353a0ac93c/scratchpad/qr-sheet -p 8322 -c-1"],
+      "port": 8322
+    },
+    {
+      "name": "fhj-site",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:/Users/fajso/AppData/Local/Temp/claude/D--FAJ-Project-faj-payments/71f3be9f-73f3-4c8c-98d3-84353a0ac93c/scratchpad/fhj-site && npx next start -p 3055"],
+      "port": 3055
+    },
+    {
+      "name": "fhj-fresh",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:/Users/fajso/AppData/Local/Temp/claude/D--FAJ-Project-faj-payments/71f3be9f-73f3-4c8c-98d3-84353a0ac93c/scratchpad/fhj-fresh && npx next dev -p 3066"],
+      "port": 3066
     }
   ]
 }

@@ -1,12 +1,13 @@
 'use client';
 import { useState } from 'react';
-import { Mail, CheckCircle2, XCircle, Inbox, LinkIcon, Sheet, Upload } from 'lucide-react';
+import { Mail, CheckCircle2, XCircle, Inbox, LinkIcon, Sheet, Upload, RefreshCw } from 'lucide-react';
 import { fmtDate, fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { ImportQueueItem, GmailConnection } from '@/lib/types';
 
 const SOURCE_LABELS: Record<string, string> = {
   netview_smartsheet: 'Netview/Smartsheet',
+  field_nation: 'FieldNation',
   google_sheets: 'Google Sheets',
   google_docs: 'Google Docs',
 };
@@ -27,12 +28,31 @@ export default function ImportQueueView({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sheetUrl, setSheetUrl] = useState('');
   const [importing, setImporting] = useState(false);
+  const [checking, setChecking] = useState(false);
   const pending = items.filter((i) => i.status === 'pending');
   const reviewed = items.filter((i) => i.status !== 'pending').slice(0, 20);
 
   const act = async (id: string, fn: (id: string) => Promise<void>) => {
     setBusyId(id);
     try { await fn(id); } finally { setBusyId(null); }
+  };
+
+  const checkNow = async () => {
+    setChecking(true);
+    try {
+      const res = await fetch('/api/import-queue/check-now', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toastError(data.error || 'Check failed');
+      } else {
+        toastSuccess(data.imported > 0 ? `Found ${data.imported} new work order${data.imported === 1 ? '' : 's'}` : 'No new work orders — you\'re caught up');
+        onImported?.();
+      }
+    } catch {
+      toastError('Check failed — try again');
+    } finally {
+      setChecking(false);
+    }
   };
 
   const importSheet = async () => {
@@ -68,7 +88,7 @@ export default function ImportQueueView({
       <div style={{ marginBottom: 24 }}>
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>IMPORT</div>
         <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Imports</h1>
-        <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Dispatch emails, Google Sheets, and Google Docs — parsed and queued for your review</p>
+        <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Dispatch emails (Netview + FieldNation routed jobs), Google Sheets, and Google Docs — parsed and queued for your review</p>
       </div>
 
       <div className="glass card" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -81,13 +101,26 @@ export default function ImportQueueView({
             <div style={{ fontSize: 11, color: '#999' }}>
               {connection
                 ? connection.last_polled_at ? `Last checked ${fmtDate(connection.last_polled_at)}` : 'Not checked yet'
-                : 'Connect Gmail to automatically import Netview dispatch emails'}
+                : 'Connect Gmail to automatically import Netview + FieldNation dispatch emails'}
             </div>
           </div>
         </div>
-        <a href="/api/integrations/gmail/connect" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
-          <LinkIcon size={13} /> {connection ? 'Reconnect' : 'Connect Gmail'}
-        </a>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {connection && (
+            <button
+              className="btn btn-ghost"
+              onClick={checkNow}
+              disabled={checking}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              title="Automatic checks only run once a day on your current plan — click this for an on-demand check"
+            >
+              <RefreshCw size={13} className={checking ? 'spin' : ''} /> {checking ? 'Checking…' : 'Check Now'}
+            </button>
+          )}
+          <a href="/api/integrations/gmail/connect" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
+            <LinkIcon size={13} /> {connection ? 'Reconnect' : 'Connect Gmail'}
+          </a>
+        </div>
       </div>
 
       <div className="glass card" style={{ marginBottom: 20 }}>

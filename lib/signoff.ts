@@ -1,4 +1,4 @@
-import type { WorkOrder, Quote } from '@/lib/types';
+import type { WorkOrder, Quote, Invoice } from '@/lib/types';
 
 /**
  * Opens a new browser window with a print-ready Work Order Sign-Off Sheet
@@ -476,6 +476,111 @@ export function printQuoteSheet(q: Quote) {
   <div class="footer">
     <span>FAJ Solutions — Field Services Management</span>
     <span>Printed: ${today} &nbsp;|&nbsp; ${escHtml(q.quote_number)}</span>
+  </div>
+
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=850,height=1100');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  }
+}
+
+export function printInvoiceSheet(inv: Invoice, amountPaid: number) {
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const dueDate = inv.due_date
+    ? new Date(inv.due_date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : null;
+  const balance = Math.max(0, Number(inv.total) - amountPaid);
+
+  const rows = (inv.line_items ?? []).map((li) => `
+    <tr>
+      <td>${escHtml(li.description)}</td>
+      <td style="text-align:center">${li.quantity}</td>
+      <td style="text-align:right">$${Number(li.rate).toFixed(2)}</td>
+      <td style="text-align:right">$${(Number(li.quantity) * Number(li.rate)).toFixed(2)}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Invoice ${escHtml(inv.invoice_number)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #1a1a1a; padding: 0.6in; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0D7377; padding-bottom: 16px; margin-bottom: 24px; }
+    .brand { font-size: 20pt; font-weight: 700; color: #0D7377; }
+    .inv-num { font-size: 13pt; font-weight: 700; text-align: right; }
+    .meta { color: #666; font-size: 9pt; margin-top: 4px; }
+    .section { margin-bottom: 20px; }
+    .label { font-size: 8pt; font-weight: 700; letter-spacing: 0.5px; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background: #0D7377; color: white; text-align: left; padding: 8px 10px; font-size: 9pt; }
+    th:nth-child(2), th:nth-child(3), th:nth-child(4) { text-align: right; }
+    th:nth-child(2) { text-align: center; }
+    td { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 10pt; }
+    .totals { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .totals table { width: 280px; }
+    .totals td { border: none; padding: 4px 10px; }
+    .totals .grand { font-weight: 700; font-size: 13pt; color: #0D7377; border-top: 2px solid #0D7377; }
+    .totals .balance { font-weight: 700; font-size: 13pt; color: ${balance > 0 ? '#b91c1c' : '#047857'}; }
+    .paid-stamp { display: inline-block; margin-top: 8px; padding: 4px 14px; border: 2px solid #047857; border-radius: 6px; color: #047857; font-weight: 700; font-size: 12pt; letter-spacing: 2px; }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; font-size: 8pt; color: #999; }
+    @media print { .footer { position: fixed; bottom: 0.4in; left: 0.6in; right: 0.6in; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">FAJ SOLUTIONS</div>
+      <div class="meta">fajsolutions@gmail.com</div>
+    </div>
+    <div>
+      <div class="inv-num">Invoice ${escHtml(inv.invoice_number)}</div>
+      <div class="meta">Issued ${today}${dueDate ? ` · Due ${dueDate}` : ''}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Bill To</div>
+    <div>${escHtml(inv.client_name)}</div>
+    ${inv.client_email ? `<div class="meta">${escHtml(inv.client_email)}</div>` : ''}
+    ${inv.client_phone ? `<div class="meta">${escHtml(inv.client_phone)}</div>` : ''}
+  </div>
+
+  ${inv.title ? `<div class="section"><div class="label">Title</div><div>${escHtml(inv.title)}</div></div>` : ''}
+  ${inv.description ? `<div class="section"><div class="label">Work Performed</div><div>${escHtml(inv.description)}</div></div>` : ''}
+
+  <table>
+    <thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <div class="totals">
+    <table>
+      <tr><td>Subtotal</td><td style="text-align:right">$${Number(inv.subtotal).toFixed(2)}</td></tr>
+      ${Number(inv.tax_rate) > 0 ? `<tr><td>Tax (${inv.tax_rate}%)</td><td style="text-align:right">$${Number(inv.tax_amount).toFixed(2)}</td></tr>` : ''}
+      <tr class="grand"><td>Total</td><td style="text-align:right">$${Number(inv.total).toFixed(2)}</td></tr>
+      ${amountPaid > 0 ? `<tr><td>Paid</td><td style="text-align:right">−$${amountPaid.toFixed(2)}</td></tr>` : ''}
+      ${amountPaid > 0 || balance > 0 ? `<tr class="balance"><td>Balance Due</td><td style="text-align:right">$${balance.toFixed(2)}</td></tr>` : ''}
+    </table>
+  </div>
+
+  ${balance <= 0 && Number(inv.total) > 0 ? `<div style="text-align:right"><span class="paid-stamp">PAID</span></div>` : ''}
+
+  ${inv.notes ? `<div class="section"><div class="label">Notes</div><div>${escHtml(inv.notes)}</div></div>` : ''}
+  ${dueDate && balance > 0 ? `<div class="section meta">Please include invoice number ${escHtml(inv.invoice_number)} with your payment. Payment is due by ${dueDate}.</div>` : ''}
+
+  <div class="footer">
+    <span>FAJ Solutions — Field Services Management</span>
+    <span>Printed: ${today} &nbsp;|&nbsp; ${escHtml(inv.invoice_number)}</span>
   </div>
 
   <script>

@@ -21,6 +21,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const nums = (wos ?? []).map((w) => parseInt(w.wo_number, 10)).filter((n) => !isNaN(n));
   const nextWoNumber = nums.length > 0 ? String(Math.max(...nums) + 1) : '1001';
 
+  const SOURCE_PLATFORM_MAP: Record<string, string> = {
+    netview_smartsheet: 'NetView',
+    field_nation: 'FieldNation',
+    google_sheets: 'Internal',
+    google_docs: 'Internal',
+  };
+
   const { data: newWO, error: insertError } = await supabase.from('work_orders').insert({
     user_id: user.id,
     wo_number: nextWoNumber,
@@ -30,7 +37,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     customer_name: f.customer_name ?? null,
     client_reference: f.client_reference ?? null,
     external_wo_id: f.external_wo_id ?? null,
-    source_platform: item.source === 'google_sheets' || item.source === 'google_docs' ? 'Internal' : 'NetView',
+    source_platform: SOURCE_PLATFORM_MAP[item.source] ?? 'Internal',
     start_date: f.start_date ?? null,
     total_amount: typeof f.total_amount === 'number' && !isNaN(f.total_amount) ? f.total_amount : 0,
     pay_type: 'Fixed',

@@ -7,12 +7,12 @@ import { enrichWorkOrders } from '@/lib/utils';
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
-import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, Quote, ImportQueueItem, GmailConnection, QuickBooksConnection } from '@/lib/types';
+import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, Quote, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection } from '@/lib/types';
 import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
   Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox,
-  ChevronDown,
+  ChevronDown, Receipt, Network,
 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -25,6 +25,8 @@ import SchedulingView from '@/components/SchedulingView';
 import DispatchMapView from '@/components/DispatchMapView';
 import MaterialsView from '@/components/MaterialsView';
 import QuotesView from '@/components/QuotesView';
+import InvoicesView from '@/components/InvoicesView';
+import NetworkView from '@/components/NetworkView';
 import ImportQueueView from '@/components/ImportQueueView';
 import StatementView from '@/components/StatementView';
 import TenNinetyNineView from '@/components/TenNinetyNineView';
@@ -46,8 +48,8 @@ import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 
 const VIEWS = [
-  'dashboard', 'financials', 'workorders', 'payments', 'payables', 'ledger', 'contractors',
-  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'import-queue',
+  'dashboard', 'financials', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
+  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'import-queue',
   'statements', '1099', 'w9', 'quickbooks', 'settings',
 ] as const;
 type View = (typeof VIEWS)[number];
@@ -61,8 +63,8 @@ function viewFromUrl(): View {
 // Which sidebar dropdown each view lives under — used to auto-open the right
 // section when navigating (including via search, dashboard links, or the URL).
 const SECTION_OF_VIEW: Record<View, string> = {
-  dashboard: 'main', financials: 'main', workorders: 'main', payments: 'main', payables: 'main', ledger: 'main',
-  scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', 'import-queue': 'fieldops',
+  dashboard: 'main', financials: 'main', workorders: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
+  scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', 'import-queue': 'fieldops',
   contractors: 'contractors', 'contractor-analytics': 'contractors',
   statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
   settings: 'settings',
@@ -150,6 +152,8 @@ export default function HomePage() {
   const [contractorTimeLogs, setContractorTimeLogs] = useState<ContractorTimeLog[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [importQueue, setImportQueue] = useState<ImportQueueItem[]>([]);
   const [gmailConnection, setGmailConnection] = useState<GmailConnection | null>(null);
   const [qboConnection, setQboConnection] = useState<QuickBooksConnection | null>(null);
@@ -177,12 +181,14 @@ export default function HomePage() {
 
   // Everything else — loaded right after first paint so startup stays fast.
   const loadSecondary = async () => {
-    const [tRes, dtRes, ctlRes, matRes, qRes, iqRes, gcRes, qboRes] = await Promise.all([
+    const [tRes, dtRes, ctlRes, matRes, qRes, invRes, ipRes, iqRes, gcRes, qboRes] = await Promise.all([
       supabase.from('question_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('deliverable_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('contractor_time_logs').select('*').order('updated_at', { ascending: false }),
       supabase.from('materials').select('*').order('name'),
       supabase.from('quotes').select('*').order('created_at', { ascending: false }),
+      supabase.from('invoices').select('*').order('created_at', { ascending: false }),
+      supabase.from('invoice_payments').select('*').order('payment_date', { ascending: false }),
       supabase.from('import_queue').select('*').order('created_at', { ascending: false }),
       // Explicit column list — refresh_token/access_token are excluded from browser SELECT by RLS anyway.
       supabase.from('gmail_connections').select('id, user_id, connected_email, last_polled_at, created_at').maybeSingle(),
@@ -193,12 +199,15 @@ export default function HomePage() {
     if (ctlRes.data) setContractorTimeLogs(ctlRes.data as ContractorTimeLog[]);
     if (matRes.data) setMaterials(matRes.data as Material[]);
     if (qRes.data) setQuotes(qRes.data as Quote[]);
+    if (invRes.data) setInvoices(invRes.data as Invoice[]);
+    if (ipRes.data) setInvoicePayments(ipRes.data as InvoicePayment[]);
     if (iqRes.data) setImportQueue(iqRes.data as ImportQueueItem[]);
     setGmailConnection((gcRes.data as GmailConnection | null) ?? null);
     setQboConnection((qboRes.data as QuickBooksConnection | null) ?? null);
     const failed = [
       tRes.error && 'templates', dtRes.error && 'deliverable templates', ctlRes.error && 'time logs',
-      matRes.error && 'materials', qRes.error && 'quotes', iqRes.error && 'import queue',
+      matRes.error && 'materials', qRes.error && 'quotes', invRes.error && 'invoices',
+      ipRes.error && 'invoice payments', iqRes.error && 'import queue',
     ].filter(Boolean);
     if (failed.length > 0) {
       toastError(`Couldn't load ${failed.join(', ')}. Check your connection and refresh.`);
@@ -721,6 +730,72 @@ export default function HomePage() {
     loadAll();
   };
 
+  // ── Invoices ───────────────────────────────────────────────────────────────
+
+  const saveInvoice = async (inv: Partial<Invoice>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const existing = inv.id ? invoices.find((i) => i.id === inv.id) : null;
+    const payload = {
+      invoice_number: inv.invoice_number!, client_name: inv.client_name ?? null, client_email: inv.client_email ?? null,
+      client_phone: inv.client_phone ?? null, title: inv.title ?? null, description: inv.description ?? null,
+      line_items: inv.line_items ?? [], subtotal: Number(inv.subtotal ?? 0), tax_rate: Number(inv.tax_rate ?? 0),
+      tax_amount: Number(inv.tax_amount ?? 0), total: Number(inv.total ?? 0), status: inv.status ?? 'draft',
+      due_date: inv.due_date || null, notes: inv.notes ?? null,
+      work_order_ids: inv.work_order_ids ?? [],
+      // Stamp sent_at/paid_at on the first transition into each status.
+      sent_at: inv.status !== 'draft' ? (existing?.sent_at ?? new Date().toISOString()) : null,
+      paid_at: inv.status === 'paid' ? (existing?.paid_at ?? new Date().toISOString()) : null,
+    };
+    const { error } = inv.id
+      ? await supabase.from('invoices').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', inv.id)
+      : await supabase.from('invoices').insert({ ...payload, user_id: user.id });
+    if (error) { toastError(`Couldn't save invoice: ${error.message}`); return; }
+    loadAll();
+  };
+
+  const deleteInvoice = async (id: string) => {
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete invoice: ${error.message}`); return; }
+    loadAll();
+  };
+
+  // Recompute stored status from the payment sum: fully covered → paid,
+  // otherwise a paying invoice is at least 'sent' (never back to draft).
+  const syncInvoicePaidStatus = async (inv: Invoice) => {
+    const { data, error } = await supabase.from('invoice_payments').select('amount').eq('invoice_id', inv.id);
+    if (error) return;
+    const paid = (data ?? []).reduce((s, p) => s + Number(p.amount), 0);
+    const fullyPaid = paid >= Number(inv.total) - 0.005 && Number(inv.total) > 0;
+    if (fullyPaid && inv.status !== 'paid') {
+      await supabase.from('invoices').update({ status: 'paid', paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', inv.id);
+    } else if (!fullyPaid && inv.status === 'paid') {
+      await supabase.from('invoices').update({ status: 'sent', paid_at: null, updated_at: new Date().toISOString() }).eq('id', inv.id);
+    } else if (!fullyPaid && inv.status === 'draft' && paid > 0) {
+      await supabase.from('invoices').update({ status: 'sent', sent_at: inv.sent_at ?? new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', inv.id);
+    }
+  };
+
+  const recordInvoicePayment = async (inv: Invoice, p: { amount: number; payment_date: string; method: string; reference: string }) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('invoice_payments').insert({
+      user_id: user.id, invoice_id: inv.id, amount: Number(p.amount),
+      payment_date: p.payment_date, method: p.method, reference: p.reference || null,
+    });
+    if (error) { toastError(`Couldn't record payment: ${error.message}`); return; }
+    await syncInvoicePaidStatus(inv);
+    toastSuccess(`Recorded ${p.method} payment on ${inv.invoice_number}`);
+    loadAll();
+  };
+
+  const deleteInvoicePayment = async (inv: Invoice, paymentId: string) => {
+    const { error } = await supabase.from('invoice_payments').delete().eq('id', paymentId);
+    if (error) { toastError(`Couldn't delete payment: ${error.message}`); return; }
+    await syncInvoicePaidStatus(inv);
+    loadAll();
+  };
+
   // ── Import Queue ───────────────────────────────────────────────────────────
 
   const approveImportItem = async (id: string) => {
@@ -849,6 +924,7 @@ export default function HomePage() {
             <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
             <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
             <NI k="ledger"      icon={<BookOpen size={15} />}     label="Ledger" />
+            <NI k="invoices"    icon={<Receipt size={15} />}      label="Invoices" />
           </NavSection>
           <NavSection
             title="Field Ops"
@@ -860,6 +936,7 @@ export default function HomePage() {
             <NI k="dispatch" icon={<Map size={15} />} label="Dispatch Map" />
             <NI k="materials" icon={<Package size={15} />} label="Materials" />
             <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
+            <NI k="network" icon={<Network size={15} />} label="Network" />
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
               <Inbox size={15} /> Import
               {pendingImportCount > 0 && (
@@ -983,6 +1060,18 @@ export default function HomePage() {
         )}
         {view === 'quotes' && (
           <QuotesView quotes={quotes} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} />
+        )}
+        {view === 'network' && <NetworkView />}
+        {view === 'invoices' && (
+          <InvoicesView
+            invoices={invoices}
+            invoicePayments={invoicePayments}
+            workOrders={workOrders}
+            onSave={saveInvoice}
+            onDelete={deleteInvoice}
+            onRecordPayment={recordInvoicePayment}
+            onDeletePayment={deleteInvoicePayment}
+          />
         )}
         {view === 'import-queue' && (
           <ImportQueueView

@@ -27,6 +27,12 @@ body {
   box-shadow: 0 8px 32px rgba(13,115,119,0.08);
 }
 
+/* Solid variant for dialog cards — backdrop blur is unreliable inside fixed
+   overlays, letting busy content bleed through a translucent .glass. */
+.modal-solid {
+  background: #fdfcfa;
+}
+
 .glass-dark {
   background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dark) 100%);
   color: white;
@@ -245,6 +251,7 @@ html.dark body { background: #111827; color: var(--ink); }
 html.dark .glass { background: rgba(30,30,50,0.75); border-color: rgba(201,169,97,0.15); }
 html.dark .glass-dark { background: linear-gradient(135deg, #1a2332 0%, #111827 100%); }
 html.dark .card { background: #1f2937; }
+html.dark .modal-solid { background: #1f2937; }
 html.dark .input, html.dark .select, html.dark textarea.input { background: #1f2937; border-color: rgba(20,184,184,0.25); color: var(--ink); }
 html.dark .filter-chip { background: rgba(30,30,50,0.6); border-color: rgba(20,184,184,0.2); color: var(--ink); }
 html.dark .modal-content { background: #1f2937; color: var(--ink); }

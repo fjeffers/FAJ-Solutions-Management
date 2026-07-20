@@ -556,9 +556,20 @@ export type DeliverableSubmission = {
 // Port mapping for client sites: a site owns switches and patch panels; each
 // drop is one room/jack record. Port maps are derived from drops app-side.
 
+export type NetworkProject = {
+  id: string;
+  user_id: string;
+  name: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** A floor (or area) within a network project. */
 export type NetworkSite = {
   id: string;
   user_id: string;
+  project_id: string | null;
   name: string;
   notes: string | null;
   /** Template for generated target labels: {room}, {jack}, {jacks} tokens. */

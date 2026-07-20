@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { genTargetLabel } from '@/lib/network';
-import type { NetworkSite, NetworkSwitch, NetworkPatchPanel, NetworkDrop, NetworkDropStatus } from '@/lib/types';
+import type { NetworkProject, NetworkSite, NetworkSwitch, NetworkPatchPanel, NetworkDrop, NetworkDropStatus } from '@/lib/types';
 import { Plus, Edit2, Trash2, X, Search, AlertTriangle, Server, Cable, Network, Tag } from 'lucide-react';
 
 const DEFAULT_SCHEME = '{room}-{jack}';
@@ -22,6 +22,7 @@ const STATUS_META: Record<NetworkDropStatus, { label: string; color: string; bg:
 type Tab = 'drops' | 'switches' | 'panels';
 
 type ModalState =
+  | { type: 'project'; item: Partial<NetworkProject> }
   | { type: 'site'; item: Partial<NetworkSite> }
   | { type: 'switch'; item: Partial<NetworkSwitch> }
   | { type: 'panel'; item: Partial<NetworkPatchPanel> }
@@ -31,6 +32,8 @@ type ModalState =
 export default function NetworkView() {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<NetworkProject[]>([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [sites, setSites] = useState<NetworkSite[]>([]);
   const [switches, setSwitches] = useState<NetworkSwitch[]>([]);
   const [panels, setPanels] = useState<NetworkPatchPanel[]>([]);
@@ -41,29 +44,43 @@ export default function NetworkView() {
   const [modal, setModal] = useState<ModalState>(null);
 
   const load = async () => {
-    const [sRes, swRes, ppRes, dRes] = await Promise.all([
+    const [pRes, sRes, swRes, ppRes, dRes] = await Promise.all([
+      supabase.from('network_projects').select('*').order('name'),
       supabase.from('network_sites').select('*').order('name'),
       supabase.from('network_switches').select('*').order('name'),
       supabase.from('network_patch_panels').select('*').order('name'),
       supabase.from('network_drops').select('*').order('room'),
     ]);
+    if (pRes.data) setProjects(pRes.data as NetworkProject[]);
     if (sRes.data) setSites(sRes.data as NetworkSite[]);
     if (swRes.data) setSwitches(swRes.data as NetworkSwitch[]);
     if (ppRes.data) setPanels(ppRes.data as NetworkPatchPanel[]);
     if (dRes.data) setDrops(dRes.data as NetworkDrop[]);
-    if (sRes.error || swRes.error || ppRes.error || dRes.error) {
+    if (pRes.error || sRes.error || swRes.error || ppRes.error || dRes.error) {
       toastError("Couldn't load network data. Check your connection and refresh.");
     }
-    // Opens blank on purpose — no auto-selected project. Keep the current
-    // selection only while it still exists.
-    const list = (sRes.data as NetworkSite[] | null) ?? [];
-    setSiteId((prev) => (prev && list.some((s) => s.id === prev) ? prev : null));
+    // Opens blank on purpose — no auto-selected project. Keep current
+    // selections only while they still exist; floor must belong to project.
+    const plist = (pRes.data as NetworkProject[] | null) ?? [];
+    const slist = (sRes.data as NetworkSite[] | null) ?? [];
+    setProjectId((prevP) => {
+      const p = prevP && plist.some((x) => x.id === prevP) ? prevP : null;
+      setSiteId((prevS) => {
+        if (prevS && slist.some((s) => s.id === prevS && s.project_id === p)) return prevS;
+        return p ? (slist.find((s) => s.project_id === p)?.id ?? null) : null;
+      });
+      return p;
+    });
     setLoading(false);
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const selectSite = (id: string | null) => setSiteId(id);
+  const selectProject = (id: string | null) => {
+    setProjectId(id);
+    setSiteId(id ? (sites.find((s) => s.project_id === id)?.id ?? null) : null);
+  };
 
   // ── CRUD ────────────────────────────────────────────────────────────────
   const saveRow = async (table: string, payload: Record<string, unknown>, label: string) => {
@@ -76,8 +93,12 @@ export default function NetworkView() {
     } else {
       const ins = await supabase.from(table).insert({ ...rest, user_id: user.id }).select('id').single();
       res = ins;
-      // Jump straight into a freshly created project
-      if (!ins.error && table === 'network_sites' && ins.data) setSiteId((ins.data as { id: string }).id);
+      // Jump straight into a freshly created project or floor
+      if (!ins.error && ins.data) {
+        const newId = (ins.data as { id: string }).id;
+        if (table === 'network_projects') { setProjectId(newId); setSiteId(null); }
+        if (table === 'network_sites') setSiteId(newId);
+      }
     }
     if (res.error) { toastError(`Couldn't save ${label}: ${res.error.message}`); return; }
     toastSuccess(`${label} saved`);
@@ -93,7 +114,9 @@ export default function NetworkView() {
     await load();
   };
 
-  // ── Derived data for the selected site ──────────────────────────────────
+  // ── Derived data for the selected project / floor ───────────────────────
+  const project = projects.find((p) => p.id === projectId) ?? null;
+  const floors = useMemo(() => sites.filter((s) => s.project_id === projectId), [sites, projectId]);
   const site = sites.find((s) => s.id === siteId) ?? null;
   const siteSwitches = useMemo(() => switches.filter((s) => s.site_id === siteId), [switches, siteId]);
   const sitePanels = useMemo(() => panels.filter((p) => p.site_id === siteId), [panels, siteId]);
@@ -182,33 +205,52 @@ export default function NetworkView() {
                 · {relabeledCount}/{relabelable.length} relabeled
                 {needsLabelCount > 0 && <span style={{ color: '#b45309', fontWeight: 600 }}> · {needsLabelCount} need labels</span>}
               </>
-            ) : sites.length > 0 ? 'Select a project to view its port mappings.' : 'Track switch and patch panel port mappings per project.'}
+            ) : projects.length > 0 ? 'Select a project and floor to view its port mappings.' : 'Track switch and patch panel port mappings per project.'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {sites.length > 0 && (
-            <select className="input" style={{ width: 'auto', minWidth: 200 }} value={siteId ?? ''} onChange={(e) => selectSite(e.target.value || null)}>
+          {projects.length > 0 && (
+            <select className="input" style={{ width: 'auto', minWidth: 170 }} value={projectId ?? ''} onChange={(e) => selectProject(e.target.value || null)}>
               <option value="">— Select project —</option>
-              {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
-          {site && (
-            <button className="btn btn-ghost" title="Edit project" onClick={() => setModal({ type: 'site', item: site })}><Edit2 size={14} /></button>
+          {project && (
+            <button className="btn btn-ghost" title="Edit project" onClick={() => setModal({ type: 'project', item: project })}><Edit2 size={14} /></button>
           )}
-          <button className="btn btn-ghost" onClick={() => setModal({ type: 'site', item: {} })}><Plus size={14} /> Project</button>
+          <button className="btn btn-ghost" onClick={() => setModal({ type: 'project', item: {} })}><Plus size={14} /> Project</button>
+          {project && (
+            <>
+              <select className="input" style={{ width: 'auto', minWidth: 130 }} value={siteId ?? ''} onChange={(e) => selectSite(e.target.value || null)}>
+                <option value="">— Floor —</option>
+                {floors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              {site && (
+                <button className="btn btn-ghost" title="Edit floor" onClick={() => setModal({ type: 'site', item: site })}><Edit2 size={14} /></button>
+              )}
+              <button className="btn btn-ghost" onClick={() => setModal({ type: 'site', item: { project_id: project.id } })}><Plus size={14} /> Floor</button>
+            </>
+          )}
         </div>
       </div>
 
       {!site ? (
         <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>
           <Network size={28} color="#ddd" style={{ marginBottom: 8 }} />
-          {sites.length === 0 ? (
+          {projects.length === 0 ? (
             <>
               <div style={{ marginBottom: 12 }}>No projects yet. Create one to start mapping ports.</div>
-              <button className="btn btn-primary" onClick={() => setModal({ type: 'site', item: {} })}><Plus size={14} /> New Project</button>
+              <button className="btn btn-primary" onClick={() => setModal({ type: 'project', item: {} })}><Plus size={14} /> New Project</button>
+            </>
+          ) : !project ? (
+            <div>Select a project above to view its network — or add a new one with + Project.</div>
+          ) : floors.length === 0 ? (
+            <>
+              <div style={{ marginBottom: 12 }}>No floors in {project.name} yet.</div>
+              <button className="btn btn-primary" onClick={() => setModal({ type: 'site', item: { project_id: project.id } })}><Plus size={14} /> Add Floor</button>
             </>
           ) : (
-            <div>Select a project above to view its network — or add a new one with + Project.</div>
+            <div>Select a floor above.</div>
           )}
         </div>
       ) : (
@@ -318,17 +360,30 @@ export default function NetworkView() {
       )}
 
       {/* Modals */}
-      {modal?.type === 'site' && (
+      {modal?.type === 'project' && (
         <EntityModal
           title={modal.item.id ? 'Edit Project' : 'New Project'}
           onClose={() => setModal(null)}
           onDelete={modal.item.id ? () => {
-            if (confirm(`Delete project "${modal.item.name}" and ALL its switches, panels, and drops? This can't be undone.`)) {
-              deleteRow('network_sites', modal.item.id!, 'Site');
+            if (confirm(`Delete project "${modal.item.name}" and ALL its floors, switches, panels, and drops? This can't be undone.`)) {
+              deleteRow('network_projects', modal.item.id!, 'Project');
             }
           } : undefined}
         >
-          {(close) => <SiteForm item={modal.item} onSave={(p) => saveRow('network_sites', p, 'Site')} onCancel={close} />}
+          {(close) => <ProjectForm item={modal.item} onSave={(p) => saveRow('network_projects', p, 'Project')} onCancel={close} />}
+        </EntityModal>
+      )}
+      {modal?.type === 'site' && (
+        <EntityModal
+          title={modal.item.id ? 'Edit Floor' : 'Add Floor'}
+          onClose={() => setModal(null)}
+          onDelete={modal.item.id ? () => {
+            if (confirm(`Delete floor "${modal.item.name}" and ALL its switches, panels, and drops? This can't be undone.`)) {
+              deleteRow('network_sites', modal.item.id!, 'Floor');
+            }
+          } : undefined}
+        >
+          {(close) => <SiteForm item={modal.item} onSave={(p) => saveRow('network_sites', p, 'Floor')} onCancel={close} />}
         </EntityModal>
       )}
       {modal?.type === 'switch' && (
@@ -538,6 +593,23 @@ const nn = (v: string) => (v.trim() === '' ? null : v);
 const nnum = (v: string) => (v.trim() === '' ? null : Number(v));
 
 // ── Forms ─────────────────────────────────────────────────────────────────
+function ProjectForm({ item, onSave, onCancel }: {
+  item: Partial<NetworkProject>;
+  onSave: (p: Partial<NetworkProject>) => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState<Partial<NetworkProject>>({ name: '', notes: '', ...item });
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Field label="Project Name"><input className="input" value={form.name ?? ''} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Reitler, ClientX HQ" /></Field>
+        <Field label="Notes"><textarea className="input" rows={2} value={form.notes ?? ''} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></Field>
+      </div>
+      <FormFooter onCancel={onCancel} onSave={() => onSave({ ...form, notes: nn(form.notes ?? '') })} disabled={!form.name?.trim()} />
+    </>
+  );
+}
+
 function SiteForm({ item, onSave, onCancel }: {
   item: Partial<NetworkSite>;
   onSave: (p: Partial<NetworkSite>) => void;
@@ -547,7 +619,7 @@ function SiteForm({ item, onSave, onCancel }: {
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Field label="Project Name"><input className="input" value={form.name ?? ''} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Reitler — Floor 21, ClientX — HQ" /></Field>
+        <Field label="Floor Name"><input className="input" value={form.name ?? ''} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Floor 21, Basement, IDF East" /></Field>
         <Field label="Label Scheme">
           <input className="input" value={form.label_scheme ?? ''} onChange={(e) => setForm((f) => ({ ...f, label_scheme: e.target.value }))} placeholder={DEFAULT_SCHEME} />
           <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>

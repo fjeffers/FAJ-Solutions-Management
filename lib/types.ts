@@ -604,6 +604,8 @@ export type PlanItem = {
 export type FloorPlan = {
   rooms: PlanRoom[];
   items: PlanItem[];
+  /** Optional photo underlay (evac map / blueprint snapshot) traced over. */
+  bg?: { url: string; opacity: number } | null;
 };
 
 /** A floor (or area) within a network project. */

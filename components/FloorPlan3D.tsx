@@ -64,6 +64,22 @@ export default function FloorPlan3D({ plan, floorName }: { plan: FloorPlan; floo
     slab.position.set(500, -4, 350);
     scene.add(slab);
 
+    // Traced photo underlay draped on the floor, matching the 2D canvas
+    if (plan.bg?.url) {
+      new THREE.TextureLoader().load(plan.bg.url, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const img = tex.image as { width: number; height: number };
+        const fit = Math.min(1000 / img.width, 700 / img.height);
+        const overlay = new THREE.Mesh(
+          new THREE.PlaneGeometry(img.width * fit, img.height * fit),
+          new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: Math.min(0.85, plan.bg!.opacity + 0.2) }),
+        );
+        overlay.rotation.x = -Math.PI / 2;
+        overlay.position.set(500, 0.6, 350);
+        scene.add(overlay);
+      });
+    }
+
     // Rooms: transparent extruded boxes + edge outlines
     for (const r of plan.rooms) {
       const color = r.kind === 'closet' ? 0xc9a961 : 0x0d7377;

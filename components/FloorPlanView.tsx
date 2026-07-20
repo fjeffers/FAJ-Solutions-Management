@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { ITEM_META, ITEM_VARIANTS, PLAN_W, PLAN_H, newPlanId, RACK_BUILDER_URL } from '@/lib/floorplan';
 import type { NetworkSite, NetworkDrop, FloorPlan, PlanRoom, PlanItem, PlanItemType, PlanRoomKind } from '@/lib/types';
-import { MousePointer2, Square, Trash2, Save, Box, Map as MapIcon, ImagePlus, ExternalLink, X } from 'lucide-react';
+import { MousePointer2, Square, Trash2, Save, Box, Map as MapIcon, ImagePlus, ExternalLink, X, Image as ImageIcon } from 'lucide-react';
 
 const Plan3D = dynamic(() => import('./FloorPlan3D'), { ssr: false, loading: () => <div style={{ padding: 40, color: '#999', textAlign: 'center' }}>Loading 3D view…</div> });
 
@@ -135,6 +135,26 @@ export default function FloorPlanView({ site, drops, onSaved }: {
     mutateItem(item.id, (i) => ({ ...i, photos: i.photos.filter((u) => u !== url) }));
   };
 
+  const uploadBg = async (file: File) => {
+    setUploading(true);
+    const path = `${site.id}/background/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
+    const { error } = await supabase.storage.from('network-photos').upload(path, file);
+    if (error) { setUploading(false); toastError(`Upload failed: ${error.message}`); return; }
+    const { data } = supabase.storage.from('network-photos').getPublicUrl(path);
+    setPlan((p) => ({ ...p, bg: { url: data.publicUrl, opacity: 0.5 } }));
+    setUploading(false);
+    toastSuccess('Photo set as underlay — trace rooms over it, then Save Plan');
+  };
+
+  const removeBg = async () => {
+    const url = plan.bg?.url;
+    if (url) {
+      const path = url.split('/network-photos/')[1];
+      if (path) await supabase.storage.from('network-photos').remove([decodeURIComponent(path)]);
+    }
+    setPlan((p) => ({ ...p, bg: null }));
+  };
+
   const dropName = (d: NetworkDrop) =>
     `${d.room}${d.wall_jack_label ? ` — ${d.wall_jack_label}` : d.assigned_to ? ` — ${d.assigned_to}` : ''}`;
 
@@ -161,6 +181,24 @@ export default function FloorPlanView({ site, drops, onSaved }: {
                 {ITEM_META[t].label}
               </button>
             ))}
+            <span style={{ width: 1, height: 22, background: '#ddd', margin: '0 4px' }} />
+            {!plan.bg ? (
+              <label className="filter-chip" style={{ cursor: 'pointer' }} title="Photo of the building's floor plan / evac map / blueprint — shows faded under the canvas so you can trace rooms over it">
+                <ImageIcon size={12} style={{ marginRight: 4, verticalAlign: -2 }} />{uploading ? 'Uploading…' : 'Trace Photo'}
+                <input type="file" accept="image/*" style={{ display: 'none' }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadBg(f); e.target.value = ''; }} />
+              </label>
+            ) : (
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#777' }}>
+                <ImageIcon size={12} /> Underlay
+                <input
+                  type="range" min={10} max={100} value={Math.round(plan.bg.opacity * 100)} style={{ width: 80 }}
+                  title="Underlay visibility"
+                  onChange={(e) => setPlan((p) => ({ ...p, bg: p.bg && { ...p.bg, opacity: Number(e.target.value) / 100 } }))}
+                />
+                <button onClick={removeBg} title="Remove underlay photo" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', padding: 2, display: 'flex' }}><X size={13} /></button>
+              </span>
+            )}
           </>
         )}
         <div style={{ flex: 1 }} />
@@ -195,6 +233,13 @@ export default function FloorPlanView({ site, drops, onSaved }: {
                 </pattern>
               </defs>
               <rect width={PLAN_W} height={PLAN_H} fill="url(#fp-grid)" />
+              {plan.bg && (
+                <image
+                  href={plan.bg.url} x={0} y={0} width={PLAN_W} height={PLAN_H}
+                  preserveAspectRatio="xMidYMid meet" opacity={plan.bg.opacity}
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
 
               {plan.rooms.map((r) => (
                 <g key={r.id} onPointerDown={(e) => startDrag(e, 'room', r.id, r.x, r.y)} style={{ cursor: tool === 'select' ? 'move' : undefined }}>
@@ -361,6 +406,7 @@ export default function FloorPlanView({ site, drops, onSaved }: {
             {!selRoom && !selItem && (
               <div style={{ fontSize: 13, color: '#777', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ fontWeight: 700, color: '#333' }}>Site Survey</div>
+                <div>0. Got a photo of the building plan (evac map, blueprint)? <b>Trace Photo</b> puts it under the canvas so your rooms match reality.</div>
                 <div>1. <b>Draw Room</b> — drag out each office, the IT closet, open areas.</div>
                 <div>2. Pick an item from the palette and <b>click to place</b> drops, outlets, workstations, APs, the rack…</div>
                 <div>3. Select a pin to <b>link it to a real drop</b>, note ports, and <b>attach photos</b> from your phone camera.</div>

@@ -25,18 +25,36 @@ export const ITEM_VARIANTS: Record<PlanItemType, string[]> = {
   drop: [
     'Single drop (1x Cat6)', 'Dual drop (2x Cat6)', 'Triple drop (3x Cat6)',
     'Quad drop (4x Cat6)', 'Cat6A shielded drop', 'Fiber drop (SMF)', 'Fiber drop (MMF)',
+    'Panduit Cat6 (Mini-Com)', 'Leviton Cat6 (QuickPort)', 'CommScope Cat6 (Netconnect)',
+    'Legrand/Ortronics Cat6', 'Belden Cat6A', 'Corning fiber drop',
   ],
   outlet: [
     'Single-port faceplate', 'Dual-port faceplate', 'Quad-port faceplate', '6-port faceplate',
     'Surface-mount biscuit box', 'Floor box', 'Fiber outlet', 'Coax + data combo plate',
+    'Leviton QuickPort plate', 'Panduit Mini-Com plate', 'Legrand faceplate',
+    'Hubbell faceplate', 'FSR floor box', 'Wiremold surface raceway',
   ],
   power: [
     'Duplex 120V', 'Quad 120V', 'Dedicated 20A circuit', '208V circuit',
     'UPS-backed outlet', 'Floor power box', 'Power pole (ceiling drop)', 'Generator-backed',
+    'APC Smart-UPS', 'CyberPower UPS', 'Tripp Lite PDU', 'APC rack PDU (AP series)',
+    'Leviton duplex', 'Hubbell 20A duplex',
   ],
-  workstation: ['Desktop PC', 'Docking station', 'Thin client', 'POS terminal', 'Kiosk', 'Dual-monitor setup'],
-  laptop: ['Windows laptop', 'MacBook', 'Chromebook', 'Tablet'],
-  printer: ['Network printer', 'MFP / copier', 'Receipt printer', 'Label printer', 'Plotter', 'USB-shared printer'],
+  workstation: [
+    'Desktop PC', 'Docking station', 'Thin client', 'POS terminal', 'Kiosk', 'Dual-monitor setup',
+    'Dell OptiPlex', 'HP EliteDesk / ProDesk', 'Lenovo ThinkCentre', 'Apple Mac mini', 'Apple iMac',
+    'Dell WD19/WD22 dock', 'HP Thunderbolt dock', 'Elo POS terminal', 'Clover POS', 'Square register',
+  ],
+  laptop: [
+    'Windows laptop', 'MacBook', 'Chromebook', 'Tablet',
+    'Dell Latitude', 'HP EliteBook', 'Lenovo ThinkPad', 'MacBook Pro', 'MacBook Air',
+    'Microsoft Surface', 'iPad', 'Samsung Galaxy Tab',
+  ],
+  printer: [
+    'Network printer', 'MFP / copier', 'Receipt printer', 'Label printer', 'Plotter', 'USB-shared printer',
+    'HP LaserJet', 'HP OfficeJet Pro', 'Canon imageRUNNER', 'Xerox VersaLink', 'Ricoh IM series',
+    'Brother HL/MFC', 'Epson WorkForce', 'Epson TM-m30 receipt', 'Zebra ZD421 label', 'Konica Minolta bizhub',
+  ],
   ap: [
     'Ceiling-mount AP', 'Wall-mount AP', 'Outdoor AP', 'AP with external antennas', 'Mesh point', 'Wi-Fi 6E AP',
     'Cisco Meraki MR36', 'Cisco Meraki MR46', 'Cisco Catalyst 9105AX',
@@ -69,7 +87,11 @@ export const ITEM_VARIANTS: Record<PlanItemType, string[]> = {
     'Hikvision dome (DS-2CD21xx)', 'Hikvision bullet (DS-2CD20xx)', 'Hikvision PTZ',
     'Axis dome', 'UniFi Protect G5 Dome', 'UniFi Protect G4 Bullet', 'Verkada CD42',
   ],
-  tv: ['Conference room display', 'Digital signage', 'Video wall', 'Projector', 'Wireless presenter (Airtame etc.)'],
+  tv: [
+    'Conference room display', 'Digital signage', 'Video wall', 'Projector', 'Wireless presenter (Airtame etc.)',
+    'Samsung commercial display', 'LG commercial display', 'Sony Bravia Pro', 'BrightSign player',
+    'Epson projector', 'Logitech Rally / MeetUp', 'Neat Board', 'Crestron room system',
+  ],
   phone: [
     'VoIP desk phone', 'Conference phone', 'Cordless / DECT base', 'Analog line', 'Paging speaker',
     'Cisco 8841', 'Poly VVX 450', 'Yealink T54W', 'Grandstream GRP2615',

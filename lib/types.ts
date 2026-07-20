@@ -565,6 +565,45 @@ export type NetworkProject = {
   updated_at: string;
 };
 
+// ─── Floor plan site survey (migration-037) ─────────────────────────────────
+// Coordinates are in plan units on a 1000x700 canvas (roughly feet at a
+// medium office scale — relative placement is what matters on a survey).
+
+export type PlanRoomKind = 'room' | 'closet' | 'open';
+
+export type PlanRoom = {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  kind: PlanRoomKind;
+};
+
+export type PlanItemType =
+  | 'drop' | 'outlet' | 'power' | 'workstation' | 'laptop' | 'printer'
+  | 'ap' | 'rack' | 'switch' | 'firewall' | 'camera' | 'tv' | 'phone' | 'other';
+
+export type PlanItem = {
+  id: string;
+  type: PlanItemType;
+  x: number;
+  y: number;
+  label: string;
+  /** Optional link to a network_drops row on the same floor. */
+  drop_id?: string | null;
+  /** Free text: jack/port details, e.g. "2x Cat6, jack A data / jack B voice". */
+  ports?: string;
+  notes?: string;
+  photos: string[];
+};
+
+export type FloorPlan = {
+  rooms: PlanRoom[];
+  items: PlanItem[];
+};
+
 /** A floor (or area) within a network project. */
 export type NetworkSite = {
   id: string;
@@ -574,6 +613,7 @@ export type NetworkSite = {
   notes: string | null;
   /** Template for generated target labels: {room}, {jack}, {jacks} tokens. */
   label_scheme: string;
+  floor_plan: FloorPlan | null;
   created_at: string;
   updated_at: string;
 };

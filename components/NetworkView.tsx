@@ -10,6 +10,7 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import { genTargetLabel } from '@/lib/network';
 import type { NetworkProject, NetworkSite, NetworkSwitch, NetworkPatchPanel, NetworkDrop, NetworkDropStatus } from '@/lib/types';
 import { Plus, Edit2, Trash2, X, Search, AlertTriangle, Server, Cable, Network, Tag } from 'lucide-react';
+import FloorPlanView from '@/components/FloorPlanView';
 
 const DEFAULT_SCHEME = '{room}-{jack}';
 
@@ -19,7 +20,7 @@ const STATUS_META: Record<NetworkDropStatus, { label: string; color: string; bg:
   office_closed: { label: 'Office Closed', color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
 };
 
-type Tab = 'drops' | 'switches' | 'panels';
+type Tab = 'drops' | 'switches' | 'panels' | 'plan';
 
 type ModalState =
   | { type: 'project'; item: Partial<NetworkProject> }
@@ -260,6 +261,7 @@ export default function NetworkView() {
             <button className={`filter-chip ${tab === 'drops' ? 'active' : ''}`} onClick={() => setTab('drops')}>Drops</button>
             <button className={`filter-chip ${tab === 'switches' ? 'active' : ''}`} onClick={() => setTab('switches')}>Switches</button>
             <button className={`filter-chip ${tab === 'panels' ? 'active' : ''}`} onClick={() => setTab('panels')}>Patch Panels</button>
+            <button className={`filter-chip ${tab === 'plan' ? 'active' : ''}`} onClick={() => setTab('plan')}>Floor Plan</button>
             <div style={{ flex: 1 }} />
             {tab === 'drops' && (
               <div style={{ position: 'relative' }}>
@@ -310,6 +312,10 @@ export default function NetworkView() {
                 />
               ))
             )
+          )}
+
+          {tab === 'plan' && (
+            <FloorPlanView key={site.id} site={site} drops={siteDrops} onSaved={load} />
           )}
 
           {tab === 'panels' && (

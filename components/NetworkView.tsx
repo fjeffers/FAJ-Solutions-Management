@@ -28,8 +28,6 @@ type ModalState =
   | { type: 'drop'; item: Partial<NetworkDrop> }
   | null;
 
-const SITE_KEY = 'faj-network-site';
-
 export default function NetworkView() {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
@@ -56,30 +54,31 @@ export default function NetworkView() {
     if (sRes.error || swRes.error || ppRes.error || dRes.error) {
       toastError("Couldn't load network data. Check your connection and refresh.");
     }
-    // Keep the selected site valid: restore from localStorage, else first site.
+    // Opens blank on purpose — no auto-selected project. Keep the current
+    // selection only while it still exists.
     const list = (sRes.data as NetworkSite[] | null) ?? [];
-    setSiteId((prev) => {
-      const saved = prev ?? (typeof window !== 'undefined' ? localStorage.getItem(SITE_KEY) : null);
-      return list.some((s) => s.id === saved) ? saved : (list[0]?.id ?? null);
-    });
+    setSiteId((prev) => (prev && list.some((s) => s.id === prev) ? prev : null));
     setLoading(false);
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  const selectSite = (id: string) => {
-    setSiteId(id);
-    localStorage.setItem(SITE_KEY, id);
-  };
+  const selectSite = (id: string | null) => setSiteId(id);
 
   // ── CRUD ────────────────────────────────────────────────────────────────
   const saveRow = async (table: string, payload: Record<string, unknown>, label: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { id, created_at: _c, updated_at: _u, user_id: _uid, ...rest } = payload;
-    const res = id
-      ? await supabase.from(table).update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id)
-      : await supabase.from(table).insert({ ...rest, user_id: user.id });
+    let res;
+    if (id) {
+      res = await supabase.from(table).update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id);
+    } else {
+      const ins = await supabase.from(table).insert({ ...rest, user_id: user.id }).select('id').single();
+      res = ins;
+      // Jump straight into a freshly created project
+      if (!ins.error && table === 'network_sites' && ins.data) setSiteId((ins.data as { id: string }).id);
+    }
     if (res.error) { toastError(`Couldn't save ${label}: ${res.error.message}`); return; }
     toastSuccess(`${label} saved`);
     setModal(null);
@@ -183,27 +182,34 @@ export default function NetworkView() {
                 · {relabeledCount}/{relabelable.length} relabeled
                 {needsLabelCount > 0 && <span style={{ color: '#b45309', fontWeight: 600 }}> · {needsLabelCount} need labels</span>}
               </>
-            ) : 'Track switch and patch panel port mappings per site.'}
+            ) : sites.length > 0 ? 'Select a project to view its port mappings.' : 'Track switch and patch panel port mappings per project.'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {sites.length > 0 && (
-            <select className="input" style={{ width: 'auto', minWidth: 180 }} value={siteId ?? ''} onChange={(e) => selectSite(e.target.value)}>
+            <select className="input" style={{ width: 'auto', minWidth: 200 }} value={siteId ?? ''} onChange={(e) => selectSite(e.target.value || null)}>
+              <option value="">— Select project —</option>
               {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
           {site && (
-            <button className="btn btn-ghost" title="Edit site" onClick={() => setModal({ type: 'site', item: site })}><Edit2 size={14} /></button>
+            <button className="btn btn-ghost" title="Edit project" onClick={() => setModal({ type: 'site', item: site })}><Edit2 size={14} /></button>
           )}
-          <button className="btn btn-ghost" onClick={() => setModal({ type: 'site', item: {} })}><Plus size={14} /> Site</button>
+          <button className="btn btn-ghost" onClick={() => setModal({ type: 'site', item: {} })}><Plus size={14} /> Project</button>
         </div>
       </div>
 
       {!site ? (
         <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>
           <Network size={28} color="#ddd" style={{ marginBottom: 8 }} />
-          <div style={{ marginBottom: 12 }}>No sites yet. Create one to start mapping ports.</div>
-          <button className="btn btn-primary" onClick={() => setModal({ type: 'site', item: {} })}><Plus size={14} /> New Site</button>
+          {sites.length === 0 ? (
+            <>
+              <div style={{ marginBottom: 12 }}>No projects yet. Create one to start mapping ports.</div>
+              <button className="btn btn-primary" onClick={() => setModal({ type: 'site', item: {} })}><Plus size={14} /> New Project</button>
+            </>
+          ) : (
+            <div>Select a project above to view its network — or add a new one with + Project.</div>
+          )}
         </div>
       ) : (
         <>
@@ -314,10 +320,10 @@ export default function NetworkView() {
       {/* Modals */}
       {modal?.type === 'site' && (
         <EntityModal
-          title={modal.item.id ? 'Edit Site' : 'New Site'}
+          title={modal.item.id ? 'Edit Project' : 'New Project'}
           onClose={() => setModal(null)}
           onDelete={modal.item.id ? () => {
-            if (confirm(`Delete site "${modal.item.name}" and ALL its switches, panels, and drops? This can't be undone.`)) {
+            if (confirm(`Delete project "${modal.item.name}" and ALL its switches, panels, and drops? This can't be undone.`)) {
               deleteRow('network_sites', modal.item.id!, 'Site');
             }
           } : undefined}
@@ -541,7 +547,7 @@ function SiteForm({ item, onSave, onCancel }: {
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Field label="Site Name"><input className="input" value={form.name ?? ''} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Reitler — Floor 21" /></Field>
+        <Field label="Project Name"><input className="input" value={form.name ?? ''} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Reitler — Floor 21, ClientX — HQ" /></Field>
         <Field label="Label Scheme">
           <input className="input" value={form.label_scheme ?? ''} onChange={(e) => setForm((f) => ({ ...f, label_scheme: e.target.value }))} placeholder={DEFAULT_SCHEME} />
           <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>

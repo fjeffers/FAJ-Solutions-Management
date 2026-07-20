@@ -19,6 +19,40 @@ export const ITEM_META: Record<PlanItemType, { label: string; color: string; gly
   other:       { label: 'Other',          color: '#6b7280', glyph: '•' },
 };
 
+// Field-common varieties per item type. Shown as a datalist so any custom
+// model can also be typed in freely.
+export const ITEM_VARIANTS: Record<PlanItemType, string[]> = {
+  drop: [
+    'Single drop (1x Cat6)', 'Dual drop (2x Cat6)', 'Triple drop (3x Cat6)',
+    'Quad drop (4x Cat6)', 'Cat6A shielded drop', 'Fiber drop (SMF)', 'Fiber drop (MMF)',
+  ],
+  outlet: [
+    'Single-port faceplate', 'Dual-port faceplate', 'Quad-port faceplate', '6-port faceplate',
+    'Surface-mount biscuit box', 'Floor box', 'Fiber outlet', 'Coax + data combo plate',
+  ],
+  power: [
+    'Duplex 120V', 'Quad 120V', 'Dedicated 20A circuit', '208V circuit',
+    'UPS-backed outlet', 'Floor power box', 'Power pole (ceiling drop)', 'Generator-backed',
+  ],
+  workstation: ['Desktop PC', 'Docking station', 'Thin client', 'POS terminal', 'Kiosk', 'Dual-monitor setup'],
+  laptop: ['Windows laptop', 'MacBook', 'Chromebook', 'Tablet'],
+  printer: ['Network printer', 'MFP / copier', 'Receipt printer', 'Label printer', 'Plotter', 'USB-shared printer'],
+  ap: ['Ceiling-mount AP', 'Wall-mount AP', 'Outdoor AP', 'AP with external antennas', 'Mesh point', 'Wi-Fi 6E AP'],
+  rack: [
+    '42U 4-post open frame', '24U 4-post open frame', '42U 2-post relay rack',
+    '42U enclosed cabinet', '12U wall-mount cabinet', '16U rolling rack', '6U wall bracket', '9U wall-mount cabinet',
+  ],
+  switch: [
+    '8-port unmanaged', '8-port PoE', '16-port managed', '24-port managed', '24-port PoE+',
+    '48-port managed', '48-port PoE+', '24-port SFP aggregation', 'Industrial DIN-rail switch', '10G core switch',
+  ],
+  firewall: ['SMB firewall', 'UTM appliance', 'Router/firewall combo', 'SD-WAN edge', 'VPN concentrator', 'ISP modem/gateway'],
+  camera: ['Dome IP camera', 'Bullet IP camera', 'PTZ camera', 'Fisheye 360', 'Doorbell / intercom', 'NVR'],
+  tv: ['Conference room display', 'Digital signage', 'Video wall', 'Projector', 'Wireless presenter (Airtame etc.)'],
+  phone: ['VoIP desk phone', 'Conference phone', 'Cordless / DECT base', 'Analog line', 'Paging speaker'],
+  other: [],
+};
+
 export const PLAN_W = 1000;
 export const PLAN_H = 700;
 

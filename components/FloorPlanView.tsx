@@ -7,7 +7,7 @@ import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { ITEM_META, PLAN_W, PLAN_H, newPlanId, RACK_BUILDER_URL } from '@/lib/floorplan';
+import { ITEM_META, ITEM_VARIANTS, PLAN_W, PLAN_H, newPlanId, RACK_BUILDER_URL } from '@/lib/floorplan';
 import type { NetworkSite, NetworkDrop, FloorPlan, PlanRoom, PlanItem, PlanItemType, PlanRoomKind } from '@/lib/types';
 import { MousePointer2, Square, Trash2, Save, Box, Map as MapIcon, ImagePlus, ExternalLink, X } from 'lucide-react';
 
@@ -216,6 +216,7 @@ export default function FloorPlanView({ site, drops, onSaved }: {
                 const isSel = sel?.kind === 'item' && sel.id === it.id;
                 return (
                   <g key={it.id} onPointerDown={(e) => startDrag(e, 'item', it.id, it.x, it.y)} style={{ cursor: tool === 'select' ? 'move' : undefined }}>
+                    <title>{[meta.label, it.variant, it.label, it.ports].filter(Boolean).join(' · ')}</title>
                     {isSel && <circle cx={it.x} cy={it.y} r={16} fill="none" stroke="#C9A961" strokeWidth={2.5} />}
                     <circle cx={it.x} cy={it.y} r={11} fill={meta.color} />
                     <text x={it.x} y={it.y + 4} textAnchor="middle" fontSize={11} fontWeight={800} fill="white">{meta.glyph}</text>
@@ -272,9 +273,21 @@ export default function FloorPlanView({ site, drops, onSaved }: {
                   {ITEM_META[selItem.type].label}
                 </div>
                 <PanelField label="Type">
-                  <select className="input" value={selItem.type} onChange={(e) => mutateItem(selItem.id, (i) => ({ ...i, type: e.target.value as PlanItemType }))}>
+                  <select className="input" value={selItem.type} onChange={(e) => mutateItem(selItem.id, (i) => ({ ...i, type: e.target.value as PlanItemType, variant: '' }))}>
                     {(Object.keys(ITEM_META) as PlanItemType[]).map((t) => <option key={t} value={t}>{ITEM_META[t].label}</option>)}
                   </select>
+                </PanelField>
+                <PanelField label="Variety / Model">
+                  <input
+                    className="input"
+                    list={`fp-variants-${selItem.type}`}
+                    value={selItem.variant ?? ''}
+                    onChange={(e) => mutateItem(selItem.id, (i) => ({ ...i, variant: e.target.value }))}
+                    placeholder={ITEM_VARIANTS[selItem.type][0] ?? 'e.g. model / kind'}
+                  />
+                  <datalist id={`fp-variants-${selItem.type}`}>
+                    {ITEM_VARIANTS[selItem.type].map((v) => <option key={v} value={v} />)}
+                  </datalist>
                 </PanelField>
                 <PanelField label="Label"><input className="input" value={selItem.label} onChange={(e) => mutateItem(selItem.id, (i) => ({ ...i, label: e.target.value }))} placeholder="e.g. 2153-A, WS-Reception" /></PanelField>
                 <PanelField label="Link to Network Drop">

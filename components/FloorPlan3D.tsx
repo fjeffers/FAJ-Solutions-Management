@@ -93,8 +93,9 @@ export default function FloorPlan3D({ plan, floorName }: { plan: FloorPlan; floo
         : new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 18, 16), new THREE.MeshLambertMaterial({ color }));
       mesh.position.set(it.x, tall ? 21 : 9, it.y);
       scene.add(mesh);
-      if (it.label) {
-        const tag = labelSprite(it.label);
+      const tagText = it.label || it.variant;
+      if (tagText) {
+        const tag = labelSprite(tagText);
         tag.position.set(it.x, tall ? 58 : 34, it.y);
         tag.scale.multiplyScalar(0.62);
         scene.add(tag);

@@ -588,6 +588,8 @@ export type PlanItemType =
 export type PlanItem = {
   id: string;
   type: PlanItemType;
+  /** Specific variety/model within the type, e.g. "48-port PoE+ managed". */
+  variant?: string;
   x: number;
   y: number;
   label: string;

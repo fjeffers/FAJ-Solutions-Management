@@ -315,7 +315,7 @@ export default function NetworkView() {
           )}
 
           {tab === 'plan' && (
-            <FloorPlanView key={site.id} site={site} drops={siteDrops} onSaved={load} />
+            <FloorPlanView key={site.id} site={site} drops={siteDrops} projectName={project?.name ?? ''} onSaved={load} />
           )}
 
           {tab === 'panels' && (

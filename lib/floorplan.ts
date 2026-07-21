@@ -106,3 +106,33 @@ export const newPlanId = () => Math.random().toString(36).slice(2, 10);
 
 /** The user's 3D rack builder artifact — racks placed on a plan link out to it. */
 export const RACK_BUILDER_URL = 'https://claude.ai/code/artifact/a534163c-509a-4c0e-a8b2-39e477f383af';
+
+// ── Cable-run math ──────────────────────────────────────────────────────────
+
+/** Extra slack added to every run: service loops, terminations, routing ups/downs. */
+export const SERVICE_LOOP = 0.15;
+/** A standard box/spool of Cat6 is 1000 ft. */
+export const CAT6_BOX_FT = 1000;
+
+export function polylineLength(points: { x: number; y: number }[]): number {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) {
+    len += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  return len;
+}
+
+/** Plan units → feet, if the plan has been calibrated. */
+export function unitsToFeet(units: number, unitsPerFt: number | null | undefined): number | null {
+  if (!unitsPerFt || unitsPerFt <= 0) return null;
+  return units / unitsPerFt;
+}
+
+export function withServiceLoop(feet: number): number {
+  return feet * (1 + SERVICE_LOOP);
+}
+
+export function cat6Boxes(totalFeetRaw: number): number {
+  if (totalFeetRaw <= 0) return 0;
+  return Math.ceil(withServiceLoop(totalFeetRaw) / CAT6_BOX_FT);
+}

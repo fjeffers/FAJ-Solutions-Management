@@ -3,36 +3,62 @@
 // link pins to real network drops, attach photos, and flip to a 3D view.
 // Lives as the "Floor Plan" tab of NetworkView; plan JSON persists on
 // network_sites.floor_plan (migration-037), photos in the network-photos bucket.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { ITEM_META, ITEM_VARIANTS, PLAN_W, PLAN_H, newPlanId, RACK_BUILDER_URL } from '@/lib/floorplan';
-import type { NetworkSite, NetworkDrop, FloorPlan, PlanRoom, PlanItem, PlanItemType, PlanRoomKind } from '@/lib/types';
-import { MousePointer2, Square, Trash2, Save, Box, Map as MapIcon, ImagePlus, ExternalLink, X, Image as ImageIcon } from 'lucide-react';
+import {
+  ITEM_META, ITEM_VARIANTS, PLAN_W, PLAN_H, newPlanId, RACK_BUILDER_URL,
+  polylineLength, unitsToFeet, withServiceLoop, cat6Boxes,
+} from '@/lib/floorplan';
+import { buildSurveyReportHTML, openSurveyReport } from '@/lib/survey-report';
+import type { NetworkSite, NetworkDrop, FloorPlan, PlanRoom, PlanItem, PlanItemType, PlanRoomKind, PlanRun } from '@/lib/types';
+import {
+  MousePointer2, Square, Trash2, Save, Box, Map as MapIcon, ImagePlus, ExternalLink, X,
+  Image as ImageIcon, Ruler, Route, FileDown, ClipboardList,
+} from 'lucide-react';
 
 const Plan3D = dynamic(() => import('./FloorPlan3D'), { ssr: false, loading: () => <div style={{ padding: 40, color: '#999', textAlign: 'center' }}>Loading 3D view…</div> });
 
-type Tool = 'select' | 'room' | `place:${PlanItemType}`;
-type Sel = { kind: 'room' | 'item'; id: string } | null;
+type Tool = 'select' | 'room' | 'scale' | 'run' | `place:${PlanItemType}`;
+type Sel = { kind: 'room' | 'item' | 'run'; id: string } | null;
 
 const emptyPlan: FloorPlan = { rooms: [], items: [] };
 
-export default function FloorPlanView({ site, drops, onSaved }: {
+export default function FloorPlanView({ site, drops, projectName, onSaved }: {
   site: NetworkSite;
   drops: NetworkDrop[];
+  projectName: string;
   onSaved: () => void;
 }) {
   const supabase = createClient();
   const svgRef = useRef<SVGSVGElement>(null);
-  const [plan, setPlanRaw] = useState<FloorPlan>(site.floor_plan ?? emptyPlan);
+  const draftKey = `faj-plan-draft-${site.id}`;
+  // Field safety net: unsaved edits live in localStorage so a dead spot or a
+  // closed tab on-site doesn't lose the survey. Cleared on successful save.
+  const restoredRef = useRef(false);
+  const [plan, setPlanRaw] = useState<FloorPlan>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`faj-plan-draft-${site.id}`);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { plan?: FloorPlan };
+          if (parsed?.plan) { restoredRef.current = true; return parsed.plan; }
+        }
+      } catch { /* corrupted draft — fall through to saved plan */ }
+    }
+    return site.floor_plan ?? emptyPlan;
+  });
   const [tool, setTool] = useState<Tool>('select');
   const [sel, setSel] = useState<Sel>(null);
   const [view, setView] = useState<'2d' | '3d'>('2d');
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useState(() => restoredRef.current);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [quoting, setQuoting] = useState(false);
   const [draft, setDraft] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [scalePt, setScalePt] = useState<{ x: number; y: number } | null>(null);
+  const [runDraft, setRunDraft] = useState<{ x: number; y: number }[] | null>(null);
   const dragRef = useRef<{ kind: 'room' | 'item'; id: string; dx: number; dy: number } | null>(null);
 
   const setPlan = (fn: (p: FloorPlan) => FloorPlan) => { setPlanRaw(fn); setDirty(true); };
@@ -41,9 +67,38 @@ export default function FloorPlanView({ site, drops, onSaved }: {
   const mutateRoom = (id: string, fn: (r: PlanRoom) => PlanRoom) =>
     setPlan((p) => ({ ...p, rooms: p.rooms.map((r) => (r.id === id ? fn(r) : r)) }));
 
+  const mutateRun = (id: string, fn: (r: PlanRun) => PlanRun) =>
+    setPlan((p) => ({ ...p, runs: (p.runs ?? []).map((r) => (r.id === id ? fn(r) : r)) }));
+
   const selRoom = sel?.kind === 'room' ? plan.rooms.find((r) => r.id === sel.id) ?? null : null;
   const selItem = sel?.kind === 'item' ? plan.items.find((i) => i.id === sel.id) ?? null : null;
+  const selRun = sel?.kind === 'run' ? (plan.runs ?? []).find((r) => r.id === sel.id) ?? null : null;
   const linkedDrop = selItem?.drop_id ? drops.find((d) => d.id === selItem.drop_id) ?? null : null;
+  const unitsPerFt = plan.scale?.unitsPerFt ?? null;
+
+  useEffect(() => {
+    if (restoredRef.current) toastSuccess('Restored unsaved survey changes from this device — Save Plan to keep them');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (dirty) {
+      try { localStorage.setItem(draftKey, JSON.stringify({ t: Date.now(), plan })); } catch { /* storage full */ }
+    }
+  }, [plan, dirty, draftKey]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  // Leaving the scale/run tools abandons their in-progress drafts.
+  useEffect(() => {
+    if (tool !== 'run') setRunDraft(null);
+    if (tool !== 'scale') setScalePt(null);
+  }, [tool]);
 
   // ── Pointer helpers ─────────────────────────────────────────────────────
   const pt = (e: React.PointerEvent): { x: number; y: number } => {
@@ -58,6 +113,18 @@ export default function FloorPlanView({ site, drops, onSaved }: {
     const p = pt(e);
     if (tool === 'room') {
       setDraft({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+    } else if (tool === 'scale') {
+      if (!scalePt) { setScalePt(p); return; }
+      const units = Math.hypot(p.x - scalePt.x, p.y - scalePt.y);
+      setScalePt(null);
+      setTool('select');
+      if (units < 5) { toastError('Points too close together — use a longer reference, like a hallway.'); return; }
+      const ft = Number(window.prompt('Real-world distance between those two points, in feet:', '10'));
+      if (!ft || ft <= 0 || isNaN(ft)) return;
+      setPlan((pl) => ({ ...pl, scale: { unitsPerFt: units / ft } }));
+      toastSuccess('Scale set — cable runs now measure in feet');
+    } else if (tool === 'run') {
+      setRunDraft((r) => [...(r ?? []), p]);
     } else if (tool.startsWith('place:')) {
       const type = tool.slice(6) as PlanItemType;
       const item: PlanItem = { id: newPlanId(), type, x: p.x, y: p.y, label: '', photos: [] };
@@ -114,8 +181,60 @@ export default function FloorPlanView({ site, drops, onSaved }: {
     setSaving(false);
     if (error) { toastError(`Couldn't save plan: ${error.message}`); return; }
     setDirty(false);
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
     toastSuccess('Floor plan saved');
     onSaved();
+  };
+
+  const exportPdf = () => {
+    const svg = svgRef.current?.outerHTML;
+    if (!svg) { setView('2d'); toastError('Switched to the 2D plan — hit Survey PDF again.'); return; }
+    const html = buildSurveyReportHTML({ projectName, floorName: site.name, plan, drops, planSvg: svg });
+    if (!openSurveyReport(html)) toastError('Popup blocked — allow popups for this site to export the survey PDF.');
+  };
+
+  // Turn the placed pins + measured runs into a draft quote in the Quotes tab.
+  const draftQuote = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setQuoting(true);
+    const year = new Date().getFullYear();
+    const { data: qnums } = await supabase.from('quotes').select('quote_number');
+    const nums = (qnums ?? [])
+      .map((q) => q.quote_number as string)
+      .filter((n) => n?.startsWith(`Q-${year}-`))
+      .map((n) => parseInt(n.split('-')[2] ?? '0', 10))
+      .filter((n) => !isNaN(n));
+    const quote_number = `Q-${year}-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0')}`;
+
+    const groups = new Map<string, number>();
+    for (const it of plan.items) {
+      const desc = `${ITEM_META[it.type].label}${it.variant ? ` — ${it.variant}` : ''} (supply/install)`;
+      groups.set(desc, (groups.get(desc) ?? 0) + 1);
+    }
+    const line_items = [...groups.entries()].map(([description, quantity]) => ({ id: newPlanId(), description, quantity, rate: 0 }));
+    const runs = plan.runs ?? [];
+    if (runs.length > 0) {
+      const totalUnits = runs.reduce((s, r) => s + polylineLength(r.points), 0);
+      const ft = unitsToFeet(totalUnits, unitsPerFt);
+      line_items.push({
+        id: newPlanId(),
+        description: ft != null
+          ? `Cat6 cable runs — ${Math.round(ft)} ft measured, ~${Math.round(withServiceLoop(ft))} ft with service loop (${cat6Boxes(ft)} box${cat6Boxes(ft) !== 1 ? 'es' : ''} of Cat6)`
+          : `Cat6 cable runs — ${runs.length} measured path${runs.length !== 1 ? 's' : ''} (set the plan scale for footage)`,
+        quantity: 1,
+        rate: 0,
+      });
+    }
+    const { error } = await supabase.from('quotes').insert({
+      user_id: user.id, quote_number, client_name: projectName || null,
+      title: `Site survey — ${projectName ? `${projectName} ` : ''}${site.name}`,
+      description: 'Drafted from the floor plan site survey. Set your rate on each line.',
+      line_items, subtotal: 0, tax_rate: 0, tax_amount: 0, total: 0, status: 'draft',
+    });
+    setQuoting(false);
+    if (error) { toastError(`Couldn't create quote: ${error.message}`); return; }
+    toastSuccess(`Draft ${quote_number} created — open Quotes to set your rates`);
   };
 
   const uploadPhoto = async (item: PlanItem, file: File) => {
@@ -182,6 +301,13 @@ export default function FloorPlanView({ site, drops, onSaved }: {
               </button>
             ))}
             <span style={{ width: 1, height: 22, background: '#ddd', margin: '0 4px' }} />
+            <button className={`filter-chip ${tool === 'scale' ? 'active' : ''}`} onClick={() => setTool('scale')} title="Click two points a known distance apart, then enter the feet — cable runs then measure in real footage">
+              <Ruler size={12} style={{ marginRight: 4, verticalAlign: -2 }} />{plan.scale ? 'Rescale' : 'Set Scale'}
+            </button>
+            <button className={`filter-chip ${tool === 'run' ? 'active' : ''}`} onClick={() => setTool('run')} title="Click waypoints along a cable path (drop to closet); double-click to finish">
+              <Route size={12} style={{ marginRight: 4, verticalAlign: -2 }} />Measure Run
+            </button>
+            <span style={{ width: 1, height: 22, background: '#ddd', margin: '0 4px' }} />
             {!plan.bg ? (
               <label className="filter-chip" style={{ cursor: 'pointer' }} title="Photo of the building's floor plan / evac map / blueprint — shows faded under the canvas so you can trace rooms over it">
                 <ImageIcon size={12} style={{ marginRight: 4, verticalAlign: -2 }} />{uploading ? 'Uploading…' : 'Trace Photo'}
@@ -202,6 +328,12 @@ export default function FloorPlanView({ site, drops, onSaved }: {
           </>
         )}
         <div style={{ flex: 1 }} />
+        <button className="btn btn-ghost" onClick={exportPdf} title="Print-ready site survey report — save as PDF from the print dialog">
+          <FileDown size={14} /> Survey PDF
+        </button>
+        <button className="btn btn-ghost" onClick={draftQuote} disabled={quoting || plan.items.length === 0} title="Create a draft quote in Quotes from the items and cable runs on this plan">
+          <ClipboardList size={14} /> {quoting ? 'Creating…' : 'Draft Quote'}
+        </button>
         <button className="btn btn-primary" onClick={save} disabled={!dirty || saving}>
           <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save Plan' : 'Saved'}
         </button>
@@ -226,6 +358,16 @@ export default function FloorPlanView({ site, drops, onSaved }: {
               onPointerMove={onMove}
               onPointerUp={onUp}
               onPointerLeave={onUp}
+              onDoubleClick={() => {
+                if (tool === 'run' && runDraft && runDraft.length >= 3) {
+                  const pts = runDraft.slice(0, -1); // the double-click added a duplicate endpoint
+                  const run: PlanRun = { id: newPlanId(), points: pts };
+                  setPlan((p) => ({ ...p, runs: [...(p.runs ?? []), run] }));
+                  setSel({ kind: 'run', id: run.id });
+                  setRunDraft(null);
+                  setTool('select');
+                }
+              }}
             >
               <defs>
                 <pattern id="fp-grid" width="25" height="25" patternUnits="userSpaceOnUse">
@@ -273,6 +415,30 @@ export default function FloorPlanView({ site, drops, onSaved }: {
                 );
               })}
 
+              {(plan.runs ?? []).map((r) => {
+                const isSel = sel?.kind === 'run' && sel.id === r.id;
+                const len = polylineLength(r.points);
+                const ft = unitsToFeet(len, unitsPerFt);
+                const mid = r.points[Math.floor(r.points.length / 2)];
+                const ptsStr = r.points.map((p) => `${p.x},${p.y}`).join(' ');
+                return (
+                  <g
+                    key={r.id}
+                    onPointerDown={(e) => { if (tool === 'select') { e.stopPropagation(); setSel({ kind: 'run', id: r.id }); } }}
+                    style={{ cursor: tool === 'select' ? 'pointer' : undefined }}
+                  >
+                    <polyline points={ptsStr} fill="none" stroke="transparent" strokeWidth={14} />
+                    <polyline points={ptsStr} fill="none" stroke={isSel ? '#C9A961' : '#e8590c'} strokeWidth={isSel ? 3 : 2} strokeDasharray="8 5" />
+                    <text x={mid.x} y={mid.y - 8} textAnchor="middle" fontSize={11} fontWeight={700} fill="#e8590c">
+                      {ft != null ? `${Math.round(ft)} ft` : `${Math.round(len)} u`}
+                    </text>
+                  </g>
+                );
+              })}
+              {runDraft && runDraft.length > 0 && (
+                <polyline points={runDraft.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#e8590c" strokeWidth={2} strokeDasharray="4 4" opacity={0.7} />
+              )}
+              {scalePt && <circle cx={scalePt.x} cy={scalePt.y} r={5} fill="#C9A961" stroke="white" strokeWidth={1.5} />}
               {draft && (
                 <rect
                   x={Math.min(draft.x0, draft.x1)} y={Math.min(draft.y0, draft.y1)}
@@ -283,8 +449,10 @@ export default function FloorPlanView({ site, drops, onSaved }: {
             </svg>
             <div style={{ fontSize: 11, color: '#999', padding: '8px 6px 2px' }}>
               {tool === 'room' ? 'Drag on the canvas to draw a room.'
+                : tool === 'scale' ? (scalePt ? 'Now click the second reference point…' : 'Click the first of two points a known distance apart (e.g. both ends of a hallway).')
+                : tool === 'run' ? 'Click waypoints along the cable path — double-click to finish the run.'
                 : tool.startsWith('place:') ? `Click anywhere to place a ${ITEM_META[tool.slice(6) as PlanItemType].label} — keep clicking to place more, then hit Select.`
-                : 'Click to select · drag to move. Gold dot on a pin = has photos.'}
+                : `Click to select · drag to move. Gold dot on a pin = has photos.${plan.scale ? '' : ' Tip: Set Scale to measure cable runs in feet.'}`}
             </div>
           </div>
 
@@ -403,14 +571,57 @@ export default function FloorPlanView({ site, drops, onSaved }: {
               </div>
             )}
 
-            {!selRoom && !selItem && (
+            {selRun && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 4, background: '#e8590c', display: 'inline-block' }} />
+                  Cable Run
+                </div>
+                {(() => {
+                  const len = polylineLength(selRun.points);
+                  const ft = unitsToFeet(len, unitsPerFt);
+                  return (
+                    <div style={{ fontSize: 12, background: 'rgba(232,89,12,0.07)', borderRadius: 8, padding: '8px 10px', color: '#333' }}>
+                      {ft != null ? (
+                        <>
+                          <div>Measured: <b>{Math.round(ft)} ft</b></div>
+                          <div>With 15% service loop: <b>{Math.round(withServiceLoop(ft))} ft</b></div>
+                        </>
+                      ) : (
+                        <div>{Math.round(len)} plan units — use <b>Set Scale</b> to get feet.</div>
+                      )}
+                      <div style={{ color: '#999' }}>{selRun.points.length} waypoints</div>
+                    </div>
+                  );
+                })()}
+                <PanelField label="Note"><input className="input" value={selRun.note ?? ''} onChange={(e) => mutateRun(selRun.id, (r) => ({ ...r, note: e.target.value }))} placeholder="e.g. 2153 to IDF, above ceiling" /></PanelField>
+                <button className="btn btn-ghost" style={{ color: '#b91c1c' }} onClick={() => { setPlan((p) => ({ ...p, runs: (p.runs ?? []).filter((r) => r.id !== selRun.id) })); setSel(null); }}>
+                  <Trash2 size={13} /> Delete Run
+                </button>
+              </div>
+            )}
+
+            {!selRoom && !selItem && !selRun && (
               <div style={{ fontSize: 13, color: '#777', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ fontWeight: 700, color: '#333' }}>Site Survey</div>
                 <div>0. Got a photo of the building plan (evac map, blueprint)? <b>Trace Photo</b> puts it under the canvas so your rooms match reality.</div>
                 <div>1. <b>Draw Room</b> — drag out each office, the IT closet, open areas.</div>
                 <div>2. Pick an item from the palette and <b>click to place</b> drops, outlets, workstations, APs, the rack…</div>
                 <div>3. Select a pin to <b>link it to a real drop</b>, note ports, and <b>attach photos</b> from your phone camera.</div>
-                <div>4. Flip to <b>3D View</b> to walk the client through it.</div>
+                <div>4. <b>Set Scale</b> once, then <b>Measure Run</b> drop-to-closet paths for real cable footage.</div>
+                <div>5. Flip to <b>3D View</b> to walk the client through it — then <b>Survey PDF</b> or <b>Draft Quote</b>.</div>
+                {(plan.runs?.length ?? 0) > 0 && (() => {
+                  const totalUnits = (plan.runs ?? []).reduce((s, r) => s + polylineLength(r.points), 0);
+                  const ft = unitsToFeet(totalUnits, unitsPerFt);
+                  return (
+                    <div style={{ background: 'rgba(232,89,12,0.07)', borderRadius: 8, padding: '8px 10px', color: '#333', fontSize: 12 }}>
+                      <b>{plan.runs!.length} cable run{plan.runs!.length !== 1 ? 's' : ''}</b>
+                      {ft != null
+                        ? <> · {Math.round(ft)} ft measured · {Math.round(withServiceLoop(ft))} ft with loop ≈ <b>{cat6Boxes(ft)} box{cat6Boxes(ft) !== 1 ? 'es' : ''} of Cat6</b></>
+                        : <> · set the scale to total footage</>}
+                    </div>
+                  );
+                })()}
                 <div style={{ borderTop: '1px dashed #eee', paddingTop: 8 }}>
                   {(Object.keys(ITEM_META) as PlanItemType[]).map((t) => (
                     <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 10, marginBottom: 4, fontSize: 11 }}>

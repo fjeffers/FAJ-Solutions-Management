@@ -118,6 +118,17 @@ export default function FloorPlan3D({ plan, floorName }: { plan: FloorPlan; floo
       }
     }
 
+    // Measured cable runs traced on the floor
+    for (const r of plan.runs ?? []) {
+      const pts = r.points.map((p) => new THREE.Vector3(p.x, 3, p.y));
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineDashedMaterial({ color: 0xe8590c, dashSize: 12, gapSize: 8 }),
+      );
+      line.computeLineDistances();
+      scene.add(line);
+    }
+
     const tag = labelSprite(floorName);
     tag.position.set(500, WALL_H + 60, -30);
     tag.scale.multiplyScalar(1.4);

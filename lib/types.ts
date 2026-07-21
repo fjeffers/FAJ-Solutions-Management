@@ -601,11 +601,21 @@ export type PlanItem = {
   photos: string[];
 };
 
+/** A measured cable path on the plan (drop → closet etc.). */
+export type PlanRun = {
+  id: string;
+  points: { x: number; y: number }[];
+  note?: string;
+};
+
 export type FloorPlan = {
   rooms: PlanRoom[];
   items: PlanItem[];
   /** Optional photo underlay (evac map / blueprint snapshot) traced over. */
   bg?: { url: string; opacity: number } | null;
+  /** Plan-units-per-foot calibration set by the Set Scale tool. */
+  scale?: { unitsPerFt: number } | null;
+  runs?: PlanRun[];
 };
 
 /** A floor (or area) within a network project. */

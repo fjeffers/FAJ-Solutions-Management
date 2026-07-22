@@ -1,0 +1,378 @@
+'use client';
+// Site Log — phone-first tracker for where you went and how long you were
+// on site (migration-038). Lighter than work orders: one card per visit,
+// grouped by program (Wendys, State Farm...), with a live Check In/Check Out
+// timer that fills hours automatically. Self-contained like NetworkView.
+import { useEffect, useMemo, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import { toastError, toastSuccess } from '@/lib/toast';
+import type { SiteVisit, SiteVisitType } from '@/lib/types';
+import { SITE_VISIT_TYPES } from '@/lib/types';
+import { Plus, Edit2, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation } from 'lucide-react';
+
+const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
+  'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
+  'T&M':     { color: '#2563eb', bg: 'rgba(37,99,235,0.1)' },
+  'Revisit': { color: '#b45309', bg: 'rgba(245,158,11,0.12)' },
+  'Survey':  { color: '#7c3aed', bg: 'rgba(124,58,237,0.1)' },
+  'Other':   { color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
+};
+
+function fmtElapsed(ms: number): string {
+  const mins = Math.floor(ms / 60000);
+  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
+}
+
+function fmtDate(d: string): string {
+  return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export default function SiteLogView() {
+  const supabase = createClient();
+  const [visits, setVisits] = useState<SiteVisit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<Partial<SiteVisit> | null>(null);
+  const [checkinOpen, setCheckinOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [programFilter, setProgramFilter] = useState<string | null>(null);
+  const [unpaidOnly, setUnpaidOnly] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  const load = async () => {
+    const { data, error } = await supabase.from('site_visits').select('*')
+      .order('visit_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+    if (error) toastError("Couldn't load the site log. Check your connection and refresh.");
+    if (data) setVisits(data as SiteVisit[]);
+    setLoading(false);
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Live timer tick while a visit is open
+  const openVisit = visits.find((v) => v.time_in && !v.time_out) ?? null;
+  useEffect(() => {
+    if (!openVisit) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [openVisit]);
+
+  const programs = useMemo(
+    () => [...new Set(visits.map((v) => v.program).filter((p): p is string => !!p))].sort(),
+    [visits],
+  );
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return visits.filter((v) => {
+      if (programFilter && v.program !== programFilter) return false;
+      if (unpaidOnly && v.payment_status === 'paid') return false;
+      if (needle) {
+        const hay = [v.program, v.site_code, v.site_name, v.address, v.notes, v.rate].join(' ').toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [visits, q, programFilter, unpaidOnly]);
+
+  const groups = useMemo(() => {
+    const m = new Map<string, SiteVisit[]>();
+    for (const v of filtered) {
+      const k = v.visit_date ?? 'no-date';
+      m.set(k, [...(m.get(k) ?? []), v]);
+    }
+    return [...m.entries()].sort((a, b) =>
+      a[0] === 'no-date' ? 1 : b[0] === 'no-date' ? -1 : b[0].localeCompare(a[0]));
+  }, [filtered]);
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const monthStart = new Date().toISOString().slice(0, 8) + '01';
+  const hoursSince = (since: string) =>
+    visits.filter((v) => v.visit_date && v.visit_date >= since).reduce((s, v) => s + (v.hours ?? 0), 0);
+  const unpaidCount = visits.filter((v) => v.payment_status === 'unpaid').length;
+
+  // ── Mutations ───────────────────────────────────────────────────────────
+  const saveVisit = async (v: Partial<SiteVisit>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { id, created_at: _c, updated_at: _u, user_id: _uid, ...rest } = v;
+    const clean = {
+      ...rest,
+      program: rest.program?.toString().trim() || null,
+      site_code: rest.site_code?.toString().trim() || null,
+      site_name: rest.site_name?.toString().trim() || null,
+      address: rest.address?.toString().trim() || null,
+      rate: rest.rate?.toString().trim() || null,
+      notes: rest.notes?.toString().trim() || null,
+      visit_date: rest.visit_date || null,
+    };
+    const res = id
+      ? await supabase.from('site_visits').update({ ...clean, updated_at: new Date().toISOString() }).eq('id', id)
+      : await supabase.from('site_visits').insert({ ...clean, user_id: user.id });
+    if (res.error) { toastError(`Couldn't save visit: ${res.error.message}`); return; }
+    toastSuccess('Visit saved');
+    setEditing(null);
+    setCheckinOpen(false);
+    await load();
+  };
+
+  const deleteVisit = async (v: SiteVisit) => {
+    if (!confirm(`Delete the visit to ${v.site_name || v.site_code || v.address || 'this site'}?`)) return;
+    const { error } = await supabase.from('site_visits').delete().eq('id', v.id);
+    if (error) { toastError(`Couldn't delete: ${error.message}`); return; }
+    setEditing(null);
+    await load();
+  };
+
+  const checkIn = async (v: Partial<SiteVisit>) => {
+    await saveVisit({
+      ...v,
+      visit_date: new Date().toISOString().slice(0, 10),
+      time_in: new Date().toISOString(),
+      visit_type: v.visit_type ?? 'T&M',
+    });
+  };
+
+  const checkOut = async (v: SiteVisit) => {
+    const out = new Date();
+    const hrs = Math.max(0.25, Math.round(((out.getTime() - new Date(v.time_in!).getTime()) / 3600000) * 100) / 100);
+    const { error } = await supabase.from('site_visits')
+      .update({ time_out: out.toISOString(), hours: hrs, updated_at: out.toISOString() })
+      .eq('id', v.id);
+    if (error) { toastError(`Couldn't check out: ${error.message}`); return; }
+    toastSuccess(`Checked out — ${hrs} hours on site`);
+    await load();
+  };
+
+  if (loading) {
+    return <div className="view-inner" style={{ maxWidth: 900, margin: '0 auto', color: '#999', padding: 40 }}>Loading site log…</div>;
+  }
+
+  return (
+    <div className="view-inner" style={{ maxWidth: 900, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>FIELD OPS</div>
+          <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Site Log</h1>
+          <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>
+            {visits.length} visit{visits.length !== 1 ? 's' : ''} · {hoursSince(sevenDaysAgo).toFixed(1)}h last 7 days · {hoursSince(monthStart).toFixed(1)}h this month
+            {unpaidCount > 0 && <span style={{ color: '#b45309', fontWeight: 600 }}> · {unpaidCount} unpaid</span>}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!openVisit && (
+            <button className="btn btn-primary" onClick={() => setCheckinOpen(true)} style={{ fontSize: 15, padding: '12px 18px' }}>
+              <Timer size={16} /> Check In
+            </button>
+          )}
+          <button className="btn btn-ghost" onClick={() => setEditing({ visit_date: new Date().toISOString().slice(0, 10), visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' })}>
+            <Plus size={14} /> Add Visit
+          </button>
+        </div>
+      </div>
+
+      {/* Live open visit */}
+      {openVisit && (
+        <div className="glass card" style={{ marginBottom: 16, border: '2px solid var(--teal)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal)', letterSpacing: 1.5, textTransform: 'uppercase' }}>● On Site Now</div>
+            <div style={{ fontWeight: 800, fontSize: 18, marginTop: 2 }}>
+              {openVisit.site_name || openVisit.site_code || 'Site'}
+              {openVisit.program && <span style={{ color: '#999', fontWeight: 600, fontSize: 13 }}> · {openVisit.program}</span>}
+            </div>
+            {openVisit.address && <div style={{ fontSize: 12, color: '#888' }}>{openVisit.address}</div>}
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'var(--teal)' }}>
+            {fmtElapsed(now - new Date(openVisit.time_in!).getTime())}
+          </div>
+          <button className="btn btn-primary" style={{ background: '#b91c1c', fontSize: 15, padding: '12px 18px' }} onClick={() => checkOut(openVisit)}>
+            <StopIcon size={15} /> Check Out
+          </button>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+        <button className={`filter-chip ${programFilter === null ? 'active' : ''}`} onClick={() => setProgramFilter(null)}>All</button>
+        {programs.map((p) => (
+          <button key={p} className={`filter-chip ${programFilter === p ? 'active' : ''}`} onClick={() => setProgramFilter(programFilter === p ? null : p)}>{p}</button>
+        ))}
+        <button className={`filter-chip ${unpaidOnly ? 'active' : ''}`} onClick={() => setUnpaidOnly(!unpaidOnly)}>Unpaid</button>
+        <div style={{ flex: 1 }} />
+        <div style={{ position: 'relative' }}>
+          <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
+          <input className="input" style={{ paddingLeft: 30, width: 190 }} placeholder="Search site, notes…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+      </div>
+
+      {/* Visit cards grouped by date */}
+      {groups.length === 0 ? (
+        <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>
+          <MapPin size={28} color="#ddd" style={{ marginBottom: 8 }} />
+          <div>No visits match. Check In when you land on site, or Add Visit to backfill one.</div>
+        </div>
+      ) : (
+        groups.map(([date, dayVisits]) => (
+          <div key={date} style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: 1, textTransform: 'uppercase', margin: '0 2px 8px' }}>
+              {date === 'no-date' ? 'Date TBD' : fmtDate(date)}
+              <span style={{ color: '#bbb', fontWeight: 600 }}> · {dayVisits.reduce((s, v) => s + (v.hours ?? 0), 0).toFixed(1)}h</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {dayVisits.map((v) => {
+                const tc = TYPE_COLORS[v.visit_type] ?? TYPE_COLORS.Other;
+                return (
+                  <div key={v.id} className="glass card" style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => setEditing(v)}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 800, fontSize: 15 }}>
+                        {v.site_name || v.site_code || v.address || 'Site'}
+                      </span>
+                      {v.site_code && v.site_name && <span style={{ color: '#999', fontSize: 12 }}>#{v.site_code}</span>}
+                      {v.program && <span style={{ color: '#999', fontSize: 12 }}>{v.program}</span>}
+                      <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color }}>{v.visit_type}</span>
+                      <div style={{ flex: 1 }} />
+                      {v.hours != null && <span style={{ fontWeight: 800, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>{v.hours}h</span>}
+                      {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+                      {v.address && (
+                        <a
+                          href={`https://maps.google.com/?q=${encodeURIComponent(v.address)}`}
+                          target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ fontSize: 12, color: 'var(--teal)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                        >
+                          <Navigation size={11} /> {v.address}
+                        </a>
+                      )}
+                      {v.payment_status === 'unpaid' && v.invoice_status === 'invoiced' && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#b45309' }}>INVOICED · UNPAID</span>
+                      )}
+                      {v.payment_status === 'paid' && <span style={{ fontSize: 10, fontWeight: 700, color: '#047857' }}>PAID</span>}
+                      {v.invoice_status === 'not_invoiced' && <span style={{ fontSize: 10, fontWeight: 700, color: '#6b7280' }}>NOT INVOICED</span>}
+                    </div>
+                    {v.notes && <div style={{ fontSize: 12, color: '#777', marginTop: 4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{v.notes}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))
+      )}
+
+      {/* Check-in modal */}
+      {checkinOpen && (
+        <VisitModal
+          title="Check In — start the clock"
+          quick
+          item={{ program: programs[0] ?? '', visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' }}
+          programs={programs}
+          onSave={checkIn}
+          onDelete={undefined}
+          onClose={() => setCheckinOpen(false)}
+        />
+      )}
+
+      {/* Full edit modal */}
+      {editing && (
+        <VisitModal
+          title={editing.id ? 'Edit Visit' : 'Add Visit'}
+          item={editing}
+          programs={programs}
+          onSave={saveVisit}
+          onDelete={editing.id ? () => deleteVisit(editing as SiteVisit) : undefined}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function VisitModal({ title, item, programs, quick = false, onSave, onDelete, onClose }: {
+  title: string;
+  item: Partial<SiteVisit>;
+  programs: string[];
+  quick?: boolean;
+  onSave: (v: Partial<SiteVisit>) => void;
+  onDelete?: () => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<Partial<SiteVisit>>({ ...item });
+  const set = <K extends keyof SiteVisit>(k: K, v: SiteVisit[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const canSave = !!(form.site_name?.trim() || form.site_code?.trim() || form.address?.trim());
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
+      <div className="glass card modal-solid" style={{ width: 520, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>{title}</div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            {onDelete && <button onClick={onDelete} title="Delete visit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', padding: 6 }}><Trash2 size={15} /></button>}
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="Program / Client">
+              <input className="input" list="sitelog-programs" value={form.program ?? ''} onChange={(e) => set('program', e.target.value)} placeholder="e.g. Wendys" />
+              <datalist id="sitelog-programs">{programs.map((p) => <option key={p} value={p} />)}</datalist>
+            </Field>
+            <Field label="Site # / WO #"><input className="input" value={form.site_code ?? ''} onChange={(e) => set('site_code', e.target.value)} placeholder="e.g. 5798" /></Field>
+          </div>
+          <Field label="Site Name"><input className="input" value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="e.g. Roselle" /></Field>
+          <Field label="Address"><input className="input" value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} placeholder="Street, city, state" /></Field>
+          {!quick && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                <Field label="Date"><input className="input" type="date" value={form.visit_date ?? ''} onChange={(e) => set('visit_date', e.target.value)} /></Field>
+                <Field label="Hours"><input className="input" type="number" step="0.25" value={form.hours ?? ''} onChange={(e) => set('hours', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+                <Field label="Rate"><input className="input" value={form.rate ?? ''} onChange={(e) => set('rate', e.target.value)} placeholder="$55/hr, 2600…" /></Field>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                <Field label="Type">
+                  <select className="input" value={form.visit_type ?? 'T&M'} onChange={(e) => set('visit_type', e.target.value as SiteVisitType)}>
+                    {SITE_VISIT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </Field>
+                <Field label="Invoiced?">
+                  <select className="input" value={form.invoice_status ?? 'not_invoiced'} onChange={(e) => set('invoice_status', e.target.value as SiteVisit['invoice_status'])}>
+                    <option value="not_invoiced">Not Invoiced</option>
+                    <option value="invoiced">Invoiced</option>
+                    <option value="na">N/A</option>
+                  </select>
+                </Field>
+                <Field label="Paid?">
+                  <select className="input" value={form.payment_status ?? 'unpaid'} onChange={(e) => set('payment_status', e.target.value as SiteVisit['payment_status'])}>
+                    <option value="unpaid">Unpaid</option>
+                    <option value="paid">Paid</option>
+                    <option value="na">N/A</option>
+                  </select>
+                </Field>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Field label="Round Trip Miles"><input className="input" type="number" step="0.1" value={form.miles ?? ''} onChange={(e) => set('miles', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+                <Field label="Travel Charge $"><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+              </div>
+              <Field label="Notes"><textarea className="input" rows={3} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="What you did on site, punch list, follow-ups…" /></Field>
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => onSave(form)} disabled={!canSave} style={quick ? { fontSize: 15, padding: '12px 18px' } : undefined}>
+            {quick ? <><Timer size={15} /> Start Timer</> : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#555', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>{label}</label>
+      {children}
+    </div>
+  );
+}

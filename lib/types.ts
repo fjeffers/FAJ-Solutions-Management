@@ -684,6 +684,34 @@ export type NetworkDrop = {
   updated_at: string;
 };
 
+// ─── Site visit log (migration-038) — lightweight field tracking ────────────
+
+export type SiteVisitType = 'Project' | 'T&M' | 'Revisit' | 'Survey' | 'Other';
+export const SITE_VISIT_TYPES: SiteVisitType[] = ['Project', 'T&M', 'Revisit', 'Survey', 'Other'];
+
+export type SiteVisit = {
+  id: string;
+  user_id: string;
+  program: string | null;
+  site_code: string | null;
+  site_name: string | null;
+  address: string | null;
+  visit_date: string | null;
+  time_in: string | null;
+  time_out: string | null;
+  hours: number | null;
+  rate: string | null;
+  visit_type: SiteVisitType;
+  invoice_status: 'not_invoiced' | 'invoiced' | 'na';
+  payment_status: 'unpaid' | 'paid' | 'na';
+  miles: number | null;
+  travel_charge: number | null;
+  notes: string | null;
+  work_order_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PaymentMethod =
   | 'Cash' | 'Check' | 'Zelle' | 'Venmo' | 'CashApp'
   | 'PayPal' | 'Direct Deposit' | 'Bank Transfer' | 'Credit Card' | 'Other';

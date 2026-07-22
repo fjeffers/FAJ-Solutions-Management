@@ -12,7 +12,7 @@ import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
   Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox,
-  ChevronDown, Receipt, Network,
+  ChevronDown, Receipt, Network, Timer,
 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -27,6 +27,7 @@ import MaterialsView from '@/components/MaterialsView';
 import QuotesView from '@/components/QuotesView';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
+import SiteLogView from '@/components/SiteLogView';
 import ImportQueueView from '@/components/ImportQueueView';
 import StatementView from '@/components/StatementView';
 import TenNinetyNineView from '@/components/TenNinetyNineView';
@@ -49,7 +50,7 @@ import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 
 const VIEWS = [
   'dashboard', 'financials', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
-  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'import-queue',
+  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'statements', '1099', 'w9', 'quickbooks', 'settings',
 ] as const;
 type View = (typeof VIEWS)[number];
@@ -64,7 +65,7 @@ function viewFromUrl(): View {
 // section when navigating (including via search, dashboard links, or the URL).
 const SECTION_OF_VIEW: Record<View, string> = {
   dashboard: 'main', financials: 'main', workorders: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
-  scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', 'import-queue': 'fieldops',
+  scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', sitelog: 'fieldops', 'import-queue': 'fieldops',
   contractors: 'contractors', 'contractor-analytics': 'contractors',
   statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
   settings: 'settings',
@@ -937,6 +938,7 @@ export default function HomePage() {
             <NI k="materials" icon={<Package size={15} />} label="Materials" />
             <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
             <NI k="network" icon={<Network size={15} />} label="Network" />
+            <NI k="sitelog" icon={<Timer size={15} />} label="Site Log" />
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
               <Inbox size={15} /> Import
               {pendingImportCount > 0 && (
@@ -1062,6 +1064,7 @@ export default function HomePage() {
           <QuotesView quotes={quotes} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} />
         )}
         {view === 'network' && <NetworkView />}
+        {view === 'sitelog' && <SiteLogView />}
         {view === 'invoices' && (
           <InvoicesView
             invoices={invoices}

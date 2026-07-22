@@ -10,7 +10,7 @@ import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem } from '@/lib/visits';
 import { roundTripMiles } from '@/lib/driving';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car } from 'lucide-react';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -29,6 +29,15 @@ function fmtDate(d: string): string {
   return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function dateGroupsOf(list: SiteVisit[]): [string, SiteVisit[]][] {
+  const m = new Map<string, SiteVisit[]>();
+  for (const v of list) {
+    const k = v.visit_date ?? 'no-date';
+    m.set(k, [...(m.get(k) ?? []), v]);
+  }
+  return [...m.entries()].sort((a, b) => (a[0] === 'no-date' ? 1 : b[0] === 'no-date' ? -1 : b[0].localeCompare(a[0])));
+}
+
 export default function SiteLogView() {
   const supabase = createClient();
   const [visits, setVisits] = useState<SiteVisit[]>([]);
@@ -41,24 +50,59 @@ export default function SiteLogView() {
   const [invoicing, setInvoicing] = useState(false);
   const [homeBase, setHomeBase] = useState<string>('');
   const [mileageRate, setMileageRate] = useState<number>(0.7);
+  // Per-customer overrides (site_programs.mileage_rate); null = use default.
+  const [programRates, setProgramRates] = useState<Record<string, number | null>>({});
+  const [collapsedProgs, setCollapsedProgs] = useState<Set<string>>(new Set());
   const [milesProgress, setMilesProgress] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const load = async () => {
-    const [vRes, sRes] = await Promise.all([
+    const [vRes, sRes, pRes] = await Promise.all([
       supabase.from('site_visits').select('*')
         .order('visit_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false }),
       supabase.from('user_settings').select('home_base_address, mileage_rate').maybeSingle(),
+      supabase.from('site_programs').select('name, mileage_rate'),
     ]);
     if (vRes.error) toastError("Couldn't load the site log. Check your connection and refresh.");
     if (vRes.data) setVisits(vRes.data as SiteVisit[]);
     setHomeBase((sRes.data?.home_base_address as string | null) ?? '');
     setMileageRate(Number(sRes.data?.mileage_rate ?? 0.7));
+    if (pRes.data) {
+      const m: Record<string, number | null> = {};
+      for (const p of pRes.data) m[p.name as string] = p.mileage_rate == null ? null : Number(p.mileage_rate);
+      setProgramRates(m);
+    }
     setLoading(false);
   };
 
-  const travelFor = (miles: number) => (mileageRate > 0 ? Math.round(miles * mileageRate * 100) / 100 : null);
+  // Every customer is different: their rate wins, default fills the gaps.
+  const rateFor = (program?: string | null) => {
+    const r = program ? programRates[program] : null;
+    return r ?? mileageRate;
+  };
+  const travelFor = (miles: number, program?: string | null) => {
+    const rate = rateFor(program);
+    return rate > 0 ? Math.round(miles * rate * 100) / 100 : null;
+  };
+
+  const saveProgramRate = async (name: string) => {
+    const current = programRates[name];
+    const raw = window.prompt(
+      `Mileage rate for ${name}, $ per mile (blank = use your default $${mileageRate.toFixed(2)}):`,
+      current != null ? String(current) : '',
+    );
+    if (raw == null) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const rate = raw.trim() === '' ? null : Number(raw.replace(/[^0-9.]/g, ''));
+    if (rate != null && (isNaN(rate) || rate < 0)) { toastError('Enter a number like 0.70, or leave blank for default'); return; }
+    const { error } = await supabase.from('site_programs')
+      .upsert({ user_id: user.id, name, mileage_rate: rate, updated_at: new Date().toISOString() }, { onConflict: 'user_id,name' });
+    if (error) { toastError(`Couldn't save ${name} rate: ${error.message}`); return; }
+    setProgramRates((m) => ({ ...m, [name]: rate }));
+    toastSuccess(rate == null ? `${name} uses your default rate` : `${name} mileage set to $${rate.toFixed(2)}/mi`);
+  };
 
   const saveMileageRate = async () => {
     const raw = window.prompt('Customer mileage rate, $ per mile (travel charge = round-trip miles × this):', String(mileageRate));
@@ -88,15 +132,15 @@ export default function SiteLogView() {
 
   // Fill round-trip miles (and the customer travel charge) for one saved
   // visit — used on check-out. Never overwrites an existing travel charge.
-  const autoMilesFor = async (visitId: string, address: string | null, existingTravel: number | null) => {
-    if (!homeBase || !address) return;
-    const mi = await roundTripMiles(homeBase, address);
+  const autoMilesFor = async (v: Pick<SiteVisit, 'id' | 'address' | 'travel_charge' | 'program'>) => {
+    if (!homeBase || !v.address) return;
+    const mi = await roundTripMiles(homeBase, v.address);
     if (mi == null) return;
-    const travel = existingTravel ?? travelFor(mi);
+    const travel = v.travel_charge ?? travelFor(mi, v.program);
     const { error } = await supabase.from('site_visits')
-      .update({ miles: mi, travel_charge: travel, updated_at: new Date().toISOString() }).eq('id', visitId);
+      .update({ miles: mi, travel_charge: travel, updated_at: new Date().toISOString() }).eq('id', v.id);
     if (!error) {
-      toastSuccess(`Auto-logged ${mi} mi${travel != null && existingTravel == null ? ` · $${travel.toFixed(2)} travel` : ''}`);
+      toastSuccess(`Auto-logged ${mi} mi${travel != null && v.travel_charge == null ? ` · $${travel.toFixed(2)} travel` : ''}`);
       await load();
     }
   };
@@ -114,7 +158,7 @@ export default function SiteLogView() {
       if (mi == null) { failed++; }
       else {
         const { error } = await supabase.from('site_visits')
-          .update({ miles: mi, travel_charge: v.travel_charge ?? travelFor(mi), updated_at: new Date().toISOString() }).eq('id', v.id);
+          .update({ miles: mi, travel_charge: v.travel_charge ?? travelFor(mi, v.program), updated_at: new Date().toISOString() }).eq('id', v.id);
         if (error) failed++; else done++;
       }
       await new Promise((r) => setTimeout(r, 1100));
@@ -152,15 +196,22 @@ export default function SiteLogView() {
     });
   }, [visits, q, programFilter, unpaidOnly]);
 
-  const groups = useMemo(() => {
+  // Customer-first: Wendys under Wendys, State Farm under State Farm — with
+  // date groups inside each, like the old spreadsheet's per-client sheets.
+  const programGroups = useMemo(() => {
     const m = new Map<string, SiteVisit[]>();
     for (const v of filtered) {
-      const k = v.visit_date ?? 'no-date';
+      const k = v.program || 'Other';
       m.set(k, [...(m.get(k) ?? []), v]);
     }
-    return [...m.entries()].sort((a, b) =>
-      a[0] === 'no-date' ? 1 : b[0] === 'no-date' ? -1 : b[0].localeCompare(a[0]));
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered]);
+
+  const toggleProg = (p: string) => setCollapsedProgs((s) => {
+    const next = new Set(s);
+    if (next.has(p)) next.delete(p); else next.add(p);
+    return next;
+  });
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
   const monthStart = new Date().toISOString().slice(0, 8) + '01';
@@ -220,7 +271,7 @@ export default function SiteLogView() {
     toastSuccess(`Checked out — ${hrs} hours on site`);
     await load();
     // Auto mileage: fill the round trip from home base in the background
-    if (v.miles == null && v.address && homeBase) void autoMilesFor(v.id, v.address, v.travel_charge);
+    if (v.miles == null && v.address && homeBase) void autoMilesFor(v);
   };
 
   // Roll every uninvoiced visit in the current view into one draft invoice,
@@ -346,8 +397,8 @@ export default function SiteLogView() {
         >
           <Home size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{homeBase ? 'Home ✓' : 'Set Home Base'}
         </button>
-        <button className="filter-chip" onClick={saveMileageRate} title="Customer mileage rate — travel charge auto-fills as miles × this">
-          ${mileageRate.toFixed(2)}/mi
+        <button className="filter-chip" onClick={saveMileageRate} title="Default mileage rate — customers without their own rate use this (set per-customer rates on each section header)">
+          Default ${mileageRate.toFixed(2)}/mi
         </button>
         <div style={{ flex: 1 }} />
         <div style={{ position: 'relative' }}>
@@ -357,14 +408,40 @@ export default function SiteLogView() {
       </div>
 
       {/* Visit cards grouped by date */}
-      {groups.length === 0 ? (
+      {programGroups.length === 0 ? (
         <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>
           <MapPin size={28} color="#ddd" style={{ marginBottom: 8 }} />
           <div>No visits match. Check In when you land on site, or Add Visit to backfill one.</div>
         </div>
       ) : (
-        groups.map(([date, dayVisits]) => (
-          <div key={date} style={{ marginBottom: 18 }}>
+        programGroups.map(([prog, progVisits]) => {
+          const isCollapsed = collapsedProgs.has(prog);
+          const progHours = progVisits.reduce((s, x) => s + (x.hours ?? 0), 0);
+          const progUnpaid = progVisits.filter((x) => x.payment_status === 'unpaid').length;
+          return (
+            <div key={prog} style={{ marginBottom: 24 }}>
+              {/* Customer section header */}
+              <div
+                onClick={() => toggleProg(prog)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '10px 12px', background: 'rgba(13,115,119,0.07)', borderRadius: 10, marginBottom: 10, flexWrap: 'wrap' }}
+              >
+                <ChevronDown size={15} style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--teal)' }} />
+                <span style={{ fontWeight: 800, fontSize: 16 }}>{prog}</span>
+                <span style={{ fontSize: 12, color: '#888' }}>{progVisits.length} visit{progVisits.length !== 1 ? 's' : ''} · {progHours.toFixed(1)}h</span>
+                {progUnpaid > 0 && <span style={{ fontSize: 10, fontWeight: 800, color: '#b45309' }}>{progUnpaid} UNPAID</span>}
+                <div style={{ flex: 1 }} />
+                {prog !== 'Other' && (
+                  <button
+                    className="filter-chip"
+                    onClick={(e) => { e.stopPropagation(); saveProgramRate(prog); }}
+                    title={`${prog} mileage rate — travel charges for ${prog} visits use this`}
+                  >
+                    ${rateFor(prog).toFixed(2)}/mi{programRates[prog] == null ? ' (default)' : ''}
+                  </button>
+                )}
+              </div>
+              {!isCollapsed && dateGroupsOf(progVisits).map(([date, dayVisits]) => (
+                <div key={date} style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: 1, textTransform: 'uppercase', margin: '0 2px 8px' }}>
               {date === 'no-date' ? 'Date TBD' : fmtDate(date)}
               <span style={{ color: '#bbb', fontWeight: 600 }}> · {dayVisits.reduce((s, v) => s + (v.hours ?? 0), 0).toFixed(1)}h</span>
@@ -408,8 +485,11 @@ export default function SiteLogView() {
                 );
               })}
             </div>
-          </div>
-        ))
+                </div>
+              ))}
+            </div>
+          );
+        })
       )}
 
       {/* Check-in modal */}
@@ -420,7 +500,7 @@ export default function SiteLogView() {
           item={{ program: programs[0] ?? '', visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' }}
           programs={programs}
           homeBase={homeBase}
-          mileageRate={mileageRate}
+          rateFor={rateFor}
           onSave={checkIn}
           onDelete={undefined}
           onClose={() => setCheckinOpen(false)}
@@ -434,7 +514,7 @@ export default function SiteLogView() {
           item={editing}
           programs={programs}
           homeBase={homeBase}
-          mileageRate={mileageRate}
+          rateFor={rateFor}
           onSave={saveVisit}
           onDelete={editing.id ? () => deleteVisit(editing as SiteVisit) : undefined}
           onClose={() => setEditing(null)}
@@ -444,12 +524,12 @@ export default function SiteLogView() {
   );
 }
 
-function VisitModal({ title, item, programs, homeBase, mileageRate, quick = false, onSave, onDelete, onClose }: {
+function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, onSave, onDelete, onClose }: {
   title: string;
   item: Partial<SiteVisit>;
   programs: string[];
   homeBase: string;
-  mileageRate: number;
+  rateFor: (program?: string | null) => number;
   quick?: boolean;
   onSave: (v: Partial<SiteVisit>) => void;
   onDelete?: () => void;
@@ -460,12 +540,15 @@ function VisitModal({ title, item, programs, homeBase, mileageRate, quick = fals
   const set = <K extends keyof SiteVisit>(k: K, v: SiteVisit[K]) => setForm((f) => ({ ...f, [k]: v }));
   const canSave = !!(form.site_name?.trim() || form.site_code?.trim() || form.address?.trim());
 
-  // Miles drive the travel charge: miles × customer rate, editable after.
-  const setMiles = (mi: number | null) => setForm((f) => ({
-    ...f,
-    miles: mi,
-    travel_charge: mi != null && mileageRate > 0 ? Math.round(mi * mileageRate * 100) / 100 : f.travel_charge,
-  }));
+  // Miles drive the travel charge: miles × this customer's rate, editable after.
+  const setMiles = (mi: number | null) => setForm((f) => {
+    const rate = rateFor(f.program);
+    return {
+      ...f,
+      miles: mi,
+      travel_charge: mi != null && rate > 0 ? Math.round(mi * rate * 100) / 100 : f.travel_charge,
+    };
+  });
 
   const autoMiles = async () => {
     if (!homeBase || !form.address?.trim()) return;
@@ -538,7 +621,7 @@ function VisitModal({ title, item, programs, homeBase, mileageRate, quick = fals
                     </button>
                   </div>
                 </Field>
-                <Field label={`Travel Charge $ (auto: miles × $${mileageRate.toFixed(2)})`}><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+                <Field label={`Travel Charge $ (auto: miles × $${rateFor(form.program).toFixed(2)})`}><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
               </div>
               <Field label="Notes"><textarea className="input" rows={3} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="What you did on site, punch list, follow-ups…" /></Field>
             </>

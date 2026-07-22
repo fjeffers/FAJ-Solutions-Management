@@ -25,17 +25,28 @@ function fmtElapsed(ms: number): string {
   return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
 }
 
-function fmtDate(d: string): string {
-  return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+function fmtShortDate(d: string): string {
+  return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' });
 }
 
-function dateGroupsOf(list: SiteVisit[]): [string, SiteVisit[]][] {
+// Each site/project keeps its own log: every visit to Roselle #5798 stacks
+// under one heading inside the customer's section. Grouped by site code
+// (name/address as fallback), newest activity first.
+function siteGroupsOf(list: SiteVisit[]): { key: string; title: string; visits: SiteVisit[] }[] {
   const m = new Map<string, SiteVisit[]>();
   for (const v of list) {
-    const k = v.visit_date ?? 'no-date';
+    const k = (v.site_code || v.site_name || v.address || 'unknown').toString().trim().toLowerCase();
     m.set(k, [...(m.get(k) ?? []), v]);
   }
-  return [...m.entries()].sort((a, b) => (a[0] === 'no-date' ? 1 : b[0] === 'no-date' ? -1 : b[0].localeCompare(a[0])));
+  return [...m.entries()]
+    .map(([key, visits]) => {
+      const sorted = [...visits].sort((a, b) => (b.visit_date ?? '').localeCompare(a.visit_date ?? ''));
+      const named = sorted.find((v) => v.site_name) ?? sorted[0];
+      const title = [named.site_name, named.site_code ? `#${named.site_code}` : null].filter(Boolean).join(' ')
+        || named.address || 'Unknown site';
+      return { key, title, visits: sorted };
+    })
+    .sort((a, b) => (b.visits[0].visit_date ?? '').localeCompare(a.visits[0].visit_date ?? ''));
 }
 
 export default function SiteLogView() {
@@ -440,23 +451,21 @@ export default function SiteLogView() {
                   </button>
                 )}
               </div>
-              {!isCollapsed && dateGroupsOf(progVisits).map(([date, dayVisits]) => (
-                <div key={date} style={{ marginBottom: 18 }}>
+              {!isCollapsed && siteGroupsOf(progVisits).map((sg) => (
+                <div key={sg.key} style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: 1, textTransform: 'uppercase', margin: '0 2px 8px' }}>
-              {date === 'no-date' ? 'Date TBD' : fmtDate(date)}
-              <span style={{ color: '#bbb', fontWeight: 600 }}> · {dayVisits.reduce((s, v) => s + (v.hours ?? 0), 0).toFixed(1)}h</span>
+              {sg.title}
+              <span style={{ color: '#bbb', fontWeight: 600 }}> · {sg.visits.length} visit{sg.visits.length !== 1 ? 's' : ''} · {sg.visits.reduce((s, v) => s + (v.hours ?? 0), 0).toFixed(1)}h</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {dayVisits.map((v) => {
+              {sg.visits.map((v) => {
                 const tc = TYPE_COLORS[v.visit_type] ?? TYPE_COLORS.Other;
                 return (
                   <div key={v.id} className="glass card" style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => setEditing(v)}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 800, fontSize: 15 }}>
-                        {v.site_name || v.site_code || v.address || 'Site'}
+                        {v.visit_date ? fmtShortDate(v.visit_date) : 'Date TBD'}
                       </span>
-                      {v.site_code && v.site_name && <span style={{ color: '#999', fontSize: 12 }}>#{v.site_code}</span>}
-                      {v.program && <span style={{ color: '#999', fontSize: 12 }}>{v.program}</span>}
                       <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color }}>{v.visit_type}</span>
                       <div style={{ flex: 1 }} />
                       {v.hours != null && <span style={{ fontWeight: 800, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>{v.hours}h</span>}

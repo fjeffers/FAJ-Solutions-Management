@@ -6,6 +6,14 @@ import type { SiteVisit } from './types';
 
 export type VisitLine = { description: string; quantity: number; rate: number };
 
+/** What a visit is worth: parsed rate (hours × hourly or flat) + travel charge. */
+export function visitAmount(
+  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge'>,
+): number {
+  const li = visitLineItem(v);
+  return Math.round((li.quantity * li.rate + (v.travel_charge ?? 0)) * 100) / 100;
+}
+
 export function visitLineItem(
   v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate'>,
 ): VisitLine {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem } from './visits';
+import { visitLineItem, visitAmount } from './visits';
 
 const base = { visit_date: '2026-06-20', site_name: 'Roselle', site_code: '5798', visit_type: 'T&M' as const };
 
@@ -21,6 +21,12 @@ describe('visitLineItem', () => {
     const li = visitLineItem({ ...base, hours: 2, rate: null });
     expect(li).toMatchObject({ quantity: 2, rate: 0 });
     expect(li.description).toContain('set rate');
+  });
+
+  it('totals a visit as labor plus travel', () => {
+    expect(visitAmount({ ...base, hours: 9, rate: '$55/hr', travel_charge: 56.65 })).toBe(551.65);
+    expect(visitAmount({ ...base, hours: null, rate: '2600', travel_charge: null })).toBe(2600);
+    expect(visitAmount({ ...base, hours: 2, rate: null, travel_charge: 10 })).toBe(10);
   });
 
   it('handles missing date and site name', () => {

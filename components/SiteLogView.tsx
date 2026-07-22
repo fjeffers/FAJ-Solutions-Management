@@ -8,7 +8,8 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem } from '@/lib/visits';
+import { visitLineItem, visitAmount } from '@/lib/visits';
+import { fmtMoney } from '@/lib/utils';
 import { roundTripMiles } from '@/lib/driving';
 import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown } from 'lucide-react';
 
@@ -230,6 +231,15 @@ export default function SiteLogView() {
     visits.filter((v) => v.visit_date && v.visit_date >= since).reduce((s, v) => s + (v.hours ?? 0), 0);
   const unpaidCount = visits.filter((v) => v.payment_status === 'unpaid').length;
 
+  // Money breakdown: labor (parsed from each visit's rate) + travel charge.
+  const sumAmount = (list: SiteVisit[]) => Math.round(list.reduce((s, v) => s + visitAmount(v), 0) * 100) / 100;
+  const money = useMemo(() => ({
+    earned: sumAmount(visits),
+    paid: sumAmount(visits.filter((v) => v.payment_status === 'paid')),
+    owed: sumAmount(visits.filter((v) => v.payment_status === 'unpaid')),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [visits]);
+
   // ── Mutations ───────────────────────────────────────────────────────────
   const saveVisit = async (v: Partial<SiteVisit>) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -365,6 +375,13 @@ export default function SiteLogView() {
         </div>
       </div>
 
+      {/* Money breakdown */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <MoneyTile label="Total Earned" value={fmtMoney(money.earned)} color="var(--teal)" />
+        <MoneyTile label="Paid" value={fmtMoney(money.paid)} color="#047857" />
+        <MoneyTile label="Still Owed" value={fmtMoney(money.owed)} color="#b45309" />
+      </div>
+
       {/* Live open visit */}
       {openVisit && (
         <div className="glass card" style={{ marginBottom: 16, border: '2px solid var(--teal)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
@@ -429,6 +446,8 @@ export default function SiteLogView() {
           const isCollapsed = collapsedProgs.has(prog);
           const progHours = progVisits.reduce((s, x) => s + (x.hours ?? 0), 0);
           const progUnpaid = progVisits.filter((x) => x.payment_status === 'unpaid').length;
+          const progPaid$ = sumAmount(progVisits.filter((x) => x.payment_status === 'paid'));
+          const progOwed$ = sumAmount(progVisits.filter((x) => x.payment_status === 'unpaid'));
           return (
             <div key={prog} style={{ marginBottom: 24 }}>
               {/* Customer section header */}
@@ -439,7 +458,8 @@ export default function SiteLogView() {
                 <ChevronDown size={15} style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--teal)' }} />
                 <span style={{ fontWeight: 800, fontSize: 16 }}>{prog}</span>
                 <span style={{ fontSize: 12, color: '#888' }}>{progVisits.length} visit{progVisits.length !== 1 ? 's' : ''} · {progHours.toFixed(1)}h</span>
-                {progUnpaid > 0 && <span style={{ fontSize: 10, fontWeight: 800, color: '#b45309' }}>{progUnpaid} UNPAID</span>}
+                {progPaid$ > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#047857' }}>{fmtMoney(progPaid$)} paid</span>}
+                {progOwed$ > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309' }}>{fmtMoney(progOwed$)} owed{progUnpaid > 0 ? ` (${progUnpaid})` : ''}</span>}
                 <div style={{ flex: 1 }} />
                 {prog !== 'Other' && (
                   <button
@@ -455,7 +475,7 @@ export default function SiteLogView() {
                 <div key={sg.key} style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: 1, textTransform: 'uppercase', margin: '0 2px 8px' }}>
               {sg.title}
-              <span style={{ color: '#bbb', fontWeight: 600 }}> · {sg.visits.length} visit{sg.visits.length !== 1 ? 's' : ''} · {sg.visits.reduce((s, v) => s + (v.hours ?? 0), 0).toFixed(1)}h</span>
+              <span style={{ color: '#bbb', fontWeight: 600 }}> · {sg.visits.length} visit{sg.visits.length !== 1 ? 's' : ''} · {sg.visits.reduce((s, v) => s + (v.hours ?? 0), 0).toFixed(1)}h · {fmtMoney(sumAmount(sg.visits))}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {sg.visits.map((v) => {
@@ -643,6 +663,15 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MoneyTile({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="glass card" style={{ padding: '12px 16px' }}>
+      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#999' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   );
 }

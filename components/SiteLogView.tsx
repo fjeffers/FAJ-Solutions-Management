@@ -8,7 +8,8 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { Plus, Edit2, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation } from 'lucide-react';
+import { visitLineItem } from '@/lib/visits';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -36,6 +37,7 @@ export default function SiteLogView() {
   const [q, setQ] = useState('');
   const [programFilter, setProgramFilter] = useState<string | null>(null);
   const [unpaidOnly, setUnpaidOnly] = useState(false);
+  const [invoicing, setInvoicing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   const load = async () => {
@@ -143,6 +145,50 @@ export default function SiteLogView() {
     await load();
   };
 
+  // Roll every uninvoiced visit in the current view into one draft invoice,
+  // then mark those visits Invoiced. Hourly rates bill hours x rate; flat
+  // rates bill once; unpriced lines land at $0 to fill in before sending.
+  const invoiceVisits = async () => {
+    const targets = filtered.filter((v) => v.invoice_status === 'not_invoiced');
+    if (targets.length === 0) { toastError('No uninvoiced visits in the current view — adjust the filters.'); return; }
+    const line_items: { id: string; description: string; quantity: number; rate: number }[] = [];
+    for (const v of targets) {
+      const li = visitLineItem(v);
+      line_items.push({ id: `sv-${v.id}`, ...li });
+      if (v.travel_charge) {
+        line_items.push({ id: `svt-${v.id}`, description: `${v.site_name || v.site_code || 'Site'} — travel charge`, quantity: 1, rate: v.travel_charge });
+      }
+    }
+    const subtotal = Math.round(line_items.reduce((s, li) => s + li.quantity * li.rate, 0) * 100) / 100;
+    const client = programFilter ?? targets[0].program ?? null;
+    if (!confirm(`Create a draft invoice${client ? ` for ${client}` : ''} from ${targets.length} uninvoiced visit${targets.length !== 1 ? 's' : ''} (subtotal $${subtotal.toFixed(2)})? They'll be marked Invoiced.`)) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setInvoicing(true);
+    const year = new Date().getFullYear();
+    const { data: inums } = await supabase.from('invoices').select('invoice_number');
+    const nums = (inums ?? [])
+      .map((i) => i.invoice_number as string)
+      .filter((n) => n?.startsWith(`INV-${year}-`))
+      .map((n) => parseInt(n.split('-')[2] ?? '0', 10))
+      .filter((n) => !isNaN(n));
+    const invoice_number = `INV-${year}-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0')}`;
+    const { error } = await supabase.from('invoices').insert({
+      user_id: user.id, invoice_number, client_name: client,
+      title: `Site visits — ${client ?? 'field work'}`,
+      description: `Generated from the Site Log (${targets.length} visit${targets.length !== 1 ? 's' : ''}).`,
+      line_items, subtotal, tax_rate: 0, tax_amount: 0, total: subtotal, status: 'draft',
+    });
+    if (error) { setInvoicing(false); toastError(`Couldn't create invoice: ${error.message}`); return; }
+    const upd = await supabase.from('site_visits')
+      .update({ invoice_status: 'invoiced', updated_at: new Date().toISOString() })
+      .in('id', targets.map((t) => t.id));
+    setInvoicing(false);
+    if (upd.error) toastError(`Invoice created but marking visits failed: ${upd.error.message}`);
+    else toastSuccess(`Draft ${invoice_number} created (${line_items.length} lines) — review it in Invoices`);
+    await load();
+  };
+
   if (loading) {
     return <div className="view-inner" style={{ maxWidth: 900, margin: '0 auto', color: '#999', padding: 40 }}>Loading site log…</div>;
   }
@@ -167,6 +213,14 @@ export default function SiteLogView() {
           )}
           <button className="btn btn-ghost" onClick={() => setEditing({ visit_date: new Date().toISOString().slice(0, 10), visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' })}>
             <Plus size={14} /> Add Visit
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={invoiceVisits}
+            disabled={invoicing}
+            title="Roll all uninvoiced visits in the current view into one draft invoice (filter by program first to bill one client)"
+          >
+            <Receipt size={14} /> {invoicing ? 'Creating…' : 'Invoice Visits'}
           </button>
         </div>
       </div>

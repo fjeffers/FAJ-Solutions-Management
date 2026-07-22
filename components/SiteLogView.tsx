@@ -11,7 +11,7 @@ import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem, visitAmount } from '@/lib/visits';
 import { fmtMoney } from '@/lib/utils';
 import { roundTripMiles } from '@/lib/driving';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2 } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -58,7 +58,8 @@ export default function SiteLogView() {
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [q, setQ] = useState('');
   const [programFilter, setProgramFilter] = useState<string | null>(null);
-  const [unpaidOnly, setUnpaidOnly] = useState(false);
+  // Billing lens: what still needs an invoice / what's invoiced but unpaid / what's paid
+  const [billing, setBilling] = useState<null | 'needs' | 'awaiting' | 'paid'>(null);
   const [invoicing, setInvoicing] = useState(false);
   const [homeBase, setHomeBase] = useState<string>('');
   const [mileageRate, setMileageRate] = useState<number>(0.7);
@@ -182,8 +183,11 @@ export default function SiteLogView() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  // Live timer tick while a visit is open
-  const openVisit = visits.find((v) => v.time_in && !v.time_out) ?? null;
+  // Live timer tick while a visit is open. Check-ins older than 18h are stale
+  // (imported rows or a forgotten checkout) — never surface those as "on site
+  // now", or checking out would stamp days of hours.
+  const openVisit = visits.find((v) =>
+    v.time_in && !v.time_out && Date.now() - new Date(v.time_in).getTime() < 18 * 3600000) ?? null;
   useEffect(() => {
     if (!openVisit) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -199,14 +203,16 @@ export default function SiteLogView() {
     const needle = q.trim().toLowerCase();
     return visits.filter((v) => {
       if (programFilter && v.program !== programFilter) return false;
-      if (unpaidOnly && v.payment_status === 'paid') return false;
+      if (billing === 'needs' && v.invoice_status !== 'not_invoiced') return false;
+      if (billing === 'awaiting' && !(v.invoice_status === 'invoiced' && v.payment_status === 'unpaid')) return false;
+      if (billing === 'paid' && v.payment_status !== 'paid') return false;
       if (needle) {
         const hay = [v.program, v.site_code, v.site_name, v.address, v.notes, v.rate].join(' ').toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       return true;
     });
-  }, [visits, q, programFilter, unpaidOnly]);
+  }, [visits, q, programFilter, billing]);
 
   // Customer-first: Wendys under Wendys, State Farm under State Farm — with
   // date groups inside each, like the old spreadsheet's per-client sheets.
@@ -235,10 +241,36 @@ export default function SiteLogView() {
   const sumAmount = (list: SiteVisit[]) => Math.round(list.reduce((s, v) => s + visitAmount(v), 0) * 100) / 100;
   const money = useMemo(() => ({
     earned: sumAmount(visits),
+    needsInvoice: sumAmount(visits.filter((v) => v.invoice_status === 'not_invoiced')),
+    awaiting: sumAmount(visits.filter((v) => v.invoice_status === 'invoiced' && v.payment_status === 'unpaid')),
     paid: sumAmount(visits.filter((v) => v.payment_status === 'paid')),
-    owed: sumAmount(visits.filter((v) => v.payment_status === 'unpaid')),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [visits]);
+
+  // Billing helper link: a read-only /billing/<token> page listing only what
+  // needs invoicing — for a second person, without a login or anything else.
+  const shareBillingLink = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('user_settings').select('billing_share_token').maybeSingle();
+    let token = (data?.billing_share_token as string | null) ?? null;
+    if (!token) {
+      token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+      const { error } = await supabase.from('user_settings')
+        .upsert({ user_id: user.id, billing_share_token: token, updated_at: new Date().toISOString() });
+      if (error) { toastError(`Couldn't create billing link: ${error.message}`); return; }
+    }
+    const url = `${window.location.origin}/billing/${token}`;
+    if (typeof navigator.share === 'function') {
+      try { await navigator.share({ title: 'FAJ Solutions — Needs Invoicing', url }); return; } catch { /* closed share sheet */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toastSuccess('Billing link copied — send it to your helper (they see only what needs invoicing)');
+    } catch {
+      window.prompt('Copy this billing link:', url);
+    }
+  };
 
   // ── Mutations ───────────────────────────────────────────────────────────
   const saveVisit = async (v: Partial<SiteVisit>) => {
@@ -284,7 +316,7 @@ export default function SiteLogView() {
 
   const checkOut = async (v: SiteVisit) => {
     const out = new Date();
-    const hrs = Math.max(0.25, Math.round(((out.getTime() - new Date(v.time_in!).getTime()) / 3600000) * 100) / 100);
+    const hrs = Math.min(16, Math.max(0.25, Math.round(((out.getTime() - new Date(v.time_in!).getTime()) / 3600000) * 100) / 100));
     const { error } = await supabase.from('site_visits')
       .update({ time_out: out.toISOString(), hours: hrs, updated_at: out.toISOString() })
       .eq('id', v.id);
@@ -372,14 +404,22 @@ export default function SiteLogView() {
           >
             <Receipt size={14} /> {invoicing ? 'Creating…' : 'Invoice Visits'}
           </button>
+          <button
+            className="btn btn-ghost"
+            onClick={shareBillingLink}
+            title="Share a read-only link that shows ONLY what needs invoicing — for a helper, no login, nothing else visible"
+          >
+            <Share2 size={14} /> Billing Link
+          </button>
         </div>
       </div>
 
-      {/* Money breakdown */}
+      {/* Money breakdown — tap a tile to filter the list to that bucket */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
-        <MoneyTile label="Total Earned" value={fmtMoney(money.earned)} color="var(--teal)" />
-        <MoneyTile label="Paid" value={fmtMoney(money.paid)} color="#047857" />
-        <MoneyTile label="Still Owed" value={fmtMoney(money.owed)} color="#b45309" />
+        <MoneyTile label="Total Earned" value={fmtMoney(money.earned)} color="var(--teal)" active={billing === null} onClick={() => setBilling(null)} />
+        <MoneyTile label="Needs Invoice" value={fmtMoney(money.needsInvoice)} color="#b91c1c" active={billing === 'needs'} onClick={() => setBilling(billing === 'needs' ? null : 'needs')} />
+        <MoneyTile label="Invoiced · Awaiting Pay" value={fmtMoney(money.awaiting)} color="#b45309" active={billing === 'awaiting'} onClick={() => setBilling(billing === 'awaiting' ? null : 'awaiting')} />
+        <MoneyTile label="Paid" value={fmtMoney(money.paid)} color="#047857" active={billing === 'paid'} onClick={() => setBilling(billing === 'paid' ? null : 'paid')} />
       </div>
 
       {/* Live open visit */}
@@ -408,7 +448,9 @@ export default function SiteLogView() {
         {programs.map((p) => (
           <button key={p} className={`filter-chip ${programFilter === p ? 'active' : ''}`} onClick={() => setProgramFilter(programFilter === p ? null : p)}>{p}</button>
         ))}
-        <button className={`filter-chip ${unpaidOnly ? 'active' : ''}`} onClick={() => setUnpaidOnly(!unpaidOnly)}>Unpaid</button>
+        <button className={`filter-chip ${billing === 'needs' ? 'active' : ''}`} onClick={() => setBilling(billing === 'needs' ? null : 'needs')}>Needs Invoice</button>
+        <button className={`filter-chip ${billing === 'awaiting' ? 'active' : ''}`} onClick={() => setBilling(billing === 'awaiting' ? null : 'awaiting')}>Awaiting Pay</button>
+        <button className={`filter-chip ${billing === 'paid' ? 'active' : ''}`} onClick={() => setBilling(billing === 'paid' ? null : 'paid')}>Paid</button>
         <span style={{ width: 1, height: 22, background: '#ddd', margin: '0 2px' }} />
         <button
           className="filter-chip"
@@ -667,11 +709,17 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
   );
 }
 
-function MoneyTile({ label, value, color }: { label: string; value: string; color: string }) {
+function MoneyTile({ label, value, color, active = false, onClick }: {
+  label: string; value: string; color: string; active?: boolean; onClick?: () => void;
+}) {
   return (
-    <div className="glass card" style={{ padding: '12px 16px' }}>
+    <div
+      className="glass card"
+      onClick={onClick}
+      style={{ padding: '12px 16px', cursor: onClick ? 'pointer' : undefined, border: active ? `2px solid ${color}` : '2px solid transparent' }}
+    >
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#999' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 21, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   );
 }

@@ -387,7 +387,7 @@ export default function SiteLogView() {
             {unpaidCount > 0 && <span style={{ color: '#b45309', fontWeight: 600 }}> · {unpaidCount} unpaid</span>}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {!openVisit && (
             <button className="btn btn-primary" onClick={() => setCheckinOpen(true)} style={{ fontSize: 15, padding: '12px 18px' }}>
               <Timer size={16} /> Check In

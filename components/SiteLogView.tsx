@@ -9,7 +9,8 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem } from '@/lib/visits';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt } from 'lucide-react';
+import { roundTripMiles } from '@/lib/driving';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -38,15 +39,70 @@ export default function SiteLogView() {
   const [programFilter, setProgramFilter] = useState<string | null>(null);
   const [unpaidOnly, setUnpaidOnly] = useState(false);
   const [invoicing, setInvoicing] = useState(false);
+  const [homeBase, setHomeBase] = useState<string>('');
+  const [milesProgress, setMilesProgress] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const load = async () => {
-    const { data, error } = await supabase.from('site_visits').select('*')
-      .order('visit_date', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false });
-    if (error) toastError("Couldn't load the site log. Check your connection and refresh.");
-    if (data) setVisits(data as SiteVisit[]);
+    const [vRes, sRes] = await Promise.all([
+      supabase.from('site_visits').select('*')
+        .order('visit_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false }),
+      supabase.from('user_settings').select('home_base_address').maybeSingle(),
+    ]);
+    if (vRes.error) toastError("Couldn't load the site log. Check your connection and refresh.");
+    if (vRes.data) setVisits(vRes.data as SiteVisit[]);
+    setHomeBase((sRes.data?.home_base_address as string | null) ?? '');
     setLoading(false);
+  };
+
+  const saveHomeBase = async () => {
+    const addr = window.prompt('Home base address (where your round trips start and end):', homeBase || '');
+    if (addr == null) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('user_settings')
+      .upsert({ user_id: user.id, home_base_address: addr.trim() || null, updated_at: new Date().toISOString() });
+    if (error) { toastError(`Couldn't save home base: ${error.message}`); return; }
+    setHomeBase(addr.trim());
+    toastSuccess(addr.trim() ? 'Home base saved — mileage will auto-calculate' : 'Home base cleared');
+  };
+
+  // Fill round-trip miles for one saved visit (used on check-out).
+  const autoMilesFor = async (visitId: string, address: string | null) => {
+    if (!homeBase || !address) return;
+    const mi = await roundTripMiles(homeBase, address);
+    if (mi == null) return;
+    const { error } = await supabase.from('site_visits')
+      .update({ miles: mi, updated_at: new Date().toISOString() }).eq('id', visitId);
+    if (!error) {
+      toastSuccess(`Auto-logged ${mi} round-trip miles`);
+      await load();
+    }
+  };
+
+  // Backfill every filtered visit that has an address but no miles.
+  // Nominatim asks for ~1 request/second, so this walks the list politely.
+  const autoMilesBulk = async () => {
+    if (!homeBase) { toastError('Set your Home Base first (car icon row).'); return; }
+    const targets = filtered.filter((v) => v.address && v.miles == null);
+    if (targets.length === 0) { toastSuccess('Every visit in view already has mileage (or no address).'); return; }
+    let done = 0, failed = 0;
+    for (const v of targets) {
+      setMilesProgress(`${done + failed + 1}/${targets.length}`);
+      const mi = await roundTripMiles(homeBase, v.address!);
+      if (mi == null) { failed++; }
+      else {
+        const { error } = await supabase.from('site_visits')
+          .update({ miles: mi, updated_at: new Date().toISOString() }).eq('id', v.id);
+        if (error) failed++; else done++;
+      }
+      await new Promise((r) => setTimeout(r, 1100));
+    }
+    setMilesProgress(null);
+    if (done > 0) toastSuccess(`Mileage filled for ${done} visit${done !== 1 ? 's' : ''}${failed ? ` (${failed} address${failed !== 1 ? 'es' : ''} couldn't be routed)` : ''}`);
+    else toastError('No addresses could be routed — check they include city and state.');
+    await load();
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
@@ -143,6 +199,8 @@ export default function SiteLogView() {
     if (error) { toastError(`Couldn't check out: ${error.message}`); return; }
     toastSuccess(`Checked out — ${hrs} hours on site`);
     await load();
+    // Auto mileage: fill the round trip from home base in the background
+    if (v.miles == null && v.address && homeBase) void autoMilesFor(v.id, v.address);
   };
 
   // Roll every uninvoiced visit in the current view into one draft invoice,
@@ -252,6 +310,22 @@ export default function SiteLogView() {
           <button key={p} className={`filter-chip ${programFilter === p ? 'active' : ''}`} onClick={() => setProgramFilter(programFilter === p ? null : p)}>{p}</button>
         ))}
         <button className={`filter-chip ${unpaidOnly ? 'active' : ''}`} onClick={() => setUnpaidOnly(!unpaidOnly)}>Unpaid</button>
+        <span style={{ width: 1, height: 22, background: '#ddd', margin: '0 2px' }} />
+        <button
+          className="filter-chip"
+          onClick={autoMilesBulk}
+          disabled={milesProgress != null}
+          title={homeBase ? `Fill missing round-trip miles (driving distance from ${homeBase})` : 'Set your home base first'}
+        >
+          <Car size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{milesProgress ? `Miles ${milesProgress}…` : 'Auto Miles'}
+        </button>
+        <button
+          className="filter-chip"
+          onClick={saveHomeBase}
+          title={homeBase ? `Home base: ${homeBase} — tap to change` : 'Set the address your round trips start and end at'}
+        >
+          <Home size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{homeBase ? 'Home ✓' : 'Set Home Base'}
+        </button>
         <div style={{ flex: 1 }} />
         <div style={{ position: 'relative' }}>
           <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
@@ -286,6 +360,7 @@ export default function SiteLogView() {
                       <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color }}>{v.visit_type}</span>
                       <div style={{ flex: 1 }} />
                       {v.hours != null && <span style={{ fontWeight: 800, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>{v.hours}h</span>}
+                      {v.miles != null && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>🚗 {v.miles} mi</span>}
                       {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
@@ -321,6 +396,7 @@ export default function SiteLogView() {
           quick
           item={{ program: programs[0] ?? '', visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' }}
           programs={programs}
+          homeBase={homeBase}
           onSave={checkIn}
           onDelete={undefined}
           onClose={() => setCheckinOpen(false)}
@@ -333,6 +409,7 @@ export default function SiteLogView() {
           title={editing.id ? 'Edit Visit' : 'Add Visit'}
           item={editing}
           programs={programs}
+          homeBase={homeBase}
           onSave={saveVisit}
           onDelete={editing.id ? () => deleteVisit(editing as SiteVisit) : undefined}
           onClose={() => setEditing(null)}
@@ -342,18 +419,29 @@ export default function SiteLogView() {
   );
 }
 
-function VisitModal({ title, item, programs, quick = false, onSave, onDelete, onClose }: {
+function VisitModal({ title, item, programs, homeBase, quick = false, onSave, onDelete, onClose }: {
   title: string;
   item: Partial<SiteVisit>;
   programs: string[];
+  homeBase: string;
   quick?: boolean;
   onSave: (v: Partial<SiteVisit>) => void;
   onDelete?: () => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState<Partial<SiteVisit>>({ ...item });
+  const [calcing, setCalcing] = useState(false);
   const set = <K extends keyof SiteVisit>(k: K, v: SiteVisit[K]) => setForm((f) => ({ ...f, [k]: v }));
   const canSave = !!(form.site_name?.trim() || form.site_code?.trim() || form.address?.trim());
+
+  const autoMiles = async () => {
+    if (!homeBase || !form.address?.trim()) return;
+    setCalcing(true);
+    const mi = await roundTripMiles(homeBase, form.address.trim());
+    setCalcing(false);
+    if (mi == null) toastError("Couldn't route that address — make sure it has street, city, and state.");
+    else set('miles', mi);
+  };
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
@@ -404,7 +492,19 @@ function VisitModal({ title, item, programs, quick = false, onSave, onDelete, on
                 </Field>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Round Trip Miles"><input className="input" type="number" step="0.1" value={form.miles ?? ''} onChange={(e) => set('miles', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+                <Field label="Round Trip Miles">
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input className="input" style={{ flex: 1, minWidth: 0 }} type="number" step="0.1" value={form.miles ?? ''} onChange={(e) => set('miles', e.target.value === '' ? null : Number(e.target.value))} />
+                    <button
+                      className="btn btn-ghost"
+                      disabled={calcing || !homeBase || !form.address?.trim()}
+                      title={!homeBase ? 'Set your home base on the Site Log first' : !form.address?.trim() ? 'Enter the site address first' : `Driving round trip from ${homeBase}`}
+                      onClick={autoMiles}
+                    >
+                      {calcing ? '…' : 'Auto'}
+                    </button>
+                  </div>
+                </Field>
                 <Field label="Travel Charge $"><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
               </div>
               <Field label="Notes"><textarea className="input" rows={3} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="What you did on site, punch list, follow-ups…" /></Field>

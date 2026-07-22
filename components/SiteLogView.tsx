@@ -40,6 +40,7 @@ export default function SiteLogView() {
   const [unpaidOnly, setUnpaidOnly] = useState(false);
   const [invoicing, setInvoicing] = useState(false);
   const [homeBase, setHomeBase] = useState<string>('');
+  const [mileageRate, setMileageRate] = useState<number>(0.7);
   const [milesProgress, setMilesProgress] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -48,12 +49,29 @@ export default function SiteLogView() {
       supabase.from('site_visits').select('*')
         .order('visit_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false }),
-      supabase.from('user_settings').select('home_base_address').maybeSingle(),
+      supabase.from('user_settings').select('home_base_address, mileage_rate').maybeSingle(),
     ]);
     if (vRes.error) toastError("Couldn't load the site log. Check your connection and refresh.");
     if (vRes.data) setVisits(vRes.data as SiteVisit[]);
     setHomeBase((sRes.data?.home_base_address as string | null) ?? '');
+    setMileageRate(Number(sRes.data?.mileage_rate ?? 0.7));
     setLoading(false);
+  };
+
+  const travelFor = (miles: number) => (mileageRate > 0 ? Math.round(miles * mileageRate * 100) / 100 : null);
+
+  const saveMileageRate = async () => {
+    const raw = window.prompt('Customer mileage rate, $ per mile (travel charge = round-trip miles × this):', String(mileageRate));
+    if (raw == null) return;
+    const rate = Number(raw.replace(/[^0-9.]/g, ''));
+    if (isNaN(rate) || rate < 0) { toastError('Enter a number like 0.70'); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('user_settings')
+      .upsert({ user_id: user.id, mileage_rate: rate, updated_at: new Date().toISOString() });
+    if (error) { toastError(`Couldn't save rate: ${error.message}`); return; }
+    setMileageRate(rate);
+    toastSuccess(`Mileage rate set to $${rate.toFixed(2)}/mi`);
   };
 
   const saveHomeBase = async () => {
@@ -68,15 +86,17 @@ export default function SiteLogView() {
     toastSuccess(addr.trim() ? 'Home base saved — mileage will auto-calculate' : 'Home base cleared');
   };
 
-  // Fill round-trip miles for one saved visit (used on check-out).
-  const autoMilesFor = async (visitId: string, address: string | null) => {
+  // Fill round-trip miles (and the customer travel charge) for one saved
+  // visit — used on check-out. Never overwrites an existing travel charge.
+  const autoMilesFor = async (visitId: string, address: string | null, existingTravel: number | null) => {
     if (!homeBase || !address) return;
     const mi = await roundTripMiles(homeBase, address);
     if (mi == null) return;
+    const travel = existingTravel ?? travelFor(mi);
     const { error } = await supabase.from('site_visits')
-      .update({ miles: mi, updated_at: new Date().toISOString() }).eq('id', visitId);
+      .update({ miles: mi, travel_charge: travel, updated_at: new Date().toISOString() }).eq('id', visitId);
     if (!error) {
-      toastSuccess(`Auto-logged ${mi} round-trip miles`);
+      toastSuccess(`Auto-logged ${mi} mi${travel != null && existingTravel == null ? ` · $${travel.toFixed(2)} travel` : ''}`);
       await load();
     }
   };
@@ -94,7 +114,7 @@ export default function SiteLogView() {
       if (mi == null) { failed++; }
       else {
         const { error } = await supabase.from('site_visits')
-          .update({ miles: mi, updated_at: new Date().toISOString() }).eq('id', v.id);
+          .update({ miles: mi, travel_charge: v.travel_charge ?? travelFor(mi), updated_at: new Date().toISOString() }).eq('id', v.id);
         if (error) failed++; else done++;
       }
       await new Promise((r) => setTimeout(r, 1100));
@@ -200,7 +220,7 @@ export default function SiteLogView() {
     toastSuccess(`Checked out — ${hrs} hours on site`);
     await load();
     // Auto mileage: fill the round trip from home base in the background
-    if (v.miles == null && v.address && homeBase) void autoMilesFor(v.id, v.address);
+    if (v.miles == null && v.address && homeBase) void autoMilesFor(v.id, v.address, v.travel_charge);
   };
 
   // Roll every uninvoiced visit in the current view into one draft invoice,
@@ -326,6 +346,9 @@ export default function SiteLogView() {
         >
           <Home size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{homeBase ? 'Home ✓' : 'Set Home Base'}
         </button>
+        <button className="filter-chip" onClick={saveMileageRate} title="Customer mileage rate — travel charge auto-fills as miles × this">
+          ${mileageRate.toFixed(2)}/mi
+        </button>
         <div style={{ flex: 1 }} />
         <div style={{ position: 'relative' }}>
           <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
@@ -397,6 +420,7 @@ export default function SiteLogView() {
           item={{ program: programs[0] ?? '', visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' }}
           programs={programs}
           homeBase={homeBase}
+          mileageRate={mileageRate}
           onSave={checkIn}
           onDelete={undefined}
           onClose={() => setCheckinOpen(false)}
@@ -410,6 +434,7 @@ export default function SiteLogView() {
           item={editing}
           programs={programs}
           homeBase={homeBase}
+          mileageRate={mileageRate}
           onSave={saveVisit}
           onDelete={editing.id ? () => deleteVisit(editing as SiteVisit) : undefined}
           onClose={() => setEditing(null)}
@@ -419,11 +444,12 @@ export default function SiteLogView() {
   );
 }
 
-function VisitModal({ title, item, programs, homeBase, quick = false, onSave, onDelete, onClose }: {
+function VisitModal({ title, item, programs, homeBase, mileageRate, quick = false, onSave, onDelete, onClose }: {
   title: string;
   item: Partial<SiteVisit>;
   programs: string[];
   homeBase: string;
+  mileageRate: number;
   quick?: boolean;
   onSave: (v: Partial<SiteVisit>) => void;
   onDelete?: () => void;
@@ -434,13 +460,20 @@ function VisitModal({ title, item, programs, homeBase, quick = false, onSave, on
   const set = <K extends keyof SiteVisit>(k: K, v: SiteVisit[K]) => setForm((f) => ({ ...f, [k]: v }));
   const canSave = !!(form.site_name?.trim() || form.site_code?.trim() || form.address?.trim());
 
+  // Miles drive the travel charge: miles × customer rate, editable after.
+  const setMiles = (mi: number | null) => setForm((f) => ({
+    ...f,
+    miles: mi,
+    travel_charge: mi != null && mileageRate > 0 ? Math.round(mi * mileageRate * 100) / 100 : f.travel_charge,
+  }));
+
   const autoMiles = async () => {
     if (!homeBase || !form.address?.trim()) return;
     setCalcing(true);
     const mi = await roundTripMiles(homeBase, form.address.trim());
     setCalcing(false);
     if (mi == null) toastError("Couldn't route that address — make sure it has street, city, and state.");
-    else set('miles', mi);
+    else setMiles(mi);
   };
 
   return (
@@ -494,7 +527,7 @@ function VisitModal({ title, item, programs, homeBase, quick = false, onSave, on
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Round Trip Miles">
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input className="input" style={{ flex: 1, minWidth: 0 }} type="number" step="0.1" value={form.miles ?? ''} onChange={(e) => set('miles', e.target.value === '' ? null : Number(e.target.value))} />
+                    <input className="input" style={{ flex: 1, minWidth: 0 }} type="number" step="0.1" value={form.miles ?? ''} onChange={(e) => setMiles(e.target.value === '' ? null : Number(e.target.value))} />
                     <button
                       className="btn btn-ghost"
                       disabled={calcing || !homeBase || !form.address?.trim()}
@@ -505,7 +538,7 @@ function VisitModal({ title, item, programs, homeBase, quick = false, onSave, on
                     </button>
                   </div>
                 </Field>
-                <Field label="Travel Charge $"><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+                <Field label={`Travel Charge $ (auto: miles × $${mileageRate.toFixed(2)})`}><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
               </div>
               <Field label="Notes"><textarea className="input" rows={3} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="What you did on site, punch list, follow-ups…" /></Field>
             </>

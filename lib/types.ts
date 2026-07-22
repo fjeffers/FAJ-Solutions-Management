@@ -386,6 +386,8 @@ export type Invoice = {
   paid_at: string | null;
   work_order_ids: string[];
   quote_id: string | null;
+  /** (migration-042) powers the public /invoice/<token> client page. */
+  share_token: string | null;
   created_at: string;
   updated_at: string;
 };

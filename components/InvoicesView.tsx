@@ -1,8 +1,10 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Printer, Receipt, DollarSign, Briefcase } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Printer, Receipt, DollarSign, Briefcase, Share2 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { printInvoiceSheet } from '@/lib/signoff';
+import { createClient } from '@/lib/supabase/client';
+import { toastError, toastSuccess } from '@/lib/toast';
 import { PAYMENT_METHODS } from '@/lib/types';
 import type { Invoice, InvoiceLineItem, InvoicePayment, InvoiceStatus, WorkOrder } from '@/lib/types';
 
@@ -58,6 +60,34 @@ export default function InvoicesView({
 }) {
   const [editing, setEditing] = useState<Partial<Invoice> | null>(null);
   const [paying, setPaying] = useState<Invoice | null>(null);
+  const supabase = createClient();
+
+  // Share a client-facing link (/invoice/<token>) — creates the token once,
+  // reuses it forever so a link you already sent never breaks. Uses the
+  // phone's native share sheet when available, else copies to clipboard.
+  const shareInvoice = async (inv: Invoice) => {
+    const { data } = await supabase.from('invoices').select('share_token').eq('id', inv.id).single();
+    let token = (data?.share_token as string | null) ?? null;
+    if (!token) {
+      token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+      const { error } = await supabase.from('invoices')
+        .update({ share_token: token, updated_at: new Date().toISOString() }).eq('id', inv.id);
+      if (error) { toastError(`Couldn't create share link: ${error.message}`); return; }
+    }
+    const url = `${window.location.origin}/invoice/${token}`;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: `Invoice ${inv.invoice_number} — FAJ Solutions LLC`, url });
+        return;
+      } catch { /* user closed the share sheet — fall through to copy */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toastSuccess('Invoice link copied — text or email it to your client');
+    } catch {
+      window.prompt('Copy this invoice link:', url);
+    }
+  };
 
   const paidByInvoice = useMemo(() => {
     const m = new Map<string, number>();
@@ -147,6 +177,7 @@ export default function InvoicesView({
                     {inv.status !== 'void' && inv.status !== 'draft' && (
                       <button title="Record Payment" onClick={() => setPaying(inv)} style={{ ...ICON_BTN, color: '#047857' }}><DollarSign size={15} /></button>
                     )}
+                    <button title="Share with client — public link, no login needed" onClick={() => shareInvoice(inv)} style={{ ...ICON_BTN, color: 'var(--teal)' }}><Share2 size={15} /></button>
                     <button title="Print" onClick={() => printInvoiceSheet(inv, paid)} style={ICON_BTN}><Printer size={15} /></button>
                     <button title="Edit" onClick={() => setEditing(inv)} style={ICON_BTN}><Edit2 size={15} /></button>
                     <button title="Delete" onClick={() => { if (confirm(`Delete invoice ${inv.invoice_number}? Recorded payments on it are deleted too.`)) onDelete(inv.id); }} style={{ ...ICON_BTN, color: '#b91c1c' }}><Trash2 size={15} /></button>

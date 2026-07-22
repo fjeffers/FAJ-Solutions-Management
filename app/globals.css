@@ -221,6 +221,26 @@ body {
 @media (max-width: 768px) {
   .app-root { flex-direction: column !important; }
   .sidebar-desktop { display: none !important; }
+  /* Hamburger-opened menu: must out-specific the display:none above,
+     since the toggle used to rely on an inline style that !important beat. */
+  .sidebar-desktop.mobile-open {
+    display: flex !important;
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 60;
+    width: 272px !important;
+    height: 100dvh !important;
+    overflow-y: auto;
+    box-shadow: 0 0 44px rgba(0, 0, 0, 0.4);
+  }
+  .mobile-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 55;
+  }
   #mobile-header { display: flex !important; width: 100%; }
   .main-content { padding: 0 !important; }
 

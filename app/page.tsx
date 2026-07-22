@@ -904,10 +904,11 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar — .mobile-open beats the mobile display:none in CSS */}
+      {mobileNavOpen && <div className="mobile-nav-backdrop no-print" onClick={() => setMobileNavOpen(false)} />}
       <aside
-        className="no-print glass-dark sidebar-desktop"
-        style={{ width: 250, padding: '24px 16px', position: 'sticky', top: 0, height: '100vh', flexDirection: 'column', gap: 2, ...(mobileNavOpen ? { display: 'flex', position: 'fixed', zIndex: 40, width: 260 } : {}) }}
+        className={`no-print glass-dark sidebar-desktop ${mobileNavOpen ? 'mobile-open' : ''}`}
+        style={{ width: 250, padding: '24px 16px', position: 'sticky', top: 0, height: '100vh', flexDirection: 'column', gap: 2 }}
       >
         <div style={{ padding: '0 12px 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>

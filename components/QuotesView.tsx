@@ -1,8 +1,10 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Printer, CheckCircle2, FileText } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Printer, CheckCircle2, FileText, Share2 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { printQuoteSheet } from '@/lib/signoff';
+import { createClient } from '@/lib/supabase/client';
+import { toastError, toastSuccess } from '@/lib/toast';
 import type { Quote, QuoteLineItem, QuoteStatus } from '@/lib/types';
 
 const STATUS_META: Record<QuoteStatus, { label: string; color: string; bg: string }> = {
@@ -37,6 +39,33 @@ export default function QuotesView({
   onAccept: (quote: Quote) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<Partial<Quote> | null>(null);
+  const supabase = createClient();
+
+  // Share a client-facing link (/quote/<token>) — token created once and
+  // reused forever, so a link you already sent never breaks.
+  const shareQuote = async (q: Quote) => {
+    const { data } = await supabase.from('quotes').select('share_token').eq('id', q.id).single();
+    let token = (data?.share_token as string | null) ?? null;
+    if (!token) {
+      token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+      const { error } = await supabase.from('quotes')
+        .update({ share_token: token, updated_at: new Date().toISOString() }).eq('id', q.id);
+      if (error) { toastError(`Couldn't create share link: ${error.message}`); return; }
+    }
+    const url = `${window.location.origin}/quote/${token}`;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: `Quote ${q.quote_number} — FAJ Solutions LLC`, url });
+        return;
+      } catch { /* user closed the share sheet — fall through to copy */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toastSuccess('Quote link copied — text or email it to your client');
+    } catch {
+      window.prompt('Copy this quote link:', url);
+    }
+  };
 
   const sorted = useMemo(
     () => [...quotes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
@@ -82,6 +111,7 @@ export default function QuotesView({
                     <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--teal)' }}>{fmtMoney(q.total)}</div>
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
+                    <button title="Share with client — public link, no login needed" onClick={() => shareQuote(q)} style={{ ...ICON_BTN, color: 'var(--teal)' }}><Share2 size={15} /></button>
                     <button title="Print" onClick={() => printQuoteSheet(q)} style={ICON_BTN}><Printer size={15} /></button>
                     <button title="Edit" onClick={() => setEditing(q)} style={ICON_BTN}><Edit2 size={15} /></button>
                     {q.status !== 'accepted' && (

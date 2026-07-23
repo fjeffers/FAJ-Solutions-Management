@@ -353,6 +353,8 @@ export type Quote = {
   sent_at: string | null;
   accepted_at: string | null;
   work_order_id: string | null;
+  /** (migration-044) powers the public /quote/<token> client page. */
+  share_token: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -31,6 +31,9 @@ export default function ImportQueueView({
   const [checking, setChecking] = useState(false);
   const pending = items.filter((i) => i.status === 'pending');
   const reviewed = items.filter((i) => i.status !== 'pending').slice(0, 20);
+  const approvedCount = items.filter((i) => i.status === 'approved').length;
+  const rejectedCount = items.filter((i) => i.status === 'rejected').length;
+  const pendingValue = pending.reduce((s, i) => s + Number(i.parsed_fields.total_amount ?? 0), 0);
 
   const act = async (id: string, fn: (id: string) => Promise<void>) => {
     setBusyId(id);
@@ -89,6 +92,21 @@ export default function ImportQueueView({
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>IMPORT</div>
         <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Imports</h1>
         <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Dispatch emails (Netview + FieldNation routed jobs), Google Sheets, and Google Docs — parsed and queued for your review</p>
+      </div>
+
+      {/* At-a-glance import stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+        {[
+          { label: 'Pending Review', value: String(pending.length), color: pending.length > 0 ? '#b45309' : '#047857' },
+          { label: 'Pending Value', value: pendingValue > 0 ? fmtMoney(pendingValue) : '—', color: 'var(--teal)' },
+          { label: 'Approved → WOs', value: String(approvedCount), color: '#047857' },
+          { label: 'Rejected', value: String(rejectedCount), color: '#6b7280' },
+        ].map((t) => (
+          <div key={t.label} className="glass card" style={{ padding: '12px 16px' }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#999' }}>{t.label}</div>
+            <div style={{ fontSize: 21, fontWeight: 800, color: t.color, fontVariantNumeric: 'tabular-nums' }}>{t.value}</div>
+          </div>
+        ))}
       </div>
 
       <div className="glass card" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -210,8 +228,18 @@ export default function ImportQueueView({
           </div>
           <div className="glass card" style={{ padding: 0, overflow: 'hidden' }}>
             {reviewed.map((item) => (
-              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid #f5f5f5', fontSize: 13 }}>
-                <span>{item.parsed_fields.title}</span>
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid #f5f5f5', fontSize: 13, flexWrap: 'wrap' }}>
+                <span style={{ flex: 1, minWidth: 180 }}>
+                  <b>{item.parsed_fields.title}</b>
+                  <span style={{ color: '#999', fontSize: 12 }}>
+                    {item.parsed_fields.customer_name ? ` · ${item.parsed_fields.customer_name}` : ''}
+                    {item.parsed_fields.client_reference ? ` · Site ${item.parsed_fields.client_reference}` : ''}
+                    {` · ${fmtDate(item.created_at)}`}
+                  </span>
+                </span>
+                {typeof item.parsed_fields.total_amount === 'number' && item.parsed_fields.total_amount > 0 && (
+                  <span style={{ fontWeight: 700, fontSize: 12 }}>{fmtMoney(item.parsed_fields.total_amount)}</span>
+                )}
                 <span style={{
                   fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 20,
                   background: item.status === 'approved' ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',

@@ -30,6 +30,17 @@ function fmtShortDate(d: string): string {
   return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' });
 }
 
+function fmtClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+/** ISO timestamp ⇄ the browser's datetime-local input format (local tz). */
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 // Each site/project keeps its own log: every visit to Roselle #5798 stacks
 // under one heading inside the customer's section. Grouped by site code
 // (name/address as fallback), newest activity first.
@@ -386,6 +397,11 @@ export default function SiteLogView() {
             {visits.length} visit{visits.length !== 1 ? 's' : ''} · {hoursSince(sevenDaysAgo).toFixed(1)}h last 7 days · {hoursSince(monthStart).toFixed(1)}h this month
             {unpaidCount > 0 && <span style={{ color: '#b45309', fontWeight: 600 }}> · {unpaidCount} unpaid</span>}
           </p>
+          <p style={{ margin: '2px 0 0', color: '#999', fontSize: 12 }}>
+            All time: <b style={{ color: '#666' }}>{visits.reduce((s, v) => s + Number(v.hours ?? 0), 0).toFixed(1)} hours</b>
+            {' · '}<b style={{ color: '#666' }}>{visits.reduce((s, v) => s + Number(v.miles ?? 0), 0).toFixed(0)} miles</b>
+            {' · '}<b style={{ color: '#666' }}>{fmtMoney(visits.reduce((s, v) => s + Number(v.travel_charge ?? 0), 0))} travel billed</b>
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {!openVisit && (
@@ -500,6 +516,7 @@ export default function SiteLogView() {
                 <ChevronDown size={15} style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--teal)' }} />
                 <span style={{ fontWeight: 800, fontSize: 16 }}>{prog}</span>
                 <span style={{ fontSize: 12, color: '#888' }}>{progVisits.length} visit{progVisits.length !== 1 ? 's' : ''} · {progHours.toFixed(1)}h</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)' }}>{fmtMoney(sumAmount(progVisits))} total</span>
                 {progPaid$ > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#047857' }}>{fmtMoney(progPaid$)} paid</span>}
                 {progOwed$ > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309' }}>{fmtMoney(progOwed$)} owed{progUnpaid > 0 ? ` (${progUnpaid})` : ''}</span>}
                 <div style={{ flex: 1 }} />
@@ -535,6 +552,11 @@ export default function SiteLogView() {
                       {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+                      {v.time_in && (
+                        <span style={{ fontSize: 12, color: '#666', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          ⏱ {fmtClock(v.time_in)} – {v.time_out ? fmtClock(v.time_out) : 'on site'}
+                        </span>
+                      )}
                       {v.address && (
                         <a
                           href={`https://maps.google.com/?q=${encodeURIComponent(v.address)}`}
@@ -630,6 +652,16 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
     else setMiles(mi);
   };
 
+  // Editing either timestamp recomputes total hours from the in→out span.
+  const setTime = (which: 'time_in' | 'time_out', local: string) => setForm((f) => {
+    const next = { ...f, [which]: local ? new Date(local).toISOString() : null };
+    if (next.time_in && next.time_out) {
+      const h = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
+      if (h > 0) next.hours = Math.round(h * 100) / 100;
+    }
+    return next;
+  });
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
       <div className="glass card modal-solid" style={{ width: 520, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
@@ -657,6 +689,11 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
                 <Field label="Hours"><input className="input" type="number" step="0.25" value={form.hours ?? ''} onChange={(e) => set('hours', e.target.value === '' ? null : Number(e.target.value))} /></Field>
                 <Field label="Rate"><input className="input" value={form.rate ?? ''} onChange={(e) => set('rate', e.target.value)} placeholder="$55/hr, 2600…" /></Field>
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Field label="Time In"><input className="input" type="datetime-local" value={toLocalInput(form.time_in)} onChange={(e) => setTime('time_in', e.target.value)} /></Field>
+                <Field label="Time Out"><input className="input" type="datetime-local" value={toLocalInput(form.time_out)} onChange={(e) => setTime('time_out', e.target.value)} /></Field>
+              </div>
+              <div style={{ fontSize: 11, color: '#999', marginTop: -6 }}>Setting both times recalculates Hours automatically.</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 <Field label="Type">
                   <select className="input" value={form.visit_type ?? 'T&M'} onChange={(e) => set('visit_type', e.target.value as SiteVisitType)}>

@@ -693,6 +693,9 @@ export type NetworkDrop = {
 export type SiteVisitType = 'Project' | 'T&M' | 'Revisit' | 'Survey' | 'Other';
 export const SITE_VISIT_TYPES: SiteVisitType[] = ['Project', 'T&M', 'Revisit', 'Survey', 'Other'];
 
+/** One on-site stint; a visit can span several (multi-day jobs). */
+export type VisitSession = { in: string; out: string | null };
+
 export type SiteVisit = {
   id: string;
   user_id: string;
@@ -703,6 +706,8 @@ export type SiteVisit = {
   visit_date: string | null;
   time_in: string | null;
   time_out: string | null;
+  /** (migration-045) all stints; hours totals the completed ones. */
+  sessions: VisitSession[] | null;
   hours: number | null;
   rate: string | null;
   visit_type: SiteVisitType;

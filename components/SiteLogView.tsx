@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
-import type { SiteVisit, SiteVisitType } from '@/lib/types';
+import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem, visitAmount } from '@/lib/visits';
 import { fmtMoney } from '@/lib/utils';
@@ -327,12 +327,17 @@ export default function SiteLogView() {
 
   const checkOut = async (v: SiteVisit) => {
     const out = new Date();
-    const hrs = Math.min(16, Math.max(0.25, Math.round(((out.getTime() - new Date(v.time_in!).getTime()) / 3600000) * 100) / 100));
+    const stint = Math.min(16, Math.max(0.25, Math.round(((out.getTime() - new Date(v.time_in!).getTime()) / 3600000) * 100) / 100));
+    // Multi-day jobs: this stint joins any earlier sessions; hours = the sum.
+    const prior = (v.sessions ?? []).filter((s) => s.in && s.out);
+    const priorHours = prior.reduce((s, x) => s + (new Date(x.out!).getTime() - new Date(x.in).getTime()) / 3600000, 0);
+    const sessions = [...prior, { in: v.time_in!, out: out.toISOString() }];
+    const hrs = Math.round((priorHours + stint) * 100) / 100;
     const { error } = await supabase.from('site_visits')
-      .update({ time_out: out.toISOString(), hours: hrs, updated_at: out.toISOString() })
+      .update({ time_out: out.toISOString(), hours: hrs, sessions, updated_at: out.toISOString() })
       .eq('id', v.id);
     if (error) { toastError(`Couldn't check out: ${error.message}`); return; }
-    toastSuccess(`Checked out — ${hrs} hours on site`);
+    toastSuccess(`Checked out — ${stint}h this stint${prior.length > 0 ? ` · ${hrs}h total across ${sessions.length} days` : ''}`);
     await load();
     // Auto mileage: fill the round trip from home base in the background
     if (v.miles == null && v.address && homeBase) void autoMilesFor(v);
@@ -552,11 +557,17 @@ export default function SiteLogView() {
                       {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-                      {v.time_in && (
+                      {(v.sessions?.length ?? 0) > 1 ? (
+                        <span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}>
+                          ⏱ {v.sessions!.slice(0, 3).map((s) =>
+                            `${new Date(s.in).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })} ${fmtClock(s.in)}–${s.out ? fmtClock(s.out) : '…'}`
+                          ).join(' · ')}{v.sessions!.length > 3 ? ` +${v.sessions!.length - 3} more` : ''}
+                        </span>
+                      ) : v.time_in ? (
                         <span style={{ fontSize: 12, color: '#666', fontWeight: 600, whiteSpace: 'nowrap' }}>
                           ⏱ {fmtClock(v.time_in)} – {v.time_out ? fmtClock(v.time_out) : 'on site'}
                         </span>
-                      )}
+                      ) : null}
                       {v.address && (
                         <a
                           href={`https://maps.google.com/?q=${encodeURIComponent(v.address)}`}
@@ -628,7 +639,14 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
   onDelete?: () => void;
   onClose: () => void;
 }) {
-  const [form, setForm] = useState<Partial<SiteVisit>>({ ...item });
+  const [form, setForm] = useState<Partial<SiteVisit>>(() => {
+    const f = { ...item };
+    // Back-compat: older visits carry a single time_in/out pair, not sessions.
+    if ((!f.sessions || f.sessions.length === 0) && f.time_in) {
+      f.sessions = [{ in: f.time_in, out: f.time_out ?? null }];
+    }
+    return f;
+  });
   const [calcing, setCalcing] = useState(false);
   const set = <K extends keyof SiteVisit>(k: K, v: SiteVisit[K]) => setForm((f) => ({ ...f, [k]: v }));
   const canSave = !!(form.site_name?.trim() || form.site_code?.trim() || form.address?.trim());
@@ -652,14 +670,21 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
     else setMiles(mi);
   };
 
-  // Editing either timestamp recomputes total hours from the in→out span.
-  const setTime = (which: 'time_in' | 'time_out', local: string) => setForm((f) => {
-    const next = { ...f, [which]: local ? new Date(local).toISOString() : null };
-    if (next.time_in && next.time_out) {
-      const h = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
-      if (h > 0) next.hours = Math.round(h * 100) / 100;
-    }
-    return next;
+  // Sessions drive the times: hours = sum of completed stints, and
+  // time_in/time_out mirror first-in / last-out for the cards and timer.
+  const sessions = (form.sessions ?? []) as VisitSession[];
+  const setSessions = (next: VisitSession[]) => setForm((f) => {
+    const total = next.reduce((s, x) =>
+      x.in && x.out ? s + Math.max(0, (new Date(x.out).getTime() - new Date(x.in).getTime()) / 3600000) : s, 0);
+    const ins = next.filter((x) => x.in).map((x) => x.in).sort();
+    const outs = next.filter((x) => x.out).map((x) => x.out!).sort();
+    return {
+      ...f,
+      sessions: next,
+      hours: total > 0 ? Math.round(total * 100) / 100 : f.hours,
+      time_in: ins[0] ?? null,
+      time_out: next.some((x) => x.in && !x.out) ? null : (outs[outs.length - 1] ?? null),
+    };
   });
 
   return (
@@ -689,11 +714,33 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
                 <Field label="Hours"><input className="input" type="number" step="0.25" value={form.hours ?? ''} onChange={(e) => set('hours', e.target.value === '' ? null : Number(e.target.value))} /></Field>
                 <Field label="Rate"><input className="input" value={form.rate ?? ''} onChange={(e) => set('rate', e.target.value)} placeholder="$55/hr, 2600…" /></Field>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Time In"><input className="input" type="datetime-local" value={toLocalInput(form.time_in)} onChange={(e) => setTime('time_in', e.target.value)} /></Field>
-                <Field label="Time Out"><input className="input" type="datetime-local" value={toLocalInput(form.time_out)} onChange={(e) => setTime('time_out', e.target.value)} /></Field>
-              </div>
-              <div style={{ fontSize: 11, color: '#999', marginTop: -6 }}>Setting both times recalculates Hours automatically.</div>
+              <Field label="Days & Times on Site">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {sessions.map((s, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 30px', gap: 6, alignItems: 'center' }}>
+                      <input
+                        className="input" type="datetime-local" title="Time in"
+                        value={toLocalInput(s.in)}
+                        onChange={(e) => { const n = [...sessions]; n[i] = { ...n[i], in: e.target.value ? new Date(e.target.value).toISOString() : '' }; setSessions(n); }}
+                      />
+                      <input
+                        className="input" type="datetime-local" title="Time out"
+                        value={toLocalInput(s.out)}
+                        onChange={(e) => { const n = [...sessions]; n[i] = { ...n[i], out: e.target.value ? new Date(e.target.value).toISOString() : null }; setSessions(n); }}
+                      />
+                      <button
+                        onClick={() => setSessions(sessions.filter((_, j) => j !== i))}
+                        title="Remove this day/session"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', padding: 4 }}
+                      ><X size={14} /></button>
+                    </div>
+                  ))}
+                  <button className="btn btn-ghost" onClick={() => setSessions([...sessions, { in: '', out: null }])} style={{ justifyContent: 'center' }}>
+                    <Plus size={13} /> Add Day / Session
+                  </button>
+                  <div style={{ fontSize: 11, color: '#999' }}>Hours totals every completed session automatically — multi-day jobs welcome.</div>
+                </div>
+              </Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 <Field label="Type">
                   <select className="input" value={form.visit_type ?? 'T&M'} onChange={(e) => set('visit_type', e.target.value as SiteVisitType)}>
@@ -737,7 +784,7 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave(form)} disabled={!canSave} style={quick ? { fontSize: 15, padding: '12px 18px' } : undefined}>
+          <button className="btn btn-primary" onClick={() => onSave({ ...form, sessions: (form.sessions ?? []).filter((s) => s.in) })} disabled={!canSave} style={quick ? { fontSize: 15, padding: '12px 18px' } : undefined}>
             {quick ? <><Timer size={15} /> Start Timer</> : 'Save'}
           </button>
         </div>

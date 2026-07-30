@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Mail, CheckCircle2, XCircle, Inbox, LinkIcon, Sheet, Upload, RefreshCw } from 'lucide-react';
+import { Mail, CheckCircle2, XCircle, Inbox, LinkIcon, Sheet, Upload, RefreshCw, ClipboardPaste } from 'lucide-react';
 import { fmtDate, fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { ImportQueueItem, GmailConnection } from '@/lib/types';
@@ -27,6 +27,8 @@ export default function ImportQueueView({
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sheetUrl, setSheetUrl] = useState('');
+  const [pastedEmail, setPastedEmail] = useState('');
+  const [pasting, setPasting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [checking, setChecking] = useState(false);
   const pending = items.filter((i) => i.status === 'pending');
@@ -55,6 +57,46 @@ export default function ImportQueueView({
       toastError('Check failed — try again');
     } finally {
       setChecking(false);
+    }
+  };
+
+  // Paste an email (or drop the .eml) — the manual door into the same queue,
+  // for while the Gmail connection is unavailable.
+  const importEmail = async (payload: { raw?: string; file?: File }) => {
+    setPasting(true);
+    try {
+      let res: Response;
+      if (payload.file) {
+        const fd = new FormData();
+        fd.append('file', payload.file);
+        res = await fetch('/api/import-queue/from-email', { method: 'POST', body: fd });
+      } else {
+        res = await fetch('/api/import-queue/from-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw: payload.raw ?? '' }),
+        });
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toastError(data.error || 'Could not read that email');
+        return;
+      }
+      if (data.duplicate) {
+        toastSuccess('Already in the queue — nothing added');
+      } else {
+        // Say which parser matched: a recognised dispatch is pre-filled, a
+        // generic one needs more from the reviewer.
+        toastSuccess(data.matched === 'generic'
+          ? 'Added for review — check the details, it was not a recognised dispatch format'
+          : 'Added for review — dispatch details filled in automatically');
+      }
+      setPastedEmail('');
+      onImported?.();
+    } catch {
+      toastError('Could not read that email');
+    } finally {
+      setPasting(false);
     }
   };
 
@@ -138,6 +180,56 @@ export default function ImportQueueView({
           <a href="/api/integrations/gmail/connect" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
             <LinkIcon size={13} /> {connection ? 'Reconnect' : 'Connect Gmail'}
           </a>
+        </div>
+      </div>
+
+      <div className="glass card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <ClipboardPaste size={18} color="#0D7377" />
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Paste an email</div>
+        </div>
+        <div style={{ fontSize: 11, color: '#999', marginBottom: 10, lineHeight: 1.5 }}>
+          Copy the whole email — headers and all — and paste it here, or drop in a saved
+          .eml file. Netview and FieldNation dispatches are read automatically; anything
+          else gets whatever can be found (site ID, ticket number, date) and you fill in
+          the rest. Nothing becomes a work order until you approve it below.
+        </div>
+        <textarea
+          className="input"
+          value={pastedEmail}
+          onChange={(e) => setPastedEmail(e.target.value)}
+          placeholder={`From: dispatch@…
+Subject: NETVIEW DISPATCH FOR …
+
+Site ID: 9531
+Ticket Number: FLN5092
+…`}
+          rows={5}
+          style={{ width: '100%', fontSize: 12.5, fontFamily: 'ui-monospace, monospace', marginBottom: 8 }}
+        />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => importEmail({ raw: pastedEmail })}
+            disabled={pasting || !pastedEmail.trim()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: pasting || !pastedEmail.trim() ? 0.6 : 1 }}
+          >
+            <Upload size={13} /> {pasting ? 'Reading…' : 'Add for review'}
+          </button>
+          <label className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <Mail size={13} /> Upload .eml
+            <input
+              type="file"
+              accept=".eml,.txt,.msg,message/rfc822,text/plain"
+              disabled={pasting}
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void importEmail({ file: f });
+                e.target.value = '';
+              }}
+            />
+          </label>
         </div>
       </div>
 

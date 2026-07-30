@@ -7,6 +7,7 @@
 // Two outputs from one shape: a CSV he can open in Excel, and a public
 // read-only page at /site-report/<token>.
 import type { SiteVisit, VisitSession } from './types';
+import { toCSV } from './csv';
 
 export type ReportVisit = {
   visit_date: string | null;
@@ -141,18 +142,6 @@ const CSV_HEADERS = [
   'Date', 'Site', 'Site ID', 'Address', 'Time In', 'Time Out', 'Hours', 'Type', 'Work Performed', 'Sessions',
 ] as const;
 
-/**
- * Escape one CSV field. Leading =, +, - and @ are prefixed with a quote so a
- * value like "-2 drops" can't be interpreted as a formula when the client opens
- * the file in Excel.
- */
-export function csvCell(value: unknown): string {
-  const s = value == null ? '' : String(value);
-  const needsGuard = /^[=+\-@]/.test(s);
-  const body = needsGuard ? `'${s}` : s;
-  return `"${body.replace(/"/g, '""')}"`;
-}
-
 export function siteReportCSV(visits: ReportVisit[]): string {
   const rows = [...visits]
     .sort((a, b) => (b.visit_date ?? '').localeCompare(a.visit_date ?? ''))
@@ -168,9 +157,9 @@ export function siteReportCSV(visits: ReportVisit[]): string {
       // The CSV gets shared too, so it shows exactly what the web report shows.
       clientVisibleNote(v),
       fmtSessions(v.sessions),
-    ].map(csvCell).join(','));
+    ]);
 
-  return [CSV_HEADERS.map(csvCell).join(','), ...rows].join('\r\n');
+  return toCSV([[...CSV_HEADERS], ...rows]);
 }
 
 export type SiteReportTotals = {
@@ -183,9 +172,7 @@ export type SiteReportTotals = {
 
 export function siteReportTotals(visits: ReportVisit[]): SiteReportTotals {
   const dates = visits.map((v) => v.visit_date).filter((d): d is string => Boolean(d)).sort();
-  const siteKeys = new Set(
-    visits.map((v) => (v.site_code || v.site_name || v.address || '').trim().toLowerCase()).filter(Boolean),
-  );
+  const siteKeys = new Set(visits.map(siteKey).filter(Boolean));
   return {
     visits: visits.length,
     hours: Math.round(visits.reduce((s, v) => s + Number(v.hours ?? 0), 0) * 100) / 100,
@@ -199,7 +186,7 @@ export function siteReportTotals(visits: ReportVisit[]): SiteReportTotals {
 export function groupBySite(visits: ReportVisit[]): { title: string; code: string | null; visits: ReportVisit[] }[] {
   const m = new Map<string, ReportVisit[]>();
   for (const v of visits) {
-    const key = (v.site_code || v.site_name || v.address || 'unknown').trim().toLowerCase();
+    const key = siteKey(v) || 'unknown';
     // Push into the existing array rather than rebuilding it — spreading here
     // copies the whole group on every visit, which is quadratic as sites fill up.
     const group = m.get(key);

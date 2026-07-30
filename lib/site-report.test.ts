@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  siteReportCSV, siteReportTotals, groupBySite, csvCell, fmtDay, fmtSessions, clientSafeNotes, clientVisibleNote,
+  siteReportCSV, siteReportTotals, groupBySite, fmtDay, fmtSessions, clientSafeNotes, clientVisibleNote,
   type ReportVisit,
 } from './site-report';
 
@@ -16,24 +16,6 @@ const v = (over: Partial<ReportVisit> = {}): ReportVisit => ({
   notes: 'Pulled 6 drops, terminated patch panel',
   sessions: null,
   ...over,
-});
-
-describe('csvCell', () => {
-  it('quotes and escapes embedded quotes', () => {
-    expect(csvCell('say "hi"')).toBe('"say ""hi"""');
-  });
-
-  it('neutralises formula injection so Excel treats it as text', () => {
-    expect(csvCell('=SUM(A1:A9)')).toBe('"\'=SUM(A1:A9)"');
-    expect(csvCell('-2 drops')).toBe('"\'-2 drops"');
-    expect(csvCell('+1')).toBe('"\'+1"');
-    expect(csvCell('@handle')).toBe('"\'@handle"');
-  });
-
-  it('renders null and undefined as empty', () => {
-    expect(csvCell(null)).toBe('""');
-    expect(csvCell(undefined)).toBe('""');
-  });
 });
 
 describe('fmtDay', () => {

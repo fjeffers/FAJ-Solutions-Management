@@ -17,6 +17,7 @@ import type {
 } from '@/lib/types';
 import { customerBooks, unlinkedCount, type CustomerBook } from '@/lib/customers';
 import { siteReportCSV, toReportVisits } from '@/lib/site-report';
+import { downloadCSVText } from '@/lib/export';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
   Plus, X, Search, Trash2, Building2, Phone, Mail, User, MessageSquarePlus,
@@ -168,15 +169,10 @@ export default function CustomersView() {
     const mine = visits.filter((v) => v.customer_id === c.id);
     if (mine.length === 0) return toastError('No site visits logged for this customer yet');
 
-    const csv = siteReportCSV(toReportVisits(mine));
-    // ﻿ so Excel opens it as UTF-8 rather than mangling accented site names.
-    const blob = new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${c.name.replace(/[^\w\s-]/g, '')} site activity ${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCSVText(
+      `${c.name.replace(/[^\w\s-]/g, '')} site activity ${new Date().toISOString().slice(0, 10)}.csv`,
+      siteReportCSV(toReportVisits(mine)),
+    );
     toastSuccess('Spreadsheet downloaded');
   };
 

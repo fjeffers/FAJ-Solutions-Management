@@ -1,15 +1,31 @@
 import type { EnrichedWorkOrder, Payment, Contractor } from '@/lib/types';
 import { fmtMoney } from '@/lib/utils';
+import { toCSV, UTF8_BOM } from '@/lib/csv';
 
-function downloadCSV(filename: string, rows: string[][]) {
-  const csv = rows.map((r) => r.map((c) => `"${(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+/**
+ * Save a ready-built CSV string. The only place in the app that touches the
+ * download plumbing — exported so callers holding their own CSV (the site
+ * activity report) don't reimplement it.
+ */
+export function downloadCSVText(filename: string, csv: string) {
+  // BOM so Excel reads it as UTF-8 instead of mangling accented names.
+  const blob = new Blob([UTF8_BOM + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Escaping goes through lib/csv, which guards against Excel formula injection.
+ * The previous inline escaper here only handled quotes, so a contractor name or
+ * note beginning with '=' or '-' was written as a live formula into files that
+ * go to clients and to the accountant.
+ */
+function downloadCSV(filename: string, rows: string[][]) {
+  downloadCSVText(filename, toCSV(rows));
 }
 
 export function exportWorkOrdersCSV(wos: EnrichedWorkOrder[]) {

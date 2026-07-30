@@ -751,6 +751,12 @@ export type SiteVisit = {
   miles: number | null;
   travel_charge: number | null;
   notes: string | null;
+  /**
+   * (migration-050) what the CLIENT sees on the shared report. When empty the
+   * report falls back to `notes`, but only if they're short enough to be a real
+   * work description — long ones are imported emails and are hidden instead.
+   */
+  client_summary: string | null;
   work_order_id: string | null;
   /** (migration-046) join key to the customer master. */
   customer_id: string | null;

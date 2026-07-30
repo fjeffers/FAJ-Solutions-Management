@@ -18,8 +18,18 @@ export type ReportVisit = {
   hours: number | null;
   visit_type: string | null;
   notes: string | null;
+  /** (migration-050) the deliberate client-facing line, when one was written. */
+  client_summary?: string | null;
   sessions?: VisitSession[] | null;
 };
+
+/**
+ * Longest a fallback note can be and still plausibly be a work description
+ * rather than a pasted email. The real ones are short: 'Add BLANKS to Rack',
+ * 'Cabling refresh reinstall the network cables and cameras', and the longest
+ * genuine one (a list of faceplate corrections) is comfortably under this.
+ */
+export const MAX_FALLBACK_NOTE = 300;
 
 /** Local clock time, or empty. Kept short — the date already has the day. */
 export function fmtClock(iso: string | null | undefined): string {
@@ -93,6 +103,30 @@ export function clientSafeNotes(notes: string | null | undefined, maxChars = 600
   return s;
 }
 
+/**
+ * The one line a client should read for this visit.
+ *
+ * Order of preference:
+ *   1. client_summary — written on purpose for the client, used as-is
+ *   2. short notes    — genuine work descriptions, sanitised
+ *   3. nothing        — a long note is an imported email; hiding it beats
+ *                       truncating it into something that reads like tech
+ *                       instructions on a client's report
+ *
+ * The full note always stays visible inside the app. This only governs the
+ * shared report and the shared spreadsheet.
+ */
+export function clientVisibleNote(v: Pick<ReportVisit, 'notes' | 'client_summary'>): string {
+  const summary = (v.client_summary ?? '').trim();
+  if (summary) return clientSafeNotes(summary, 2000);
+
+  const safe = clientSafeNotes(v.notes, MAX_FALLBACK_NOTE + 1);
+  if (!safe) return '';
+  // Truncated by the sanitiser, or simply long → an email, not a description.
+  if (safe.length > MAX_FALLBACK_NOTE || safe.endsWith('…')) return '';
+  return safe;
+}
+
 const CSV_HEADERS = [
   'Date', 'Site', 'Site ID', 'Address', 'Time In', 'Time Out', 'Hours', 'Type', 'Work Performed', 'Sessions',
 ] as const;
@@ -121,8 +155,8 @@ export function siteReportCSV(visits: ReportVisit[]): string {
       fmtClock(v.time_out),
       v.hours ?? '',
       v.visit_type ?? '',
-      // Sanitised: the CSV gets shared too, so it must not carry internal links.
-      clientSafeNotes(v.notes),
+      // The CSV gets shared too, so it shows exactly what the web report shows.
+      clientVisibleNote(v),
       fmtSessions(v.sessions),
     ].map(csvCell).join(','));
 
@@ -184,6 +218,7 @@ export function toReportVisits(visits: SiteVisit[]): ReportVisit[] {
     hours: v.hours,
     visit_type: v.visit_type,
     notes: v.notes,
+    client_summary: v.client_summary,
     sessions: v.sessions,
   }));
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  siteReportCSV, siteReportTotals, groupBySite, csvCell, fmtDay, fmtSessions, clientSafeNotes,
+  siteReportCSV, siteReportTotals, groupBySite, csvCell, fmtDay, fmtSessions, clientSafeNotes, clientVisibleNote,
   type ReportVisit,
 } from './site-report';
 
@@ -187,5 +187,48 @@ Questions: dispatch@netview.example.com`;
     const csv = siteReportCSV([v({ notes: realEmail })]);
     expect(csv).not.toMatch(/https?:\/\//);
     expect(csv).not.toContain('drive.google');
+  });
+});
+
+describe('clientVisibleNote', () => {
+  const emailDump = `Frederick,
+
+You are scheduled for the following assignment.
+Please review each document to be familiar on what is expected and what are the
+Required deliverables. Please note there is a Fillable Check list attached that
+must be filled out and submitted with the deliverables. Please ensure that you
+take a photo of the BOM then Check Mark each item received when doing your
+inventory. We will need a photo of the Check Marked BOM added into your
+deliverables. Brand : Wendy's Date : 7/16/2026 Address : 388 Highway Route 35.
+Matawan, NJ 07735 FLN Number: FLN4783 Scope : Standardization Project`;
+
+  it('prefers a written client summary over notes', () => {
+    expect(clientVisibleNote({ notes: emailDump, client_summary: 'Installed 12 drops and terminated the rack.' }))
+      .toBe('Installed 12 drops and terminated the rack.');
+  });
+
+  it('hides an imported email rather than truncating it into tech instructions', () => {
+    expect(clientVisibleNote({ notes: emailDump, client_summary: null })).toBe('');
+  });
+
+  it('still shows genuine short notes', () => {
+    expect(clientVisibleNote({ notes: 'Add BLANKS to Rack', client_summary: null })).toBe('Add BLANKS to Rack');
+    const faceplates = 'Kiosk 2 - faceplate shows B9 and B10. This faceplate should be B10 GREEN and B11 VIOLET. Faceplates B16, A37, A38 have BLUE jacks; change to YELLOW.';
+    expect(clientVisibleNote({ notes: faceplates, client_summary: null })).toBe(faceplates);
+  });
+
+  it('still strips links from a hand-written summary', () => {
+    expect(clientVisibleNote({ notes: null, client_summary: 'Done — see https://internal.example.com/x' }))
+      .not.toMatch(/https?:\/\//);
+  });
+
+  it('is empty when there is nothing to show', () => {
+    expect(clientVisibleNote({ notes: null, client_summary: null })).toBe('');
+  });
+
+  it('keeps the shared spreadsheet consistent with the web report', () => {
+    const csv = siteReportCSV([v({ notes: emailDump, client_summary: null })]);
+    expect(csv).not.toContain('BOM');
+    expect(csv).not.toContain('FLN4783');
   });
 });

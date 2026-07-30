@@ -779,6 +779,13 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
                 <Field label={`Travel Charge $ (auto: miles × $${rateFor(form.program).toFixed(2)})`}><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
               </div>
               <Field label="Notes"><textarea className="input" rows={3} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="What you did on site, punch list, follow-ups…" /></Field>
+              {/* migration-050: the client-facing line. Notes are internal and can
+                  be a whole imported email; this is what a shared report shows. */}
+              <Field label="Client summary (shows on shared reports)">
+                <textarea className="input" rows={2} value={form.client_summary ?? ''}
+                  onChange={(e) => set('client_summary', e.target.value)}
+                  placeholder="Leave blank to use your notes — long imported notes are hidden from clients" />
+              </Field>
             </>
           )}
         </div>

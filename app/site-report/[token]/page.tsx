@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { notFound } from 'next/navigation';
 import {
-  groupBySite, siteReportTotals, fmtDay, fmtClock, fmtSessions, clientSafeNotes,
+  groupBySite, siteReportTotals, fmtDay, fmtClock, fmtSessions, clientVisibleNote,
   type ReportVisit,
 } from '@/lib/site-report';
 
@@ -100,9 +100,9 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
                         </div>
                       )}
                     </div>
-                    {clientSafeNotes(v.notes) && (
+                    {clientVisibleNote(v) && (
                       <div style={{ fontSize: 12.5, color: '#333', marginTop: 3, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                        {clientSafeNotes(v.notes)}
+                        {clientVisibleNote(v)}
                       </div>
                     )}
                     {sessions && (

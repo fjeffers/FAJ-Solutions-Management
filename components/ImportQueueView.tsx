@@ -21,7 +21,7 @@ export default function ImportQueueView({
 }: {
   items: ImportQueueItem[];
   connection: GmailConnection | null;
-  onApprove: (id: string) => Promise<void>;
+  onApprove: (id: string, opts?: { silent?: boolean }) => Promise<boolean | void>;
   onReject: (id: string) => Promise<void>;
   onImported?: () => void;
 }) {
@@ -29,6 +29,7 @@ export default function ImportQueueView({
   const [sheetUrl, setSheetUrl] = useState('');
   const [pastedEmail, setPastedEmail] = useState('');
   const [pasting, setPasting] = useState(false);
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const [importing, setImporting] = useState(false);
   const [checking, setChecking] = useState(false);
   const pending = items.filter((i) => i.status === 'pending');
@@ -37,7 +38,7 @@ export default function ImportQueueView({
   const rejectedCount = items.filter((i) => i.status === 'rejected').length;
   const pendingValue = pending.reduce((s, i) => s + Number(i.parsed_fields.total_amount ?? 0), 0);
 
-  const act = async (id: string, fn: (id: string) => Promise<void>) => {
+  const act = async (id: string, fn: (id: string) => Promise<boolean | void>) => {
     setBusyId(id);
     try { await fn(id); } finally { setBusyId(null); }
   };
@@ -102,6 +103,41 @@ export default function ImportQueueView({
     } finally {
       setPasting(false);
     }
+  };
+
+  // Approve every queued job, one at a time.
+  //
+  // Sequential on purpose: each approval reads the highest existing work order
+  // number to pick the next one, so running these in parallel would hand the
+  // same number to several jobs. A go-back list is routinely 18 sites, which is
+  // 18 clicks otherwise.
+  const approveAll = async () => {
+    const queue = [...pending];
+    if (queue.length === 0) return;
+    if (!confirm(`Create ${queue.length} work order${queue.length === 1 ? '' : 's'}?
+
+Each one also opens a site visit at that address.`)) return;
+
+    setBulk({ done: 0, total: queue.length });
+    const failed: string[] = [];
+    for (const [i, item] of queue.entries()) {
+      // silent: one toast and one refresh at the end, not per job.
+      const ok = await onApprove(item.id, { silent: true }).catch(() => false);
+      if (!ok) {
+        failed.push(item.parsed_fields.title || item.parsed_fields.client_reference || 'a job');
+      }
+      setBulk({ done: i + 1, total: queue.length });
+    }
+    setBulk(null);
+
+    const made = queue.length - failed.length;
+    if (failed.length === 0) {
+      toastSuccess(`Created ${made} work order${made === 1 ? '' : 's'}`);
+    } else {
+      // Name what didn't land rather than reporting a clean success.
+      toastError(`Created ${made} of ${queue.length} — ${failed.length} failed: ${failed.slice(0, 3).join(', ')}`);
+    }
+    onImported?.();
   };
 
   const importSheet = async () => {
@@ -267,8 +303,22 @@ Ticket Number: FLN5092
         </div>
       </div>
 
-      <div style={{ marginBottom: 12, fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase' }}>
-        Pending Review ({pending.length})
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+          Pending Review ({pending.length})
+        </div>
+        <div style={{ flex: 1 }} />
+        {pending.length > 1 && (
+          <button
+            className="btn btn-primary"
+            onClick={approveAll}
+            disabled={bulk !== null || busyId !== null}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: bulk ? 0.7 : 1 }}
+          >
+            <CheckCircle2 size={13} />
+            {bulk ? `Creating ${bulk.done} of ${bulk.total}…` : `Approve all ${pending.length}`}
+          </button>
+        )}
       </div>
 
       {pending.length === 0 ? (

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { deriveSiteName } from '@/lib/visits';
+import { nextWorkOrderNumber } from '@/lib/wo-number';
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -28,8 +29,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       : Promise.resolve({ data: null, error: null }),
   ]);
 
-  const nums = (wos ?? []).map((w) => parseInt(w.wo_number, 10)).filter((n) => !isNaN(n));
-  const nextWoNumber = nums.length > 0 ? String(Math.max(...nums) + 1) : '1001';
+  // FAJ's own sequence, ignoring imported ticket numbers — see lib/wo-number.ts
+  // for why "highest + 1" produced 8-digit numbers for internal jobs.
+  const nextWoNumber = nextWorkOrderNumber((wos ?? []).map((w) => w.wo_number));
 
   // Folding 'Wendys' onto the canonical "Wendy's" is best-effort: an unmatched
   // name must never block the work order.

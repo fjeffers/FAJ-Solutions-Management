@@ -801,19 +801,26 @@ export default function HomePage() {
 
   // ── Import Queue ───────────────────────────────────────────────────────────
 
-  const approveImportItem = async (id: string) => {
+  // Returns whether the work order was actually created, so a bulk run can
+  // report what failed instead of claiming a clean success. In `silent` mode
+  // (approve-all) it skips the per-item toast and reload — eighteen of each
+  // would be eighteen toasts and eighteen full refetches.
+  const approveImportItem = async (id: string, opts?: { silent?: boolean }): Promise<boolean> => {
+    let ok = false;
     try {
       const res = await fetch(`/api/import-queue/${id}/approve`, { method: 'POST' });
-      if (!res.ok) {
+      ok = res.ok;
+      if (!res.ok && !opts?.silent) {
         const data = await res.json().catch(() => ({}));
         toastError(data.error || 'Import approval failed');
-      } else {
+      } else if (res.ok && !opts?.silent) {
         toastSuccess('Import approved — work order created');
       }
     } catch {
-      toastError('Import approval failed — check your connection');
+      if (!opts?.silent) toastError('Import approval failed — check your connection');
     }
-    loadAll();
+    if (!opts?.silent) loadAll();
+    return ok;
   };
 
   const rejectImportItem = async (id: string) => {

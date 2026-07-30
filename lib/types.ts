@@ -145,6 +145,19 @@ export type WorkOrder = {
   closeout_notes: string | null;
   submitted_at: string | null;
 
+  // Submit → review (columns existed in the DB but were never typed;
+  // migration-049 adds submitted_by and review_history)
+  /** 'submitted' puts the job in the owner's review queue. */
+  submission_status: 'submitted' | 'approved' | 'rejected' | null;
+  approved_at: string | null;
+  reviewed_at: string | null;
+  /** Why it was sent back, shown to the tech so they know what to fix. */
+  rejection_reason: string | null;
+  /** Who submitted it — a multi-tech job needs to know which one. */
+  submitted_by: string | null;
+  /** Append-only log so a second denial doesn't erase the first. */
+  review_history: { at: string; action: string; by: string; reason?: string }[];
+
   // POC + custom Q&A (migration-006)
   poc_name: string | null;
   poc_phone: string | null;
@@ -792,6 +805,43 @@ export type CustomerContact = {
   phone: string | null;
   is_primary: boolean;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ── Portal access grants (migration 048) ────────────────────────────────────
+// A revocable, optionally-expiring token letting a helper do a chosen subset of
+// what a contractor can. Enforced server-side by portal_resolve + portal_can;
+// the UI only decides which controls to draw.
+
+export type PortalCapability =
+  | 'view' | 'tasks' | 'answers' | 'upload' | 'documents'
+  | 'time' | 'notes' | 'status' | 'messages';
+
+export const PORTAL_CAPABILITIES: { key: PortalCapability; label: string; hint: string }[] = [
+  { key: 'view',      label: 'See assigned jobs', hint: 'Required — without this they see nothing' },
+  { key: 'tasks',     label: 'Tick off tasks',    hint: 'Mark work order tasks complete' },
+  { key: 'answers',   label: 'Answer questions',  hint: 'Fill in the custom questions' },
+  { key: 'upload',    label: 'Upload photos',     hint: 'Add pictures and documents to the job' },
+  { key: 'documents', label: 'View documents',    hint: 'Open, download and print attached documents' },
+  { key: 'time',      label: 'Log time',          hint: 'Travel, arrival, check in and check out' },
+  { key: 'notes',     label: 'Write closeout notes', hint: 'Describe what was done' },
+  { key: 'status',    label: 'Advance and submit',  hint: 'In Progress / Work Done, and submit for review' },
+  { key: 'messages',  label: 'Messages',          hint: 'Read and send messages on the job' },
+];
+
+export type PortalGrant = {
+  id: string;
+  user_id: string;
+  token: string;
+  label: string;
+  contractor_id: string;
+  capabilities: PortalCapability[];
+  /** NULL = every job assigned to that contractor. */
+  scope_wo_ids: string[] | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_seen_at: string | null;
   created_at: string;
   updated_at: string;
 };

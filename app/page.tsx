@@ -12,7 +12,7 @@ import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
   Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox,
-  ChevronDown, Receipt, Network, Timer, Building2,
+  ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck,
 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -29,6 +29,7 @@ import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
 import SiteLogView from '@/components/SiteLogView';
 import CustomersView from '@/components/CustomersView';
+import PortalAdminView from '@/components/PortalAdminView';
 import ImportQueueView from '@/components/ImportQueueView';
 import StatementView from '@/components/StatementView';
 import TenNinetyNineView from '@/components/TenNinetyNineView';
@@ -52,7 +53,7 @@ import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
-  'statements', '1099', 'w9', 'quickbooks', 'settings',
+  'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -67,7 +68,7 @@ function viewFromUrl(): View {
 const SECTION_OF_VIEW: Record<View, string> = {
   dashboard: 'main', financials: 'main', customers: 'main', workorders: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
   scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', sitelog: 'fieldops', 'import-queue': 'fieldops',
-  contractors: 'contractors', 'contractor-analytics': 'contractors',
+  contractors: 'contractors', 'contractor-analytics': 'contractors', 'portal-admin': 'contractors',
   statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
   settings: 'settings',
 };
@@ -957,6 +958,7 @@ export default function HomePage() {
           <NavSection title="Contractors" open={sectionOpen('contractors')} onToggle={() => toggleSection('contractors')}>
             <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
             <NI k="contractor-analytics" icon={<Award size={15} />} label="Performance" />
+            <NI k="portal-admin" icon={<ShieldCheck size={15} />} label="Portal & Review" />
           </NavSection>
           <NavSection title="Reports" open={sectionOpen('reports')} onToggle={() => toggleSection('reports')}>
             <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
@@ -1067,6 +1069,7 @@ export default function HomePage() {
           <QuotesView quotes={quotes} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} />
         )}
         {view === 'customers' && <CustomersView />}
+        {view === 'portal-admin' && <PortalAdminView />}
         {view === 'network' && <NetworkView />}
         {view === 'sitelog' && <SiteLogView />}
         {view === 'invoices' && (

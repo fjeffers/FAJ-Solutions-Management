@@ -51,38 +51,48 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Couldn't read anything usable out of that." }, { status: 422 });
   }
 
-  const { fields, matched, email } = parsed;
+  const { jobs, matched } = parsed;
 
-  // Dedupe on the content itself. Pasting the same email twice — easy to do when
-  // you're working through an inbox by hand — must not create two work orders.
-  // A site + ticket pair identifies a dispatch; otherwise fall back to the body.
-  const identity = fields.client_reference || fields.external_wo_id
-    ? `${fields.client_reference}:${fields.external_wo_id}`
-    : createHash('sha1').update(`${email.subject}\n${email.body}`).digest('hex');
+  // One queue row per job. A go-back list covers a run of sites — the real one
+  // that prompted this carried eighteen — and each is its own work order.
+  const source = matched === 'netview' ? 'netview_smartsheet'
+    : matched === 'fieldnation' ? 'field_nation'
+    : 'google_docs';
+
+  const rows = jobs.map((fields) => {
+    // Dedupe per job, so re-pasting the list after Karen adds a site queues only
+    // the new one instead of eighteen duplicates. Site + ticket identifies a
+    // job; without either, fall back to a hash of that job's own text.
+    const identity = fields.client_reference || fields.external_wo_id
+      ? `${fields.client_reference}:${fields.external_wo_id}`
+      : createHash('sha1').update(`${fields.title}\n${fields.description}`).digest('hex');
+
+    return {
+      user_id: user.id,
+      source,
+      external_dedupe_key: `pasted:${identity}`,
+      parsed_fields: fields,
+      raw_snippet: `${fields.title}\n${fields.site_address ?? ''}\n${fields.description}`.slice(0, 500),
+      status: 'pending',
+    };
+  });
 
   const { data: inserted, error } = await supabase
     .from('import_queue')
-    .upsert({
-      user_id: user.id,
-      // Reuse the existing source values so ImportQueueView labels it correctly;
-      // a generic paste is closest to an internal doc.
-      source: matched === 'netview' ? 'netview_smartsheet'
-        : matched === 'fieldnation' ? 'field_nation'
-        : 'google_docs',
-      external_dedupe_key: `pasted:${identity}`,
-      parsed_fields: fields,
-      raw_snippet: `${email.subject}\n${email.body}`.slice(0, 500),
-      status: 'pending',
-    }, { onConflict: 'user_id,source,external_dedupe_key', ignoreDuplicates: true })
+    .upsert(rows, { onConflict: 'user_id,source,external_dedupe_key', ignoreDuplicates: true })
     .select('id');
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // ignoreDuplicates returns nothing when it was already queued — say so plainly
-  // rather than reporting a success that didn't add anything.
-  if (!inserted || inserted.length === 0) {
-    return NextResponse.json({ ok: true, duplicate: true, matched });
-  }
-
-  return NextResponse.json({ ok: true, duplicate: false, matched, id: inserted[0].id, fields });
+  // ignoreDuplicates returns only what was actually added, so the difference is
+  // what was already queued. Report both rather than claiming a clean success.
+  const added = inserted?.length ?? 0;
+  return NextResponse.json({
+    ok: true,
+    matched,
+    found: jobs.length,
+    added,
+    duplicates: jobs.length - added,
+    sites: jobs.map((j) => j.client_reference).filter(Boolean),
+  });
 }

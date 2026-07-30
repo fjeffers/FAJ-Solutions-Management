@@ -82,14 +82,18 @@ export default function ImportQueueView({
         toastError(data.error || 'Could not read that email');
         return;
       }
-      if (data.duplicate) {
-        toastSuccess('Already in the queue — nothing added');
+      // One email routinely covers many sites, so report the count — and say
+      // plainly when some were already queued rather than implying all landed.
+      const { found = 0, added = 0, duplicates = 0 } = data;
+      if (added === 0) {
+        toastSuccess(`All ${found} already in the queue — nothing added`);
       } else {
-        // Say which parser matched: a recognised dispatch is pre-filled, a
-        // generic one needs more from the reviewer.
-        toastSuccess(data.matched === 'generic'
-          ? 'Added for review — check the details, it was not a recognised dispatch format'
-          : 'Added for review — dispatch details filled in automatically');
+        const site = added === 1 ? 'site' : 'sites';
+        toastSuccess(
+          `${added} ${site} added for review`
+          + (duplicates ? ` (${duplicates} already queued)` : '')
+          + (data.matched === 'generic' ? ' — check the details before approving' : ''),
+        );
       }
       setPastedEmail('');
       onImported?.();

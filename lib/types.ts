@@ -476,6 +476,15 @@ export type ParsedNetviewFields = {
   external_wo_id: string;   // Ticket Number
   start_date: string | null;
   total_amount?: number;    // Google Sheets imports carry an amount; email imports don't
+
+  // Location, when the email states it. A go-back list gives a name and street
+  // address per site, which become the work order's site fields and the site
+  // visit's own address rather than being buried in the description.
+  site_name?: string | null;
+  site_address?: string | null;
+  city?: string;
+  state?: string;
+  zip?: string;
 };
 
 export type ImportQueueItem = {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { splitPastedEmail, parseGenericEmail, parsePastedEmail } from './pasted';
+import { GO_BACK_LIST, GO_BACK_SITE_IDS } from './go-back-list.fixture';
 
 describe('splitPastedEmail', () => {
   it('reads an Outlook forward block', () => {
@@ -71,10 +72,13 @@ Scope :  Wendy's New Jersey and Philly Standardization Project`,
     expect(parseGenericEmail(email).title).toBe("Wendy's Standardization — Matawan");
   });
 
-  it('keeps the address and full body in the description for the reviewer', () => {
-    const d = parseGenericEmail(email).description;
-    expect(d).toContain('388 Highway Route 35');
-    expect(d).toContain('Standardization Project');
+  it('puts the address in its own field and the scope in the description', () => {
+    const f = parseGenericEmail(email);
+    // The address gets a real field so it can reach work_orders.site_address
+    // and the site visit, instead of being buried in prose.
+    expect(f.site_address).toBe('388 Highway Route 35. Matawan, NJ 07735');
+    expect(f).toMatchObject({ city: 'Matawan', state: 'NJ', zip: '07735' });
+    expect(f.description).toContain('Standardization Project');
   });
 
   it('reads a written-out date when there is no numeric one', () => {
@@ -124,5 +128,75 @@ CONFIRM YOUR VISIT by opening the request`);
   it('returns null only for an empty paste', () => {
     expect(parsePastedEmail('')).toBeNull();
     expect(parsePastedEmail('   ')).toBeNull();
+  });
+});
+
+// ── The real thing: one email, many work orders ──────────────────────────────
+describe('multi-site go-back list (real NetView email, 2026-07-28)', () => {
+  const out = parsePastedEmail(GO_BACK_LIST)!;
+
+  it('finds all 18 sites, not one job for the whole email', () => {
+    expect(out.jobs).toHaveLength(18);
+  });
+
+  it('reads every site number through every separator variant Karen typed', () => {
+    // "Site ID 1331", "Site ID  452", "Site ID: 9291", "Site ID : 11503"
+    expect(out.jobs.map((j) => j.client_reference)).toEqual(GO_BACK_SITE_IDS);
+  });
+
+  it('gives every job a distinct site number — none merge or duplicate', () => {
+    expect(new Set(out.jobs.map((j) => j.client_reference)).size).toBe(18);
+  });
+
+  it('titles each job by its site name and number', () => {
+    expect(out.jobs.map((j) => j.title).slice(0, 4))
+      .toEqual(['Hillside #1331', 'BAYONNE #8349', 'WEST DEPTFORD #8526', 'ARAMINGO #452']);
+    // including the awkward "Site Name  :City Ave Center" (no space after colon)
+    expect(out.jobs.find((j) => j.client_reference === '945')?.title)
+      .toBe('City Ave Center #945');
+  });
+
+  it('gives every job a name and an address — nothing silently blank', () => {
+    for (const j of out.jobs) {
+      expect(j.site_name, `site ${j.client_reference} name`).toBeTruthy();
+      expect(j.site_address, `site ${j.client_reference} address`).toBeTruthy();
+    }
+  });
+
+  it('captures the street address, including the "Site Address :" variant', () => {
+    expect(out.jobs[0].site_address).toBe('410 Route 221 Hillside, NJ 07205');
+    expect(out.jobs.find((j) => j.client_reference === '2445')?.site_address)
+      .toBe('501 ADAMS AVENUE.  PHILADELPHIA, PA 19120');
+    expect(out.jobs.find((j) => j.client_reference === '9291')?.site_address)
+      .toBe('320 Village Center Dr.  Swedesboro, NJ 08085');
+  });
+
+  it('splits city and state out of the address', () => {
+    expect(out.jobs[0]).toMatchObject({ city: 'Hillside', state: 'NJ', zip: '07205' });
+    expect(out.jobs.find((j) => j.client_reference === '452'))
+      .toMatchObject({ city: 'Philadelphia', state: 'PA', zip: '19134' });
+    expect(out.jobs.find((j) => j.client_reference === '11503'))
+      .toMatchObject({ city: 'Mt Laurel', state: 'NJ', zip: '08054' });
+  });
+
+  it('keeps each site\'s own multi-line scope as its description', () => {
+    expect(out.jobs[0].description).toContain('Q-Board and COB are black');
+    expect(out.jobs[0].description).toContain('All cameras are showing offline');
+    // and does not bleed the next site's scope into it
+    expect(out.jobs[0].description).not.toContain('Rack needs to be moved');
+    expect(out.jobs.find((j) => j.client_reference === '8526')?.description)
+      .toContain('Rack needs to be moved into managers office');
+  });
+
+  it('keeps internal Drive links out of the description', () => {
+    for (const j of out.jobs) expect(j.description).not.toMatch(/https?:\/\//);
+  });
+
+  it('takes the customer from the subject so all 5 land on one client', () => {
+    expect(new Set(out.jobs.map((j) => j.customer_name))).toEqual(new Set(['Wendys']));
+  });
+
+  it('does not leak the shared preamble into a job as if it were scope', () => {
+    expect(out.jobs[0].description).not.toContain('remaining sites that need');
   });
 });

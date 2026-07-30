@@ -55,6 +55,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     external_wo_id: f.external_wo_id ?? null,
     source_platform: SOURCE_PLATFORM_MAP[item.source] ?? 'Internal',
     start_date: f.start_date ?? null,
+    // Location, when the email stated it (a go-back list gives one per site).
+    site_name: f.site_name ?? null,
+    site_address: f.site_address ?? null,
+    site_city: f.city || null,
+    site_state: f.state || null,
+    site_zip: f.zip || null,
     total_amount: typeof f.total_amount === 'number' && !isNaN(f.total_amount) ? f.total_amount : 0,
     pay_type: 'Fixed',
     wo_status: 'Open',
@@ -71,7 +77,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // to is tracked from the moment of import rather than remembered later. It
   // starts un-invoiced with no hours; the Site Log's Check In fills those in.
   // Non-fatal for the same reason as above — the work order is what matters.
-  const siteLabel = deriveSiteName(f.title, f.customer_name);
+  // Prefer the site name the email actually gave; fall back to parsing the title.
+  const siteLabel = f.site_name || deriveSiteName(f.title, f.customer_name);
   const [{ error: visitError }] = await Promise.all([
     supabase.from('site_visits').insert({
       user_id: user.id,
@@ -79,6 +86,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       program: f.customer_name?.trim() || null,
       site_code: f.client_reference?.trim() || null,
       site_name: siteLabel,
+      address: f.site_address ?? null,
       visit_date: f.start_date ?? null,
       visit_type: 'Project',
       invoice_status: 'not_invoiced',

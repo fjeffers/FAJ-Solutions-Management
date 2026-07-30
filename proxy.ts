@@ -27,7 +27,8 @@ export async function proxy(request: NextRequest) {
   const isAuthRoute   = pathname.startsWith('/login');
   const isApiRoute    = pathname.startsWith('/api');
   const isPortalRoute = pathname.startsWith('/portal');
-  const isInvoiceRoute = pathname.startsWith('/invoice/') || pathname.startsWith('/billing/') || pathname.startsWith('/quote/');
+  const isInvoiceRoute = pathname.startsWith('/invoice/') || pathname.startsWith('/billing/')
+    || pathname.startsWith('/quote/') || pathname.startsWith('/site-report/');
 
   // Portal is public — contractors access it via a signed token link, no session required
   if (isPortalRoute) return response;

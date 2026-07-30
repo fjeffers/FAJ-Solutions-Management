@@ -16,10 +16,11 @@ import type {
   WorkOrder, Invoice, InvoicePayment, SiteVisit, Quote,
 } from '@/lib/types';
 import { customerBooks, unlinkedCount, type CustomerBook } from '@/lib/customers';
+import { siteReportCSV, toReportVisits } from '@/lib/site-report';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
   Plus, X, Search, Trash2, Building2, Phone, Mail, User, MessageSquarePlus,
-  TrendingUp, AlertTriangle, ChevronLeft,
+  AlertTriangle, ChevronLeft, Share2, Download,
 } from 'lucide-react';
 
 const STATUSES: CustomerStatus[] = ['lead', 'prospect', 'active', 'dormant', 'lost'];
@@ -162,6 +163,49 @@ export default function CustomersView() {
     void load();
   };
 
+  // ── Site activity report: spreadsheet + share link ──────────────────────
+  const downloadSiteCSV = (c: Customer) => {
+    const mine = visits.filter((v) => v.customer_id === c.id);
+    if (mine.length === 0) return toastError('No site visits logged for this customer yet');
+
+    const csv = siteReportCSV(toReportVisits(mine));
+    // ﻿ so Excel opens it as UTF-8 rather than mangling accented site names.
+    const blob = new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${c.name.replace(/[^\w\s-]/g, '')} site activity ${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toastSuccess('Spreadsheet downloaded');
+  };
+
+  const shareSiteReport = async (c: Customer) => {
+    // Reuse an existing token — regenerating would break links already sent.
+    const { data: fresh } = await supabase
+      .from('customers').select('share_token').eq('id', c.id).single();
+
+    let tok = fresh?.share_token as string | null | undefined;
+    if (!tok) {
+      tok = crypto.randomUUID().replace(/-/g, '');
+      const { error } = await supabase.from('customers')
+        .update({ share_token: tok, updated_at: new Date().toISOString() }).eq('id', c.id);
+      if (error) return toastError(error.message);
+      void load();
+    }
+
+    const url = `${window.location.origin}/site-report/${tok}`;
+    try {
+      if (navigator.share) await navigator.share({ title: `${c.name} — site activity`, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        toastSuccess('Share link copied');
+      }
+    } catch {
+      // User dismissed the share sheet — not an error worth shouting about.
+    }
+  };
+
   if (loading) return <div style={{ padding: 24, color: 'var(--muted)' }}>Loading customers…</div>;
 
   // ── Detail ──────────────────────────────────────────────────────────────
@@ -186,6 +230,13 @@ export default function CustomersView() {
             {c.status}
           </span>
           <div style={{ flex: 1 }} />
+          {/* Wraps rather than overflowing on phone widths. */}
+          <button className="btn btn-ghost" onClick={() => downloadSiteCSV(c)} title="Download site activity as a spreadsheet">
+            <Download size={14} /> Spreadsheet
+          </button>
+          <button className="btn btn-ghost" onClick={() => void shareSiteReport(c)} title="Share a read-only site activity report">
+            <Share2 size={14} /> Share report
+          </button>
           <button className="btn btn-ghost" onClick={() => setEditing(c)}>Edit</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>

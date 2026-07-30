@@ -9,6 +9,7 @@ import PortalWorkDoneGate from './PortalWorkDoneGate';
 import PortalUpload from './PortalUpload';
 import PortalTimeLog from './PortalTimeLog';
 import PortalChat from './PortalChat';
+import PortalDocuments from './PortalDocuments';
 import type { WorkOrder, Contractor } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -19,6 +20,10 @@ type PortalWorkOrder = WorkOrder & { is_lead: boolean };
 type PortalData = {
   contractor: Contractor;
   work_orders: PortalWorkOrder[];
+  // migration-048: what this token may do, and whether it's the tech or a helper
+  capabilities?: string[];
+  display_name?: string;
+  kind?: 'contractor' | 'grant';
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -78,7 +83,9 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
   const { data, error } = await supabase.rpc('get_portal_data', { p_token: token });
   if (error || !data) return notFound();
 
-  const { contractor, work_orders } = data as PortalData;
+  const { contractor, work_orders, kind } = data as PortalData;
+  // Paperwork is the tech's own; a helper link never sees it.
+  const isContractor = (kind ?? 'contractor') === 'contractor';
   // Pre-compute isLead per WO for ergonomic use below
   const woIsLead = (wo: PortalWorkOrder) => wo.is_lead !== false;
 
@@ -198,6 +205,21 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
                   isNew={false} isLead={woIsLead(wo)} />
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Onboarding paperwork — tech only */}
+        {isContractor && (
+          <div style={{ marginBottom: 32 }}>
+            <PortalDocuments
+              token={token}
+              w9Received={Boolean(contractor.w9_received)}
+              w9SubmittedAt={contractor.w9_submitted_at ?? null}
+              contractUrl={contractor.contract_url ?? null}
+              contractSignedAt={contractor.contract_signed_at ?? null}
+              contractSignedName={contractor.contract_signed_name ?? null}
+              contractorName={contractor.name}
+            />
           </div>
         )}
 

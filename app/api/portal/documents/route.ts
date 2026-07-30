@@ -17,6 +17,10 @@ import { NextResponse } from 'next/server';
 export async function POST(req: Request) {
   try {
     const contentType = req.headers.get('content-type') ?? '';
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    );
 
     // ── Contract signature (JSON) ──
     if (contentType.includes('application/json')) {
@@ -27,11 +31,6 @@ export async function POST(req: Request) {
       if (!signed_name?.trim()) {
         return NextResponse.json({ error: 'Type your full name to sign' }, { status: 400 });
       }
-
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      );
 
       const { data, error } = await supabase.rpc('portal_submit_document', {
         p_token: token,
@@ -57,11 +56,6 @@ export async function POST(req: Request) {
     if (file.size > 10 * 1024 * 1024) {
       return NextResponse.json({ error: 'File is larger than 10MB' }, { status: 400 });
     }
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    );
 
     // Path is keyed by the token so one tech can never overwrite another's form.
     const safeExt = file.name.split('.').pop()?.replace(/[^a-z0-9]/gi, '') ?? 'pdf';

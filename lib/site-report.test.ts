@@ -191,7 +191,12 @@ Questions: dispatch@netview.example.com`;
 });
 
 describe('clientVisibleNote', () => {
+  // Length and shape matched to the real offender in production (1,789 chars).
+  // Genuine work notes top out around 739, so the gate separates the two
+  // populations rather than being tuned to a convenient fixture.
   const emailDump = `Frederick,
+
+Here are their plans for this location
 
 You are scheduled for the following assignment.
 Please review each document to be familiar on what is expected and what are the
@@ -200,15 +205,42 @@ must be filled out and submitted with the deliverables. Please ensure that you
 take a photo of the BOM then Check Mark each item received when doing your
 inventory. We will need a photo of the Check Marked BOM added into your
 deliverables. Brand : Wendy's Date : 7/16/2026 Address : 388 Highway Route 35.
-Matawan, NJ 07735 FLN Number: FLN4783 Scope : Standardization Project`;
+Matawan, NJ 07735 FLN Number: FLN4783 Scope : Standardization Project
+
+I've also attached all the docs we have for the project. You will need to read
+through and be aware of what the project's requirements are. The Rack and Matrix
+PDF has been designed to be printed. It may be a good idea to take it to Staples
+to print. When you hand them the files, say: These are already sized. Please
+print: This one at 36x48, these two at 24x36, all in full color, no scaling, and
+laminate matte finish.
+
+Please note the following. Color clips need to be installed on both ends of the
+patch cables. Patch cables go into the rack and also into the faceplates. All
+faceplates must be labeled with port numbers as per matrix. All faceplates must
+have the paper and plastic screw covers they come with installed. All exposed
+wiring must be contained in raceway. All deliverables must be uploaded to the
+Google Drive prior to leaving site.`;
 
   it('prefers a written client summary over notes', () => {
     expect(clientVisibleNote({ notes: emailDump, client_summary: 'Installed 12 drops and terminated the rack.' }))
       .toBe('Installed 12 drops and terminated the rack.');
   });
 
-  it('hides an imported email rather than truncating it into tech instructions', () => {
+  it('hides a pasted assignment email rather than truncating it into tech instructions', () => {
     expect(clientVisibleNote({ notes: emailDump, client_summary: null })).toBe('');
+  });
+
+  // Regression: a 300-char gate hid six real notes in production to suppress one
+  // email. Genuine descriptions top out around 739 chars; the email is 1,789.
+  it('shows a long GENUINE work note — these are what the report is for', () => {
+    const real =
+      'Kiosk 2 - faceplate shows B9 and B10. This faceplate should be B10 GREEN and B11 VIOLET. '
+      + 'There are 2 faceplates with A5. There are 2 faceplates with B5. Faceplates B16, A37, A38, '
+      + 'A19, B20 have BLUE jacks. These need to be changed to YELLOW. Managers office is missing '
+      + 'B13 in the faceplate. RACK A26 is not labelled. Please verify every drop against the '
+      + 'matrix before leaving and photograph each corrected faceplate for the deliverables.';
+    expect(real.length).toBeGreaterThan(300);
+    expect(clientVisibleNote({ notes: real, client_summary: null })).toBe(real);
   });
 
   it('still shows genuine short notes', () => {

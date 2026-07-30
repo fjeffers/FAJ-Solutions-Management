@@ -59,8 +59,7 @@ export function deriveSiteName(
   const raw = (title ?? '').trim();
   if (raw) {
     const parts = raw.split('/').map((s) => s.trim()).filter(Boolean);
-    if (parts.length > 1) return parts[parts.length - 1];
-    if (parts.length === 1) return parts[0];
+    if (parts.length) return parts.at(-1)!;
   }
   return (fallback ?? '').trim() || null;
 }

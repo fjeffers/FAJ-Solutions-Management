@@ -147,8 +147,12 @@ export type WorkOrder = {
 
   // Submit → review (columns existed in the DB but were never typed;
   // migration-049 adds submitted_by and review_history)
-  /** 'submitted' puts the job in the owner's review queue. */
-  submission_status: 'submitted' | 'approved' | 'rejected' | null;
+  /**
+   * 'submitted' puts the job in the owner's review queue. Defaults to
+   * 'not_started' in the database — all 61 existing rows carry that value, and
+   * an earlier version of this type omitted it.
+   */
+  submission_status: 'not_started' | 'submitted' | 'approved' | 'rejected' | null;
   approved_at: string | null;
   reviewed_at: string | null;
   /** Why it was sent back, shown to the tech so they know what to fix. */

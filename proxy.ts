@@ -24,16 +24,29 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
 
-  const isAuthRoute   = pathname.startsWith('/login');
-  const isApiRoute    = pathname.startsWith('/api');
-  const isPortalRoute = pathname.startsWith('/portal');
-  const isInvoiceRoute = pathname.startsWith('/invoice/') || pathname.startsWith('/billing/')
-    || pathname.startsWith('/quote/') || pathname.startsWith('/site-report/');
+  // Pages that must work without a session. Token-gated pages authorise
+  // themselves against an unguessable token, and the password-reset pages are
+  // by definition reached while logged out.
+  //
+  // ANY new public page goes in this list. It used to be a chain of
+  // `isInvoiceRoute`-style booleans, which drifted: the name stopped describing
+  // the set once the site report joined it, and both password-reset routes had
+  // been missed entirely — a logged-out user following a reset link was bounced
+  // to /login.
+  const PUBLIC_PREFIXES = [
+    '/portal/',        // contractor + helper portal
+    '/invoice/',       // client invoice
+    '/billing/',       // billing helper
+    '/quote/',         // client quote
+    '/site-report/',   // client site activity report
+    '/reset-password', // request a reset — always logged out
+    '/update-password',// set the new password from the emailed link
+  ];
 
-  // Portal is public — contractors access it via a signed token link, no session required
-  if (isPortalRoute) return response;
-  // Client-facing invoice pages are public too — shared via unguessable token links
-  if (isInvoiceRoute) return response;
+  const isAuthRoute = pathname.startsWith('/login');
+  const isApiRoute  = pathname.startsWith('/api');
+
+  if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return response;
 
   if (!user && !isAuthRoute && !isApiRoute) {
     const url = request.nextUrl.clone();

@@ -14,6 +14,9 @@ import {
 // A wrong token 404s rather than hinting that a report exists.
 
 export const dynamic = 'force-dynamic';
+// Same as the invoice/quote/billing pages — a shared client report must never
+// be indexed, even though the token makes it unguessable.
+export const metadata = { robots: { index: false, follow: false } };
 
 type Payload = {
   customer: { name: string; city: string | null; state: string | null };
@@ -88,6 +91,7 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
               {g.visits.map((v, i) => {
                 const sessions = fmtSessions(v.sessions);
                 const times = [fmtClock(v.time_in), fmtClock(v.time_out)].filter(Boolean).join(' – ');
+                const note = clientVisibleNote(v);
                 return (
                   <div key={i} style={{ padding: '9px 0', borderTop: i === 0 ? 'none' : '1px solid #f5f2ea' }}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', alignItems: 'baseline' }}>
@@ -100,9 +104,9 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
                         </div>
                       )}
                     </div>
-                    {clientVisibleNote(v) && (
+                    {note && (
                       <div style={{ fontSize: 12.5, color: '#333', marginTop: 3, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                        {clientVisibleNote(v)}
+                        {note}
                       </div>
                     )}
                     {sessions && (

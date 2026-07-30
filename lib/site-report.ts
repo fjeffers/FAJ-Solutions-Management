@@ -25,11 +25,22 @@ export type ReportVisit = {
 
 /**
  * Longest a fallback note can be and still plausibly be a work description
- * rather than a pasted email. The real ones are short: 'Add BLANKS to Rack',
- * 'Cabling refresh reinstall the network cables and cameras', and the longest
- * genuine one (a list of faceplate corrections) is comfortably under this.
+ * rather than a pasted email.
+ *
+ * Measured against production rather than guessed. Genuine notes run to 739
+ * chars — "Kiosk 2 faceplate shows B9 and B10…", "Missing photos of APs…",
+ * "I have no idea what is going on at this site…" — and every one of those is
+ * exactly what a client should read. The one pasted assignment email is 1,789.
+ *
+ * An earlier 300 here was wrong: it hid six real work descriptions to suppress
+ * one email. Provenance is no help either — all seven were typed by hand, so
+ * "came from an import" would gate the wrong way round.
  */
-export const MAX_FALLBACK_NOTE = 300;
+const MAX_FALLBACK_NOTE = 1200;
+
+/** How a visit is identified as "the same site" for grouping and counting. */
+const siteKey = (v: ReportVisit): string =>
+  (v.site_code || v.site_name || v.address || '').trim().toLowerCase();
 
 /** Local clock time, or empty. Kept short — the date already has the day. */
 export function fmtClock(iso: string | null | undefined): string {
@@ -118,13 +129,12 @@ export function clientSafeNotes(notes: string | null | undefined, maxChars = 600
  */
 export function clientVisibleNote(v: Pick<ReportVisit, 'notes' | 'client_summary'>): string {
   const summary = (v.client_summary ?? '').trim();
-  if (summary) return clientSafeNotes(summary, 2000);
+  if (summary) return clientSafeNotes(summary);
 
-  const safe = clientSafeNotes(v.notes, MAX_FALLBACK_NOTE + 1);
-  if (!safe) return '';
-  // Truncated by the sanitiser, or simply long → an email, not a description.
-  if (safe.length > MAX_FALLBACK_NOTE || safe.endsWith('…')) return '';
-  return safe;
+  // Sanitise without a budget, then judge the real length. Truncating first and
+  // then sniffing for the ellipsis also hid genuine short notes ending in '…'.
+  const safe = clientSafeNotes(v.notes, Number.MAX_SAFE_INTEGER);
+  return !safe || safe.length > MAX_FALLBACK_NOTE ? '' : safe;
 }
 
 const CSV_HEADERS = [
@@ -190,7 +200,11 @@ export function groupBySite(visits: ReportVisit[]): { title: string; code: strin
   const m = new Map<string, ReportVisit[]>();
   for (const v of visits) {
     const key = (v.site_code || v.site_name || v.address || 'unknown').trim().toLowerCase();
-    m.set(key, [...(m.get(key) ?? []), v]);
+    // Push into the existing array rather than rebuilding it — spreading here
+    // copies the whole group on every visit, which is quadratic as sites fill up.
+    const group = m.get(key);
+    if (group) group.push(v);
+    else m.set(key, [v]);
   }
   return [...m.values()]
     .map((group) => {

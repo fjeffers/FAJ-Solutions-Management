@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
+import { logAudit } from '@/lib/audit';
 import type {
   WorkOrder, Contractor, ContractorTimeLog, PortalGrant, PortalCapability,
 } from '@/lib/types';
@@ -22,8 +23,7 @@ import { PORTAL_CAPABILITIES } from '@/lib/types';
 import { suggestPayForWO, suggestionsAsContractorPay, payVariance, type PaySuggestion } from '@/lib/pay';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
-  Plus, X, Trash2, Check, Ban, Link2, Clock, MapPin, ShieldCheck,
-  AlertTriangle, ClipboardCheck, Users,
+  Plus, X, Check, Ban, Link2, Clock, MapPin, ShieldCheck, AlertTriangle, Users,
 } from 'lucide-react';
 
 type Tab = 'review' | 'access';
@@ -71,7 +71,17 @@ export default function PortalAdminView() {
       && w.wo_status !== 'Approved' && w.wo_status !== 'Paid');
   }, [wos, logs]);
 
-  const suggestionsFor = (wo: WorkOrder) => suggestPayForWO(wo, logs, contractors);
+  // One pass over the logs per data change, not one per card per render — a
+  // keystroke in the deny box used to re-run this for every visible job.
+  const suggestionsByWo = useMemo(() => {
+    const m = new Map<string, PaySuggestion[]>();
+    for (const wo of [...submitted, ...inFlight]) {
+      m.set(wo.id, suggestPayForWO(wo, logs, contractors));
+    }
+    return m;
+  }, [submitted, inFlight, logs, contractors]);
+
+  const suggestionsFor = (wo: WorkOrder) => suggestionsByWo.get(wo.id) ?? [];
 
   // ── Approve / deny ──────────────────────────────────────────────────────
   const approve = async (wo: WorkOrder, acceptPay: PaySuggestion[] | null) => {
@@ -98,6 +108,13 @@ export default function PortalAdminView() {
 
     const { error } = await supabase.from('work_orders').update(patch).eq('id', wo.id);
     if (error) return toastError(error.message);
+    // Approving can write contractor_pay, so it belongs in the audit trail
+    // alongside every other money-touching write in the app.
+    await logAudit({
+      action: 'update', entityType: 'work_order', entityId: wo.id,
+      entityLabel: `WO#${wo.wo_number}`,
+      changes: { event: 'approved', pay: patch.contractor_pay ?? null },
+    });
     toastSuccess(`${wo.wo_number} approved — the portal can no longer change it`);
     void load();
   };
@@ -122,6 +139,11 @@ export default function PortalAdminView() {
     }).eq('id', denying.wo.id);
 
     if (error) return toastError(error.message);
+    await logAudit({
+      action: 'update', entityType: 'work_order', entityId: denying.wo.id,
+      entityLabel: `WO#${denying.wo.wo_number}`,
+      changes: { event: 'denied', reason },
+    });
     toastSuccess('Sent back to the tech with your reason');
     setDenying(null);
     void load();

@@ -18,9 +18,23 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (item.status !== 'pending') return NextResponse.json({ error: 'Already reviewed' }, { status: 400 });
 
   const f = item.parsed_fields;
-  const { data: wos } = await supabase.from('work_orders').select('wo_number').order('wo_number');
+
+  // The next WO number and the customer lookup don't depend on each other, and
+  // Fred is watching a button spin — run them together.
+  const [{ data: wos }, custRes] = await Promise.all([
+    supabase.from('work_orders').select('wo_number').order('wo_number'),
+    f.customer_name?.trim()
+      ? supabase.rpc('customer_resolve_or_create', { p_user_id: user.id, p_name: f.customer_name })
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
   const nums = (wos ?? []).map((w) => parseInt(w.wo_number, 10)).filter((n) => !isNaN(n));
   const nextWoNumber = nums.length > 0 ? String(Math.max(...nums) + 1) : '1001';
+
+  // Folding 'Wendys' onto the canonical "Wendy's" is best-effort: an unmatched
+  // name must never block the work order.
+  if (custRes.error) console.error('customer_resolve_or_create failed:', custRes.error);
+  const customerId = (custRes.data as string | null) ?? null;
 
   const SOURCE_PLATFORM_MAP: Record<string, string> = {
     netview_smartsheet: 'NetView',
@@ -28,19 +42,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     google_sheets: 'Internal',
     google_docs: 'Internal',
   };
-
-  // Fold the incoming customer name onto the canonical customer record, so a job
-  // for 'Wendys' lands on the same customer as "Wendy's" (migration 046/049).
-  // Non-fatal: an unmatched name must never block the import.
-  let customerId: string | null = null;
-  if (f.customer_name?.trim()) {
-    const { data: cid, error: custErr } = await supabase.rpc('customer_resolve_or_create', {
-      p_user_id: user.id,
-      p_name: f.customer_name,
-    });
-    if (custErr) console.error('customer_resolve_or_create failed:', custErr);
-    else customerId = (cid as string | null) ?? null;
-  }
 
   const { data: newWO, error: insertError } = await supabase.from('work_orders').insert({
     user_id: user.id,
@@ -71,26 +72,27 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // starts un-invoiced with no hours; the Site Log's Check In fills those in.
   // Non-fatal for the same reason as above — the work order is what matters.
   const siteLabel = deriveSiteName(f.title, f.customer_name);
-  const { error: visitError } = await supabase.from('site_visits').insert({
-    user_id: user.id,
-    customer_id: customerId,
-    program: f.customer_name?.trim() || null,
-    site_code: f.client_reference?.trim() || null,
-    site_name: siteLabel,
-    visit_date: f.start_date ?? null,
-    visit_type: 'Project',
-    invoice_status: 'not_invoiced',
-    payment_status: 'unpaid',
-    work_order_id: newWO.id,
-    notes: f.title ?? null,
-  });
+  const [{ error: visitError }] = await Promise.all([
+    supabase.from('site_visits').insert({
+      user_id: user.id,
+      customer_id: customerId,
+      program: f.customer_name?.trim() || null,
+      site_code: f.client_reference?.trim() || null,
+      site_name: siteLabel,
+      visit_date: f.start_date ?? null,
+      visit_type: 'Project',
+      invoice_status: 'not_invoiced',
+      payment_status: 'unpaid',
+      work_order_id: newWO.id,
+      notes: f.title ?? null,
+    }),
+    supabase.from('import_queue').update({
+      status: 'approved',
+      reviewed_at: new Date().toISOString(),
+      created_work_order_id: newWO.id,
+    }).eq('id', id),
+  ]);
   if (visitError) console.error('site_visits insert failed:', visitError);
-
-  await supabase.from('import_queue').update({
-    status: 'approved',
-    reviewed_at: new Date().toISOString(),
-    created_work_order_id: newWO.id,
-  }).eq('id', id);
 
   return NextResponse.json({
     ok: true,

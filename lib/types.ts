@@ -90,6 +90,9 @@ export type WorkOrder = {
   title: string | null;
   contractor_name: string;
 
+  /** (migration-046) join key to the customer master. */
+  customer_id: string | null;
+
   // FieldNation status
   wo_status: WorkOrderStatus;
 
@@ -353,6 +356,8 @@ export type Quote = {
   sent_at: string | null;
   accepted_at: string | null;
   work_order_id: string | null;
+  /** (migration-046) join key to the customer master. */
+  customer_id: string | null;
   /** (migration-044) powers the public /quote/<token> client page. */
   share_token: string | null;
   created_at: string;
@@ -388,6 +393,8 @@ export type Invoice = {
   paid_at: string | null;
   work_order_ids: string[];
   quote_id: string | null;
+  /** (migration-046) join key to the customer master. */
+  customer_id: string | null;
   /** (migration-042) powers the public /invoice/<token> client page. */
   share_token: string | null;
   created_at: string;
@@ -717,8 +724,76 @@ export type SiteVisit = {
   travel_charge: number | null;
   notes: string | null;
   work_order_id: string | null;
+  /** (migration-046) join key to the customer master. */
+  customer_id: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// ── Customer master (migration 046) — the ERP/CRM foundation ────────────────
+// One canonical record per client. The free-text names on work orders,
+// invoices, quotes and visits stay as the human label; customer_id is the join
+// key that makes per-customer reporting possible.
+
+export type CustomerStatus = 'lead' | 'prospect' | 'active' | 'dormant' | 'lost';
+
+export type Customer = {
+  id: string;
+  user_id: string;
+  name: string;
+  status: CustomerStatus;
+  industry: string | null;
+  source: string | null;
+  billing_email: string | null;
+  billing_phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  payment_terms: string | null;
+  /** NULL falls back to user_settings.mileage_rate. */
+  default_mileage_rate: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Every spelling that means this customer — 'wendys' and "wendy's" both resolve. */
+export type CustomerAlias = {
+  id: string;
+  user_id: string;
+  customer_id: string;
+  alias: string;
+  created_at: string;
+};
+
+export type CustomerContact = {
+  id: string;
+  user_id: string;
+  customer_id: string;
+  name: string;
+  title: string | null;
+  email: string | null;
+  phone: string | null;
+  is_primary: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CustomerActivityKind =
+  | 'call' | 'email' | 'meeting' | 'note' | 'quote' | 'invoice' | 'job';
+
+export type CustomerActivity = {
+  id: string;
+  user_id: string;
+  customer_id: string;
+  contact_id: string | null;
+  kind: CustomerActivityKind;
+  subject: string | null;
+  body: string | null;
+  occurred_at: string;
+  created_at: string;
 };
 
 export type PaymentMethod =

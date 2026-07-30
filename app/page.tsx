@@ -12,7 +12,7 @@ import {
   BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp,
   LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet,
   Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox,
-  ChevronDown, Receipt, Network, Timer,
+  ChevronDown, Receipt, Network, Timer, Building2,
 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -28,6 +28,7 @@ import QuotesView from '@/components/QuotesView';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
 import SiteLogView from '@/components/SiteLogView';
+import CustomersView from '@/components/CustomersView';
 import ImportQueueView from '@/components/ImportQueueView';
 import StatementView from '@/components/StatementView';
 import TenNinetyNineView from '@/components/TenNinetyNineView';
@@ -49,7 +50,7 @@ import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 
 const VIEWS = [
-  'dashboard', 'financials', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
+  'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'statements', '1099', 'w9', 'quickbooks', 'settings',
 ] as const;
@@ -64,7 +65,7 @@ function viewFromUrl(): View {
 // Which sidebar dropdown each view lives under — used to auto-open the right
 // section when navigating (including via search, dashboard links, or the URL).
 const SECTION_OF_VIEW: Record<View, string> = {
-  dashboard: 'main', financials: 'main', workorders: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
+  dashboard: 'main', financials: 'main', customers: 'main', workorders: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
   scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', sitelog: 'fieldops', 'import-queue': 'fieldops',
   contractors: 'contractors', 'contractor-analytics': 'contractors',
   statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
@@ -922,6 +923,7 @@ export default function HomePage() {
           <NavSection title="Main" open={sectionOpen('main')} onToggle={() => toggleSection('main')}>
             <NI k="dashboard"   icon={<BarChart3 size={15} />}    label="Dashboard" />
             <NI k="financials"  icon={<TrendingUp size={15} />}   label="Financials" />
+            <NI k="customers"   icon={<Building2 size={15} />}    label="Customers" />
             <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
             <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
             <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
@@ -1064,6 +1066,7 @@ export default function HomePage() {
         {view === 'quotes' && (
           <QuotesView quotes={quotes} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} />
         )}
+        {view === 'customers' && <CustomersView />}
         {view === 'network' && <NetworkView />}
         {view === 'sitelog' && <SiteLogView />}
         {view === 'invoices' && (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName } from './visits';
 
 const base = { visit_date: '2026-06-20', site_name: 'Roselle', site_code: '5798', visit_type: 'T&M' as const };
 
@@ -33,5 +33,33 @@ describe('visitLineItem', () => {
     const li = visitLineItem({ visit_date: null, site_name: null, site_code: '10760', visit_type: 'T&M', hours: 2, rate: '$55/hr' });
     expect(li.description).toContain('#10760');
     expect(li.quantity).toBe(2);
+  });
+});
+
+describe('deriveSiteName', () => {
+  it('uses a NetView sheet title as-is — it is already the location', () => {
+    expect(deriveSiteName('EDGEWATER II')).toBe('EDGEWATER II');
+    expect(deriveSiteName('Mt. Laurel')).toBe('Mt. Laurel');
+    expect(deriveSiteName('WOODBURY HTS')).toBe('WOODBURY HTS');
+  });
+
+  it('takes the last segment of a slash-delimited email-parsed title', () => {
+    expect(deriveSiteName("Wendy's / Site ID 5519 / NJ & Philly / Project / PERTH AMBOY"))
+      .toBe('PERTH AMBOY');
+  });
+
+  it('preserves casing rather than prettifying — re-casing mangles numerals', () => {
+    expect(deriveSiteName('VOORHEES 1')).toBe('VOORHEES 1');
+  });
+
+  it('falls back to the customer name when there is no title', () => {
+    expect(deriveSiteName(null, "Wendy's")).toBe("Wendy's");
+    expect(deriveSiteName('   ', 'State Farm')).toBe('State Farm');
+  });
+
+  it('returns null when it has nothing to work with', () => {
+    expect(deriveSiteName(null)).toBeNull();
+    expect(deriveSiteName('', '')).toBeNull();
+    expect(deriveSiteName('///')).toBeNull();
   });
 });

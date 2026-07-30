@@ -48,6 +48,15 @@ export type Contractor = {
   account_number: string | null;
   account_type: 'checking' | 'savings' | null;
 
+  // (migration-049) pay from logged hours, and portal onboarding documents
+  /** Default rate used to turn GPS-stamped hours into a suggested payout. */
+  default_hourly_rate: number | null;
+  contract_url: string | null;
+  contract_signed_at: string | null;
+  contract_signed_name: string | null;
+  contract_signed_ip: string | null;
+  w9_submitted_at: string | null;
+
   created_at: string;
   updated_at: string;
 };
@@ -539,6 +548,12 @@ export type ContractorTimeLog = {
   arrived_lng:      number | null;
   checked_in_at:    string | null;
   checked_out_at:   string | null;
+  /** (migration-049) per-job rate override; falls back to the tech's default. */
+  hourly_rate:      number | null;
+  /** (migration-049) what the tech says they did, captured at checkout. */
+  work_summary:     string | null;
+  /** (migration-049) manual correction when the clock is wrong (missed checkout). */
+  adjusted_hours:   number | null;
   created_at: string;
   updated_at: string;
 };

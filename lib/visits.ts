@@ -40,3 +40,27 @@ export function visitLineItem(
     rate: 0,
   };
 }
+
+/**
+ * Best-effort site label for a visit created from an import.
+ *
+ * Import titles come in two shapes. NetView sheet rows are already just the
+ * location — "EDGEWATER II", "Mt. Laurel", "WOODBURY HTS". Email-parsed jobs
+ * arrive as a slash-delimited path where the location is last:
+ * "Wendy's / Site ID 5519 / NJ & Philly / Project / PERTH AMBOY".
+ *
+ * Casing is preserved rather than prettified — the source is what the client
+ * calls the site, and re-casing "EDGEWATER II" mangles the numeral.
+ */
+export function deriveSiteName(
+  title: string | null | undefined,
+  fallback?: string | null,
+): string | null {
+  const raw = (title ?? '').trim();
+  if (raw) {
+    const parts = raw.split('/').map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 1) return parts[parts.length - 1];
+    if (parts.length === 1) return parts[0];
+  }
+  return (fallback ?? '').trim() || null;
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  siteReportCSV, siteReportTotals, groupBySite, csvCell, fmtDay, fmtSessions,
+  siteReportCSV, siteReportTotals, groupBySite, csvCell, fmtDay, fmtSessions, clientSafeNotes,
   type ReportVisit,
 } from './site-report';
 
@@ -133,5 +133,59 @@ describe('groupBySite', () => {
   it('falls back to the address when a site has no name', () => {
     const groups = groupBySite([v({ site_name: null, site_code: null, address: '9 Elm' })]);
     expect(groups[0].title).toBe('9 Elm');
+  });
+});
+
+describe('clientSafeNotes', () => {
+  // A real Wendy's visit carried the whole import email into notes, including
+  // NetView's internal Smartsheet form and a Google Drive deliverables folder.
+  const realEmail = `Frederick,
+
+Here are their plans for this location
+
+You are scheduled for the following assignment.
+Check Out: https://app.smartsheet.com/b/form/019dc57e81267f29af8cdb73440952f3
+Bridge : https://bit.ly/Netview-Bridge
+Deliverable https://drive.google.com/drive/folders/1cVTGCIKD7p2Psfa6bStVkvM9XOgmenNx?usp=sharing
+Questions: dispatch@netview.example.com`;
+
+  it('strips every internal link so a client report cannot leak them', () => {
+    const out = clientSafeNotes(realEmail);
+    expect(out).not.toMatch(/https?:\/\//);
+    expect(out).not.toContain('smartsheet');
+    expect(out).not.toContain('drive.google');
+    expect(out).not.toContain('bit.ly');
+  });
+
+  it('strips email addresses', () => {
+    expect(clientSafeNotes(realEmail)).not.toContain('@netview.example.com');
+    expect(clientSafeNotes('reach me at bob@example.com')).not.toContain('@');
+  });
+
+  it('drops an internal salutation that gives away forwarded mail', () => {
+    expect(clientSafeNotes(realEmail).startsWith('Frederick')).toBe(false);
+  });
+
+  it('leaves a genuine work description alone', () => {
+    const real = 'Kiosk 2 - faceplate shows B9 and B10. This faceplate should be B10 GREEN and B11 VIOLET.';
+    expect(clientSafeNotes(real)).toBe(real);
+    expect(clientSafeNotes('Add BLANKS to Rack')).toBe('Add BLANKS to Rack');
+  });
+
+  it('truncates anything email-length', () => {
+    const out = clientSafeNotes('x'.repeat(2000));
+    expect(out.length).toBeLessThanOrEqual(601);
+    expect(out.endsWith('…')).toBe(true);
+  });
+
+  it('is empty for empty input', () => {
+    expect(clientSafeNotes(null)).toBe('');
+    expect(clientSafeNotes('   ')).toBe('');
+  });
+
+  it('keeps the CSV free of internal links too — the spreadsheet gets shared', () => {
+    const csv = siteReportCSV([v({ notes: realEmail })]);
+    expect(csv).not.toMatch(/https?:\/\//);
+    expect(csv).not.toContain('drive.google');
   });
 });

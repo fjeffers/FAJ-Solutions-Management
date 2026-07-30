@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { notFound } from 'next/navigation';
 import {
-  groupBySite, siteReportTotals, fmtDay, fmtClock, fmtSessions, type ReportVisit,
+  groupBySite, siteReportTotals, fmtDay, fmtClock, fmtSessions, clientSafeNotes,
+  type ReportVisit,
 } from '@/lib/site-report';
 
 // Public, read-only site activity report (migration 049), reached by an
@@ -36,8 +37,8 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
   const place = [customer.city, customer.state].filter(Boolean).join(', ');
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f1ea', padding: '28px 14px', fontFamily: 'Arial, Helvetica, sans-serif', color: '#1a1a1a' }}>
-      <div style={{ maxWidth: 860, margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', background: '#f4f1ea', padding: '28px 14px', fontFamily: 'Arial, Helvetica, sans-serif', color: '#1a1a1a', overflowX: 'hidden' }}>
+      <div style={{ maxWidth: 860, margin: '0 auto', overflowWrap: 'anywhere' }}>
 
         <div style={{ padding: '0 4px 16px' }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: '#0D7377', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
@@ -78,7 +79,7 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
           {groups.map((g) => (
             <div key={g.title} style={{ background: '#fff', border: '1px solid #eee', borderRadius: 12, padding: '15px 17px', marginBottom: 12 }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'baseline', marginBottom: 8 }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>{g.title}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, overflowWrap: 'anywhere' }}>{g.title}</div>
                 <div style={{ fontSize: 11, color: '#999' }}>
                   {g.visits.length} visit{g.visits.length !== 1 ? 's' : ''}
                 </div>
@@ -99,8 +100,10 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
                         </div>
                       )}
                     </div>
-                    {v.notes && (
-                      <div style={{ fontSize: 12.5, color: '#333', marginTop: 3, whiteSpace: 'pre-wrap' }}>{v.notes}</div>
+                    {clientSafeNotes(v.notes) && (
+                      <div style={{ fontSize: 12.5, color: '#333', marginTop: 3, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                        {clientSafeNotes(v.notes)}
+                      </div>
                     )}
                     {sessions && (
                       <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>{sessions}</div>

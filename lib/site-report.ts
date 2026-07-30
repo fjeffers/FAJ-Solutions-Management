@@ -51,6 +51,48 @@ export function fmtSessions(sessions: VisitSession[] | null | undefined): string
     .join('; ');
 }
 
+/**
+ * Make a visit note safe to show a client.
+ *
+ * `notes` is dual-use. Most of it is exactly what belongs on this report —
+ * "Add BLANKS to Rack", "Kiosk 2 faceplate shows B9 and B10…". But visits
+ * created from an email import can carry the whole raw email, and one real
+ * Wendy's visit did: addressed to Frederick, with NetView's internal Smartsheet
+ * form, a bit.ly bridge link, and a Google Drive deliverables folder. Sharing
+ * that report would have handed a client FAJ's internal links.
+ *
+ * So on the client-facing report only: links and addresses come out, a leading
+ * salutation comes off, and anything email-length is truncated. The full note is
+ * untouched in the app — this only changes what a client sees.
+ */
+export function clientSafeNotes(notes: string | null | undefined, maxChars = 600): string {
+  let s = (notes ?? '').replace(/\r\n/g, '\n').trim();
+  if (!s) return '';
+
+  // Internal links and addresses are never appropriate on a client report.
+  s = s.replace(/\bhttps?:\/\/\S+/gi, '')
+       .replace(/\bwww\.\S+/gi, '')
+       .replace(/\b[\w.+-]+@[\w-]+\.[\w.]+\b/gi, '');
+
+  // "Frederick," / "Hi Fred," — an internal greeting gives away that this is
+  // forwarded correspondence rather than a work description.
+  s = s.replace(/^(hi|hello|hey|dear)?\s*[A-Z][a-z]+\s*,\s*\n/i, '');
+
+  // Collapse the whitespace the stripping leaves behind.
+  s = s.split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim())
+       .filter((l, i, arr) => l !== '' || arr[i - 1] !== '')
+       .join('\n')
+       .trim();
+
+  if (s.length > maxChars) {
+    const cut = s.slice(0, maxChars);
+    const lastStop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('\n'));
+    s = `${(lastStop > maxChars * 0.5 ? cut.slice(0, lastStop + 1) : cut).trim()}…`;
+  }
+
+  return s;
+}
+
 const CSV_HEADERS = [
   'Date', 'Site', 'Site ID', 'Address', 'Time In', 'Time Out', 'Hours', 'Type', 'Work Performed', 'Sessions',
 ] as const;
@@ -79,7 +121,8 @@ export function siteReportCSV(visits: ReportVisit[]): string {
       fmtClock(v.time_out),
       v.hours ?? '',
       v.visit_type ?? '',
-      v.notes ?? '',
+      // Sanitised: the CSV gets shared too, so it must not carry internal links.
+      clientSafeNotes(v.notes),
       fmtSessions(v.sessions),
     ].map(csvCell).join(','));
 

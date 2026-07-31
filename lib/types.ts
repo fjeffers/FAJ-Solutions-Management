@@ -59,7 +59,6 @@ export type Contractor = {
 
   // (migration-051) W9 form tracking and management
   w9_file_path: string | null;
-  w9_received: boolean;
   w9_uploaded_by: string | null;
   w9_uploaded_at: string | null;
   w9_invite_sent_at: string | null;

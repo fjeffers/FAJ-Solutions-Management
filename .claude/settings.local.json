@@ -72,7 +72,8 @@
       "Bash(npx -y vercel env add NEXT_PUBLIC_APP_URL production)",
       "Bash(curl -s -L https://app.fajsolutions.com -o /tmp/newdomain.html -w \"status: %{http_code}\\\\n\")",
       "Bash(git commit -m 'feat: add contractor assignment and project price to site visits, W9 tracking *)",
-      "Bash(git commit -m 'feat: add enhanced field ops form, contractor W9 system, and spreadsheet exports *)"
+      "Bash(git commit -m 'feat: add enhanced field ops form, contractor W9 system, and spreadsheet exports *)",
+      "Bash(git commit -m 'fix: add Button component and remove duplicate w9_received field *)"
     ]
   }
 }

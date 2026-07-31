@@ -70,7 +70,9 @@
       "Bash(curl -s -X POST -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -d '{\"name\":\"app.fajsolutions.com\"}' https://api.vercel.com/v10/projects/faj-biz/domains?teamId=__TRACKED_VAR__)",
       "Bash(npx -y vercel env rm NEXT_PUBLIC_APP_URL production --yes)",
       "Bash(npx -y vercel env add NEXT_PUBLIC_APP_URL production)",
-      "Bash(curl -s -L https://app.fajsolutions.com -o /tmp/newdomain.html -w \"status: %{http_code}\\\\n\")"
+      "Bash(curl -s -L https://app.fajsolutions.com -o /tmp/newdomain.html -w \"status: %{http_code}\\\\n\")",
+      "Bash(git commit -m 'feat: add contractor assignment and project price to site visits, W9 tracking *)",
+      "Bash(git commit -m 'feat: add enhanced field ops form, contractor W9 system, and spreadsheet exports *)"
     ]
   }
 }

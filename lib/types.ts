@@ -57,6 +57,14 @@ export type Contractor = {
   contract_signed_ip: string | null;
   w9_submitted_at: string | null;
 
+  // (migration-051) W9 form tracking and management
+  w9_file_path: string | null;
+  w9_received: boolean;
+  w9_uploaded_by: string | null;
+  w9_uploaded_at: string | null;
+  w9_invite_sent_at: string | null;
+  w9_invite_token: string | null;
+
   created_at: string;
   updated_at: string;
 };
@@ -758,6 +766,8 @@ export type SiteVisit = {
   sessions: VisitSession[] | null;
   hours: number | null;
   rate: string | null;
+  /** (migration-051) fixed project price for non-hourly work. */
+  total_project_price: number | null;
   visit_type: SiteVisitType;
   invoice_status: 'not_invoiced' | 'invoiced' | 'na';
   payment_status: 'unpaid' | 'paid' | 'na';
@@ -773,6 +783,8 @@ export type SiteVisit = {
   work_order_id: string | null;
   /** (migration-046) join key to the customer master. */
   customer_id: string | null;
+  /** (migration-051) contractor assigned to this visit. */
+  contractor_id: string | null;
   created_at: string;
   updated_at: string;
 };

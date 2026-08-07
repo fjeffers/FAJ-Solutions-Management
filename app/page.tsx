@@ -471,6 +471,29 @@ export default function HomePage() {
     else toastError(`Couldn't email ${c.name}: ${res.error}`);
   };
 
+  // One at a time rather than Promise.all: a burst of sends trips Resend's rate
+  // limit, and a partial failure needs to name who actually missed out.
+  const handleSendAllOnboarding = async (list: Contractor[]) => {
+    if (list.length === 0) return;
+    if (!confirm(`Email all ${list.length} contractor${list.length !== 1 ? 's' : ''} a link to file their W-9 and sign the agreement?`)) return;
+    setContractorBusy('ALL');
+    const failed: string[] = [];
+    let sent = 0;
+    for (const c of list) {
+      if (!c.email || !c.portal_token) { failed.push(c.name); continue; }
+      const res = await sendOnboarding({
+        contractor_email: c.email,
+        contractor_name: c.name,
+        portal_url: `${window.location.origin}/portal/${c.portal_token}`,
+      });
+      if (res.ok) sent++; else failed.push(c.name);
+    }
+    setContractorBusy(null);
+    if (sent > 0) toastSuccess(`W-9 request sent to ${sent} contractor${sent !== 1 ? 's' : ''}`);
+    if (failed.length > 0) toastError(`Couldn't email: ${failed.join(', ')}`);
+    await loadCore();
+  };
+
   const handleSyncQuickBooks = async (c: Contractor) => {
     setContractorBusy(c.id);
     try {
@@ -1194,6 +1217,7 @@ export default function HomePage() {
             onAddPayment={(prefill) => setModal({ type: 'payment', item: null, prefill })}
             onEditPayment={(p) => setModal({ type: 'payment', item: p })}
             onSendOnboarding={handleSendOnboarding}
+            onSendAll={handleSendAllOnboarding}
             onSyncQuickBooks={handleSyncQuickBooks}
             busy={contractorBusy}
           />

@@ -22,9 +22,35 @@ export async function POST(req: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
 
-    // ── Contract signature (JSON) ──
+    // ── Contract signature, or typed W-9 details (JSON) ──
     if (contentType.includes('application/json')) {
-      const { token, kind, signed_name } = await req.json();
+      const body = await req.json();
+      const { token, kind, signed_name } = body;
+
+      // W-9 details the tech typed themselves. The RPC validates the TIN and
+      // re-checks that this token belongs to the contractor, not a helper.
+      if (kind === 'w9_details') {
+        if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 });
+        const { data, error } = await supabase.rpc('portal_submit_w9_details', {
+          p_token: token,
+          p_legal_name: body.legal_name ?? '',
+          p_business_name: body.business_name ?? null,
+          p_entity_type: body.entity_type ?? null,
+          p_tax_id_type: body.tax_id_type ?? '',
+          p_tax_id: body.tax_id ?? '',
+          p_address: body.address ?? null,
+          p_city: body.city ?? null,
+          p_state: body.state ?? null,
+          p_zip: body.zip ?? null,
+          p_phone: body.phone ?? null,
+          p_email: body.email ?? null,
+          p_signed_name: signed_name ?? '',
+        });
+        if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+        if (data?.error) return NextResponse.json({ error: data.error }, { status: 400 });
+        return NextResponse.json({ ok: true });
+      }
+
       if (!token || kind !== 'contract') {
         return NextResponse.json({ error: 'Missing token or unsupported kind' }, { status: 400 });
       }

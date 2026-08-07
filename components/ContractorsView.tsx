@@ -7,7 +7,7 @@ import ContractorDetailView from './ContractorDetailView';
 
 export default function ContractorsView({
   contractors, workOrders, payments, onAdd, onEdit, onDelete, onViewStatement, onAddJob, onAddPayment, onEditPayment,
-  onSendOnboarding, onSyncQuickBooks, busy,
+  onSendOnboarding, onSendAll, onSyncQuickBooks, busy,
 }: {
   contractors: Contractor[];
   workOrders: EnrichedWorkOrder[];
@@ -20,14 +20,17 @@ export default function ContractorsView({
   onAddPayment: (prefill?: { contractor_name: string; wo_number?: string }) => void;
   onEditPayment: (p: Payment) => void;
   onSendOnboarding: (c: Contractor) => void;
+  onSendAll: (list: Contractor[]) => void;
   onSyncQuickBooks: (c: Contractor) => void;
-  /** Contractor id with a send/sync in flight, so its buttons disable. */
+  /** Contractor id with a send/sync in flight, or 'ALL' during a bulk send. */
   busy: string | null;
 }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Contractor | null>(null);
 
   const filtered = contractors.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()));
+  /** Bulk send covers everyone reachable, not just the filtered view. */
+  const emailable = contractors.filter((c) => c.email);
 
   if (selected) {
     return (
@@ -52,7 +55,16 @@ export default function ContractorsView({
             <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Contractors</h1>
             <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>{contractors.length} contractor{contractors.length !== 1 ? 's' : ''} — click a card to view details</p>
           </div>
-          <button className="btn btn-primary" onClick={onAdd}><Plus size={15} /> Add Contractor</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {emailable.length > 0 && (
+              <button className="btn btn-ghost" disabled={busy !== null}
+                title={`Email all ${emailable.length} contractors with an email address a link to file their W-9 and sign the agreement`}
+                onClick={() => onSendAll(emailable)}>
+                <Send size={14} /> {busy === 'ALL' ? 'Sending…' : `Request W-9 from all (${emailable.length})`}
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={onAdd}><Plus size={15} /> Add Contractor</button>
+          </div>
         </div>
       </div>
 
@@ -102,14 +114,17 @@ export default function ContractorsView({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                  {!c.w9_received && c.email && c.portal_token && (
-                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }}
-                      title={`Email ${c.name} a link to file their W-9 and sign the contractor agreement`}
-                      disabled={busy === c.id}
-                      onClick={() => onSendOnboarding(c)}>
-                      <Send size={13} /> {busy === c.id ? 'Sending…' : 'Request W-9'}
-                    </button>
-                  )}
+                  {/* Always offered — a W-9 already on file can still need
+                      replacing, and a contractor with no email says so rather
+                      than the button silently vanishing. */}
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }}
+                    title={c.email
+                      ? `Email ${c.name} a link to file their W-9 and sign the contractor agreement`
+                      : `Add an email address for ${c.name} first — click the pencil to edit`}
+                    disabled={busy === c.id || !c.email}
+                    onClick={() => onSendOnboarding(c)}>
+                    <Send size={13} /> {busy === c.id ? 'Sending…' : !c.email ? 'Needs email' : c.w9_received ? 'Resend' : 'Request W-9'}
+                  </button>
                   {c.w9_received && !c.qbo_vendor_id && (
                     <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }}
                       title={`Push ${c.name}'s W-9 details to QuickBooks as a 1099 vendor`}

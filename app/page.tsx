@@ -464,7 +464,9 @@ export default function HomePage() {
     const res = await sendOnboarding({
       contractor_email: c.email,
       contractor_name: c.name,
-      portal_url: `${window.location.origin}/portal/${c.portal_token}`,
+      // ?view=paperwork so the W-9 request opens on the forms alone. A job
+      // link uses the bare token and shows only the work.
+      portal_url: `${window.location.origin}/portal/${c.portal_token}?view=paperwork`,
     });
     if (res.ok) await markInviteSent([c.id]);
     setContractorBusy(null);
@@ -498,7 +500,7 @@ export default function HomePage() {
       const res = await sendOnboarding({
         contractor_email: c.email,
         contractor_name: c.name,
-        portal_url: `${window.location.origin}/portal/${c.portal_token}`,
+        portal_url: `${window.location.origin}/portal/${c.portal_token}?view=paperwork`,
       });
       if (res.ok) sentIds.push(c.id); else failed.push(c.name);
     }

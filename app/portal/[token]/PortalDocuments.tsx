@@ -5,6 +5,7 @@
 // portal_submit_document refuses it server-side too — a helper must not be able
 // to file someone's tax form or sign their agreement.
 import { useState } from 'react';
+import { CONTRACTOR_AGREEMENT, AGREEMENT_VERSION, AGREEMENT_CERTIFICATION } from '@/lib/contractor-agreement';
 
 type Props = {
   token: string;
@@ -135,7 +136,14 @@ export default function PortalDocuments({
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ ...label, marginBottom: 8 }}>Your paperwork</div>
+      {/* Two separate forms, numbered, so it is obvious there are exactly two
+          things to do and which one is still outstanding. */}
+      <div style={{ ...label, marginBottom: 4 }}>Your paperwork</div>
+      <div style={{ fontSize: 12.5, color: '#666', marginBottom: 14 }}>
+        {w9Done && signedAt
+          ? 'Both forms are on file. Nothing further needed.'
+          : `Two forms to complete${w9Done || signedAt ? ' — one still outstanding' : ''}. You can do them in any order.`}
+      </div>
 
       {err && (
         <div style={{ background: 'rgba(185,28,28,0.08)', color: '#b91c1c', borderRadius: 8, padding: '9px 12px', fontSize: 12, marginBottom: 10 }}>
@@ -143,10 +151,12 @@ export default function PortalDocuments({
         </div>
       )}
 
-      {/* ── W-9 ── */}
-      <div style={card}>
+      {/* ══ FORM 1 — W-9 ══ */}
+      <div style={{ ...card, borderLeft: `3px solid ${w9Done ? '#047857' : '#0D7377'}` }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-          <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>W-9 tax form</div>
+          <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>
+            <span style={{ color: '#999', fontWeight: 800 }}>FORM 1 · </span>W-9 tax form
+          </div>
           {w9Done && <span style={done}>✓ Received{w9SubmittedAt ? ` ${fmt(w9SubmittedAt)}` : ''}</span>}
         </div>
         <div style={{ fontSize: 12, color: '#666', margin: '5px 0 10px' }}>
@@ -260,10 +270,12 @@ export default function PortalDocuments({
         </div>
       </div>
 
-      {/* ── Contractor agreement ── */}
-      <div style={card}>
+      {/* ══ FORM 2 — Contractor agreement ══ */}
+      <div style={{ ...card, borderLeft: `3px solid ${signedAt ? '#047857' : '#0D7377'}` }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-          <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>Contractor agreement</div>
+          <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>
+            <span style={{ color: '#999', fontWeight: 800 }}>FORM 2 · </span>Contractor agreement
+          </div>
           {signedAt && (
             <span style={done}>
               ✓ Signed {fmt(signedAt)}{contractSignedName ? ` by ${contractSignedName}` : ''}
@@ -271,12 +283,34 @@ export default function PortalDocuments({
           )}
         </div>
 
-        {contractUrl && (
+        {/* An uploaded PDF wins when there is one; otherwise the terms are
+            shown inline. Previously neither existed for any contractor, so the
+            portal asked people to sign something they could not read. */}
+        {contractUrl ? (
           <div style={{ margin: '7px 0' }}>
             <a href={contractUrl} target="_blank" rel="noopener noreferrer"
               style={{ fontSize: 12.5, color: '#0D7377', fontWeight: 700 }}>
               Read the agreement →
             </a>
+          </div>
+        ) : (
+          <div style={{
+            maxHeight: 260, overflowY: 'auto', border: '1px solid #eee',
+            borderRadius: 8, padding: '12px 14px', margin: '9px 0',
+            background: '#fbfbfb', fontSize: 12.5, lineHeight: 1.6, color: '#333',
+          }}>
+            <div style={{ fontWeight: 800, marginBottom: 2 }}>
+              Independent Contractor Agreement
+            </div>
+            <div style={{ fontSize: 11, color: '#999', marginBottom: 10 }}>
+              FAJ Solutions · version {AGREEMENT_VERSION}
+            </div>
+            {CONTRACTOR_AGREEMENT.map((c) => (
+              <div key={c.heading} style={{ marginBottom: 10 }}>
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>{c.heading}</div>
+                <div>{c.body}</div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -287,7 +321,7 @@ export default function PortalDocuments({
         ) : (
           <>
             <div style={{ fontSize: 12, color: '#666', margin: '5px 0 9px' }}>
-              Type your full legal name to sign. This records the date and time as your signature.
+              {AGREEMENT_CERTIFICATION} This records the date and time as your signature.
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <input

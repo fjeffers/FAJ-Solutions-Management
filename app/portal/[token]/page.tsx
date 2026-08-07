@@ -72,8 +72,17 @@ function Divider() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function PortalPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function PortalPage({ params, searchParams }: {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ view?: string }>;
+}) {
   const { token } = await params;
+  // One token, two front doors. A W-9 request links to ?view=paperwork and
+  // shows only the forms; a job link shows only the work. Mixing tax paperwork
+  // into a job screen reads as unprofessional and buries whichever one the
+  // person was actually sent for.
+  const { view } = await searchParams;
+  const paperworkOnly = view === 'paperwork';
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -159,7 +168,7 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
             FAJ SOLUTIONS
           </div>
           <div style={{ color: 'white', fontSize: 22, fontWeight: 700, marginBottom: 2 }}>
-            Contractor Portal
+            {paperworkOnly ? 'Onboarding Paperwork' : 'Contractor Portal'}
           </div>
           <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>
             Welcome, {contractor.name}
@@ -170,8 +179,30 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
       {/* Content */}
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 16px 48px' }}>
 
+        {/* ══ PAPERWORK VIEW — reached from a W-9 request. Forms only. ══ */}
+        {paperworkOnly && isContractor && (
+          <PortalDocuments
+            token={token}
+            w9Received={Boolean(contractor.w9_received)}
+            w9SubmittedAt={contractor.w9_submitted_at ?? null}
+            contractUrl={contractor.contract_url ?? null}
+            contractSignedAt={contractor.contract_signed_at ?? null}
+            contractSignedName={contractor.contract_signed_name ?? null}
+            contractorName={contractor.name}
+          />
+        )}
+
+        {/* A helper link carries no paperwork, so send it to the job view
+            rather than showing an empty page. */}
+        {paperworkOnly && !isContractor && (
+          <div style={{ textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: 16, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#333', marginBottom: 6 }}>Nothing to complete here</div>
+            <div style={{ fontSize: 13, color: '#888' }}>Onboarding paperwork is filed by the contractor themselves.</div>
+          </div>
+        )}
+
         {/* New / pending jobs */}
-        {pending.length > 0 && (
+        {!paperworkOnly && pending.length > 0 && (
           <div style={{ marginBottom: 32 }}>
             <div style={{
               fontSize: 11, fontWeight: 700, color: '#0D7377', letterSpacing: 2,
@@ -190,7 +221,7 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
         )}
 
         {/* Accepted jobs */}
-        {accepted.length > 0 && (
+        {!paperworkOnly && accepted.length > 0 && (
           <div style={{ marginBottom: 32 }}>
             <div style={{
               fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 2,
@@ -208,23 +239,9 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
           </div>
         )}
 
-        {/* Onboarding paperwork — tech only */}
-        {isContractor && (
-          <div style={{ marginBottom: 32 }}>
-            <PortalDocuments
-              token={token}
-              w9Received={Boolean(contractor.w9_received)}
-              w9SubmittedAt={contractor.w9_submitted_at ?? null}
-              contractUrl={contractor.contract_url ?? null}
-              contractSignedAt={contractor.contract_signed_at ?? null}
-              contractSignedName={contractor.contract_signed_name ?? null}
-              contractorName={contractor.name}
-            />
-          </div>
-        )}
-
-        {/* Empty state */}
-        {work_orders.length === 0 && (
+        {/* Job view with nothing assigned. Paperwork is deliberately NOT shown
+            here — it has its own link. */}
+        {!paperworkOnly && work_orders.length === 0 && (
           <div style={{
             textAlign: 'center', padding: '60px 20px',
             background: 'white', borderRadius: 16, border: '1px solid #e5e7eb',

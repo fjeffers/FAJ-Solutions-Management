@@ -1,281 +1,188 @@
-import OAuthClient from 'intuit-oauth';
+// Minimal QuickBooks Online API client for Phase 11 (payments -> Expense sync).
+// Requires QBO_CLIENT_ID / QBO_CLIENT_SECRET from an Intuit Developer app. Start against a
+// free Sandbox company (QBO_ENVIRONMENT=sandbox) before ever pointing this at production.
 
-const oauthClient = new OAuthClient({
-  clientId: process.env.QB_CLIENT_ID || '',
-  clientSecret: process.env.QB_CLIENT_SECRET || '',
-  environment: (process.env.QB_ENVIRONMENT || 'sandbox') as 'sandbox' | 'production',
-  redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/quickbooks/callback`,
-});
+const INTUIT_AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2';
+const INTUIT_TOKEN_URL = 'https://oauth2.bearer.token.intuit.com/oauth2/v1/tokens/bearer';
+const SCOPE = 'com.intuit.quickbooks.accounting';
 
-export interface QBVendor {
-  DisplayName: string;
-  PrimaryEmailAddr?: { Address: string };
-  PrimaryPhone?: { FreeFormNumber: string };
-  BillAddr?: {
-    Line1?: string;
-    City?: string;
-    CountrySubDivisionCode?: string;
-    PostalCode?: string;
-  };
-  TaxID?: string;
+function apiBase(environment: 'sandbox' | 'production'): string {
+  return environment === 'production'
+    ? 'https://quickbooks.api.intuit.com/v3/company'
+    : 'https://sandbox-quickbooks.api.intuit.com/v3/company';
 }
 
-export async function createQBVendor(
-  accessToken: string,
-  realmId: string,
-  vendor: QBVendor
-): Promise<any> {
-  try {
-    const url = `https://quickbooks.api.intuit.com/v2/company/${realmId}/vendor`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(vendor),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`QB API error: ${error.message}`);
-    }
-
-    return await response.json();
-  } catch (err) {
-    console.error('QB vendor creation error:', err);
-    throw err;
-  }
+function redirectUri(): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  return `${base}/api/integrations/quickbooks/callback`;
 }
 
-export async function uploadQBAttachment(
-  accessToken: string,
-  realmId: string,
-  fileName: string,
-  fileContent: Buffer,
-  entityId: string,
-  entityType: 'Vendor' = 'Vendor'
-): Promise<any> {
-  try {
-    const url = `https://quickbooks.api.intuit.com/v2/company/${realmId}/upload`;
-
-    const formData = new FormData();
-    formData.append('file', new Blob([new Uint8Array(fileContent)], { type: 'application/pdf' }), fileName);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`QB upload error: ${error.message}`);
-    }
-
-    const uploadResponse = await response.json();
-
-    // Create attachment reference
-    const attachmentUrl = `https://quickbooks.api.intuit.com/v2/company/${realmId}/attachable`;
-
-    const attachablePayload = {
-      AttachableRef: [
-        {
-          EntityRef: {
-            type: entityType,
-            value: entityId,
-          },
-        },
-      ],
-      AttachFile: uploadResponse.AttachFile,
-      FileName: fileName,
-    };
-
-    const attachResponse = await fetch(attachmentUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(attachablePayload),
-    });
-
-    if (!attachResponse.ok) {
-      const error = await attachResponse.json();
-      throw new Error(`QB attachment error: ${error.message}`);
-    }
-
-    return await attachResponse.json();
-  } catch (err) {
-    console.error('QB attachment upload error:', err);
-    throw err;
-  }
-}
-
-export async function refreshAccessToken(refreshToken: string) {
-  try {
-    const response = await fetch('https://oauth.platform.intuit.com/oauth2/tokens/bearer', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: `Basic ${Buffer.from(
-          `${process.env.QB_CLIENT_ID}:${process.env.QB_CLIENT_SECRET}`
-        ).toString('base64')}`,
-      },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-      }).toString(),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Token refresh failed: ${error.error}`);
-    }
-
-    return await response.json();
-  } catch (err) {
-    console.error('Token refresh error:', err);
-    throw err;
-  }
-}
-
-export async function getQuickBooksAuthUrl() {
-  return oauthClient.authorizeUri({
-    scope: ['com.intuit.quickbooks.accounting'],
-    state: Buffer.from(Date.now().toString()).toString('base64'),
+export function getQuickBooksAuthUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: process.env.QBO_CLIENT_ID!,
+    redirect_uri: redirectUri(),
+    response_type: 'code',
+    scope: SCOPE,
+    state,
   });
+  return `${INTUIT_AUTH_URL}?${params.toString()}`;
+}
+
+async function tokenRequest(body: URLSearchParams): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+  const basicAuth = Buffer.from(`${process.env.QBO_CLIENT_ID}:${process.env.QBO_CLIENT_SECRET}`).toString('base64');
+  const res = await fetch(INTUIT_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${basicAuth}`,
+    },
+    body,
+  });
+  if (!res.ok) throw new Error(`QuickBooks token request failed: ${await res.text()}`);
+  return res.json();
 }
 
 export async function exchangeCodeForTokens(code: string) {
-  try {
-    const tokens = await oauthClient.createToken(code);
-    const tokenObj = typeof tokens.token === 'string' ? JSON.parse(tokens.token) : tokens.token;
-    return {
-      access_token: tokenObj.access_token,
-      refresh_token: tokenObj.refresh_token,
-      expires_in: tokenObj.expires_in,
-    };
-  } catch (err) {
-    console.error('Token exchange error:', err);
-    throw err;
-  }
+  return tokenRequest(new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: redirectUri(),
+  }));
 }
 
-export async function getCompanyName(environment: string, realmId: string, accessToken: string) {
-  try {
-    const url = `https://quickbooks.api.intuit.com/v2/company/${realmId}`;
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`QB API error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data.CompanyInfo?.CompanyName || 'QuickBooks Company';
-  } catch (err) {
-    console.error('Get company name error:', err);
-    throw err;
-  }
+export async function refreshAccessToken(refreshToken: string) {
+  return tokenRequest(new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+  }));
 }
 
-export async function listAccounts(environment: string, realmId: string, accessToken: string) {
-  try {
-    const url = `https://quickbooks.api.intuit.com/v2/company/${realmId}/query?query=select * from Account`;
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`QB API error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data.QueryResponse?.Account || [];
-  } catch (err) {
-    console.error('List accounts error:', err);
-    throw err;
-  }
+async function qboQuery<T>(environment: 'sandbox' | 'production', realmId: string, accessToken: string, query: string): Promise<T[]> {
+  const url = `${apiBase(environment)}/${realmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`QuickBooks query failed: ${await res.text()}`);
+  const data = await res.json();
+  const entityKey = Object.keys(data.QueryResponse ?? {}).find((k) => k !== 'maxResults' && k !== 'startPosition');
+  return entityKey ? data.QueryResponse[entityKey] : [];
 }
 
-export async function findOrCreateVendor(
-  environment: string,
+export async function getCompanyName(environment: 'sandbox' | 'production', realmId: string, accessToken: string): Promise<string> {
+  const url = `${apiBase(environment)}/${realmId}/companyinfo/${realmId}?minorversion=65`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`QuickBooks company info failed: ${await res.text()}`);
+  const data = await res.json();
+  return data.CompanyInfo?.CompanyName ?? 'QuickBooks Company';
+}
+
+export async function listAccounts(environment: 'sandbox' | 'production', realmId: string, accessToken: string): Promise<{ id: string; name: string; accountType: string }[]> {
+  type QboAccount = { Id: string; Name: string; AccountType: string };
+  const accounts = await qboQuery<QboAccount>(environment, realmId, accessToken, 'SELECT Id, Name, AccountType FROM Account WHERE Active = true MAXRESULTS 200');
+  return accounts.map((a) => ({ id: a.Id, name: a.Name, accountType: a.AccountType }));
+}
+
+export async function findOrCreateVendor(environment: 'sandbox' | 'production', realmId: string, accessToken: string, name: string): Promise<string> {
+  type QboVendor = { Id: string };
+  const escaped = name.replace(/'/g, "\\'");
+  const existing = await qboQuery<QboVendor>(environment, realmId, accessToken, `SELECT Id FROM Vendor WHERE DisplayName = '${escaped}'`);
+  if (existing.length > 0) return existing[0].Id;
+
+  const res = await fetch(`${apiBase(environment)}/${realmId}/vendor?minorversion=65`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ DisplayName: name }),
+  });
+  if (!res.ok) throw new Error(`QuickBooks vendor create failed: ${await res.text()}`);
+  const data = await res.json();
+  return data.Vendor.Id;
+}
+
+/**
+ * Creates or updates a vendor carrying the details from a filed W-9, so the
+ * 1099 comes out of QuickBooks with the right legal name, TIN and address.
+ * findOrCreateVendor only sets DisplayName — this is the W-9 path.
+ */
+export async function upsertVendorFromW9(
+  environment: 'sandbox' | 'production',
   realmId: string,
   accessToken: string,
-  vendorName: string,
-  email?: string
-): Promise<any> {
-  try {
-    // Query for existing vendor
-    const query = `select * from Vendor where DisplayName = '${vendorName.replace(/'/g, "''")}'`;
-    const url = `https://quickbooks.api.intuit.com/v2/company/${realmId}/query?query=${encodeURIComponent(query)}`;
+  w9: {
+    displayName: string;
+    legalName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    taxId?: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
+  },
+): Promise<string> {
+  type QboVendor = { Id: string; SyncToken: string };
+  const escaped = w9.displayName.replace(/'/g, "\\'");
+  const existing = await qboQuery<QboVendor>(
+    environment, realmId, accessToken,
+    `SELECT Id, SyncToken FROM Vendor WHERE DisplayName = '${escaped}'`,
+  );
 
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`QB API error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    if (data.QueryResponse?.Vendor?.length > 0) {
-      return data.QueryResponse.Vendor[0].Id;
-    }
-
-    // Create new vendor
-    const newVendor = await createQBVendor(accessToken, realmId, {
-      DisplayName: vendorName,
-      PrimaryEmailAddr: email ? { Address: email } : undefined,
-    });
-    return newVendor.Vendor.Id;
-  } catch (err) {
-    console.error('Find or create vendor error:', err);
-    throw err;
+  const body: Record<string, unknown> = {
+    DisplayName: w9.displayName,
+    Vendor1099: true,
+  };
+  if (w9.legalName) body.CompanyName = w9.legalName;
+  if (w9.email) body.PrimaryEmailAddr = { Address: w9.email };
+  if (w9.phone) body.PrimaryPhone = { FreeFormNumber: w9.phone };
+  if (w9.taxId) body.TaxIdentifier = w9.taxId;
+  if (w9.address || w9.city || w9.state || w9.zip) {
+    body.BillAddr = {
+      Line1: w9.address ?? undefined,
+      City: w9.city ?? undefined,
+      CountrySubDivisionCode: w9.state ?? undefined,
+      PostalCode: w9.zip ?? undefined,
+    };
   }
+
+  // Updating an existing vendor requires Id + SyncToken, or QuickBooks rejects it.
+  if (existing.length > 0) {
+    body.Id = existing[0].Id;
+    body.SyncToken = existing[0].SyncToken;
+    body.sparse = true;
+  }
+
+  const res = await fetch(`${apiBase(environment)}/${realmId}/vendor?minorversion=65`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`QuickBooks vendor upsert failed: ${await res.text()}`);
+  const data = await res.json();
+  return data.Vendor.Id;
 }
 
 export async function createExpensePurchase(
-  environment: string,
+  environment: 'sandbox' | 'production',
   realmId: string,
   accessToken: string,
-  expense: any
-): Promise<any> {
-  try {
-    const url = `https://quickbooks.api.intuit.com/v2/company/${realmId}/purchase`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(expense),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`QB API error: ${error.message}`);
-    }
-
-    const result = await response.json();
-    return result.Purchase?.Id;
-  } catch (err) {
-    console.error('Create expense purchase error:', err);
-    throw err;
-  }
+  params: { vendorId: string; amount: number; date: string; paymentAccountId: string; expenseAccountId: string; memo: string },
+): Promise<string> {
+  const res = await fetch(`${apiBase(environment)}/${realmId}/purchase?minorversion=65`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      PaymentType: 'Cash',
+      AccountRef: { value: params.paymentAccountId },
+      EntityRef: { value: params.vendorId, type: 'Vendor' },
+      TxnDate: params.date,
+      PrivateNote: params.memo,
+      Line: [{
+        Amount: params.amount,
+        DetailType: 'AccountBasedExpenseLineDetail',
+        AccountBasedExpenseLineDetail: { AccountRef: { value: params.expenseAccountId } },
+      }],
+    }),
+  });
+  if (!res.ok) throw new Error(`QuickBooks purchase create failed: ${await res.text()}`);
+  const data = await res.json();
+  return data.Purchase.Id;
 }
-
-export { oauthClient };

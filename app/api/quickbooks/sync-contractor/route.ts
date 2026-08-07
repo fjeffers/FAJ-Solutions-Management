@@ -1,89 +1,46 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { createQBVendor } from '@/lib/quickbooks';
+import { getValidQboSession } from '@/lib/quickbooks-session';
+import { upsertVendorFromW9 } from '@/lib/quickbooks';
+import { NextResponse } from 'next/server';
 
-export async function POST(req: NextRequest) {
+// Body: { contractorId } — pushes a filed W-9 into QuickBooks as a 1099 vendor.
+export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { contractorId } = await req.json();
+  if (!contractorId) return NextResponse.json({ error: 'Missing contractorId' }, { status: 400 });
 
-  if (!contractorId) {
-    return NextResponse.json({ error: 'Contractor ID required' }, { status: 400 });
+  const { data: contractor } = await supabase
+    .from('contractors').select('*').eq('id', contractorId).eq('user_id', user.id).single();
+  if (!contractor) return NextResponse.json({ error: 'Contractor not found' }, { status: 404 });
+
+  if (!contractor.w9_received) {
+    return NextResponse.json({ error: 'No W-9 on file for this contractor yet' }, { status: 400 });
   }
 
+  const session = await getValidQboSession(user.id);
+  if (!session) return NextResponse.json({ error: 'QuickBooks not connected' }, { status: 400 });
+
   try {
-    // Get contractor details
-    const { data: contractor, error: fetchErr } = await supabase
-      .from('contractors')
-      .select('*')
-      .eq('id', contractorId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (fetchErr || !contractor) {
-      return NextResponse.json({ error: 'Contractor not found' }, { status: 404 });
-    }
-
-    // Get user's QB credentials from settings
-    const { data: settings, error: settingsErr } = await supabase
-      .from('user_settings')
-      .select('qbo_access_token, qbo_realm_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (settingsErr || !settings?.qbo_access_token || !settings?.qbo_realm_id) {
-      return NextResponse.json(
-        { error: 'QuickBooks not connected. Please authorize first.' },
-        { status: 400 }
-      );
-    }
-
-    // Build vendor payload
-    const vendorPayload = {
-      DisplayName: contractor.business_name || contractor.name,
-      PrimaryEmailAddr: contractor.email ? { Address: contractor.email } : undefined,
-      PrimaryPhone: contractor.phone ? { FreeFormNumber: contractor.phone } : undefined,
-      BillAddr: {
-        Line1: contractor.address || '',
-        City: contractor.city || '',
-        CountrySubDivisionCode: contractor.state || '',
-        PostalCode: contractor.zip || '',
-      },
-      TaxID: contractor.tax_id || '',
-    };
-
-    // Create vendor in QB
-    const qbVendor = await createQBVendor(
-      settings.qbo_access_token,
-      settings.qbo_realm_id,
-      vendorPayload
-    );
-
-    // Store QB vendor ID
-    const { error: updateErr } = await supabase
-      .from('contractors')
-      .update({
-        qbo_vendor_id: qbVendor.Vendor.Id,
-      })
-      .eq('id', contractorId);
-
-    if (updateErr) throw updateErr;
-
-    return NextResponse.json({
-      ok: true,
-      message: `Contractor synced to QuickBooks as vendor ${qbVendor.Vendor.DisplayName}`,
-      qboVendorId: qbVendor.Vendor.Id,
+    const vendorId = await upsertVendorFromW9(session.environment, session.realm_id, session.access_token, {
+      displayName: contractor.business_name || contractor.name,
+      legalName: contractor.business_name ? contractor.name : null,
+      email: contractor.email,
+      phone: contractor.phone,
+      taxId: contractor.tax_id,
+      address: contractor.address,
+      city: contractor.city,
+      state: contractor.state,
+      zip: contractor.zip,
     });
-  } catch (err: any) {
-    console.error('QB sync error:', err);
-    return NextResponse.json(
-      { error: err.message || 'Failed to sync to QuickBooks' },
-      { status: 500 }
-    );
+
+    await supabase.from('contractors').update({ qbo_vendor_id: vendorId }).eq('id', contractorId);
+
+    return NextResponse.json({ ok: true, message: `${contractor.name} synced to QuickBooks`, vendorId });
+  } catch (err) {
+    console.error('QuickBooks contractor sync error:', err);
+    return NextResponse.json({ error: 'Failed to sync to QuickBooks' }, { status: 500 });
   }
 }

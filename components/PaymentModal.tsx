@@ -119,6 +119,18 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
   const isZelle = form.method === 'Zelle';
   const isDirectDeposit = form.method === 'Direct Deposit';
 
+  /** Why Save is unavailable, in the words of the thing that's missing. */
+  const blockedReason: string | null = (() => {
+    if (!form.wo_number) return 'Pick the work order this payment is for.';
+    if (!form.contractor_name) return 'Pick who was paid.';
+    if (!form.amount || Number(form.amount) <= 0) return 'Enter an amount.';
+    if (!form.payment_date) return 'Pick the date it was paid.';
+    if (!item && isZelle && zelleStep === 'idle' && !!zelleTarget) {
+      return 'Open Zelle, or choose “I already sent it” above.';
+    }
+    return null;
+  })();
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -332,11 +344,23 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
                 </div>
               )}
               {zelleStep === 'idle' && (
-                <button type="button" className="btn btn-primary"
-                  style={{ background: '#6B2D8B', width: '100%', justifyContent: 'center', gap: 6 }}
-                  onClick={launchZelle}>
-                  <ExternalLink size={13} /> Open Zelle App
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <button type="button" className="btn btn-primary"
+                    style={{ background: '#6B2D8B', width: '100%', justifyContent: 'center', gap: 6 }}
+                    onClick={launchZelle}>
+                    <ExternalLink size={13} /> Open Zelle App
+                  </button>
+                  {/* Paying elsewhere — in the bank app, on a phone — is the
+                      normal case, and the launch step was a dead end for it:
+                      Save stayed disabled with nothing saying why. Recording
+                      what already happened must never depend on the app having
+                      been the one to do it. */}
+                  <button type="button" className="btn btn-ghost"
+                    style={{ width: '100%', justifyContent: 'center', fontSize: 12.5 }}
+                    onClick={() => setZelleStep('confirmed')}>
+                    I already sent it — just record it
+                  </button>
+                </div>
               )}
               {zelleStep === 'ready' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -380,15 +404,25 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
         </div>
 
         {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary"
-            // The Zelle send-first gate only applies when recording a NEW payment —
-            // editing an already-recorded one must always be savable.
-            disabled={!canSave || (!item && isZelle && zelleStep === 'idle' && !!zelleTarget)}
-            onClick={() => canSave && onSave(form)}>
-            {item ? 'Save Changes' : 'Record Payment'}
-          </button>
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+          {/* A greyed-out button with no reason reads as "the app isn't
+              saving". Say which field is missing instead. */}
+          {blockedReason && (
+            <div style={{ fontSize: 12, color: '#b45309', marginBottom: 10, textAlign: 'right' }}>
+              {blockedReason}
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary"
+              // The Zelle send-first gate only applies when recording a NEW payment —
+              // editing an already-recorded one must always be savable.
+              disabled={!!blockedReason}
+              title={blockedReason ?? undefined}
+              onClick={() => canSave && onSave(form)}>
+              {item ? 'Save Changes' : 'Record Payment'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

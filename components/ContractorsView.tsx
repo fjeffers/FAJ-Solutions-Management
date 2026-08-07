@@ -103,17 +103,19 @@ export default function ContractorsView({
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                   {!c.w9_received && c.email && c.portal_token && (
-                    <button className="icon-btn" title="Email W-9 and agreement request"
+                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }}
+                      title={`Email ${c.name} a link to file their W-9 and sign the contractor agreement`}
                       disabled={busy === c.id}
                       onClick={() => onSendOnboarding(c)}>
-                      <Send size={14} />
+                      <Send size={13} /> {busy === c.id ? 'Sending…' : 'Request W-9'}
                     </button>
                   )}
                   {c.w9_received && !c.qbo_vendor_id && (
-                    <button className="icon-btn" title="Send W-9 details to QuickBooks"
+                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }}
+                      title={`Push ${c.name}'s W-9 details to QuickBooks as a 1099 vendor`}
                       disabled={busy === c.id}
                       onClick={() => onSyncQuickBooks(c)}>
-                      <BookUp size={14} />
+                      <BookUp size={13} /> {busy === c.id ? 'Syncing…' : 'Send to QuickBooks'}
                     </button>
                   )}
                   <button className="icon-btn" onClick={() => onEdit(c)}><Edit2 size={14} /></button>

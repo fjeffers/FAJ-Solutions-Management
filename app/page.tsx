@@ -1220,6 +1220,7 @@ export default function HomePage() {
             payments={payments}
             onPay={handlePayWO}
             onQuickPay={() => setModal({ type: 'payment', item: null })}
+            onEditWO={(w) => setModal({ type: 'wo', item: w })}
           />
         )}
         {view === 'contractors' && (

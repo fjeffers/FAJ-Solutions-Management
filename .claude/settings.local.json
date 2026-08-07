@@ -98,7 +98,8 @@
       "mcp__f4c4e511-5845-483f-aaf2-da3c23278c0b__get_logs",
       "Bash(grep -oE '\\(ERROR|FATAL\\)[^\"]{0,180}' mcp-f4c4e511-5845-483f-aaf2-da3c23278c0b-get_logs-1786142319672.txt)",
       "Bash(python -c ' *)",
-      "Bash(git commit -m 'fix: a busy map service could stall a work order save; W-9 filing never saved at all *)"
+      "Bash(git commit -m 'fix: a busy map service could stall a work order save; W-9 filing never saved at all *)",
+      "Bash(git commit -m 'feat: Payables says which jobs are blocking payroll, and opens each one to fix *)"
     ]
   }
 }

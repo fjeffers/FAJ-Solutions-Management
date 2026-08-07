@@ -45,6 +45,13 @@ export async function POST(req: Request) {
           p_phone: body.phone ?? null,
           p_email: body.email ?? null,
           p_signed_name: signed_name ?? '',
+          p_payment_method: body.payment_method ?? null,
+          p_zelle_phone: body.zelle_phone ?? null,
+          p_bank_name: body.bank_name ?? null,
+          p_account_holder: body.account_holder ?? null,
+          p_routing_number: body.routing_number ?? null,
+          p_account_number: body.account_number ?? null,
+          p_account_type: body.account_type ?? null,
         });
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });
         if (data?.error) return NextResponse.json({ error: data.error }, { status: 400 });

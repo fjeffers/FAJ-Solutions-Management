@@ -34,6 +34,8 @@ export type Contractor = {
   zip: string | null;
   w9_received: boolean;
   zelle_phone: string | null;
+  /** (migration-054) how this tech wants to be paid, answered on their W-9. */
+  payment_method: 'Zelle' | 'Direct Deposit' | 'Check' | 'Other' | null;
 
   // Contractor portal (migration-011)
   portal_token: string | null;

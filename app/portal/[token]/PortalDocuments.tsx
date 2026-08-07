@@ -75,6 +75,8 @@ export default function PortalDocuments({
     legal_name: contractorName ?? '', business_name: '',
     entity_type: 'Individual/Sole Proprietor', tax_id_type: 'SSN', tax_id: '',
     address: '', city: '', state: '', zip: '', phone: '', email: '', signed_name: '',
+    payment_method: 'Zelle', zelle_phone: '', bank_name: '', account_holder: '',
+    routing_number: '', account_number: '', account_type: 'checking',
   });
   const setW9v = (k: keyof typeof w9, v: string) => setW9((f) => ({ ...f, [k]: v }));
 
@@ -220,6 +222,63 @@ export default function PortalDocuments({
               <div style={row}>
                 <W9Field label="Phone"><input style={input} value={w9.phone} onChange={(e) => setW9v('phone', e.target.value)} /></W9Field>
                 <W9Field label="Email"><input style={input} type="email" value={w9.email} onChange={(e) => setW9v('email', e.target.value)} /></W9Field>
+              </div>
+
+              {/* How they want to be paid. Asked here because this is the one
+                  moment they are already entering their details. */}
+              <div style={{ borderTop: '1px solid #eee', paddingTop: 12, marginTop: 2 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#333', marginBottom: 8 }}>
+                  How would you like to be paid?
+                </div>
+                <div style={row}>
+                  <W9Field label="Preferred payment method" required>
+                    <select style={input} value={w9.payment_method} onChange={(e) => setW9v('payment_method', e.target.value)}>
+                      <option value="Zelle">Zelle</option>
+                      <option value="Direct Deposit">Direct deposit (ACH)</option>
+                      <option value="Check">Check</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </W9Field>
+                </div>
+
+                {w9.payment_method === 'Zelle' && (
+                  <div style={{ marginTop: 10 }}>
+                    <W9Field label="Phone or email registered to your Zelle" required>
+                      <input style={input} value={w9.zelle_phone} onChange={(e) => setW9v('zelle_phone', e.target.value)} />
+                    </W9Field>
+                  </div>
+                )}
+
+                {w9.payment_method === 'Direct Deposit' && (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={row}>
+                      <W9Field label="Bank name"><input style={input} value={w9.bank_name} onChange={(e) => setW9v('bank_name', e.target.value)} /></W9Field>
+                      <W9Field label="Name on the account"><input style={input} value={w9.account_holder} onChange={(e) => setW9v('account_holder', e.target.value)} /></W9Field>
+                    </div>
+                    <div style={row}>
+                      <W9Field label="Routing number" required>
+                        <input style={input} inputMode="numeric" autoComplete="off" placeholder="9 digits"
+                          value={w9.routing_number} onChange={(e) => setW9v('routing_number', e.target.value)} />
+                      </W9Field>
+                      <W9Field label="Account number" required>
+                        <input style={input} inputMode="numeric" autoComplete="off"
+                          value={w9.account_number} onChange={(e) => setW9v('account_number', e.target.value)} />
+                      </W9Field>
+                      <W9Field label="Account type">
+                        <select style={input} value={w9.account_type} onChange={(e) => setW9v('account_type', e.target.value)}>
+                          <option value="checking">Checking</option>
+                          <option value="savings">Savings</option>
+                        </select>
+                      </W9Field>
+                    </div>
+                  </div>
+                )}
+
+                {w9.payment_method === 'Check' && (
+                  <div style={{ fontSize: 11.5, color: '#777', marginTop: 8 }}>
+                    Checks go to the address you entered above.
+                  </div>
+                )}
               </div>
 
               <div style={{ background: '#f7f7f7', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: '#555', lineHeight: 1.5 }}>

@@ -89,7 +89,8 @@
       "Bash(git commit -m 'fix: label the contractor W-9 and QuickBooks buttons *)",
       "Bash(git commit -m 'feat: techs type their own W-9 details; request one from everybody *)",
       "Bash(git commit -m 'fix: the W-9 form is what a tech lands on, not a hidden link *)",
-      "Bash(git commit -m 'feat: W-9 requests and job assignments are separate front doors *)"
+      "Bash(git commit -m 'feat: W-9 requests and job assignments are separate front doors *)",
+      "Bash(git commit -m 'feat: the tech says how they want to be paid, on their W-9 *)"
     ]
   }
 }

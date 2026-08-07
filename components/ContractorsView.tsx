@@ -96,10 +96,17 @@ export default function ContractorsView({
                       {c.business_name && <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>{c.business_name}</div>}
                     </div>
                   </div>
-                  {(c.phone || c.email) && (
-                    <div style={{ display: 'flex', gap: 16, marginTop: 8, marginLeft: 50 }}>
+                  {(c.phone || c.email || c.payment_method) && (
+                    <div style={{ display: 'flex', gap: 16, marginTop: 8, marginLeft: 50, flexWrap: 'wrap' }}>
                       {c.phone && <span style={{ fontSize: 12, color: '#888' }}>{c.phone}</span>}
                       {c.email && <span style={{ fontSize: 12, color: '#888' }}>{c.email}</span>}
+                      {/* Answered on their W-9 — the thing you need at payout time. */}
+                      {c.payment_method && (
+                        <span style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 700 }}>
+                          Pays by {c.payment_method}
+                          {c.payment_method === 'Zelle' && c.zelle_phone ? ` · ${c.zelle_phone}` : ''}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>

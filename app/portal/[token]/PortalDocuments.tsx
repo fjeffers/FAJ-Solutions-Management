@@ -67,7 +67,9 @@ export default function PortalDocuments({
   const [w9Done, setW9Done] = useState(w9Received);
   const [signedAt, setSignedAt] = useState(contractSignedAt);
   const [typedName, setTypedName] = useState('');
-  const [formOpen, setFormOpen] = useState(false);
+  // Open on arrival when nothing is filed yet — a tech sent here to do their
+  // W-9 should see the fields, not a button that hides them.
+  const [formOpen, setFormOpen] = useState(!w9Received);
   const [w9, setW9] = useState({
     legal_name: contractorName ?? '', business_name: '',
     entity_type: 'Individual/Sole Proprietor', tax_id_type: 'SSN', tax_id: '',
@@ -149,38 +151,19 @@ export default function PortalDocuments({
         </div>
         <div style={{ fontSize: 12, color: '#666', margin: '5px 0 10px' }}>
           {w9Done
-            ? 'On file. Upload again only if your details have changed.'
-            : 'Needed before you can be paid. A photo of the signed form is fine.'}
-        </div>
-        <label style={{ ...btn, display: 'inline-block', opacity: busy ? 0.6 : 1 }}>
-          {busy ? 'Uploading…' : w9Done ? 'Replace W-9' : 'Upload W-9'}
-          <input
-            type="file"
-            accept="image/*,application/pdf"
-            disabled={busy}
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void uploadW9(f);
-              e.target.value = '';
-            }}
-          />
-        </label>
-        <div style={{ fontSize: 11, color: '#999', marginTop: 7 }}>
-          Stored privately. Only FAJ Solutions can open it.
+            ? 'On file. Fill this in again only if your details have changed.'
+            : 'Needed before you can be paid. Fill in the form below — it takes a minute.'}
         </div>
 
-        {/* Typed details. The upload above is the signed record; these are the
-            fields the office needs to issue a 1099, and for a new contractor
-            nobody has them yet. */}
-        <div style={{ borderTop: '1px solid #eee', marginTop: 14, paddingTop: 12 }}>
-          <button
-            type="button"
-            onClick={() => setFormOpen((o) => !o)}
-            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#0D7377' }}
-          >
-            {formOpen ? '− Hide the form' : '+ Or type your details instead'}
-          </button>
+        {/* Filling the form in is the main path: it is the only version the
+            office can actually act on, and a new contractor's details exist
+            nowhere else. Uploading a photo is offered underneath. */}
+        <div>
+          {!formOpen && (
+            <button type="button" style={{ ...btn }} onClick={() => setFormOpen(true)}>
+              {w9Done ? 'Update my W-9 details' : 'Fill in my W-9'}
+            </button>
+          )}
 
           {formOpen && (
             <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -245,6 +228,35 @@ export default function PortalDocuments({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Secondary: a photo of a signed form. Kept because it is the legal
+            record, but it is not what the office can act on by itself. */}
+        <div style={{ borderTop: '1px solid #eee', marginTop: 14, paddingTop: 12 }}>
+          <div style={{ fontSize: 11.5, color: '#777', marginBottom: 8 }}>
+            Already have a signed W-9? You can send a photo or PDF of it as well.
+          </div>
+          <label style={{
+            display: 'inline-block', cursor: busy ? 'default' : 'pointer',
+            border: '1px solid #ddd', borderRadius: 8, padding: '8px 14px',
+            fontSize: 12.5, fontWeight: 700, color: '#555', opacity: busy ? 0.6 : 1,
+          }}>
+            {busy ? 'Uploading…' : 'Attach signed W-9'}
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              disabled={busy}
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadW9(f);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          <div style={{ fontSize: 11, color: '#999', marginTop: 7 }}>
+            Stored privately. Only FAJ Solutions can open it.
+          </div>
         </div>
       </div>
 

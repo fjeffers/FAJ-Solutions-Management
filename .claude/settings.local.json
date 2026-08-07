@@ -87,7 +87,8 @@
       "Bash(perl -0pi -e 's/\\(          programs=\\\\{programs\\\\}\\\\n          homeBase=\\\\{homeBase\\\\}\\)/          programs={programs}\\\\n          contractors={contractors}\\\\n          homeBase={homeBase}/g' components/SiteLogView.tsx)",
       "Bash(git commit -m 'feat: project price and contractor on a visit, and a client statement to get paid *)",
       "Bash(git commit -m 'fix: label the contractor W-9 and QuickBooks buttons *)",
-      "Bash(git commit -m 'feat: techs type their own W-9 details; request one from everybody *)"
+      "Bash(git commit -m 'feat: techs type their own W-9 details; request one from everybody *)",
+      "Bash(git commit -m 'fix: the W-9 form is what a tech lands on, not a hidden link *)"
     ]
   }
 }

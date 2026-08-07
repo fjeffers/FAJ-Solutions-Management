@@ -5,7 +5,7 @@ import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 const OWNER_EMAIL = 'fajsolutions@gmail.com';
 
 // Types that go to the owner (Fred), not the contractor
-const OWNER_TYPES = new Set(['contractor_accepted', 'contractor_status_update', 'import_queue_pending']);
+const OWNER_TYPES = new Set(['contractor_accepted', 'contractor_status_update', 'import_queue_pending', 'w9_filed']);
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -84,6 +84,22 @@ export async function POST(req: NextRequest) {
         </div>
         <p>Once both are in you're clear to take assignments. Anything unclear, just reply to this email.</p>
         <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
+      </div>
+    `;
+  } else if (type === 'w9_filed') {
+    // Goes to Fred, not the tech — the tech already knows they filed it.
+    subject = `📋 ${contractor_name ?? 'A contractor'} filed their ${status === 'contract' ? 'signed agreement' : 'W-9'}`;
+    html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <h2 style="color:#0D7377;">Paperwork received</h2>
+        <p><strong>${contractor_name ?? 'A contractor'}</strong> just filed their
+        ${status === 'contract' ? 'signed contractor agreement' : status === 'w9_details' ? 'W-9 details' : 'W-9 form'}.</p>
+        ${status === 'w9_details'
+          ? '<p>Their legal name, tax ID and address are now on their record, so they are ready to send to QuickBooks.</p>'
+          : status === 'w9'
+            ? '<p>The signed form is on file. Open their record to check the details are filled in before sending to QuickBooks.</p>'
+            : ''}
+        <p style="color:#888;font-size:12px;">— FAJ Business Manager</p>
       </div>
     `;
   } else if (type === 'contractor_accepted') {

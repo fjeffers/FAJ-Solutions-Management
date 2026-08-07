@@ -466,9 +466,23 @@ export default function HomePage() {
       contractor_name: c.name,
       portal_url: `${window.location.origin}/portal/${c.portal_token}`,
     });
+    if (res.ok) await markInviteSent([c.id]);
     setContractorBusy(null);
-    if (res.ok) toastSuccess(`W-9 request sent to ${c.name}`);
+    if (res.ok) { toastSuccess(`W-9 request sent to ${c.name}`); await loadCore(); }
     else toastError(`Couldn't email ${c.name}: ${res.error}`);
+  };
+
+  /**
+   * Stamps who has actually been asked. Without this the card can never show
+   * "Requested", and Fred has no way to tell who he has already chased.
+   */
+  const markInviteSent = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from('contractors')
+      .update({ w9_invite_sent_at: new Date().toISOString() })
+      .in('id', ids);
+    if (error) toastError(`Email sent, but recording it failed: ${error.message}`);
   };
 
   // One at a time rather than Promise.all: a burst of sends trips Resend's rate
@@ -478,7 +492,7 @@ export default function HomePage() {
     if (!confirm(`Email all ${list.length} contractor${list.length !== 1 ? 's' : ''} a link to file their W-9 and sign the agreement?`)) return;
     setContractorBusy('ALL');
     const failed: string[] = [];
-    let sent = 0;
+    const sentIds: string[] = [];
     for (const c of list) {
       if (!c.email || !c.portal_token) { failed.push(c.name); continue; }
       const res = await sendOnboarding({
@@ -486,8 +500,10 @@ export default function HomePage() {
         contractor_name: c.name,
         portal_url: `${window.location.origin}/portal/${c.portal_token}`,
       });
-      if (res.ok) sent++; else failed.push(c.name);
+      if (res.ok) sentIds.push(c.id); else failed.push(c.name);
     }
+    const sent = sentIds.length;
+    await markInviteSent(sentIds);
     setContractorBusy(null);
     if (sent > 0) toastSuccess(`W-9 request sent to ${sent} contractor${sent !== 1 ? 's' : ''}`);
     if (failed.length > 0) toastError(`Couldn't email: ${failed.join(', ')}`);

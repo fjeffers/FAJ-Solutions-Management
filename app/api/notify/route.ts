@@ -68,6 +68,24 @@ export async function POST(req: NextRequest) {
     );
     // Update subject to mention WO count if available
     if (woCount > 0) subject = `You have ${woCount} work order${woCount !== 1 ? 's' : ''} from FAJ Solutions`;
+  } else if (type === 'onboarding') {
+    subject = 'Welcome to FAJ Solutions — W-9 and contractor agreement';
+    html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <h2 style="color:#0D7377;">Welcome aboard, ${contractor_name}</h2>
+        <p>Before your first job we need two things from you. Both are on your
+        contractor portal — one link, no account to create:</p>
+        <p style="margin:24px 0;">
+          <a href="${portal_url}" style="background:#0D7377;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Open your portal</a>
+        </p>
+        <div style="background:#f9f9f9;padding:16px;border-radius:8px;margin:16px 0;">
+          <p style="margin:4px 0;"><strong>1. Your W-9.</strong> Upload a photo or PDF of your signed form. We use it for your 1099 at year end.</p>
+          <p style="margin:12px 0 4px;"><strong>2. The contractor agreement.</strong> Read it and type your full legal name to sign.</p>
+        </div>
+        <p>Once both are in you're clear to take assignments. Anything unclear, just reply to this email.</p>
+        <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
+      </div>
+    `;
   } else if (type === 'contractor_accepted') {
     // Contractor accepted a WO — notify Fred
     subject = `✅ ${contractor_name} accepted WO #${wo_number}`;

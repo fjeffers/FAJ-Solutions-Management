@@ -44,7 +44,7 @@ import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
 import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export1099CSV } from '@/lib/export';
 import { logAudit } from '@/lib/audit';
-import { notifyContractor, sendPortalLink } from '@/lib/notify';
+import { notifyContractor, sendPortalLink, sendOnboarding } from '@/lib/notify';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { stockAdjustments } from '@/lib/materials-used';
 import Toaster from '@/components/Toaster';
@@ -161,6 +161,8 @@ export default function HomePage() {
   const [gmailConnection, setGmailConnection] = useState<GmailConnection | null>(null);
   const [qboConnection, setQboConnection] = useState<QuickBooksConnection | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Contractor id with an onboarding email or QuickBooks sync in flight. */
+  const [contractorBusy, setContractorBusy] = useState<string | null>(null);
 
   // Core data every view needs — loaded before first paint.
   const loadCore = async (): Promise<boolean> => {
@@ -451,6 +453,40 @@ export default function HomePage() {
 
     toastSuccess(`Work order #${w.wo_number} saved`);
     loadAll();
+  };
+
+  const handleSendOnboarding = async (c: Contractor) => {
+    if (!c.email || !c.portal_token) {
+      toastError(`${c.name} needs an email and a portal link first`);
+      return;
+    }
+    setContractorBusy(c.id);
+    const res = await sendOnboarding({
+      contractor_email: c.email,
+      contractor_name: c.name,
+      portal_url: `${window.location.origin}/portal/${c.portal_token}`,
+    });
+    setContractorBusy(null);
+    if (res.ok) toastSuccess(`W-9 request sent to ${c.name}`);
+    else toastError(`Couldn't email ${c.name}: ${res.error}`);
+  };
+
+  const handleSyncQuickBooks = async (c: Contractor) => {
+    setContractorBusy(c.id);
+    try {
+      const res = await fetch('/api/quickbooks/sync-contractor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contractorId: c.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) toastError(json.error ?? 'QuickBooks sync failed');
+      else { toastSuccess(`${c.name} synced to QuickBooks`); await loadCore(); }
+    } catch {
+      toastError('QuickBooks sync failed');
+    } finally {
+      setContractorBusy(null);
+    }
   };
 
   const handleSendPortal = async (w: EnrichedWorkOrder) => {
@@ -1157,6 +1193,9 @@ export default function HomePage() {
             onAddJob={(_prefill) => setModal({ type: 'wo', item: null })}
             onAddPayment={(prefill) => setModal({ type: 'payment', item: null, prefill })}
             onEditPayment={(p) => setModal({ type: 'payment', item: p })}
+            onSendOnboarding={handleSendOnboarding}
+            onSyncQuickBooks={handleSyncQuickBooks}
+            busy={contractorBusy}
           />
         )}
         {view === 'statements' && (

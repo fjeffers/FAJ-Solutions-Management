@@ -19,6 +19,29 @@ export async function notifyContractor(params: {
   }
 }
 
+/** Asks a new tech to file their W-9 and sign the agreement, on their portal. */
+export async function sendOnboarding(params: {
+  contractor_email: string;
+  contractor_name: string;
+  portal_url: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!params.contractor_email) return { ok: false, error: 'No email' };
+  try {
+    const res = await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'onboarding', ...params }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      return { ok: false, error: json.error ?? 'Send failed' };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Unknown error' };
+  }
+}
+
 export async function sendPortalLink(params: {
   contractor_email: string;
   contractor_name: string;

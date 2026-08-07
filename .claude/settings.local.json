@@ -77,7 +77,9 @@
       "Bash(git commit -m 'feat: add QuickBooks integration, W9/agreement emails, and contractor documents portal *)",
       "Bash(git commit -m 'fix: complete QuickBooks integration with proper function signatures *)",
       "Bash(npm uninstall *)",
-      "Bash(git commit -m 'fix: restore original QuickBooks client, add W-9 vendor sync on top *)"
+      "Bash(git commit -m 'fix: restore original QuickBooks client, add W-9 vendor sync on top *)",
+      "Bash(rmdir app/dashboard)",
+      "Bash(git commit -m 'fix: drop duplicate W-9 pages, put onboarding and QB sync in the real UI *)"
     ]
   }
 }

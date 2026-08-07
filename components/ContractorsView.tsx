@@ -1,12 +1,13 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, ChevronRight } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, ChevronRight, Send, BookUp } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
 import type { Contractor, EnrichedWorkOrder, Payment } from '@/lib/types';
 import ContractorDetailView from './ContractorDetailView';
 
 export default function ContractorsView({
   contractors, workOrders, payments, onAdd, onEdit, onDelete, onViewStatement, onAddJob, onAddPayment, onEditPayment,
+  onSendOnboarding, onSyncQuickBooks, busy,
 }: {
   contractors: Contractor[];
   workOrders: EnrichedWorkOrder[];
@@ -18,6 +19,10 @@ export default function ContractorsView({
   onAddJob: (prefill?: { contractor_name: string }) => void;
   onAddPayment: (prefill?: { contractor_name: string; wo_number?: string }) => void;
   onEditPayment: (p: Payment) => void;
+  onSendOnboarding: (c: Contractor) => void;
+  onSyncQuickBooks: (c: Contractor) => void;
+  /** Contractor id with a send/sync in flight, so its buttons disable. */
+  busy: string | null;
 }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Contractor | null>(null);
@@ -97,6 +102,20 @@ export default function ContractorsView({
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                  {!c.w9_received && c.email && c.portal_token && (
+                    <button className="icon-btn" title="Email W-9 and agreement request"
+                      disabled={busy === c.id}
+                      onClick={() => onSendOnboarding(c)}>
+                      <Send size={14} />
+                    </button>
+                  )}
+                  {c.w9_received && !c.qbo_vendor_id && (
+                    <button className="icon-btn" title="Send W-9 details to QuickBooks"
+                      disabled={busy === c.id}
+                      onClick={() => onSyncQuickBooks(c)}>
+                      <BookUp size={14} />
+                    </button>
+                  )}
                   <button className="icon-btn" onClick={() => onEdit(c)}><Edit2 size={14} /></button>
                   <button className="icon-btn" style={{ color: '#b91c1c' }}
                     onClick={() => { if (confirm('Delete ' + c.name + '?')) onDelete(c.id); }}>

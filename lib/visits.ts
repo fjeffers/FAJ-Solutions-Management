@@ -8,20 +8,29 @@ export type VisitLine = { description: string; quantity: number; rate: number };
 
 /** What a visit is worth: parsed rate (hours × hourly or flat) + travel charge. */
 export function visitAmount(
-  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge'>,
+  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price'>,
 ): number {
   const li = visitLineItem(v);
   return Math.round((li.quantity * li.rate + (v.travel_charge ?? 0)) * 100) / 100;
 }
 
 export function visitLineItem(
-  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate'>,
+  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'total_project_price'>,
 ): VisitLine {
   const date = v.visit_date
     ? new Date(v.visit_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
     : null;
   const site = [v.site_name, v.site_code ? `#${v.site_code}` : null].filter(Boolean).join(' ') || null;
   const base = [date, site, v.visit_type].filter(Boolean).join(' — ');
+
+  // A typed project price is an explicit decision and outranks the free-text
+  // rate, which is a note to self as often as it is a number ("2600", "$55/hr",
+  // "$250 flat rate"). Zero is a real answer — a no-charge revisit — so only
+  // null/undefined falls through to parsing.
+  const price = v.total_project_price;
+  if (price != null && !isNaN(Number(price))) {
+    return { description: `${base} — project price`, quantity: 1, rate: Number(price) };
+  }
 
   const rateText = (v.rate ?? '').trim();
   const hourly = rateText.match(/\$?\s*(\d+(?:\.\d+)?)\s*\/\s*h/i);

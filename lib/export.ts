@@ -19,6 +19,26 @@ export function downloadCSVText(filename: string, csv: string) {
 }
 
 /**
+ * Save a sheet as a real .xlsx. Loaded on demand so the SheetJS bundle only
+ * reaches users who actually export — it is far larger than the rest of this
+ * module. Column widths are set because the default is unreadable for an
+ * address column, and this file goes to a client.
+ */
+export async function downloadXLSX(
+  filename: string,
+  sheetName: string,
+  rows: (string | number)[][],
+  colWidths?: number[],
+) {
+  const XLSX = await import('xlsx');
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  if (colWidths) ws['!cols'] = colWidths.map((wch) => ({ wch }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, filename);
+}
+
+/**
  * Escaping goes through lib/csv, which guards against Excel formula injection.
  * The previous inline escaper here only handled quotes, so a contractor name or
  * note beginning with '=' or '-' was written as a live formula into files that

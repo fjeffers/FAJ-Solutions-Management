@@ -79,7 +79,13 @@
       "Bash(npm uninstall *)",
       "Bash(git commit -m 'fix: restore original QuickBooks client, add W-9 vendor sync on top *)",
       "Bash(rmdir app/dashboard)",
-      "Bash(git commit -m 'fix: drop duplicate W-9 pages, put onboarding and QB sync in the real UI *)"
+      "Bash(git commit -m 'fix: drop duplicate W-9 pages, put onboarding and QB sync in the real UI *)",
+      "mcp__ba044cc9-e950-46a2-a6c4-2a584346b49c__get_deployment",
+      "Bash(npx vitest *)",
+      "Bash(npm audit *)",
+      "Bash(awk 'NR>=690 && NR<=730 && \\(/^function /||/^  function /||/=> \\\\{$/||/^}/\\)' components/SiteLogView.tsx)",
+      "Bash(perl -0pi -e 's/\\(          programs=\\\\{programs\\\\}\\\\n          homeBase=\\\\{homeBase\\\\}\\)/          programs={programs}\\\\n          contractors={contractors}\\\\n          homeBase={homeBase}/g' components/SiteLogView.tsx)",
+      "Bash(git commit -m 'feat: project price and contractor on a visit, and a client statement to get paid *)"
     ]
   }
 }

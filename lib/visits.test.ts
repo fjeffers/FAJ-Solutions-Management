@@ -23,6 +23,22 @@ describe('visitLineItem', () => {
     expect(li.description).toContain('set rate');
   });
 
+  it('lets a typed project price outrank the free-text rate', () => {
+    const li = visitLineItem({ ...base, hours: 9, rate: '$55/hr', total_project_price: 2600 });
+    expect(li).toMatchObject({ quantity: 1, rate: 2600 });
+    expect(li.description).toContain('project price');
+    // Travel still bills on top of a fixed price.
+    expect(visitAmount({ ...base, hours: 9, rate: '$55/hr', total_project_price: 2600, travel_charge: 56.65 })).toBe(2656.65);
+  });
+
+  it('treats a zero project price as a real no-charge visit, not a blank', () => {
+    expect(visitAmount({ ...base, hours: 3, rate: '$55/hr', total_project_price: 0, travel_charge: null })).toBe(0);
+  });
+
+  it('falls back to the rate text when no project price is set', () => {
+    expect(visitAmount({ ...base, hours: 9, rate: '$55/hr', total_project_price: null, travel_charge: null })).toBe(495);
+  });
+
   it('totals a visit as labor plus travel', () => {
     expect(visitAmount({ ...base, hours: 9, rate: '$55/hr', travel_charge: 56.65 })).toBe(551.65);
     expect(visitAmount({ ...base, hours: null, rate: '2600', travel_charge: null })).toBe(2600);

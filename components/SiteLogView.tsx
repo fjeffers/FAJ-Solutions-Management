@@ -11,7 +11,10 @@ import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem, visitAmount } from '@/lib/visits';
 import { fmtMoney } from '@/lib/utils';
 import { roundTripMiles } from '@/lib/driving';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2 } from 'lucide-react';
+import { buildStatementRows, statementMatrix, statementTotal } from '@/lib/site-statement';
+import { downloadXLSX, downloadCSVText } from '@/lib/export';
+import { toCSV } from '@/lib/csv';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -78,18 +81,22 @@ export default function SiteLogView() {
   const [programRates, setProgramRates] = useState<Record<string, number | null>>({});
   const [collapsedProgs, setCollapsedProgs] = useState<Set<string>>(new Set());
   const [milesProgress, setMilesProgress] = useState<string | null>(null);
+  /** Just id + name — the Site Log never needs pay or banking details. */
+  const [contractors, setContractors] = useState<{ id: string; name: string }[]>([]);
   const [now, setNow] = useState(() => Date.now());
 
   const load = async () => {
-    const [vRes, sRes, pRes] = await Promise.all([
+    const [vRes, sRes, pRes, cRes] = await Promise.all([
       supabase.from('site_visits').select('*')
         .order('visit_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false }),
       supabase.from('user_settings').select('home_base_address, mileage_rate').maybeSingle(),
       supabase.from('site_programs').select('name, mileage_rate'),
+      supabase.from('contractors').select('id, name').order('name'),
     ]);
     if (vRes.error) toastError("Couldn't load the site log. Check your connection and refresh.");
     if (vRes.data) setVisits(vRes.data as SiteVisit[]);
+    if (cRes.data) setContractors(cRes.data as { id: string; name: string }[]);
     setHomeBase((sRes.data?.home_base_address as string | null) ?? '');
     setMileageRate(Number(sRes.data?.mileage_rate ?? 0.7));
     if (pRes.data) {
@@ -308,6 +315,28 @@ export default function SiteLogView() {
     await load();
   };
 
+  // The spreadsheet that goes to the client to get paid: whatever is on screen
+  // right now, so filtering to one program first bills one client. Refuses to
+  // write an empty file rather than sending a client a header row.
+  const exportStatement = async (format: 'xlsx' | 'csv') => {
+    if (filtered.length === 0) { toastError('Nothing in the current view to export — adjust the filters.'); return; }
+    const rows = buildStatementRows(filtered);
+    const client = programFilter ?? 'All Clients';
+    const stamp = new Date().toISOString().slice(0, 10);
+    const safeName = `${client} statement ${stamp}`.replace(/[\\/:*?"<>|]/g, '-');
+    const matrix = statementMatrix(rows);
+    try {
+      if (format === 'xlsx') {
+        await downloadXLSX(`${safeName}.xlsx`, 'Statement', matrix, [12, 22, 34, 46, 8, 16, 12]);
+      } else {
+        downloadCSVText(`${safeName}.csv`, toCSV(matrix.map((r) => r.map(String))));
+      }
+      toastSuccess(`${rows.length} visit${rows.length !== 1 ? 's' : ''} · ${fmtMoney(statementTotal(rows))} exported`);
+    } catch {
+      toastError("Couldn't build the statement file.");
+    }
+  };
+
   const deleteVisit = async (v: SiteVisit) => {
     if (!confirm(`Delete the visit to ${v.site_name || v.site_code || v.address || 'this site'}?`)) return;
     const { error } = await supabase.from('site_visits').delete().eq('id', v.id);
@@ -424,6 +453,20 @@ export default function SiteLogView() {
             title="Roll all uninvoiced visits in the current view into one draft invoice (filter by program first to bill one client)"
           >
             <Receipt size={14} /> {invoicing ? 'Creating…' : 'Invoice Visits'}
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => exportStatement('xlsx')}
+            title="Excel spreadsheet of the visits on screen, with amounts and a total — the one you send a client to get paid. Filter by program first to bill one client."
+          >
+            <FileSpreadsheet size={14} /> Client Statement
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => exportStatement('csv')}
+            title="Same statement as CSV — opens in Excel, or File → Import in Google Sheets"
+          >
+            <FileSpreadsheet size={14} /> Statement CSV
           </button>
           <button
             className="btn btn-ghost"
@@ -603,6 +646,7 @@ export default function SiteLogView() {
           quick
           item={{ program: programs[0] ?? '', visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' }}
           programs={programs}
+          contractors={contractors}
           homeBase={homeBase}
           rateFor={rateFor}
           onSave={checkIn}
@@ -617,6 +661,7 @@ export default function SiteLogView() {
           title={editing.id ? 'Edit Visit' : 'Add Visit'}
           item={editing}
           programs={programs}
+          contractors={contractors}
           homeBase={homeBase}
           rateFor={rateFor}
           onSave={saveVisit}
@@ -628,10 +673,11 @@ export default function SiteLogView() {
   );
 }
 
-function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, onSave, onDelete, onClose }: {
+function VisitModal({ title, item, programs, contractors, homeBase, rateFor, quick = false, onSave, onDelete, onClose }: {
   title: string;
   item: Partial<SiteVisit>;
   programs: string[];
+  contractors: { id: string; name: string }[];
   homeBase: string;
   rateFor: (program?: string | null) => number;
   quick?: boolean;
@@ -713,6 +759,20 @@ function VisitModal({ title, item, programs, homeBase, rateFor, quick = false, o
                 <Field label="Date"><input className="input" type="date" value={form.visit_date ?? ''} onChange={(e) => set('visit_date', e.target.value)} /></Field>
                 <Field label="Hours"><input className="input" type="number" step="0.25" value={form.hours ?? ''} onChange={(e) => set('hours', e.target.value === '' ? null : Number(e.target.value))} /></Field>
                 <Field label="Rate"><input className="input" value={form.rate ?? ''} onChange={(e) => set('rate', e.target.value)} placeholder="$55/hr, 2600…" /></Field>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Field label="Project Price $ (fixed jobs — overrides Rate)">
+                  <input className="input" type="number" step="0.01" value={form.total_project_price ?? ''}
+                    onChange={(e) => set('total_project_price', e.target.value === '' ? null : Number(e.target.value))}
+                    placeholder="Leave blank for hourly" />
+                </Field>
+                <Field label="Contractor on site">
+                  <select className="input" value={form.contractor_id ?? ''}
+                    onChange={(e) => set('contractor_id', e.target.value === '' ? null : e.target.value)}>
+                    <option value="">— none —</option>
+                    {contractors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </Field>
               </div>
               <Field label="Days & Times on Site">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

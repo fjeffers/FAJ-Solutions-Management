@@ -94,7 +94,11 @@
       "Read(//dev/**)",
       "Bash(awk -F= '/^QBO_CLIENT_ID=/{print \"QBO_CLIENT_ID length:\", length\\($2\\)} /^QBO_CLIENT_SECRET=/{print \"QBO_CLIENT_SECRET length:\", length\\($2\\)}' .env.local)",
       "Bash(curl -s https://app.fajsolutions.com/login)",
-      "Bash(git commit -m 'fix: say why QuickBooks can'\\\\''t connect instead of bouncing to Intuit *)"
+      "Bash(git commit -m 'fix: say why QuickBooks can'\\\\''t connect instead of bouncing to Intuit *)",
+      "mcp__f4c4e511-5845-483f-aaf2-da3c23278c0b__get_logs",
+      "Bash(grep -oE '\\(ERROR|FATAL\\)[^\"]{0,180}' mcp-f4c4e511-5845-483f-aaf2-da3c23278c0b-get_logs-1786142319672.txt)",
+      "Bash(python -c ' *)",
+      "Bash(git commit -m 'fix: a busy map service could stall a work order save; W-9 filing never saved at all *)"
     ]
   }
 }

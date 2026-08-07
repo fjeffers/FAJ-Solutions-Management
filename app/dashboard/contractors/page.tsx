@@ -36,12 +36,12 @@ export default function ContractorsPage() {
     }
   }
 
-  async function sendW9Invite(contractorId: string) {
+  async function sendDocuments(contractorId: string) {
     setSending(contractorId);
     setMessage('');
 
     try {
-      const res = await fetch('/api/contractors/send-w9-invite', {
+      const res = await fetch('/api/contractors/send-documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contractorId }),
@@ -50,7 +50,7 @@ export default function ContractorsPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMessage(data.error || 'Failed to send invite');
+        setMessage(data.error || 'Failed to send documents');
       } else {
         setMessage(`✓ ${data.message}`);
         setTimeout(() => setMessage(''), 5000);
@@ -58,7 +58,35 @@ export default function ContractorsPage() {
       }
     } catch (err) {
       console.error('Send error:', err);
-      setMessage('Failed to send invite');
+      setMessage('Failed to send documents');
+    } finally {
+      setSending(null);
+    }
+  }
+
+  async function syncToQuickBooks(contractorId: string) {
+    setSending(contractorId);
+    setMessage('');
+
+    try {
+      const res = await fetch('/api/quickbooks/sync-contractor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contractorId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMessage(data.error || 'Failed to sync to QuickBooks');
+      } else {
+        setMessage(`✓ ${data.message}`);
+        setTimeout(() => setMessage(''), 5000);
+        await loadContractors();
+      }
+    } catch (err) {
+      console.error('QB sync error:', err);
+      setMessage('Failed to sync to QuickBooks');
     } finally {
       setSending(null);
     }
@@ -91,7 +119,9 @@ export default function ContractorsPage() {
               <th className="px-6 py-3 text-left text-sm font-semibold">Entity Type</th>
               <th className="px-6 py-3 text-left text-sm font-semibold">Tax ID</th>
               <th className="px-6 py-3 text-left text-sm font-semibold">W-9 Status</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold">Action</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold">Agreement</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold">QB Status</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -122,16 +152,50 @@ export default function ContractorsPage() {
                   )}
                 </td>
                 <td className="px-6 py-3 text-sm">
-                  {!c.w9_received && (
-                    <Button
-                      onClick={() => sendW9Invite(c.id)}
-                      disabled={sending === c.id}
-                      variant="secondary"
-                      size="sm"
-                    >
-                      {sending === c.id ? 'Sending...' : 'Send W-9'}
-                    </Button>
+                  {c.contract_signed_at ? (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                      ✓ Signed
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+                      Pending
+                    </span>
                   )}
+                </td>
+                <td className="px-6 py-3 text-sm">
+                  {c.qbo_vendor_id ? (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                      ✓ Synced
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+                      Not Synced
+                    </span>
+                  )}
+                </td>
+                <td className="px-6 py-3 text-sm">
+                  <div className="flex gap-2">
+                    {!c.w9_received && (
+                      <Button
+                        onClick={() => sendDocuments(c.id)}
+                        disabled={sending === c.id}
+                        variant="secondary"
+                        size="sm"
+                      >
+                        {sending === c.id ? '...' : 'Send Docs'}
+                      </Button>
+                    )}
+                    {c.w9_received && !c.qbo_vendor_id && (
+                      <Button
+                        onClick={() => syncToQuickBooks(c.id)}
+                        disabled={sending === c.id}
+                        variant="secondary"
+                        size="sm"
+                      >
+                        {sending === c.id ? '...' : 'Sync QB'}
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

@@ -26,6 +26,12 @@
       "port": 3055
     },
     {
+      "name": "forge-anvil",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "C:\\Users\\fajso\\AppData\\Local\\Temp\\claude\\D--FAJ-Project-faj-payments\\cf907e1f-4489-46d1-95e3-f23738da6717\\scratchpad\\forge-dev.cmd"],
+      "port": 3077
+    },
+    {
       "name": "fhj-fresh",
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "cd /d C:/Users/fajso/AppData/Local/Temp/claude/D--FAJ-Project-faj-payments/71f3be9f-73f3-4c8c-98d3-84353a0ac93c/scratchpad/fhj-fresh && npx next dev -p 3066"],

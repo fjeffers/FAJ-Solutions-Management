@@ -103,7 +103,10 @@
       "Bash(git commit -m 'fix: recording a Zelle payment no longer requires paying through the app *)",
       "Bash(git commit -m 'fix: Payables hid payments that exceeded a job'\\\\''s share *)",
       "Bash(git commit -m 'fix: Payables no longer invites payment against a guessed amount *)",
-      "Bash(git commit -m 'feat: the client statement carries the columns a client actually checks *)"
+      "Bash(git commit -m 'feat: the client statement carries the columns a client actually checks *)",
+      "Bash(cd \"C:\\\\Users\\\\fajso\\\\Downloads\" && head -3 \"Projects - Wendys Project.csv\")",
+      "Bash(sed -i \"s/expect\\(total\\\\[STATEMENT_HEADERS.indexOf\\('Labor'\\)\\\\]\\).toBe\\(275\\);/expect\\(total[STATEMENT_HEADERS.indexOf\\('Total Pay'\\)]\\).toBe\\(275\\);/; s/expect\\(total\\\\[STATEMENT_HEADERS.indexOf\\('Hours'\\)\\\\]\\).toBe\\(5\\);/expect\\(total[STATEMENT_HEADERS.indexOf\\('Total Time'\\)]\\).toBe\\(5\\);/; s/expect\\(total\\\\[STATEMENT_HEADERS.indexOf\\('Miles'\\)\\\\]\\).toBe\\(30\\);/expect\\(total[STATEMENT_HEADERS.indexOf\\('Round Trip Miles'\\)]\\).toBe\\(30\\);/; s/expect\\(total\\\\[STATEMENT_HEADERS.indexOf\\('Amount'\\)\\\\]\\).toBe\\(statementTotal\\(rows\\)\\);/expect\\(total[STATEMENT_HEADERS.indexOf\\('Total'\\)]\\).toBe\\(statementTotal\\(rows\\)\\);/\" lib/site-statement.test.ts)",
+      "Bash(git commit -m 'feat: the statement is Fred'\\\\''s own Projects sheet, with the arithmetic done *)"
     ]
   }
 }

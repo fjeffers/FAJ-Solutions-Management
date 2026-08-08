@@ -331,7 +331,7 @@ export default function SiteLogView() {
     try {
       if (format === 'xlsx') {
         await downloadXLSX(`${safeName}.xlsx`, 'Statement', matrix,
-          [12, 10, 20, 32, 40, 20, 8, 14, 8, 12, 12]);
+          [12, 9, 20, 32, 40, 10, 10, 10, 12, 12, 11, 13, 12]);
       } else {
         downloadCSVText(`${safeName}.csv`, toCSV(matrix.map((r) => r.map(String))));
       }

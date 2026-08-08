@@ -18,34 +18,43 @@ export type StatementRow = {
   site: string;
   address: string;
   work: string;
-  timeOnSite: string;
+  timeIn: string;
+  timeOut: string;
   hours: number | null;
   rate: string;
+  /** hours × rate — shown so the client can check the arithmetic themselves. */
+  labor: number;
   miles: number | null;
   travel: number | null;
   amount: number;
 };
 
-// Mirrors the columns of the Projects spreadsheet this replaces: the client
-// recognises their own site id, and a billed hour is easier to accept next to
-// the times it was worked.
+// Deliberately the column names from Fred's own Projects sheet — Time In,
+// Time Out, Total Time, Rate, Total Pay, Round Trip Miles, Travel Charge — so
+// the client receives the document they already recognise. 'Total' is the one
+// addition: his sheet made the reader add labour and travel themselves.
 export const STATEMENT_HEADERS = [
-  'Date', 'Site #', 'Site', 'Address', 'Work Performed',
-  'Time On Site', 'Hours', 'Rate', 'Miles', 'Travel Charge', 'Amount',
+  'Date', 'Site #', 'Site Name', 'Address', 'Work Performed',
+  'Time In', 'Time Out', 'Total Time', 'Rate', 'Total Pay',
+  'Round Trip Miles', 'Travel Charge', 'Total',
 ];
 
-/** "8:15 AM – 12:30 PM", across however many stints the visit had. */
-function timeOnSite(v: SiteVisit): string {
-  const stints = (v.sessions && v.sessions.length > 0)
+const clock = (iso: string | null | undefined) => iso
+  ? new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  : '';
+
+/** First arrival and last departure. A multi-day visit shows the span it covered. */
+function stints(v: SiteVisit) {
+  const list = (v.sessions && v.sessions.length > 0)
     ? v.sessions
     : (v.time_in ? [{ in: v.time_in, out: v.time_out }] : []);
-  const t = (iso: string | null) => iso
-    ? new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-    : '';
-  return stints
-    .filter((s) => s.in)
-    .map((s) => `${t(s.in)}${s.out ? ` – ${t(s.out)}` : ''}`)
-    .join(', ');
+  const withIn = list.filter((s) => s.in);
+  if (withIn.length === 0) return { timeIn: '', timeOut: '' };
+  const outs = withIn.filter((s) => s.out);
+  return {
+    timeIn: clock(withIn[0].in),
+    timeOut: outs.length > 0 ? clock(outs[outs.length - 1].out) : '',
+  };
 }
 
 /** Newest last, so the statement reads like a running account. */
@@ -67,9 +76,12 @@ export function buildStatementRows(visits: SiteVisit[]): StatementRow[] {
         // Same gate the shared report uses, so a pasted assignment email never
         // reaches a client here either.
         work: clientVisibleNote(v),
-        timeOnSite: timeOnSite(v),
+        ...stints(v),
         hours: v.hours,
         rate: basis,
+        // Straight from the same line item the amount comes from, so Labor and
+        // Amount can never disagree about what the hours were worth.
+        labor: Math.round(li.quantity * li.rate * 100) / 100,
         miles: v.miles,
         travel: v.travel_charge,
         amount: visitAmount(v),
@@ -84,14 +96,19 @@ export function statementTotal(rows: StatementRow[]): number {
 export function statementMatrix(rows: StatementRow[]): (string | number)[][] {
   const body = rows.map((r) => [
     r.date, r.siteCode, r.site, r.address, r.work,
-    r.timeOnSite, r.hours ?? '', r.rate, r.miles ?? '', r.travel ?? '', r.amount,
+    r.timeIn, r.timeOut, r.hours ?? '', r.rate, r.labor,
+    r.miles ?? '', r.travel ?? '', r.amount,
   ]);
-  const totalMiles = rows.reduce((s, r) => s + Number(r.miles ?? 0), 0);
-  const totalHours = rows.reduce((s, r) => s + Number(r.hours ?? 0), 0);
+  const sum = (pick: (r: StatementRow) => number | null) =>
+    Math.round(rows.reduce((s, r) => s + Number(pick(r) ?? 0), 0) * 100) / 100;
+
+  // Every column a client would add up themselves is totalled, so they can
+  // check the bottom line without retyping the sheet.
   return [
     STATEMENT_HEADERS,
     ...body,
-    ['', '', '', '', '', 'TOTAL',
-      totalHours || '', '', totalMiles || '', '', statementTotal(rows)],
+    ['', '', '', '', '', '', 'TOTAL',
+      sum((r) => r.hours) || '', '', sum((r) => r.labor),
+      sum((r) => r.miles) || '', sum((r) => r.travel), statementTotal(rows)],
   ];
 }

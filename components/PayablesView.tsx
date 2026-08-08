@@ -75,11 +75,19 @@ export default function PayablesView({
       const names = (w.contractor_names && w.contractor_names.length > 0)
         ? w.contractor_names
         : (w.contractor_name ? [w.contractor_name] : []);
+      // A job with no contractor_pay has no agreed tech rate, and the legacy
+      // fallback then values their share at the FULL client price. Shown as a
+      // balance, that reads as a debt and invites payment against a guess —
+      // on 7 Aug 2026 it produced $9,125 of recorded payments that never
+      // happened, each one topping a job up to exactly its client price.
+      // These belong in the needs-setup banner until a real split is entered.
+      const hasSplit = Boolean(w.contractor_pay && Object.keys(w.contractor_pay).length > 0);
       for (const name of names) {
         const share = contractorOwedOnWO(w, name);
         const sharePaid = payments
           .filter((p) => p.wo_number === w.wo_number && p.contractor_name === name)
           .reduce((s, p) => s + Number(p.amount), 0);
+        if (!hasSplit && sharePaid <= share) continue;
         if (sharePaid - share > 0.009) {
           overMap.set(name, [...(overMap.get(name) ?? []),
             { ...w, share, sharePaid, shareRemaining: 0 }]);

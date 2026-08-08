@@ -83,6 +83,17 @@ export default function SiteLogView() {
   const [milesProgress, setMilesProgress] = useState<string | null>(null);
   /** Just id + name — the Site Log never needs pay or banking details. */
   const [contractors, setContractors] = useState<{ id: string; name: string }[]>([]);
+  /**
+   * Hand-picked visits for the client statement. Empty means "no opinion" and
+   * the export uses the filtered view, so the old behaviour is untouched until
+   * a box is actually ticked.
+   */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const togglePicked = (id: string) => setPicked((s) => {
+    const next = new Set(s);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [now, setNow] = useState(() => Date.now());
 
   const load = async () => {
@@ -322,8 +333,14 @@ export default function SiteLogView() {
   // right now, so filtering to one program first bills one client. Refuses to
   // write an empty file rather than sending a client a header row.
   const exportStatement = async (format: 'xlsx' | 'csv') => {
-    if (filtered.length === 0) { toastError('Nothing in the current view to export — adjust the filters.'); return; }
-    const rows = buildStatementRows(filtered);
+    // Ticked rows win over the filters — that is the whole point of ticking.
+    // Picks are honoured even when the filters have since hidden them, so a
+    // statement assembled across two searches doesn't silently lose sites.
+    const chosen = picked.size > 0
+      ? visits.filter((v) => picked.has(v.id))
+      : filtered;
+    if (chosen.length === 0) { toastError('Nothing to export — tick some sites, or adjust the filters.'); return; }
+    const rows = buildStatementRows(chosen);
     const client = programFilter ?? 'All Clients';
     const stamp = new Date().toISOString().slice(0, 10);
     const safeName = `${client} statement ${stamp}`.replace(/[\\/:*?"<>|]/g, '-');
@@ -461,9 +478,11 @@ export default function SiteLogView() {
           <button
             className="btn btn-ghost"
             onClick={() => exportStatement('xlsx')}
-            title="Excel spreadsheet of the visits on screen, with amounts and a total — the one you send a client to get paid. Filter by program first to bill one client."
+            title={picked.size > 0
+              ? `Excel statement of the ${picked.size} site${picked.size !== 1 ? 's' : ''} you've ticked`
+              : 'Excel statement of the visits on screen, with amounts and a total — the one you send a client to get paid. Tick sites to choose them by hand.'}
           >
-            <FileSpreadsheet size={14} /> Client Statement
+            <FileSpreadsheet size={14} /> Client Statement{picked.size > 0 ? ` (${picked.size})` : ''}
           </button>
           <button
             className="btn btn-ghost"
@@ -481,6 +500,33 @@ export default function SiteLogView() {
           </button>
         </div>
       </div>
+
+      {/* Hand-built statement: what's ticked, and how to add or drop the rest. */}
+      {(picked.size > 0 || filtered.length > 0) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          marginBottom: 12, padding: '8px 12px', borderRadius: 10,
+          background: picked.size > 0 ? 'rgba(13,115,119,0.06)' : 'transparent',
+          border: picked.size > 0 ? '1px solid rgba(13,115,119,0.2)' : '1px solid transparent',
+        }}>
+          <span style={{ fontSize: 12.5, color: picked.size > 0 ? 'var(--teal)' : '#999', fontWeight: picked.size > 0 ? 700 : 500 }}>
+            {picked.size > 0
+              ? `${picked.size} site${picked.size !== 1 ? 's' : ''} picked for the statement · ${fmtMoney(statementTotal(buildStatementRows(visits.filter((v) => picked.has(v.id)))))}`
+              : `Tick sites to build a statement by hand — otherwise it exports all ${filtered.length} on screen.`}
+          </span>
+          <div style={{ flex: 1 }} />
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '5px 10px' }}
+            onClick={() => setPicked((s) => new Set([...s, ...filtered.map((v) => v.id)]))}>
+            Add all {filtered.length} on screen
+          </button>
+          {picked.size > 0 && (
+            <button className="btn btn-ghost" style={{ fontSize: 12, padding: '5px 10px' }}
+              onClick={() => setPicked(new Set())}>
+              Clear picks
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Money breakdown — tap a tile to filter the list to that bucket */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
@@ -592,8 +638,25 @@ export default function SiteLogView() {
               {sg.visits.map((v) => {
                 const tc = TYPE_COLORS[v.visit_type] ?? TYPE_COLORS.Other;
                 return (
-                  <div key={v.id} className="glass card" style={{ padding: '12px 14px', cursor: 'pointer' }} onClick={() => setEditing(v)}>
+                  <div key={v.id} className="glass card"
+                    style={{
+                      padding: '12px 14px', cursor: 'pointer',
+                      border: picked.has(v.id) ? '1.5px solid var(--teal)' : undefined,
+                      background: picked.has(v.id) ? 'rgba(13,115,119,0.05)' : undefined,
+                    }}
+                    onClick={() => setEditing(v)}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      {/* Ticking a visit builds the statement by hand. Untouched,
+                          nothing is ticked and the export falls back to the whole
+                          filtered view — the way it worked before. */}
+                      <input
+                        type="checkbox"
+                        checked={picked.has(v.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => togglePicked(v.id)}
+                        title="Include this site on the client statement"
+                        style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--teal)' }}
+                      />
                       <span style={{ fontWeight: 800, fontSize: 15 }}>
                         {v.visit_date ? fmtShortDate(v.visit_date) : 'Date TBD'}
                       </span>

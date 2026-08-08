@@ -64,32 +64,52 @@ export default function PayablesView({
     // Break each WO into per-tech rows so multi-tech jobs show what each tech
     // is owed (their share from contractor_pay), not just the primary.
     const map = new Map<string, PayableRow[]>();
+    // Jobs paid MORE than the tech's share. Each row is clamped at zero so a
+    // single job never shows a negative balance — but that clamp also hid the
+    // money entirely, so a tech already paid $2,600 against a $500 share still
+    // read as owed in full on his other jobs. Kept separately and shown, rather
+    // than netted off silently: whether an overpayment on one job was meant to
+    // cover another is Fred's call, not an assumption to bury in a total.
+    const overMap = new Map<string, PayableRow[]>();
     for (const w of workOrders) {
       const names = (w.contractor_names && w.contractor_names.length > 0)
         ? w.contractor_names
         : (w.contractor_name ? [w.contractor_name] : []);
       for (const name of names) {
         const share = contractorOwedOnWO(w, name);
-        if (share <= 0) continue;
         const sharePaid = payments
           .filter((p) => p.wo_number === w.wo_number && p.contractor_name === name)
           .reduce((s, p) => s + Number(p.amount), 0);
+        if (sharePaid - share > 0.009) {
+          overMap.set(name, [...(overMap.get(name) ?? []),
+            { ...w, share, sharePaid, shareRemaining: 0 }]);
+          continue;
+        }
+        if (share <= 0) continue;
         const shareRemaining = Math.max(0, share - sharePaid);
         if (shareRemaining <= 0) continue;
         map.set(name, [...(map.get(name) ?? []), { ...w, share, sharePaid, shareRemaining }]);
       }
     }
-    return Array.from(map.entries())
-      .map(([name, wos]) => ({
-        name,
-        wos,
-        total: wos.reduce((s, w) => s + w.shareRemaining, 0),
-        contractor: contractors.find((c) => c.name === name) ?? null,
-      }))
+    const allNames = new Set([...map.keys(), ...overMap.keys()]);
+    return Array.from(allNames)
+      .map((name) => {
+        const wos = map.get(name) ?? [];
+        const overWos = overMap.get(name) ?? [];
+        const total = wos.reduce((s, w) => s + w.shareRemaining, 0);
+        const overpaid = overWos.reduce((s, w) => s + (w.sharePaid - w.share), 0);
+        return {
+          name, wos, overWos, total, overpaid,
+          net: Math.round((total - overpaid) * 100) / 100,
+          contractor: contractors.find((c) => c.name === name) ?? null,
+        };
+      })
+      .filter((g) => g.wos.length > 0 || g.overWos.length > 0)
       .sort((a, b) => b.total - a.total);
   }, [workOrders, contractors, payments]);
 
   const grandTotal = groups.reduce((s, g) => s + g.total, 0);
+  const grandOverpaid = groups.reduce((s, g) => s + g.overpaid, 0);
 
   return (
     <div className="view-inner" style={{ maxWidth: 960, margin: '0 auto' }}>
@@ -112,6 +132,11 @@ export default function PayablesView({
             <div style={{ padding: '12px 20px', borderRadius: 10, background: 'rgba(185,28,28,0.06)', border: '1.5px solid rgba(185,28,28,0.15)', textAlign: 'right' }}>
               <div style={{ fontSize: 11, color: '#b91c1c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total Owed</div>
               <div style={{ fontSize: 26, fontWeight: 800, color: '#b91c1c', fontFamily: 'Lato, sans-serif' }}>{fmtMoney(grandTotal)}</div>
+              {grandOverpaid > 0.009 && (
+                <div style={{ fontSize: 11.5, color: '#047857', fontWeight: 700, marginTop: 2 }}>
+                  {fmtMoney(grandOverpaid)} already overpaid elsewhere
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -191,11 +216,14 @@ export default function PayablesView({
 }
 
 function ContractorGroup({
-  name, wos, total, contractor, onPay,
+  name, wos, overWos, total, overpaid, net, contractor, onPay,
 }: {
   name: string;
   wos: PayableRow[];
+  overWos: PayableRow[];
   total: number;
+  overpaid: number;
+  net: number;
   contractor: Contractor | null;
   onPay: (w: EnrichedWorkOrder) => void;
 }) {
@@ -229,8 +257,38 @@ function ContractorGroup({
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>Total Owed</div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#b91c1c', fontFamily: 'Lato, sans-serif' }}>{fmtMoney(total)}</div>
+          {overpaid > 0.009 && (
+            <div style={{ fontSize: 12, color: '#047857', fontWeight: 700, marginTop: 3 }}>
+              −{fmtMoney(overpaid)} already overpaid
+              <div style={{ color: net > 0.009 ? '#b45309' : '#047857', fontWeight: 800 }}>
+                {net > 0.009 ? `Net owed ${fmtMoney(net)}` : `Net credit ${fmtMoney(Math.abs(net))}`}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Jobs paid beyond the tech's share. Without these the payments are
+          invisible and the balance above looks unpaid when it is not. */}
+      {overWos.length > 0 && (
+        <div style={{ padding: '10px 20px', background: 'rgba(5,150,105,0.05)', borderBottom: '1px solid #f0f0f0', fontSize: 12.5 }}>
+          <div style={{ fontWeight: 700, color: '#047857', marginBottom: 5 }}>
+            Paid more than the agreed share on {overWos.length} job{overWos.length !== 1 ? 's' : ''}
+          </div>
+          {overWos.map((w) => (
+            <div key={w.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: '#555', padding: '2px 0' }}>
+              <span style={{ fontWeight: 700, minWidth: 88 }}>WO#{w.wo_number}</span>
+              <span style={{ flex: 1, minWidth: 110 }}>{w.title || w.site_name || '—'}</span>
+              <span>share {fmtMoney(w.share)}</span>
+              <span>paid {fmtMoney(w.sharePaid)}</span>
+              <span style={{ fontWeight: 800, color: '#047857' }}>+{fmtMoney(w.sharePaid - w.share)}</span>
+            </div>
+          ))}
+          <div style={{ color: '#777', marginTop: 5, fontSize: 11.5 }}>
+            Either the pay split on these jobs is too low, or the payment was recorded against the wrong job.
+          </div>
+        </div>
+      )}
 
       {/* WO rows */}
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

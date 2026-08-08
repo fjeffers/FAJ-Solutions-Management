@@ -100,7 +100,8 @@
       "Bash(python -c ' *)",
       "Bash(git commit -m 'fix: a busy map service could stall a work order save; W-9 filing never saved at all *)",
       "Bash(git commit -m 'feat: Payables says which jobs are blocking payroll, and opens each one to fix *)",
-      "Bash(git commit -m 'fix: recording a Zelle payment no longer requires paying through the app *)"
+      "Bash(git commit -m 'fix: recording a Zelle payment no longer requires paying through the app *)",
+      "Bash(git commit -m 'fix: Payables hid payments that exceeded a job'\\\\''s share *)"
     ]
   }
 }

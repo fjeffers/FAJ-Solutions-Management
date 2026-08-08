@@ -14,7 +14,8 @@ import { roundTripMiles } from '@/lib/driving';
 import { buildStatementRows, statementMatrix, statementTotal } from '@/lib/site-statement';
 import { downloadXLSX, downloadCSVText } from '@/lib/export';
 import { toCSV } from '@/lib/csv';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet } from 'lucide-react';
+import SiteSheetView from './SiteSheetView';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -89,6 +90,15 @@ export default function SiteLogView() {
    * a box is actually ticked.
    */
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  /** Cards on a phone, grid at a desk. Remembered so it doesn't reset each visit. */
+  const [sheetMode, setSheetMode] = useState(false);
+  useEffect(() => {
+    setSheetMode(localStorage.getItem('sitelog-sheet') === '1');
+  }, []);
+  const toggleSheet = () => setSheetMode((m) => {
+    localStorage.setItem('sitelog-sheet', m ? '0' : '1');
+    return !m;
+  });
   const togglePicked = (id: string) => setPicked((s) => {
     const next = new Set(s);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -358,6 +368,20 @@ export default function SiteLogView() {
     }
   };
 
+  /**
+   * One cell, one column. Deliberately not routed through saveVisit, which
+   * writes the whole row from a form — sending a stale copy of every other
+   * field back would quietly undo edits made since the grid last loaded.
+   * Updated in place first so the cell doesn't flicker back while the round
+   * trip completes.
+   */
+  const saveCell = async (id: string, patch: Partial<SiteVisit>) => {
+    setVisits((list) => list.map((v) => (v.id === id ? { ...v, ...patch } : v)));
+    const { error } = await supabase.from('site_visits')
+      .update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) { toastError(`Couldn't save: ${error.message}`); await load(); }
+  };
+
   const deleteVisit = async (v: SiteVisit) => {
     if (!confirm(`Delete the visit to ${v.site_name || v.site_code || v.address || 'this site'}?`)) return;
     const { error } = await supabase.from('site_visits').delete().eq('id', v.id);
@@ -464,6 +488,10 @@ export default function SiteLogView() {
               <Timer size={16} /> Check In
             </button>
           )}
+          <button className="btn btn-ghost" onClick={toggleSheet}
+            title={sheetMode ? 'Back to cards' : 'Edit every site in one grid, like a spreadsheet'}>
+            {sheetMode ? <><LayoutGrid size={14} /> Cards</> : <><Table2 size={14} /> Spreadsheet</>}
+          </button>
           <button className="btn btn-ghost" onClick={() => setEditing({ visit_date: new Date().toISOString().slice(0, 10), visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' })}>
             <Plus size={14} /> Add Visit
           </button>
@@ -591,8 +619,21 @@ export default function SiteLogView() {
         </div>
       </div>
 
-      {/* Visit cards grouped by date */}
-      {programGroups.length === 0 ? (
+      {/* Spreadsheet: every filtered site in one editable grid. */}
+      {sheetMode ? (
+        <SiteSheetView
+          visits={filtered}
+          picked={picked}
+          onTogglePicked={togglePicked}
+          onSave={saveCell}
+          onDelete={deleteVisit}
+          onAdd={() => setEditing({
+            visit_date: new Date().toISOString().slice(0, 10), visit_type: 'T&M',
+            invoice_status: 'not_invoiced', payment_status: 'unpaid',
+            program: programFilter ?? programs[0] ?? '',
+          })}
+        />
+      ) : programGroups.length === 0 ? (
         <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>
           <MapPin size={28} color="#ddd" style={{ marginBottom: 8 }} />
           <div>No visits match. Check In when you land on site, or Add Visit to backfill one.</div>

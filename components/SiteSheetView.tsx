@@ -12,8 +12,14 @@ import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitAmount } from '@/lib/visits';
+import { visitAmount, visitLineItem } from '@/lib/visits';
 import { fmtMoney } from '@/lib/utils';
+
+/** hours × rate — the Total Pay column of the Projects sheet, computed. */
+const laborOf = (v: SiteVisit) => {
+  const li = visitLineItem(v);
+  return Math.round(li.quantity * li.rate * 100) / 100;
+};
 
 type Col = {
   key: keyof SiteVisit;
@@ -117,7 +123,22 @@ export default function SiteSheetView({
           <thead>
             <tr>
               <th style={{ ...th, width: 34, textAlign: 'center' }} title="Include on the client statement">✓</th>
-              {COLS.map((c) => <th key={String(c.key)} style={{ ...th, minWidth: c.width }}>{c.label}</th>)}
+              {COLS.map((c) => (
+                <th key={String(c.key)} style={{ ...th, minWidth: c.width }}>
+                  {c.label}
+                  {/* Calculated, not typed — say so in the header rather than
+                      letting a number appear from nowhere. */}
+                  {(c.key === 'hours' || c.key === 'travel_charge') && (
+                    <span title={c.key === 'hours'
+                      ? 'Fills in from Time In and Time Out. Type over it to override.'
+                      : 'Miles × your mileage rate. Type over it to override.'}
+                      style={{ color: 'var(--teal)', marginLeft: 3 }}>ƒ</span>
+                  )}
+                </th>
+              ))}
+              <th style={{ ...th, minWidth: 96, textAlign: 'right' }}>
+                Total Pay <span style={{ color: 'var(--teal)' }}>ƒ</span>
+              </th>
               <th style={{ ...th, minWidth: 92, textAlign: 'right' }}>Total</th>
               <th style={{ ...th, width: 40 }} />
             </tr>
@@ -168,6 +189,9 @@ export default function SiteSheetView({
                   );
                 })}
 
+                <td style={{ ...td, textAlign: 'right', padding: '7px 9px', fontVariantNumeric: 'tabular-nums', color: '#555', background: 'rgba(13,115,119,0.03)' }}>
+                  {fmtMoney(laborOf(v))}
+                </td>
                 <td style={{ ...td, textAlign: 'right', padding: '7px 9px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                   {fmtMoney(visitAmount(v))}
                 </td>
@@ -180,7 +204,7 @@ export default function SiteSheetView({
             ))}
 
             {visits.length === 0 && (
-              <tr><td colSpan={COLS.length + 3} style={{ padding: 30, textAlign: 'center', color: '#aaa' }}>
+              <tr><td colSpan={COLS.length + 4} style={{ padding: 30, textAlign: 'center', color: '#aaa' }}>
                 No sites match the current filters.
               </td></tr>
             )}
@@ -198,6 +222,9 @@ export default function SiteSheetView({
                       : ''}
                   </td>
                 ))}
+                <td style={{ ...td, borderTop: '2px solid #e5e7eb', textAlign: 'right', padding: '8px 9px', fontWeight: 800, color: '#555' }}>
+                  {fmtMoney(visits.reduce((s, v) => s + laborOf(v), 0))}
+                </td>
                 <td style={{ ...td, borderTop: '2px solid #e5e7eb', textAlign: 'right', padding: '8px 9px', fontWeight: 800, color: 'var(--teal)' }}>
                   {fmtMoney(total)}
                 </td>

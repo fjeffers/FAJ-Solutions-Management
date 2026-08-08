@@ -376,9 +376,29 @@ export default function SiteLogView() {
    * trip completes.
    */
   const saveCell = async (id: string, patch: Partial<SiteVisit>) => {
-    setVisits((list) => list.map((v) => (v.id === id ? { ...v, ...patch } : v)));
+    const row = visits.find((v) => v.id === id);
+    const next = { ...row, ...patch } as SiteVisit;
+    const derived: Partial<SiteVisit> = {};
+
+    // The two formulas the Projects sheet carried in its cells. Each only fires
+    // when its own inputs were the thing that changed, so a figure typed over
+    // the top of a calculated one stays typed — the override a spreadsheet
+    // user expects, rather than the cell fighting back.
+    if (('time_in' in patch || 'time_out' in patch) && next.time_in && next.time_out) {
+      const h = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
+      if (h > 0) derived.hours = Math.round(h * 100) / 100;
+    }
+    if ('miles' in patch) {
+      const rate = rateFor(next.program);
+      derived.travel_charge = next.miles != null && rate > 0
+        ? Math.round(Number(next.miles) * rate * 100) / 100
+        : null;
+    }
+
+    const full = { ...patch, ...derived };
+    setVisits((list) => list.map((v) => (v.id === id ? { ...v, ...full } : v)));
     const { error } = await supabase.from('site_visits')
-      .update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+      .update({ ...full, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) { toastError(`Couldn't save: ${error.message}`); await load(); }
   };
 

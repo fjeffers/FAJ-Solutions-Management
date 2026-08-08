@@ -108,7 +108,9 @@
       "Bash(sed -i \"s/expect\\(total\\\\[STATEMENT_HEADERS.indexOf\\('Labor'\\)\\\\]\\).toBe\\(275\\);/expect\\(total[STATEMENT_HEADERS.indexOf\\('Total Pay'\\)]\\).toBe\\(275\\);/; s/expect\\(total\\\\[STATEMENT_HEADERS.indexOf\\('Hours'\\)\\\\]\\).toBe\\(5\\);/expect\\(total[STATEMENT_HEADERS.indexOf\\('Total Time'\\)]\\).toBe\\(5\\);/; s/expect\\(total\\\\[STATEMENT_HEADERS.indexOf\\('Miles'\\)\\\\]\\).toBe\\(30\\);/expect\\(total[STATEMENT_HEADERS.indexOf\\('Round Trip Miles'\\)]\\).toBe\\(30\\);/; s/expect\\(total\\\\[STATEMENT_HEADERS.indexOf\\('Amount'\\)\\\\]\\).toBe\\(statementTotal\\(rows\\)\\);/expect\\(total[STATEMENT_HEADERS.indexOf\\('Total'\\)]\\).toBe\\(statementTotal\\(rows\\)\\);/\" lib/site-statement.test.ts)",
       "Bash(git commit -m 'feat: the statement is Fred'\\\\''s own Projects sheet, with the arithmetic done *)",
       "Bash(git commit -q -m 'feat: pick sites by hand for the client statement *)",
-      "Bash(git commit -q -m 'feat: Site Log has a real spreadsheet view *)"
+      "Bash(git commit -q -m 'feat: Site Log has a real spreadsheet view *)",
+      "Bash(sed -i 's|<tr><td colSpan={COLS.length + 3}|<tr><td colSpan={COLS.length + 4}|' components/SiteSheetView.tsx)",
+      "Bash(git commit -q -m 'feat: the grid calculates its own cells, like the sheet it replaces *)"
     ]
   }
 }

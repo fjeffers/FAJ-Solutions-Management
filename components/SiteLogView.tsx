@@ -225,7 +225,10 @@ export default function SiteLogView() {
       if (billing === 'awaiting' && !(v.invoice_status === 'invoiced' && v.payment_status === 'unpaid')) return false;
       if (billing === 'paid' && v.payment_status !== 'paid') return false;
       if (needle) {
-        const hay = [v.program, v.site_code, v.site_name, v.address, v.notes, v.rate].join(' ').toLowerCase();
+        // visit_type is in the haystack so typing "T&M" narrows to T&M work —
+        // which is how a client asks for it, and what the statement then exports.
+        const hay = [v.program, v.site_code, v.site_name, v.address, v.notes, v.rate, v.visit_type]
+          .join(' ').toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       return true;
@@ -327,7 +330,8 @@ export default function SiteLogView() {
     const matrix = statementMatrix(rows);
     try {
       if (format === 'xlsx') {
-        await downloadXLSX(`${safeName}.xlsx`, 'Statement', matrix, [12, 22, 34, 46, 8, 16, 12]);
+        await downloadXLSX(`${safeName}.xlsx`, 'Statement', matrix,
+          [12, 10, 20, 32, 40, 20, 8, 14, 8, 12, 12]);
       } else {
         downloadCSVText(`${safeName}.csv`, toCSV(matrix.map((r) => r.map(String))));
       }

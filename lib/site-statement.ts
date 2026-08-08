@@ -14,17 +14,39 @@ import { clientVisibleNote } from './site-report';
 
 export type StatementRow = {
   date: string;
+  siteCode: string;
   site: string;
   address: string;
   work: string;
+  timeOnSite: string;
   hours: number | null;
-  basis: string;
+  rate: string;
+  miles: number | null;
+  travel: number | null;
   amount: number;
 };
 
+// Mirrors the columns of the Projects spreadsheet this replaces: the client
+// recognises their own site id, and a billed hour is easier to accept next to
+// the times it was worked.
 export const STATEMENT_HEADERS = [
-  'Date', 'Site', 'Address', 'Work Performed', 'Hours', 'Basis', 'Amount',
+  'Date', 'Site #', 'Site', 'Address', 'Work Performed',
+  'Time On Site', 'Hours', 'Rate', 'Miles', 'Travel Charge', 'Amount',
 ];
+
+/** "8:15 AM – 12:30 PM", across however many stints the visit had. */
+function timeOnSite(v: SiteVisit): string {
+  const stints = (v.sessions && v.sessions.length > 0)
+    ? v.sessions
+    : (v.time_in ? [{ in: v.time_in, out: v.time_out }] : []);
+  const t = (iso: string | null) => iso
+    ? new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : '';
+  return stints
+    .filter((s) => s.in)
+    .map((s) => `${t(s.in)}${s.out ? ` – ${t(s.out)}` : ''}`)
+    .join(', ');
+}
 
 /** Newest last, so the statement reads like a running account. */
 export function buildStatementRows(visits: SiteVisit[]): StatementRow[] {
@@ -39,13 +61,17 @@ export function buildStatementRows(visits: SiteVisit[]): StatementRow[] {
           : li.rate > 0 ? 'Flat rate' : 'To be priced';
       return {
         date: v.visit_date ?? '',
-        site: [v.site_name, v.site_code ? `#${v.site_code}` : null].filter(Boolean).join(' '),
+        siteCode: v.site_code ?? '',
+        site: v.site_name ?? '',
         address: v.address ?? '',
         // Same gate the shared report uses, so a pasted assignment email never
         // reaches a client here either.
         work: clientVisibleNote(v),
+        timeOnSite: timeOnSite(v),
         hours: v.hours,
-        basis,
+        rate: basis,
+        miles: v.miles,
+        travel: v.travel_charge,
         amount: visitAmount(v),
       };
     });
@@ -57,7 +83,15 @@ export function statementTotal(rows: StatementRow[]): number {
 
 export function statementMatrix(rows: StatementRow[]): (string | number)[][] {
   const body = rows.map((r) => [
-    r.date, r.site, r.address, r.work, r.hours ?? '', r.basis, r.amount,
+    r.date, r.siteCode, r.site, r.address, r.work,
+    r.timeOnSite, r.hours ?? '', r.rate, r.miles ?? '', r.travel ?? '', r.amount,
   ]);
-  return [STATEMENT_HEADERS, ...body, ['', '', '', '', '', 'TOTAL', statementTotal(rows)]];
+  const totalMiles = rows.reduce((s, r) => s + Number(r.miles ?? 0), 0);
+  const totalHours = rows.reduce((s, r) => s + Number(r.hours ?? 0), 0);
+  return [
+    STATEMENT_HEADERS,
+    ...body,
+    ['', '', '', '', '', 'TOTAL',
+      totalHours || '', '', totalMiles || '', '', statementTotal(rows)],
+  ];
 }

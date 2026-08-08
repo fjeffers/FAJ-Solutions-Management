@@ -10,6 +10,7 @@ import PortalUpload from './PortalUpload';
 import PortalTimeLog from './PortalTimeLog';
 import PortalChat from './PortalChat';
 import PortalDocuments from './PortalDocuments';
+import PortalWorkExport from './PortalWorkExport';
 import type { WorkOrder, Contractor } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -237,6 +238,12 @@ export default async function PortalPage({ params, searchParams }: {
               ))}
             </div>
           </div>
+        )}
+
+        {/* Their own record of the work, money-free. Only on the job view —
+            the paperwork link stays a single errand. */}
+        {!paperworkOnly && isContractor && work_orders.length > 0 && (
+          <PortalWorkExport workOrders={work_orders} contractorName={contractor.name} />
         )}
 
         {/* Job view with nothing assigned. Paperwork is deliberately NOT shown

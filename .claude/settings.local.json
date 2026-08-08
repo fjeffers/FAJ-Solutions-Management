@@ -110,7 +110,10 @@
       "Bash(git commit -q -m 'feat: pick sites by hand for the client statement *)",
       "Bash(git commit -q -m 'feat: Site Log has a real spreadsheet view *)",
       "Bash(sed -i 's|<tr><td colSpan={COLS.length + 3}|<tr><td colSpan={COLS.length + 4}|' components/SiteSheetView.tsx)",
-      "Bash(git commit -q -m 'feat: the grid calculates its own cells, like the sheet it replaces *)"
+      "Bash(git commit -q -m 'feat: the grid calculates its own cells, like the sheet it replaces *)",
+      "Bash(cd \"D:\\\\FAJ Project\" && ls -1 CLAUDE.md TASKS.md dashboard.html 2>&1; echo \"--- memory/ ---\"; ls -1 memory/ 2>&1 | head -20; echo \"--- faj-payments ---\"; ls -1 faj-payments/TASKS.md faj-payments/dashboard.html faj-payments/CLAUDE.md 2>&1)",
+      "Bash(cp \"C:/Users/fajso/AppData/Roaming/Claude/local-agent-mode-sessions/33c59f6b-8add-4563-b21e-14ecbc0e90b1/f74865f7-7510-484e-9130-b64f9c0022a9/rpm/plugin_014WxCYbLf7f3uw2isHFR9US/skills/dashboard.html\" \"D:/FAJ Project/dashboard.html\" && ls -la \"D:/FAJ Project/dashboard.html\" && echo \"--- TASKS.md ---\" && head -25 \"D:/FAJ Project/TASKS.md\")",
+      "Bash(git commit -q -m 'fix: the spreadsheet gets the whole page *)"
     ]
   }
 }

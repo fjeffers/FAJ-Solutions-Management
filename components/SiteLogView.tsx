@@ -486,7 +486,10 @@ export default function SiteLogView() {
   }
 
   return (
-    <div className="view-inner" style={{ maxWidth: 900, margin: '0 auto' }}>
+    // 900px suits a column of cards. The spreadsheet has sixteen columns and
+    // needs the whole window, so the wrapper widens with the mode rather than
+    // the grid scrolling sideways inside a narrow well.
+    <div className="view-inner" style={{ maxWidth: sheetMode ? '100%' : 900, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: 16, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>

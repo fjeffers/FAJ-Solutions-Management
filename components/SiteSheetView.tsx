@@ -118,8 +118,10 @@ export default function SiteSheetView({
         </span>
       </div>
 
-      <div style={{ overflow: 'auto', maxHeight: '70vh', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff' }}>
-        <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }}>
+      {/* Tall enough to work a month without the page itself scrolling, and
+          full width so the columns get the room they need. */}
+      <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 230px)', width: '100%', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff' }}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 13, width: 'max-content', minWidth: '100%' }}>
           <thead>
             <tr>
               <th style={{ ...th, width: 34, textAlign: 'center' }} title="Include on the client statement">✓</th>

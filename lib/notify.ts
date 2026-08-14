@@ -6,6 +6,13 @@ export async function notifyContractor(params: {
   title?: string;
   status?: string;
   amount?: number;
+  // wo_assigned extras: enable one-click accept/decline + portal link + job facts
+  wo_id?: string;
+  portal_token?: string | null;
+  pay?: number;
+  reference?: string | null;
+  site?: string | null;
+  schedule?: string | null;
 }) {
   if (!params.contractor_email) return;
   try {

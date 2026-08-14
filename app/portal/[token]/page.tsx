@@ -338,6 +338,19 @@ function WOCard({
           </div>
         )}
 
+        {/* ── On-site reference: the number to give at check-in ── */}
+        {(wo.external_wo_id || wo.client_reference) && (
+          <InfoRow icon="🔖" label="On-Site Reference">
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0D7377' }}>
+              {wo.source_platform && wo.source_platform !== 'Internal' ? `${wo.source_platform} ` : ''}
+              #{wo.external_wo_id || wo.client_reference}
+            </div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+              Give this number when you check in on site
+            </div>
+          </InfoRow>
+        )}
+
         {/* ── Schedule ── */}
         {timeStr && (
           <InfoRow icon="📅" label="Schedule">

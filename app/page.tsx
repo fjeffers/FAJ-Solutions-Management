@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { enrichWorkOrders } from '@/lib/utils';
+import { enrichWorkOrders, contractorOwedOnWO } from '@/lib/utils';
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
@@ -429,12 +429,33 @@ export default function HomePage() {
         if (c?.email) notifyContractor({ type: 'status_change', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined, status: w.wo_status ?? '' });
       }
     } else {
-      const { error } = await supabase.from('work_orders').insert({ ...payload, user_id: user.id });
+      const { data: created, error } = await supabase.from('work_orders').insert({ ...payload, user_id: user.id }).select('id').single();
       if (error) { toastError(`Couldn't save WO#${w.wo_number}: ${error.message}`); return; }
       logAudit({ action: 'create', entityType: 'work_order', entityLabel: `WO#${w.wo_number}` });
-      // Notify contractor of assignment
-      const c = contractors.find((x) => x.name === w.contractor_name);
-      if (c?.email) notifyContractor({ type: 'wo_assigned', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined });
+      // Notify every assigned tech with their own accept/decline links and pay
+      const assignedNames: string[] = (payload.contractor_names && payload.contractor_names.length > 0)
+        ? payload.contractor_names
+        : (payload.contractor_name ? [payload.contractor_name] : []);
+      const siteLine = [w.site_name, w.site_address, w.site_city, w.site_state].filter(Boolean).join(', ') || null;
+      const scheduleLine = [w.start_date, w.start_time].filter(Boolean).join(' ') || null;
+      const refId = w.external_wo_id || w.client_reference || null;
+      for (const name of assignedNames) {
+        const c = contractors.find((x) => x.name === name);
+        if (!c?.email) continue;
+        notifyContractor({
+          type: 'wo_assigned',
+          contractor_email: c.email,
+          contractor_name: c.name,
+          wo_number: w.wo_number!,
+          title: w.title ?? undefined,
+          wo_id: created?.id,
+          portal_token: c.portal_token ?? null,
+          pay: contractorOwedOnWO({ ...(payload as unknown as WorkOrder) }, name),
+          reference: refId ? `${w.source_platform && w.source_platform !== 'Internal' ? `${w.source_platform} ` : ''}#${refId}` : null,
+          site: siteLine,
+          schedule: scheduleLine,
+        });
+      }
     }
     // Sync inventory with the closeout materials: deduct newly used stock,
     // put back anything removed or reduced. Extra (non-inventory) items skip this.

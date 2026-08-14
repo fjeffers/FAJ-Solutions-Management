@@ -79,7 +79,16 @@ function section(heading: string, content: string): string {
 
 // ─── Work Order ───────────────────────────────────────────────────────────────
 
-export function workOrderEmail(wo: WorkOrder, note?: string): string {
+// Per-recipient extras for the assignment email. When present, the email shows
+// the TECH's pay (never the client price) and one-click Accept / Decline links.
+export type WorkOrderEmailOpts = {
+  techPay?: number | null;
+  portalUrl?: string | null;
+  acceptUrl?: string | null;
+  declineUrl?: string | null;
+};
+
+export function workOrderEmail(wo: WorkOrder, note?: string, opts: WorkOrderEmailOpts = {}): string {
   const site = [wo.site_name, wo.site_address, wo.site_city, wo.site_state, wo.site_zip]
     .filter(Boolean).join(', ');
   const schedule = [
@@ -103,6 +112,25 @@ export function workOrderEmail(wo: WorkOrder, note?: string): string {
                    font-size:14px;color:#333;line-height:1.6;">${note}</div>`
     : '';
 
+  // On-site reference: the number the tech gives the client's help desk
+  // (e.g. the FieldNation or NetView work order ID), plus where it came from.
+  const refId = wo.external_wo_id || wo.client_reference || null;
+  const refLabel = refId
+    ? `${wo.source_platform && wo.source_platform !== 'Internal' ? `${wo.source_platform} ` : ''}#${refId}`
+    : null;
+
+  // Accept / Decline / portal buttons — only when per-recipient links exist
+  const respondBlock = (opts.acceptUrl && opts.declineUrl) ? `
+    <div style="text-align:center;margin:28px 0;">
+      <div style="font-size:13px;color:#555;margin-bottom:14px;font-weight:600;">Can you take this job?</div>
+      <a href="${opts.acceptUrl}" style="display:inline-block;background:#047857;color:#fff;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;margin:0 6px 8px;">✓ Accept Job</a>
+      <a href="${opts.declineUrl}" style="display:inline-block;background:#fff;color:#b91c1c;border:2px solid #b91c1c;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;margin:0 6px 8px;">✗ Decline</a>
+      ${opts.portalUrl ? `<div style="margin-top:10px;"><a href="${opts.portalUrl}" style="color:${TEAL};font-size:13px;font-weight:600;">Open my portal for full details ↗</a></div>` : ''}
+    </div>` : (opts.portalUrl ? `
+    <div style="text-align:center;margin:28px 0;">
+      <a href="${opts.portalUrl}" style="display:inline-block;background:${TEAL};color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">Open My Portal</a>
+    </div>` : '');
+
   const body = `
     ${noteBlock}
 
@@ -110,15 +138,17 @@ export function workOrderEmail(wo: WorkOrder, note?: string): string {
       WO #${wo.wo_number}${wo.title ? ` — ${wo.title}` : ''}
     </div>
 
+    ${respondBlock}
+
     ${section('Work Order Details', `
       <table width="100%" cellpadding="0" cellspacing="0">
         ${infoRow('Contractor', wo.contractor_name, true)}
         ${infoRow('Status', wo.wo_status)}
+        ${refLabel ? infoRow('On-Site Reference', refLabel, true) : ''}
         ${wo.service_type ? infoRow('Service Type', wo.service_type) : ''}
         ${schedule ? infoRow('Schedule', schedule) : ''}
         ${site ? infoRow('Site', site) : ''}
-        ${infoRow('Pay Type', wo.pay_type)}
-        ${infoRow('Total Amount', fmtMoney(Number(wo.total_amount)), true)}
+        ${opts.techPay != null && opts.techPay > 0 ? infoRow('Your Pay', fmtMoney(opts.techPay), true) : ''}
       </table>
     `)}
 

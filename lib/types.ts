@@ -231,6 +231,9 @@ export type WorkOrder = {
   // Mileage logged at closeout (migration-032)
   mileage_logs: MileageLog[] | null;
 
+  // Accept/decline per tech (migration-056): name -> { status, at }
+  assignment_responses: Record<string, AssignmentResponse> | null;
+
   // Soft-archive (migration-013)
   archived_at: string | null;
 
@@ -313,6 +316,11 @@ export type SiteContact = {
 };
 
 // ─── Materials / Inventory (pre-existing table, built outside this repo) ─────
+
+export type AssignmentResponse = {
+  status: 'accepted' | 'declined';
+  at: string; // ISO timestamp
+};
 
 export type MileageLog = {
   id: string;              // row id within the WO (client-generated)

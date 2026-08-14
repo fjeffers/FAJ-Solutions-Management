@@ -10,7 +10,8 @@ const OWNER_TYPES = new Set(['contractor_accepted', 'contractor_status_update', 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const body = await req.json();
-  const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders, count } = body;
+  const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders, count,
+    wo_id, portal_token, pay, reference, site, schedule } = body;
 
   // Contractor email only required for contractor-facing notification types
   if (!OWNER_TYPES.has(type) && !contractor_email) {
@@ -22,7 +23,11 @@ export async function POST(req: NextRequest) {
   let html = '';
 
   if (type === 'wo_assigned') {
-    subject = `Work Order #${wo_number} Assigned to You`;
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com';
+    const canRespond = !!(portal_token && wo_id);
+    const respond = canRespond ? `${base}/api/portal/respond?token=${portal_token}&wo=${wo_id}` : null;
+    const portalUrl = portal_token ? `${base}/portal/${portal_token}` : null;
+    subject = `Work Order #${wo_number} Assigned to You — please accept or decline`;
     html = `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
         <h2 style="color:#0D7377;">New Work Order Assigned</h2>
@@ -30,9 +35,21 @@ export async function POST(req: NextRequest) {
         <p>You've been assigned a new work order:</p>
         <div style="background:#f9f9f9;padding:16px;border-radius:8px;margin:16px 0;">
           <p style="margin:4px 0;"><strong>WO #:</strong> ${wo_number}</p>
-          ${title ? `<p style="margin:4px 0;"><strong>Title:</strong> ${title}</p>` : ''}
+          ${title ? `<p style="margin:4px 0;"><strong>Job:</strong> ${title}</p>` : ''}
+          ${reference ? `<p style="margin:4px 0;"><strong>On-Site Reference:</strong> ${reference}</p>` : ''}
+          ${schedule ? `<p style="margin:4px 0;"><strong>Schedule:</strong> ${schedule}</p>` : ''}
+          ${site ? `<p style="margin:4px 0;"><strong>Site:</strong> ${site}</p>` : ''}
+          ${pay && Number(pay) > 0 ? `<p style="margin:4px 0;"><strong>Your Pay:</strong> $${Number(pay).toFixed(2)}</p>` : ''}
         </div>
-        <p>Log in to the contractor portal to view details and get started.</p>
+        ${canRespond ? `
+        <div style="text-align:center;margin:24px 0;">
+          <div style="font-size:13px;color:#555;margin-bottom:12px;font-weight:600;">Can you take this job?</div>
+          <a href="${respond}&action=accept" style="display:inline-block;background:#047857;color:#fff;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;margin:0 6px 8px;">✓ Accept Job</a>
+          <a href="${respond}&action=decline" style="display:inline-block;background:#fff;color:#b91c1c;border:2px solid #b91c1c;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;margin:0 6px 8px;">✗ Decline</a>
+        </div>` : ''}
+        ${portalUrl
+          ? `<p style="text-align:center;"><a href="${portalUrl}" style="color:#0D7377;font-weight:600;">Open your portal for full details ↗</a></p>`
+          : `<p>Log in to the contractor portal to view details and get started.</p>`}
         <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
       </div>
     `;

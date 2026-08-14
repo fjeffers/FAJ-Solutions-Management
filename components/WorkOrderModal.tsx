@@ -550,6 +550,17 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                           <span style={{ fontSize: 10, color: '#aaa', fontWeight: 600 }}>PRIMARY</span>
                         )}
 
+                        {/* Accept/decline state from the assignment email (existing WOs only) */}
+                        {item && (() => {
+                          const resp = item.assignment_responses?.[name];
+                          if (!resp) {
+                            return <span title="No response yet" style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>⏳ AWAITING</span>;
+                          }
+                          return resp.status === 'accepted'
+                            ? <span title={`Accepted ${new Date(resp.at).toLocaleString()}`} style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(4,120,87,0.12)', color: '#047857' }}>✓ ACCEPTED</span>
+                            : <span title={`Declined ${new Date(resp.at).toLocaleString()}`} style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(185,28,28,0.12)', color: '#b91c1c' }}>✗ DECLINED</span>;
+                        })()}
+
                         {/* Per-tech pay — what THIS tech gets (client price stays separate) */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                           <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>

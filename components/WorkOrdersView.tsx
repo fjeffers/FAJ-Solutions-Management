@@ -75,14 +75,19 @@ export default function WorkOrdersView({
 
   const openSendModal = (w: EnrichedWorkOrder) => {
     const names = w.contractor_names?.length ? w.contractor_names : [w.contractor_name].filter(Boolean);
-    const emails = names
-      .map((name) => contractors.find((c) => c.name === name)?.email)
-      .filter(Boolean) as string[];
+    // Each tech gets an individualized email (their pay + their accept/decline
+    // links), so the server needs name/email/portal_token per recipient.
+    const recipients = names
+      .map((name) => {
+        const c = contractors.find((x) => x.name === name);
+        return c?.email ? { name: c.name, email: c.email, portal_token: c.portal_token ?? null } : null;
+      })
+      .filter(Boolean);
     setEmailPayload({
       type: 'work_order',
-      to: emails.join(', '),
+      to: recipients.map((r) => r!.email).join(', '),
       subject: `Work Order #${w.wo_number}${w.title ? ` — ${w.title}` : ''}`,
-      data: { workOrder: w },
+      data: { workOrder: w, recipients },
     });
   };
 

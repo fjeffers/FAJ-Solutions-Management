@@ -7,6 +7,7 @@ import {
   accountantSummaryEmail,
 } from '@/lib/email-templates';
 import { contractorOwedOnWO } from '@/lib/utils';
+import { createClient as createServerClient } from '@/lib/supabase/server';
 import type { WorkOrder, Payment, Contractor } from '@/lib/types';
 
 // Techs assigned to the WO, so each address gets ITS OWN email with that
@@ -29,6 +30,12 @@ const FROM     = process.env.FROM_EMAIL     ?? 'FAJ Solutions <support@fajsoluti
 const REPLY_TO = process.env.REPLY_TO_EMAIL ?? 'support@fajsolutions.com';
 
 export async function POST(req: NextRequest) {
+  // Signed-in users only — this endpoint sends from the FAJ domain to any
+  // address, so leaving it open would make it a public email relay.
+  const authClient = await createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const resend = new Resend(process.env.RESEND_API_KEY);
   try {
     const body = await req.json();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
+import { createClient } from '@/lib/supabase/server';
 
 const OWNER_EMAIL = 'fajsolutions@gmail.com';
 
@@ -10,6 +11,16 @@ const OWNER_TYPES = new Set(['contractor_accepted', 'contractor_status_update', 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const body = await req.json();
+
+  // Owner-facing types are safe to leave open: the recipient is hard-coded to
+  // Fred, and the portal's server actions (no session cookie) rely on them.
+  // Everything else emails an arbitrary address, so it requires a signed-in
+  // session — otherwise this endpoint is an open relay on a public URL.
+  if (!OWNER_TYPES.has(body.type)) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders, count,
     wo_id, portal_token, pay, reference, site, schedule } = body;
 

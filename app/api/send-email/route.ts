@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       const toList = to.split(',').map((e) => e.trim()).filter(Boolean);
 
       const failures: string[] = [];
+      let lastError = '';
       for (const addr of toList) {
         const match = recipients.find((r) => r.email?.toLowerCase() === addr.toLowerCase());
         const { error } = await resend.emails.send({
@@ -61,10 +62,14 @@ export async function POST(req: NextRequest) {
           subject,
           html: woEmailFor(wo, note, match),
         });
-        if (error) failures.push(addr);
+        if (error) {
+          failures.push(addr);
+          lastError = error.message;
+          console.error('[send-email] work_order send failed for', addr, error);
+        }
       }
       if (failures.length === toList.length) {
-        return NextResponse.json({ error: `Send failed for ${failures.join(', ')}` }, { status: 500 });
+        return NextResponse.json({ error: `Send failed for ${failures.join(', ')}${lastError ? ` — ${lastError}` : ''}` }, { status: 500 });
       }
       return NextResponse.json({ success: true, failed: failures.length ? failures : undefined });
     }

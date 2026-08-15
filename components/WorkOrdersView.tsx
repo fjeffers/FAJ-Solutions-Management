@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2 } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
@@ -28,7 +28,7 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 
 export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
-  onArchive, onUnarchive,
+  onArchive, onUnarchive, onCloseJob,
 }: {
   workOrders: EnrichedWorkOrder[];
   stats: Stats;
@@ -42,34 +42,43 @@ export default function WorkOrdersView({
   contractors: Contractor[];
   onArchive: (id: string) => void;
   onUnarchive: (id: string) => void;
+  onCloseJob: (w: EnrichedWorkOrder) => void;
 }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [woStatusFilter, setWoStatusFilter] = useState<'all' | WorkOrderStatus>('all');
+  // FieldNation-style board: active jobs move through status tabs; Closed is
+  // its own tab at the end (our archived jobs) instead of a separate toggle.
+  const [woStatusFilter, setWoStatusFilter] = useState<'all' | 'closed' | WorkOrderStatus>('all');
   const [emailPayload, setEmailPayload] = useState<EmailPayload | null>(null);
-  const [showArchived, setShowArchived] = useState(false);
 
   const archivedCount = workOrders.filter((w) => w.archived_at !== null).length;
 
   const sorted = sortByWO(workOrders);
   const filtered = sorted.filter((w) => {
-    if (!showArchived && w.archived_at !== null) return false;
+    const isClosed = w.archived_at !== null;
+    if (woStatusFilter === 'closed') {
+      if (!isClosed) return false;
+    } else {
+      if (isClosed) return false;
+      if (woStatusFilter !== 'all' && w.wo_status !== woStatusFilter) return false;
+    }
     const q = search.toLowerCase();
     const allNames = (w.contractor_names && w.contractor_names.length > 0)
       ? w.contractor_names
       : [w.contractor_name];
-    const matchSearch =
+    return (
       w.wo_number.includes(search) ||
       allNames.some((n) => n.toLowerCase().includes(q)) ||
       (w.title ?? '').toLowerCase().includes(q) ||
       (w.service_type ?? '').toLowerCase().includes(q) ||
-      (w.site_city ?? '').toLowerCase().includes(q);
-    const matchStatus = woStatusFilter === 'all' || w.wo_status === woStatusFilter;
-    return matchSearch && matchStatus;
+      (w.site_city ?? '').toLowerCase().includes(q)
+    );
   });
 
+  // Tab counts follow the board: active tabs count non-closed jobs only
+  const activeWOs = workOrders.filter((w) => w.archived_at === null);
   const statusCounts = WO_STATUSES.reduce((acc, s) => {
-    acc[s] = workOrders.filter((w) => w.wo_status === s).length;
+    acc[s] = activeWOs.filter((w) => w.wo_status === s).length;
     return acc;
   }, {} as Record<WorkOrderStatus, number>);
 
@@ -107,22 +116,6 @@ export default function WorkOrdersView({
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {archivedCount > 0 && (
-              <button
-                onClick={() => setShowArchived(!showArchived)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '9px 16px', borderRadius: 8,
-                  border: '1.5px solid rgba(109,40,217,0.3)',
-                  background: showArchived ? 'rgba(109,40,217,0.1)' : 'rgba(109,40,217,0.05)',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                  color: '#6d28d9', fontFamily: 'Lato, sans-serif',
-                }}
-              >
-                <Archive size={13} />
-                {showArchived ? 'Hide Archived' : `Archived (${archivedCount})`}
-              </button>
-            )}
             <button className="btn btn-ghost" onClick={() => setAiOpen(true)}><Sparkles size={14} /> Generate with AI</button>
             <button className="btn btn-primary" onClick={onAdd}><Plus size={14} /> New Work Order</button>
           </div>
@@ -136,34 +129,53 @@ export default function WorkOrdersView({
         />
       )}
 
-      {/* ── Search + Filter ── */}
-      <div className="glass card" style={{ marginBottom: 20, padding: '14px 16px' }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ position: 'relative', flex: '1 1 220px' }}>
-            <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
-            <input
-              className="input"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by contractor, title, service type, city…"
-              style={{ paddingLeft: 36 }}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button className={`filter-chip ${woStatusFilter === 'all' ? 'active' : ''}`} onClick={() => setWoStatusFilter('all')}>
-              All <span style={{ opacity: 0.6, fontSize: 10, marginLeft: 4 }}>{workOrders.length}</span>
-            </button>
-            {WO_STATUSES.map((s) => (
+      {/* ── FieldNation-style status board tabs ── */}
+      <div className="glass card" style={{ marginBottom: 20, padding: '0 16px' }}>
+        <div style={{ display: 'flex', gap: 2, overflowX: 'auto', borderBottom: '1px solid #eee' }}>
+          {[
+            { key: 'all' as const, label: 'All Active', count: activeWOs.length },
+            ...WO_STATUSES.map((s) => ({ key: s, label: s, count: statusCounts[s] })),
+            { key: 'closed' as const, label: 'Closed', count: archivedCount },
+          ].map((t) => {
+            const active = woStatusFilter === t.key;
+            const isClosedTab = t.key === 'closed';
+            return (
               <button
-                key={s}
-                className={`filter-chip ${woStatusFilter === s ? 'active' : ''}`}
-                onClick={() => setWoStatusFilter(s)}
+                key={t.key}
+                onClick={() => setWoStatusFilter(t.key)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0,
+                  padding: '13px 14px', border: 'none', background: 'none', cursor: 'pointer',
+                  fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 12,
+                  color: active ? (isClosedTab ? '#6d28d9' : 'var(--teal)') : '#888',
+                  borderBottom: active
+                    ? `2.5px solid ${isClosedTab ? '#6d28d9' : 'var(--teal)'}`
+                    : '2.5px solid transparent',
+                  marginBottom: -1,
+                }}
               >
-                {s}
-                {statusCounts[s] > 0 && <span style={{ opacity: 0.6, fontSize: 10, marginLeft: 4 }}>{statusCounts[s]}</span>}
+                {isClosedTab && <Archive size={11} />}
+                {t.label}
+                <span style={{
+                  fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 999,
+                  background: active ? (isClosedTab ? 'rgba(109,40,217,0.12)' : 'rgba(13,115,119,0.12)') : 'rgba(0,0,0,0.06)',
+                  color: active ? (isClosedTab ? '#6d28d9' : 'var(--teal)') : '#999',
+                }}>
+                  {t.count}
+                </span>
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </div>
+        <div style={{ position: 'relative', padding: '12px 0' }}>
+          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
+          <input
+            className="input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by contractor, title, service type, city…"
+            style={{ paddingLeft: 36 }}
+          />
         </div>
       </div>
 
@@ -176,7 +188,7 @@ export default function WorkOrdersView({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} />)}
+          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} onCloseJob={onCloseJob} />)}
         </div>
       )}
 
@@ -196,6 +208,7 @@ function WOCard({
   contractors,
   onArchive,
   onUnarchive,
+  onCloseJob,
 }: {
   w: EnrichedWorkOrder;
   onEdit: (w: EnrichedWorkOrder) => void;
@@ -207,6 +220,7 @@ function WOCard({
   contractors: Contractor[];
   onArchive: (id: string) => void;
   onUnarchive: (id: string) => void;
+  onCloseJob: (w: EnrichedWorkOrder) => void;
 }) {
   const [portalSending, setPortalSending] = useState(false);
   const [portalSent,    setPortalSent]    = useState(false);
@@ -337,6 +351,24 @@ function WOCard({
                 }}
               >
                 <DollarSign size={11} /> Pay
+              </button>
+            )}
+            {!isArchived && (
+              <button
+                title={w.remaining > 0
+                  ? `Close job (${fmtMoney(w.remaining)} still owed — closes as Approved)`
+                  : 'Close job — everyone is paid, moves to Closed'}
+                onClick={() => onCloseJob(w)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', borderRadius: 8,
+                  border: '1.5px solid rgba(4,120,87,0.4)',
+                  background: '#047857', cursor: 'pointer',
+                  fontSize: 11, fontWeight: 700, color: 'white',
+                  fontFamily: 'Lato, sans-serif',
+                }}
+              >
+                <CheckCircle2 size={11} /> Close
               </button>
             )}
             <button className="icon-btn" onClick={() => onEdit(w)} title="Edit"><Edit2 size={14} /></button>

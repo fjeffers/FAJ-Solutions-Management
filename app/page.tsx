@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { enrichWorkOrders, contractorOwedOnWO } from '@/lib/utils';
+import { enrichWorkOrders, contractorOwedOnWO, woPayoutTotal, fmtMoney } from '@/lib/utils';
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
@@ -610,6 +610,21 @@ export default function HomePage() {
     loadAll();
   };
 
+  // FieldNation-style close: fully-paid jobs close as Paid; jobs closed early
+  // close as Approved. Either way they leave the active board (archived, not
+  // deleted — Ledger, Payments, and the Closed tab still have them).
+  const closeWorkOrder = async (w: EnrichedWorkOrder) => {
+    const finalStatus = w.remaining <= 0 && w.paid > 0 ? 'Paid' : 'Approved';
+    const { error } = await supabase
+      .from('work_orders')
+      .update({ wo_status: finalStatus, archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', w.id);
+    if (error) { toastError(`Couldn't close WO#${w.wo_number}: ${error.message}`); return; }
+    logAudit({ action: 'archive', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number} closed as ${finalStatus}` });
+    toastSuccess(`WO #${w.wo_number} closed${finalStatus === 'Paid' ? ' — everyone paid ✓' : w.remaining > 0 ? ` (${fmtMoney(w.remaining)} still owed — find it under Closed)` : ''}`);
+    loadAll();
+  };
+
   const handleArchive = async (id: string) => {
     const wo = workOrders.find((x) => x.id === id);
     const { error } = await supabase.from('work_orders').update({ archived_at: new Date().toISOString() }).eq('id', id);
@@ -649,6 +664,24 @@ export default function HomePage() {
       if (c?.email) notifyContractor({ type: 'payment_recorded', contractor_email: c.email, contractor_name: c.name, wo_number: p.wo_number!, amount: Number(p.amount) });
     }
     toastSuccess(`Payment recorded — WO#${p.wo_number}`);
+
+    // Auto-close: if this payment settles everyone on the job, the job closes
+    // itself (status Paid + off the active board) — no manual step.
+    const wo = workOrders.find((x) => x.wo_number === p.wo_number);
+    if (wo && !wo.archived_at) {
+      const priorPaid = payments
+        .filter((x) => x.wo_number === p.wo_number && x.id !== p.id)
+        .reduce((s, x) => s + Number(x.amount), 0);
+      const nowPaid = priorPaid + Number(p.amount);
+      if (nowPaid > 0 && nowPaid >= woPayoutTotal(wo)) {
+        const { error: closeErr } = await supabase
+          .from('work_orders')
+          .update({ wo_status: 'Paid', archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq('id', wo.id);
+        if (!closeErr) toastSuccess(`WO #${wo.wo_number} fully paid — closed automatically ✓`);
+      }
+    }
+
     loadAll();
   };
 
@@ -1216,6 +1249,7 @@ export default function HomePage() {
             onPay={handlePayWO}
             onSendPortal={handleSendPortal}
             onArchive={handleArchive}
+            onCloseJob={closeWorkOrder}
             onUnarchive={handleUnarchive}
           />
         )}

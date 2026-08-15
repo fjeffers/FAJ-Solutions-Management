@@ -66,8 +66,9 @@ function viewFromUrl(): View {
 // Which sidebar dropdown each view lives under — used to auto-open the right
 // section when navigating (including via search, dashboard links, or the URL).
 const SECTION_OF_VIEW: Record<View, string> = {
-  dashboard: 'main', financials: 'main', customers: 'main', workorders: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
-  scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', sitelog: 'fieldops', 'import-queue': 'fieldops',
+  dashboard: 'main', financials: 'main', customers: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
+  // Field Ops holds the whole job pipeline, work orders through site log
+  workorders: 'fieldops', scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', sitelog: 'fieldops', 'import-queue': 'fieldops',
   contractors: 'contractors', 'contractor-analytics': 'contractors', 'portal-admin': 'contractors',
   statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
   settings: 'settings',
@@ -1063,24 +1064,20 @@ export default function HomePage() {
             <NI k="dashboard"   icon={<BarChart3 size={15} />}    label="Dashboard" />
             <NI k="financials"  icon={<TrendingUp size={15} />}   label="Financials" />
             <NI k="customers"   icon={<Building2 size={15} />}    label="Customers" />
-            <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
             <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
             <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
             <NI k="ledger"      icon={<BookOpen size={15} />}     label="Ledger" />
             <NI k="invoices"    icon={<Receipt size={15} />}      label="Invoices" />
           </NavSection>
+          {/* The job pipeline in working order: jobs arrive (Import), become
+              Work Orders, get Scheduled, dispatched, and logged on site. */}
           <NavSection
             title="Field Ops"
             open={sectionOpen('fieldops')}
             onToggle={() => toggleSection('fieldops')}
             badge={pendingImportCount}
           >
-            <NI k="scheduling" icon={<Calendar size={15} />} label="Scheduling" />
-            <NI k="dispatch" icon={<Map size={15} />} label="Dispatch Map" />
-            <NI k="materials" icon={<Package size={15} />} label="Materials" />
-            <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
-            <NI k="network" icon={<Network size={15} />} label="Network" />
-            <NI k="sitelog" icon={<Timer size={15} />} label="Site Log" />
+            <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
               <Inbox size={15} /> Import
               {pendingImportCount > 0 && (
@@ -1092,6 +1089,12 @@ export default function HomePage() {
                 </span>
               )}
             </button>
+            <NI k="scheduling" icon={<Calendar size={15} />} label="Scheduling" />
+            <NI k="dispatch" icon={<Map size={15} />} label="Dispatch Map" />
+            <NI k="sitelog" icon={<Timer size={15} />} label="Site Log" />
+            <NI k="materials" icon={<Package size={15} />} label="Materials" />
+            <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
+            <NI k="network" icon={<Network size={15} />} label="Network" />
           </NavSection>
           <NavSection title="Contractors" open={sectionOpen('contractors')} onToggle={() => toggleSection('contractors')}>
             <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />

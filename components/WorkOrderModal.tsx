@@ -10,6 +10,8 @@ import {
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MileageLog } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
 import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE } from '@/lib/mileage';
+import { roundTripMiles } from '@/lib/driving';
+import { toastError, toastSuccess } from '@/lib/toast';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import {
@@ -283,6 +285,42 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     setMileageLogs((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const removeMileageRow = (id: string) =>
     setMileageLogs((rows) => rows.filter((r) => r.id !== id));
+
+  // Mileage calculator: real road miles, home base → this WO's site → home,
+  // using the same engine as the Site Log (Nominatim + OSRM, both free).
+  const [calcingMiles, setCalcingMiles] = useState(false);
+  const autoCalcMiles = async () => {
+    const dest = [form.site_address, form.site_city, form.site_state, form.site_zip].filter(Boolean).join(', ');
+    if (!dest) { toastError('Add a site address first (Site tab) so there\'s somewhere to route to.'); return; }
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: s } = await supabase.from('user_settings').select('home_base_address').maybeSingle();
+    let home = (s?.home_base_address as string | null) ?? '';
+    if (!home) {
+      const entered = window.prompt('Home base address (round trips start and end here — saved for next time):', '');
+      if (!entered?.trim()) return;
+      home = entered.trim();
+      await supabase.from('user_settings').upsert({ user_id: user.id, home_base_address: home, updated_at: new Date().toISOString() });
+    }
+    setCalcingMiles(true);
+    const mi = await roundTripMiles(home, dest);
+    setCalcingMiles(false);
+    if (mi == null) { toastError("Couldn't route that address — check street, city, and state on the Site tab."); return; }
+    setMileageLogs((rows) => {
+      // Fill the first empty row before adding a new one
+      const target = rows.find((r) => !(Number(r.miles) > 0));
+      if (target) return rows.map((r) => (r.id === target.id ? { ...r, miles: mi, note: r.note ?? 'round trip (calculated)' } : r));
+      return [...rows, {
+        id: `ml-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        contractor_name: contractorNames[0] ?? '',
+        miles: mi,
+        rate: DEFAULT_MILEAGE_RATE,
+        note: 'round trip (calculated)',
+      }];
+    });
+    toastSuccess(`${mi} miles round trip, home base to site`);
+  };
 
   // ── Payments tab state ────────────────────────────────────────────────────
   const [showPayForm, setShowPayForm] = useState(false);
@@ -1482,9 +1520,21 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                <button type="button" className="btn btn-ghost" onClick={addMileageRow} style={{ fontSize: 12 }}>
-                  <Plus size={13} /> Add mileage
-                </button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-ghost" onClick={addMileageRow} style={{ fontSize: 12 }}>
+                    <Plus size={13} /> Add mileage
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={calcingMiles}
+                    onClick={autoCalcMiles}
+                    title="Real road miles: home base → this site → home (uses the site address)"
+                    style={{ fontSize: 12, color: 'var(--teal)', opacity: calcingMiles ? 0.6 : 1 }}
+                  >
+                    🚗 {calcingMiles ? 'Calculating…' : 'Calculate from address'}
+                  </button>
+                </div>
                 {mileageLogs.length > 0 && (
                   <span style={{ fontSize: 12, color: '#555' }}>
                     <strong>{totalMiles(mileageLogs).toLocaleString()}</strong> miles ·{' '}

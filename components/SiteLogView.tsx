@@ -10,12 +10,13 @@ import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem, visitAmount } from '@/lib/visits';
 import { fmtMoney } from '@/lib/utils';
+import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { roundTripMiles } from '@/lib/driving';
 import { buildStatementRows, statementMatrix, statementTotal } from '@/lib/site-statement';
 import { downloadXLSX, downloadCSVText } from '@/lib/export';
 import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid } from 'lucide-react';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -437,6 +438,62 @@ export default function SiteLogView() {
     if (v.miles == null && v.address && homeBase) void autoMilesFor(v);
   };
 
+  // Site Log visit → real work order. The visit's free-text rate becomes the
+  // pay setup ($55/hr → Hourly, flat/project price → Fixed), the address is
+  // split into site fields, and the visit keeps a link to the WO so it can't
+  // be converted twice. Assigning a tech happens on the WO afterward.
+  const convertToWorkOrder = async (v: SiteVisit) => {
+    if (v.work_order_id) { toastError('This visit already has a work order — see the Work Orders board.'); return; }
+    const amount = visitAmount(v);
+    const label = v.site_name || v.site_code || v.address || 'this visit';
+    if (!confirm(`Create a work order from ${label}?${amount > 0 ? `\n\nClient price will start at ${fmtMoney(amount)} (editable).` : ''}`)) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: wos } = await supabase.from('work_orders').select('wo_number');
+    const nums = (wos ?? []).map((w) => parseInt(w.wo_number, 10)).filter((n) => !isNaN(n));
+    const nextWo = String((nums.length ? Math.max(...nums) : 1000) + 1);
+
+    const addr = extractWorkOrderFields(v.address ?? '');
+    const hourly = (v.rate ?? '').match(/\$?\s*(\d+(?:\.\d+)?)\s*\/\s*h/i);
+
+    const { data: created, error } = await supabase.from('work_orders').insert({
+      user_id: user.id,
+      wo_number: nextWo,
+      contractor_name: '',
+      title: [v.program, v.site_name || v.site_code].filter(Boolean).join(' — ') || 'Site visit',
+      customer_name: v.program ?? null,
+      client_reference: v.site_code ?? null,
+      description: [
+        `Converted from Site Log${v.visit_date ? ` — visit on ${v.visit_date}` : ''}${v.hours ? ` (${v.hours}h logged)` : ''}.`,
+        v.notes ?? '',
+      ].filter(Boolean).join('\n'),
+      site_name: v.site_name ?? null,
+      site_address: addr.site_address ?? v.address ?? null,
+      site_city: addr.site_city ?? null,
+      site_state: addr.site_state ?? null,
+      site_zip: addr.site_zip ?? null,
+      start_date: v.visit_date ?? null,
+      total_amount: amount,
+      pay_type: hourly ? 'Hourly' : 'Fixed',
+      hourly_rate: hourly ? Number(hourly[1]) : null,
+      hours_worked: hourly ? (v.hours ?? null) : null,
+      wo_status: 'Open',
+      source_platform: 'Internal',
+      assignment_type: 'Internal',
+      priority: 'Normal',
+      schedule_type: 'Exact Time',
+    }).select('id').single();
+    if (error || !created) { toastError(`Couldn't create the work order: ${error?.message ?? 'unknown error'}`); return; }
+
+    const upd = await supabase.from('site_visits')
+      .update({ work_order_id: created.id, updated_at: new Date().toISOString() })
+      .eq('id', v.id);
+    if (upd.error) toastError(`WO #${nextWo} created, but linking the visit failed: ${upd.error.message}`);
+    else toastSuccess(`WO #${nextWo} created from ${label} — it's on the Work Orders board, ready to assign`);
+    await load();
+  };
+
   // Roll every uninvoiced visit in the current view into one draft invoice,
   // then mark those visits Invoiced. Hourly rates bill hours x rate; flat
   // rates bill once; unpriced lines land at $0 to fill in before sending.
@@ -757,6 +814,24 @@ export default function SiteLogView() {
                       )}
                       {v.payment_status === 'paid' && <span style={{ fontSize: 10, fontWeight: 700, color: '#047857' }}>PAID</span>}
                       {v.invoice_status === 'not_invoiced' && <span style={{ fontSize: 10, fontWeight: 700, color: '#6b7280' }}>NOT INVOICED</span>}
+                      {v.work_order_id ? (
+                        <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <Briefcase size={10} /> HAS WORK ORDER
+                        </span>
+                      ) : (
+                        <button
+                          title="Create a work order from this visit"
+                          onClick={(e) => { e.stopPropagation(); convertToWorkOrder(v); }}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+                            border: '1.5px solid rgba(13,115,119,0.35)', background: 'rgba(13,115,119,0.06)',
+                            fontSize: 10, fontWeight: 800, color: 'var(--teal)', fontFamily: 'Lato, sans-serif',
+                          }}
+                        >
+                          <Briefcase size={10} /> → WORK ORDER
+                        </button>
+                      )}
                     </div>
                     {v.notes && <div style={{ fontSize: 12, color: '#777', marginTop: 4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{v.notes}</div>}
                   </div>

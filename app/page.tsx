@@ -1113,6 +1113,7 @@ export default function HomePage() {
               rel="noopener noreferrer"
               title="Opens NetView's vendor payment form in a new tab. Tip: open a NetView work order and use 'Submit to Netview' there to get the form pre-filled."
               style={{ textDecoration: 'none' }}
+              onClick={() => setMobileNavOpen(false)}
             >
               <FileText size={15} /> NetView Invoice
             </a>

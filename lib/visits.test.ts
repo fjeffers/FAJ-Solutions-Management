@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
 
 // total_project_price is required on SiteVisit, so it belongs in the shared
 // fixture — individual cases override it when the price is the thing under test.
@@ -167,6 +167,57 @@ describe('rate entry — the unit is chosen, never guessed', () => {
   it('the hourly form bills hours × rate, the flat form bills once', () => {
     expect(visitAmount({ ...base, hours: 2, rate: buildRate('55','hr'),   travel_charge: 58.7 })).toBe(168.7);
     expect(visitAmount({ ...base, hours: 2, rate: buildRate('55','flat'), travel_charge: 58.7 })).toBe(113.7);
+  });
+});
+
+describe('pricing a visit — one answer, not two competing fields', () => {
+  it('opens a new visit on per hour, the common case', () => {
+    expect(readPricing({ rate: null, total_project_price: null }))
+      .toEqual({ amount: '', unit: 'hr' });
+    expect(readPricing({ rate: '', total_project_price: null }))
+      .toEqual({ amount: '', unit: 'hr' });
+  });
+
+  it('reads back what was set, either way round', () => {
+    expect(readPricing({ rate: '$55/hr', total_project_price: null }))
+      .toEqual({ amount: '55', unit: 'hr' });
+    expect(readPricing({ rate: null, total_project_price: 540 }))
+      .toEqual({ amount: '540', unit: 'flat' });
+  });
+
+  it('shows an old bare rate as flat, which is what it currently bills as', () => {
+    // Not silently reinterpreted — the form shows the truth so it can be flipped.
+    expect(readPricing({ rate: '55', total_project_price: null }))
+      .toEqual({ amount: '55', unit: 'flat' });
+  });
+
+  it('lets a project price win, the way billing does', () => {
+    expect(readPricing({ rate: '$55/hr', total_project_price: 2600 }))
+      .toEqual({ amount: '2600', unit: 'flat' });
+  });
+
+  it('writes the pair so the two can never disagree', () => {
+    expect(writePricing('55', 'hr')).toEqual({ rate: '$55/hr', total_project_price: null });
+    expect(writePricing('540', 'flat')).toEqual({ rate: null, total_project_price: 540 });
+    expect(writePricing('', 'hr')).toEqual({ rate: null, total_project_price: null });
+  });
+
+  it('keeps zero as a real no-charge visit', () => {
+    expect(writePricing('0', 'flat')).toEqual({ rate: null, total_project_price: 0 });
+    expect(readPricing({ rate: null, total_project_price: 0 })).toEqual({ amount: '0', unit: 'flat' });
+  });
+
+  it('round-trips through the form without drifting', () => {
+    for (const [amount, unit] of [['55','hr'],['100','hr'],['540','flat'],['2600','flat']] as const) {
+      expect(readPricing(writePricing(amount, unit) as never)).toEqual({ amount, unit });
+    }
+  });
+
+  it('bills what the form says: per hour uses hours, flat does not', () => {
+    const hourly = { ...base, hours: 2, travel_charge: 58.7, ...writePricing('55', 'hr') };
+    const flat   = { ...base, hours: 6.75, travel_charge: 82.7, ...writePricing('540', 'flat') };
+    expect(visitAmount(hourly)).toBe(168.7);   // 2 × 55 + 58.70
+    expect(visitAmount(flat)).toBe(622.7);     // 540 once + 82.70
   });
 });
 

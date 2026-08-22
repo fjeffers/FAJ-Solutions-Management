@@ -104,6 +104,46 @@ export function buildRate(amount: string | number | null | undefined, unit: Rate
 }
 
 /**
+ * How a visit is priced, as one answer rather than two competing fields.
+ *
+ * A flat price used to be settable in two places — the rate text and
+ * total_project_price — and the second silently outranked the first. Pricing
+ * a job meant knowing which box won. These two collapse it: read gives the
+ * single current answer, write sets the pair so they can never disagree.
+ */
+export interface Pricing {
+  amount: string;
+  unit: RateUnit;
+}
+
+export function readPricing(
+  v: Pick<SiteVisit, 'rate' | 'total_project_price'>,
+): Pricing {
+  // A typed project price is the explicit decision, so it wins on read too.
+  if (v.total_project_price != null && !isNaN(Number(v.total_project_price))) {
+    return { amount: String(v.total_project_price), unit: 'flat' };
+  }
+  const amount = rateAmount(v.rate);
+  // Nothing priced yet — most jobs are T&M by the hour, so open on that
+  // rather than making the common case the one you have to change.
+  if (amount === '') return { amount: '', unit: 'hr' };
+  return { amount, unit: rateUnit(v.rate) };
+}
+
+export function writePricing(
+  amount: string | number | null | undefined,
+  unit: RateUnit,
+): Pick<SiteVisit, 'rate' | 'total_project_price'> {
+  const n = String(amount ?? '').trim();
+  // Clearing the amount clears both, so no stale price is left behind.
+  if (n === '') return { rate: null, total_project_price: null };
+  if (unit === 'hr') return { rate: `$${n}/hr`, total_project_price: null };
+  // Flat lives in the numeric column — any custom amount, including zero for
+  // a no-charge revisit.
+  return { rate: null, total_project_price: Number(n) };
+}
+
+/**
  * True when the minimum is actually lifting what this visit bills.
  *
  * Only hourly visits qualify: a flat rate or a typed project price ignores

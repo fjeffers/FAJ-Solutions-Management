@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, rateAmount, rateUnit, buildRate, type RateUnit, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
+import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { laborOf } from '@/lib/site-sheet';
 import { fmtMoney } from '@/lib/utils';
@@ -1115,37 +1115,36 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, qui
                 <Field label="Hours"><input className="input" type="number" step="0.25" value={form.hours ?? ''}
                   onChange={(e) => set('hours', e.target.value === '' ? null : Number(e.target.value))}
                   onBlur={() => set('hours', billableHours(form.hours))} /></Field>
-                {/* Amount and unit are separate, because a bare "55" is
-                    ambiguous and the app used to read it as a flat $55 —
-                    billing a two-hour job at $55 instead of $110. Now the
-                    unit is always chosen, never inferred. */}
-                <Field label="Rate">
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 104px', gap: 6 }}>
-                    <input
-                      className="input"
-                      type="number"
-                      step="0.01"
-                      value={rateAmount(form.rate)}
-                      onChange={(e) => set('rate', buildRate(e.target.value, rateUnit(form.rate)))}
-                      placeholder="55"
-                    />
-                    <select
-                      className="input"
-                      value={rateUnit(form.rate)}
-                      onChange={(e) => set('rate', buildRate(rateAmount(form.rate), e.target.value as RateUnit))}
-                      title="Per hour bills hours × rate. Flat bills the amount once, however long it took."
-                    >
-                      <option value="hr">per hour</option>
-                      <option value="flat">flat</option>
-                    </select>
-                  </div>
-                </Field>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Project Price $ (fixed jobs — overrides Rate)">
-                  <input className="input" type="number" step="0.01" value={form.total_project_price ?? ''}
-                    onChange={(e) => set('total_project_price', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="Leave blank for hourly" />
+                {/* One control for how the job is priced. A bare "55" used to
+                    be read as a flat $55, billing a two-hour visit at $55
+                    instead of $110, and a flat price could be typed into two
+                    different boxes where one silently beat the other. Now the
+                    amount is yours to set and the unit is always chosen. */}
+                <Field label="Price">
+                  {(() => {
+                    const { amount, unit } = readPricing(form as SiteVisit);
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 104px', gap: 6 }}>
+                        <input
+                          className="input"
+                          type="number"
+                          step="0.01"
+                          value={amount}
+                          onChange={(e) => setForm((f) => ({ ...f, ...writePricing(e.target.value, unit) }))}
+                          placeholder={unit === 'hr' ? '55' : '540'}
+                        />
+                        <select
+                          className="input"
+                          value={unit}
+                          onChange={(e) => setForm((f) => ({ ...f, ...writePricing(amount, e.target.value as RateUnit) }))}
+                          title="Per hour bills hours × rate. Flat bills your amount once for the whole job, however long it took."
+                        >
+                          <option value="hr">per hour</option>
+                          <option value="flat">flat</option>
+                        </select>
+                      </div>
+                    );
+                  })()}
                 </Field>
               </div>
 

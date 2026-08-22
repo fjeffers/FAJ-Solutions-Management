@@ -782,6 +782,11 @@ export type SiteVisit = {
   payment_status: 'unpaid' | 'paid' | 'na';
   miles: number | null;
   travel_charge: number | null;
+  /** (migration-057) Master Entry columns M, N, O and T. */
+  materials_description: string | null;
+  materials_cost: number | null;
+  other_charges: number | null;
+  additional_details: string | null;
   notes: string | null;
   /**
    * (migration-050) what the CLIENT sees on the shared report. When empty the

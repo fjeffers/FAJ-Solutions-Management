@@ -104,6 +104,34 @@ describe('two-hour billing minimum', () => {
   });
 });
 
+describe('Line Total matches the tracker — SUM(labor, mileage, materials, other)', () => {
+  it('adds materials and other charges on top of labor and travel', () => {
+    expect(visitAmount({
+      ...base, hours: 3, rate: '$55/hr', travel_charge: 27.5,
+      materials_cost: 120, other_charges: 15,
+    })).toBe(327.5); // 165 + 27.50 + 120 + 15
+  });
+
+  it('treats each of the four parts as optional', () => {
+    expect(visitAmount({ ...base, hours: 3, rate: '$55/hr', travel_charge: null })).toBe(165);
+    expect(visitAmount({ ...base, hours: null, rate: null, travel_charge: null, materials_cost: 90 })).toBe(90);
+    expect(visitAmount({ ...base, hours: null, rate: null, travel_charge: null, other_charges: 40 })).toBe(40);
+  });
+
+  it('adds materials to a flat-rate visit too', () => {
+    expect(visitAmount({
+      ...base, hours: null, rate: '$250 flat rate', travel_charge: null, materials_cost: 50,
+    })).toBe(300);
+  });
+
+  it('adds them to a fixed project price as well', () => {
+    expect(visitAmount({
+      ...base, hours: 9, rate: '$55/hr', total_project_price: 2600,
+      travel_charge: 56.65, materials_cost: 100, other_charges: 25,
+    })).toBe(2781.65);
+  });
+});
+
 describe('billsAtMinimum — when to flag the visit in the UI', () => {
   it('flags a short hourly visit', () => {
     expect(billsAtMinimum({ hours: 0.75, rate: '$55/hr', total_project_price: null })).toBe(true);

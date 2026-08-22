@@ -29,22 +29,39 @@ type Col = {
   step?: string;
 };
 
-// Column order follows the Projects sheet, so the muscle memory carries over.
+// Column order, labels and meaning follow Master Entry in
+// FAJ_Solutions_Invoice_Tracker_2026_master_auto.xlsx, so the app and the
+// spreadsheet can be read against each other line for line. The letter in each
+// comment is the Excel column it corresponds to.
+//
+// Two of Master Entry's twenty are calculated rather than typed and so are not
+// in this list: Labor Total (I) and Line Total (P) render as the Total Pay and
+// Total columns at the end of the row. Mileage Rate (K) is a setting, not a
+// per-visit field, and Mileage Total (L) is the travel charge below.
+//
+// Time In and Time Out have no Master Entry equivalent — they drive the
+// check-in timer that fills Hours — so they sit at the end, out of the way.
 const COLS: Col[] = [
-  { key: 'visit_date', label: 'Date',          width: 122, type: 'date' },
-  { key: 'site_code',  label: 'Site #',        width: 78 },
-  { key: 'site_name',  label: 'Site Name',     width: 150 },
-  { key: 'address',    label: 'Address',       width: 250 },
-  { key: 'time_in',    label: 'Time In',       width: 150, type: 'time' },
-  { key: 'time_out',   label: 'Time Out',      width: 150, type: 'time' },
-  { key: 'hours',      label: 'Total Time',    width: 88,  type: 'number', step: '0.25' },
-  { key: 'rate',       label: 'Rate',          width: 96 },
-  { key: 'visit_type', label: 'Project or T&M', width: 112, type: 'select', options: SITE_VISIT_TYPES },
-  { key: 'invoice_status', label: 'Invoiced',  width: 116, type: 'select', options: ['not_invoiced', 'invoiced', 'na'] },
-  { key: 'payment_status', label: 'Paid',      width: 96,  type: 'select', options: ['unpaid', 'paid', 'na'] },
-  { key: 'miles',      label: 'Round Trip Miles', width: 108, type: 'number', step: '0.1' },
-  { key: 'travel_charge', label: 'Travel Charge', width: 108, type: 'number', step: '0.01' },
-  { key: 'notes',      label: 'Notes',         width: 280 },
+  { key: 'visit_date',            label: 'Date',                  width: 122, type: 'date' },        // A
+  { key: 'program',               label: 'Customer/Brand',        width: 130 },                      // B
+  { key: 'site_code',             label: 'Site/Location',         width: 96 },                       // C
+  { key: 'site_name',             label: 'Site Name',             width: 140 },                      // C
+  { key: 'address',               label: 'Site Address',          width: 240 },                      // D
+  { key: 'client_summary',        label: 'Scope of Work',         width: 260 },                      // E
+  { key: 'visit_type',            label: 'Work Type',             width: 112, type: 'select', options: SITE_VISIT_TYPES }, // F
+  { key: 'hours',                 label: 'Hours',                 width: 84,  type: 'number', step: '0.25' },  // G
+  { key: 'rate',                  label: 'Labor Rate',            width: 100 },                      // H
+  { key: 'miles',                 label: 'Mileage/Distance',      width: 116, type: 'number', step: '0.1' },   // J
+  { key: 'travel_charge',         label: 'Mileage Total',         width: 110, type: 'number', step: '0.01' },  // L
+  { key: 'materials_description', label: 'Materials Description', width: 220 },                      // M
+  { key: 'materials_cost',        label: 'Materials Cost',        width: 110, type: 'number', step: '0.01' },  // N
+  { key: 'other_charges',         label: 'Other Charges',         width: 106, type: 'number', step: '0.01' },  // O
+  { key: 'invoice_status',        label: 'Invoice Status',        width: 122, type: 'select', options: ['not_invoiced', 'invoiced', 'na'] }, // Q
+  { key: 'payment_status',        label: 'Payment Status',        width: 116, type: 'select', options: ['unpaid', 'paid', 'na'] },           // R
+  { key: 'notes',                 label: 'Notes',                 width: 240 },                      // S
+  { key: 'additional_details',    label: 'Additional Details',    width: 180 },                      // T
+  { key: 'time_in',               label: 'Time In',               width: 150, type: 'time' },        // app only
+  { key: 'time_out',              label: 'Time Out',              width: 150, type: 'time' },        // app only
 ];
 
 /** datetime-local wants local time; the column stores an ISO instant. */
@@ -248,9 +265,11 @@ export default function SiteSheetView({
                 </th>
               ))}
               <th style={{ ...th, minWidth: 96, textAlign: 'right' }}>
-                Total Pay <span style={{ color: 'var(--teal)' }}>ƒ</span>
+                Labor Total <span style={{ color: 'var(--teal)' }} title="Hours × Labor Rate — Master Entry column I">ƒ</span>
               </th>
-              <th style={{ ...th, minWidth: 92, textAlign: 'right' }}>Total</th>
+              <th style={{ ...th, minWidth: 104, textAlign: 'right' }}>
+                Line Total <span style={{ color: 'var(--teal)' }} title="Labor + Mileage + Materials + Other — Master Entry column P">ƒ</span>
+              </th>
               <th style={{ ...th, width: 72 }} />
             </tr>
           </thead>

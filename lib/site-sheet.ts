@@ -45,7 +45,10 @@ export function sheetValue(v: SiteVisit, key: keyof SiteVisit): string | number 
   if (key === 'invoice_status' || key === 'payment_status') {
     return STATUS_LABEL[String(raw ?? '')] ?? String(raw ?? '');
   }
-  if (key === 'hours' || key === 'miles' || key === 'travel_charge') {
+  if (
+    key === 'hours' || key === 'miles' || key === 'travel_charge' ||
+    key === 'materials_cost' || key === 'other_charges'
+  ) {
     return raw == null || raw === '' ? '' : Number(raw);
   }
   return raw == null ? '' : String(raw);
@@ -63,7 +66,10 @@ export function sheetRow(v: SiteVisit, keys: (keyof SiteVisit)[]): (string | num
   return [...keys.map((k) => sheetValue(v, k)), laborOf(v), visitAmount(v)];
 }
 
-/** Header row for the same column order, with the two computed columns. */
+/**
+ * Header row for the same column order, with the two computed columns.
+ * Named for their Master Entry equivalents, columns I and P.
+ */
 export function sheetHeader(labels: string[]): string[] {
-  return [...labels, 'Total Pay', 'Total'];
+  return [...labels, 'Labor Total', 'Line Total'];
 }

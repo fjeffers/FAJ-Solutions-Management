@@ -103,9 +103,9 @@ export interface TrackerRowOptions {
  * keeps Labor Total in Excel equal to Total Pay in the app; sending the raw
  * 0.75 would make the two disagree the moment they are compared.
  *
- * Other Charges is left empty even though the app tracks a travel charge.
- * Mileage Total already computes miles × rate in column L, and writing the
- * same money into O as well would double it in the Line Total.
+ * The travel charge goes to Mileage Total (L) and nowhere else. Other Charges
+ * (O) carries its own field — writing the travel charge into both would double
+ * it inside Line Total, which sums I, L, N and O.
  */
 export function trackerRow(v: SiteVisit, opts: TrackerRowOptions): (string | number | RawCell)[] {
   const { row, keepFormulas = true } = opts;
@@ -123,14 +123,19 @@ export function trackerRow(v: SiteVisit, opts: TrackerRowOptions): (string | num
   const mileageRate  = miles !== '' && Number(miles) > 0 && mileageTotal !== ''
     ? Math.round((Number(mileageTotal) / Number(miles)) * 10000) / 10000
     : '';
-  const lineTotal    = (Number(labor) || 0) + (Number(mileageTotal) || 0);
+  const materials = v.materials_cost == null ? '' : Number(v.materials_cost);
+  const other     = v.other_charges  == null ? '' : Number(v.other_charges);
+
+  // Same shape as his =SUM(I,L,N,O).
+  const lineTotal = (Number(labor) || 0) + (Number(mileageTotal) || 0)
+                  + (Number(materials) || 0) + (Number(other) || 0);
 
   return [
     v.visit_date ?? '',                                   // A Date
     v.program ?? '',                                      // B Customer/Brand
     v.site_code ?? v.site_name ?? '',                     // C Site/Location
     v.address ?? '',                                      // D Site Address
-    v.notes ?? '',                                        // E Scope of Work
+    v.client_summary ?? v.notes ?? '',                    // E Scope of Work
     WORK_TYPE[v.visit_type ?? ''] ?? v.visit_type ?? '',  // F Work Type
     hours,                                                // G Hours (billable)
     rate,                                                 // H Labor Rate
@@ -138,14 +143,14 @@ export function trackerRow(v: SiteVisit, opts: TrackerRowOptions): (string | num
     miles,                                                // J Mileage/Distance
     keepFormulas ? f.K : mileageRate,                     // K Mileage Rate     ƒ
     keepFormulas ? f.L : mileageTotal,                    // L Mileage Total    ƒ
-    '',                                                   // M Materials Description
-    '',                                                   // N Materials Cost
-    '',                                                   // O Other Charges — see note above
+    v.materials_description ?? '',                        // M Materials Description
+    materials,                                            // N Materials Cost
+    other,                                                // O Other Charges — see note above
     keepFormulas ? f.P : Math.round(lineTotal * 100) / 100, // P Line Total     ƒ
     INVOICE_STATUS[v.invoice_status ?? ''] ?? '',         // Q Invoice Status
     PAYMENT_STATUS[v.payment_status ?? ''] ?? '',         // R Payment Status
-    '',                                                   // S Notes
-    '',                                                   // T Additional Details
+    v.notes ?? '',                                        // S Notes
+    v.additional_details ?? '',                           // T Additional Details
   ];
 }
 

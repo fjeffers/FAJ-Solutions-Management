@@ -106,16 +106,43 @@ describe('values mapped into his columns', () => {
     expect(hourlyRate(null)).toBe('');
   });
 
-  it('leaves Other Charges empty so mileage is not billed twice', () => {
-    // Mileage Total (L) already carries miles × rate; repeating it in O would
-    // double it inside Line Total.
-    expect(trackerRow(visit, { row: 1505 })[14]).toBe('');
+  it('carries materials and other charges through to M, N and O', () => {
+    const withExtras = {
+      ...visit,
+      materials_description: '2x 4U rack shelf',
+      materials_cost: 120,
+      other_charges: 15,
+    } as SiteVisit;
+    const row = trackerRow(withExtras, { row: 1505 });
+    expect(row[12]).toBe('2x 4U rack shelf');
+    expect(row[13]).toBe(120);
+    expect(row[14]).toBe(15);
   });
 
-  it('leaves the materials columns for him to fill in', () => {
+  it('keeps the travel charge in Mileage Total only, never also in Other', () => {
+    // Line Total sums I, L, N and O — writing travel into both L and O would
+    // bill the mileage twice.
     const row = trackerRow(visit, { row: 1505 });
-    expect(row[12]).toBe('');
-    expect(row[13]).toBe('');
+    expect(row[14]).toBe('');           // O — nothing set on this visit
+    expect(trackerRow(visit, { row: 1505, keepFormulas: false })[11]).toBe(27.5); // L
+  });
+
+  it('sends Scope of Work from the client summary, falling back to notes', () => {
+    expect(trackerRow(visit, { row: 1505 })[4]).toBe('Swapped the switch');
+    const summarised = { ...visit, client_summary: 'Data line replacement' } as SiteVisit;
+    expect(trackerRow(summarised, { row: 1505 })[4]).toBe('Data line replacement');
+  });
+
+  it('sends notes and additional details to S and T', () => {
+    const row = trackerRow({ ...visit, additional_details: 'Gate code 4417' } as SiteVisit, { row: 1505 });
+    expect(row[18]).toBe('Swapped the switch');
+    expect(row[19]).toBe('Gate code 4417');
+  });
+
+  it('totals the four parts the way his Line Total does', () => {
+    const withExtras = { ...visit, materials_cost: 120, other_charges: 15 } as SiteVisit;
+    const row = trackerRow(withExtras, { row: 1505, keepFormulas: false });
+    expect(row[15]).toBe(327.5); // 165 labor + 27.50 mileage + 120 + 15
   });
 
   it('handles a visit with nothing logged without shifting columns', () => {

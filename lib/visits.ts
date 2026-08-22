@@ -47,12 +47,21 @@ export function billsAtMinimum(
   return HOURLY_RATE_RE.test((v.rate ?? '').trim());
 }
 
-/** What a visit is worth: parsed rate (hours × hourly or flat) + travel charge. */
+/**
+ * What a visit is worth.
+ *
+ * Mirrors the Line Total of the Invoice Tracker's Master Entry sheet,
+ * `=SUM(I,L,N,O)`: labor + mileage + materials + other charges. The two are
+ * meant to agree cell for cell, so a change here needs the same change there.
+ */
 export function visitAmount(
-  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price'>,
+  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price'>
+    & Partial<Pick<SiteVisit, 'materials_cost' | 'other_charges'>>,
 ): number {
   const li = visitLineItem(v);
-  return Math.round((li.quantity * li.rate + (v.travel_charge ?? 0)) * 100) / 100;
+  const labor = li.quantity * li.rate;
+  const extras = (v.travel_charge ?? 0) + (v.materials_cost ?? 0) + (v.other_charges ?? 0);
+  return Math.round((labor + extras) * 100) / 100;
 }
 
 export function visitLineItem(

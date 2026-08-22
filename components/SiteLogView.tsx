@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
+import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { laborOf } from '@/lib/site-sheet';
 import { fmtMoney } from '@/lib/utils';
@@ -1047,6 +1047,20 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, qui
     return f;
   });
   const [calcing, setCalcing] = useState(false);
+
+  // The price amount is held as raw text while you type. Deriving it back out
+  // of storage on every keystroke reformatted it mid-word and deleted the
+  // decimal point the instant it was typed, so "55.5" could not be entered.
+  const [price, setPrice] = useState<Pricing>(() => readPricing(item as SiteVisit));
+  const setPriceAmount = (amount: string) => {
+    setPrice((p) => ({ ...p, amount }));
+    setForm((f) => ({ ...f, ...writePricing(amount, price.unit) }));
+  };
+  const setPriceUnit = (unit: RateUnit) => {
+    setPrice((p) => ({ ...p, unit }));
+    setForm((f) => ({ ...f, ...writePricing(price.amount, unit) }));
+  };
+
   const set = <K extends keyof SiteVisit>(k: K, v: SiteVisit[K]) => setForm((f) => ({ ...f, [k]: v }));
   const canSave = !!(form.site_name?.trim() || form.site_code?.trim() || form.address?.trim());
 
@@ -1121,30 +1135,26 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, qui
                     different boxes where one silently beat the other. Now the
                     amount is yours to set and the unit is always chosen. */}
                 <Field label="Price">
-                  {(() => {
-                    const { amount, unit } = readPricing(form as SiteVisit);
-                    return (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 104px', gap: 6 }}>
-                        <input
-                          className="input"
-                          type="number"
-                          step="0.01"
-                          value={amount}
-                          onChange={(e) => setForm((f) => ({ ...f, ...writePricing(e.target.value, unit) }))}
-                          placeholder={unit === 'hr' ? '55' : '540'}
-                        />
-                        <select
-                          className="input"
-                          value={unit}
-                          onChange={(e) => setForm((f) => ({ ...f, ...writePricing(amount, e.target.value as RateUnit) }))}
-                          title="Per hour bills hours × rate. Flat bills your amount once for the whole job, however long it took."
-                        >
-                          <option value="hr">per hour</option>
-                          <option value="flat">flat</option>
-                        </select>
-                      </div>
-                    );
-                  })()}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 104px', gap: 6 }}>
+                    <input
+                      className="input"
+                      type="number"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={price.amount}
+                      onChange={(e) => setPriceAmount(e.target.value)}
+                      placeholder={price.unit === 'hr' ? '55' : '540'}
+                    />
+                    <select
+                      className="input"
+                      value={price.unit}
+                      onChange={(e) => setPriceUnit(e.target.value as RateUnit)}
+                      title="Per hour bills hours × rate. Flat bills your amount once for the whole job, however long it took."
+                    >
+                      <option value="hr">per hour</option>
+                      <option value="flat">flat</option>
+                    </select>
+                  </div>
                 </Field>
               </div>
 

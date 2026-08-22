@@ -436,15 +436,25 @@ export default function SiteLogView() {
     // the top of a calculated one stays typed — the override a spreadsheet
     // user expects, rather than the cell fighting back.
     if (('time_in' in patch || 'time_out' in patch) && next.time_in && next.time_out) {
-      // On a multi-day job time_in/time_out are only mirrors of first-in and
-      // last-out, so the gap between them counts every night nobody was on
-      // site. One job read 94.79 hours for 6.73 hours of actual work. Where
-      // stints exist they are the truth; the gap is the fallback.
-      const fromStints = actualHours(next.sessions ?? null);
-      const gap = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
-      const h = fromStints ?? (gap > 0 ? Math.round(gap * 100) / 100 : null);
-      // Stored at the two-hour minimum, same as the timer and the invoice.
-      if (h != null && h > 0) derived.hours = billableHours(h);
+      const stints = (next.sessions ?? []).filter((s) => s.in && s.out);
+
+      if (stints.length > 1) {
+        // A genuine multi-day job. time_in/time_out are only mirrors of
+        // first-in and last-out here, so the gap between them would count
+        // every night nobody was on site — one job read 94.79 hours for 6.73
+        // hours of work. The stints are the truth; edit them, not the mirrors.
+        const fromStints = actualHours(next.sessions ?? null);
+        if (fromStints != null && fromStints > 0) derived.hours = billableHours(fromStints);
+      } else {
+        // One stint, or none yet: these times ARE the visit, so editing them
+        // has to move the hours. Keep the single stint in step with them, or
+        // the two would immediately disagree and the card would warn about it.
+        const gap = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
+        if (gap > 0) {
+          derived.sessions = [{ in: next.time_in, out: next.time_out }];
+          derived.hours = billableHours(Math.round(gap * 100) / 100);
+        }
+      }
     }
     if ('miles' in patch) {
       const rate = rateFor(next.program);

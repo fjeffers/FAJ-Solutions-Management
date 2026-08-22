@@ -9,17 +9,15 @@
 // Editing is per-cell and saves on blur: a spreadsheet has no Save button, and
 // adding one here would be the sort of thing that loses an afternoon's typing.
 import { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Copy } from 'lucide-react';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitAmount, visitLineItem } from '@/lib/visits';
+import { visitAmount } from '@/lib/visits';
+import { laborOf, sheetRow, sheetHeader, STATUS_LABEL } from '@/lib/site-sheet';
+import { toTSV } from '@/lib/csv';
+import { copyToClipboard } from '@/lib/export';
+import { toastSuccess, toastError } from '@/lib/toast';
 import { fmtMoney } from '@/lib/utils';
-
-/** hours × rate — the Total Pay column of the Projects sheet, computed. */
-const laborOf = (v: SiteVisit) => {
-  const li = visitLineItem(v);
-  return Math.round(li.quantity * li.rate * 100) / 100;
-};
 
 type Col = {
   key: keyof SiteVisit;
@@ -47,11 +45,6 @@ const COLS: Col[] = [
   { key: 'travel_charge', label: 'Travel Charge', width: 108, type: 'number', step: '0.01' },
   { key: 'notes',      label: 'Notes',         width: 280 },
 ];
-
-const STATUS_LABEL: Record<string, string> = {
-  not_invoiced: 'Not Invoiced', invoiced: 'Invoiced', na: 'N/A',
-  unpaid: 'Unpaid', paid: 'Paid',
-};
 
 /** datetime-local wants local time; the column stores an ISO instant. */
 function toLocal(iso: string | null | undefined): string {
@@ -109,10 +102,44 @@ export default function SiteSheetView({
   const totalHours = visits.reduce((s, v) => s + Number(v.hours ?? 0), 0);
   const totalMiles = visits.reduce((s, v) => s + Number(v.miles ?? 0), 0);
 
+  // ── Copy to Excel ─────────────────────────────────────────────────────────
+  // Tab-separated on the clipboard: paste into Excel and the values land in
+  // their own columns with no import dialog. Columns come from COLS, so the
+  // copy always matches the grid.
+  const KEYS   = COLS.map((c) => c.key);
+  const LABELS = COLS.map((c) => c.label);
+
+  /** Ticked rows if any are ticked, otherwise everything on screen. */
+  const chosen = picked.size > 0 ? visits.filter((v) => picked.has(v.id)) : visits;
+
+  const copyRows = async (rows: SiteVisit[], withHeader: boolean, what: string) => {
+    if (rows.length === 0) { toastError('Nothing to copy.'); return; }
+    const matrix = [
+      ...(withHeader ? [sheetHeader(LABELS)] : []),
+      ...rows.map((v) => sheetRow(v, KEYS)),
+    ];
+    const ok = await copyToClipboard(toTSV(matrix));
+    if (ok) toastSuccess(`${what} copied — paste into Excel with Ctrl+V`);
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <button className="btn btn-ghost" onClick={onAdd}><Plus size={14} /> Add Row</button>
+
+        <button
+          className="btn btn-ghost"
+          onClick={() => copyRows(chosen, true, picked.size > 0
+            ? `${chosen.length} selected row${chosen.length !== 1 ? 's' : ''}`
+            : `All ${chosen.length} row${chosen.length !== 1 ? 's' : ''}`)}
+          title={picked.size > 0
+            ? 'Copy the ticked rows, with headers, ready to paste into Excel'
+            : 'Copy every row on screen, with headers, ready to paste into Excel'}
+        >
+          <Copy size={14} />
+          {picked.size > 0 ? `Copy ${picked.size} selected` : 'Copy all for Excel'}
+        </button>
+
         <span style={{ fontSize: 12.5, color: '#888' }}>
           Click any cell to edit. Changes save when you tab or click away.
         </span>
@@ -142,7 +169,7 @@ export default function SiteSheetView({
                 Total Pay <span style={{ color: 'var(--teal)' }}>ƒ</span>
               </th>
               <th style={{ ...th, minWidth: 92, textAlign: 'right' }}>Total</th>
-              <th style={{ ...th, width: 40 }} />
+              <th style={{ ...th, width: 72 }} />
             </tr>
           </thead>
           <tbody>
@@ -197,7 +224,16 @@ export default function SiteSheetView({
                 <td style={{ ...td, textAlign: 'right', padding: '7px 9px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                   {fmtMoney(visitAmount(v))}
                 </td>
-                <td style={{ ...td, textAlign: 'center' }}>
+                <td style={{ ...td, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  {/* No header on a single row — you are pasting it under rows
+                      that already have one. */}
+                  <button
+                    className="icon-btn"
+                    title="Copy this row for Excel"
+                    onClick={() => copyRows([v], false, 'Row')}
+                  >
+                    <Copy size={13} />
+                  </button>
                   <button className="icon-btn" title="Delete this row" onClick={() => onDelete(v)}>
                     <Trash2 size={13} />
                   </button>

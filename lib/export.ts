@@ -3,6 +3,25 @@ import { fmtMoney } from '@/lib/utils';
 import { toCSV, UTF8_BOM } from '@/lib/csv';
 
 /**
+ * Put text on the clipboard, with a fallback for the cases where the browser
+ * refuses: Safari outside a user gesture, an insecure origin, or a denied
+ * permission. The prompt is ugly but it always lets the user get their data —
+ * silently failing a copy is the one outcome worth avoiding.
+ *
+ * Returns true when the clipboard API took it, false when the user was shown
+ * the fallback, so the caller can word its toast honestly.
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    window.prompt('Copy with Ctrl+C, then paste into Excel:', text);
+    return false;
+  }
+}
+
+/**
  * Save a ready-built CSV string. The only place in the app that touches the
  * download plumbing — exported so callers holding their own CSV (the site
  * activity report) don't reimplement it.

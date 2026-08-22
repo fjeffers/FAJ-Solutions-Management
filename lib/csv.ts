@@ -44,3 +44,27 @@ export const toCSV = (rows: unknown[][]): string => rows.map(csvRow).join('\r\n'
  * name, the en dashes in a date range.
  */
 export const UTF8_BOM = '﻿';
+
+/**
+ * Escape one field for a tab-separated clipboard paste.
+ *
+ * Tab-separated is what Excel, Google Sheets and Numbers all expect on the
+ * clipboard: paste and the values land in separate columns with no import
+ * dialog. That convenience is exactly why we cannot quote-wrap the way CSV
+ * does — a paste is read literally, so quotes would show up in the cells.
+ *
+ * Instead the field is flattened: a tab or newline inside a value would push
+ * the rest of the row into the wrong columns, so they collapse to a space.
+ *
+ * The formula-injection guard from csvCell applies unchanged — a note that
+ * starts with '=' is just as live when pasted as when opened from a file.
+ */
+export function tsvCell(value: unknown): string {
+  const s = value == null ? '' : String(value);
+  const flat = s.replace(/[\t\r\n]+/g, ' ');
+  return /^\s*[=+\-@]/.test(flat) ? `'${flat}` : flat;
+}
+
+/** A whole sheet as clipboard-ready TSV. */
+export const toTSV = (rows: unknown[][]): string =>
+  rows.map((r) => r.map(tsvCell).join('\t')).join('\r\n');

@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
+import { visitLineItem, visitAmount, billableHours, actualHours, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
 import { fmtMoney } from '@/lib/utils';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { roundTripMiles } from '@/lib/driving';
@@ -387,7 +387,8 @@ export default function SiteLogView() {
     // user expects, rather than the cell fighting back.
     if (('time_in' in patch || 'time_out' in patch) && next.time_in && next.time_out) {
       const h = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
-      if (h > 0) derived.hours = Math.round(h * 100) / 100;
+      // Stored at the two-hour minimum, same as the timer and the invoice.
+      if (h > 0) derived.hours = billableHours(Math.round(h * 100) / 100);
     }
     if ('miles' in patch) {
       const rate = rateFor(next.program);
@@ -427,12 +428,19 @@ export default function SiteLogView() {
     const prior = (v.sessions ?? []).filter((s) => s.in && s.out);
     const priorHours = prior.reduce((s, x) => s + (new Date(x.out!).getTime() - new Date(x.in).getTime()) / 3600000, 0);
     const sessions = [...prior, { in: v.time_in!, out: out.toISOString() }];
-    const hrs = Math.round((priorHours + stint) * 100) / 100;
+    const onSite = Math.round((priorHours + stint) * 100) / 100;
+    // The minimum applies to what gets recorded, not just what gets billed.
+    // sessions still holds every real in/out, so the true time is not lost.
+    const hrs = billableHours(onSite) ?? onSite;
     const { error } = await supabase.from('site_visits')
       .update({ time_out: out.toISOString(), hours: hrs, sessions, updated_at: out.toISOString() })
       .eq('id', v.id);
     if (error) { toastError(`Couldn't check out: ${error.message}`); return; }
-    toastSuccess(`Checked out — ${stint}h this stint${prior.length > 0 ? ` · ${hrs}h total across ${sessions.length} days` : ''}`);
+    toastSuccess(
+      hrs > onSite
+        ? `Checked out — ${onSite}h on site, recorded as the ${hrs}h minimum`
+        : `Checked out — ${stint}h this stint${prior.length > 0 ? ` · ${hrs}h total across ${sessions.length} days` : ''}`
+    );
     await load();
     // Auto mileage: fill the round trip from home base in the background
     if (v.miles == null && v.address && homeBase) void autoMilesFor(v);
@@ -784,14 +792,21 @@ export default function SiteLogView() {
                       <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color }}>{v.visit_type}</span>
                       <div style={{ flex: 1 }} />
                       {v.hours != null && <span style={{ fontWeight: 800, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>{v.hours}h</span>}
-                      {billsAtMinimum(v) && (
-                        <span
-                          title={`On site ${v.hours}h — bills at the ${MINIMUM_BILLABLE_HOURS}h minimum`}
-                          style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fff4e5', color: '#b45309', whiteSpace: 'nowrap' }}
-                        >
-                          bills {MINIMUM_BILLABLE_HOURS}h min
-                        </span>
-                      )}
+                      {/* Hours already carry the minimum. Show the real clock
+                          time when it was shorter, so the number is explained
+                          rather than just asserted. */}
+                      {(() => {
+                        const onSite = actualHours(v.sessions);
+                        if (onSite == null || v.hours == null || onSite >= Number(v.hours)) return null;
+                        return (
+                          <span
+                            title={`On site ${onSite}h — recorded at the ${MINIMUM_BILLABLE_HOURS}h minimum`}
+                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fff4e5', color: '#b45309', whiteSpace: 'nowrap' }}
+                          >
+                            {MINIMUM_BILLABLE_HOURS}h min · {onSite}h on site
+                          </span>
+                        );
+                      })()}
                       {v.miles != null && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>🚗 {v.miles} mi</span>}
                       {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}
                     </div>
@@ -941,7 +956,7 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, qui
     return {
       ...f,
       sessions: next,
-      hours: total > 0 ? Math.round(total * 100) / 100 : f.hours,
+      hours: total > 0 ? billableHours(Math.round(total * 100) / 100) : f.hours,
       time_in: ins[0] ?? null,
       time_out: next.some((x) => x.in && !x.out) ? null : (outs[outs.length - 1] ?? null),
     };
@@ -971,7 +986,11 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, qui
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 <Field label="Date"><input className="input" type="date" value={form.visit_date ?? ''} onChange={(e) => set('visit_date', e.target.value)} /></Field>
-                <Field label="Hours"><input className="input" type="number" step="0.25" value={form.hours ?? ''} onChange={(e) => set('hours', e.target.value === '' ? null : Number(e.target.value))} /></Field>
+                {/* Snaps up on blur, so a typed 0.75 becomes the 2h minimum
+                    while you are still looking at the field. */}
+                <Field label="Hours"><input className="input" type="number" step="0.25" value={form.hours ?? ''}
+                  onChange={(e) => set('hours', e.target.value === '' ? null : Number(e.target.value))}
+                  onBlur={() => set('hours', billableHours(form.hours))} /></Field>
                 <Field label="Rate"><input className="input" value={form.rate ?? ''} onChange={(e) => set('rate', e.target.value)} placeholder="$55/hr, 2600…" /></Field>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

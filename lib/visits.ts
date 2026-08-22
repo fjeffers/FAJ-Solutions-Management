@@ -7,25 +7,43 @@ import type { SiteVisit } from './types';
 export type VisitLine = { description: string; quantity: number; rate: number };
 
 /**
- * Client billing minimum. A visit shorter than this still bills this many
- * hours — the truck roll costs the same whether the job took 20 minutes or
- * two hours. Only affects what the client is billed: the hours logged on the
- * visit stay exactly as recorded, and contractor pay is unchanged.
+ * Site visit minimum. A visit shorter than this counts as this many hours —
+ * the truck roll costs the same whether the job took 20 minutes or two.
+ *
+ * This is applied when hours are SAVED, not only when they are billed, so the
+ * Site Log shows the two hours that will actually go on the invoice rather
+ * than the twenty minutes the timer caught. The real clock time is not lost:
+ * time_in, time_out and the sessions array still hold every stint exactly as
+ * it happened, and the card shows it alongside.
  */
 export const MINIMUM_BILLABLE_HOURS = 2;
 
 /**
- * The hours a visit bills at: time actually on site, floored at the minimum.
+ * The hours to record for a visit: time on site, lifted to the minimum.
  *
- * Null hours mean nobody logged time yet, so there is nothing to bill and
- * nothing to round up — we never invent time that was not recorded. Zero and
- * negative stay as-is for the same reason.
+ * Null means nobody has logged time yet — there is nothing to round up, and
+ * inventing hours for a visit that has not happened would be worse than
+ * leaving it blank. Zero is a deliberate no-charge visit (a revisit under
+ * warranty), so it stays zero rather than becoming two billable hours.
  */
 export function billableHours(hours: number | null | undefined): number | null {
   if (hours == null) return null;
   const h = Number(hours);
   if (!isFinite(h) || h <= 0) return h;
   return h < MINIMUM_BILLABLE_HOURS ? MINIMUM_BILLABLE_HOURS : h;
+}
+
+/** Actual time on site from the recorded stints, ignoring the minimum. */
+export function actualHours(
+  sessions: Array<{ in: string; out: string | null }> | null | undefined,
+): number | null {
+  if (!sessions || sessions.length === 0) return null;
+  const total = sessions.reduce((sum, s) => {
+    if (!s.in || !s.out) return sum;
+    const ms = new Date(s.out).getTime() - new Date(s.in).getTime();
+    return ms > 0 ? sum + ms / 3600000 : sum;
+  }, 0);
+  return total > 0 ? Math.round(total * 100) / 100 : null;
 }
 
 /** An hourly rate in the free-text rate field: "$55/hr", "55 / h". */

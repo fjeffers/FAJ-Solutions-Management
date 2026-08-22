@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { Plus, Trash2, Copy, FileSpreadsheet } from 'lucide-react';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitAmount } from '@/lib/visits';
+import { visitAmount, billableHours } from '@/lib/visits';
 import { laborOf, sheetRow, sheetHeader, STATUS_LABEL } from '@/lib/site-sheet';
 import { toTSV } from '@/lib/csv';
 import { trackerRows } from '@/lib/invoice-tracker';
@@ -117,6 +117,9 @@ export default function SiteSheetView({
     let next: unknown = value.trim() === '' ? null : value.trim();
     if (col.type === 'number') next = value.trim() === '' ? null : Number(value);
     if (col.type === 'time') next = value ? new Date(value).toISOString() : null;
+    // Typing a short day into Hours snaps up to the two-hour minimum, the same
+    // as the check-in timer does.
+    if (col.key === 'hours') next = billableHours(next as number | null);
 
     if (String(row[col.key] ?? '') === String(next ?? '')) return; // nothing changed
     await onSave(id, { [col.key]: next } as Partial<SiteVisit>);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
 
 // total_project_price is required on SiteVisit, so it belongs in the shared
 // fixture — individual cases override it when the price is the thing under test.
@@ -129,6 +129,41 @@ describe('Line Total matches the tracker — SUM(labor, mileage, materials, othe
       ...base, hours: 9, rate: '$55/hr', total_project_price: 2600,
       travel_charge: 56.65, materials_cost: 100, other_charges: 25,
     })).toBe(2781.65);
+  });
+});
+
+describe('actualHours — the real clock time behind a lifted figure', () => {
+  it('totals the completed stints', () => {
+    expect(actualHours([
+      { in: '2026-08-05T13:00:00Z', out: '2026-08-05T13:45:00Z' },
+    ])).toBe(0.75);
+  });
+
+  it('adds up a multi-day job', () => {
+    expect(actualHours([
+      { in: '2026-06-04T20:15:00Z', out: '2026-06-04T23:45:00Z' },
+      { in: '2026-06-05T10:00:00Z', out: '2026-06-05T13:15:00Z' },
+    ])).toBe(6.75);
+  });
+
+  it('ignores a stint that is still running', () => {
+    expect(actualHours([
+      { in: '2026-08-05T13:00:00Z', out: '2026-08-05T14:00:00Z' },
+      { in: '2026-08-06T09:00:00Z', out: null },
+    ])).toBe(1);
+  });
+
+  it('returns null when there is nothing to total', () => {
+    expect(actualHours(null)).toBe(null);
+    expect(actualHours([])).toBe(null);
+    expect(actualHours([{ in: '2026-08-05T13:00:00Z', out: null }])).toBe(null);
+  });
+
+  it('is the figure the badge compares against the stored hours', () => {
+    // 45 minutes on site, stored as 2 — the card shows both.
+    const onSite = actualHours([{ in: '2026-08-05T13:00:00Z', out: '2026-08-05T13:45:00Z' }]);
+    expect(billableHours(onSite)).toBe(2);
+    expect(onSite).toBe(0.75);
   });
 });
 

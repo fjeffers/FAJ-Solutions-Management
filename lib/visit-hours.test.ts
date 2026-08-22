@@ -1,6 +1,77 @@
 import { describe, it, expect } from 'vitest';
-import { actualHours, billableHours } from './visits';
+import { actualHours, billableHours, applyHoursToSessions } from './visits';
 import type { VisitSession } from './types';
+
+describe('typing Hours moves the times', () => {
+  const clock = (s: VisitSession[] | null) =>
+    (s ?? []).map((x) => `${x.in.slice(11, 16)}–${x.out?.slice(11, 16) ?? '…'}`).join(' | ');
+
+  it('moves the finish time on a single day', () => {
+    const out = applyHoursToSessions(
+      [{ in: '2026-07-23T14:00:00.000Z', out: '2026-07-23T16:45:00.000Z' }], 8,
+    );
+    expect(clock(out)).toBe('14:00–22:00');
+    expect(actualHours(out)).toBe(8);
+  });
+
+  it('shortens as readily as it lengthens', () => {
+    const out = applyHoursToSessions(
+      [{ in: '2026-07-23T14:00:00.000Z', out: '2026-07-23T22:00:00.000Z' }], 3,
+    );
+    expect(actualHours(out)).toBe(3);
+  });
+
+  it('leaves finished days alone and moves only the current one', () => {
+    // Day one was 5h and is history. Typing 8 makes day two 3h, not 8h.
+    const out = applyHoursToSessions([
+      { in: '2026-07-31T17:45:00.000Z', out: '2026-07-31T22:45:00.000Z' },
+      { in: '2026-08-04T14:00:00.000Z', out: '2026-08-04T15:00:00.000Z' },
+    ], 8);
+    expect(actualHours(out)).toBe(8);
+    expect(out![0].out).toBe('2026-07-31T22:45:00.000Z');   // untouched
+    expect(clock(out![1] ? [out![1]] : null)).toBe('14:00–17:00');
+  });
+
+  it('refuses when the finished days already exceed the figure typed', () => {
+    // 5h already logged on day one; 3 total is impossible without rewriting
+    // history, so the times are left alone rather than invented.
+    expect(applyHoursToSessions([
+      { in: '2026-07-31T17:45:00.000Z', out: '2026-07-31T22:45:00.000Z' },
+      { in: '2026-08-04T14:00:00.000Z', out: '2026-08-04T15:00:00.000Z' },
+    ], 3)).toBe(null);
+  });
+
+  it('has nothing to reshape before a day is started', () => {
+    expect(applyHoursToSessions(null, 4)).toBe(null);
+    expect(applyHoursToSessions([], 4)).toBe(null);
+  });
+
+  it('ignores a cleared or nonsense figure', () => {
+    const s = [{ in: '2026-07-23T14:00:00.000Z', out: '2026-07-23T16:00:00.000Z' }];
+    expect(applyHoursToSessions(s, null)).toBe(null);
+    expect(applyHoursToSessions(s, 0)).toBe(null);
+    expect(applyHoursToSessions(s, -3)).toBe(null);
+  });
+
+  it('round-trips: hours in, times out, same hours back', () => {
+    for (const h of [2, 2.75, 4.5, 8, 19.83]) {
+      const out = applyHoursToSessions(
+        [{ in: '2026-07-23T14:00:00.000Z', out: '2026-07-23T15:00:00.000Z' }], h,
+      );
+      expect(actualHours(out)).toBe(h);
+    }
+  });
+
+  it('the minimum and the times end up agreeing', () => {
+    // Type 0.75, blur snaps to 2, and the finish time follows to match.
+    const snapped = billableHours(0.75);
+    const out = applyHoursToSessions(
+      [{ in: '2026-08-05T13:00:00.000Z', out: '2026-08-05T13:45:00.000Z' }], snapped,
+    );
+    expect(actualHours(out)).toBe(2);
+    expect(clock(out)).toBe('13:00–15:00');
+  });
+});
 
 /**
  * The rule that decides Hours when Time In / Time Out are edited, lifted out

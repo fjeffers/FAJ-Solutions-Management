@@ -11,6 +11,7 @@ import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { laborOf } from '@/lib/site-sheet';
+import { deriveTimesAndHours } from '@/lib/visit-sync';
 import { fmtMoney } from '@/lib/utils';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { roundTripMiles } from '@/lib/driving';
@@ -431,31 +432,10 @@ export default function SiteLogView() {
     const next = { ...row, ...patch } as SiteVisit;
     const derived: Partial<SiteVisit> = {};
 
-    // The two formulas the Projects sheet carried in its cells. Each only fires
-    // when its own inputs were the thing that changed, so a figure typed over
-    // the top of a calculated one stays typed — the override a spreadsheet
-    // user expects, rather than the cell fighting back.
-    if (('time_in' in patch || 'time_out' in patch) && next.time_in && next.time_out) {
-      const stints = (next.sessions ?? []).filter((s) => s.in && s.out);
+    // Times and hours move together, in both directions. One shared rule in
+    // lib/visit-sync, so the grid, the card and the timer cannot drift apart.
+    Object.assign(derived, deriveTimesAndHours(next, patch));
 
-      if (stints.length > 1) {
-        // A genuine multi-day job. time_in/time_out are only mirrors of
-        // first-in and last-out here, so the gap between them would count
-        // every night nobody was on site — one job read 94.79 hours for 6.73
-        // hours of work. The stints are the truth; edit them, not the mirrors.
-        const fromStints = actualHours(next.sessions ?? null);
-        if (fromStints != null && fromStints > 0) derived.hours = billableHours(fromStints);
-      } else {
-        // One stint, or none yet: these times ARE the visit, so editing them
-        // has to move the hours. Keep the single stint in step with them, or
-        // the two would immediately disagree and the card would warn about it.
-        const gap = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
-        if (gap > 0) {
-          derived.sessions = [{ in: next.time_in, out: next.time_out }];
-          derived.hours = billableHours(Math.round(gap * 100) / 100);
-        }
-      }
-    }
     if ('miles' in patch) {
       const rate = rateFor(next.program);
       derived.travel_charge = next.miles != null && rate > 0
@@ -1130,15 +1110,28 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
   // Sessions drive the times: hours = sum of completed stints, and
   // time_in/time_out mirror first-in / last-out for the cards and timer.
   const sessions = (form.sessions ?? []) as VisitSession[];
+
+  /**
+   * The other direction: a typed Hours figure moves the finish time so the
+   * days on site really do add up to it. Falls back to storing the number
+   * alone when there is no stint to reshape — a visit with no times yet, or
+   * a figure smaller than the days already logged.
+   */
+  const setHoursValue = (h: number | null) => setForm((f) => {
+    const next = { ...f, hours: h } as SiteVisit;
+    return { ...f, hours: h, ...deriveTimesAndHours(next, { hours: h }) };
+  });
+
   const setSessions = (next: VisitSession[]) => setForm((f) => {
-    const total = next.reduce((s, x) =>
-      x.in && x.out ? s + Math.max(0, (new Date(x.out).getTime() - new Date(x.in).getTime()) / 3600000) : s, 0);
+    // Editing the days themselves: they are the record, so they simply total
+    // into Hours. actualHours ignores a day still running.
+    const total = actualHours(next);
     const ins = next.filter((x) => x.in).map((x) => x.in).sort();
     const outs = next.filter((x) => x.out).map((x) => x.out!).sort();
     return {
       ...f,
       sessions: next,
-      hours: total > 0 ? billableHours(Math.round(total * 100) / 100) : f.hours,
+      hours: total != null && total > 0 ? billableHours(total) : f.hours,
       time_in: ins[0] ?? null,
       time_out: next.some((x) => x.in && !x.out) ? null : (outs[outs.length - 1] ?? null),
     };
@@ -1168,11 +1161,16 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Date"><input className="input" type="date" value={form.visit_date ?? ''} onChange={(e) => set('visit_date', e.target.value)} /></Field>
-                {/* Snaps up on blur, so a typed 0.75 becomes the 2h minimum
-                    while you are still looking at the field. */}
-                <Field label="Hours"><input className="input" type="number" step="0.25" value={form.hours ?? ''}
-                  onChange={(e) => set('hours', e.target.value === '' ? null : Number(e.target.value))}
-                  onBlur={() => set('hours', billableHours(form.hours))} /></Field>
+                {/* Hours and the times are the same fact written twice, so
+                    they move together in both directions. Editing the times
+                    totals them into here; typing here moves the finish time
+                    of the last day to match. Snaps to the 2h minimum on blur. */}
+                <Field label="Hours">
+                  <input className="input" type="number" step="0.25" inputMode="decimal"
+                    value={form.hours ?? ''}
+                    onChange={(e) => setHoursValue(e.target.value === '' ? null : Number(e.target.value))}
+                    onBlur={() => setHoursValue(billableHours(form.hours))} />
+                </Field>
                 {/* One control for how the job is priced. A bare "55" used to
                     be read as a flat $55, billing a two-hour visit at $55
                     instead of $110, and a flat price could be typed into two

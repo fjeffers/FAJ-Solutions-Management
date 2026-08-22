@@ -61,6 +61,45 @@ export function hoursDisagree(
   return Math.abs(Number(hours) - expected) > 0.1;
 }
 
+/**
+ * Push a typed Hours figure back onto the times, so the two always agree.
+ *
+ * Times and hours are the same fact written twice. Editing the times already
+ * totals them into Hours; this is the other direction — type 8 hours and the
+ * last stint's finish moves so the stints really do add up to 8.
+ *
+ * The LAST stint absorbs the change: on a multi-day job the earlier days
+ * already happened, so the only end that can honestly move is the current one.
+ * Returns null when there is nothing sensible to reshape — no stint started
+ * yet, or the earlier days already exceed the figure typed.
+ */
+export function applyHoursToSessions(
+  sessions: Array<{ in: string; out: string | null }> | null | undefined,
+  hours: number | null | undefined,
+): Array<{ in: string; out: string | null }> | null {
+  if (hours == null || !isFinite(Number(hours)) || Number(hours) <= 0) return null;
+
+  const started = (sessions ?? []).filter((s) => s.in);
+  if (started.length === 0) return null;
+
+  const earlier = started.slice(0, -1);
+  const last = started[started.length - 1];
+
+  const earlierHours = earlier.reduce((sum, s) => {
+    if (!s.out) return sum;
+    const ms = new Date(s.out).getTime() - new Date(s.in).getTime();
+    return ms > 0 ? sum + ms / 3600000 : sum;
+  }, 0);
+
+  const remaining = Number(hours) - earlierHours;
+  // The earlier days already account for more than this. Refuse rather than
+  // inventing a finish time before the start.
+  if (remaining <= 0) return null;
+
+  const out = new Date(new Date(last.in).getTime() + remaining * 3600000).toISOString();
+  return [...earlier, { in: last.in, out }];
+}
+
 /** Actual time on site from the recorded stints, ignoring the minimum. */
 export function actualHours(
   sessions: Array<{ in: string; out: string | null }> | null | undefined,

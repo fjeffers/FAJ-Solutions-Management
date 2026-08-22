@@ -78,6 +78,32 @@ export function actualHours(
 const HOURLY_RATE_RE = /\$?\s*(\d+(?:\.\d+)?)\s*\/\s*h/i;
 
 /**
+ * The rate field is free text carrying two different meanings, and the
+ * difference is money: "$55/hr" on a two-hour visit bills $110, while a bare
+ * "55" bills $55 for the whole job. These three keep the entry form explicit
+ * so the unit is always chosen rather than guessed from the text.
+ */
+export type RateUnit = 'hr' | 'flat';
+
+/** The number out of a rate, whatever notation it was written in. */
+export function rateAmount(rate: string | null | undefined): string {
+  const m = (rate ?? '').match(/(\d+(?:\.\d+)?)/);
+  return m ? m[1] : '';
+}
+
+/** Whether a stored rate reads as hourly. Anything else is treated as flat. */
+export function rateUnit(rate: string | null | undefined): RateUnit {
+  return HOURLY_RATE_RE.test((rate ?? '').trim()) ? 'hr' : 'flat';
+}
+
+/** Compose the canonical text the parser expects. Blank amount clears it. */
+export function buildRate(amount: string | number | null | undefined, unit: RateUnit): string | null {
+  const n = String(amount ?? '').trim();
+  if (n === '') return null;
+  return unit === 'hr' ? `$${n}/hr` : `$${n} flat`;
+}
+
+/**
  * True when the minimum is actually lifting what this visit bills.
  *
  * Only hourly visits qualify: a flat rate or a typed project price ignores

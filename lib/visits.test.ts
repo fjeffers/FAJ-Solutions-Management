@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
 
 // total_project_price is required on SiteVisit, so it belongs in the shared
 // fixture — individual cases override it when the price is the thing under test.
@@ -129,6 +129,44 @@ describe('Line Total matches the tracker — SUM(labor, mileage, materials, othe
       ...base, hours: 9, rate: '$55/hr', total_project_price: 2600,
       travel_charge: 56.65, materials_cost: 100, other_charges: 25,
     })).toBe(2781.65);
+  });
+});
+
+describe('rate entry — the unit is chosen, never guessed', () => {
+  it('reads the amount out of any notation', () => {
+    expect(rateAmount('$55/hr')).toBe('55');
+    expect(rateAmount('55')).toBe('55');
+    expect(rateAmount('$250 flat rate')).toBe('250');
+    expect(rateAmount('100 / h')).toBe('100');
+    expect(rateAmount(null)).toBe('');
+  });
+
+  it('reads the unit, treating a bare number as flat — which is the trap', () => {
+    expect(rateUnit('$55/hr')).toBe('hr');
+    expect(rateUnit('55 / h')).toBe('hr');
+    expect(rateUnit('55')).toBe('flat');
+    expect(rateUnit('$250 flat rate')).toBe('flat');
+    expect(rateUnit(null)).toBe('flat');
+  });
+
+  it('writes text the billing parser reads back the same way', () => {
+    expect(buildRate('55', 'hr')).toBe('$55/hr');
+    expect(buildRate('250', 'flat')).toBe('$250 flat');
+    expect(buildRate('', 'hr')).toBe(null);
+    expect(buildRate(null, 'flat')).toBe(null);
+  });
+
+  it('round-trips: what the form writes, the form reads back unchanged', () => {
+    for (const [amount, unit] of [['55','hr'],['100','hr'],['250','flat'],['2600','flat']] as const) {
+      const text = buildRate(amount, unit)!;
+      expect(rateAmount(text)).toBe(amount);
+      expect(rateUnit(text)).toBe(unit);
+    }
+  });
+
+  it('the hourly form bills hours × rate, the flat form bills once', () => {
+    expect(visitAmount({ ...base, hours: 2, rate: buildRate('55','hr'),   travel_charge: 58.7 })).toBe(168.7);
+    expect(visitAmount({ ...base, hours: 2, rate: buildRate('55','flat'), travel_charge: 58.7 })).toBe(113.7);
   });
 });
 

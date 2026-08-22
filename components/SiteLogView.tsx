@@ -929,6 +929,20 @@ export default function SiteLogView() {
                       })()}
                       {v.miles != null && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>🚗 {v.miles} mi</span>}
                       {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}
+                      {/* Materials and other charges are part of the total, so
+                          the card says so rather than only the spreadsheet. */}
+                      {v.materials_cost != null && Number(v.materials_cost) !== 0 && (
+                        <span title={v.materials_description ?? 'Materials'}
+                          style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>
+                          🧰 {fmtMoney(Number(v.materials_cost))}
+                        </span>
+                      )}
+                      {v.other_charges != null && Number(v.other_charges) !== 0 && (
+                        <span title="Other charges"
+                          style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>
+                          + {fmtMoney(Number(v.other_charges))}
+                        </span>
+                      )}
                       {(() => {
                         const crew = techsOn(v, contractors);
                         if (crew.length === 0) return null;
@@ -1314,13 +1328,46 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
                 </Field>
                 <Field label={`Travel Charge $ (auto: miles × $${rateFor(form.program).toFixed(2)})`}><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
               </div>
+
+              {/* Materials and other charges. These existed in the spreadsheet
+                  view and in the Line Total, but had no fields here at all, so
+                  parts fitted on a job could not be billed from the card. */}
+              <Field label="Materials Used">
+                <input className="input" value={form.materials_description ?? ''}
+                  onChange={(e) => set('materials_description', e.target.value || null)}
+                  placeholder="2× 4U rack shelf, 300ft CAT6…" />
+              </Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Field label="Materials Cost $">
+                  <input className="input" type="number" step="0.01" inputMode="decimal"
+                    value={form.materials_cost ?? ''}
+                    onChange={(e) => set('materials_cost', e.target.value === '' ? null : Number(e.target.value))}
+                    placeholder="0.00" />
+                </Field>
+                <Field label="Other Charges $ (permits, parking, rental)">
+                  <input className="input" type="number" step="0.01" inputMode="decimal"
+                    value={form.other_charges ?? ''}
+                    onChange={(e) => set('other_charges', e.target.value === '' ? null : Number(e.target.value))}
+                    placeholder="0.00" />
+                </Field>
+              </div>
+
               <Field label="Notes"><textarea className="input" rows={3} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="What you did on site, punch list, follow-ups…" /></Field>
               {/* migration-050: the client-facing line. Notes are internal and can
                   be a whole imported email; this is what a shared report shows. */}
-              <Field label="Client summary (shows on shared reports)">
+              {/* Called Scope of Work in the spreadsheet and in the Invoice
+                  Tracker, so it is called that here too. One field, one name. */}
+              <Field label="Scope of Work (shows on shared reports)">
                 <textarea className="input" rows={2} value={form.client_summary ?? ''}
                   onChange={(e) => set('client_summary', e.target.value)}
                   placeholder="Leave blank to use your notes — long imported notes are hidden from clients" />
+              </Field>
+              {/* Master Entry column T. The spreadsheet had it, the card did
+                  not, so a pasted row lost it on the way back. */}
+              <Field label="Additional Details">
+                <input className="input" value={form.additional_details ?? ''}
+                  onChange={(e) => set('additional_details', e.target.value || null)}
+                  placeholder="Gate code, contact on site, anything else" />
               </Field>
             </>
           )}

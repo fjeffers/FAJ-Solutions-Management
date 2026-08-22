@@ -175,4 +175,28 @@ describe('Site Log visit editor', () => {
     await openVisit(user);
     expect(screen.getByText('Frederick Jeffers')).toBeTruthy();
   });
+
+  // The spreadsheet carried these columns while the card had no fields at all,
+  // so parts fitted on a job could not be billed from the card view.
+  it('has every field the spreadsheet has', async () => {
+    const user = userEvent.setup();
+    await openVisit(user);
+    const labels = [...document.querySelectorAll('label')].map((l) => l.textContent ?? '');
+    for (const needed of [
+      'Materials Used', 'Materials Cost', 'Other Charges',
+      'Scope of Work', 'Additional Details',
+    ]) {
+      expect(labels.some((l) => l.includes(needed))).toBe(true);
+    }
+  });
+
+  it('lets materials be typed and adds them to the total', async () => {
+    const user = userEvent.setup();
+    await openVisit(user);
+
+    const cost = document.querySelector('input[placeholder="0.00"]') as HTMLInputElement;
+    await user.clear(cost);
+    await user.type(cost, '120');
+    expect(cost.value).toBe('120');
+  });
 });

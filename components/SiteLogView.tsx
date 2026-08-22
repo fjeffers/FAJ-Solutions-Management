@@ -847,6 +847,37 @@ export default function SiteLogView() {
                       </span>
                       <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color }}>{v.visit_type}</span>
                       <div style={{ flex: 1 }} />
+                      {(() => {
+                        // What this one visit is worth, built from the same
+                        // parts as the totals band and the tracker's Line
+                        // Total, so a card, the band and the spreadsheet all
+                        // agree. Zero means nothing has been priced yet, which
+                        // is worth saying rather than showing a bare $0.00.
+                        const amount    = visitAmount(v);
+                        const li        = visitLineItem(v);
+                        const labor     = Math.round(li.quantity * li.rate * 100) / 100;
+                        const breakdown = [
+                          labor ? `Labor ${fmtMoney(labor)}` : null,
+                          v.travel_charge ? `Mileage ${fmtMoney(Number(v.travel_charge))}` : null,
+                          v.materials_cost ? `Materials ${fmtMoney(Number(v.materials_cost))}` : null,
+                          v.other_charges ? `Other ${fmtMoney(Number(v.other_charges))}` : null,
+                        ].filter(Boolean).join('  +  ');
+                        const unpriced = amount === 0;
+                        return (
+                          <span
+                            title={unpriced
+                              ? 'No rate set on this visit yet — open it and add a rate or a project price.'
+                              : `${breakdown}  =  ${fmtMoney(amount)}`}
+                            style={{
+                              fontWeight: 800, fontSize: 15,
+                              fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                              color: unpriced ? '#b45309' : '#1f2937',
+                            }}
+                          >
+                            {unpriced ? 'set a rate' : fmtMoney(amount)}
+                          </span>
+                        );
+                      })()}
                       {v.hours != null && <span style={{ fontWeight: 800, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>{v.hours}h</span>}
                       {/* Hours already carry the minimum. Show the real clock
                           time when it was shorter, so the number is explained

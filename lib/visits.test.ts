@@ -132,6 +132,29 @@ describe('Line Total matches the tracker — SUM(labor, mileage, materials, othe
   });
 });
 
+describe('the per-visit breakdown adds up to the per-visit total', () => {
+  // The card shows "Labor + Mileage + Materials + Other = Total". If rounding
+  // made those disagree by a cent the card would be quietly lying.
+  const cases = [
+    { ...base, hours: 3,     rate: '$55/hr', travel_charge: 27.5,  materials_cost: 120,   other_charges: 15 },
+    { ...base, hours: 6.73,  rate: '$55/hr', travel_charge: 69.95, materials_cost: null,  other_charges: null },
+    { ...base, hours: 2.21,  rate: '$55/hr', travel_charge: 62.1,  materials_cost: null,  other_charges: null },
+    { ...base, hours: 0.75,  rate: '$55/hr', travel_charge: 56.65, materials_cost: 33.33, other_charges: 11.11 },
+    { ...base, hours: 19.83, rate: '$55/hr', travel_charge: 47.6,  materials_cost: null,  other_charges: null },
+    { ...base, hours: null,  rate: '2600',   travel_charge: 90.3,  materials_cost: null,  other_charges: null },
+  ];
+
+  it.each(cases)('holds for %o', (v) => {
+    const li = visitLineItem(v);
+    const labor = Math.round(li.quantity * li.rate * 100) / 100;
+    const parts = labor
+      + Number(v.travel_charge ?? 0)
+      + Number(v.materials_cost ?? 0)
+      + Number(v.other_charges ?? 0);
+    expect(Math.round(parts * 100) / 100).toBe(visitAmount(v));
+  });
+});
+
 describe('actualHours — the real clock time behind a lifted figure', () => {
   it('totals the completed stints', () => {
     expect(actualHours([

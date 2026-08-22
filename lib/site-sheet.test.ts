@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { sheetValue, sheetRow, sheetHeader, laborOf, localStamp } from './site-sheet';
 import { toTSV, tsvCell } from './csv';
+import { visitAmount } from './visits';
 import type { SiteVisit } from './types';
 
 const visit = {
@@ -75,6 +76,56 @@ describe('sheetRow', () => {
     expect(sheetHeader(['Date', 'Site Name', 'Total Time', 'Rate'])).toHaveLength(
       sheetRow(visit, keys).length,
     );
+  });
+});
+
+describe('labor + mileage + materials + other = total, everywhere', () => {
+  // The card, the totals band, the spreadsheet and the invoice all have to
+  // agree. They agree because they all derive labour from laborOf() and add
+  // the same three charges — this is the test that keeps that true.
+  const make = (over: Partial<SiteVisit>) => ({ ...visit, ...over } as SiteVisit);
+
+  const rows = [
+    make({ hours: 2,     rate: '$55/hr',  travel_charge: 58.7,  materials_cost: null,  other_charges: null }),
+    make({ hours: 6.73,  rate: '$55/hr',  travel_charge: 69.95, materials_cost: 120,   other_charges: 15 }),
+    make({ hours: 0.75,  rate: '$55/hr',  travel_charge: 56.65, materials_cost: 33.33, other_charges: 11.11 }),
+    make({ hours: 19.83, rate: '$55/hr',  travel_charge: 47.6,  materials_cost: null,  other_charges: null }),
+    make({ hours: 3,     rate: '$100/hr', travel_charge: 93.75, materials_cost: 7.77,  other_charges: null }),
+    make({ hours: null,  rate: '$2600 flat', travel_charge: 90.3, materials_cost: null, other_charges: null }),
+    make({ hours: 10.75, rate: '$55/hr',  travel_charge: 66.4,  materials_cost: null,  other_charges: null,
+           total_project_price: 1500 }),
+  ];
+
+  it('holds for every visit on its own — the card', () => {
+    for (const v of rows) {
+      const parts = laborOf(v)
+        + Number(v.travel_charge ?? 0)
+        + Number(v.materials_cost ?? 0)
+        + Number(v.other_charges ?? 0);
+      expect(Math.round(parts * 100) / 100).toBe(visitAmount(v));
+    }
+  });
+
+  it('holds across the whole list — the totals band', () => {
+    const sum = (f: (v: SiteVisit) => number) =>
+      Math.round(rows.reduce((s, v) => s + (f(v) || 0), 0) * 100) / 100;
+
+    const labor     = sum((v) => laborOf(v));
+    const travel    = sum((v) => Number(v.travel_charge ?? 0));
+    const materials = sum((v) => Number(v.materials_cost ?? 0));
+    const other     = sum((v) => Number(v.other_charges ?? 0));
+    const band      = Math.round((labor + travel + materials + other) * 100) / 100;
+
+    const cards = Math.round(rows.reduce((s, v) => s + visitAmount(v), 0) * 100) / 100;
+    expect(band).toBe(cards);
+  });
+
+  it('the spreadsheet row carries the same two figures', () => {
+    for (const v of rows) {
+      const row = sheetRow(v, ['visit_date'] as (keyof SiteVisit)[]);
+      expect(row[1]).toBe(laborOf(v));      // Labor Total
+      expect(row[2]).toBe(visitAmount(v));  // Line Total
+    }
   });
 });
 

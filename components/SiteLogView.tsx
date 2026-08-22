@@ -10,6 +10,7 @@ import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, rateAmount, rateUnit, buildRate, type RateUnit, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
+import { laborOf } from '@/lib/site-sheet';
 import { fmtMoney } from '@/lib/utils';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { roundTripMiles } from '@/lib/driving';
@@ -298,17 +299,22 @@ export default function SiteLogView() {
   const totals = useMemo(() => {
     const sum = (f: (v: SiteVisit) => number) =>
       Math.round(filtered.reduce((s, v) => s + (f(v) || 0), 0) * 100) / 100;
-    const grand     = sum((v) => visitAmount(v));
+
+    // Every part comes from the same per-visit helpers the cards, the
+    // spreadsheet and the invoice use, and the total is their sum. Deriving
+    // labour by subtracting the rest from the total would let a rounded cent
+    // land where the band no longer visibly adds up.
+    const labor     = sum((v) => laborOf(v));
     const travel    = sum((v) => Number(v.travel_charge ?? 0));
     const materials = sum((v) => Number(v.materials_cost ?? 0));
     const other     = sum((v) => Number(v.other_charges ?? 0));
+
     return {
       visits: filtered.length,
       hours:  sum((v) => Number(v.hours ?? 0)),
       miles:  sum((v) => Number(v.miles ?? 0)),
-      travel, materials, other,
-      labor: Math.round((grand - travel - materials - other) * 100) / 100,
-      grand,
+      labor, travel, materials, other,
+      grand: Math.round((labor + travel + materials + other) * 100) / 100,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered]);
@@ -854,8 +860,7 @@ export default function SiteLogView() {
                         // agree. Zero means nothing has been priced yet, which
                         // is worth saying rather than showing a bare $0.00.
                         const amount    = visitAmount(v);
-                        const li        = visitLineItem(v);
-                        const labor     = Math.round(li.quantity * li.rate * 100) / 100;
+                        const labor     = laborOf(v);
                         const breakdown = [
                           labor ? `Labor ${fmtMoney(labor)}` : null,
                           v.travel_charge ? `Mileage ${fmtMoney(Number(v.travel_charge))}` : null,

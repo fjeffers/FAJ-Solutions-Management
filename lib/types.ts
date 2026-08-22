@@ -797,8 +797,13 @@ export type SiteVisit = {
   work_order_id: string | null;
   /** (migration-046) join key to the customer master. */
   customer_id: string | null;
-  /** (migration-051) contractor assigned to this visit. */
+  /** (migration-051) lead tech. Mirrors the first entry of tech_ids. */
   contractor_id: string | null;
+  /**
+   * (migration-058) every tech who was on site, lead first. Purely a record
+   * of who did the work — it does not change what the client is billed.
+   */
+  tech_ids: string[];
   created_at: string;
   updated_at: string;
 };

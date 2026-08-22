@@ -9,7 +9,7 @@ const visit = (over: Partial<SiteVisit>): SiteVisit => ({
   total_project_price: null, visit_type: 'T&M', invoice_status: 'not_invoiced',
   payment_status: 'unpaid', miles: 100, travel_charge: 50, notes: 'Replaced data lines',
   materials_description: null, materials_cost: null, other_charges: null, additional_details: null,
-  client_summary: null, work_order_id: null, customer_id: null, contractor_id: null,
+  client_summary: null, work_order_id: null, customer_id: null, contractor_id: null, tech_ids: [],
   created_at: '', updated_at: '',
   ...over,
 });

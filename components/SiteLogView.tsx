@@ -9,6 +9,7 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem, visitAmount, billableHours, actualHours, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
+import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { fmtMoney } from '@/lib/utils';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { roundTripMiles } from '@/lib/driving';
@@ -16,7 +17,7 @@ import { buildStatementRows, statementMatrix, statementTotal } from '@/lib/site-
 import { downloadXLSX, downloadCSVText } from '@/lib/export';
 import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase } from 'lucide-react';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -386,9 +387,15 @@ export default function SiteLogView() {
     // the top of a calculated one stays typed — the override a spreadsheet
     // user expects, rather than the cell fighting back.
     if (('time_in' in patch || 'time_out' in patch) && next.time_in && next.time_out) {
-      const h = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
+      // On a multi-day job time_in/time_out are only mirrors of first-in and
+      // last-out, so the gap between them counts every night nobody was on
+      // site. One job read 94.79 hours for 6.73 hours of actual work. Where
+      // stints exist they are the truth; the gap is the fallback.
+      const fromStints = actualHours(next.sessions ?? null);
+      const gap = (new Date(next.time_out).getTime() - new Date(next.time_in).getTime()) / 3600000;
+      const h = fromStints ?? (gap > 0 ? Math.round(gap * 100) / 100 : null);
       // Stored at the two-hour minimum, same as the timer and the invoice.
-      if (h > 0) derived.hours = billableHours(Math.round(h * 100) / 100);
+      if (h != null && h > 0) derived.hours = billableHours(h);
     }
     if ('miles' in patch) {
       const rate = rateFor(next.program);
@@ -468,7 +475,9 @@ export default function SiteLogView() {
     const { data: created, error } = await supabase.from('work_orders').insert({
       user_id: user.id,
       wo_number: nextWo,
-      contractor_name: '',
+      // Carry the crew across. This used to be blank, so the tech recorded on
+      // the visit was lost the moment it became a work order.
+      contractor_name: techNames(techsOn(v, contractors)),
       title: [v.program, v.site_name || v.site_code].filter(Boolean).join(' — ') || 'Site visit',
       customer_name: v.program ?? null,
       client_reference: v.site_code ?? null,
@@ -711,6 +720,7 @@ export default function SiteLogView() {
       {sheetMode ? (
         <SiteSheetView
           visits={filtered}
+          techRoster={contractors}
           picked={picked}
           onTogglePicked={togglePicked}
           onSave={saveCell}
@@ -809,6 +819,21 @@ export default function SiteLogView() {
                       })()}
                       {v.miles != null && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>🚗 {v.miles} mi</span>}
                       {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}
+                      {(() => {
+                        const crew = techsOn(v, contractors);
+                        if (crew.length === 0) return null;
+                        return (
+                          <span
+                            title={crew.length > 1 ? `On site: ${techNames(crew)} (lead ${crew[0].name})` : crew[0].name}
+                            style={{
+                              fontSize: 12, color: 'var(--teal)', fontWeight: 600,
+                              whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4,
+                            }}
+                          >
+                            <Users size={12} /> {techSummary(crew)}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
                       {(v.sessions?.length ?? 0) > 1 ? (
@@ -999,14 +1024,46 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, qui
                     onChange={(e) => set('total_project_price', e.target.value === '' ? null : Number(e.target.value))}
                     placeholder="Leave blank for hourly" />
                 </Field>
-                <Field label="Contractor on site">
-                  <select className="input" value={form.contractor_id ?? ''}
-                    onChange={(e) => set('contractor_id', e.target.value === '' ? null : e.target.value)}>
-                    <option value="">— none —</option>
-                    {contractors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </Field>
               </div>
+
+              {/* Whole crew, not just one name. Tick everyone who was on site;
+                  the first ticked is the lead. Recording a second tech does
+                  not change what the client is billed. */}
+              <Field label="Techs on site">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {contractors.length === 0 && (
+                    <span style={{ fontSize: 12.5, color: '#888' }}>No techs on file yet.</span>
+                  )}
+                  {contractors.map((c) => {
+                    const crew = form.tech_ids ?? [];
+                    const on = crew.includes(c.id);
+                    const lead = crew[0] === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          const next = normalizeCrew(toggleTech(crew, c.id));
+                          setForm((f) => ({ ...f, tech_ids: next.tech_ids, contractor_id: next.contractor_id }));
+                        }}
+                        title={on ? (lead ? `${c.name} — lead tech` : `${c.name} — on site`) : `Add ${c.name}`}
+                        style={{
+                          padding: '5px 11px',
+                          border: `1px solid ${on ? 'var(--teal)' : '#ddd'}`,
+                          background: on ? 'rgba(13,115,119,0.09)' : '#fff',
+                          color: on ? 'var(--teal)' : '#666',
+                          fontWeight: on ? 700 : 500,
+                          fontSize: 13,
+                          borderRadius: 20,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {on ? '✓ ' : ''}{c.name}{lead && (form.tech_ids?.length ?? 0) > 1 ? ' · lead' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
               <Field label="Days & Times on Site">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {sessions.map((s, i) => (

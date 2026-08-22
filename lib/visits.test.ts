@@ -159,6 +159,22 @@ describe('actualHours — the real clock time behind a lifted figure', () => {
     expect(actualHours([{ in: '2026-08-05T13:00:00Z', out: null }])).toBe(null);
   });
 
+  it('counts only time on site, never the nights between visits', () => {
+    // The Kellogg 5800 shape: two stints four days apart. First-in to last-out
+    // is 94.79 hours; the work was 6.73.
+    const stints = [
+      { in: '2026-07-31T17:45:00.000Z', out: '2026-07-31T22:45:00.000Z' },
+      { in: '2026-08-04T14:49:00.000Z', out: '2026-08-04T16:32:40.832Z' },
+    ];
+    expect(actualHours(stints)).toBe(6.73);
+
+    const firstIn = new Date(stints[0].in).getTime();
+    const lastOut = new Date(stints[1].out).getTime();
+    const gap = Math.round(((lastOut - firstIn) / 3600000) * 100) / 100;
+    expect(gap).toBe(94.79);
+    expect(actualHours(stints)).toBeLessThan(gap);
+  });
+
   it('is the figure the badge compares against the stored hours', () => {
     // 45 minutes on site, stored as 2 — the card shows both.
     const onSite = actualHours([{ in: '2026-08-05T13:00:00Z', out: '2026-08-05T13:45:00Z' }]);

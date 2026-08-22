@@ -13,6 +13,7 @@ import { Plus, Trash2, Copy, FileSpreadsheet } from 'lucide-react';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitAmount, billableHours } from '@/lib/visits';
+import { techsOn, techNames, type Tech } from '@/lib/visit-techs';
 import { laborOf, sheetRow, sheetHeader, STATUS_LABEL } from '@/lib/site-sheet';
 import { toTSV } from '@/lib/csv';
 import { trackerRows } from '@/lib/invoice-tracker';
@@ -27,6 +28,8 @@ type Col = {
   type?: 'text' | 'number' | 'date' | 'time' | 'select';
   options?: readonly string[];
   step?: string;
+  /** Shown but not editable in the grid — edit it in the card view instead. */
+  readOnly?: boolean;
 };
 
 // Column order, labels and meaning follow Master Entry in
@@ -62,6 +65,9 @@ const COLS: Col[] = [
   { key: 'additional_details',    label: 'Additional Details',    width: 180 },                      // T
   { key: 'time_in',               label: 'Time In',               width: 150, type: 'time' },        // app only
   { key: 'time_out',              label: 'Time Out',              width: 150, type: 'time' },        // app only
+  // Read-only: a crew is a list, which no single grid cell edits sanely.
+  // Change it by opening the visit in the card view.
+  { key: 'tech_ids',              label: 'Techs on site',         width: 180, readOnly: true },      // app only
 ];
 
 /** datetime-local wants local time; the column stores an ISO instant. */
@@ -86,9 +92,10 @@ const cell: React.CSSProperties = {
 };
 
 export default function SiteSheetView({
-  visits, picked, onTogglePicked, onSave, onDelete, onAdd,
+  visits, picked, onTogglePicked, onSave, onDelete, onAdd, techRoster = [],
 }: {
   visits: SiteVisit[];
+  techRoster?: Tech[];
   picked: Set<string>;
   onTogglePicked: (id: string) => void;
   onSave: (id: string, patch: Partial<SiteVisit>) => Promise<void> | void;
@@ -293,7 +300,14 @@ export default function SiteSheetView({
 
                   return (
                     <td key={String(c.key)} style={td}>
-                      {c.type === 'select' ? (
+                      {c.readOnly ? (
+                        <span
+                          title={c.key === 'tech_ids' ? techNames(techsOn(v, techRoster)) : shown}
+                          style={{ ...cell, display: 'block', color: '#555' }}
+                        >
+                          {c.key === 'tech_ids' ? (techNames(techsOn(v, techRoster)) || '—') : (shown || '—')}
+                        </span>
+                      ) : c.type === 'select' ? (
                         <select
                           value={(raw as string) ?? ''}
                           onChange={(e) => void onSave(v.id, { [c.key]: e.target.value } as Partial<SiteVisit>)}

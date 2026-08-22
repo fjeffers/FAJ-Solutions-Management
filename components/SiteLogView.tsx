@@ -81,6 +81,8 @@ export default function SiteLogView() {
   const [invoicing, setInvoicing] = useState(false);
   const [homeBase, setHomeBase] = useState<string>('');
   const [mileageRate, setMileageRate] = useState<number>(0.7);
+  /** Standard T&M rate. Pre-fills a new visit; always editable on the visit. */
+  const [defaultHourlyRate, setDefaultHourlyRate] = useState<number>(55);
   // Per-customer overrides (site_programs.mileage_rate); null = use default.
   const [programRates, setProgramRates] = useState<Record<string, number | null>>({});
   const [collapsedProgs, setCollapsedProgs] = useState<Set<string>>(new Set());
@@ -114,7 +116,7 @@ export default function SiteLogView() {
       supabase.from('site_visits').select('*')
         .order('visit_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false }),
-      supabase.from('user_settings').select('home_base_address, mileage_rate').maybeSingle(),
+      supabase.from('user_settings').select('home_base_address, mileage_rate, default_hourly_rate').maybeSingle(),
       supabase.from('site_programs').select('name, mileage_rate'),
       supabase.from('contractors').select('id, name').order('name'),
     ]);
@@ -123,6 +125,7 @@ export default function SiteLogView() {
     if (cRes.data) setContractors(cRes.data as { id: string; name: string }[]);
     setHomeBase((sRes.data?.home_base_address as string | null) ?? '');
     setMileageRate(Number(sRes.data?.mileage_rate ?? 0.7));
+    setDefaultHourlyRate(Number(sRes.data?.default_hourly_rate ?? 55));
     if (pRes.data) {
       const m: Record<string, number | null> = {};
       for (const p of pRes.data) m[p.name as string] = p.mileage_rate == null ? null : Number(p.mileage_rate);
@@ -171,6 +174,24 @@ export default function SiteLogView() {
     if (error) { toastError(`Couldn't save rate: ${error.message}`); return; }
     setMileageRate(rate);
     toastSuccess(`Mileage rate set to $${rate.toFixed(2)}/mi`);
+  };
+
+  /** Change the standard T&M rate that new visits start on. */
+  const editDefaultHourlyRate = async () => {
+    const raw = window.prompt(
+      'Standard T&M rate, $ per hour. New visits start on this; you can still change it on any visit:',
+      String(defaultHourlyRate),
+    );
+    if (raw == null) return;
+    const rate = Number(raw.replace(/[^0-9.]/g, ''));
+    if (isNaN(rate) || rate <= 0) { toastError('Enter a number like 55'); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('user_settings')
+      .upsert({ user_id: user.id, default_hourly_rate: rate, updated_at: new Date().toISOString() });
+    if (error) { toastError(`Couldn't save rate: ${error.message}`); return; }
+    setDefaultHourlyRate(rate);
+    toastSuccess(`New visits will start at $${rate}/hr`);
   };
 
   const saveHomeBase = async () => {
@@ -670,7 +691,7 @@ export default function SiteLogView() {
           background: '#e8ecec', border: '1px solid #e0e5e5', borderRadius: 10, overflow: 'hidden',
         }}>
           <TotalTile label="Time on site" value={`${totals.hours.toFixed(2)}h`} sub={`${totals.visits} visit${totals.visits !== 1 ? 's' : ''}`} />
-          <TotalTile label="Labor" value={fmtMoney(totals.labor)} />
+          <TotalTile label="Labor" value={fmtMoney(totals.labor)} sub={`new visits @ $${defaultHourlyRate}/hr`} onEdit={editDefaultHourlyRate} />
           <TotalTile label="Mileage" value={fmtMoney(totals.travel)} sub={`${totals.miles.toFixed(0)} mi`} />
           <TotalTile label="Materials" value={fmtMoney(totals.materials)} />
           <TotalTile label="Other charges" value={fmtMoney(totals.other)} />
@@ -1000,6 +1021,7 @@ export default function SiteLogView() {
           item={{ program: programs[0] ?? '', visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' }}
           programs={programs}
           contractors={contractors}
+          defaultRate={defaultHourlyRate}
           homeBase={homeBase}
           rateFor={rateFor}
           onSave={checkIn}
@@ -1015,6 +1037,7 @@ export default function SiteLogView() {
           item={editing}
           programs={programs}
           contractors={contractors}
+          defaultRate={defaultHourlyRate}
           homeBase={homeBase}
           rateFor={rateFor}
           onSave={saveVisit}
@@ -1026,13 +1049,15 @@ export default function SiteLogView() {
   );
 }
 
-function VisitModal({ title, item, programs, contractors, homeBase, rateFor, quick = false, onSave, onDelete, onClose }: {
+function VisitModal({ title, item, programs, contractors, homeBase, rateFor, defaultRate, quick = false, onSave, onDelete, onClose }: {
   title: string;
   item: Partial<SiteVisit>;
   programs: string[];
   contractors: { id: string; name: string }[];
   homeBase: string;
   rateFor: (program?: string | null) => number;
+  /** Standard T&M rate a brand-new visit starts on. */
+  defaultRate: number;
   quick?: boolean;
   onSave: (v: Partial<SiteVisit>) => void;
   onDelete?: () => void;
@@ -1044,6 +1069,12 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, qui
     if ((!f.sessions || f.sessions.length === 0) && f.time_in) {
       f.sessions = [{ in: f.time_in, out: f.time_out ?? null }];
     }
+    // A brand-new visit starts on the standard T&M rate rather than blank —
+    // it is the answer nine times out of ten, and it is still editable here.
+    // An existing visit is never re-priced, including one deliberately at 0.
+    if (f.rate == null && f.total_project_price == null) {
+      Object.assign(f, writePricing(defaultRate, 'hr'));
+    }
     return f;
   });
   const [calcing, setCalcing] = useState(false);
@@ -1051,7 +1082,10 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, qui
   // The price amount is held as raw text while you type. Deriving it back out
   // of storage on every keystroke reformatted it mid-word and deleted the
   // decimal point the instant it was typed, so "55.5" could not be entered.
-  const [price, setPrice] = useState<Pricing>(() => readPricing(item as SiteVisit));
+  const [price, setPrice] = useState<Pricing>(() =>
+    item.rate == null && item.total_project_price == null
+      ? { amount: String(defaultRate), unit: 'hr' }
+      : readPricing(item as SiteVisit));
   const setPriceAmount = (amount: string) => {
     setPrice((p) => ({ ...p, amount }));
     setForm((f) => ({ ...f, ...writePricing(amount, price.unit) }));
@@ -1298,8 +1332,8 @@ function MoneyTile({ label, value, color, active = false, onClick }: {
 }
 
 /** One figure in the totals band across the top of the Site Log. */
-function TotalTile({ label, value, sub, accent = false }: {
-  label: string; value: string; sub?: string; accent?: boolean;
+function TotalTile({ label, value, sub, accent = false, onEdit }: {
+  label: string; value: string; sub?: string; accent?: boolean; onEdit?: () => void;
 }) {
   return (
     <div style={{
@@ -1316,7 +1350,22 @@ function TotalTile({ label, value, sub, accent = false }: {
         fontVariantNumeric: 'tabular-nums',
         color: accent ? 'var(--teal)' : '#333',
       }}>{value}</span>
-      {sub && <span style={{ fontSize: 11, color: '#9aa3a2' }}>{sub}</span>}
+      {sub && (
+        onEdit ? (
+          <button
+            onClick={onEdit}
+            title="Change the standard rate new visits start on"
+            style={{
+              fontSize: 11, color: 'var(--teal)', background: 'none', border: 'none',
+              padding: 0, textAlign: 'left', cursor: 'pointer', textDecoration: 'underline dotted',
+            }}
+          >
+            {sub}
+          </button>
+        ) : (
+          <span style={{ fontSize: 11, color: '#9aa3a2' }}>{sub}</span>
+        )
+      )}
     </div>
   );
 }

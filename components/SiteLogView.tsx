@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount } from '@/lib/visits';
+import { visitLineItem, visitAmount, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
 import { fmtMoney } from '@/lib/utils';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { roundTripMiles } from '@/lib/driving';
@@ -784,6 +784,14 @@ export default function SiteLogView() {
                       <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color }}>{v.visit_type}</span>
                       <div style={{ flex: 1 }} />
                       {v.hours != null && <span style={{ fontWeight: 800, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>{v.hours}h</span>}
+                      {billsAtMinimum(v) && (
+                        <span
+                          title={`On site ${v.hours}h — bills at the ${MINIMUM_BILLABLE_HOURS}h minimum`}
+                          style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fff4e5', color: '#b45309', whiteSpace: 'nowrap' }}
+                        >
+                          bills {MINIMUM_BILLABLE_HOURS}h min
+                        </span>
+                      )}
                       {v.miles != null && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>🚗 {v.miles} mi</span>}
                       {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}
                     </div>

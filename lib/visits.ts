@@ -6,6 +6,47 @@ import type { SiteVisit } from './types';
 
 export type VisitLine = { description: string; quantity: number; rate: number };
 
+/**
+ * Client billing minimum. A visit shorter than this still bills this many
+ * hours — the truck roll costs the same whether the job took 20 minutes or
+ * two hours. Only affects what the client is billed: the hours logged on the
+ * visit stay exactly as recorded, and contractor pay is unchanged.
+ */
+export const MINIMUM_BILLABLE_HOURS = 2;
+
+/**
+ * The hours a visit bills at: time actually on site, floored at the minimum.
+ *
+ * Null hours mean nobody logged time yet, so there is nothing to bill and
+ * nothing to round up — we never invent time that was not recorded. Zero and
+ * negative stay as-is for the same reason.
+ */
+export function billableHours(hours: number | null | undefined): number | null {
+  if (hours == null) return null;
+  const h = Number(hours);
+  if (!isFinite(h) || h <= 0) return h;
+  return h < MINIMUM_BILLABLE_HOURS ? MINIMUM_BILLABLE_HOURS : h;
+}
+
+/** An hourly rate in the free-text rate field: "$55/hr", "55 / h". */
+const HOURLY_RATE_RE = /\$?\s*(\d+(?:\.\d+)?)\s*\/\s*h/i;
+
+/**
+ * True when the minimum is actually lifting what this visit bills.
+ *
+ * Only hourly visits qualify: a flat rate or a typed project price ignores
+ * hours entirely, so the minimum cannot change what they bill.
+ */
+export function billsAtMinimum(
+  v: Pick<SiteVisit, 'hours' | 'rate' | 'total_project_price'>,
+): boolean {
+  if (v.hours == null) return false;
+  const billed = billableHours(v.hours);
+  if (billed == null || billed <= Number(v.hours)) return false;
+  if (v.total_project_price != null && !isNaN(Number(v.total_project_price))) return false;
+  return HOURLY_RATE_RE.test((v.rate ?? '').trim());
+}
+
 /** What a visit is worth: parsed rate (hours × hourly or flat) + travel charge. */
 export function visitAmount(
   v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price'>,
@@ -33,19 +74,27 @@ export function visitLineItem(
   }
 
   const rateText = (v.rate ?? '').trim();
-  const hourly = rateText.match(/\$?\s*(\d+(?:\.\d+)?)\s*\/\s*h/i);
+  const hourly = rateText.match(HOURLY_RATE_RE);
   if (hourly) {
-    const rate = Number(hourly[1]);
-    const qty = v.hours ?? 1;
-    return { description: `${base} — ${qty}h @ $${rate}/hr`, quantity: qty, rate };
+    const rate   = Number(hourly[1]);
+    const logged = v.hours ?? null;
+    const qty    = billableHours(logged) ?? 1;
+    // Say so on the line item. A client who sees "2h" against a 45-minute
+    // visit asks questions; one who sees the minimum spelled out does not.
+    const desc = logged != null && qty > logged
+      ? `${base} — ${logged}h on site, ${qty}h minimum @ $${rate}/hr`
+      : `${base} — ${qty}h @ $${rate}/hr`;
+    return { description: desc, quantity: qty, rate };
   }
   const flat = rateText.match(/\$?\s*(\d+(?:\.\d+)?)/);
   if (flat) {
     return { description: `${base} — flat rate`, quantity: 1, rate: Number(flat[1]) };
   }
+  // Unpriced: carry the billable hours so the minimum is already applied when
+  // a rate gets typed into the invoice editor.
   return {
     description: `${base}${v.hours ? ` — ${v.hours}h` : ''} — set rate`,
-    quantity: v.hours ?? 1,
+    quantity: billableHours(v.hours) ?? 1,
     rate: 0,
   };
 }

@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
 
-const base = { visit_date: '2026-06-20', site_name: 'Roselle', site_code: '5798', visit_type: 'T&M' as const };
+// total_project_price is required on SiteVisit, so it belongs in the shared
+// fixture — individual cases override it when the price is the thing under test.
+const base = {
+  visit_date: '2026-06-20',
+  site_name: 'Roselle',
+  site_code: '5798',
+  visit_type: 'T&M' as const,
+  total_project_price: null,
+};
 
 describe('visitLineItem', () => {
   it('bills hourly rates as hours x rate', () => {
@@ -46,9 +54,76 @@ describe('visitLineItem', () => {
   });
 
   it('handles missing date and site name', () => {
-    const li = visitLineItem({ visit_date: null, site_name: null, site_code: '10760', visit_type: 'T&M', hours: 2, rate: '$55/hr' });
+    const li = visitLineItem({ visit_date: null, site_name: null, site_code: '10760', visit_type: 'T&M', hours: 2, rate: '$55/hr', total_project_price: null });
     expect(li.description).toContain('#10760');
     expect(li.quantity).toBe(2);
+  });
+});
+
+describe('two-hour billing minimum', () => {
+  it('bills a short visit at the minimum, not the time logged', () => {
+    const li = visitLineItem({ ...base, hours: 0.75, rate: '$55/hr' });
+    expect(li.quantity).toBe(2);
+    expect(visitAmount({ ...base, hours: 0.75, rate: '$55/hr', travel_charge: null })).toBe(110);
+  });
+
+  it('says so on the line item so the client is not surprised', () => {
+    const li = visitLineItem({ ...base, hours: 0.75, rate: '$55/hr' });
+    expect(li.description).toContain('0.75h on site');
+    expect(li.description).toContain('2h minimum');
+  });
+
+  it('leaves visits at or over the minimum exactly as logged', () => {
+    expect(visitLineItem({ ...base, hours: 2, rate: '$55/hr' }).quantity).toBe(2);
+    expect(visitLineItem({ ...base, hours: 9, rate: '$55/hr' }).quantity).toBe(9);
+    expect(visitLineItem({ ...base, hours: 9, rate: '$55/hr' }).description).toContain('9h @ $55/hr');
+    expect(visitLineItem({ ...base, hours: 9, rate: '$55/hr' }).description).not.toContain('minimum');
+  });
+
+  it('never invents time on a visit nobody has logged yet', () => {
+    expect(billableHours(null)).toBe(null);
+    expect(billableHours(undefined)).toBe(null);
+    expect(billableHours(0)).toBe(0);
+  });
+
+  it('does not touch flat rates or project prices — hours are irrelevant there', () => {
+    expect(visitAmount({ ...base, hours: 0.5, rate: '$250 flat rate', travel_charge: null })).toBe(250);
+    expect(visitAmount({ ...base, hours: 0.5, rate: '$55/hr', total_project_price: 2600, travel_charge: null })).toBe(2600);
+  });
+
+  it('still adds travel on top of a minimum-billed visit', () => {
+    expect(visitAmount({ ...base, hours: 0.5, rate: '$55/hr', travel_charge: 56.65 })).toBe(166.65);
+  });
+
+  it('carries the minimum into an unpriced visit awaiting a rate', () => {
+    expect(visitLineItem({ ...base, hours: 1, rate: null }).quantity).toBe(2);
+  });
+
+  it('exposes the minimum as a constant rather than a magic number', () => {
+    expect(MINIMUM_BILLABLE_HOURS).toBe(2);
+  });
+});
+
+describe('billsAtMinimum — when to flag the visit in the UI', () => {
+  it('flags a short hourly visit', () => {
+    expect(billsAtMinimum({ hours: 0.75, rate: '$55/hr', total_project_price: null })).toBe(true);
+    expect(billsAtMinimum({ hours: 1.99, rate: '55 / h', total_project_price: null })).toBe(true);
+  });
+
+  it('does not flag a visit already at or over the minimum', () => {
+    expect(billsAtMinimum({ hours: 2, rate: '$55/hr', total_project_price: null })).toBe(false);
+    expect(billsAtMinimum({ hours: 8, rate: '$55/hr', total_project_price: null })).toBe(false);
+  });
+
+  it('does not flag flat rates or project prices — hours do not bill there', () => {
+    expect(billsAtMinimum({ hours: 0.5, rate: '$250 flat rate', total_project_price: null })).toBe(false);
+    expect(billsAtMinimum({ hours: 0.5, rate: '2600', total_project_price: null })).toBe(false);
+    expect(billsAtMinimum({ hours: 0.5, rate: '$55/hr', total_project_price: 2600 })).toBe(false);
+  });
+
+  it('does not flag an unlogged or zero visit', () => {
+    expect(billsAtMinimum({ hours: null, rate: '$55/hr', total_project_price: null })).toBe(false);
+    expect(billsAtMinimum({ hours: 0, rate: '$55/hr', total_project_price: null })).toBe(false);
   });
 });
 

@@ -1156,7 +1156,7 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
           <Field label="Address"><input className="input" value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} placeholder="Street, city, state" /></Field>
           {!quick && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Date"><input className="input" type="date" value={form.visit_date ?? ''} onChange={(e) => set('visit_date', e.target.value)} /></Field>
                 {/* Snaps up on blur, so a typed 0.75 becomes the 2h minimum
                     while you are still looking at the field. */}
@@ -1168,29 +1168,41 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
                     instead of $110, and a flat price could be typed into two
                     different boxes where one silently beat the other. Now the
                     amount is yours to set and the unit is always chosen. */}
-                <Field label="Price">
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 104px', gap: 6 }}>
-                    <input
-                      className="input"
-                      type="number"
-                      step="0.01"
-                      inputMode="decimal"
-                      value={price.amount}
-                      onChange={(e) => setPriceAmount(e.target.value)}
-                      placeholder={price.unit === 'hr' ? '55' : '540'}
-                    />
-                    <select
-                      className="input"
-                      value={price.unit}
-                      onChange={(e) => setPriceUnit(e.target.value as RateUnit)}
-                      title="Per hour bills hours × rate. Flat bills your amount once for the whole job, however long it took."
-                    >
-                      <option value="hr">per hour</option>
-                      <option value="flat">flat</option>
-                    </select>
-                  </div>
-                </Field>
               </div>
+
+              {/* Price gets its own row. Sharing a three-across row with Date
+                  and Hours squeezed the amount box down to a sliver you could
+                  not type into. */}
+              <Field label="Price">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 16, color: '#888', fontWeight: 600 }}>$</span>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    inputMode="decimal"
+                    value={price.amount}
+                    onChange={(e) => setPriceAmount(e.target.value)}
+                    placeholder={price.unit === 'hr' ? '55' : '540'}
+                    style={{ width: 150, flexShrink: 0 }}
+                  />
+                  <select
+                    className="input"
+                    value={price.unit}
+                    onChange={(e) => setPriceUnit(e.target.value as RateUnit)}
+                    style={{ width: 150, flexShrink: 0 }}
+                  >
+                    <option value="hr">per hour</option>
+                    <option value="flat">flat for the job</option>
+                  </select>
+                  <span style={{ fontSize: 12.5, color: '#888' }}>
+                    {price.unit === 'hr'
+                      ? `bills ${form.hours ?? 0}h × $${price.amount || 0} = ${fmtMoney((Number(form.hours) || 0) * (Number(price.amount) || 0))}`
+                      : `bills ${fmtMoney(Number(price.amount) || 0)} once, however long it took`}
+                  </span>
+                </div>
+              </Field>
 
               {/* Whole crew, not just one name. Tick everyone who was on site;
                   the first ticked is the lead. Recording a second tech does

@@ -291,6 +291,28 @@ export default function SiteLogView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [visits]);
 
+  // Totals for what is actually on screen, so filtering to one customer or one
+  // month answers "what is this worth" without exporting anything. Labor is
+  // the whole visit minus the parts we can name, which keeps it in step with
+  // visitAmount rather than re-deriving the rate parsing here.
+  const totals = useMemo(() => {
+    const sum = (f: (v: SiteVisit) => number) =>
+      Math.round(filtered.reduce((s, v) => s + (f(v) || 0), 0) * 100) / 100;
+    const grand     = sum((v) => visitAmount(v));
+    const travel    = sum((v) => Number(v.travel_charge ?? 0));
+    const materials = sum((v) => Number(v.materials_cost ?? 0));
+    const other     = sum((v) => Number(v.other_charges ?? 0));
+    return {
+      visits: filtered.length,
+      hours:  sum((v) => Number(v.hours ?? 0)),
+      miles:  sum((v) => Number(v.miles ?? 0)),
+      travel, materials, other,
+      labor: Math.round((grand - travel - materials - other) * 100) / 100,
+      grand,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered]);
+
   // Billing helper link: a read-only /billing/<token> page listing only what
   // needs invoicing — for a second person, without a login or anything else.
   const shareBillingLink = async () => {
@@ -578,6 +600,11 @@ export default function SiteLogView() {
             {' · '}<b style={{ color: '#666' }}>{visits.reduce((s, v) => s + Number(v.miles ?? 0), 0).toFixed(0)} miles</b>
             {' · '}<b style={{ color: '#666' }}>{fmtMoney(visits.reduce((s, v) => s + Number(v.travel_charge ?? 0), 0))} travel billed</b>
           </p>
+          {totals.visits !== visits.length && (
+            <p style={{ margin: '2px 0 0', color: 'var(--teal)', fontSize: 12, fontWeight: 600 }}>
+              Totals below cover the {totals.visits} visit{totals.visits !== 1 ? 's' : ''} currently shown.
+            </p>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {!openVisit && (
@@ -625,6 +652,25 @@ export default function SiteLogView() {
           </button>
         </div>
       </div>
+
+      {/* What the visits on screen are worth, broken into the parts that make
+          it up. Labor + mileage + materials + other is exactly the Line Total
+          of the Invoice Tracker, so the two can be read against each other. */}
+      {totals.visits > 0 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+          gap: 1, marginBottom: 14,
+          background: '#e8ecec', border: '1px solid #e0e5e5', borderRadius: 10, overflow: 'hidden',
+        }}>
+          <TotalTile label="Time on site" value={`${totals.hours.toFixed(2)}h`} sub={`${totals.visits} visit${totals.visits !== 1 ? 's' : ''}`} />
+          <TotalTile label="Labor" value={fmtMoney(totals.labor)} />
+          <TotalTile label="Mileage" value={fmtMoney(totals.travel)} sub={`${totals.miles.toFixed(0)} mi`} />
+          <TotalTile label="Materials" value={fmtMoney(totals.materials)} />
+          <TotalTile label="Other charges" value={fmtMoney(totals.other)} />
+          <TotalTile label="Total" value={fmtMoney(totals.grand)} accent />
+        </div>
+      )}
 
       {/* Hand-built statement: what's ticked, and how to add or drop the rest. */}
       {(picked.size > 0 || filtered.length > 0) && (
@@ -1178,6 +1224,30 @@ function MoneyTile({ label, value, color, active = false, onClick }: {
     >
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#999' }}>{label}</div>
       <div style={{ fontSize: 21, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    </div>
+  );
+}
+
+/** One figure in the totals band across the top of the Site Log. */
+function TotalTile({ label, value, sub, accent = false }: {
+  label: string; value: string; sub?: string; accent?: boolean;
+}) {
+  return (
+    <div style={{
+      background: accent ? 'rgba(13,115,119,0.07)' : '#fff',
+      padding: '10px 12px',
+      display: 'flex', flexDirection: 'column', gap: 2,
+    }}>
+      <span style={{
+        fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase',
+        color: '#8a9492', fontWeight: 700,
+      }}>{label}</span>
+      <span style={{
+        fontSize: 18, fontWeight: 800, lineHeight: 1.1,
+        fontVariantNumeric: 'tabular-nums',
+        color: accent ? 'var(--teal)' : '#333',
+      }}>{value}</span>
+      {sub && <span style={{ fontSize: 11, color: '#9aa3a2' }}>{sub}</span>}
     </div>
   );
 }

@@ -60,9 +60,27 @@ export const UTF8_BOM = '﻿';
  * starts with '=' is just as live when pasted as when opened from a file.
  */
 export function tsvCell(value: unknown): string {
+  if (isRawCell(value)) return value.raw.replace(/[\t\r\n]+/g, ' ');
   const s = value == null ? '' : String(value);
   const flat = s.replace(/[\t\r\n]+/g, ' ');
   return /^\s*[=+\-@]/.test(flat) ? `'${flat}` : flat;
+}
+
+/**
+ * A cell we mean literally, formula and all.
+ *
+ * The guard above exists because data must never become a live formula. But
+ * some cells are formulas on purpose — rebuilding the calculated columns of
+ * Fred's invoice tracker, for one. Wrapping in raw() is the deliberate,
+ * greppable way to say "this one is mine, not user data", so the guard keeps
+ * protecting everything that isn't explicitly marked.
+ */
+export type RawCell = { readonly raw: string };
+
+export const raw = (formula: string): RawCell => ({ raw: formula });
+
+export function isRawCell(value: unknown): value is RawCell {
+  return typeof value === 'object' && value !== null && typeof (value as RawCell).raw === 'string';
 }
 
 /** A whole sheet as clipboard-ready TSV. */

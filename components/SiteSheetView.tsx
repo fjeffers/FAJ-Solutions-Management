@@ -9,12 +9,13 @@
 // Editing is per-cell and saves on blur: a spreadsheet has no Save button, and
 // adding one here would be the sort of thing that loses an afternoon's typing.
 import { useState } from 'react';
-import { Plus, Trash2, Copy } from 'lucide-react';
+import { Plus, Trash2, Copy, FileSpreadsheet } from 'lucide-react';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitAmount } from '@/lib/visits';
 import { laborOf, sheetRow, sheetHeader, STATUS_LABEL } from '@/lib/site-sheet';
 import { toTSV } from '@/lib/csv';
+import { trackerRows } from '@/lib/invoice-tracker';
 import { copyToClipboard } from '@/lib/export';
 import { toastSuccess, toastError } from '@/lib/toast';
 import { fmtMoney } from '@/lib/utils';
@@ -82,6 +83,12 @@ export default function SiteSheetView({
   // fresh one after a realtime refresh.
   const [editing, setEditing] = useState<{ id: string; key: string; value: string } | null>(null);
 
+  // Invoice Tracker copy settings. Defaults are the safe ones: rebuild the
+  // formulas rather than paste over them.
+  const [trackerOpen, setTrackerOpen] = useState(false);
+  const [pasteRow, setPasteRow] = useState(1505);
+  const [keepFormulas, setKeepFormulas] = useState(true);
+
   const commit = async () => {
     if (!editing) return;
     const { id, key, value } = editing;
@@ -122,6 +129,25 @@ export default function SiteSheetView({
     if (ok) toastSuccess(`${what} copied — paste into Excel with Ctrl+V`);
   };
 
+  // ── Copy for the Invoice Tracker ──────────────────────────────────────────
+  // Master Entry's exact 20 columns, with its four calculated columns rebuilt
+  // as the same formulas rather than pasted over. See lib/invoice-tracker.ts.
+  const copyForTracker = async () => {
+    if (chosen.length === 0) { toastError('Nothing to copy.'); return; }
+    if (!Number.isInteger(pasteRow) || pasteRow < 2) {
+      toastError('Enter the sheet row you are pasting at — the first empty row in Master Entry.');
+      return;
+    }
+    const matrix = trackerRows(chosen, { row: pasteRow, keepFormulas });
+    const ok = await copyToClipboard(toTSV(matrix));
+    if (!ok) return;
+    const last = pasteRow + chosen.length - 1;
+    toastSuccess(
+      `${chosen.length} row${chosen.length !== 1 ? 's' : ''} copied for Master Entry — ` +
+      `click cell A${pasteRow} and press Ctrl+V (fills rows ${pasteRow}–${last})`
+    );
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -140,10 +166,66 @@ export default function SiteSheetView({
           {picked.size > 0 ? `Copy ${picked.size} selected` : 'Copy all for Excel'}
         </button>
 
+        <button
+          className="btn btn-ghost"
+          onClick={() => setTrackerOpen((o) => !o)}
+          title="Copy in the exact 20-column layout of Master Entry in your Invoice Tracker"
+        >
+          <FileSpreadsheet size={14} /> Copy for Invoice Tracker {trackerOpen ? '▴' : '▾'}
+        </button>
+
         <span style={{ fontSize: 12.5, color: '#888' }}>
           Click any cell to edit. Changes save when you tab or click away.
         </span>
       </div>
+
+      {trackerOpen && (
+        <div style={{
+          border: '1px solid #e5e7eb', borderRadius: 10, background: '#fbfbfb',
+          padding: '14px 16px', marginBottom: 12, maxWidth: 720,
+        }}>
+          <p style={{ fontSize: 12.5, color: '#555', margin: '0 0 12px', lineHeight: 1.6 }}>
+            Copies <b>{picked.size > 0 ? `${chosen.length} selected` : `all ${chosen.length}`}</b>{' '}
+            row{chosen.length !== 1 ? 's' : ''} in Master Entry&rsquo;s exact column order
+            (A&ndash;T). Click cell <b>A{pasteRow || '?'}</b> in Excel and press Ctrl+V.
+          </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 7 }}>
+              Pasting at row
+              <input
+                className="input"
+                type="number"
+                min={2}
+                value={pasteRow}
+                onChange={(e) => setPasteRow(Number(e.target.value))}
+                style={{ width: 90 }}
+                title="The first empty row in Master Entry. The formulas are written to point at this row."
+              />
+            </label>
+
+            <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={keepFormulas}
+                onChange={(e) => setKeepFormulas(e.target.checked)}
+                style={{ accentColor: 'var(--teal)' }}
+              />
+              Keep the calculated columns as formulas
+            </label>
+
+            <button className="btn btn-primary" onClick={copyForTracker}>
+              <Copy size={14} /> Copy {picked.size > 0 ? `${chosen.length} selected` : 'all'}
+            </button>
+          </div>
+
+          <p style={{ fontSize: 11.5, color: keepFormulas ? '#888' : '#b45309', margin: '12px 0 0', lineHeight: 1.6 }}>
+            {keepFormulas
+              ? 'Labor Total, Mileage Rate, Mileage Total and Line Total are written as your own formulas, aimed at the row above — so the pasted rows behave exactly like the rest of the sheet.'
+              : 'Warning: the four calculated columns will be pasted as fixed numbers. Those rows will stop recalculating if you change Hours or your mileage rate later.'}
+          </p>
+        </div>
+      )}
 
       {/* Tall enough to work a month without the page itself scrolling, and
           full width so the columns get the room they need. */}

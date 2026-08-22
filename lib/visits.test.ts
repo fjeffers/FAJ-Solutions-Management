@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
 
 // total_project_price is required on SiteVisit, so it belongs in the shared
 // fixture — individual cases override it when the price is the thing under test.
@@ -173,6 +173,34 @@ describe('actualHours — the real clock time behind a lifted figure', () => {
     const gap = Math.round(((lastOut - firstIn) / 3600000) * 100) / 100;
     expect(gap).toBe(94.79);
     expect(actualHours(stints)).toBeLessThan(gap);
+  });
+
+  it('flags hours that have drifted away from the stints', () => {
+    const kellogg = [
+      { in: '2026-07-31T17:45:00.000Z', out: '2026-07-31T22:45:00.000Z' },
+      { in: '2026-08-04T14:49:00.000Z', out: '2026-08-04T16:32:40.832Z' },
+    ];
+    expect(expectedHours(kellogg)).toBe(6.73);
+    expect(hoursDisagree(94.79, kellogg)).toBe(true);   // the bug
+    expect(hoursDisagree(6.73, kellogg)).toBe(false);   // after the fix
+  });
+
+  it('does not flag a short visit lifted to the minimum', () => {
+    const short = [{ in: '2026-08-05T13:00:00Z', out: '2026-08-05T13:45:00Z' }];
+    expect(expectedHours(short)).toBe(2);
+    expect(hoursDisagree(2, short)).toBe(false);
+  });
+
+  it('tolerates rounding, not real drift', () => {
+    const s = [{ in: '2026-08-05T09:00:00Z', out: '2026-08-05T14:00:00Z' }];
+    expect(hoursDisagree(5.05, s)).toBe(false);
+    expect(hoursDisagree(5.5, s)).toBe(true);
+  });
+
+  it('says nothing when there is nothing clocked to compare against', () => {
+    expect(hoursDisagree(9, null)).toBe(false);
+    expect(hoursDisagree(9, [])).toBe(false);
+    expect(hoursDisagree(null, [{ in: '2026-08-05T09:00:00Z', out: '2026-08-05T14:00:00Z' }])).toBe(false);
   });
 
   it('is the figure the badge compares against the stored hours', () => {

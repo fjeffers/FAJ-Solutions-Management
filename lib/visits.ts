@@ -33,6 +33,34 @@ export function billableHours(hours: number | null | undefined): number | null {
   return h < MINIMUM_BILLABLE_HOURS ? MINIMUM_BILLABLE_HOURS : h;
 }
 
+/**
+ * What the Hours field should read, given the stints on a visit.
+ *
+ * Most jobs run across several days and several stints, so the stints are the
+ * authority: hours is their sum, lifted to the minimum. Null when nothing has
+ * been clocked yet, in which case a hand-typed figure is all there is.
+ */
+export function expectedHours(
+  sessions: Array<{ in: string; out: string | null }> | null | undefined,
+): number | null {
+  return billableHours(actualHours(sessions));
+}
+
+/**
+ * True when the stored hours disagree with the clocked stints.
+ *
+ * This is the check that would have caught Kellogg 5800 reading 94.79 hours
+ * for 6.73 hours of work. A tenth of an hour of slack absorbs rounding.
+ */
+export function hoursDisagree(
+  hours: number | null | undefined,
+  sessions: Array<{ in: string; out: string | null }> | null | undefined,
+): boolean {
+  const expected = expectedHours(sessions);
+  if (expected == null || hours == null) return false;
+  return Math.abs(Number(hours) - expected) > 0.1;
+}
+
 /** Actual time on site from the recorded stints, ignoring the minimum. */
 export function actualHours(
   sessions: Array<{ in: string; out: string | null }> | null | undefined,

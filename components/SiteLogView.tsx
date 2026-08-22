@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount, billableHours, actualHours, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
+import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { fmtMoney } from '@/lib/utils';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
@@ -807,15 +807,32 @@ export default function SiteLogView() {
                           rather than just asserted. */}
                       {(() => {
                         const onSite = actualHours(v.sessions);
-                        if (onSite == null || v.hours == null || onSite >= Number(v.hours)) return null;
-                        return (
-                          <span
-                            title={`On site ${onSite}h — recorded at the ${MINIMUM_BILLABLE_HOURS}h minimum`}
-                            style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fff4e5', color: '#b45309', whiteSpace: 'nowrap' }}
-                          >
-                            {MINIMUM_BILLABLE_HOURS}h min · {onSite}h on site
-                          </span>
-                        );
+                        if (onSite == null || v.hours == null) return null;
+
+                        // Most jobs run across several days, so the stints are
+                        // the authority. Say so loudly when Hours has drifted
+                        // away from them rather than letting it bill quietly.
+                        if (hoursDisagree(v.hours, v.sessions)) {
+                          return (
+                            <span
+                              title={`The stints on this visit total ${onSite}h, but Hours says ${v.hours}h. Open the visit and re-save to correct it.`}
+                              style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fdeaea', color: '#b02a2a', whiteSpace: 'nowrap' }}
+                            >
+                              ⚠ {onSite}h on site, not {v.hours}h
+                            </span>
+                          );
+                        }
+                        if (onSite < Number(v.hours)) {
+                          return (
+                            <span
+                              title={`On site ${onSite}h — recorded at the ${MINIMUM_BILLABLE_HOURS}h minimum`}
+                              style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fff4e5', color: '#b45309', whiteSpace: 'nowrap' }}
+                            >
+                              {MINIMUM_BILLABLE_HOURS}h min · {onSite}h on site
+                            </span>
+                          );
+                        }
+                        return null;
                       })()}
                       {v.miles != null && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>🚗 {v.miles} mi</span>}
                       {v.rate && <span style={{ fontSize: 12, color: '#888' }}>{v.rate}</span>}

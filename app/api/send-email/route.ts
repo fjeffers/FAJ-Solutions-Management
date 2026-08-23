@@ -5,10 +5,11 @@ import {
   paymentConfirmationEmail,
   w9RequestEmail,
   accountantSummaryEmail,
+  invoiceEmail,
 } from '@/lib/email-templates';
 import { contractorOwedOnWO } from '@/lib/utils';
 import { createClient as createServerClient } from '@/lib/supabase/server';
-import type { WorkOrder, Payment, Contractor } from '@/lib/types';
+import type { WorkOrder, Payment, Contractor, Invoice } from '@/lib/types';
 
 // Techs assigned to the WO, so each address gets ITS OWN email with that
 // tech's pay and personal accept/decline links (never another tech's).
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { type, to, subject, data } = body as {
-      type: 'work_order' | 'payment_confirmation' | 'w9_request' | 'accountant_summary';
+      type: 'work_order' | 'payment_confirmation' | 'w9_request' | 'accountant_summary' | 'invoice';
       to: string;
       subject: string;
       data: Record<string, unknown>;
@@ -89,6 +90,14 @@ export async function POST(req: NextRequest) {
         html = paymentConfirmationEmail(
           data.payment as Payment,
           data.workOrder as WorkOrder | undefined,
+        );
+        break;
+
+      case 'invoice':
+        html = invoiceEmail(
+          data.invoice as Invoice,
+          (data.shareUrl as string | null) ?? null,
+          data.note as string | undefined,
         );
         break;
 

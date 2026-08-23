@@ -1,7 +1,7 @@
 // ─── FAJ Email Templates ──────────────────────────────────────────────────────
 // Pure functions — no browser APIs, safe to call from API routes.
 
-import type { WorkOrder, Payment, Contractor } from './types';
+import type { WorkOrder, Payment, Contractor, Invoice } from './types';
 import { fmtMoney, fmtDate } from './utils';
 
 const TEAL = '#0D7377';
@@ -418,4 +418,71 @@ export function portalInviteEmail(
   `;
 
   return base('Your Work Orders — FAJ Solutions', body);
+}
+
+// ─── Invoice ──────────────────────────────────────────────────────────────────
+
+/**
+ * The client-facing invoice email. Carries the headline number and a link to
+ * the shareable invoice page — line items live there, not in the email, so a
+ * long site-visit roll-up doesn't turn into a wall of text in Outlook.
+ */
+export function invoiceEmail(
+  invoice: Invoice,
+  shareUrl: string | null,
+  note?: string,
+): string {
+  const lineCount = invoice.line_items?.length ?? 0;
+  const preview = (invoice.line_items ?? []).slice(0, 6);
+  const hidden = lineCount - preview.length;
+
+  const rows = preview
+    .map((li) =>
+      infoRow(
+        li.description || 'Work performed',
+        fmtMoney(Number(li.quantity ?? 1) * Number(li.rate ?? 0)),
+      ),
+    )
+    .join('');
+
+  const body = `
+  <p style="font-size:14px;color:#333;line-height:1.7;margin:0 0 22px;">
+    Please find invoice <strong>${invoice.invoice_number}</strong> below${
+      invoice.client_name ? ` for ${invoice.client_name}` : ''
+    }.
+  </p>
+
+  ${note ? `<div style="font-size:13px;color:#444;line-height:1.7;background:#f7f8fa;
+              border-left:3px solid ${TEAL};padding:12px 16px;margin-bottom:22px;">
+              ${note.replace(/\n/g, '<br />')}
+            </div>` : ''}
+
+  ${section('Summary', `<table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+    ${infoRow('Invoice number', invoice.invoice_number)}
+    ${invoice.due_date ? infoRow('Due', fmtDate(invoice.due_date)) : ''}
+    ${infoRow('Amount due', fmtMoney(Number(invoice.total)), true)}
+  </table>`)}
+
+  ${lineCount ? section(`Work covered (${lineCount} line${lineCount !== 1 ? 's' : ''})`,
+    `<table width="100%" cellpadding="0" cellspacing="0" role="presentation">${rows}</table>
+     ${hidden > 0 ? `<div style="font-size:12px;color:#888;padding-top:10px;">
+        …and ${hidden} more line${hidden !== 1 ? 's' : ''} — see the full invoice.
+     </div>` : ''}`) : ''}
+
+  ${shareUrl ? `<div style="text-align:center;margin:28px 0 8px;">
+    <a href="${shareUrl}"
+       style="display:inline-block;background:${TEAL};color:#fff;text-decoration:none;
+              font-size:14px;font-weight:600;padding:13px 30px;border-radius:8px;">
+      View &amp; print invoice
+    </a>
+    <div style="font-size:11px;color:#aaa;margin-top:10px;">
+      No login needed — the link opens the invoice directly.
+    </div>
+  </div>` : ''}
+
+  <p style="font-size:13px;color:#666;line-height:1.7;margin:22px 0 0;">
+    Any questions on this invoice, just reply to this email.
+  </p>`;
+
+  return base(`Invoice ${invoice.invoice_number}`, body);
 }

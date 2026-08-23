@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { X, Send, CheckCircle2, Loader2, Mail } from 'lucide-react';
 
-export type EmailType = 'work_order' | 'payment_confirmation' | 'w9_request' | 'accountant_summary';
+export type EmailType = 'work_order' | 'payment_confirmation' | 'w9_request' | 'accountant_summary' | 'invoice';
 export type EmailPayload = {
   type: EmailType;
   to: string;
@@ -10,7 +10,7 @@ export type EmailPayload = {
   data: Record<string, unknown>;
 };
 
-export default function EmailModal({ payload, onClose }: { payload: EmailPayload; onClose: () => void }) {
+export default function EmailModal({ payload, onClose, onSent }: { payload: EmailPayload; onClose: () => void; onSent?: () => void | Promise<void> }) {
   const [to, setTo] = useState(payload.to);
   const [cc, setCc] = useState('');
   const [subject, setSubject] = useState(payload.subject);
@@ -43,6 +43,9 @@ export default function EmailModal({ payload, onClose }: { payload: EmailPayload
       const json = await res.json();
       if (!res.ok || json.error) throw new Error(json.error ?? 'Send failed');
       setSent(true);
+      // Let the caller record the consequence of a successful send (e.g. flip
+      // an invoice from draft to sent). Never runs on a failed send.
+      await onSent?.();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to send email');
     } finally {
@@ -55,6 +58,7 @@ export default function EmailModal({ payload, onClose }: { payload: EmailPayload
     payment_confirmation: 'Send Payment Confirmation',
     w9_request: 'Send W-9 Request',
     accountant_summary: 'Send Accountant Summary',
+    invoice: 'Send Invoice to Client',
   };
 
   return (
@@ -86,7 +90,7 @@ export default function EmailModal({ payload, onClose }: { payload: EmailPayload
             <EF label="Subject">
               <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} />
             </EF>
-            {(payload.type === 'work_order' || payload.type === 'w9_request') && (
+            {(payload.type === 'work_order' || payload.type === 'w9_request' || payload.type === 'invoice') && (
               <EF label="Note (optional)">
                 <textarea
                   className="input"

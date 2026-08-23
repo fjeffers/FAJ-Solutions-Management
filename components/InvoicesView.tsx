@@ -1,8 +1,9 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Printer, Receipt, DollarSign, Briefcase, Share2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Printer, Receipt, DollarSign, Briefcase, Share2, Send } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { printInvoiceSheet } from '@/lib/signoff';
+import EmailModal, { type EmailPayload } from '@/components/EmailModal';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { PAYMENT_METHODS } from '@/lib/types';
@@ -20,6 +21,14 @@ const STATUS_META: Record<DisplayStatus, { label: string; color: string; bg: str
   paid:    { label: 'Paid',     color: '#047857', bg: 'rgba(16,185,129,0.12)' },
   void:    { label: 'Void',     color: '#999',    bg: 'rgba(0,0,0,0.04)' },
 };
+
+/** Whole days a draft invoice has been sitting unsent — nothing can be paid
+ *  until it goes out, so the list calls this out once it starts to age. */
+function draftAgeDays(inv: Invoice): number {
+  const created = new Date(inv.created_at).getTime();
+  if (Number.isNaN(created)) return 0;
+  return Math.max(0, Math.floor((Date.now() - created) / 86_400_000));
+}
 
 function displayStatus(inv: Invoice, paid: number): DisplayStatus {
   if (inv.status === 'draft' || inv.status === 'paid' || inv.status === 'void') return inv.status;
@@ -60,20 +69,51 @@ export default function InvoicesView({
 }) {
   const [editing, setEditing] = useState<Partial<Invoice> | null>(null);
   const [paying, setPaying] = useState<Invoice | null>(null);
+  const [emailing, setEmailing] = useState<{ payload: EmailPayload; invoice: Invoice } | null>(null);
   const supabase = createClient();
+
+  // One share token per invoice, minted on first use and reused forever so a
+  // link already sitting in a client's inbox never stops working.
+  const ensureShareToken = async (inv: Invoice): Promise<string | null> => {
+    const { data } = await supabase.from('invoices').select('share_token').eq('id', inv.id).single();
+    let token = (data?.share_token as string | null) ?? null;
+    if (token) return token;
+    token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+    const { error } = await supabase.from('invoices')
+      .update({ share_token: token, updated_at: new Date().toISOString() }).eq('id', inv.id);
+    if (error) { toastError(`Couldn't create share link: ${error.message}`); return null; }
+    return token;
+  };
+
+  // Email the invoice to the client and, only once Resend accepts it, move the
+  // invoice from draft to sent. Nothing is sent without Fred pressing Send in
+  // the modal — this just prepares the message.
+  const sendInvoice = async (inv: Invoice) => {
+    const token = await ensureShareToken(inv);
+    const shareUrl = token ? `${window.location.origin}/invoice/${token}` : null;
+    setEmailing({
+      invoice: inv,
+      payload: {
+        type: 'invoice',
+        to: inv.client_email ?? '',
+        subject: `Invoice ${inv.invoice_number} from FAJ Solutions${inv.client_name ? ` — ${inv.client_name}` : ''}`,
+        data: { invoice: inv, shareUrl },
+      },
+    });
+  };
+
+  const markSent = async (inv: Invoice) => {
+    if (inv.status !== 'draft') return;
+    await onSave({ id: inv.id, status: 'sent', sent_at: new Date().toISOString() });
+    toastSuccess(`${inv.invoice_number} marked as sent`);
+  };
 
   // Share a client-facing link (/invoice/<token>) — creates the token once,
   // reuses it forever so a link you already sent never breaks. Uses the
   // phone's native share sheet when available, else copies to clipboard.
   const shareInvoice = async (inv: Invoice) => {
-    const { data } = await supabase.from('invoices').select('share_token').eq('id', inv.id).single();
-    let token = (data?.share_token as string | null) ?? null;
-    if (!token) {
-      token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
-      const { error } = await supabase.from('invoices')
-        .update({ share_token: token, updated_at: new Date().toISOString() }).eq('id', inv.id);
-      if (error) { toastError(`Couldn't create share link: ${error.message}`); return; }
-    }
+    const token = await ensureShareToken(inv);
+    if (!token) return;
     const url = `${window.location.origin}/invoice/${token}`;
     if (typeof navigator.share === 'function') {
       try {
@@ -154,6 +194,11 @@ export default function InvoicesView({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                     <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--teal)' }}>{inv.invoice_number}</span>
                     <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sm.bg, color: sm.color }}>{sm.label}</span>
+                    {inv.status === 'draft' && draftAgeDays(inv) >= 3 && (
+                      <span title="This invoice has never been sent — the client cannot pay it yet." style={{ fontSize: 10, fontWeight: 700, color: '#b91c1c' }}>
+                        never sent · {draftAgeDays(inv)}d
+                      </span>
+                    )}
                     {inv.work_order_ids.length > 0 && (
                       <span title={`${inv.work_order_ids.length} linked work order${inv.work_order_ids.length !== 1 ? 's' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#888' }}>
                         <Briefcase size={11} /> {inv.work_order_ids.length}
@@ -176,6 +221,9 @@ export default function InvoicesView({
                   <div style={{ display: 'flex', gap: 4 }}>
                     {inv.status !== 'void' && inv.status !== 'draft' && (
                       <button title="Record Payment" onClick={() => setPaying(inv)} style={{ ...ICON_BTN, color: '#047857' }}><DollarSign size={15} /></button>
+                    )}
+                    {inv.status !== 'void' && inv.status !== 'paid' && (
+                      <button title={inv.status === 'draft' ? 'Email this invoice to the client' : 'Email this invoice again'} onClick={() => sendInvoice(inv)} style={{ ...ICON_BTN, color: '#1D4ED8' }}><Send size={15} /></button>
                     )}
                     <button title="Share with client — public link, no login needed" onClick={() => shareInvoice(inv)} style={{ ...ICON_BTN, color: 'var(--teal)' }}><Share2 size={15} /></button>
                     <button title="Print" onClick={() => printInvoiceSheet(inv, paid)} style={ICON_BTN}><Printer size={15} /></button>
@@ -204,6 +252,13 @@ export default function InvoicesView({
           onRecord={async (p) => { await onRecordPayment(paying, p); setPaying(null); }}
           onDeletePayment={async (pid) => { await onDeletePayment(paying, pid); setPaying(null); }}
           onClose={() => setPaying(null)}
+        />
+      )}
+      {emailing && (
+        <EmailModal
+          payload={emailing.payload}
+          onSent={() => markSent(emailing.invoice)}
+          onClose={() => setEmailing(null)}
         />
       )}
     </div>

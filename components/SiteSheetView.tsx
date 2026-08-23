@@ -8,8 +8,8 @@
 //
 // Editing is per-cell and saves on blur: a spreadsheet has no Save button, and
 // adding one here would be the sort of thing that loses an afternoon's typing.
-import { useState } from 'react';
-import { Plus, Trash2, Copy, FileSpreadsheet } from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
+import { Plus, Trash2, Copy, FileSpreadsheet, ChevronDown, ChevronRight, ArrowUpDown, Layers } from 'lucide-react';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitAmount, billableHours } from '@/lib/visits';
@@ -20,6 +20,10 @@ import { trackerRows } from '@/lib/invoice-tracker';
 import { copyToClipboard } from '@/lib/export';
 import { toastSuccess, toastError } from '@/lib/toast';
 import { fmtMoney } from '@/lib/utils';
+import {
+  groupVisits, sortVisits, totalsOf, pillFor, groupColor,
+  GROUP_BY_LABEL, type GroupBy, type SortKey, type SortDir,
+} from '@/lib/site-board';
 
 type Col = {
   key: keyof SiteVisit;
@@ -109,6 +113,32 @@ export default function SiteSheetView({
 
   // Invoice Tracker copy settings. Defaults are the safe ones: rebuild the
   // formulas rather than paste over them.
+  // Board controls. Grouping and sorting are view state only — they never
+  // touch the rows, so nothing here can change what a visit bills.
+  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const groups = useMemo(
+    () => groupVisits(sortVisits(visits, sortKey, sortDir), groupBy),
+    [visits, sortKey, sortDir, groupBy],
+  );
+  const grand = useMemo(() => totalsOf(visits), [visits]);
+
+  const toggleGroup = (key: string) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  // Click a heading to sort by it; click again to reverse.
+  const sortOn = (key: SortKey) => {
+    if (sortKey === key) { setSortDir((d) => (d === 'asc' ? 'desc' : 'asc')); return; }
+    setSortKey(key);
+    setSortDir('asc');
+  };
+
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [pasteRow, setPasteRow] = useState(1505);
   const [keepFormulas, setKeepFormulas] = useState(true);
@@ -131,10 +161,6 @@ export default function SiteSheetView({
     if (String(row[col.key] ?? '') === String(next ?? '')) return; // nothing changed
     await onSave(id, { [col.key]: next } as Partial<SiteVisit>);
   };
-
-  const total = visits.reduce((s, v) => s + visitAmount(v), 0);
-  const totalHours = visits.reduce((s, v) => s + Number(v.hours ?? 0), 0);
-  const totalMiles = visits.reduce((s, v) => s + Number(v.miles ?? 0), 0);
 
   // ── Copy to Excel ─────────────────────────────────────────────────────────
   // Tab-separated on the clipboard: paste into Excel and the values land in
@@ -179,6 +205,35 @@ export default function SiteSheetView({
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <button className="btn btn-ghost" onClick={onAdd}><Plus size={14} /> Add Row</button>
+
+        <label
+          title="Break the rows into sections, each with its own running total"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#555' }}
+        >
+          <Layers size={14} style={{ color: 'var(--teal)' }} />
+          Group by
+          <select
+            className="input"
+            value={groupBy}
+            onChange={(e) => { setGroupBy(e.target.value as GroupBy); setCollapsed(new Set()); }}
+            style={{ width: 'auto', padding: '5px 8px', fontSize: 12, cursor: 'pointer' }}
+          >
+            {(Object.keys(GROUP_BY_LABEL) as GroupBy[]).map((g) => (
+              <option key={g} value={g}>{GROUP_BY_LABEL[g]}</option>
+            ))}
+          </select>
+        </label>
+
+        {sortKey && (
+          <button
+            className="btn btn-ghost"
+            onClick={() => setSortKey(null)}
+            title="Back to the order the rows came in"
+            style={{ fontSize: 12 }}
+          >
+            <ArrowUpDown size={13} /> Clear sort
+          </button>
+        )}
 
         <button
           className="btn btn-ghost"
@@ -262,8 +317,15 @@ export default function SiteSheetView({
             <tr>
               <th style={{ ...th, width: 34, textAlign: 'center' }} title="Include on the client statement">✓</th>
               {COLS.map((c) => (
-                <th key={String(c.key)} style={{ ...th, minWidth: c.width }}>
+                <th
+                  key={String(c.key)}
+                  onClick={() => sortOn(c.key as SortKey)}
+                  title={`Sort by ${c.label}`}
+                  style={{ ...th, minWidth: c.width, cursor: 'pointer', userSelect: 'none',
+                           color: sortKey === c.key ? 'var(--teal)' : th.color }}
+                >
                   {c.label}
+                  {sortKey === c.key && <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
                   {/* Calculated, not typed — say so in the header rather than
                       letting a number appear from nowhere. */}
                   {(c.key === 'hours' || c.key === 'travel_charge') && (
@@ -274,17 +336,62 @@ export default function SiteSheetView({
                   )}
                 </th>
               ))}
-              <th style={{ ...th, minWidth: 96, textAlign: 'right' }}>
+              <th
+                onClick={() => sortOn('labor_total')}
+                title="Sort by Labor Total"
+                style={{ ...th, minWidth: 96, textAlign: 'right', cursor: 'pointer', userSelect: 'none',
+                         color: sortKey === 'labor_total' ? 'var(--teal)' : th.color }}
+              >
                 Labor Total <span style={{ color: 'var(--teal)' }} title="Hours × Labor Rate — Master Entry column I">ƒ</span>
+                {sortKey === 'labor_total' && <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
               </th>
-              <th style={{ ...th, minWidth: 104, textAlign: 'right' }}>
+              <th
+                onClick={() => sortOn('line_total')}
+                title="Sort by Line Total"
+                style={{ ...th, minWidth: 104, textAlign: 'right', cursor: 'pointer', userSelect: 'none',
+                         color: sortKey === 'line_total' ? 'var(--teal)' : th.color }}
+              >
                 Line Total <span style={{ color: 'var(--teal)' }} title="Labor + Mileage + Materials + Other — Master Entry column P">ƒ</span>
+                {sortKey === 'line_total' && <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
               </th>
               <th style={{ ...th, width: 72 }} />
             </tr>
           </thead>
           <tbody>
-            {visits.map((v) => (
+            {groups.map((g, gi) => (
+              <Fragment key={g.key}>
+                {/* A section heading that carries its own money, so "what is
+                    August worth" is answered without adding anything up. */}
+                {groupBy !== 'none' && (
+                  <tr>
+                    <td
+                      colSpan={COLS.length + 4}
+                      onClick={() => toggleGroup(g.key)}
+                      style={{
+                        position: 'sticky', left: 0,
+                        background: '#fbfbfc', borderTop: '1px solid #e5e7eb',
+                        borderBottom: '1px solid #e5e7eb', padding: '9px 12px',
+                        cursor: 'pointer', userSelect: 'none',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        {collapsed.has(g.key) ? <ChevronRight size={15} color="#888" /> : <ChevronDown size={15} color="#888" />}
+                        <span style={{ width: 4, height: 16, borderRadius: 2, background: groupColor(gi) }} />
+                        <span style={{ fontWeight: 800, fontSize: 13, color: '#222' }}>{g.label}</span>
+                        <span style={{ fontSize: 11, color: '#999' }}>
+                          {g.totals.count} visit{g.totals.count !== 1 ? 's' : ''}
+                        </span>
+                        <span style={{ marginLeft: 'auto', display: 'flex', gap: 16, fontSize: 12, color: '#666', fontVariantNumeric: 'tabular-nums' }}>
+                          <span>{g.totals.hours.toFixed(2)}h</span>
+                          <span>{g.totals.miles.toFixed(0)} mi</span>
+                          <span>Labor {fmtMoney(g.totals.labor)}</span>
+                          <strong style={{ color: 'var(--teal)' }}>{fmtMoney(g.totals.total)}</strong>
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {!collapsed.has(g.key) && g.rows.map((v) => (
               <tr key={v.id} style={{ background: picked.has(v.id) ? 'rgba(13,115,119,0.06)' : undefined }}>
                 <td style={{ ...td, textAlign: 'center' }}>
                   <input type="checkbox" checked={picked.has(v.id)}
@@ -308,13 +415,24 @@ export default function SiteSheetView({
                           {c.key === 'tech_ids' ? (techNames(techsOn(v, techRoster)) || '—') : (shown || '—')}
                         </span>
                       ) : c.type === 'select' ? (
+                        // Still a real select — one click to change — but wearing
+                        // the status colour, so a screen of rows reads at a glance.
                         <select
                           value={(raw as string) ?? ''}
                           onChange={(e) => void onSave(v.id, { [c.key]: e.target.value } as Partial<SiteVisit>)}
-                          style={{ ...cell, cursor: 'pointer' }}
+                          style={{
+                            ...cell, cursor: 'pointer', appearance: 'none',
+                            margin: '4px 6px', width: 'calc(100% - 12px)', padding: '4px 8px',
+                            borderRadius: 20, textAlign: 'center',
+                            fontSize: 11, fontWeight: 700,
+                            color: pillFor(raw as string).color,
+                            background: pillFor(raw as string).bg,
+                          }}
                         >
                           {c.options!.map((o) => (
-                            <option key={o} value={o}>{STATUS_LABEL[o] ?? o}</option>
+                            <option key={o} value={o} style={{ color: '#222', background: '#fff', fontWeight: 500 }}>
+                              {STATUS_LABEL[o] ?? o}
+                            </option>
                           ))}
                         </select>
                       ) : (
@@ -357,6 +475,8 @@ export default function SiteSheetView({
                   </button>
                 </td>
               </tr>
+                ))}
+              </Fragment>
             ))}
 
             {visits.length === 0 && (
@@ -372,17 +492,17 @@ export default function SiteSheetView({
                 <td style={{ ...td, borderTop: '2px solid #e5e7eb' }} />
                 {COLS.map((c) => (
                   <td key={String(c.key)} style={{ ...td, borderTop: '2px solid #e5e7eb', padding: '8px 9px', fontWeight: 800, fontSize: 12 }}>
-                    {c.key === 'hours' ? totalHours.toFixed(2)
-                      : c.key === 'miles' ? totalMiles.toFixed(0)
+                    {c.key === 'hours' ? grand.hours.toFixed(2)
+                      : c.key === 'miles' ? grand.miles.toFixed(0)
                       : c.key === 'visit_date' ? `${visits.length} site${visits.length !== 1 ? 's' : ''}`
                       : ''}
                   </td>
                 ))}
                 <td style={{ ...td, borderTop: '2px solid #e5e7eb', textAlign: 'right', padding: '8px 9px', fontWeight: 800, color: '#555' }}>
-                  {fmtMoney(visits.reduce((s, v) => s + laborOf(v), 0))}
+                  {fmtMoney(grand.labor)}
                 </td>
                 <td style={{ ...td, borderTop: '2px solid #e5e7eb', textAlign: 'right', padding: '8px 9px', fontWeight: 800, color: 'var(--teal)' }}>
-                  {fmtMoney(total)}
+                  {fmtMoney(grand.total)}
                 </td>
                 <td style={{ ...td, borderTop: '2px solid #e5e7eb' }} />
               </tr>

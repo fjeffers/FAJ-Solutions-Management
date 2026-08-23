@@ -90,6 +90,16 @@ const th: React.CSSProperties = {
 const td: React.CSSProperties = {
   borderBottom: '1px solid #f2f2f2', borderRight: '1px solid #f7f7f7', padding: 0,
 };
+// The grid is 22 columns wide, so scrolling right loses sight of which row you
+// are on. The tick box and the Date stay pinned to the left edge. Their
+// backgrounds must be opaque — a transparent frozen cell lets the columns
+// underneath slide through it.
+const CHECK_W = 34;
+const frozen = (left: number, z: number, background: string): React.CSSProperties => ({
+  position: 'sticky', left, zIndex: z, background,
+  boxShadow: left > 0 ? '2px 0 0 -1px #e5e7eb' : undefined,
+});
+
 const cell: React.CSSProperties = {
   width: '100%', border: 'none', background: 'transparent', padding: '7px 9px',
   fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
@@ -315,14 +325,15 @@ export default function SiteSheetView({
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 13, width: 'max-content', minWidth: '100%' }}>
           <thead>
             <tr>
-              <th style={{ ...th, width: 34, textAlign: 'center' }} title="Include on the client statement">✓</th>
-              {COLS.map((c) => (
+              <th style={{ ...th, width: CHECK_W, textAlign: 'center', ...frozen(0, 4, '#f7f7f7') }} title="Include on the client statement">✓</th>
+              {COLS.map((c, ci) => (
                 <th
                   key={String(c.key)}
                   onClick={() => sortOn(c.key as SortKey)}
                   title={`Sort by ${c.label}`}
                   style={{ ...th, minWidth: c.width, cursor: 'pointer', userSelect: 'none',
-                           color: sortKey === c.key ? 'var(--teal)' : th.color }}
+                           color: sortKey === c.key ? 'var(--teal)' : th.color,
+                           ...(ci === 0 ? frozen(CHECK_W, 4, '#f7f7f7') : {}) }}
                 >
                   {c.label}
                   {sortKey === c.key && <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
@@ -393,20 +404,20 @@ export default function SiteSheetView({
                 )}
                 {!collapsed.has(g.key) && g.rows.map((v) => (
               <tr key={v.id} style={{ background: picked.has(v.id) ? 'rgba(13,115,119,0.06)' : undefined }}>
-                <td style={{ ...td, textAlign: 'center' }}>
+                <td style={{ ...td, textAlign: 'center', ...frozen(0, 1, picked.has(v.id) ? '#eef5f5' : '#fff') }}>
                   <input type="checkbox" checked={picked.has(v.id)}
                     onChange={() => onTogglePicked(v.id)}
                     style={{ width: 15, height: 15, cursor: 'pointer', accentColor: 'var(--teal)' }} />
                 </td>
 
-                {COLS.map((c) => {
+                {COLS.map((c, ci) => {
                   const isEditing = editing?.id === v.id && editing.key === c.key;
                   const raw = v[c.key];
                   const shown = c.type === 'time' ? toLocal(raw as string)
                     : raw == null ? '' : String(raw);
 
                   return (
-                    <td key={String(c.key)} style={td}>
+                    <td key={String(c.key)} style={ci === 0 ? { ...td, ...frozen(CHECK_W, 1, picked.has(v.id) ? '#eef5f5' : '#fff') } : td}>
                       {c.readOnly ? (
                         <span
                           title={c.key === 'tech_ids' ? techNames(techsOn(v, techRoster)) : shown}
@@ -489,9 +500,10 @@ export default function SiteSheetView({
           {visits.length > 0 && (
             <tfoot>
               <tr style={{ position: 'sticky', bottom: 0, background: '#fafafa' }}>
-                <td style={{ ...td, borderTop: '2px solid #e5e7eb' }} />
-                {COLS.map((c) => (
-                  <td key={String(c.key)} style={{ ...td, borderTop: '2px solid #e5e7eb', padding: '8px 9px', fontWeight: 800, fontSize: 12 }}>
+                <td style={{ ...td, borderTop: '2px solid #e5e7eb', ...frozen(0, 1, '#fafafa') }} />
+                {COLS.map((c, ci) => (
+                  <td key={String(c.key)} style={{ ...td, borderTop: '2px solid #e5e7eb', padding: '8px 9px', fontWeight: 800, fontSize: 12,
+                                                  ...(ci === 0 ? frozen(CHECK_W, 1, '#fafafa') : {}) }}>
                     {c.key === 'hours' ? grand.hours.toFixed(2)
                       : c.key === 'miles' ? grand.miles.toFixed(0)
                       : c.key === 'visit_date' ? `${visits.length} site${visits.length !== 1 ? 's' : ''}`

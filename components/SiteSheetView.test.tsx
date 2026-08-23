@@ -10,7 +10,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SiteSheetView from './SiteSheetView';
-import type { SiteVisit } from '@/lib/types';
+import type { SiteVisit, FormulaColumn } from '@/lib/types';
 
 vi.mock('@/lib/toast', () => ({ toastError: () => {}, toastSuccess: () => {}, toastInfo: () => {} }));
 vi.mock('@/lib/export', () => ({ copyToClipboard: async () => true }));
@@ -34,8 +34,10 @@ const visit = (over: Record<string, unknown>): SiteVisit => ({
   ...over,
 } as SiteVisit);
 
-function draw(visits: SiteVisit[]) {
+function draw(visits: SiteVisit[], formulaColumns: FormulaColumn[] = []) {
   const onSave = vi.fn();
+  const onSaveFormula = vi.fn();
+  const onDeleteFormula = vi.fn();
   render(
     <SiteSheetView
       visits={visits}
@@ -44,10 +46,20 @@ function draw(visits: SiteVisit[]) {
       onSave={onSave}
       onDelete={() => {}}
       onAdd={() => {}}
+      formulaColumns={formulaColumns}
+      onSaveFormula={onSaveFormula}
+      onDeleteFormula={onDeleteFormula}
     />,
   );
-  return { onSave };
+  return { onSave, onSaveFormula, onDeleteFormula };
 }
+
+const fc = (over: Partial<FormulaColumn>): FormulaColumn => ({
+  id: String(over.id ?? 'f1'), user_id: 'u1', name: 'Margin',
+  expression: '{Labor Total} / {Line Total}', format: 'percent',
+  position: 0, applies_to: 'site_visits', created_at: '', updated_at: '',
+  ...over,
+});
 
 const groupBy = () => screen.getByRole('combobox', { name: /group by/i });
 
@@ -247,6 +259,86 @@ describe('Site Sheet board', () => {
     it('a flat-priced visit totals its fee, not fee x hours', () => {
       draw([visit({ id: 'a', hours: 6.73, rate: null, total_project_price: 2600, travel_charge: 80.9 })]);
       expect(screen.getAllByText('$2,680.90').length).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Formula columns: Smartsheet's and Monday's feature, in Fred's grid ─────
+  describe('formula columns', () => {
+    it('adds a column of its own and computes it per row', () => {
+      // 2h x $55 = 110 labour; total 168.70. Effective rate = 84.35/h.
+      draw([visit({ id: 'a' })], [fc({ name: 'Rate/hr', expression: '{Line Total} / {Hours}', format: 'money' })]);
+      expect(screen.getByText('Rate/hr')).toBeTruthy();
+      // Once on the row, once in the money total at the foot.
+      expect(screen.getAllByText('$84.35').length).toBe(2);
+    });
+
+    it('totals a money formula column at the foot', () => {
+      draw(
+        [visit({ id: 'a', hours: 2, travel_charge: 58.7 }), visit({ id: 'b', hours: 9, travel_charge: 56.65 })],
+        [fc({ name: 'Labour', expression: '{Labor Total}', format: 'money' })],
+      );
+      // 110 + 495 = 605
+      expect(screen.getAllByText('$605.00').length).toBeGreaterThan(0);
+    });
+
+    it('does not total a percentage column, which would be meaningless', () => {
+      draw([visit({ id: 'a' }), visit({ id: 'b' })], [fc({ name: 'Margin', format: 'percent' })]);
+      // 65% appears on the rows, never summed into 130%
+      expect(screen.queryByText('130%')).toBeNull();
+    });
+
+    it('marks just the broken cell when a formula cannot be worked out', () => {
+      draw([visit({ id: 'a' })], [fc({ name: 'Oops', expression: '{Nonsense} * 2', format: 'number' })]);
+      expect(screen.getByText('error')).toBeTruthy();
+      // The rest of the row still renders.
+      expect(screen.getByDisplayValue('Hillside')).toBeTruthy();
+    });
+
+    it('accepts the Smartsheet spelling as readily as the Monday one', () => {
+      draw([visit({ id: 'a' })], [fc({ name: 'S', expression: '[Hours]@row * 10', format: 'number' })]);
+      expect(screen.getByText('20')).toBeTruthy();
+    });
+
+    it('opens the editor from the toolbar and previews the result as you type', async () => {
+      const user = userEvent.setup();
+      draw([visit({ id: 'a' })]);
+      await user.click(screen.getByRole('button', { name: /formula column/i }));
+      await user.type(screen.getByPlaceholderText('{Line Total} / {Hours}'), '{{Hours} * 10');
+      expect(screen.getByText(/On the first row this reads/)).toBeTruthy();
+      expect(screen.getByText('20')).toBeTruthy();
+    });
+
+    it('will not save a formula that does not work', async () => {
+      const user = userEvent.setup();
+      const { onSaveFormula } = draw([visit({ id: 'a' })]);
+      await user.click(screen.getByRole('button', { name: /formula column/i }));
+      await user.type(screen.getByPlaceholderText('e.g. Margin, Rate per hour, Unbilled'), 'Broken');
+      await user.type(screen.getByPlaceholderText('{Line Total} / {Hours}'), '{{Nope} * 2');
+      const save = screen.getByRole('button', { name: /add column/i });
+      expect((save as HTMLButtonElement).disabled).toBe(true);
+      await user.click(save);
+      expect(onSaveFormula).not.toHaveBeenCalled();
+    });
+
+    it('saves a good one with its heading, formula and format', async () => {
+      const user = userEvent.setup();
+      const { onSaveFormula } = draw([visit({ id: 'a' })]);
+      await user.click(screen.getByRole('button', { name: /formula column/i }));
+      await user.type(screen.getByPlaceholderText('e.g. Margin, Rate per hour, Unbilled'), 'Rate per hour');
+      await user.type(screen.getByPlaceholderText('{Line Total} / {Hours}'), '{{Line Total} / {{Hours}');
+      await user.selectOptions(screen.getByDisplayValue('Number'), 'money');
+      await user.click(screen.getByRole('button', { name: /add column/i }));
+      expect(onSaveFormula).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Rate per hour', expression: '{Line Total} / {Hours}', format: 'money' }),
+      );
+    });
+
+    it('shows no formula controls when the parent does not allow editing', () => {
+      render(
+        <SiteSheetView visits={[visit({ id: 'a' })]} picked={new Set()} onTogglePicked={() => {}}
+          onSave={() => {}} onDelete={() => {}} onAdd={() => {}} />,
+      );
+      expect(screen.queryByRole('button', { name: /formula column/i })).toBeNull();
     });
   });
 

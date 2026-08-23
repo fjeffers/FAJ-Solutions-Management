@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
-import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
+import type { SiteVisit, SiteVisitType, VisitSession, FormulaColumn } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
@@ -103,6 +103,7 @@ export default function SiteLogView() {
   // to the client opens on top of it. Held here so the modal outlives the
   // async work that created the invoice.
   const [emailing, setEmailing] = useState<{ payload: EmailPayload; invoiceId: string } | null>(null);
+  const [formulaColumns, setFormulaColumns] = useState<FormulaColumn[]>([]);
   useEffect(() => {
     setSheetMode(localStorage.getItem('sitelog-sheet') === '1');
   }, []);
@@ -117,18 +118,55 @@ export default function SiteLogView() {
   });
   const [now, setNow] = useState(() => Date.now());
 
+  // Formula columns are Fred's own, so they save and delete like any other row
+  // he owns. The expression is stored as typed; nothing evaluates it here.
+  const saveFormulaColumn = async (c: Partial<FormulaColumn>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const payload = {
+      user_id: user.id,
+      name: c.name ?? '',
+      expression: c.expression ?? '',
+      format: c.format ?? 'number',
+      applies_to: 'site_visits' as const,
+      position: c.position ?? formulaColumns.length,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = c.id
+      ? await supabase.from('formula_columns').update(payload).eq('id', c.id)
+      : await supabase.from('formula_columns').insert(payload);
+    if (error) {
+      toastError(error.message.includes('duplicate')
+        ? `You already have a column called "${payload.name}".`
+        : `Couldn't save the column: ${error.message}`);
+      return;
+    }
+    toastSuccess(`"${payload.name}" saved`);
+    await load();
+  };
+
+  const deleteFormulaColumn = async (id: string) => {
+    const { error } = await supabase.from('formula_columns').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete the column: ${error.message}`); return; }
+    toastSuccess('Column removed — the visits themselves are untouched');
+    await load();
+  };
+
   const load = async () => {
-    const [vRes, sRes, pRes, cRes] = await Promise.all([
+    const [vRes, sRes, pRes, cRes, fRes] = await Promise.all([
       supabase.from('site_visits').select('*')
         .order('visit_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false }),
       supabase.from('user_settings').select('home_base_address, mileage_rate, default_hourly_rate').maybeSingle(),
       supabase.from('site_programs').select('name, mileage_rate'),
       supabase.from('contractors').select('id, name').order('name'),
+      supabase.from('formula_columns').select('*')
+        .eq('applies_to', 'site_visits').order('position').order('created_at'),
     ]);
     if (vRes.error) toastError("Couldn't load the site log. Check your connection and refresh.");
     if (vRes.data) setVisits(vRes.data as SiteVisit[]);
     if (cRes.data) setContractors(cRes.data as { id: string; name: string }[]);
+    if (fRes.data) setFormulaColumns(fRes.data as FormulaColumn[]);
     setHomeBase((sRes.data?.home_base_address as string | null) ?? '');
     setMileageRate(Number(sRes.data?.mileage_rate ?? 0.7));
     setDefaultHourlyRate(Number(sRes.data?.default_hourly_rate ?? 55));
@@ -828,6 +866,9 @@ export default function SiteLogView() {
             invoice_status: 'not_invoiced', payment_status: 'unpaid',
             program: programFilter ?? programs[0] ?? '',
           })}
+          formulaColumns={formulaColumns}
+          onSaveFormula={saveFormulaColumn}
+          onDeleteFormula={deleteFormulaColumn}
         />
       ) : programGroups.length === 0 ? (
         <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>

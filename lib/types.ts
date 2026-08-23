@@ -937,3 +937,18 @@ export const WORK_ORDER_PRIORITIES: string[] = [
 export const SCHEDULE_TYPES: string[] = [
   'Exact Time', 'Time Window', 'Day', 'Flexible', 'On Demand',
 ];
+/**
+ * A column Fred defined himself, computed from the other columns on the row.
+ * The expression is evaluated by lib/formula.ts — a parser, never eval().
+ */
+export type FormulaColumn = {
+  id: string;
+  user_id: string | null;
+  name: string;
+  expression: string;
+  format: 'number' | 'money' | 'percent' | 'text';
+  position: number;
+  applies_to: 'site_visits' | 'assets';
+  created_at: string;
+  updated_at: string;
+};

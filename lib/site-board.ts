@@ -9,7 +9,7 @@
 // Everything here is pure and takes rows in, so the grid stays a renderer and
 // the money keeps coming from visitAmount/laborOf rather than being recomputed.
 import type { SiteVisit } from './types';
-import { visitAmount } from './visits';
+import { visitAmount, readPricing } from './visits';
 import { laborOf } from './site-sheet';
 
 export type GroupBy = 'none' | 'program' | 'month' | 'visit_type' | 'invoice_status' | 'site';
@@ -203,3 +203,50 @@ const GROUP_COLORS = ['#0D7377', '#6d28d9', '#c2410c', '#1D4ED8', '#047857', '#b
 export function groupColor(index: number): string {
   return GROUP_COLORS[index % GROUP_COLORS.length];
 }
+
+// ─── Formula columns ──────────────────────────────────────────────────────────
+
+/**
+ * The row a user-written formula sees, keyed by the headings on screen.
+ *
+ * A formula says {Hours} or [Labor Total] because that is what the column is
+ * called in the grid. The keys here are therefore the grid's own labels, and a
+ * test asserts the two lists stay in step — a heading that renamed itself out
+ * from under a saved formula would break it silently.
+ *
+ * Labor Total and Line Total are included even though they are computed, since
+ * they are the two numbers most formulas want to build on.
+ */
+export function formulaRow(v: SiteVisit): Record<string, string | number | boolean | null> {
+  const n = (x: unknown) => (x == null || x === '' ? null : Number(x));
+  return {
+    'Date':                  v.visit_date ?? null,
+    'Customer/Brand':        v.program ?? null,
+    'Site/Location':         v.site_code ?? null,
+    'Site Name':             v.site_name ?? null,
+    'Site Address':          v.address ?? null,
+    'Scope of Work':         v.client_summary ?? null,
+    'Work Type':             v.visit_type ?? null,
+    'Hours':                 n(v.hours),
+    'Price':                 n(readPricing(v).amount),
+    'Mileage/Distance':      n(v.miles),
+    'Mileage Total':         n(v.travel_charge),
+    'Materials Description': v.materials_description ?? null,
+    'Materials Cost':        n(v.materials_cost),
+    'Other Charges':         n(v.other_charges),
+    'Invoice Status':        v.invoice_status ?? null,
+    'Payment Status':        v.payment_status ?? null,
+    'Notes':                 v.notes ?? null,
+    'Additional Details':    v.additional_details ?? null,
+    'Time In':               v.time_in ?? null,
+    'Time Out':              v.time_out ?? null,
+    'Techs on site':         (v.tech_ids ?? []).length,
+    'Labor Total':           laborOf(v),
+    'Line Total':            visitAmount(v),
+  };
+}
+
+/** The column names a formula may reference — for the editor to offer. */
+export const FORMULA_COLUMN_NAMES = Object.keys(
+  formulaRow({ tech_ids: [] } as unknown as SiteVisit),
+);

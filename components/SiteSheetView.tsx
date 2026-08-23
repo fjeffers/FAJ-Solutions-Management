@@ -9,8 +9,8 @@
 // Editing is per-cell and saves on blur: a spreadsheet has no Save button, and
 // adding one here would be the sort of thing that loses an afternoon's typing.
 import { Fragment, useMemo, useState } from 'react';
-import { Plus, Trash2, Copy, FileSpreadsheet, ChevronDown, ChevronRight, ArrowUpDown, Layers } from 'lucide-react';
-import type { SiteVisit, SiteVisitType } from '@/lib/types';
+import { Plus, Trash2, Copy, FileSpreadsheet, ChevronDown, ChevronRight, ArrowUpDown, Layers, Sigma, Pencil, X } from 'lucide-react';
+import type { SiteVisit, SiteVisitType, FormulaColumn } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
 import { visitAmount, billableHours, readPricing, writePricing, type RateUnit } from '@/lib/visits';
 import { techsOn, techNames, type Tech } from '@/lib/visit-techs';
@@ -21,9 +21,10 @@ import { copyToClipboard } from '@/lib/export';
 import { toastSuccess, toastError } from '@/lib/toast';
 import { fmtMoney } from '@/lib/utils';
 import {
-  groupVisits, sortVisits, totalsOf, pillFor, groupColor,
-  GROUP_BY_LABEL, type GroupBy, type SortKey, type SortDir,
+  groupVisits, sortVisits, totalsOf, pillFor, groupColor, formulaRow,
+  GROUP_BY_LABEL, FORMULA_COLUMN_NAMES, type GroupBy, type SortKey, type SortDir,
 } from '@/lib/site-board';
+import { runFormula, checkFormula, formatFormulaValue, FUNCTION_NAMES, type FormulaFormat } from '@/lib/formula';
 
 type Col = {
   key: keyof SiteVisit;
@@ -159,9 +160,14 @@ const cell: React.CSSProperties = {
 
 export default function SiteSheetView({
   visits, picked, onTogglePicked, onSave, onDelete, onAdd, techRoster = [],
+  formulaColumns = [], onSaveFormula, onDeleteFormula,
 }: {
   visits: SiteVisit[];
   techRoster?: Tech[];
+  /** Columns Fred defined himself. Computed per row, never stored on the visit. */
+  formulaColumns?: FormulaColumn[];
+  onSaveFormula?: (c: Partial<FormulaColumn>) => Promise<void> | void;
+  onDeleteFormula?: (id: string) => Promise<void> | void;
   picked: Set<string>;
   onTogglePicked: (id: string) => void;
   onSave: (id: string, patch: Partial<SiteVisit>) => Promise<void> | void;
@@ -188,6 +194,29 @@ export default function SiteSheetView({
   );
   const grand = useMemo(() => totalsOf(visits), [visits]);
 
+  // Every formula column, for every row, worked out once. A broken formula
+  // yields an error on its own cell and leaves the rest of the grid alone.
+  const computed = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof runFormula>[]>();
+    if (formulaColumns.length === 0) return m;
+    for (const v of visits) {
+      const row = formulaRow(v);
+      m.set(v.id, formulaColumns.map((c) => runFormula(c.expression, row)));
+    }
+    return m;
+  }, [visits, formulaColumns]);
+
+  /** Money columns total at the foot; a percentage or a label does not. */
+  const formulaTotal = (ci: number) => {
+    if (formulaColumns[ci]?.format !== 'money') return '';
+    let sum = 0;
+    for (const v of visits) {
+      const r = computed.get(v.id)?.[ci];
+      if (r?.ok && typeof r.value === 'number') sum += r.value;
+    }
+    return fmtMoney(Math.round(sum * 100) / 100);
+  };
+
   const toggleGroup = (key: string) => setCollapsed((prev) => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -200,6 +229,8 @@ export default function SiteSheetView({
     setSortKey(key);
     setSortDir('asc');
   };
+
+  const [formulaEditor, setFormulaEditor] = useState<Partial<FormulaColumn> | null>(null);
 
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [pasteRow, setPasteRow] = useState(1505);
@@ -295,6 +326,17 @@ export default function SiteSheetView({
             ))}
           </select>
         </label>
+
+        {onSaveFormula && (
+          <button
+            className="btn btn-ghost"
+            onClick={() => setFormulaEditor({ name: '', expression: '', format: 'number' })}
+            title="Add a column you write yourself — margin, effective hourly rate, anything built from the other columns"
+            style={{ fontSize: 12 }}
+          >
+            <Sigma size={13} /> Formula column
+          </button>
+        )}
 
         {sortKey && (
           <button
@@ -427,6 +469,18 @@ export default function SiteSheetView({
                 Line Total <span style={{ color: 'var(--teal)' }} title="Labor + Mileage + Materials + Other — Master Entry column P">ƒ</span>
                 {sortKey === 'line_total' && <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
               </th>
+              {formulaColumns.map((fc) => (
+                <th key={fc.id} style={{ ...th, minWidth: 118, textAlign: 'right' }}>
+                  <span
+                    title={`${fc.name} = ${fc.expression}`}
+                    style={{ cursor: onSaveFormula ? 'pointer' : 'default' }}
+                    onClick={() => onSaveFormula && setFormulaEditor(fc)}
+                  >
+                    {fc.name} <Sigma size={10} style={{ color: 'var(--teal)' }} />
+                    {onSaveFormula && <Pencil size={9} style={{ marginLeft: 3, color: '#bbb' }} />}
+                  </span>
+                </th>
+              ))}
               <th style={{ ...th, width: 72 }} />
             </tr>
           </thead>
@@ -438,7 +492,7 @@ export default function SiteSheetView({
                 {groupBy !== 'none' && (
                   <tr>
                     <td
-                      colSpan={COLS.length + 4}
+                      colSpan={COLS.length + 4 + formulaColumns.length}
                       onClick={() => toggleGroup(g.key)}
                       style={{
                         position: 'sticky', left: 0,
@@ -542,6 +596,16 @@ export default function SiteSheetView({
                 <td style={{ ...td, textAlign: 'right', padding: '7px 9px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                   {fmtMoney(visitAmount(v))}
                 </td>
+                {formulaColumns.map((fc, ci) => {
+                  const r = computed.get(v.id)?.[ci];
+                  return (
+                    <td key={fc.id} style={{ ...td, textAlign: 'right', padding: '7px 9px', fontVariantNumeric: 'tabular-nums', background: 'rgba(13,115,119,0.03)' }}>
+                      {r?.ok
+                        ? formatFormulaValue(r.value, fc.format)
+                        : <span title={r?.error} style={{ color: '#b91c1c', fontSize: 11, fontWeight: 700 }}>error</span>}
+                    </td>
+                  );
+                })}
                 <td style={{ ...td, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   {/* No header on a single row — you are pasting it under rows
                       that already have one. */}
@@ -562,7 +626,7 @@ export default function SiteSheetView({
             ))}
 
             {visits.length === 0 && (
-              <tr><td colSpan={COLS.length + 4} style={{ padding: 30, textAlign: 'center', color: '#aaa' }}>
+              <tr><td colSpan={COLS.length + 4 + formulaColumns.length} style={{ padding: 30, textAlign: 'center', color: '#aaa' }}>
                 No sites match the current filters.
               </td></tr>
             )}
@@ -587,12 +651,153 @@ export default function SiteSheetView({
                 <td style={{ ...td, borderTop: '2px solid #e5e7eb', textAlign: 'right', padding: '8px 9px', fontWeight: 800, color: 'var(--teal)' }}>
                   {fmtMoney(grand.total)}
                 </td>
+                {formulaColumns.map((fc, ci) => (
+                  <td key={fc.id} style={{ ...td, borderTop: '2px solid #e5e7eb', textAlign: 'right', padding: '8px 9px', fontWeight: 800, color: '#555' }}>
+                    {formulaTotal(ci)}
+                  </td>
+                ))}
                 <td style={{ ...td, borderTop: '2px solid #e5e7eb' }} />
               </tr>
             </tfoot>
           )}
         </table>
       </div>
+
+      {formulaEditor && onSaveFormula && (
+        <FormulaEditor
+          item={formulaEditor}
+          sample={visits[0] ? formulaRow(visits[0]) : null}
+          onSave={async (c) => { await onSaveFormula(c); setFormulaEditor(null); }}
+          onDelete={formulaEditor.id && onDeleteFormula
+            ? async () => { await onDeleteFormula(formulaEditor.id!); setFormulaEditor(null); }
+            : undefined}
+          onClose={() => setFormulaEditor(null)}
+        />
+      )}
     </div>
   );
 }
+
+/**
+ * Writing a formula column.
+ *
+ * The result of the formula against a real row is shown as it is typed, so a
+ * mistake is a message and a preview rather than a column of "error" once it
+ * is saved.
+ */
+function FormulaEditor({
+  item, sample, onSave, onDelete, onClose,
+}: {
+  item: Partial<FormulaColumn>;
+  sample: Record<string, string | number | boolean | null> | null;
+  onSave: (c: Partial<FormulaColumn>) => Promise<void> | void;
+  onDelete?: () => Promise<void> | void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(item.name ?? '');
+  const [expression, setExpression] = useState(item.expression ?? '');
+  const [format, setFormat] = useState<FormulaFormat>((item.format as FormulaFormat) ?? 'number');
+  const [saving, setSaving] = useState(false);
+
+  const check = expression.trim()
+    ? (sample ? runFormula(expression, sample) : checkFormula(expression, FORMULA_COLUMN_NAMES))
+    : null;
+
+  const canSave = name.trim() !== '' && expression.trim() !== '' && (check?.ok ?? false);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+          <div>
+            <div className="display" style={{ fontSize: 10, color: 'var(--teal)', letterSpacing: 2, marginBottom: 4 }}>YOUR OWN COLUMN</div>
+            <h2 className="serif" style={{ fontSize: 22, margin: 0, fontWeight: 600 }}>
+              {item.id ? 'Edit formula column' : 'New formula column'}
+            </h2>
+          </div>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={LBL}>Column heading</label>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Margin, Rate per hour, Unbilled" />
+          </div>
+
+          <div>
+            <label style={LBL}>Formula</label>
+            <textarea
+              className="input"
+              rows={3}
+              value={expression}
+              onChange={(e) => setExpression(e.target.value)}
+              placeholder="{Line Total} / {Hours}"
+              style={{ fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 13 }}
+            />
+            <div style={{ fontSize: 11, color: '#888', marginTop: 5, lineHeight: 1.6 }}>
+              Write a column as <code>{'{Hours}'}</code> or <code>[Hours]</code> — both spellings work.
+            </div>
+          </div>
+
+          {/* What it comes to on a real row, right now. */}
+          {check && (
+            <div style={{
+              fontSize: 12, padding: '9px 12px', borderRadius: 8, lineHeight: 1.6,
+              background: check.ok ? 'rgba(13,115,119,0.07)' : 'rgba(239,68,68,0.08)',
+              color: check.ok ? '#155e5f' : '#b91c1c',
+            }}>
+              {check.ok
+                ? <>On the first row this reads <strong>{formatFormulaValue(check.value, format) || '(blank)'}</strong></>
+                : check.error}
+            </div>
+          )}
+
+          <div>
+            <label style={LBL}>Show as</label>
+            <select className="input" value={format} onChange={(e) => setFormat(e.target.value as FormulaFormat)}>
+              <option value="number">Number</option>
+              <option value="money">Money ($)</option>
+              <option value="percent">Percent (%)</option>
+              <option value="text">Text</option>
+            </select>
+          </div>
+
+          <details>
+            <summary style={{ ...LBL, cursor: 'pointer' }}>Columns and functions you can use</summary>
+            <div style={{ fontSize: 11, color: '#666', lineHeight: 1.8, marginTop: 8 }}>
+              <strong>Columns:</strong> {FORMULA_COLUMN_NAMES.join(' · ')}
+              <br />
+              <strong>Functions:</strong> {FUNCTION_NAMES.join(' · ')}
+            </div>
+          </details>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, paddingTop: 10, borderTop: '1px solid #eee' }}>
+            {onDelete
+              ? <button className="btn btn-ghost" style={{ color: '#b91c1c' }} onClick={onDelete}><Trash2 size={14} /> Delete</button>
+              : <span />}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                disabled={!canSave || saving}
+                style={{ opacity: !canSave || saving ? 0.55 : 1 }}
+                onClick={async () => {
+                  setSaving(true);
+                  await onSave({ ...item, name: name.trim(), expression: expression.trim(), format });
+                  setSaving(false);
+                }}
+              >
+                {saving ? 'Saving…' : item.id ? 'Save column' : 'Add column'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const LBL: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#555',
+  textTransform: 'uppercase', display: 'block', marginBottom: 5,
+};

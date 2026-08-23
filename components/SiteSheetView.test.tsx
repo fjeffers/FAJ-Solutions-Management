@@ -186,6 +186,70 @@ describe('Site Sheet board', () => {
     expect(screen.getByText('No customer')).toBeTruthy();
   });
 
+  // ── Price: the one control the card and the grid must agree on ────────────
+  describe('Price matches the card', () => {
+    it('shows a flat project price, which the old rate box left blank', () => {
+      // Folsom: $2,600 flat. rate is null, the price lives in the numeric column.
+      draw([visit({ id: 'a', rate: null, total_project_price: 2600 })]);
+      expect((screen.getByLabelText('Price amount') as HTMLInputElement).value).toBe('2600');
+      expect((screen.getByLabelText('Price unit') as HTMLSelectElement).value).toBe('flat');
+    });
+
+    it('shows an hourly rate as the amount plus per hour', () => {
+      draw([visit({ id: 'a', rate: '$55/hr', total_project_price: null })]);
+      expect((screen.getByLabelText('Price amount') as HTMLInputElement).value).toBe('55');
+      expect((screen.getByLabelText('Price unit') as HTMLSelectElement).value).toBe('hr');
+    });
+
+    it('typing an amount keeps the unit it already had', async () => {
+      const user = userEvent.setup();
+      const { onSave } = draw([visit({ id: 'a', rate: '$55/hr', total_project_price: null })]);
+      const amount = screen.getByLabelText('Price amount');
+      await user.clear(amount);
+      await user.type(amount, '60');
+      await user.tab();
+      // Still hourly — editing the number must not silently make it a flat $60.
+      expect(onSave).toHaveBeenCalledWith('a', { rate: '$60/hr', total_project_price: null });
+    });
+
+    it('re-pricing a flat job clears the project price instead of leaving it to win', async () => {
+      const user = userEvent.setup();
+      const { onSave } = draw([visit({ id: 'a', rate: null, total_project_price: 2600 })]);
+      await user.selectOptions(screen.getByLabelText('Price unit'), 'hr');
+      // This was the bug: total_project_price outranks rate, so unless it is
+      // cleared the visit keeps billing 2600 whatever the rate says.
+      expect(onSave).toHaveBeenCalledWith('a', { rate: '$2600/hr', total_project_price: null });
+    });
+
+    it('switching to flat moves the amount into the project price', async () => {
+      const user = userEvent.setup();
+      const { onSave } = draw([visit({ id: 'a', rate: '$55/hr', total_project_price: null })]);
+      await user.selectOptions(screen.getByLabelText('Price unit'), 'flat');
+      expect(onSave).toHaveBeenCalledWith('a', { rate: null, total_project_price: 55 });
+    });
+
+    it('clearing the amount clears both columns, leaving no stale price', async () => {
+      const user = userEvent.setup();
+      const { onSave } = draw([visit({ id: 'a', rate: '$55/hr', total_project_price: null })]);
+      await user.clear(screen.getByLabelText('Price amount'));
+      await user.tab();
+      expect(onSave).toHaveBeenCalledWith('a', { rate: null, total_project_price: null });
+    });
+
+    it('does not save when the amount is left exactly as it was', async () => {
+      const user = userEvent.setup();
+      const { onSave } = draw([visit({ id: 'a', rate: '$55/hr' })]);
+      await user.click(screen.getByLabelText('Price amount'));
+      await user.tab();
+      expect(onSave).not.toHaveBeenCalled();
+    });
+
+    it('a flat-priced visit totals its fee, not fee x hours', () => {
+      draw([visit({ id: 'a', hours: 6.73, rate: null, total_project_price: 2600, travel_charge: 80.9 })]);
+      expect(screen.getAllByText('$2,680.90').length).toBeGreaterThan(0);
+    });
+  });
+
   it('counts the visits in each group heading', async () => {
     const user = userEvent.setup();
     draw([

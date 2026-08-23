@@ -12,7 +12,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { Plus, Trash2, Copy, FileSpreadsheet, ChevronDown, ChevronRight, ArrowUpDown, Layers } from 'lucide-react';
 import type { SiteVisit, SiteVisitType } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitAmount, billableHours } from '@/lib/visits';
+import { visitAmount, billableHours, readPricing, writePricing, type RateUnit } from '@/lib/visits';
 import { techsOn, techNames, type Tech } from '@/lib/visit-techs';
 import { laborOf, sheetRow, sheetHeader, STATUS_LABEL } from '@/lib/site-sheet';
 import { toTSV } from '@/lib/csv';
@@ -29,7 +29,7 @@ type Col = {
   key: keyof SiteVisit;
   label: string;
   width: number;
-  type?: 'text' | 'number' | 'date' | 'time' | 'select';
+  type?: 'text' | 'number' | 'date' | 'time' | 'select' | 'pricing';
   options?: readonly string[];
   step?: string;
   /** Shown but not editable in the grid — edit it in the card view instead. */
@@ -57,7 +57,11 @@ const COLS: Col[] = [
   { key: 'client_summary',        label: 'Scope of Work',         width: 260 },                      // E
   { key: 'visit_type',            label: 'Work Type',             width: 112, type: 'select', options: SITE_VISIT_TYPES }, // F
   { key: 'hours',                 label: 'Hours',                 width: 84,  type: 'number', step: '0.25' },  // G
-  { key: 'rate',                  label: 'Labor Rate',            width: 100 },                      // H
+  // Called Price here and on the card, because it is one decision — an amount
+  // plus a unit — not two competing columns. It writes rate AND
+  // total_project_price through writePricing, the same as the card does, so
+  // the two views can never disagree about what a visit bills.
+  { key: 'rate',                  label: 'Price',                 width: 168, type: 'pricing' },     // H
   { key: 'miles',                 label: 'Mileage/Distance',      width: 116, type: 'number', step: '0.1' },   // J
   { key: 'travel_charge',         label: 'Mileage Total',         width: 110, type: 'number', step: '0.01' },  // L
   { key: 'materials_description', label: 'Materials Description', width: 220 },                      // M
@@ -73,6 +77,54 @@ const COLS: Col[] = [
   // Change it by opening the visit in the card view.
   { key: 'tech_ids',              label: 'Techs on site',         width: 180, readOnly: true },      // app only
 ];
+
+/**
+ * The Price cell: an amount and a unit, exactly as the visit card presents it.
+ *
+ * The amount is held as raw text while it is being typed and written through on
+ * blur. Re-deriving it from storage on every keystroke is what previously ate
+ * the decimal point — "55." stores as "$55./hr", which reads back as "55".
+ */
+function PricingCell({
+  visit, editingValue, onEdit, onCommit, onCancel, onUnit,
+}: {
+  visit: SiteVisit;
+  editingValue: string | null;
+  onEdit: (text: string) => void;
+  onCommit: () => void | Promise<void>;
+  onCancel: () => void;
+  onUnit: (unit: RateUnit) => void;
+}) {
+  const { amount, unit } = readPricing(visit);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 4px' }}>
+      <span style={{ color: '#aaa', fontSize: 12 }}>$</span>
+      <input
+        aria-label="Price amount"
+        type="number"
+        step="0.01"
+        value={editingValue ?? amount}
+        onChange={(e) => onEdit(e.target.value)}
+        onFocus={() => onEdit(amount)}
+        onBlur={onCommit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') onCancel();
+        }}
+        style={{ ...cell, width: 74, padding: '7px 2px' }}
+      />
+      <select
+        aria-label="Price unit"
+        value={unit}
+        onChange={(e) => onUnit(e.target.value as RateUnit)}
+        style={{ ...cell, width: 74, padding: '7px 2px', fontSize: 11, color: '#666', cursor: 'pointer' }}
+      >
+        <option value="hr">per hour</option>
+        <option value="flat">flat</option>
+      </select>
+    </div>
+  );
+}
 
 /** datetime-local wants local time; the column stores an ISO instant. */
 function toLocal(iso: string | null | undefined): string {
@@ -160,6 +212,16 @@ export default function SiteSheetView({
     const col = COLS.find((c) => c.key === key);
     const row = visits.find((v) => v.id === id);
     if (!col || !row) return;
+
+    // Price is an amount plus a unit. Typing the amount keeps whatever unit the
+    // visit already has, so editing "$55/hr" to 60 stays hourly rather than
+    // silently becoming a flat $60.
+    if (col.type === 'pricing') {
+      const { amount, unit } = readPricing(row);
+      if (value.trim() === amount) return;
+      await onSave(id, writePricing(value, unit));
+      return;
+    }
 
     let next: unknown = value.trim() === '' ? null : value.trim();
     if (col.type === 'number') next = value.trim() === '' ? null : Number(value);
@@ -425,6 +487,15 @@ export default function SiteSheetView({
                         >
                           {c.key === 'tech_ids' ? (techNames(techsOn(v, techRoster)) || '—') : (shown || '—')}
                         </span>
+                      ) : c.type === 'pricing' ? (
+                        <PricingCell
+                          visit={v}
+                          editingValue={isEditing ? editing.value : null}
+                          onEdit={(text) => setEditing({ id: v.id, key: 'rate', value: text })}
+                          onCommit={commit}
+                          onCancel={() => setEditing(null)}
+                          onUnit={(unit) => void onSave(v.id, writePricing(readPricing(v).amount, unit))}
+                        />
                       ) : c.type === 'select' ? (
                         // Still a real select — one click to change — but wearing
                         // the status colour, so a screen of rows reads at a glance.

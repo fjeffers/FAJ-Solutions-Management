@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
 
 // total_project_price is required on SiteVisit, so it belongs in the shared
 // fixture — individual cases override it when the price is the thing under test.
@@ -412,5 +412,77 @@ describe('visitInvoiceLines', () => {
   it('names materials plainly when no description was typed', () => {
     const lines = visitInvoiceLines({ ...site, hours: 2, rate: '$55/hr', travel_charge: null, materials_cost: 75 });
     expect(lines[1].description).toBe('Roselle #5798 — materials');
+  });
+});
+
+describe('workOrderMoneyFromVisit', () => {
+  const site = { ...base, site_name: 'Hillside', site_code: '1331' };
+
+  it('carries the travel across as a mileage log, not just into the total', () => {
+    // The Hillside job Fred converted: 2h @ $55 plus 106.7 miles / $58.70.
+    // The work order used to read "2 hours at $55" and lose the rest.
+    const wo = workOrderMoneyFromVisit(
+      { ...site, hours: 2, rate: '$55/hr', miles: 106.7, travel_charge: 58.7 },
+      'Frederick Jeffers',
+    );
+    expect(wo.total_amount).toBe(168.7);
+    expect(wo.hours_worked).toBe(2);
+    expect(wo.hourly_rate).toBe(55);
+    expect(wo.mileage_logs).toHaveLength(1);
+    expect(wo.mileage_logs[0]).toMatchObject({ contractor_name: 'Frederick Jeffers', miles: 106.7 });
+    // The logged rate must reproduce the charge that was actually made.
+    expect(wo.mileage_logs[0].miles * wo.mileage_logs[0].rate).toBeCloseTo(58.7, 2);
+  });
+
+  it('adds up: labour + mileage + materials + other equals the work order total', () => {
+    const v = {
+      ...site, hours: 2, rate: '$55/hr', miles: 100, travel_charge: 50,
+      materials_cost: 120, other_charges: 40, materials_description: 'CAT6',
+    };
+    const wo = workOrderMoneyFromVisit(v, 'Frederick Jeffers');
+    const labour = (wo.hours_worked ?? 0) * (wo.hourly_rate ?? 0);
+    const mileage = wo.mileage_logs.reduce((s, m) => s + m.miles * m.rate, 0);
+    const mats = wo.materials_used.reduce((s, m) => s + m.quantity * (m.unit_cost ?? 0), 0);
+    expect(Math.round((labour + mileage + mats + 40) * 100) / 100).toBe(wo.total_amount);
+  });
+
+  it('carries materials with the description typed on the visit', () => {
+    const wo = workOrderMoneyFromVisit(
+      { ...site, hours: 2, rate: '$55/hr', travel_charge: null, materials_cost: 120, materials_description: 'CAT6 + faceplates' },
+      'Frederick Jeffers',
+    );
+    expect(wo.materials_used[0]).toMatchObject({ name: 'CAT6 + faceplates', quantity: 1, unit_cost: 120 });
+  });
+
+  it('spells out other charges rather than folding them in silently', () => {
+    const wo = workOrderMoneyFromVisit(
+      { ...site, hours: 2, rate: '$55/hr', travel_charge: null, other_charges: 40 },
+      'Frederick Jeffers',
+    );
+    expect(wo.other_charges_note).toContain('40.00');
+  });
+
+  it('a flat-priced job is Fixed, with no hourly rate to contradict it', () => {
+    const wo = workOrderMoneyFromVisit(
+      { ...site, hours: null, rate: null, total_project_price: 2600, travel_charge: 80.9 },
+      'Frederick Jeffers',
+    );
+    expect(wo.pay_type).toBe('Fixed');
+    expect(wo.hourly_rate).toBe(null);
+    expect(wo.hours_worked).toBe(null);
+    expect(wo.total_amount).toBe(2680.9);
+  });
+
+  it('adds no empty rows when there was no travel or materials', () => {
+    const wo = workOrderMoneyFromVisit({ ...site, hours: 2, rate: '$55/hr', travel_charge: 0 }, 'F');
+    expect(wo.mileage_logs).toHaveLength(0);
+    expect(wo.materials_used).toHaveLength(0);
+    expect(wo.other_charges_note).toBe(null);
+  });
+
+  it('still records a travel charge that has no mileage behind it', () => {
+    const wo = workOrderMoneyFromVisit({ ...site, hours: 2, rate: '$55/hr', miles: null, travel_charge: 25 }, 'F');
+    expect(wo.mileage_logs[0].rate).toBe(25);
+    expect(wo.mileage_logs[0].miles).toBe(0);
   });
 });

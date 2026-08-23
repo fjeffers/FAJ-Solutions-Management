@@ -2,7 +2,7 @@
 // The visit's rate is free text ("$55/hr", "2600", "$250 flat rate"), so we
 // parse: hourly rates bill hours x rate, anything else numeric bills flat,
 // unparseable leaves rate 0 for the user to price in the invoice editor.
-import type { SiteVisit } from './types';
+import type { SiteVisit, MileageLog, MaterialUsed } from './types';
 
 export type VisitLine = { description: string; quantity: number; rate: number };
 
@@ -321,4 +321,68 @@ export function visitInvoiceLines(
 /** What those lines come to — equal to visitAmount, by construction. */
 export function visitInvoiceTotal(lines: VisitLine[]): number {
   return Math.round(lines.reduce((s, l) => s + l.quantity * l.rate, 0) * 100) / 100;
+}
+
+/**
+ * What a visit carries onto the work order it becomes.
+ *
+ * The conversion used to send only the labour: hours, rate and a total_amount.
+ * So a visit worth $168.70 arrived as a work order reading "2 hours at $55" —
+ * $110 — with the other $58.70 of travel buried in the total and nothing on the
+ * job to explain it. Materials and other charges vanished the same way.
+ *
+ * Every part of the visit's money now lands somewhere the work order can show:
+ * mileage as a mileage log, materials as a material line, and anything left in
+ * "other charges" spelled out in the description rather than silently folded in.
+ */
+export function workOrderMoneyFromVisit(
+  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price'>
+    & Partial<Pick<SiteVisit, 'miles' | 'materials_cost' | 'other_charges' | 'materials_description'>>,
+  contractorName: string,
+): {
+  total_amount: number;
+  pay_type: 'Hourly' | 'Fixed';
+  hourly_rate: number | null;
+  hours_worked: number | null;
+  mileage_logs: MileageLog[];
+  materials_used: MaterialUsed[];
+  other_charges_note: string | null;
+} {
+  const hourly = (v.rate ?? '').match(/\$?\s*(\d+(?:\.\d+)?)\s*\/\s*h/i);
+  const travel = Number(v.travel_charge ?? 0);
+  const miles = Number(v.miles ?? 0);
+  const materials = Number(v.materials_cost ?? 0);
+  const other = Number(v.other_charges ?? 0);
+
+  const mileage_logs: MileageLog[] = travel
+    ? [{
+        id: `sv-mileage`,
+        contractor_name: contractorName,
+        miles: miles || 0,
+        // Derive the per-mile rate from what was actually charged, so the log
+        // reproduces the travel charge instead of a default that would not.
+        rate: miles > 0 ? Math.round((travel / miles) * 10000) / 10000 : travel,
+        note: miles > 0 ? 'Round trip, from the site visit' : 'Travel charge, from the site visit',
+      }]
+    : [];
+
+  const materials_used: MaterialUsed[] = materials
+    ? [{
+        id: `sv-materials`,
+        material_id: null,
+        name: v.materials_description?.trim() || 'Materials',
+        quantity: 1,
+        unit_cost: materials,
+      }]
+    : [];
+
+  return {
+    total_amount: visitAmount(v),
+    pay_type: hourly ? 'Hourly' : 'Fixed',
+    hourly_rate: hourly ? Number(hourly[1]) : null,
+    hours_worked: hourly ? (v.hours ?? null) : null,
+    mileage_logs,
+    materials_used,
+    other_charges_note: other ? `Other charges: ${other.toFixed(2)}` : null,
+  };
 }

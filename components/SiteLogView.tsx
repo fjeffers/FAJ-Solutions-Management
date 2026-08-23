@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession, FormulaColumn } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal } from '@/lib/visits';
+import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { laborOf } from '@/lib/site-sheet';
 import { deriveTimesAndHours } from '@/lib/visit-sync';
@@ -613,7 +613,10 @@ export default function SiteLogView() {
     const nextWo = String((nums.length ? Math.max(...nums) : 1000) + 1);
 
     const addr = extractWorkOrderFields(v.address ?? '');
-    const hourly = (v.rate ?? '').match(/\$?\s*(\d+(?:\.\d+)?)\s*\/\s*h/i);
+    const crew = techNames(techsOn(v, contractors));
+    // Every part of the visit's money, each landing somewhere the work order
+    // can actually show it.
+    const money = workOrderMoneyFromVisit(v, crew || 'Unassigned');
 
     const { data: created, error } = await supabase.from('work_orders').insert({
       user_id: user.id,
@@ -634,10 +637,14 @@ export default function SiteLogView() {
       site_state: addr.site_state ?? null,
       site_zip: addr.site_zip ?? null,
       start_date: v.visit_date ?? null,
-      total_amount: amount,
-      pay_type: hourly ? 'Hourly' : 'Fixed',
-      hourly_rate: hourly ? Number(hourly[1]) : null,
-      hours_worked: hourly ? (v.hours ?? null) : null,
+      total_amount: money.total_amount,
+      pay_type: money.pay_type,
+      hourly_rate: money.hourly_rate,
+      hours_worked: money.hours_worked,
+      // Travel and materials used to be dropped, so the job showed labour only
+      // while the total said something larger.
+      mileage_logs: money.mileage_logs,
+      materials_used: money.materials_used,
       wo_status: 'Open',
       source_platform: 'Internal',
       assignment_type: 'Internal',

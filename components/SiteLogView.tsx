@@ -16,6 +16,7 @@ import { fmtMoney } from '@/lib/utils';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { roundTripMiles } from '@/lib/driving';
 import { buildStatementRows, statementMatrix, statementTotal } from '@/lib/site-statement';
+import { siteLabel } from '@/lib/maintenance';
 import { downloadXLSX, downloadCSVText } from '@/lib/export';
 import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
@@ -938,6 +939,14 @@ export default function SiteLogView() {
                       <span style={{ fontWeight: 800, fontSize: 15 }}>
                         {v.visit_date ? fmtShortDate(v.visit_date) : 'Date TBD'}
                       </span>
+                      {/* Which site this is. The site was only ever in the
+                          group heading above, so a card on its own — and the
+                          dialog opened from it — did not say where it was. */}
+                      {(v.site_name || v.site_code) && (
+                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--teal)' }}>
+                          {siteLabel(v)}
+                        </span>
+                      )}
                       <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color }}>{v.visit_type}</span>
                       <div style={{ flex: 1 }} />
                       {(() => {
@@ -1113,7 +1122,9 @@ export default function SiteLogView() {
       {/* Full edit modal */}
       {editing && (
         <VisitModal
-          title={editing.id ? 'Edit Visit' : 'Add Visit'}
+          title={editing.id
+            ? `Edit Visit${editing.site_name || editing.site_code ? ` — ${siteLabel(editing)}` : ''}`
+            : 'Add Visit'}
           item={editing}
           programs={programs}
           contractors={contractors}

@@ -150,8 +150,13 @@ export function markDone(
   return { last_done_on: doneOn, next_due_on: addDays(doneOn, plan.interval_days) };
 }
 
-/** How a site is named on screen and on a visit raised from a task. */
-export function siteLabel(x: Pick<MaintenancePlan, 'site_code' | 'site_name'> | Pick<Asset, 'site_code' | 'site_name'>): string {
+/**
+ * How a site is named on screen: "Hillside #1331".
+ *
+ * Anything carrying a site code and name uses this — plans, assets and visits —
+ * so a site is never called one thing on one screen and another elsewhere.
+ */
+export function siteLabel(x: { site_code?: string | null; site_name?: string | null }): string {
   const code = x.site_code?.trim();
   const name = x.site_name?.trim();
   if (code && name) return `${name} #${code}`;

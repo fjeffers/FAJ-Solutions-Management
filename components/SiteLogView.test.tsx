@@ -60,14 +60,16 @@ afterEach(cleanup);
 /** Render the list and wait for the one visit to arrive. */
 async function showList() {
   render(<SiteLogView />);
-  await screen.findByText(/Hillside 1331/, {}, { timeout: 3000 });
+  // The site now appears on the group heading AND on the card itself, so this
+  // deliberately does not insist on a single match.
+  await screen.findAllByText(/Hillside 1331/, {}, { timeout: 3000 });
 }
 
 /** Open the Edit Visit dialog by clicking the visit's row. */
 async function openVisit(user: ReturnType<typeof userEvent.setup>) {
   await showList();
   await user.click(screen.getByText('8/21/26'));
-  await screen.findByText('Edit Visit', {}, { timeout: 3000 });
+  await screen.findByText(/^Edit Visit/, {}, { timeout: 3000 });
 }
 
 const timeInputs = () =>
@@ -188,6 +190,19 @@ describe('Site Log visit editor', () => {
     ]) {
       expect(labels.some((l) => l.includes(needed))).toBe(true);
     }
+  });
+
+  it('names the site on the card, so a card says where it is on its own', async () => {
+    await showList();
+    // The site used to appear only on the group heading above the cards.
+    const card = screen.getByText('8/21/26').closest('.card') as HTMLElement;
+    expect(card.textContent).toContain('Hillside 1331');
+  });
+
+  it('names the site in the dialog title, so you can see what you are editing', async () => {
+    const user = userEvent.setup();
+    await openVisit(user);
+    expect(screen.getByText(/^Edit Visit — Hillside 1331/)).toBeTruthy();
   });
 
   it('lets materials be typed and adds them to the total', async () => {

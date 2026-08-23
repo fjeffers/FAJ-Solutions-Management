@@ -29,7 +29,7 @@ const VISIT = {
 const PROJECT_VISIT = {
   ...VISIT, id: 'v2', site_name: 'Folsom 397', site_code: '397',
   // Its own date, so tests that click a date still find exactly one.
-  visit_date: '2026-07-22',
+  visit_date: '2026-07-22', work_order_id: 'wo-1',
   visit_type: 'Project', hours: null, rate: null, total_project_price: 2600,
 };
 
@@ -44,7 +44,8 @@ const ARCHIVED_VISIT = {
 function makeClient() {
   const result = (data: unknown) => Promise.resolve({ data, error: null });
   const table = (name: string) => {
-    const rows = name === 'site_visits' ? [VISIT, PROJECT_VISIT, ARCHIVED_VISIT]
+    const rows = name === 'work_orders' ? [{ id: 'wo-1', wo_number: '19101348' }]
+      : name === 'site_visits' ? [VISIT, PROJECT_VISIT, ARCHIVED_VISIT]
       : name === 'contractors' ? [{ id: 'c1', name: 'Frederick Jeffers' }] : [];
     const single = name === 'user_settings'
       ? { home_base_address: '1820 Dayton Dr', mileage_rate: 0.55, default_hourly_rate: 55 } : null;
@@ -209,6 +210,14 @@ describe('Site Log visit editor', () => {
     ]) {
       expect(labels.some((l) => l.includes(needed))).toBe(true);
     }
+  });
+
+  it('names the work order a visit became, and links to it', async () => {
+    await showList();
+    const link = screen.getByTitle('Open this work order') as HTMLAnchorElement;
+    // It used to be a dead badge reading "HAS WORK ORDER" — no number, no way there.
+    expect(link.textContent).toContain('WO #19101348');
+    expect(link.getAttribute('href')).toBe('/?view=workorders&wo=19101348');
   });
 
   it('keeps archived work off the board until it is asked for', async () => {

@@ -53,6 +53,12 @@ const VIEWS = [
 ] as const;
 type View = (typeof VIEWS)[number];
 
+/** ?wo=19101348 — a Site Log card linking straight to its work order. */
+function woFromUrlParam(): string {
+  if (typeof window === 'undefined') return '';
+  return new URLSearchParams(window.location.search).get('wo') ?? '';
+}
+
 function viewFromUrl(): View {
   if (typeof window === 'undefined') return 'dashboard';
   const v = new URLSearchParams(window.location.search).get('view');
@@ -139,6 +145,9 @@ export default function HomePage() {
   // Dropdown-style nav: one section open at a time; the section holding the
   // current view opens automatically, clicking a header toggles it.
   const [openSection, setOpenSection] = useState<string | null>(() => SECTION_OF_VIEW[viewFromUrl()]);
+  // Read once on mount: the board should open on the linked work order, but
+  // must not keep re-filtering itself as the user then searches for something else.
+  const [woFromUrl] = useState<string>(() => woFromUrlParam());
   const sectionOpen = (k: string) => openSection === k;
   const toggleSection = (k: string) => setOpenSection((prev) => (prev === k ? null : k));
   const [selectedContractor, setSelectedContractor] = useState<string | null>(null);
@@ -1234,6 +1243,7 @@ export default function HomePage() {
         )}
         {view === 'workorders' && (
           <WorkOrdersView
+            initialSearch={woFromUrl}
             workOrders={enrichedWOs}
             stats={stats}
             contractors={contractors}

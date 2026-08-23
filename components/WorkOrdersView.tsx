@@ -28,9 +28,12 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 
 export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
+  initialSearch = '',
   onArchive, onUnarchive, onCloseJob,
 }: {
   workOrders: EnrichedWorkOrder[];
+  /** Pre-fill the search, so a link can point at one work order. */
+  initialSearch?: string;
   stats: Stats;
   onAdd: () => void;
   onAddFromAI: (fields: Partial<WorkOrder>) => void;
@@ -45,7 +48,9 @@ export default function WorkOrdersView({
   onCloseJob: (w: EnrichedWorkOrder) => void;
 }) {
   const [aiOpen, setAiOpen] = useState(false);
-  const [search, setSearch] = useState('');
+  // Arriving from a Site Log card's "WO #… →" link, the board opens already
+  // looking at that work order rather than at a list to hunt through.
+  const [search, setSearch] = useState(initialSearch);
   // FieldNation-style board: active jobs move through status tabs; Closed is
   // its own tab at the end (our archived jobs) instead of a separate toggle.
   const [woStatusFilter, setWoStatusFilter] = useState<'all' | 'closed' | WorkOrderStatus>('all');

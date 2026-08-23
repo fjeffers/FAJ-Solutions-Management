@@ -111,6 +111,8 @@ export default function SiteLogView() {
   // async work that created the invoice.
   const [emailing, setEmailing] = useState<{ payload: EmailPayload; invoiceId: string } | null>(null);
   const [formulaColumns, setFormulaColumns] = useState<FormulaColumn[]>([]);
+  /** work_order_id -> WO number, so a visit can say WHICH work order it became. */
+  const [woNumbers, setWoNumbers] = useState<Record<string, string>>({});
   useEffect(() => {
     setSheetMode(localStorage.getItem('sitelog-sheet') === '1');
   }, []);
@@ -201,7 +203,7 @@ export default function SiteLogView() {
   };
 
   const load = async () => {
-    const [vRes, sRes, pRes, cRes, fRes] = await Promise.all([
+    const [vRes, sRes, pRes, cRes, fRes, wRes] = await Promise.all([
       supabase.from('site_visits').select('*')
         .order('visit_date', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false }),
@@ -210,11 +212,17 @@ export default function SiteLogView() {
       supabase.from('contractors').select('id, name').order('name'),
       supabase.from('formula_columns').select('*')
         .eq('applies_to', 'site_visits').order('position').order('created_at'),
+      supabase.from('work_orders').select('id, wo_number'),
     ]);
     if (vRes.error) toastError("Couldn't load the site log. Check your connection and refresh.");
     if (vRes.data) setVisits(vRes.data as SiteVisit[]);
     if (cRes.data) setContractors(cRes.data as { id: string; name: string }[]);
     if (fRes.data) setFormulaColumns(fRes.data as FormulaColumn[]);
+    if (wRes.data) {
+      const m: Record<string, string> = {};
+      for (const w of wRes.data as { id: string; wo_number: string }[]) m[w.id] = w.wo_number;
+      setWoNumbers(m);
+    }
     setHomeBase((sRes.data?.home_base_address as string | null) ?? '');
     setMileageRate(Number(sRes.data?.mileage_rate ?? 0.7));
     setDefaultHourlyRate(Number(sRes.data?.default_hourly_rate ?? 55));
@@ -1168,9 +1176,18 @@ export default function SiteLogView() {
                         </button>
                       )}
                       {v.work_order_id ? (
-                        <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                          <Briefcase size={10} /> HAS WORK ORDER
-                        </span>
+                        // Naming the work order and linking to it. This used to be
+                        // a dead badge, so a visit told you a work order existed
+                        // and then gave you no way to reach it or say which.
+                        <a
+                          href={`/?view=workorders&wo=${encodeURIComponent(woNumbers[v.work_order_id] ?? '')}`}
+                          onClick={(e) => e.stopPropagation()}
+                          title="Open this work order"
+                          style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', gap: 3, textDecoration: 'none' }}
+                        >
+                          <Briefcase size={10} />
+                          {woNumbers[v.work_order_id] ? `WO #${woNumbers[v.work_order_id]} →` : 'HAS WORK ORDER →'}
+                        </a>
                       ) : (
                         <button
                           title="Create a work order from this visit"

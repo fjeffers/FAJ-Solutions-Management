@@ -281,3 +281,44 @@ export function deriveSiteName(
   }
   return (fallback ?? '').trim() || null;
 }
+
+/**
+ * Every billable line a visit produces: labour, travel, materials, other.
+ *
+ * visitAmount has always counted all four, but the invoice builder only wrote
+ * labour and travel — so a visit with materials showed one total on screen and
+ * billed a smaller one. These are the same four parts, in one place, and
+ * visitInvoiceTotal is their sum, so an invoice raised from a visit cannot
+ * come to less than the visit says it is worth.
+ */
+export function visitInvoiceLines(
+  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price'>
+    & Partial<Pick<SiteVisit, 'materials_cost' | 'other_charges' | 'materials_description'>>,
+): VisitLine[] {
+  const site = [v.site_name, v.site_code ? `#${v.site_code}` : null].filter(Boolean).join(' ') || 'Site';
+  const lines: VisitLine[] = [visitLineItem(v)];
+
+  const extra = (amount: number | null | undefined, description: string) => {
+    const n = Number(amount ?? 0);
+    // Zero is not a line. A $0.00 row on a client's invoice invites a question
+    // with no useful answer.
+    if (!n) return;
+    lines.push({ description, quantity: 1, rate: n });
+  };
+
+  extra(v.travel_charge, `${site} — travel charge`);
+  extra(
+    v.materials_cost,
+    v.materials_description?.trim()
+      ? `${site} — materials: ${v.materials_description.trim()}`
+      : `${site} — materials`,
+  );
+  extra(v.other_charges, `${site} — other charges`);
+
+  return lines;
+}
+
+/** What those lines come to — equal to visitAmount, by construction. */
+export function visitInvoiceTotal(lines: VisitLine[]): number {
+  return Math.round(lines.reduce((s, l) => s + l.quantity * l.rate, 0) * 100) / 100;
+}

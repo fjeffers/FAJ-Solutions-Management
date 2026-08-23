@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS } from '@/lib/visits';
+import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { laborOf } from '@/lib/site-sheet';
 import { deriveTimesAndHours } from '@/lib/visit-sync';
@@ -19,6 +19,7 @@ import { buildStatementRows, statementMatrix, statementTotal } from '@/lib/site-
 import { downloadXLSX, downloadCSVText } from '@/lib/export';
 import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
+import EmailModal, { type EmailPayload } from './EmailModal';
 import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
@@ -98,6 +99,10 @@ export default function SiteLogView() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** Cards on a phone, grid at a desk. Remembered so it doesn't reset each visit. */
   const [sheetMode, setSheetMode] = useState(false);
+  // Billing without leaving the Site Log: the draft is raised, then the email
+  // to the client opens on top of it. Held here so the modal outlives the
+  // async work that created the invoice.
+  const [emailing, setEmailing] = useState<{ payload: EmailPayload; invoiceId: string } | null>(null);
   useEffect(() => {
     setSheetMode(localStorage.getItem('sitelog-sheet') === '1');
   }, []);
@@ -556,15 +561,14 @@ export default function SiteLogView() {
   const invoiceVisits = async () => {
     const targets = filtered.filter((v) => v.invoice_status === 'not_invoiced');
     if (targets.length === 0) { toastError('No uninvoiced visits in the current view — adjust the filters.'); return; }
-    const line_items: { id: string; description: string; quantity: number; rate: number }[] = [];
-    for (const v of targets) {
-      const li = visitLineItem(v);
-      line_items.push({ id: `sv-${v.id}`, ...li });
-      if (v.travel_charge) {
-        line_items.push({ id: `svt-${v.id}`, description: `${v.site_name || v.site_code || 'Site'} — travel charge`, quantity: 1, rate: v.travel_charge });
-      }
-    }
-    const subtotal = Math.round(line_items.reduce((s, li) => s + li.quantity * li.rate, 0) * 100) / 100;
+    // Labour, travel, materials and other charges all come from one builder,
+    // so the invoice cannot come to less than the visits say they are worth.
+    // It used to write only labour and travel, which silently under-billed any
+    // visit carrying materials.
+    const line_items = targets.flatMap((v) =>
+      visitInvoiceLines(v).map((li, i) => ({ id: `sv-${v.id}-${i}`, ...li })),
+    );
+    const subtotal = visitInvoiceTotal(line_items);
     const client = programFilter ?? targets[0].program ?? null;
     if (!confirm(`Create a draft invoice${client ? ` for ${client}` : ''} from ${targets.length} uninvoiced visit${targets.length !== 1 ? 's' : ''} (subtotal $${subtotal.toFixed(2)})? They'll be marked Invoiced.`)) return;
     const { data: { user } } = await supabase.auth.getUser();
@@ -578,20 +582,51 @@ export default function SiteLogView() {
       .map((n) => parseInt(n.split('-')[2] ?? '0', 10))
       .filter((n) => !isNaN(n));
     const invoice_number = `INV-${year}-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0')}`;
-    const { error } = await supabase.from('invoices').insert({
+    // The client's billing address and terms live on the customer record, so
+    // the email is addressed and dated without retyping either.
+    const { data: cust } = client
+      ? await supabase.from('customers').select('billing_email, payment_terms').ilike('name', client).maybeSingle()
+      : { data: null };
+    const termDays = Number((cust as { payment_terms?: unknown } | null)?.payment_terms);
+    const due_date = Number.isFinite(termDays) && termDays > 0
+      ? new Date(Date.now() + termDays * 86_400_000).toISOString().slice(0, 10)
+      : null;
+
+    const { data: created, error } = await supabase.from('invoices').insert({
       user_id: user.id, invoice_number, client_name: client,
+      client_email: (cust as { billing_email?: string | null } | null)?.billing_email ?? null,
       title: `Site visits — ${client ?? 'field work'}`,
       description: `Generated from the Site Log (${targets.length} visit${targets.length !== 1 ? 's' : ''}).`,
       line_items, subtotal, tax_rate: 0, tax_amount: 0, total: subtotal, status: 'draft',
-    });
-    if (error) { setInvoicing(false); toastError(`Couldn't create invoice: ${error.message}`); return; }
+      due_date,
+    }).select('*').single();
+    if (error || !created) { setInvoicing(false); toastError(`Couldn't create invoice: ${error?.message ?? 'unknown error'}`); return; }
     const upd = await supabase.from('site_visits')
       .update({ invoice_status: 'invoiced', updated_at: new Date().toISOString() })
       .in('id', targets.map((t) => t.id));
     setInvoicing(false);
     if (upd.error) toastError(`Invoice created but marking visits failed: ${upd.error.message}`);
-    else toastSuccess(`Draft ${invoice_number} created (${line_items.length} lines) — review it in Invoices`);
+    else toastSuccess(`Draft ${invoice_number} created (${line_items.length} lines)`);
     await load();
+
+    // Straight into the email rather than sending Fred to another screen. A
+    // draft that needs a second trip to be sent is how both July invoices ended
+    // up a month old and unsent.
+    const token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+    await supabase.from('invoices')
+      .update({ share_token: token, updated_at: new Date().toISOString() }).eq('id', created.id);
+    setEmailing({
+      invoiceId: created.id,
+      payload: {
+        type: 'invoice',
+        to: created.client_email ?? '',
+        subject: `Invoice ${invoice_number} from FAJ Solutions${client ? ` — ${client}` : ''}`,
+        data: {
+          invoice: { ...created, share_token: token },
+          shareUrl: `${window.location.origin}/invoice/${token}`,
+        },
+      },
+    });
   };
 
   if (loading) {
@@ -1047,6 +1082,19 @@ export default function SiteLogView() {
           onSave={saveVisit}
           onDelete={editing.id ? () => deleteVisit(editing as SiteVisit) : undefined}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {/* Raised the draft, now send it — without a trip to the Invoices screen. */}
+      {emailing && (
+        <EmailModal
+          payload={emailing.payload}
+          onSent={async () => {
+            await supabase.from('invoices')
+              .update({ status: 'sent', sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+              .eq('id', emailing.invoiceId);
+            toastSuccess('Invoice sent — it now shows as Sent on the Invoices screen');
+          }}
+          onClose={() => setEmailing(null)}
         />
       )}
     </div>

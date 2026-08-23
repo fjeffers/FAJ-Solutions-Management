@@ -72,3 +72,33 @@ describe('client statement', () => {
     expect(rows.map((r) => r.date)).toEqual(['2026-06-01', '2026-07-01']);
   });
 });
+
+describe('the columns add up to the bottom line', () => {
+  it('carries materials and other charges in their own column', () => {
+    const [r] = buildStatementRows([visit({ materials_cost: 120, other_charges: 40 })]);
+    expect(r.extras).toBe(160);
+  });
+
+  it('labour + travel + materials equals the amount on every row', () => {
+    const rows = buildStatementRows([
+      visit({ hours: 2, rate: '$55/hr', travel_charge: 58.7 }),
+      visit({ hours: 9, rate: '$55/hr', travel_charge: 56.65, materials_cost: 120 }),
+      visit({ rate: null, total_project_price: 2600, travel_charge: 80.9, other_charges: 40 }),
+    ]);
+    for (const r of rows) {
+      expect(Math.round((r.labor + Number(r.travel ?? 0) + r.extras) * 100) / 100).toBe(r.amount);
+    }
+  });
+
+  it('the exported grid has a Materials & Other column that totals', () => {
+    const m = statementMatrix(buildStatementRows([
+      visit({ hours: 2, rate: '$55/hr', travel_charge: 58.7, materials_cost: 120 }),
+    ]));
+    const i = m[0].indexOf('Materials & Other');
+    expect(i).toBeGreaterThan(-1);
+    expect(m[1][i]).toBe(120);
+    expect(m[2][i]).toBe(120);           // the TOTAL row
+    // And the row still reads across: 110 + 58.70 + 120 = 288.70
+    expect(m[1][m[0].indexOf('Total')]).toBe(288.7);
+  });
+});

@@ -26,6 +26,14 @@ export type StatementRow = {
   labor: number;
   miles: number | null;
   travel: number | null;
+  /**
+   * Materials and other charges, together.
+   *
+   * Total Pay + Travel Charge used to be the only parts shown while Total also
+   * carried these, so on any visit with materials the columns did not add up to
+   * the bottom line — exactly the sort of thing a client queries.
+   */
+  extras: number;
   amount: number;
 };
 
@@ -36,7 +44,7 @@ export type StatementRow = {
 export const STATEMENT_HEADERS = [
   'Date', 'Site #', 'Site Name', 'Address', 'Work Performed',
   'Time In', 'Time Out', 'Total Time', 'Rate', 'Total Pay',
-  'Round Trip Miles', 'Travel Charge', 'Total',
+  'Round Trip Miles', 'Travel Charge', 'Materials & Other', 'Total',
 ];
 
 const clock = (iso: string | null | undefined) => iso
@@ -84,6 +92,7 @@ export function buildStatementRows(visits: SiteVisit[]): StatementRow[] {
         labor: Math.round(li.quantity * li.rate * 100) / 100,
         miles: v.miles,
         travel: v.travel_charge,
+        extras: Math.round((Number(v.materials_cost ?? 0) + Number(v.other_charges ?? 0)) * 100) / 100,
         amount: visitAmount(v),
       };
     });
@@ -97,7 +106,7 @@ export function statementMatrix(rows: StatementRow[]): (string | number)[][] {
   const body = rows.map((r) => [
     r.date, r.siteCode, r.site, r.address, r.work,
     r.timeIn, r.timeOut, r.hours ?? '', r.rate, r.labor,
-    r.miles ?? '', r.travel ?? '', r.amount,
+    r.miles ?? '', r.travel ?? '', r.extras, r.amount,
   ]);
   const sum = (pick: (r: StatementRow) => number | null) =>
     Math.round(rows.reduce((s, r) => s + Number(pick(r) ?? 0), 0) * 100) / 100;
@@ -109,6 +118,7 @@ export function statementMatrix(rows: StatementRow[]): (string | number)[][] {
     ...body,
     ['', '', '', '', '', '', 'TOTAL',
       sum((r) => r.hours) || '', '', sum((r) => r.labor),
-      sum((r) => r.miles) || '', sum((r) => r.travel), statementTotal(rows)],
+      sum((r) => r.miles) || '', sum((r) => r.travel), sum((r) => r.extras),
+      statementTotal(rows)],
   ];
 }

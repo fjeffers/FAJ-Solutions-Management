@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, MINIMUM_BILLABLE_HOURS } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal } from './visits';
 
 // total_project_price is required on SiteVisit, so it belongs in the shared
 // fixture — individual cases override it when the price is the thing under test.
@@ -371,5 +371,46 @@ describe('deriveSiteName', () => {
     expect(deriveSiteName(null)).toBeNull();
     expect(deriveSiteName('', '')).toBeNull();
     expect(deriveSiteName('///')).toBeNull();
+  });
+});
+
+describe('visitInvoiceLines', () => {
+  const site = { ...base, site_name: 'Roselle', site_code: '5798' };
+
+  it('bills materials and other charges, which the invoice used to drop', () => {
+    const lines = visitInvoiceLines({
+      ...site, hours: 2, rate: '$55/hr',
+      travel_charge: 58.7, materials_cost: 120, other_charges: 40,
+      materials_description: 'CAT6 + faceplates',
+    });
+    expect(lines).toHaveLength(4);
+    expect(lines[1].description).toContain('travel charge');
+    expect(lines[2].description).toContain('materials: CAT6 + faceplates');
+    expect(lines[3].description).toContain('other charges');
+    expect(visitInvoiceTotal(lines)).toBe(328.7); // 110 + 58.70 + 120 + 40
+  });
+
+  it('comes to exactly what the visit is worth, for every shape', () => {
+    const shapes = [
+      { ...site, hours: 2, rate: '$55/hr', travel_charge: 58.7 },
+      { ...site, hours: 9, rate: '$55/hr', travel_charge: 56.65, materials_cost: 120 },
+      { ...site, hours: null, rate: null, total_project_price: 2600, travel_charge: 80.9 },
+      { ...site, hours: 4.03, rate: '$55/hr', travel_charge: 87.25, other_charges: 40 },
+      { ...site, hours: 19.83, rate: '$55/hr', travel_charge: 47.6, materials_cost: 12.34, other_charges: 5.67 },
+      { ...site, hours: 0, rate: null, travel_charge: 0 },
+    ];
+    for (const v of shapes) {
+      expect(visitInvoiceTotal(visitInvoiceLines(v)), JSON.stringify(v)).toBe(visitAmount(v));
+    }
+  });
+
+  it('leaves out the parts that are zero rather than billing $0.00 lines', () => {
+    const lines = visitInvoiceLines({ ...site, hours: 2, rate: '$55/hr', travel_charge: 0, materials_cost: 0, other_charges: null });
+    expect(lines).toHaveLength(1);
+  });
+
+  it('names materials plainly when no description was typed', () => {
+    const lines = visitInvoiceLines({ ...site, hours: 2, rate: '$55/hr', travel_charge: null, materials_cost: 75 });
+    expect(lines[1].description).toBe('Roselle #5798 — materials');
   });
 });

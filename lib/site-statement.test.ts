@@ -10,6 +10,7 @@ const visit = (over: Partial<SiteVisit>): SiteVisit => ({
   payment_status: 'unpaid', miles: 100, travel_charge: 50, notes: 'Replaced data lines',
   materials_description: null, materials_cost: null, other_charges: null, additional_details: null,
   client_summary: null, work_order_id: null, customer_id: null, contractor_id: null, tech_ids: [],
+  archived_at: null,
   created_at: '', updated_at: '',
   ...over,
 });

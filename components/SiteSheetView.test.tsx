@@ -30,7 +30,7 @@ const visit = (over: Record<string, unknown>): SiteVisit => ({
   materials_description: null, materials_cost: null, other_charges: null,
   additional_details: null, notes: null, client_summary: null,
   work_order_id: null, customer_id: null, contractor_id: null, tech_ids: [],
-  created_at: '', updated_at: '',
+  created_at: '', updated_at: '', archived_at: null,
   ...over,
 } as SiteVisit);
 

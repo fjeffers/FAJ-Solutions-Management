@@ -804,6 +804,12 @@ export type SiteVisit = {
    * of who did the work — it does not change what the client is billed.
    */
   tech_ids: string[];
+  /**
+   * (migration-062) when this visit was cleared off the board. Null while it is
+   * still live work. Never deleted — an archived visit still belongs on the
+   * statement for the period it happened in.
+   */
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -21,7 +21,7 @@ import { downloadXLSX, downloadCSVText } from '@/lib/export';
 import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
 import EmailModal, { type EmailPayload } from './EmailModal';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users } from 'lucide-react';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users, Archive, ArchiveRestore } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -81,6 +81,12 @@ export default function SiteLogView() {
   const [programFilter, setProgramFilter] = useState<string | null>(null);
   // Billing lens: what still needs an invoice / what's invoiced but unpaid / what's paid
   const [billing, setBilling] = useState<null | 'needs' | 'awaiting' | 'paid'>(null);
+  // T&M, Project and Revisit are three different kinds of job that get read and
+  // billed differently — the same three the Invoice Tracker keeps on their own
+  // sheets — so they get their own lens rather than being read apart by eye.
+  const [typeFilter, setTypeFilter] = useState<SiteVisitType | null>(null);
+  // Finished work comes off the board. Nothing is deleted; this shows it again.
+  const [showArchived, setShowArchived] = useState(false);
   const [invoicing, setInvoicing] = useState(false);
   const [homeBase, setHomeBase] = useState<string>('');
   const [mileageRate, setMileageRate] = useState<number>(0.7);
@@ -151,6 +157,47 @@ export default function SiteLogView() {
     if (error) { toastError(`Couldn't delete the column: ${error.message}`); return; }
     toastSuccess('Column removed — the visits themselves are untouched');
     await load();
+  };
+
+  /** Clear finished work off the board, or put it back. Never deletes. */
+  const setArchived = async (ids: string[], archived: boolean) => {
+    if (ids.length === 0) return;
+    const { error } = await supabase.from('site_visits')
+      .update({ archived_at: archived ? new Date().toISOString() : null, updated_at: new Date().toISOString() })
+      .in('id', ids);
+    if (error) { toastError(`Couldn't ${archived ? 'archive' : 'restore'}: ${error.message}`); return; }
+    toastSuccess(archived
+      ? `${ids.length} visit${ids.length !== 1 ? 's' : ''} archived — still on your statements, just off the board`
+      : `${ids.length} visit${ids.length !== 1 ? 's' : ''} back on the board`);
+    setPicked(new Set());
+    await load();
+  };
+
+  /**
+   * The end of Fred's rhythm: everything on screen that is invoiced AND paid is
+   * finished work. Ticked visits win if any are ticked, so a partial clear-down
+   * is a matter of ticking rather than filtering.
+   */
+  const archiveSettled = async () => {
+    const target = picked.size > 0
+      ? filtered.filter((v) => picked.has(v.id))
+      : filtered.filter((v) => v.invoice_status === 'invoiced' && v.payment_status === 'paid');
+    if (target.length === 0) {
+      toastError(picked.size > 0
+        ? 'Nothing ticked to archive.'
+        : 'Nothing on screen is both invoiced and paid yet. Tick the ones you want cleared instead.');
+      return;
+    }
+    const unpaid = target.filter((v) => v.payment_status !== 'paid').length;
+    const ok = confirm(
+      `Archive ${target.length} visit${target.length !== 1 ? 's' : ''}?`
+      + (unpaid
+          ? `\n\n${unpaid} of them ${unpaid === 1 ? 'is' : 'are'} not marked paid — archiving does not change what you are owed, but they will drop off the board.`
+          : '')
+      + '\n\nNothing is deleted; they still count on statements.',
+    );
+    if (!ok) return;
+    await setArchived(target.map((v) => v.id), true);
   };
 
   const load = async () => {
@@ -310,6 +357,11 @@ export default function SiteLogView() {
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return visits.filter((v) => {
+      // Archived visits are off the board unless they are asked for, so the
+      // list stays a to-do list and the money tiles keep meaning "outstanding".
+      if (!showArchived && v.archived_at) return false;
+      if (showArchived && !v.archived_at) return false;
+      if (typeFilter && v.visit_type !== typeFilter) return false;
       if (programFilter && v.program !== programFilter) return false;
       if (billing === 'needs' && v.invoice_status !== 'not_invoiced') return false;
       if (billing === 'awaiting' && !(v.invoice_status === 'invoiced' && v.payment_status === 'unpaid')) return false;
@@ -323,7 +375,7 @@ export default function SiteLogView() {
       }
       return true;
     });
-  }, [visits, q, programFilter, billing]);
+  }, [visits, q, programFilter, billing, typeFilter, showArchived]);
 
   // Customer-first: Wendys under Wendys, State Farm under State Farm — with
   // date groups inside each, like the old spreadsheet's per-client sheets.
@@ -720,6 +772,15 @@ export default function SiteLogView() {
           </button>
           <button
             className="btn btn-ghost"
+            onClick={archiveSettled}
+            title={picked.size > 0
+              ? `Archive the ${picked.size} ticked visit${picked.size !== 1 ? 's' : ''} — off the board, still on your statements`
+              : 'Archive everything on screen that is invoiced and paid, to clear the board'}
+          >
+            <Archive size={14} /> {picked.size > 0 ? `Archive ${picked.size}` : 'Clear Settled'}
+          </button>
+          <button
+            className="btn btn-ghost"
             onClick={() => exportStatement('xlsx')}
             title={picked.size > 0
               ? `Excel statement of the ${picked.size} site${picked.size !== 1 ? 's' : ''} you've ticked`
@@ -824,9 +885,30 @@ export default function SiteLogView() {
         {programs.map((p) => (
           <button key={p} className={`filter-chip ${programFilter === p ? 'active' : ''}`} onClick={() => setProgramFilter(programFilter === p ? null : p)}>{p}</button>
         ))}
+        {/* The three kinds of job, kept apart the way the Invoice Tracker keeps
+            them on separate sheets. */}
+        {(['T&M', 'Project', 'Revisit'] as SiteVisitType[]).map((t) => (
+          <button
+            key={t}
+            className={`filter-chip ${typeFilter === t ? 'active' : ''}`}
+            onClick={() => setTypeFilter(typeFilter === t ? null : t)}
+            title={`Show only ${t} work`}
+          >
+            {t}
+          </button>
+        ))}
+        <span style={{ width: 1, height: 22, background: '#ddd', margin: '0 2px' }} />
         <button className={`filter-chip ${billing === 'needs' ? 'active' : ''}`} onClick={() => setBilling(billing === 'needs' ? null : 'needs')}>Needs Invoice</button>
         <button className={`filter-chip ${billing === 'awaiting' ? 'active' : ''}`} onClick={() => setBilling(billing === 'awaiting' ? null : 'awaiting')}>Awaiting Pay</button>
         <button className={`filter-chip ${billing === 'paid' ? 'active' : ''}`} onClick={() => setBilling(billing === 'paid' ? null : 'paid')}>Paid</button>
+        <button
+          className={`filter-chip ${showArchived ? 'active' : ''}`}
+          onClick={() => { setShowArchived(!showArchived); setPicked(new Set()); }}
+          title={showArchived ? 'Back to live work' : 'Show what has been cleared off the board'}
+        >
+          <Archive size={11} style={{ marginRight: 4, verticalAlign: -1 }} />
+          {showArchived ? 'Viewing archive' : 'Archive'}
+        </button>
         <span style={{ width: 1, height: 22, background: '#ddd', margin: '0 2px' }} />
         <button
           className="filter-chip"
@@ -1071,6 +1153,20 @@ export default function SiteLogView() {
                       )}
                       {v.payment_status === 'paid' && <span style={{ fontSize: 10, fontWeight: 700, color: '#047857' }}>PAID</span>}
                       {v.invoice_status === 'not_invoiced' && <span style={{ fontSize: 10, fontWeight: 700, color: '#6b7280' }}>NOT INVOICED</span>}
+                      {v.archived_at && (
+                        <button
+                          title="Put this visit back on the board"
+                          onClick={(e) => { e.stopPropagation(); void setArchived([v.id], false); }}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+                            border: '1px solid #ddd', background: 'transparent',
+                            fontSize: 10, fontWeight: 700, color: '#666',
+                          }}
+                        >
+                          <ArchiveRestore size={10} /> RESTORE
+                        </button>
+                      )}
                       {v.work_order_id ? (
                         <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                           <Briefcase size={10} /> HAS WORK ORDER

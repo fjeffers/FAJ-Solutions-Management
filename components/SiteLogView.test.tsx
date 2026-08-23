@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event';
 const VISIT = {
   id: 'v1', user_id: 'u1', program: "Wendy's", site_code: '1331',
   site_name: 'Hillside 1331', address: '410 Route 221 Hillside, NJ 07205',
-  visit_date: '2026-08-21',
+  visit_date: '2026-08-21', archived_at: null,
   time_in: '2026-08-21T14:00:00.000Z', time_out: '2026-08-21T16:00:00.000Z',
   sessions: [{ in: '2026-08-21T14:00:00.000Z', out: '2026-08-21T16:00:00.000Z' }],
   hours: 2, rate: '$55/hr', total_project_price: null, visit_type: 'T&M',
@@ -25,10 +25,26 @@ const VISIT = {
   created_at: '', updated_at: '',
 };
 
+/** A Project job, so the T&M / Project / Revisit lenses have something to sort. */
+const PROJECT_VISIT = {
+  ...VISIT, id: 'v2', site_name: 'Folsom 397', site_code: '397',
+  // Its own date, so tests that click a date still find exactly one.
+  visit_date: '2026-07-22',
+  visit_type: 'Project', hours: null, rate: null, total_project_price: 2600,
+};
+
+/** Finished work, already cleared off the board. */
+const ARCHIVED_VISIT = {
+  ...VISIT, id: 'v3', site_name: 'Chester 2504', site_code: '2504',
+  visit_date: '2026-08-19',
+  invoice_status: 'invoiced', payment_status: 'paid',
+  archived_at: '2026-08-22T12:00:00.000Z',
+};
+
 function makeClient() {
   const result = (data: unknown) => Promise.resolve({ data, error: null });
   const table = (name: string) => {
-    const rows = name === 'site_visits' ? [VISIT]
+    const rows = name === 'site_visits' ? [VISIT, PROJECT_VISIT, ARCHIVED_VISIT]
       : name === 'contractors' ? [{ id: 'c1', name: 'Frederick Jeffers' }] : [];
     const single = name === 'user_settings'
       ? { home_base_address: '1820 Dayton Dr', mileage_rate: 0.55, default_hourly_rate: 55 } : null;
@@ -80,7 +96,10 @@ const hoursInput = () =>
 
 describe('Site Log list', () => {
   it('breaks the money into labour, mileage, materials and other, and totals them', async () => {
+    const user = userEvent.setup();
     await showList();
+    // Narrow to the one T&M visit, so the band's figures are that visit's.
+    await user.click(screen.getByRole('button', { name: 'T&M' }));
     const band = document.body.textContent ?? '';
     // 2h x $55 = $110 labour, plus $58.70 mileage.
     expect(band).toContain('Labor$110.00');
@@ -190,6 +209,38 @@ describe('Site Log visit editor', () => {
     ]) {
       expect(labels.some((l) => l.includes(needed))).toBe(true);
     }
+  });
+
+  it('keeps archived work off the board until it is asked for', async () => {
+    const user = userEvent.setup();
+    await showList();
+    // Live work shows; the archived visit does not.
+    expect(screen.getAllByText(/Hillside 1331/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Chester 2504/)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /archive/i }));
+    // Now the archive, and only the archive.
+    expect(screen.getAllByText(/Chester 2504/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Hillside 1331/)).toBeNull();
+  });
+
+  it('separates T&M from Project work', async () => {
+    const user = userEvent.setup();
+    await showList();
+    expect(screen.getAllByText(/Folsom 397/).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'T&M' }));
+    expect(screen.getAllByText(/Hillside 1331/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Folsom 397/)).toBeNull();
+
+    // Clicking the same lens again clears it.
+    await user.click(screen.getByRole('button', { name: 'T&M' }));
+    expect(screen.getAllByText(/Folsom 397/).length).toBeGreaterThan(0);
+  });
+
+  it('offers a way to clear settled work off the board', async () => {
+    await showList();
+    expect(screen.getByRole('button', { name: /clear settled/i })).toBeTruthy();
   });
 
   it('names the site on the card, so a card says where it is on its own', async () => {

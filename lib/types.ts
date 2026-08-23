@@ -952,3 +952,54 @@ export type FormulaColumn = {
   created_at: string;
   updated_at: string;
 };
+
+/** A piece of kit at a client site — the CMMS asset register (migration 061). */
+export type Asset = {
+  id: string;
+  user_id: string | null;
+  customer_id: string | null;
+  program: string | null;
+  site_code: string | null;
+  site_name: string | null;
+  name: string;
+  asset_type: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  serial: string | null;
+  location_in_site: string | null;
+  installed_on: string | null;
+  status: 'active' | 'needs_repair' | 'retired';
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** A recurring task. asset_id null means it is against the site, not one item. */
+export type MaintenancePlan = {
+  id: string;
+  user_id: string | null;
+  asset_id: string | null;
+  program: string | null;
+  site_code: string | null;
+  site_name: string | null;
+  task: string;
+  interval_days: number;
+  last_done_on: string | null;
+  next_due_on: string | null;
+  active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Which visit discharged which task — the maintenance history. */
+export type MaintenanceEvent = {
+  id: string;
+  user_id: string | null;
+  plan_id: string | null;
+  asset_id: string | null;
+  site_visit_id: string | null;
+  done_on: string;
+  notes: string | null;
+  created_at: string;
+};

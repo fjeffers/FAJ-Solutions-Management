@@ -18,7 +18,7 @@ import type {
 import { customerBooks, unlinkedCount, type CustomerBook } from '@/lib/customers';
 import { siteReportCSV, toReportVisits } from '@/lib/site-report';
 import { downloadCSVText } from '@/lib/export';
-import { fmtMoney, fmtDate } from '@/lib/utils';
+import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import {
   Plus, X, Search, Trash2, Building2, Phone, Mail, User, MessageSquarePlus,
   AlertTriangle, ChevronLeft, Share2, Download,
@@ -170,7 +170,7 @@ export default function CustomersView() {
     if (mine.length === 0) return toastError('No site visits logged for this customer yet');
 
     downloadCSVText(
-      `${c.name.replace(/[^\w\s-]/g, '')} site activity ${new Date().toISOString().slice(0, 10)}.csv`,
+      `${c.name.replace(/[^\w\s-]/g, '')} site activity ${todayISO()}.csv`,
       siteReportCSV(toReportVisits(mine)),
     );
     toastSuccess('Spreadsheet downloaded');

@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, X, Printer, Receipt, DollarSign, Briefcase, Share2, Send } from 'lucide-react';
-import { fmtMoney, fmtDate } from '@/lib/utils';
+import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import { printInvoiceSheet } from '@/lib/signoff';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
 import { createClient } from '@/lib/supabase/client';
@@ -32,7 +32,7 @@ function draftAgeDays(inv: Invoice): number {
 
 function displayStatus(inv: Invoice, paid: number): DisplayStatus {
   if (inv.status === 'draft' || inv.status === 'paid' || inv.status === 'void') return inv.status;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   if (inv.due_date && inv.due_date < today) return 'overdue';
   if (paid > 0 && paid < Number(inv.total)) return 'partial';
   return 'sent';
@@ -142,7 +142,7 @@ export default function InvoicesView({
 
   const stats = useMemo(() => {
     let outstanding = 0, overdue = 0;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     for (const inv of invoices) {
       if (inv.status !== 'sent') continue;
       const bal = Number(inv.total) - (paidByInvoice.get(inv.id) ?? 0);
@@ -408,7 +408,7 @@ function RecordPaymentModal({
   const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
   const balance = Math.max(0, Number(invoice.total) - paid);
   const [amount, setAmount] = useState<number>(balance);
-  const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState<string>(todayISO());
   const [method, setMethod] = useState<string>('Zelle');
   const [reference, setReference] = useState<string>('');
 

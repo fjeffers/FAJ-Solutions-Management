@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO } from './utils';
 import type { WorkOrder, Payment } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -200,5 +200,50 @@ describe('fmtMoney', () => {
     expect(fmtMoney(1234.5)).toBe('$1,234.50');
     expect(fmtMoney(0)).toBe('$0.00');
     expect(fmtMoney(null)).toBe('$0.00');
+  });
+});
+
+describe('todayISO — dates are Eastern, not UTC', () => {
+  it('is still yesterday in Eastern when UTC has already ticked over', () => {
+    // 9pm Eastern on 23 Aug is 01:00 UTC on the 24th. Fred works nights, so a
+    // visit added then was being dated tomorrow.
+    expect(todayISO(new Date('2026-08-24T01:00:00Z'))).toBe('2026-08-23');
+  });
+
+  it('handles standard time as well as daylight saving', () => {
+    // January: Eastern is UTC-5, so 02:00 UTC on the 15th is 9pm on the 14th.
+    expect(todayISO(new Date('2026-01-15T02:00:00Z'))).toBe('2026-01-14');
+    // August: Eastern is UTC-4, so 02:00 UTC on the 15th is 10pm on the 14th.
+    expect(todayISO(new Date('2026-08-15T02:00:00Z'))).toBe('2026-08-14');
+  });
+
+  it('agrees with UTC during the working day', () => {
+    expect(todayISO(new Date('2026-08-23T16:00:00Z'))).toBe('2026-08-23');
+  });
+
+  it('rolls over at Eastern midnight, not UTC midnight', () => {
+    expect(todayISO(new Date('2026-08-24T03:59:00Z'))).toBe('2026-08-23'); // 11:59pm ET
+    expect(todayISO(new Date('2026-08-24T04:01:00Z'))).toBe('2026-08-24'); // 12:01am ET
+  });
+});
+
+describe('addDaysISO', () => {
+  it('adds whole days', () => {
+    expect(addDaysISO('2026-08-23', 7)).toBe('2026-08-30');
+    expect(addDaysISO('2026-08-23', -7)).toBe('2026-08-16');
+  });
+
+  it('does not slip a day across the daylight-saving changes', () => {
+    expect(addDaysISO('2026-03-07', 1)).toBe('2026-03-08');   // clocks go forward
+    expect(addDaysISO('2026-10-31', 1)).toBe('2026-11-01');   // clocks go back
+  });
+
+  it('crosses month and year ends', () => {
+    expect(addDaysISO('2026-12-31', 1)).toBe('2027-01-01');
+    expect(addDaysISO('2028-02-28', 1)).toBe('2028-02-29');
+  });
+
+  it('hands back a bad date rather than NaN', () => {
+    expect(addDaysISO('nonsense', 1)).toBe('nonsense');
   });
 });

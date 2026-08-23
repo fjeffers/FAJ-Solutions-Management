@@ -12,7 +12,7 @@ import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, 
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { laborOf } from '@/lib/site-sheet';
 import { deriveTimesAndHours } from '@/lib/visit-sync';
-import { fmtMoney } from '@/lib/utils';
+import { fmtMoney, todayISO, addDaysISO } from '@/lib/utils';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { roundTripMiles } from '@/lib/driving';
 import { buildStatementRows, statementMatrix, statementTotal } from '@/lib/site-statement';
@@ -342,7 +342,7 @@ export default function SiteLogView() {
     return next;
   });
 
-  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const sevenDaysAgo = addDaysISO(todayISO(), -7);
   const monthStart = new Date().toISOString().slice(0, 8) + '01';
   const hoursSince = (since: string) =>
     visits.filter((v) => v.visit_date && v.visit_date >= since).reduce((s, v) => s + (v.hours ?? 0), 0);
@@ -448,7 +448,7 @@ export default function SiteLogView() {
     if (chosen.length === 0) { toastError('Nothing to export — tick some sites, or adjust the filters.'); return; }
     const rows = buildStatementRows(chosen);
     const client = programFilter ?? 'All Clients';
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = todayISO();
     const safeName = `${client} statement ${stamp}`.replace(/[\\/:*?"<>|]/g, '-');
     const matrix = statementMatrix(rows);
     try {
@@ -505,7 +505,7 @@ export default function SiteLogView() {
   const checkIn = async (v: Partial<SiteVisit>) => {
     await saveVisit({
       ...v,
-      visit_date: new Date().toISOString().slice(0, 10),
+      visit_date: todayISO(),
       time_in: new Date().toISOString(),
       visit_type: v.visit_type ?? 'T&M',
     });
@@ -707,7 +707,7 @@ export default function SiteLogView() {
             title={sheetMode ? 'Back to cards' : 'Edit every site in one grid, like a spreadsheet'}>
             {sheetMode ? <><LayoutGrid size={14} /> Cards</> : <><Table2 size={14} /> Spreadsheet</>}
           </button>
-          <button className="btn btn-ghost" onClick={() => setEditing({ visit_date: new Date().toISOString().slice(0, 10), visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' })}>
+          <button className="btn btn-ghost" onClick={() => setEditing({ visit_date: todayISO(), visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' })}>
             <Plus size={14} /> Add Visit
           </button>
           <button
@@ -863,7 +863,7 @@ export default function SiteLogView() {
           onSave={saveCell}
           onDelete={deleteVisit}
           onAdd={() => setEditing({
-            visit_date: new Date().toISOString().slice(0, 10), visit_type: 'T&M',
+            visit_date: todayISO(), visit_type: 'T&M',
             invoice_status: 'not_invoiced', payment_status: 'unpaid',
             program: programFilter ?? programs[0] ?? '',
           })}

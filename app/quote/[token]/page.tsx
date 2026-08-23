@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Quote } from '@/lib/types';
 import PrintButton from '../../invoice/[token]/PrintButton';
+import { todayISO } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   if (!quote) notFound();
 
   const st = STATUS[quote.status] ?? STATUS.sent;
-  const expired = quote.valid_until && quote.valid_until < new Date().toISOString().slice(0, 10);
+  const expired = quote.valid_until && quote.valid_until < todayISO();
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg, #f4f1ea 0%, #eef2f2 100%)', padding: '24px 12px 48px' }}>

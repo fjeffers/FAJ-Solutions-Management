@@ -103,3 +103,51 @@ export const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string 
   Approved:    { bg: 'rgba(13,115,119,0.15)',  color: 'var(--teal)' },
   Paid:        { bg: 'rgba(5,150,105,0.2)',    color: '#065F46' },
 };
+
+// ─── Dates in the timezone the business actually runs in ──────────────────────
+
+/**
+ * FAJ Solutions works out of Easton, PA. A visit date, an invoice due date and
+ * a payment date are facts about the BUSINESS, not about whichever machine is
+ * asking — so they are all resolved in Eastern, on the server and in the
+ * browser alike.
+ */
+export const BUSINESS_TZ = 'America/New_York';
+
+/**
+ * Today's date in Eastern, as YYYY-MM-DD.
+ *
+ * `new Date().toISOString().slice(0, 10)` is the UTC date, which is a different
+ * DAY from about 8pm Eastern onwards. Fred works nights — several visits check
+ * in at 11pm and out at 6am — so a visit added at 11pm was being dated
+ * tomorrow, and an invoice could show overdue a day early.
+ *
+ * Intl handles daylight saving, so this is right in both EDT and EST without a
+ * twice-yearly correction.
+ */
+export function todayISO(now: Date = new Date()): string {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now);
+  const get = (t: string) => p.find((x) => x.type === t)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/**
+ * A YYYY-MM-DD date shifted by whole days.
+ *
+ * Parsed at UTC midnight so adding days can never land an hour short and slip
+ * back a day across a daylight-saving boundary.
+ */
+export function addDaysISO(date: string, days: number): string {
+  const t = Date.parse(`${String(date).slice(0, 10)}T00:00:00Z`);
+  if (isNaN(t)) return date;
+  return new Date(t + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** The current time in Eastern, for stamping and for "is it overdue" checks. */
+export function nowInBusinessTZ(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: BUSINESS_TZ, dateStyle: 'medium', timeStyle: 'short',
+  }).format(now);
+}

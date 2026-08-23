@@ -3,6 +3,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SiteVisit, Invoice, InvoicePayment } from './types';
 import { visitAmount } from './visits';
+import { todayISO, addDaysISO } from './utils';
 
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
@@ -22,8 +23,8 @@ export async function buildWeeklyDigest(admin: SupabaseClient): Promise<WeeklyDi
   const invoices = (iRes.data ?? []) as Invoice[];
   const payments = (pRes.data ?? []) as InvoicePayment[];
 
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const today = todayISO();
+  const weekAgo = addDaysISO(todayISO(), -7);
 
   // ── This week's field work ──
   const week = visits.filter((v) => v.visit_date && v.visit_date >= weekAgo);

@@ -13,6 +13,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SiteVisit, Invoice, InvoicePayment } from './types';
 import { visitAmount } from './visits';
 import { fetchFhjSnapshot, fhjConfigured } from './fhj';
+import { todayISO } from './utils';
 
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -36,7 +37,7 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
   const invoices = (iRes.data ?? []) as Invoice[];
   const payments = (pRes.data ?? []) as InvoicePayment[];
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   // ── 1. Never sent. status 'draft' means Fred built it and stopped. ──
   const drafts = invoices

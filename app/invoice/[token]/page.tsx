@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Invoice, InvoicePayment } from '@/lib/types';
 import PrintButton from './PrintButton';
+import { todayISO } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +41,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
 
   const paid = (payments ?? []).reduce((s, p) => s + Number(p.amount), 0);
   const balance = Math.max(0, Number(invoice.total) - paid);
-  const overdue = balance > 0 && invoice.due_date && invoice.due_date < new Date().toISOString().slice(0, 10);
+  const overdue = balance > 0 && invoice.due_date && invoice.due_date < todayISO();
   const statusLabel = balance <= 0 && Number(invoice.total) > 0 ? 'PAID' : overdue ? 'OVERDUE' : paid > 0 ? 'PARTIALLY PAID' : 'DUE';
   const statusColor = statusLabel === 'PAID' ? '#047857' : statusLabel === 'OVERDUE' ? '#b91c1c' : '#b45309';
 

@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { Download } from 'lucide-react';
 import { toCSV, UTF8_BOM } from '@/lib/csv';
 import type { WorkOrder } from '@/lib/types';
+import { todayISO } from '@/lib/utils';
 
 type Props = {
   workOrders: (WorkOrder & { is_lead: boolean })[];
@@ -80,7 +81,7 @@ export default function PortalWorkExport({ workOrders, contractorName }: Props) 
       // toCSV guards against Excel formula injection — a site note beginning
       // '=' or '-' must not become a live formula in a downloaded file.
       const csv = toCSV([HEADERS, ...rows]);
-      const stamp = new Date().toISOString().slice(0, 10);
+      const stamp = todayISO();
       const safe = `${contractorName} work record ${stamp}`.replace(/[\\/:*?"<>|]/g, '-');
 
       const blob = new Blob([UTF8_BOM + csv], { type: 'text/csv;charset=utf-8;' });

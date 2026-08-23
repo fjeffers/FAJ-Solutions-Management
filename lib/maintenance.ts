@@ -9,13 +9,12 @@
 // measured in whole days, and a Date built from an ISO date string is UTC
 // midnight, so adding days never lands an hour early and shifts the day.
 import type { Asset, MaintenancePlan } from './types';
+import { todayISO } from './utils';
 
 const DAY = 86_400_000;
 
-/** Today as YYYY-MM-DD in the reader's own timezone, not UTC. */
-export function todayISO(now: Date = new Date()): string {
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-}
+// Due dates are business facts, so "today" is Eastern — see lib/utils.
+export { todayISO };
 
 function parse(date: string | null | undefined): number | null {
   if (!date) return null;

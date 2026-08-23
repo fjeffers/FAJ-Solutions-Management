@@ -18,6 +18,8 @@
 // knows numbers, strings, booleans, the field values it is handed, and the
 // functions listed below.
 
+import { todayISO } from './utils';
+
 export type FormulaValue = number | string | boolean | null;
 export type FormulaFields = Record<string, FormulaValue>;
 
@@ -270,7 +272,8 @@ const FUNCTIONS: Record<string, Fn> = {
   ISBLANK: (a) => a[0] === null || a[0] === '' || a[0] === undefined,
   ISNUMBER: (a) => a[0] !== null && a[0] !== '' && !isNaN(Number(a[0])),
 
-  TODAY:   () => new Date().toISOString().slice(0, 10),
+  // Eastern, like every other date in the app — not the UTC day.
+  TODAY:   () => todayISO(),
   YEAR:    (a) => toDate(a[0]).getFullYear(),
   MONTH:   (a) => toDate(a[0]).getMonth() + 1,
   DAY:     (a) => toDate(a[0]).getDate(),

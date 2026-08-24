@@ -344,6 +344,17 @@ export function workOrderMoneyFromVisit(
   pay_type: 'Hourly' | 'Fixed';
   hourly_rate: number | null;
   hours_worked: number | null;
+  /** What the CLIENT is billed on top of labour. Revenue. */
+  billable_travel: number | null;
+  billable_materials: number | null;
+  billable_other: number | null;
+  /**
+   * Reimbursement to the tech, left EMPTY on conversion.
+   *
+   * Whether a tech gets the travel back varies by job, and billing a client
+   * $58.70 of travel never meant handing the tech $58.70 — writing it here
+   * automatically turned revenue into an expense and showed the job at a loss.
+   */
   mileage_logs: MileageLog[];
   materials_used: MaterialUsed[];
   other_charges_note: string | null;
@@ -354,18 +365,9 @@ export function workOrderMoneyFromVisit(
   const materials = Number(v.materials_cost ?? 0);
   const other = Number(v.other_charges ?? 0);
 
-  const mileage_logs: MileageLog[] = travel
-    ? [{
-        id: `sv-mileage`,
-        contractor_name: contractorName,
-        miles: miles || 0,
-        // Derive the per-mile rate from what was actually charged, so the log
-        // reproduces the travel charge instead of a default that would not.
-        rate: miles > 0 ? Math.round((travel / miles) * 10000) / 10000 : travel,
-        note: miles > 0 ? 'Round trip, from the site visit' : 'Travel charge, from the site visit',
-      }]
-    : [];
-
+  // The materials the visit recorded are what the job consumed. Most of what
+  // Fred buys stays HIS, so a row is not marked as the client's unless he says
+  // so — it is his cost until then.
   const materials_used: MaterialUsed[] = materials
     ? [{
         id: `sv-materials`,
@@ -373,6 +375,7 @@ export function workOrderMoneyFromVisit(
         name: v.materials_description?.trim() || 'Materials',
         quantity: 1,
         unit_cost: materials,
+        client_pays: false,
       }]
     : [];
 
@@ -381,7 +384,11 @@ export function workOrderMoneyFromVisit(
     pay_type: hourly ? 'Hourly' : 'Fixed',
     hourly_rate: hourly ? Number(hourly[1]) : null,
     hours_worked: hourly ? (v.hours ?? null) : null,
-    mileage_logs,
+    billable_travel: travel || null,
+    // The visit's materials cost is Fred's spend, not automatically a sale.
+    billable_materials: null,
+    billable_other: other || null,
+    mileage_logs: [],
     materials_used,
     other_charges_note: other ? `Other charges: ${other.toFixed(2)}` : null,
   };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials } from './utils';
 import type { WorkOrder, Payment } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -251,7 +251,7 @@ describe('addDaysISO', () => {
 describe('workOrderBreakdown', () => {
   const wo = (over: Record<string, unknown>) => ({
     pay_type: 'Hourly', hourly_rate: 55, hours_worked: 2, total_amount: 168.7,
-    mileage_logs: [{ id: 'm', contractor_name: 'F', miles: 117.4, rate: 0.5, note: null }],
+    billable_travel: 58.7, billable_materials: null, billable_other: null,
     materials_used: [],
     ...over,
   } as Parameters<typeof workOrderBreakdown>[0]);
@@ -262,16 +262,15 @@ describe('workOrderBreakdown', () => {
     expect(b.mileage).toBe(58.7);
     expect(b.other).toBe(0);          // nothing unexplained
     expect(b.total).toBe(168.7);
-    expect(workOrderBreakdownText(wo({}))).toBe('2h × $55.00 = $110.00  +  Mileage $58.70');
+    expect(workOrderBreakdownText(wo({}))).toBe('2h × $55.00 = $110.00  +  Travel $58.70');
   });
 
   it('adds up: the parts always account for the whole total', () => {
     const shapes = [
       wo({}),
-      wo({ materials_used: [{ id: 'x', material_id: null, name: 'CAT6', quantity: 2, unit_cost: 60 }], total_amount: 288.7 }),
-      wo({ pay_type: 'Fixed', hourly_rate: null, hours_worked: null, total_amount: 2680.9,
-           mileage_logs: [{ id: 'm', contractor_name: 'F', miles: 161.8, rate: 0.5, note: null }] }),
-      wo({ mileage_logs: [], total_amount: 110 }),
+      wo({ materials_used: [{ id: 'x', material_id: null, name: 'CAT6', quantity: 2, unit_cost: 60, client_pays: true }], total_amount: 288.7 }),
+      wo({ pay_type: 'Fixed', hourly_rate: null, hours_worked: null, total_amount: 2680.9, billable_travel: 80.9 }),
+      wo({ billable_travel: null, total_amount: 110 }),
     ];
     for (const w of shapes) {
       const b = workOrderBreakdown(w);
@@ -282,7 +281,7 @@ describe('workOrderBreakdown', () => {
   it('calls the whole fee the job price on a fixed job', () => {
     const text = workOrderBreakdownText(wo({
       pay_type: 'Fixed', hourly_rate: null, hours_worked: null,
-      total_amount: 2600, mileage_logs: [], materials_used: [],
+      total_amount: 2600, billable_travel: null, materials_used: [],
     }));
     expect(text).toBe('Job price $2,600.00');
   });
@@ -297,7 +296,48 @@ describe('workOrderBreakdown', () => {
   it('says nothing at all when there is nothing to break down', () => {
     expect(workOrderBreakdownText(wo({
       pay_type: 'Fixed', hourly_rate: null, hours_worked: null,
-      total_amount: 0, mileage_logs: [], materials_used: [],
+      total_amount: 0, billable_travel: null, materials_used: [],
     }))).toBe('');
+  });
+});
+
+describe('client charges are never mistaken for tech pay', () => {
+  const hillside = {
+    wo_number: '19101348', pay_type: 'Hourly', hourly_rate: 55, hours_worked: 2,
+    total_amount: 168.7, billable_travel: 58.7, billable_materials: null, billable_other: null,
+    contractor_pay: null, contractor_name: 'Frederick Jeffers', contractor_names: null,
+    mileage_logs: [], materials_used: [],
+  } as unknown as WorkOrder;
+
+  it('billing a client for travel does not become money owed to the tech', () => {
+    // The whole point: $168.70 in, of which $58.70 is travel the client pays.
+    // The old fallback handed the tech the entire client price.
+    expect(woTechPayTotal(hillside)).toBe(110);
+    expect(woPayoutTotal(hillside)).toBe(110);
+    expect(woProfit(hillside)).toBe(58.7);
+  });
+
+  it('reimbursing the tech is a separate, deliberate act', () => {
+    const reimbursed = {
+      ...hillside,
+      mileage_logs: [{ id: 'm', contractor_name: 'Frederick Jeffers', miles: 117.4, rate: 0.5, note: null }],
+    } as WorkOrder;
+    expect(woPayoutTotal(reimbursed)).toBe(168.7);
+    expect(woProfit(reimbursed)).toBe(0);
+  });
+
+  it('leaves older work orders exactly as they were', () => {
+    // No billable extras recorded — the fallback still gives the tech the lot.
+    const legacy = { ...hillside, total_amount: 600, billable_travel: null } as WorkOrder;
+    expect(woTechPayTotal(legacy)).toBe(600);
+  });
+
+  it('counts only the materials the client actually bought', () => {
+    const rows = [
+      { id: 'a', material_id: null, name: 'CAT6 spool', quantity: 1, unit_cost: 200, client_pays: false },
+      { id: 'b', material_id: null, name: 'Faceplates left on site', quantity: 4, unit_cost: 12, client_pays: true },
+    ];
+    expect(clientPaidMaterials(rows)).toBe(48);
+    expect(ownStockMaterials(rows)).toBe(200);
   });
 });

@@ -418,32 +418,28 @@ describe('visitInvoiceLines', () => {
 describe('workOrderMoneyFromVisit', () => {
   const site = { ...base, site_name: 'Hillside', site_code: '1331' };
 
-  it('carries the travel across as a mileage log, not just into the total', () => {
-    // The Hillside job Fred converted: 2h @ $55 plus 106.7 miles / $58.70.
-    // The work order used to read "2 hours at $55" and lose the rest.
+  it('bills the travel to the CLIENT, and never as a payout to the tech', () => {
+    // The Hillside job: 2h @ $55 plus 117.4 miles / $58.70 of travel.
     const wo = workOrderMoneyFromVisit(
-      { ...site, hours: 2, rate: '$55/hr', miles: 106.7, travel_charge: 58.7 },
+      { ...site, hours: 2, rate: '$55/hr', miles: 117.4, travel_charge: 58.7 },
       'Frederick Jeffers',
     );
     expect(wo.total_amount).toBe(168.7);
     expect(wo.hours_worked).toBe(2);
-    expect(wo.hourly_rate).toBe(55);
-    expect(wo.mileage_logs).toHaveLength(1);
-    expect(wo.mileage_logs[0]).toMatchObject({ contractor_name: 'Frederick Jeffers', miles: 106.7 });
-    // The logged rate must reproduce the charge that was actually made.
-    expect(wo.mileage_logs[0].miles * wo.mileage_logs[0].rate).toBeCloseTo(58.7, 2);
+    expect(wo.billable_travel).toBe(58.7);
+    // Reimbursement is a separate commercial decision and varies by job.
+    // Writing it here turned revenue into an expense and showed a loss.
+    expect(wo.mileage_logs).toHaveLength(0);
   });
 
-  it('adds up: labour + mileage + materials + other equals the work order total', () => {
-    const v = {
-      ...site, hours: 2, rate: '$55/hr', miles: 100, travel_charge: 50,
-      materials_cost: 120, other_charges: 40, materials_description: 'CAT6',
-    };
-    const wo = workOrderMoneyFromVisit(v, 'Frederick Jeffers');
-    const labour = (wo.hours_worked ?? 0) * (wo.hourly_rate ?? 0);
-    const mileage = wo.mileage_logs.reduce((s, m) => s + m.miles * m.rate, 0);
-    const mats = wo.materials_used.reduce((s, m) => s + m.quantity * (m.unit_cost ?? 0), 0);
-    expect(Math.round((labour + mileage + mats + 40) * 100) / 100).toBe(wo.total_amount);
+  it('does not treat materials Fred bought as a sale to the client', () => {
+    const wo = workOrderMoneyFromVisit(
+      { ...site, hours: 2, rate: '$55/hr', travel_charge: null, materials_cost: 120, materials_description: 'CAT6' },
+      'Frederick Jeffers',
+    );
+    // Recorded as used, but his until he says the client bought it.
+    expect(wo.materials_used[0].client_pays).toBe(false);
+    expect(wo.billable_materials).toBe(null);
   });
 
   it('carries materials with the description typed on the visit', () => {
@@ -475,14 +471,13 @@ describe('workOrderMoneyFromVisit', () => {
 
   it('adds no empty rows when there was no travel or materials', () => {
     const wo = workOrderMoneyFromVisit({ ...site, hours: 2, rate: '$55/hr', travel_charge: 0 }, 'F');
-    expect(wo.mileage_logs).toHaveLength(0);
+    expect(wo.billable_travel).toBe(null);
     expect(wo.materials_used).toHaveLength(0);
     expect(wo.other_charges_note).toBe(null);
   });
 
-  it('still records a travel charge that has no mileage behind it', () => {
+  it('bills a travel charge that has no mileage recorded behind it', () => {
     const wo = workOrderMoneyFromVisit({ ...site, hours: 2, rate: '$55/hr', miles: null, travel_charge: 25 }, 'F');
-    expect(wo.mileage_logs[0].rate).toBe(25);
-    expect(wo.mileage_logs[0].miles).toBe(0);
+    expect(wo.billable_travel).toBe(25);
   });
 });

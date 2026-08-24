@@ -1,4 +1,4 @@
-import type { WorkOrder, EnrichedWorkOrder, Payment, WorkOrderStatus } from './types';
+import type { WorkOrder, EnrichedWorkOrder, Payment, WorkOrderStatus, MaterialUsed } from './types';
 import { mileageReimbursement, mileageForTech } from './mileage';
 
 export function fmtMoney(n: number | null | undefined): string {
@@ -16,23 +16,36 @@ export function fmtDate(d: string | null | undefined): string {
 // contractor_pay records what each tech gets — usually less; the difference
 // is profit. Legacy WOs with no contractor_pay assume techs get the full amount.
 
+/** What the client is billed on top of the labour: travel, materials, other. */
+export function billableExtras(wo: Pick<WorkOrder, 'billable_travel' | 'billable_materials' | 'billable_other'>): number {
+  return Math.round((
+    Number(wo.billable_travel ?? 0) + Number(wo.billable_materials ?? 0) + Number(wo.billable_other ?? 0)
+  ) * 100) / 100;
+}
+
 // The techs' pay pool for a WO (before mileage)
 export function woTechPayTotal(wo: WorkOrder): number {
   if (wo.contractor_pay && Object.keys(wo.contractor_pay).length > 0) {
     return Object.values(wo.contractor_pay).reduce((s, v) => s + (Number(v) || 0), 0);
   }
-  return Number(wo.total_amount);
+  // Legacy fallback: no tech pay recorded means the tech gets the client price.
+  // Charges passed on to the CLIENT are not part of that — billing a client
+  // $58.70 of travel never meant handing the tech $58.70. On older work orders
+  // these are all zero, so this is exactly the behaviour it always had.
+  return Math.round((Number(wo.total_amount) - billableExtras(wo)) * 100) / 100;
 }
 
 // Everything that goes out the door on a WO: tech pay plus mileage.
 // This is the number "paid in full" is measured against.
 export function woPayoutTotal(wo: WorkOrder): number {
-  return woTechPayTotal(wo) + mileageReimbursement(wo.mileage_logs);
+  return Math.round((woTechPayTotal(wo) + mileageReimbursement(wo.mileage_logs)) * 100) / 100;
 }
 
 // What FAJ keeps: client price minus tech pay and mileage
 export function woProfit(wo: WorkOrder): number {
-  return Number(wo.total_amount) - woPayoutTotal(wo);
+  // Rounded to the cent: this is money on screen, and a subtraction of two
+  // decimals otherwise reads as 58.69999999999999.
+  return Math.round((Number(wo.total_amount) - woPayoutTotal(wo)) * 100) / 100;
 }
 
 export function getStatus(wo: WorkOrder, payments: Payment[]): 'paid' | 'partial' | 'pending' {
@@ -178,7 +191,8 @@ export type WOBreakdown = {
 };
 
 export function workOrderBreakdown(w: Pick<WorkOrder,
-  'pay_type' | 'hourly_rate' | 'hours_worked' | 'total_amount' | 'mileage_logs' | 'materials_used'
+  'pay_type' | 'hourly_rate' | 'hours_worked' | 'total_amount'
+  | 'billable_travel' | 'billable_materials' | 'billable_other' | 'materials_used'
 >): WOBreakdown {
   // Normalise -0: the remainder is a subtraction, and floating point makes
   // "nothing left over" come out as -0, which reads oddly and compares badly.
@@ -188,8 +202,10 @@ export function workOrderBreakdown(w: Pick<WorkOrder,
   const hourly = w.pay_type === 'Hourly' && hours > 0 && rate > 0;
 
   const labor = hourly ? r2(hours * rate) : 0;
-  const mileage = r2((w.mileage_logs ?? []).reduce((s, m) => s + Number(m.miles ?? 0) * Number(m.rate ?? 0), 0));
-  const materials = r2((w.materials_used ?? []).reduce((s, m) => s + Number(m.quantity ?? 0) * Number(m.unit_cost ?? 0), 0));
+  // The CLIENT side: what they are billed. Tech mileage reimbursement and the
+  // materials Fred keeps are costs, and belong nowhere near this figure.
+  const mileage = r2(Number(w.billable_travel ?? 0));
+  const materials = r2(Number(w.billable_materials ?? 0) || clientPaidMaterials(w.materials_used));
   const total = r2(Number(w.total_amount ?? 0));
 
   return { labor, mileage, materials, other: r2(total - labor - mileage - materials), total, hourly, hours, rate };
@@ -200,9 +216,33 @@ export function workOrderBreakdownText(w: Parameters<typeof workOrderBreakdown>[
   const b = workOrderBreakdown(w);
   const parts: string[] = [];
   if (b.hourly) parts.push(`${b.hours}h × ${fmtMoney(b.rate)} = ${fmtMoney(b.labor)}`);
-  if (b.mileage) parts.push(`Mileage ${fmtMoney(b.mileage)}`);
+  if (b.mileage) parts.push(`Travel ${fmtMoney(b.mileage)}`);
   if (b.materials) parts.push(`Materials ${fmtMoney(b.materials)}`);
   // Name the remainder for what it is, rather than leaving a silent gap.
   if (b.other) parts.push(`${b.hourly || b.mileage || b.materials ? 'Other' : 'Job price'} ${fmtMoney(b.other)}`);
   return parts.join('  +  ');
+}
+
+/**
+ * Materials the CLIENT is buying — the ones left on site or bought outright.
+ *
+ * Most of what Fred loads into the van stays his: carried to a job, used, and
+ * brought back. Billing those would charge a client for something they never
+ * received, so only rows explicitly marked as the client's are counted.
+ */
+export function clientPaidMaterials(rows: MaterialUsed[] | null | undefined): number {
+  return Math.round(
+    (rows ?? [])
+      .filter((r) => r.client_pays)
+      .reduce((s, r) => s + Number(r.quantity ?? 0) * Number(r.unit_cost ?? 0), 0) * 100,
+  ) / 100;
+}
+
+/** What Fred spent on materials that stay his — stock, not a sale. */
+export function ownStockMaterials(rows: MaterialUsed[] | null | undefined): number {
+  return Math.round(
+    (rows ?? [])
+      .filter((r) => !r.client_pays)
+      .reduce((s, r) => s + Number(r.quantity ?? 0) * Number(r.unit_cost ?? 0), 0) * 100,
+  ) / 100;
 }

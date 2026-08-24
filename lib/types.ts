@@ -224,6 +224,15 @@ export type WorkOrder = {
   // Null = no split (single tech, or legacy multi-tech where primary carries the total).
   contractor_pay: Record<string, number> | null;
 
+  // What the CLIENT is billed for travel, materials and anything else
+  // (migration-063). REVENUE — deliberately separate from mileage_logs and
+  // materials_used below, which are what goes OUT to the tech. Whether a tech
+  // is reimbursed for the travel a client was charged varies by job, so the two
+  // sides are recorded independently rather than inferred from each other.
+  billable_travel: number | null;
+  billable_materials: number | null;
+  billable_other: number | null;
+
   // Materials used at closeout (migration-031). material_id links to inventory
   // (stock decremented on save); null material_id = extra item bought for the job.
   materials_used: MaterialUsed[] | null;
@@ -336,6 +345,15 @@ export type MaterialUsed = {
   name: string;
   quantity: number;
   unit_cost: number | null;
+  /**
+   * (migration-063) The client bought it, or asked for it to be left on site.
+   *
+   * Most materials Fred buys stay HIS — carried to the job, brought back, used
+   * again. Those are stock, not a sale, and billing them would charge a client
+   * for something they never received. Only a row marked here is billed, and
+   * only that row leaves the van for good.
+   */
+  client_pays?: boolean;
 };
 
 export type Material = {

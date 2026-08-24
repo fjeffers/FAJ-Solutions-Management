@@ -641,8 +641,13 @@ export default function SiteLogView() {
       pay_type: money.pay_type,
       hourly_rate: money.hourly_rate,
       hours_worked: money.hours_worked,
-      // Travel and materials used to be dropped, so the job showed labour only
-      // while the total said something larger.
+      // What the client is billed on top of labour, so saving the job can no
+      // longer recompute the total down to the labour alone.
+      billable_travel: money.billable_travel,
+      billable_materials: money.billable_materials,
+      billable_other: money.billable_other,
+      // Reimbursement to the tech is deliberately NOT assumed — see
+      // workOrderMoneyFromVisit.
       mileage_logs: money.mileage_logs,
       materials_used: money.materials_used,
       wo_status: 'Open',

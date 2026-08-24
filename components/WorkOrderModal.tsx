@@ -24,7 +24,7 @@ import {
   WORK_ORDER_PRIORITIES,
   WORK_ORDER_SOURCES,
 } from '@/lib/types';
-import { fmtMoney, fmtDate } from '@/lib/utils';
+import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials } from '@/lib/utils';
 import { printSignOffSheet } from '@/lib/signoff';
 import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { createClient } from '@/lib/supabase/client';
@@ -128,13 +128,25 @@ const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
   'Paid':        { bg: 'rgba(16,185,129,0.2)',    color: '#047857' },
 };
 
+/**
+ * What the client is billed.
+ *
+ * Travel, client-bought materials and other charges are added on top of the
+ * labour. They used not to be: saving an hourly job recomputed the total as
+ * hours x rate, so a $168.70 visit silently became $110 and the travel was
+ * gone. A fixed-price job is whatever was typed, extras included.
+ */
 function calcTotal(f: Partial<WorkOrder>): number {
-  switch (f.pay_type) {
-    case 'Hourly':    return (Number(f.hourly_rate) || 0) * (Number(f.hours_worked) || 0);
-    case 'Per Device': return (Number(f.per_device_rate) || 0) * (Number(f.device_count) || 0);
-    case 'Blended':   return (Number(f.blended_base) || 0) + (Number(f.hourly_rate) || 0) * (Number(f.hours_worked) || 0);
-    default:          return Number(f.total_amount) || 0;
-  }
+  const extras = billableExtras(f as WorkOrder);
+  const labour = (() => {
+    switch (f.pay_type) {
+      case 'Hourly':     return (Number(f.hourly_rate) || 0) * (Number(f.hours_worked) || 0);
+      case 'Per Device': return (Number(f.per_device_rate) || 0) * (Number(f.device_count) || 0);
+      case 'Blended':    return (Number(f.blended_base) || 0) + (Number(f.hourly_rate) || 0) * (Number(f.hours_worked) || 0);
+      default:           return Number(f.total_amount) || 0;
+    }
+  })();
+  return Math.round((labour + (f.pay_type === 'Fixed' ? 0 : extras)) * 100) / 100;
 }
 
 type Props = {
@@ -439,6 +451,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       })(),
       // Closeout materials (migration-031) — drop unnamed rows
       materials_used: materialsUsed.filter((r) => r.name.trim() !== ''),
+      billable_travel:    Number(form.billable_travel)    || null,
+      billable_materials: clientPaidMaterials(materialsUsed) || null,
+      billable_other:     Number(form.billable_other)     || null,
       // Mileage (migration-032) — drop zero-mile rows
       mileage_logs: mileageLogs.filter((r) => (Number(r.miles) || 0) > 0),
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
@@ -833,6 +848,26 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 ))}
               </div>
             </div>
+
+            {/* What the client is billed on top of the labour. Revenue — the
+                tech's mileage reimbursement is separate, further down, because
+                whether a tech gets the travel back varies by job. */}
+            {form.pay_type !== 'Fixed' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <PF label="Travel charged to client" icon={<DollarSign size={13} />}>
+                  <input className="input" type="number" step="0.01" min="0"
+                    value={form.billable_travel ?? ''}
+                    onChange={(e) => set('billable_travel', e.target.value === '' ? null : Number(e.target.value))}
+                    placeholder="0.00" />
+                </PF>
+                <PF label="Other charges to client" icon={<DollarSign size={13} />}>
+                  <input className="input" type="number" step="0.01" min="0"
+                    value={form.billable_other ?? ''}
+                    onChange={(e) => set('billable_other', e.target.value === '' ? null : Number(e.target.value))}
+                    placeholder="permits, parking, rental" />
+                </PF>
+              </div>
+            )}
 
             {/* Fixed */}
             {form.pay_type === 'Fixed' && (
@@ -1438,6 +1473,28 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                         onChange={(e) => updateUsedRow(r.id, { unit_cost: e.target.value === '' ? null : Number(e.target.value) })}
                         style={{ width: 80, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
                       />
+                    </label>
+                    {/* Most materials stay Fred's — carried to the job and
+                        brought back. Only what the client actually bought, or
+                        asked to be left on site, is billed to them. */}
+                    <label
+                      title={r.client_pays
+                        ? 'The client is buying this — it is on their bill and it stays on site'
+                        : 'You keep this. Your cost, not billed to the client.'}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
+                        padding: '4px 9px', borderRadius: 999, cursor: 'pointer', flexShrink: 0,
+                        background: r.client_pays ? 'rgba(16,185,129,0.14)' : 'rgba(0,0,0,0.05)',
+                        color: r.client_pays ? '#047857' : '#777',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!r.client_pays}
+                        onChange={(e) => updateUsedRow(r.id, { client_pays: e.target.checked })}
+                        style={{ width: 13, height: 13, cursor: 'pointer', accentColor: '#047857' }}
+                      />
+                      {r.client_pays ? 'Client buys' : 'You keep it'}
                     </label>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333', minWidth: 70, textAlign: 'right' }}>
                       {fmtMoney((Number(r.quantity) || 0) * (Number(r.unit_cost) || 0))}

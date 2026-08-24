@@ -1,4 +1,4 @@
-import type { WorkOrder, EnrichedWorkOrder, Payment, WorkOrderStatus, MaterialUsed } from './types';
+import type { WorkOrder, EnrichedWorkOrder, Payment, WorkOrderStatus, MaterialUsed, PayAddon, PayAddonKind } from './types';
 import { mileageReimbursement, mileageForTech } from './mileage';
 
 export function fmtMoney(n: number | null | undefined): string {
@@ -42,6 +42,7 @@ export function woPayoutTotal(wo: WorkOrder): number {
     woTechPayTotal(wo)
     + mileageReimbursement(wo.mileage_logs)
     + materialsReimbursement(wo.materials_used)
+    + payAddonsTotal(wo.pay_addons)
   ) * 100) / 100;
 }
 
@@ -113,6 +114,7 @@ export function contractorOwedOnWO(wo: WorkOrder, name: string): number {
     contractorShareOfWO(wo, name)
     + mileageForTech(wo.mileage_logs, name)
     + materialsForTech(wo.materials_used, name, wo.contractor_name)
+    + payAddonsForTech(wo.pay_addons, name, wo.contractor_name)
   ) * 100) / 100;
 }
 
@@ -284,4 +286,69 @@ export function materialsForTech(
       .filter((r) => r.reimburse && ((r.bought_by || leadTech || '') === name))
       .reduce((s, r) => s + Number(r.quantity ?? 0) * Number(r.unit_cost ?? 0), 0) * 100,
   ) / 100;
+}
+
+// ─── Pay add-ons ──────────────────────────────────────────────────────────────
+
+/** The kinds of line a payout can carry, and which way each one goes. */
+export const PAY_ADDON_KINDS: { kind: PayAddonKind; label: string; deduct: boolean }[] = [
+  { kind: 'materials',     label: 'Materials',            deduct: false },
+  { kind: 'mileage',       label: 'Mileage',              deduct: false },
+  { kind: 'per_diem',      label: 'Per diem',             deduct: false },
+  { kind: 'tolls_parking', label: 'Tolls / parking',      deduct: false },
+  { kind: 'permit',        label: 'Permit',               deduct: false },
+  { kind: 'equipment',     label: 'Equipment rental',     deduct: false },
+  { kind: 'bonus',         label: 'Bonus',                deduct: false },
+  { kind: 'tax',           label: 'Tax',                  deduct: true  },
+  { kind: 'service_fee',   label: 'Service / platform fee', deduct: true },
+  { kind: 'deduction',     label: 'Deduction',            deduct: true  },
+  { kind: 'other',         label: 'Other',                deduct: false },
+];
+
+export const payAddonLabel = (kind: PayAddonKind): string =>
+  PAY_ADDON_KINDS.find((k) => k.kind === kind)?.label ?? 'Other';
+
+/** Signed value: what this line does to the payout. */
+export const payAddonSigned = (a: PayAddon): number =>
+  (a.deduct ? -1 : 1) * (Number(a.amount) || 0);
+
+/** Everything the add-ons add to, or take off, the payout. */
+export function payAddonsTotal(addons: PayAddon[] | null | undefined): number {
+  return Math.round((addons ?? []).reduce((s, a) => s + payAddonSigned(a), 0) * 100) / 100;
+}
+
+/** The add-on lines belonging to one tech. Unattributed go to the lead. */
+export function payAddonsForTech(
+  addons: PayAddon[] | null | undefined,
+  name: string,
+  leadTech?: string | null,
+): number {
+  return Math.round(
+    (addons ?? [])
+      .filter((a) => (a.contractor_name || leadTech || '') === name)
+      .reduce((s, a) => s + payAddonSigned(a), 0) * 100,
+  ) / 100;
+}
+
+/** The pay panel, in the order it reads on screen. */
+export function payBreakdown(wo: WorkOrder): {
+  labour: number;
+  additions: PayAddon[];
+  deductions: PayAddon[];
+  mileage: number;
+  materials: number;
+  total: number;
+} {
+  const labour = woTechPayTotal(wo);
+  const mileage = mileageReimbursement(wo.mileage_logs);
+  const materials = materialsReimbursement(wo.materials_used);
+  const addons = wo.pay_addons ?? [];
+  return {
+    labour,
+    additions: addons.filter((a) => !a.deduct),
+    deductions: addons.filter((a) => a.deduct),
+    mileage,
+    materials,
+    total: Math.round((labour + mileage + materials + payAddonsTotal(addons)) * 100) / 100,
+  };
 }

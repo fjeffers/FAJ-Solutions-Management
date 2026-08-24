@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech } from './utils';
-import type { WorkOrder, Payment } from './types';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, payAddonsForTech, payBreakdown, PAY_ADDON_KINDS, payAddonLabel } from './utils';
+import type { WorkOrder, Payment, PayAddon } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
 const wo = (over: Partial<WorkOrder>): WorkOrder =>
@@ -390,5 +390,74 @@ describe('what a tech is actually owed', () => {
   it('leaves work orders with no material flags exactly as they were', () => {
     const legacy = wo({ materials_used: [{ id: 'a', material_id: null, name: 'Bits', quantity: 1, unit_cost: 99 }] });
     expect(materialsReimbursement(legacy.materials_used)).toBe(0);
+  });
+});
+
+describe('pay add-ons', () => {
+  const addon = (over: Partial<PayAddon>): PayAddon => ({
+    id: 'a1', kind: 'materials', label: 'Materials', amount: 35, deduct: false, ...over,
+  });
+
+  const wo = (addons: PayAddon[]) => ({
+    total_amount: 400, billable_travel: null, billable_miles: null,
+    billable_materials: null, billable_other: null,
+    contractor_name: 'Ana Reyes', contractor_names: ['Ana Reyes'],
+    contractor_pay: { 'Ana Reyes': 120 },
+    mileage_logs: [], materials_used: [], pay_addons: addons,
+  } as unknown as WorkOrder);
+
+  it('adds what should be added and takes off what should not', () => {
+    // The shape of the Field Nation panel Fred works from: labour, an
+    // additional charge that adds, a service charge and tax that come off.
+    const w = wo([
+      addon({ id: 'a', kind: 'materials', amount: 35 }),
+      addon({ id: 'b', kind: 'service_fee', label: 'Platform fee', amount: 23.10, deduct: true }),
+      addon({ id: 'c', kind: 'tax', label: 'Tax', amount: 0.36, deduct: true }),
+    ]);
+    expect(payAddonsTotal(w.pay_addons)).toBe(11.54);   // 35 − 23.10 − 0.36
+    expect(woPayoutTotal(w)).toBe(131.54);              // 120 labour + 11.54
+  });
+
+  it('is zero, not NaN, with no add-ons at all', () => {
+    expect(payAddonsTotal([])).toBe(0);
+    expect(payAddonsTotal(null)).toBe(0);
+    expect(woPayoutTotal(wo([]))).toBe(120);
+  });
+
+  it('gives each tech their own lines, and unattributed ones to the lead', () => {
+    const addons = [
+      addon({ id: 'a', amount: 35 }),
+      addon({ id: 'b', amount: 40, contractor_name: 'Marco' }),
+    ];
+    expect(payAddonsForTech(addons, 'Ana Reyes', 'Ana Reyes')).toBe(35);
+    expect(payAddonsForTech(addons, 'Marco', 'Ana Reyes')).toBe(40);
+  });
+
+  it('reaches what a tech is owed, not just the job total', () => {
+    const w = wo([addon({ id: 'a', kind: 'per_diem', label: 'Per diem', amount: 50 })]);
+    expect(contractorOwedOnWO(w, 'Ana Reyes')).toBe(170);   // 120 + 50
+  });
+
+  it('splits the panel into what adds and what deducts', () => {
+    const b = payBreakdown(wo([
+      addon({ id: 'a', amount: 35 }),
+      addon({ id: 'b', kind: 'tax', amount: 0.36, deduct: true }),
+    ]));
+    expect(b.labour).toBe(120);
+    expect(b.additions).toHaveLength(1);
+    expect(b.deductions).toHaveLength(1);
+    expect(b.total).toBe(154.64);
+  });
+
+  it('knows which way each kind normally goes', () => {
+    expect(PAY_ADDON_KINDS.find((k) => k.kind === 'tax')?.deduct).toBe(true);
+    expect(PAY_ADDON_KINDS.find((k) => k.kind === 'service_fee')?.deduct).toBe(true);
+    expect(PAY_ADDON_KINDS.find((k) => k.kind === 'mileage')?.deduct).toBe(false);
+    expect(payAddonLabel('tolls_parking')).toBe('Tolls / parking');
+  });
+
+  it('leaves work orders that have no add-ons exactly as they were', () => {
+    const legacy = { ...wo([]), pay_addons: undefined } as unknown as WorkOrder;
+    expect(woPayoutTotal(legacy)).toBe(120);
   });
 });

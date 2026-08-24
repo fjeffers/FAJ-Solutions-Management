@@ -235,6 +235,9 @@ export type WorkOrder = {
   billable_materials: number | null;
   billable_other: number | null;
 
+  /** (migration-065) Everything on the pay panel that is not labour. */
+  pay_addons: PayAddon[];
+
   // Materials used at closeout (migration-031). material_id links to inventory
   // (stock decremented on save); null material_id = extra item bought for the job.
   materials_used: MaterialUsed[] | null;
@@ -1039,4 +1042,29 @@ export type MaintenanceEvent = {
   done_on: string;
   notes: string | null;
   created_at: string;
+};
+
+/**
+ * A line on the pay panel, on top of labour (migration-065).
+ *
+ * Modelled on the way Field Nation presents a work order's pay: labour, then
+ * Additional Charges that add, and Service Charges and Tax that deduct, with a
+ * sum at the bottom. Fixed fields could not hold that — a per diem, a toll or a
+ * platform fee had nowhere to go — so this is one list and a new kind of charge
+ * never needs a new column.
+ */
+export type PayAddonKind =
+  | 'materials' | 'mileage' | 'per_diem' | 'tolls_parking' | 'permit'
+  | 'equipment' | 'bonus' | 'tax' | 'service_fee' | 'deduction' | 'other';
+
+export type PayAddon = {
+  id: string;
+  kind: PayAddonKind;
+  /** What it is, in Fred's words. Falls back to the kind's own name. */
+  label: string;
+  amount: number;
+  /** True takes it off the payout (tax, platform fee); false adds it. */
+  deduct: boolean;
+  /** Who it belongs to. Empty means the job's lead tech. */
+  contractor_name?: string | null;
 };

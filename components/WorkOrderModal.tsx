@@ -7,7 +7,7 @@ import {
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
   CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MileageLog } from '@/lib/types';
+import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MileageLog, PayAddon, PayAddonKind } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
 import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE, mileageForTech } from '@/lib/mileage';
 import { roundTripMiles } from '@/lib/driving';
@@ -24,7 +24,7 @@ import {
   WORK_ORDER_PRIORITIES,
   WORK_ORDER_SOURCES,
 } from '@/lib/types';
-import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech } from '@/lib/utils';
+import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, PAY_ADDON_KINDS } from '@/lib/utils';
 import { printSignOffSheet } from '@/lib/signoff';
 import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { createClient } from '@/lib/supabase/client';
@@ -260,6 +260,18 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     () => item?.lead_contractor_name ?? null
   );
   // Per-tech pay split (migration-029). Only meaningful with 2+ contractors.
+  const [payAddons, setPayAddons] = useState<PayAddon[]>(() => item?.pay_addons ?? []);
+  const addPayAddon = (kind: PayAddonKind) => {
+    const meta = PAY_ADDON_KINDS.find((k) => k.kind === kind)!;
+    setPayAddons((rows) => [...rows, {
+      id: `pa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      kind, label: meta.label, amount: 0, deduct: meta.deduct, contractor_name: null,
+    }]);
+  };
+  const updatePayAddon = (id: string, patch: Partial<PayAddon>) =>
+    setPayAddons((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const removePayAddon = (id: string) => setPayAddons((rows) => rows.filter((r) => r.id !== id));
+
   const [contractorPay, setContractorPay] = useState<Record<string, number>>(
     () => item?.contractor_pay ?? {}
   );
@@ -522,6 +534,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       })(),
       // Closeout materials (migration-031) — drop unnamed rows
       materials_used: materialsUsed.filter((r) => r.name.trim() !== ''),
+      pay_addons:         payAddons.filter((a) => Number(a.amount) !== 0),
       billable_travel:    Number(form.billable_travel)    || null,
       billable_miles:     Number(form.billable_miles)     || null,
       billable_materials: clientPaidMaterials(materialsUsed) || null,
@@ -736,8 +749,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                     const assigned = contractorNames.reduce((s, n) => s + (Number(contractorPay[n]) || 0), 0);
                     const mileagePay = mileageReimbursement(mileageLogs);
                     const materialsPay = materialsReimbursement(materialsUsed);
+                    const addonsPay = payAddonsTotal(payAddons);
                     const woAmount = calcTotal(form);
-                    const payout = Math.round((assigned + mileagePay + materialsPay) * 100) / 100;
+                    const payout = Math.round((assigned + mileagePay + materialsPay + addonsPay) * 100) / 100;
                     const profit = Math.round((woAmount - payout) * 100) / 100;
                     return (
                       <>
@@ -752,6 +766,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                                   `Labour ${fmtMoney(assigned)}`,
                                   mileagePay ? `Mileage ${fmtMoney(mileagePay)}` : null,
                                   materialsPay ? `Materials ${fmtMoney(materialsPay)}` : null,
+                                  addonsPay ? `Add-ons ${fmtMoney(addonsPay)}` : null,
                                 ].filter(Boolean).join(' + ')
                                 + ` = ${fmtMoney(payout)} out`
                                 + ` · Client ${fmtMoney(woAmount)}`
@@ -947,6 +962,110 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                   }}>{pt}</button>
                 ))}
               </div>
+            </div>
+
+            {/* ── Add-ons on the pay ──────────────────────────────────────
+                Labour, then a list of lines that add or come off, and a sum —
+                the shape of the Field Nation panel Fred works from. Fixed
+                fields could not hold a per diem, a toll or a platform fee. */}
+            <div style={{ border: '1px solid #eee', borderRadius: 12, padding: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: '#555', textTransform: 'uppercase' }}>
+                  Add-ons on the pay
+                </div>
+                <select
+                  className="input"
+                  value=""
+                  onChange={(e) => { if (e.target.value) addPayAddon(e.target.value as PayAddonKind); }}
+                  title="Add a charge on top of the labour, or something that comes off it"
+                  style={{ width: 'auto', fontSize: 12, padding: '6px 10px', cursor: 'pointer' }}
+                >
+                  <option value="">+ Add a line…</option>
+                  {PAY_ADDON_KINDS.map((k) => (
+                    <option key={k.kind} value={k.kind}>
+                      {k.deduct ? '− ' : '+ '}{k.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {payAddons.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#aaa', padding: '10px 2px' }}>
+                  Nothing on top of the labour yet. Materials, mileage, per diem and tolls add to the pay;
+                  tax and platform fees come off it.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {payAddons.map((a) => (
+                    <div key={a.id} style={{
+                      display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap',
+                      padding: '7px 9px', borderRadius: 9,
+                      background: a.deduct ? 'rgba(239,68,68,0.05)' : 'rgba(16,185,129,0.05)',
+                      border: '1px solid rgba(0,0,0,0.07)',
+                    }}>
+                      <button
+                        type="button"
+                        onClick={() => updatePayAddon(a.id, { deduct: !a.deduct })}
+                        title={a.deduct ? 'Comes off the pay — click to make it add' : 'Adds to the pay — click to make it come off'}
+                        style={{
+                          width: 26, height: 26, borderRadius: 999, cursor: 'pointer', flexShrink: 0,
+                          border: 'none', fontSize: 15, fontWeight: 800,
+                          background: a.deduct ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
+                          color: a.deduct ? '#b91c1c' : '#047857',
+                        }}
+                      >
+                        {a.deduct ? '−' : '+'}
+                      </button>
+                      <input
+                        className="input"
+                        value={a.label}
+                        onChange={(e) => updatePayAddon(a.id, { label: e.target.value })}
+                        placeholder="What is it"
+                        style={{ flex: '2 1 160px', fontSize: 13, padding: '6px 9px', fontWeight: 600 }}
+                      />
+                      {contractorNames.length > 1 && (
+                        <select
+                          className="input"
+                          value={a.contractor_name ?? ''}
+                          onChange={(e) => updatePayAddon(a.id, { contractor_name: e.target.value || null })}
+                          title="Whose line is this"
+                          style={{ width: 'auto', fontSize: 11, padding: '6px 8px' }}
+                        >
+                          <option value="">Lead tech</option>
+                          {contractorNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                        <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
+                        <input
+                          className="input" type="number" step="0.01" min="0"
+                          value={a.amount || ''}
+                          onChange={(e) => updatePayAddon(a.id, { amount: Number(e.target.value) })}
+                          placeholder="0.00"
+                          style={{ width: 92, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
+                        />
+                      </div>
+                      <button type="button" onClick={() => removePayAddon(a.id)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4, flexShrink: 0 }}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                  <div style={{
+                    display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'baseline',
+                    paddingTop: 7, borderTop: '1px dashed #e8e8e8', fontSize: 12,
+                  }}>
+                    <span style={{ color: '#888' }}>Add-ons come to</span>
+                    <strong style={{
+                      fontSize: 14,
+                      color: payAddonsTotal(payAddons) < 0 ? '#b91c1c' : '#047857',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      {payAddonsTotal(payAddons) < 0 ? '−' : '+'}{fmtMoney(Math.abs(payAddonsTotal(payAddons)))}
+                    </strong>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* What the client is billed on top of the labour. Revenue — the

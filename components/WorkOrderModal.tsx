@@ -145,9 +145,9 @@ const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
  * whatever was typed.
  */
 function calcTotal(f: Partial<WorkOrder>, addons: PayAddon[]): number {
-  if (f.pay_type === 'Fixed') return Math.round((Number(f.total_amount) || 0) * 100) / 100;
   if (addons.length > 0) return billableAddons(addons);
-  // Nothing on the list yet — fall back to whatever the job already carried.
+  // Nothing on the list yet — keep whatever the job already carried, so opening
+  // an older work order and closing it cannot zero its price.
   return Math.round((Number(f.total_amount) || 0) * 100) / 100;
 }
 
@@ -594,7 +594,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       billable_miles:     Number(form.billable_miles)     || null,
       // Mileage (migration-032) — drop zero-mile rows
       mileage_logs: mileageLogs.filter((r) => (Number(r.miles) || 0) > 0),
-      total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
+      total_amount:    computed,
       external_wo_id:  form.external_wo_id  || null,
       customer_name:   form.customer_name   || null,
       project_name:    form.project_name    || null,
@@ -1170,18 +1170,22 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                       </button>
                     </div>
                   ))}
-                  <div style={{
-                    display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'baseline',
-                    paddingTop: 7, borderTop: '1px dashed #e8e8e8', fontSize: 12,
-                  }}>
-                    <span style={{ color: '#888' }}>Add-ons come to</span>
-                    <strong style={{
-                      fontSize: 14,
-                      color: payAddonsTotal(payAddons) < 0 ? '#b91c1c' : '#047857',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}>
-                      {payAddonsTotal(payAddons) < 0 ? '−' : '+'}{fmtMoney(Math.abs(payAddonsTotal(payAddons)))}
-                    </strong>
+                  <div style={{ paddingTop: 9, borderTop: '1px solid #e8e8e8', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#666' }}>
+                      <span>Client pays</span>
+                      <strong style={{ fontSize: 16, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>
+                        {fmtMoney(billableAddons(payAddons))}
+                      </strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#666' }}>
+                      <span>Goes out to the tech</span>
+                      <strong style={{
+                        fontVariantNumeric: 'tabular-nums',
+                        color: payAddonsTotal(payAddons) < 0 ? '#b91c1c' : '#333',
+                      }}>
+                        {fmtMoney(payAddonsTotal(payAddons))}
+                      </strong>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1191,71 +1195,12 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 tech's mileage reimbursement is separate, further down, because
                 whether a tech gets the travel back varies by job. */}
             {/* Fixed */}
-            {form.pay_type === 'Fixed' && (
-              <PF label="Client Price * (what they pay you)" icon={<DollarSign size={13} />}>
-                <input className="input" type="number" step="0.01" min="0"
-                  value={form.total_amount ?? ''}
-                  onChange={(e) => set('total_amount', Number(e.target.value))}
-                  placeholder="0.00" />
-              </PF>
-            )}
-
-            {/* Per Device */}
-            {form.pay_type === 'Per Device' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <PF label="Rate Per Device" icon={<DollarSign size={13} />}>
-                    <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa', fontSize: 14 }}>$</span>
-                      <input className="input" type="number" step="0.01" min="0" style={{ paddingLeft: 24 }}
-                        value={form.per_device_rate ?? ''}
-                        onChange={(e) => set('per_device_rate', e.target.value ? Number(e.target.value) : null)}
-                        placeholder="0.00" />
-                    </div>
-                  </PF>
-                  <PF label="Device / Unit Count" icon={<Hash size={13} />}>
-                    <input className="input" type="number" step="1" min="0"
-                      value={form.device_count ?? ''}
-                      onChange={(e) => set('device_count', e.target.value ? Number(e.target.value) : null)}
-                      placeholder="0" />
-                  </PF>
-                </div>
-                <TotalPreview label="Total (Rate × Devices)" value={computed} />
-              </div>
-            )}
-
-            {/* Blended */}
-            {form.pay_type === 'Blended' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <PF label="Fixed Base Amount" icon={<DollarSign size={13} />}>
-                  <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa', fontSize: 14 }}>$</span>
-                    <input className="input" type="number" step="0.01" min="0" style={{ paddingLeft: 24 }}
-                      value={form.blended_base ?? ''}
-                      onChange={(e) => set('blended_base', e.target.value ? Number(e.target.value) : null)}
-                      placeholder="0.00" />
-                  </div>
-                </PF>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <PF label="Overtime Hourly Rate" icon={<DollarSign size={13} />}>
-                    <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa', fontSize: 14 }}>$</span>
-                      <input className="input" type="number" step="0.01" min="0" style={{ paddingLeft: 24 }}
-                        value={form.hourly_rate ?? ''}
-                        onChange={(e) => set('hourly_rate', e.target.value ? Number(e.target.value) : null)}
-                        placeholder="0.00" />
-                    </div>
-                  </PF>
-                  <PF label="Overtime Hours" icon={<Clock size={13} />}>
-                    <input className="input" type="number" step="0.25" min="0"
-                      value={form.hours_worked ?? ''}
-                      onChange={(e) => set('hours_worked', e.target.value ? Number(e.target.value) : null)}
-                      placeholder="0.00" />
-                  </PF>
-                </div>
-                <TotalPreview label="Total (Base + Overtime)" value={computed} />
-              </div>
-            )}
+            {/* Every pay type used to bring its own pair of rate boxes —
+                hourly rate and hours, rate per device and a count, a blended
+                base with overtime — plus expense, travel and bonus underneath.
+                All of it is a line now, and a line already does qty × rate, so
+                there is nothing left for these to say. Pay Type stays as the
+                label for the KIND of job it is. */}
 
             {form.source_platform?.toLowerCase() === 'netview' && item && (
               <NetviewSubmitButton wo={item} contractors={contractors} />

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, payAddonsForTech, payBreakdown, PAY_ADDON_KINDS, payAddonLabel, billableExtras, billableAddons } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, payAddonsForTech, payBreakdown, PAY_ADDON_KINDS, payAddonLabel, billableExtras, billableAddons, payAddonAmount } from './utils';
 import type { WorkOrder, Payment, PayAddon } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -512,5 +512,34 @@ describe('one list, two sides', () => {
     // ways cannot be counted twice.
     const migrated = wo([line({ amount: 58.7 })], { billable_travel: 58.7 });
     expect(billableExtras(migrated)).toBe(58.7);
+  });
+});
+
+describe('a pay line does hours or miles as readily as a flat figure', () => {
+  it('works out qty × rate', () => {
+    // The Hillside job, as two lines rather than five fields.
+    expect(payAddonAmount({ amount: 0, qty: 2, rate: 55 })).toBe(110);
+    expect(payAddonAmount({ amount: 0, qty: 117.4, rate: 0.5 })).toBe(58.7);
+  });
+
+  it('uses the flat amount when there is no rate', () => {
+    expect(payAddonAmount({ amount: 35, qty: null, rate: null })).toBe(35);
+  });
+
+  it('lets a rate of zero mean zero, not "fall back to the amount"', () => {
+    expect(payAddonAmount({ amount: 999, qty: 3, rate: 0 })).toBe(0);
+  });
+
+  it('totals a job built entirely from lines', () => {
+    const lines: PayAddon[] = [
+      { id: 'l', kind: 'labour', label: 'Labour', amount: 0, qty: 2, rate: 55,
+        deduct: false, bill_client: true, pay_tech: true },
+      { id: 'm', kind: 'mileage', label: 'Mileage', amount: 0, qty: 117.4, rate: 0.5,
+        deduct: false, bill_client: true, pay_tech: false },
+      { id: 't', kind: 'tax', label: 'Tax', amount: 0.36, qty: null, rate: null,
+        deduct: true, bill_client: false, pay_tech: true },
+    ];
+    expect(billableAddons(lines)).toBe(168.7);      // what Wendy's pays
+    expect(payAddonsTotal(lines)).toBe(109.64);     // 110 labour − 0.36 tax
   });
 });

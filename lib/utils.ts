@@ -298,9 +298,11 @@ export function materialsForTech(
 // ─── Pay add-ons ──────────────────────────────────────────────────────────────
 
 /** The kinds of line a payout can carry, and which way each one goes. */
-export const PAY_ADDON_KINDS: { kind: PayAddonKind; label: string; deduct: boolean }[] = [
+export const PAY_ADDON_KINDS: { kind: PayAddonKind; label: string; deduct: boolean; metered?: boolean }[] = [
+  // metered: normally written as an amount x a rate rather than a flat figure.
+  { kind: 'labour',        label: 'Labour',               deduct: false, metered: true },
   { kind: 'materials',     label: 'Materials',            deduct: false },
-  { kind: 'mileage',       label: 'Mileage',              deduct: false },
+  { kind: 'mileage',       label: 'Mileage',              deduct: false, metered: true },
   { kind: 'per_diem',      label: 'Per diem',             deduct: false },
   { kind: 'tolls_parking', label: 'Tolls / parking',      deduct: false },
   { kind: 'permit',        label: 'Permit',               deduct: false },
@@ -315,9 +317,17 @@ export const PAY_ADDON_KINDS: { kind: PayAddonKind; label: string; deduct: boole
 export const payAddonLabel = (kind: PayAddonKind): string =>
   PAY_ADDON_KINDS.find((k) => k.kind === kind)?.label ?? 'Other';
 
+/** What a line comes to: qty x rate when both are given, else the flat amount. */
+export function payAddonAmount(a: Pick<PayAddon, 'amount' | 'qty' | 'rate'>): number {
+  if (a.qty != null && a.rate != null) {
+    return Math.round((Number(a.qty) || 0) * (Number(a.rate) || 0) * 100) / 100;
+  }
+  return Math.round((Number(a.amount) || 0) * 100) / 100;
+}
+
 /** Signed value: what this line does to the payout. */
 export const payAddonSigned = (a: PayAddon): number =>
-  (a.deduct ? -1 : 1) * (Number(a.amount) || 0);
+  (a.deduct ? -1 : 1) * payAddonAmount(a);
 
 /** Everything the add-ons add to, or take off, the TECH's payout. */
 export function payAddonsTotal(addons: PayAddon[] | null | undefined): number {
@@ -331,7 +341,7 @@ export function billableAddons(addons: PayAddon[] | null | undefined): number {
   return Math.round(
     (addons ?? [])
       .filter((a) => a.bill_client && !a.deduct)
-      .reduce((s, a) => s + (Number(a.amount) || 0), 0) * 100,
+      .reduce((s, a) => s + payAddonAmount(a), 0) * 100,
   ) / 100;
 }
 

@@ -1054,7 +1054,7 @@ export type MaintenanceEvent = {
  * never needs a new column.
  */
 export type PayAddonKind =
-  | 'materials' | 'mileage' | 'per_diem' | 'tolls_parking' | 'permit'
+  | 'labour' | 'materials' | 'mileage' | 'per_diem' | 'tolls_parking' | 'permit'
   | 'equipment' | 'bonus' | 'tax' | 'service_fee' | 'deduction' | 'other';
 
 export type PayAddon = {
@@ -1062,7 +1062,16 @@ export type PayAddon = {
   kind: PayAddonKind;
   /** What it is, in Fred's words. Falls back to the kind's own name. */
   label: string;
+  /**
+   * A flat figure, OR the result of qty x rate when both are set.
+   *
+   * Two hours at $55 and 117.4 miles at $0.50 are the same shape, so one line
+   * type covers labour, mileage, per-device work and a plain charge. Rate and
+   * hours stopped being fields of their own for exactly this reason.
+   */
   amount: number;
+  qty?: number | null;
+  rate?: number | null;
   /** True takes it off the payout (tax, platform fee); false adds it. */
   deduct: boolean;
   /**

@@ -24,7 +24,7 @@ import {
   WORK_ORDER_PRIORITIES,
   WORK_ORDER_SOURCES,
 } from '@/lib/types';
-import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, PAY_ADDON_KINDS } from '@/lib/utils';
+import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, PAY_ADDON_KINDS, payAddonAmount, billableAddons } from '@/lib/utils';
 import { printSignOffSheet } from '@/lib/signoff';
 import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { createClient } from '@/lib/supabase/client';
@@ -136,17 +136,19 @@ const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
  * hours x rate, so a $168.70 visit silently became $110 and the travel was
  * gone. A fixed-price job is whatever was typed, extras included.
  */
-function calcTotal(f: Partial<WorkOrder>): number {
-  const extras = billableExtras(f as WorkOrder);
-  const labour = (() => {
-    switch (f.pay_type) {
-      case 'Hourly':     return (Number(f.hourly_rate) || 0) * (Number(f.hours_worked) || 0);
-      case 'Per Device': return (Number(f.per_device_rate) || 0) * (Number(f.device_count) || 0);
-      case 'Blended':    return (Number(f.blended_base) || 0) + (Number(f.hourly_rate) || 0) * (Number(f.hours_worked) || 0);
-      default:           return Number(f.total_amount) || 0;
-    }
-  })();
-  return Math.round((labour + (f.pay_type === 'Fixed' ? 0 : extras)) * 100) / 100;
+/**
+ * What the client is billed: the sum of the lines marked as theirs.
+ *
+ * Rate and hours used to be fields here, with travel and expenses in three
+ * more beside them. They are all lines now, so this adds up one list rather
+ * than juggling a pay type against five columns. A fixed-price job is still
+ * whatever was typed.
+ */
+function calcTotal(f: Partial<WorkOrder>, addons: PayAddon[]): number {
+  if (f.pay_type === 'Fixed') return Math.round((Number(f.total_amount) || 0) * 100) / 100;
+  if (addons.length > 0) return billableAddons(addons);
+  // Nothing on the list yet — fall back to whatever the job already carried.
+  return Math.round((Number(f.total_amount) || 0) * 100) / 100;
 }
 
 type Props = {
@@ -260,12 +262,49 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     () => item?.lead_contractor_name ?? null
   );
   // Per-tech pay split (migration-029). Only meaningful with 2+ contractors.
-  const [payAddons, setPayAddons] = useState<PayAddon[]>(() => item?.pay_addons ?? []);
+  /**
+   * The pay is labour plus a list, and labour is a line like anything else.
+   *
+   * Work orders raised before that had their labour in hourly_rate/hours_worked
+   * and their extras in expense_budget / travel_amount / bonus_amount. Those
+   * fields are gone from the form, so on first open they are turned into lines —
+   * otherwise a job would quietly lose the money that was in them.
+   */
+  const [payAddons, setPayAddons] = useState<PayAddon[]>(() => {
+    const existing = item?.pay_addons ?? [];
+    if (existing.length > 0 || !item) return existing;
+
+    const seeded: PayAddon[] = [];
+    const add = (kind: PayAddonKind, label: string, amount: number, qty?: number, rate?: number) => {
+      if (!amount) return;
+      seeded.push({
+        id: `pa-seed-${kind}`, kind, label, amount,
+        qty: qty ?? null, rate: rate ?? null,
+        deduct: false, bill_client: true, pay_tech: true, contractor_name: null,
+      });
+    };
+
+    const hrs = Number(item.hours_worked ?? 0);
+    const rate = Number(item.hourly_rate ?? 0);
+    if (hrs > 0 && rate > 0) add('labour', 'Labour', Math.round(hrs * rate * 100) / 100, hrs, rate);
+    else if (Number(item.total_amount) > 0 && item.pay_type !== 'Fixed') {
+      add('labour', 'Labour', Number(item.total_amount));
+    }
+    add('other', 'Expense budget', Number(item.expense_budget ?? 0));
+    add('mileage', 'Travel', Number(item.travel_amount ?? 0));
+    add('bonus', 'Bonus', Number(item.bonus_amount ?? 0));
+    // Travel recorded against the client before the rebuild.
+    add('mileage', 'Travel', Number(item.billable_travel ?? 0));
+    return seeded;
+  });
   const addPayAddon = (kind: PayAddonKind) => {
     const meta = PAY_ADDON_KINDS.find((k) => k.kind === kind)!;
     setPayAddons((rows) => [...rows, {
       id: `pa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      kind, label: meta.label, amount: 0, deduct: meta.deduct,
+      kind, label: meta.label, amount: 0,
+      qty: meta.metered ? 1 : null,
+      rate: meta.metered ? (kind === 'mileage' ? billRate : null) : null,
+      deduct: meta.deduct,
       // A charge is billed to the client by default and paid back to the tech
       // only when it is money they laid out. Deductions are never billed on.
       bill_client: !meta.deduct,
@@ -481,7 +520,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const removeQA = (id: string) =>
     setCustomQA((qs) => qs.filter((q) => q.id !== id));
 
-  const computed = calcTotal(form);
+  const computed = calcTotal(form, payAddons);
   const canSave = !!(form.wo_number?.trim() && (contractorNames.length > 0 || contractorToAdd.trim()));
 
   const addContractor = () => {
@@ -764,7 +803,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                     const mileagePay = mileageReimbursement(mileageLogs);
                     const materialsPay = materialsReimbursement(materialsUsed);
                     const addonsPay = payAddonsTotal(payAddons);
-                    const woAmount = calcTotal(form);
+                    const woAmount = calcTotal(form, payAddons);
                     const payout = Math.round((assigned + mileagePay + materialsPay + addonsPay) * 100) / 100;
                     const profit = Math.round((woAmount - payout) * 100) / 100;
                     return (
@@ -1049,16 +1088,59 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                           {contractorNames.map((n) => <option key={n} value={n}>{n}</option>)}
                         </select>
                       )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                        <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
-                        <input
-                          className="input" type="number" step="0.01" min="0"
-                          value={a.amount || ''}
-                          onChange={(e) => updatePayAddon(a.id, { amount: Number(e.target.value) })}
-                          placeholder="0.00"
-                          style={{ width: 92, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
-                        />
-                      </div>
+                      {/* Two hours at $55 and 117.4 miles at $0.50 are the same
+                          shape, so a line is either a flat figure or qty × rate. */}
+                      {a.qty != null || a.rate != null ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                          <input
+                            className="input" type="number" step="0.01" min="0"
+                            value={a.qty ?? ''}
+                            onChange={(e) => updatePayAddon(a.id, { qty: e.target.value === '' ? null : Number(e.target.value) })}
+                            placeholder="qty"
+                            title={a.kind === 'labour' ? 'Hours' : a.kind === 'mileage' ? 'Miles' : 'How many'}
+                            style={{ width: 62, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
+                          />
+                          <span style={{ fontSize: 12, color: '#aaa' }}>×</span>
+                          <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
+                          <input
+                            className="input" type="number" step="0.01" min="0"
+                            value={a.rate ?? ''}
+                            onChange={(e) => updatePayAddon(a.id, { rate: e.target.value === '' ? null : Number(e.target.value) })}
+                            placeholder="rate"
+                            style={{ width: 70, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
+                          />
+                          <span style={{ fontSize: 12, fontWeight: 800, minWidth: 74, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtMoney(payAddonAmount(a))}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updatePayAddon(a.id, { amount: payAddonAmount(a), qty: null, rate: null })}
+                            title="Enter one figure instead"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bbb', fontSize: 10, padding: 2 }}
+                          >
+                            flat
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                          <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
+                          <input
+                            className="input" type="number" step="0.01" min="0"
+                            value={a.amount || ''}
+                            onChange={(e) => updatePayAddon(a.id, { amount: Number(e.target.value) })}
+                            placeholder="0.00"
+                            style={{ width: 92, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updatePayAddon(a.id, { qty: 1, rate: a.amount || 0 })}
+                            title="Work it out as an amount × a rate"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#bbb', fontSize: 10, padding: 2 }}
+                          >
+                            × rate
+                          </button>
+                        </div>
+                      )}
                       {/* Which side this line lands on. Both can be on: travel
                           is often billed to the client AND paid back to whoever
                           drove. This is what the separate travel, materials and
@@ -1118,30 +1200,6 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               </PF>
             )}
 
-            {/* Hourly */}
-            {form.pay_type === 'Hourly' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <PF label="Hourly Rate" icon={<DollarSign size={13} />}>
-                    <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa', fontSize: 14 }}>$</span>
-                      <input className="input" type="number" step="0.01" min="0" style={{ paddingLeft: 24 }}
-                        value={form.hourly_rate ?? ''}
-                        onChange={(e) => set('hourly_rate', e.target.value ? Number(e.target.value) : null)}
-                        placeholder="0.00" />
-                    </div>
-                  </PF>
-                  <PF label="Hours Worked" icon={<Clock size={13} />}>
-                    <input className="input" type="number" step="0.25" min="0"
-                      value={form.hours_worked ?? ''}
-                      onChange={(e) => set('hours_worked', e.target.value ? Number(e.target.value) : null)}
-                      placeholder="0.00" />
-                  </PF>
-                </div>
-                <TotalPreview label="Total (Rate × Hours)" value={computed} />
-              </div>
-            )}
-
             {/* Per Device */}
             {form.pay_type === 'Per Device' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1198,18 +1256,6 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 <TotalPreview label="Total (Base + Overtime)" value={computed} />
               </div>
             )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-              <PF label="Expense Budget">
-                <MoneyInput value={form.expense_budget} onChange={(v) => set('expense_budget', v)} />
-              </PF>
-              <PF label="Travel Amount">
-                <MoneyInput value={form.travel_amount} onChange={(v) => set('travel_amount', v)} />
-              </PF>
-              <PF label="Bonus Amount">
-                <MoneyInput value={form.bonus_amount} onChange={(v) => set('bonus_amount', v)} />
-              </PF>
-            </div>
 
             {form.source_platform?.toLowerCase() === 'netview' && item && (
               <NetviewSubmitButton wo={item} contractors={contractors} />

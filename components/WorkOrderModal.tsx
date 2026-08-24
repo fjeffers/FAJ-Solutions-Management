@@ -265,7 +265,12 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     const meta = PAY_ADDON_KINDS.find((k) => k.kind === kind)!;
     setPayAddons((rows) => [...rows, {
       id: `pa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      kind, label: meta.label, amount: 0, deduct: meta.deduct, contractor_name: null,
+      kind, label: meta.label, amount: 0, deduct: meta.deduct,
+      // A charge is billed to the client by default and paid back to the tech
+      // only when it is money they laid out. Deductions are never billed on.
+      bill_client: !meta.deduct,
+      pay_tech: meta.deduct || meta.kind === 'materials' || meta.kind === 'mileage',
+      contractor_name: null,
     }]);
   };
   const updatePayAddon = (id: string, patch: Partial<PayAddon>) =>
@@ -359,12 +364,20 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       if (!silent) toastError("Couldn't route that address — check street, city and state on the Site tab.");
       return;
     }
-    setForm((f) => ({
-      ...f,
-      billable_miles: mi,
-      billable_travel: Math.round(mi * billRate * 100) / 100,
-    }));
-    if (!silent) toastSuccess(`${mi} miles round trip — billing ${fmtMoney(mi * billRate)} at $${billRate.toFixed(2)}/mi`);
+    const amount = Math.round(mi * billRate * 100) / 100;
+    setForm((f) => ({ ...f, billable_miles: mi }));
+    // One mileage line, updated in place — calculating twice must not leave two.
+    setPayAddons((rows) => {
+      const existing = rows.find((r) => r.kind === 'mileage');
+      const label = `Mileage — ${mi} mi × $${billRate.toFixed(2)}`;
+      if (existing) return rows.map((r) => (r.id === existing.id ? { ...r, label, amount } : r));
+      return [...rows, {
+        id: `pa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        kind: 'mileage' as PayAddonKind, label, amount, deduct: false,
+        bill_client: true, pay_tech: false, contractor_name: null,
+      }];
+    });
+    if (!silent) toastSuccess(`${mi} miles round trip — ${fmtMoney(amount)} at $${billRate.toFixed(2)}/mi`);
   };
 
   /**
@@ -377,7 +390,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   useEffect(() => {
     if (autoTried.current) return;
     const hasAddress = !!(form.site_address || form.site_zip);
-    const noTravelYet = !form.billable_travel && !form.billable_miles;
+    const noTravelYet = !payAddons.some((a) => a.kind === 'mileage') && !form.billable_travel;
     if (!hasAddress || !noTravelYet) return;
     autoTried.current = true;
     void autoCalcBillableMiles(true);
@@ -534,11 +547,12 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       })(),
       // Closeout materials (migration-031) — drop unnamed rows
       materials_used: materialsUsed.filter((r) => r.name.trim() !== ''),
+      // One list holds everything that is not labour. The three billable_*
+      // columns are left alone rather than rewritten: they still carry work
+      // orders raised before the rebuild, and billableExtras only reads them
+      // when a job has no add-ons.
       pay_addons:         payAddons.filter((a) => Number(a.amount) !== 0),
-      billable_travel:    Number(form.billable_travel)    || null,
       billable_miles:     Number(form.billable_miles)     || null,
-      billable_materials: clientPaidMaterials(materialsUsed) || null,
-      billable_other:     Number(form.billable_other)     || null,
       // Mileage (migration-032) — drop zero-mile rows
       mileage_logs: mileageLogs.filter((r) => (Number(r.miles) || 0) > 0),
       total_amount:    form.pay_type === 'Fixed' ? Number(form.total_amount) : computed,
@@ -1045,6 +1059,29 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                           style={{ width: 92, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
                         />
                       </div>
+                      {/* Which side this line lands on. Both can be on: travel
+                          is often billed to the client AND paid back to whoever
+                          drove. This is what the separate travel, materials and
+                          mileage sections could never say without disagreeing. */}
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                        {!a.deduct && (
+                          <SideToggle
+                            on={a.bill_client}
+                            onClick={() => updatePayAddon(a.id, { bill_client: !a.bill_client })}
+                            onLabel="Client pays" offLabel="Not billed"
+                            title={a.bill_client ? 'On the client’s bill' : 'Not billed to the client'}
+                            color="#047857"
+                          />
+                        )}
+                        <SideToggle
+                          on={a.pay_tech}
+                          onClick={() => updatePayAddon(a.id, { pay_tech: !a.pay_tech })}
+                          onLabel={a.deduct ? 'Off their pay' : 'Tech paid'}
+                          offLabel={a.deduct ? 'Not off pay' : 'Not paid out'}
+                          title={a.pay_tech ? 'Counts in what the tech is owed' : 'Does not affect the tech’s pay'}
+                          color={a.deduct ? '#b91c1c' : 'var(--teal)'}
+                        />
+                      </div>
                       <button type="button" onClick={() => removePayAddon(a.id)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4, flexShrink: 0 }}>
                         <X size={13} />
@@ -1071,38 +1108,6 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             {/* What the client is billed on top of the labour. Revenue — the
                 tech's mileage reimbursement is separate, further down, because
                 whether a tech gets the travel back varies by job. */}
-            {form.pay_type !== 'Fixed' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <PF label="Travel charged to client" icon={<DollarSign size={13} />}>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input className="input" type="number" step="0.01" min="0"
-                      value={form.billable_travel ?? ''}
-                      onChange={(e) => set('billable_travel', e.target.value === '' ? null : Number(e.target.value))}
-                      placeholder="0.00" style={{ flex: 1 }} />
-                    <button
-                      type="button" className="btn btn-ghost" disabled={calcingMiles}
-                      onClick={() => void autoCalcBillableMiles()}
-                      title="Round trip from your home base to this site, billed at your mileage rate"
-                      style={{ fontSize: 12, whiteSpace: 'nowrap', opacity: calcingMiles ? 0.6 : 1 }}
-                    >
-                      🚗 {calcingMiles ? 'Working…' : 'Auto'}
-                    </button>
-                  </div>
-                  {form.billable_miles != null && (
-                    <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-                      {form.billable_miles} mi round trip × ${billRate.toFixed(2)}/mi
-                    </div>
-                  )}
-                </PF>
-                <PF label="Other charges to client" icon={<DollarSign size={13} />}>
-                  <input className="input" type="number" step="0.01" min="0"
-                    value={form.billable_other ?? ''}
-                    onChange={(e) => set('billable_other', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="permits, parking, rental" />
-                </PF>
-              </div>
-            )}
-
             {/* Fixed */}
             {form.pay_type === 'Fixed' && (
               <PF label="Client Price * (what they pay you)" icon={<DollarSign size={13} />}>
@@ -1708,50 +1713,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                         style={{ width: 80, fontSize: 12, padding: '6px 8px', textAlign: 'right' }}
                       />
                     </label>
-                    {/* Most materials stay Fred's — carried to the job and
-                        brought back. Only what the client actually bought, or
-                        asked to be left on site, is billed to them. */}
-                    <label
-                      title={r.client_pays
-                        ? 'The client is buying this — it is on their bill and it stays on site'
-                        : 'You keep this. Your cost, not billed to the client.'}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
-                        padding: '4px 9px', borderRadius: 999, cursor: 'pointer', flexShrink: 0,
-                        background: r.client_pays ? 'rgba(16,185,129,0.14)' : 'rgba(0,0,0,0.05)',
-                        color: r.client_pays ? '#047857' : '#777',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!r.client_pays}
-                        onChange={(e) => updateUsedRow(r.id, { client_pays: e.target.checked })}
-                        style={{ width: 13, height: 13, cursor: 'pointer', accentColor: '#047857' }}
-                      />
-                      {r.client_pays ? 'Client buys' : 'You keep it'}
-                    </label>
-                    {/* Whoever laid out the cash gets it back. An item bought
-                        for the job defaults to reimbursable; stock off the van
-                        does not, because the business already owned it. */}
-                    <label
-                      title={r.reimburse
-                        ? 'Paid back to whoever bought it, on top of their labour'
-                        : 'Not reimbursed — company stock, already paid for'}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
-                        padding: '4px 9px', borderRadius: 999, cursor: 'pointer', flexShrink: 0,
-                        background: r.reimburse ? 'rgba(13,115,119,0.12)' : 'rgba(0,0,0,0.05)',
-                        color: r.reimburse ? 'var(--teal)' : '#777',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!r.reimburse}
-                        onChange={(e) => updateUsedRow(r.id, { reimburse: e.target.checked })}
-                        style={{ width: 13, height: 13, cursor: 'pointer', accentColor: 'var(--teal)' }}
-                      />
-                      {r.reimburse ? 'Pay it back' : 'No payback'}
-                    </label>
+                    {/* Whether the client is buying it, and whether whoever
+                        bought it gets paid back, are Pay-panel lines now. One
+                        place for money; this row records what was used. */}
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333', minWidth: 70, textAlign: 'right' }}>
                       {fmtMoney((Number(r.quantity) || 0) * (Number(r.unit_cost) || 0))}
                     </span>
@@ -1771,12 +1735,16 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               Changes apply when you save the work order. Removing a stock row (or lowering its quantity) puts the units back in inventory.
             </div>
 
-            {/* ── Mileage ── */}
+            {/* ── Mileage (older work orders only) ──
+                Mileage is a line on the Pay panel now, so there is one place to
+                put it. Jobs that recorded it here before the rebuild still show
+                and still count; new ones do not get this section at all. */}
+            {mileageLogs.length > 0 && (
             <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16, marginTop: 4 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Mileage</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Mileage <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa' }}>· recorded before the Pay panel</span></div>
               <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
-                Log miles driven for this job — per tech, with a per-mile rate you can adjust
-                (defaults to ${DEFAULT_MILEAGE_RATE.toFixed(2)}/mi).
+                Kept as it was so the payout does not change. New mileage goes on the Pay tab,
+                where it can be billed to the client, paid back to the tech, or both.
               </div>
 
               {mileageLogs.length > 0 && (
@@ -1856,6 +1824,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 )}
               </div>
             </div>
+            )}
           </div>
         )}
 
@@ -2391,5 +2360,31 @@ function SummaryTile({ label, value, color }: { label: string; value: string; co
       <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: 'Lato, sans-serif' }}>{value}</div>
     </div>
+  );
+}
+
+/** A small on/off pill saying which side of the job a pay line lands on. */
+function SideToggle({ on, onClick, onLabel, offLabel, title, color }: {
+  on: boolean;
+  onClick: () => void;
+  onLabel: string;
+  offLabel: string;
+  title: string;
+  color: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      style={{
+        fontSize: 10, fontWeight: 700, padding: '4px 9px', borderRadius: 999,
+        cursor: 'pointer', whiteSpace: 'nowrap', border: 'none',
+        background: on ? `color-mix(in srgb, ${color} 14%, transparent)` : 'rgba(0,0,0,0.05)',
+        color: on ? color : '#999',
+      }}
+    >
+      {on ? `✓ ${onLabel}` : offLabel}
+    </button>
   );
 }

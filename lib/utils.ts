@@ -17,7 +17,14 @@ export function fmtDate(d: string | null | undefined): string {
 // is profit. Legacy WOs with no contractor_pay assume techs get the full amount.
 
 /** What the client is billed on top of the labour: travel, materials, other. */
-export function billableExtras(wo: Pick<WorkOrder, 'billable_travel' | 'billable_materials' | 'billable_other'>): number {
+export function billableExtras(
+  wo: Pick<WorkOrder, 'billable_travel' | 'billable_materials' | 'billable_other'> & { pay_addons?: PayAddon[] | null },
+): number {
+  // Add-ons are the way these are recorded now. The three columns remain for
+  // work orders raised before the rebuild, and are only consulted when a job
+  // has no add-ons at all — otherwise the same travel would count twice.
+  const addons = wo.pay_addons ?? [];
+  if (addons.length > 0) return billableAddons(addons);
   return Math.round((
     Number(wo.billable_travel ?? 0) + Number(wo.billable_materials ?? 0) + Number(wo.billable_other ?? 0)
   ) * 100) / 100;
@@ -312,9 +319,20 @@ export const payAddonLabel = (kind: PayAddonKind): string =>
 export const payAddonSigned = (a: PayAddon): number =>
   (a.deduct ? -1 : 1) * (Number(a.amount) || 0);
 
-/** Everything the add-ons add to, or take off, the payout. */
+/** Everything the add-ons add to, or take off, the TECH's payout. */
 export function payAddonsTotal(addons: PayAddon[] | null | undefined): number {
-  return Math.round((addons ?? []).reduce((s, a) => s + payAddonSigned(a), 0) * 100) / 100;
+  return Math.round(
+    (addons ?? []).filter((a) => a.pay_tech !== false).reduce((s, a) => s + payAddonSigned(a), 0) * 100,
+  ) / 100;
+}
+
+/** What the add-ons put on the CLIENT's bill. Deductions are never revenue. */
+export function billableAddons(addons: PayAddon[] | null | undefined): number {
+  return Math.round(
+    (addons ?? [])
+      .filter((a) => a.bill_client && !a.deduct)
+      .reduce((s, a) => s + (Number(a.amount) || 0), 0) * 100,
+  ) / 100;
 }
 
 /** The add-on lines belonging to one tech. Unattributed go to the lead. */
@@ -325,7 +343,7 @@ export function payAddonsForTech(
 ): number {
   return Math.round(
     (addons ?? [])
-      .filter((a) => (a.contractor_name || leadTech || '') === name)
+      .filter((a) => a.pay_tech !== false && (a.contractor_name || leadTech || '') === name)
       .reduce((s, a) => s + payAddonSigned(a), 0) * 100,
   ) / 100;
 }

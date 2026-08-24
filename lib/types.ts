@@ -1065,6 +1065,17 @@ export type PayAddon = {
   amount: number;
   /** True takes it off the payout (tax, platform fee); false adds it. */
   deduct: boolean;
+  /**
+   * Which side of the job this line lands on. Both can be true — travel is
+   * often billed to the client AND paid back to the tech who drove — and both
+   * can be false while a figure is still being worked out.
+   *
+   * This is why one list replaced the separate travel, materials and mileage
+   * fields: whether a charge is revenue, a cost, or both varies per job, and
+   * three sets of fields could not say so without contradicting each other.
+   */
+  bill_client: boolean;
+  pay_tech: boolean;
   /** Who it belongs to. Empty means the job's lead tech. */
   contractor_name?: string | null;
 };

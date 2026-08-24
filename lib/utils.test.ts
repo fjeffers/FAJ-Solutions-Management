@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, payAddonsForTech, payBreakdown, PAY_ADDON_KINDS, payAddonLabel } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, payAddonsForTech, payBreakdown, PAY_ADDON_KINDS, payAddonLabel, billableExtras, billableAddons } from './utils';
 import type { WorkOrder, Payment, PayAddon } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -395,7 +395,8 @@ describe('what a tech is actually owed', () => {
 
 describe('pay add-ons', () => {
   const addon = (over: Partial<PayAddon>): PayAddon => ({
-    id: 'a1', kind: 'materials', label: 'Materials', amount: 35, deduct: false, ...over,
+    id: 'a1', kind: 'materials', label: 'Materials', amount: 35, deduct: false,
+    bill_client: true, pay_tech: true, ...over,
   });
 
   const wo = (addons: PayAddon[]) => ({
@@ -459,5 +460,57 @@ describe('pay add-ons', () => {
   it('leaves work orders that have no add-ons exactly as they were', () => {
     const legacy = { ...wo([]), pay_addons: undefined } as unknown as WorkOrder;
     expect(woPayoutTotal(legacy)).toBe(120);
+  });
+});
+
+describe('one list, two sides', () => {
+  const wo = (addons: PayAddon[], over: Record<string, unknown> = {}) => ({
+    total_amount: 0, billable_travel: null, billable_miles: null,
+    billable_materials: null, billable_other: null,
+    pay_type: 'Hourly', hourly_rate: 55, hours_worked: 2,
+    contractor_name: 'Ana Reyes', contractor_names: ['Ana Reyes'],
+    contractor_pay: { 'Ana Reyes': 110 },
+    mileage_logs: [], materials_used: [], pay_addons: addons,
+    ...over,
+  } as unknown as WorkOrder);
+
+  const line = (over: Partial<PayAddon>): PayAddon => ({
+    id: 'x', kind: 'mileage', label: 'Mileage', amount: 58.7,
+    deduct: false, bill_client: true, pay_tech: false, ...over,
+  });
+
+  it('bills the client without paying the tech', () => {
+    const w = wo([line({})]);
+    expect(billableExtras(w)).toBe(58.7);   // revenue
+    expect(payAddonsTotal(w.pay_addons)).toBe(0);      // nothing out
+    expect(woPayoutTotal(w)).toBe(110);
+  });
+
+  it('pays the tech without billing the client', () => {
+    const w = wo([line({ bill_client: false, pay_tech: true })]);
+    expect(billableExtras(w)).toBe(0);
+    expect(woPayoutTotal(w)).toBe(168.7);
+  });
+
+  it('does both when the travel is charged on and handed back', () => {
+    const w = wo([line({ bill_client: true, pay_tech: true })]);
+    expect(billableExtras(w)).toBe(58.7);
+    expect(woPayoutTotal(w)).toBe(168.7);
+  });
+
+  it('never turns a deduction into revenue', () => {
+    const w = wo([line({ kind: 'tax', label: 'Tax', amount: 12, deduct: true, bill_client: true, pay_tech: true })]);
+    expect(billableExtras(w)).toBe(0);       // a tax is not something a client buys
+    expect(woPayoutTotal(w)).toBe(98);       // 110 − 12
+  });
+
+  it('reads the old columns only while a job has no add-ons', () => {
+    const legacy = wo([], { billable_travel: 58.7 });
+    expect(billableExtras(legacy)).toBe(58.7);
+
+    // Once a job has add-ons they are the whole story, so travel recorded both
+    // ways cannot be counted twice.
+    const migrated = wo([line({ amount: 58.7 })], { billable_travel: 58.7 });
+    expect(billableExtras(migrated)).toBe(58.7);
   });
 });

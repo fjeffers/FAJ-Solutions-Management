@@ -151,3 +151,58 @@ export function nowInBusinessTZ(now: Date = new Date()): string {
     timeZone: BUSINESS_TZ, dateStyle: 'medium', timeStyle: 'short',
   }).format(now);
 }
+
+// ─── What a work order is made of ─────────────────────────────────────────────
+
+/**
+ * The parts behind a work order's client price.
+ *
+ * The board showed one number and nothing else, so a job converted from a
+ * $168.70 visit read "2 hours at $55" with no sign of the $58.70 of travel that
+ * made up the difference.
+ *
+ * `other` is deliberately the REMAINDER rather than a stored field: if the named
+ * parts do not account for the total, that gap is real and belongs on screen,
+ * not rounded away. On a fixed-price job the whole fee lands there.
+ */
+export type WOBreakdown = {
+  labor: number;
+  mileage: number;
+  materials: number;
+  other: number;
+  total: number;
+  /** True when labour is an hourly calculation worth spelling out. */
+  hourly: boolean;
+  hours: number;
+  rate: number;
+};
+
+export function workOrderBreakdown(w: Pick<WorkOrder,
+  'pay_type' | 'hourly_rate' | 'hours_worked' | 'total_amount' | 'mileage_logs' | 'materials_used'
+>): WOBreakdown {
+  // Normalise -0: the remainder is a subtraction, and floating point makes
+  // "nothing left over" come out as -0, which reads oddly and compares badly.
+  const r2 = (n: number) => { const v = Math.round(n * 100) / 100; return v === 0 ? 0 : v; };
+  const hours = Number(w.hours_worked ?? 0);
+  const rate = Number(w.hourly_rate ?? 0);
+  const hourly = w.pay_type === 'Hourly' && hours > 0 && rate > 0;
+
+  const labor = hourly ? r2(hours * rate) : 0;
+  const mileage = r2((w.mileage_logs ?? []).reduce((s, m) => s + Number(m.miles ?? 0) * Number(m.rate ?? 0), 0));
+  const materials = r2((w.materials_used ?? []).reduce((s, m) => s + Number(m.quantity ?? 0) * Number(m.unit_cost ?? 0), 0));
+  const total = r2(Number(w.total_amount ?? 0));
+
+  return { labor, mileage, materials, other: r2(total - labor - mileage - materials), total, hourly, hours, rate };
+}
+
+/** The breakdown as one readable line: "2h × $55 = $110 + Mileage $58.70". */
+export function workOrderBreakdownText(w: Parameters<typeof workOrderBreakdown>[0]): string {
+  const b = workOrderBreakdown(w);
+  const parts: string[] = [];
+  if (b.hourly) parts.push(`${b.hours}h × ${fmtMoney(b.rate)} = ${fmtMoney(b.labor)}`);
+  if (b.mileage) parts.push(`Mileage ${fmtMoney(b.mileage)}`);
+  if (b.materials) parts.push(`Materials ${fmtMoney(b.materials)}`);
+  // Name the remainder for what it is, rather than leaving a silent gap.
+  if (b.other) parts.push(`${b.hourly || b.mileage || b.materials ? 'Other' : 'Job price'} ${fmtMoney(b.other)}`);
+  return parts.join('  +  ');
+}

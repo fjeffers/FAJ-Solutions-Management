@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText } from './utils';
 import type { WorkOrder, Payment } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -245,5 +245,59 @@ describe('addDaysISO', () => {
 
   it('hands back a bad date rather than NaN', () => {
     expect(addDaysISO('nonsense', 1)).toBe('nonsense');
+  });
+});
+
+describe('workOrderBreakdown', () => {
+  const wo = (over: Record<string, unknown>) => ({
+    pay_type: 'Hourly', hourly_rate: 55, hours_worked: 2, total_amount: 168.7,
+    mileage_logs: [{ id: 'm', contractor_name: 'F', miles: 117.4, rate: 0.5, note: null }],
+    materials_used: [],
+    ...over,
+  } as Parameters<typeof workOrderBreakdown>[0]);
+
+  it('breaks the Hillside job into the labour and travel that make it up', () => {
+    const b = workOrderBreakdown(wo({}));
+    expect(b.labor).toBe(110);
+    expect(b.mileage).toBe(58.7);
+    expect(b.other).toBe(0);          // nothing unexplained
+    expect(b.total).toBe(168.7);
+    expect(workOrderBreakdownText(wo({}))).toBe('2h × $55.00 = $110.00  +  Mileage $58.70');
+  });
+
+  it('adds up: the parts always account for the whole total', () => {
+    const shapes = [
+      wo({}),
+      wo({ materials_used: [{ id: 'x', material_id: null, name: 'CAT6', quantity: 2, unit_cost: 60 }], total_amount: 288.7 }),
+      wo({ pay_type: 'Fixed', hourly_rate: null, hours_worked: null, total_amount: 2680.9,
+           mileage_logs: [{ id: 'm', contractor_name: 'F', miles: 161.8, rate: 0.5, note: null }] }),
+      wo({ mileage_logs: [], total_amount: 110 }),
+    ];
+    for (const w of shapes) {
+      const b = workOrderBreakdown(w);
+      expect(Math.round((b.labor + b.mileage + b.materials + b.other) * 100) / 100).toBe(b.total);
+    }
+  });
+
+  it('calls the whole fee the job price on a fixed job', () => {
+    const text = workOrderBreakdownText(wo({
+      pay_type: 'Fixed', hourly_rate: null, hours_worked: null,
+      total_amount: 2600, mileage_logs: [], materials_used: [],
+    }));
+    expect(text).toBe('Job price $2,600.00');
+  });
+
+  it('shows an unexplained gap rather than hiding it', () => {
+    // Total says more than the named parts — that difference is real.
+    const b = workOrderBreakdown(wo({ total_amount: 300 }));
+    expect(b.other).toBe(131.3);
+    expect(workOrderBreakdownText(wo({ total_amount: 300 }))).toContain('Other $131.30');
+  });
+
+  it('says nothing at all when there is nothing to break down', () => {
+    expect(workOrderBreakdownText(wo({
+      pay_type: 'Fixed', hourly_rate: null, hours_worked: null,
+      total_amount: 0, mileage_logs: [], materials_used: [],
+    }))).toBe('');
   });
 });

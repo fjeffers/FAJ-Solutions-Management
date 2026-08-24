@@ -12,7 +12,7 @@ import { BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp, LogOut, 
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
-import WorkOrdersView from '@/components/WorkOrdersView';
+import WorkOrdersView, { type LinkedVisit } from '@/components/WorkOrdersView';
 import PaymentsView from '@/components/PaymentsView';
 import ContractorsView from '@/components/ContractorsView';
 import ContractorAnalyticsView from '@/components/ContractorAnalyticsView';
@@ -169,20 +169,28 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   /** Contractor id with an onboarding email or QuickBooks sync in flight. */
   const [contractorBusy, setContractorBusy] = useState<string | null>(null);
+  /** Site visits that became work orders, so a job can show where it came from. */
+  const [linkedVisits, setLinkedVisits] = useState<LinkedVisit[]>([]);
 
   // Core data every view needs — loaded before first paint.
   const loadCore = async (): Promise<boolean> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return false; }
 
-    const [cRes, wRes, pRes] = await Promise.all([
+    const [cRes, wRes, pRes, svRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),
       supabase.from('work_orders').select('*').order('wo_number'),
       supabase.from('payments').select('*').order('payment_date', { ascending: false }),
+      // Just enough of each linked visit for a work order to show where it came
+      // from. Visits with no work order are the Site Log's business, not this one.
+      supabase.from('site_visits')
+        .select('id, work_order_id, visit_date, site_name, site_code, hours, miles')
+        .not('work_order_id', 'is', null),
     ]);
     if (cRes.data) setContractors(cRes.data);
     if (wRes.data) setWorkOrders(wRes.data);
     if (pRes.data) setPayments(pRes.data);
+    if (svRes.data) setLinkedVisits(svRes.data as LinkedVisit[]);
     const failed = [cRes.error && 'contractors', wRes.error && 'work orders', pRes.error && 'payments'].filter(Boolean);
     if (failed.length > 0) {
       toastError(`Couldn't load ${failed.join(', ')}. Check your connection and refresh.`);
@@ -1244,6 +1252,7 @@ export default function HomePage() {
         {view === 'workorders' && (
           <WorkOrdersView
             initialSearch={woFromUrl}
+            siteVisits={linkedVisits}
             workOrders={enrichedWOs}
             stats={stats}
             contractors={contractors}

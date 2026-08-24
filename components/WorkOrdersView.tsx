@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2 } from 'lucide-react';
-import { fmtMoney, fmtDate, sortByWO } from '@/lib/utils';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer } from 'lucide-react';
+import { fmtMoney, fmtDate, sortByWO, workOrderBreakdownText } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
@@ -29,11 +29,14 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
+  siteVisits = [],
   onArchive, onUnarchive, onCloseJob,
 }: {
   workOrders: EnrichedWorkOrder[];
   /** Pre-fill the search, so a link can point at one work order. */
   initialSearch?: string;
+  /** Visits linked to work orders, so a job can show where it came from. */
+  siteVisits?: LinkedVisit[];
   stats: Stats;
   onAdd: () => void;
   onAddFromAI: (fields: Partial<WorkOrder>) => void;
@@ -193,7 +196,7 @@ export default function WorkOrdersView({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} onCloseJob={onCloseJob} />)}
+          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} onCloseJob={onCloseJob} siteVisits={siteVisits} />)}
         </div>
       )}
 
@@ -201,6 +204,17 @@ export default function WorkOrdersView({
     </div>
   );
 }
+
+/** Only what the board shows about a linked visit. */
+export type LinkedVisit = {
+  id: string;
+  work_order_id: string | null;
+  visit_date: string | null;
+  site_name: string | null;
+  site_code: string | null;
+  hours: number | null;
+  miles: number | null;
+};
 
 function WOCard({
   w,
@@ -214,8 +228,11 @@ function WOCard({
   onArchive,
   onUnarchive,
   onCloseJob,
+  siteVisits = [],
 }: {
   w: EnrichedWorkOrder;
+  /** The site visits this job came from — kept alongside what is already here. */
+  siteVisits?: LinkedVisit[];
   onEdit: (w: EnrichedWorkOrder) => void;
   onDelete: (id: string) => void;
   onSend: (w: EnrichedWorkOrder) => void;
@@ -227,6 +244,8 @@ function WOCard({
   onUnarchive: (id: string) => void;
   onCloseJob: (w: EnrichedWorkOrder) => void;
 }) {
+  const visitsForWO = siteVisits.filter((v) => v.work_order_id === w.id);
+  const breakdownText = workOrderBreakdownText(w);
   const [portalSending, setPortalSending] = useState(false);
   const [portalSent,    setPortalSent]    = useState(false);
   const sm = WO_STATUS_META[w.wo_status] ?? WO_STATUS_META['Open'];
@@ -455,6 +474,38 @@ function WOCard({
             </div>
           </div>
         </div>
+
+        {/* What the total is made of, and the site visits it came from. The
+            board used to show one number, so a job converted from a $168.70
+            visit read "2 hours at $55" with no sign of the travel. */}
+        {(breakdownText || visitsForWO.length > 0) && (
+          <div style={{
+            marginTop: 10, paddingTop: 9, borderTop: '1px dashed #e8e8e8',
+            display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center',
+            fontSize: 11, color: '#777',
+          }}>
+            {breakdownText && (
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {breakdownText} <strong style={{ color: '#1a1a1a' }}>= {fmtMoney(Number(w.total_amount))}</strong>
+              </span>
+            )}
+            {visitsForWO.map((v) => (
+              <a
+                key={v.id}
+                href="/?view=sitelog"
+                onClick={(e) => e.stopPropagation()}
+                title="Open the Site Log"
+                style={{ color: 'var(--teal)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <Timer size={11} />
+                {[v.site_name, v.site_code ? `#${v.site_code}` : null].filter(Boolean).join(' ') || 'Site visit'}
+                {v.visit_date ? ` · ${fmtDate(v.visit_date)}` : ''}
+                {v.hours ? ` · ${v.hours}h` : ''}
+                {v.miles ? ` · ${v.miles} mi` : ''}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
       </div>
     </div>

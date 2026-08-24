@@ -644,6 +644,7 @@ export default function SiteLogView() {
       // What the client is billed on top of labour, so saving the job can no
       // longer recompute the total down to the labour alone.
       billable_travel: money.billable_travel,
+      billable_miles: money.billable_miles,
       billable_materials: money.billable_materials,
       billable_other: money.billable_other,
       // Reimbursement to the tech is deliberately NOT assumed — see

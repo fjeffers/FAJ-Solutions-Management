@@ -346,6 +346,7 @@ export function workOrderMoneyFromVisit(
   hours_worked: number | null;
   /** What the CLIENT is billed on top of labour. Revenue. */
   billable_travel: number | null;
+  billable_miles: number | null;
   billable_materials: number | null;
   billable_other: number | null;
   /**
@@ -385,6 +386,7 @@ export function workOrderMoneyFromVisit(
     hourly_rate: hourly ? Number(hourly[1]) : null,
     hours_worked: hourly ? (v.hours ?? null) : null,
     billable_travel: travel || null,
+    billable_miles: miles || null,
     // The visit's materials cost is Fred's spend, not automatically a sale.
     billable_materials: null,
     billable_other: other || null,

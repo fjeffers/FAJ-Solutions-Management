@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech } from './utils';
 import type { WorkOrder, Payment } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -251,7 +251,7 @@ describe('addDaysISO', () => {
 describe('workOrderBreakdown', () => {
   const wo = (over: Record<string, unknown>) => ({
     pay_type: 'Hourly', hourly_rate: 55, hours_worked: 2, total_amount: 168.7,
-    billable_travel: 58.7, billable_materials: null, billable_other: null,
+    billable_travel: 58.7, billable_miles: 117.4, billable_materials: null, billable_other: null,
     materials_used: [],
     ...over,
   } as Parameters<typeof workOrderBreakdown>[0]);
@@ -262,7 +262,8 @@ describe('workOrderBreakdown', () => {
     expect(b.mileage).toBe(58.7);
     expect(b.other).toBe(0);          // nothing unexplained
     expect(b.total).toBe(168.7);
-    expect(workOrderBreakdownText(wo({}))).toBe('2h × $55.00 = $110.00  +  Travel $58.70');
+    // The distance is shown too, so the charge can be checked at a glance.
+    expect(workOrderBreakdownText(wo({}))).toBe('2h × $55.00 = $110.00  +  Travel 117.4 mi = $58.70');
   });
 
   it('adds up: the parts always account for the whole total', () => {
@@ -339,5 +340,55 @@ describe('client charges are never mistaken for tech pay', () => {
     ];
     expect(clientPaidMaterials(rows)).toBe(48);
     expect(ownStockMaterials(rows)).toBe(200);
+  });
+});
+
+describe('what a tech is actually owed', () => {
+  const wo = (over: Record<string, unknown>) => ({
+    total_amount: 400, billable_travel: null, billable_miles: null,
+    billable_materials: null, billable_other: null,
+    contractor_name: 'Ana Reyes', contractor_names: ['Ana Reyes'],
+    contractor_pay: { 'Ana Reyes': 200 },
+    mileage_logs: [{ id: 'm', contractor_name: 'Ana Reyes', miles: 100, rate: 0.5, note: null }],
+    materials_used: [
+      { id: 'a', material_id: null, name: 'Faceplates', quantity: 4, unit_cost: 30, reimburse: true },
+      { id: 'b', material_id: 'stock-1', name: 'CAT6 off the van', quantity: 1, unit_cost: 200, reimburse: false },
+    ],
+    ...over,
+  } as unknown as WorkOrder);
+
+  it('pays back the materials the tech bought, which used to be swallowed', () => {
+    // $200 labour + $50 mileage + $120 of faceplates she paid for.
+    expect(materialsReimbursement(wo({}).materials_used)).toBe(120);
+    expect(contractorOwedOnWO(wo({}), 'Ana Reyes')).toBe(370);
+  });
+
+  it('counts every reimbursement in the payout and the profit', () => {
+    expect(woPayoutTotal(wo({}))).toBe(370);
+    expect(woProfit(wo({}))).toBe(30);   // $400 client − $370 out
+  });
+
+  it('does not pay back stock the business already owned', () => {
+    const stockOnly = wo({
+      materials_used: [{ id: 'b', material_id: 'stock-1', name: 'CAT6', quantity: 1, unit_cost: 200, reimburse: false }],
+    });
+    expect(materialsReimbursement(stockOnly.materials_used)).toBe(0);
+    expect(contractorOwedOnWO(stockOnly, 'Ana Reyes')).toBe(250);
+  });
+
+  it('gives an unattributed purchase to the lead tech, not to nobody', () => {
+    expect(materialsForTech(wo({}).materials_used, 'Ana Reyes', 'Ana Reyes')).toBe(120);
+    expect(materialsForTech(wo({}).materials_used, 'Someone Else', 'Ana Reyes')).toBe(0);
+  });
+
+  it('attributes a purchase to whoever is recorded as buying it', () => {
+    const rows = [{ id: 'a', material_id: null, name: 'Anchors', quantity: 1, unit_cost: 40, reimburse: true, bought_by: 'Marco' }];
+    expect(materialsForTech(rows, 'Marco', 'Ana Reyes')).toBe(40);
+    expect(materialsForTech(rows, 'Ana Reyes', 'Ana Reyes')).toBe(0);
+  });
+
+  it('leaves work orders with no material flags exactly as they were', () => {
+    const legacy = wo({ materials_used: [{ id: 'a', material_id: null, name: 'Bits', quantity: 1, unit_cost: 99 }] });
+    expect(materialsReimbursement(legacy.materials_used)).toBe(0);
   });
 });

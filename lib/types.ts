@@ -230,6 +230,8 @@ export type WorkOrder = {
   // is reimbursed for the travel a client was charged varies by job, so the two
   // sides are recorded independently rather than inferred from each other.
   billable_travel: number | null;
+  /** (migration-064) round-trip miles behind billable_travel. */
+  billable_miles: number | null;
   billable_materials: number | null;
   billable_other: number | null;
 
@@ -354,6 +356,17 @@ export type MaterialUsed = {
    * only that row leaves the van for good.
    */
   client_pays?: boolean;
+  /**
+   * (migration-063) Pay this back to whoever bought it.
+   *
+   * Someone laid out cash for an item bought for the job, and the payout never
+   * counted it — a tech who spent $120 on faceplates was simply out $120. New
+   * "extra" rows default to reimbursable; stock off the van does not, because
+   * the business already owned it.
+   */
+  reimburse?: boolean;
+  /** Who paid for it. Empty means the job's lead tech. */
+  bought_by?: string | null;
 };
 
 export type Material = {

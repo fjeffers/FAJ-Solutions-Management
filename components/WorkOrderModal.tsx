@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   X, Hash, User, FileText, Calendar, DollarSign,
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MileageLog } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
-import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE } from '@/lib/mileage';
+import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE, mileageForTech } from '@/lib/mileage';
 import { roundTripMiles } from '@/lib/driving';
 import { toastError, toastSuccess } from '@/lib/toast';
 import WOTimeLogs from '@/components/WOTimeLogs';
@@ -24,7 +24,7 @@ import {
   WORK_ORDER_PRIORITIES,
   WORK_ORDER_SOURCES,
 } from '@/lib/types';
-import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials } from '@/lib/utils';
+import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech } from '@/lib/utils';
 import { printSignOffSheet } from '@/lib/signoff';
 import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { createClient } from '@/lib/supabase/client';
@@ -276,6 +276,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       name: inv?.name ?? '',
       quantity: 1,
       unit_cost: inv?.unit_cost ?? null,
+      // Bought for the job = someone is out of pocket, so it comes back by
+      // default. Stock off the van was already paid for by the business.
+      reimburse: material_id === null,
+      client_pays: false,
     }]);
   };
   const updateUsedRow = (id: string, patch: Partial<MaterialUsed>) =>
@@ -301,6 +305,73 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // Mileage calculator: real road miles, home base → this WO's site → home,
   // using the same engine as the Site Log (Nominatim + OSRM, both free).
   const [calcingMiles, setCalcingMiles] = useState(false);
+  /**
+   * The mileage rate to bill the client, from settings rather than a constant.
+   *
+   * The work order used to charge a hard-coded $0.70/mi while the Site Log used
+   * the rate in settings and the client statement bills $0.50 — three different
+   * numbers for one thing. This reads the same setting the rest of the app does.
+   */
+  const [billRate, setBillRate] = useState<number>(DEFAULT_MILEAGE_RATE);
+  useEffect(() => {
+    void (async () => {
+      const sb = createClient();
+      const { data } = await sb.from('user_settings').select('mileage_rate').maybeSingle();
+      if (data?.mileage_rate != null) setBillRate(Number(data.mileage_rate));
+    })();
+  }, []);
+
+  /**
+   * Work out the round trip and fill in the CLIENT's travel charge.
+   *
+   * Reimbursing the tech is a separate decision — the mileage rows below are
+   * still his to add — so this fills the billable side only.
+   */
+  const autoCalcBillableMiles = async (silent = false) => {
+    const dest = [form.site_address, form.site_city, form.site_state, form.site_zip].filter(Boolean).join(', ');
+    if (!dest) {
+      if (!silent) toastError('Add a site address first (Site tab) so there is somewhere to route to.');
+      return;
+    }
+    const sb = createClient();
+    const { data: s } = await sb.from('user_settings').select('home_base_address').maybeSingle();
+    const home = (s?.home_base_address as string | null) ?? '';
+    if (!home) {
+      if (!silent) toastError('Set your Home Base on the Site Log first — round trips start and end there.');
+      return;
+    }
+    setCalcingMiles(true);
+    const mi = await roundTripMiles(home, dest);
+    setCalcingMiles(false);
+    if (mi == null) {
+      if (!silent) toastError("Couldn't route that address — check street, city and state on the Site tab.");
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      billable_miles: mi,
+      billable_travel: Math.round(mi * billRate * 100) / 100,
+    }));
+    if (!silent) toastSuccess(`${mi} miles round trip — billing ${fmtMoney(mi * billRate)} at $${billRate.toFixed(2)}/mi`);
+  };
+
+  /**
+   * Do it without being asked, once, when a job has an address and no travel
+   * recorded. Fred's question was why this was not automatic: it never was, and
+   * the manual button was buried in the Mileage section and filled the tech's
+   * reimbursement instead of the client's charge.
+   */
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (autoTried.current) return;
+    const hasAddress = !!(form.site_address || form.site_zip);
+    const noTravelYet = !form.billable_travel && !form.billable_miles;
+    if (!hasAddress || !noTravelYet) return;
+    autoTried.current = true;
+    void autoCalcBillableMiles(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.site_address, form.site_zip]);
+
   const autoCalcMiles = async () => {
     const dest = [form.site_address, form.site_city, form.site_state, form.site_zip].filter(Boolean).join(', ');
     if (!dest) { toastError('Add a site address first (Site tab) so there\'s somewhere to route to.'); return; }
@@ -452,6 +523,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       // Closeout materials (migration-031) — drop unnamed rows
       materials_used: materialsUsed.filter((r) => r.name.trim() !== ''),
       billable_travel:    Number(form.billable_travel)    || null,
+      billable_miles:     Number(form.billable_miles)     || null,
       billable_materials: clientPaidMaterials(materialsUsed) || null,
       billable_other:     Number(form.billable_other)     || null,
       // Mileage (migration-032) — drop zero-mile rows
@@ -625,9 +697,24 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                             value={contractorPay[name] ?? ''}
                             onChange={(e) => setTechPay(name, e.target.value === '' ? 0 : Number(e.target.value))}
                             placeholder="0.00"
-                            title={`How much ${name} gets paid on this WO (leave empty = full client price)`}
+                            title={`${name}'s labour on this WO. Mileage and materials they are owed are added on top.`}
                             style={{ width: 90, fontSize: 12, padding: '5px 8px', textAlign: 'right' }}
                           />
+                          {/* What this tech is actually owed once what they laid
+                              out is added back. */}
+                          {(() => {
+                            const extra = mileageForTech(mileageLogs, name)
+                              + materialsForTech(materialsUsed, name, contractorNames[0] ?? null);
+                            if (!extra) return null;
+                            return (
+                              <span
+                                title="Mileage and materials this tech is owed back, on top of their labour"
+                                style={{ fontSize: 10, fontWeight: 700, color: '#047857', whiteSpace: 'nowrap' }}
+                              >
+                                +{fmtMoney(extra)} back
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         {/* Remove */}
@@ -643,9 +730,15 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                   })}
                   {/* Tech pay vs client price summary — profit at a glance */}
                   {contractorNames.length >= 1 && (() => {
+                    // The whole payout, not just the labour. Mileage and
+                    // materials are money out of the door too; leaving them out
+                    // made the profit on screen better than the real one.
                     const assigned = contractorNames.reduce((s, n) => s + (Number(contractorPay[n]) || 0), 0);
-                    const woAmount = computed > 0 ? computed : Number(form.total_amount) || 0;
-                    const profit = woAmount - assigned;
+                    const mileagePay = mileageReimbursement(mileageLogs);
+                    const materialsPay = materialsReimbursement(materialsUsed);
+                    const woAmount = calcTotal(form);
+                    const payout = Math.round((assigned + mileagePay + materialsPay) * 100) / 100;
+                    const profit = Math.round((woAmount - payout) * 100) / 100;
                     return (
                       <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 2, flexWrap: 'wrap' }}>
@@ -653,9 +746,16 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                             fontSize: 11, fontWeight: 700,
                             color: assigned === 0 ? '#9ca3af' : profit >= 0 ? '#047857' : '#b45309',
                           }}>
-                            {assigned === 0
-                              ? 'No tech pay set — tech gets the full client price'
-                              : `Techs get ${fmtMoney(assigned)} · Your profit ${fmtMoney(profit)}${profit < 0 ? ' (paying more than the client!)' : ''}`}
+                            {assigned === 0 && payout === 0
+                              ? 'No tech pay set — tech gets the full client labour'
+                              : [
+                                  `Labour ${fmtMoney(assigned)}`,
+                                  mileagePay ? `Mileage ${fmtMoney(mileagePay)}` : null,
+                                  materialsPay ? `Materials ${fmtMoney(materialsPay)}` : null,
+                                ].filter(Boolean).join(' + ')
+                                + ` = ${fmtMoney(payout)} out`
+                                + ` · Client ${fmtMoney(woAmount)}`
+                                + ` · Your profit ${fmtMoney(profit)}${profit < 0 ? ' (paying out more than the client pays!)' : ''}`}
                           </span>
                           {contractorNames.length >= 2 && (
                             <button
@@ -855,10 +955,25 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             {form.pay_type !== 'Fixed' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <PF label="Travel charged to client" icon={<DollarSign size={13} />}>
-                  <input className="input" type="number" step="0.01" min="0"
-                    value={form.billable_travel ?? ''}
-                    onChange={(e) => set('billable_travel', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="0.00" />
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input className="input" type="number" step="0.01" min="0"
+                      value={form.billable_travel ?? ''}
+                      onChange={(e) => set('billable_travel', e.target.value === '' ? null : Number(e.target.value))}
+                      placeholder="0.00" style={{ flex: 1 }} />
+                    <button
+                      type="button" className="btn btn-ghost" disabled={calcingMiles}
+                      onClick={() => void autoCalcBillableMiles()}
+                      title="Round trip from your home base to this site, billed at your mileage rate"
+                      style={{ fontSize: 12, whiteSpace: 'nowrap', opacity: calcingMiles ? 0.6 : 1 }}
+                    >
+                      🚗 {calcingMiles ? 'Working…' : 'Auto'}
+                    </button>
+                  </div>
+                  {form.billable_miles != null && (
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                      {form.billable_miles} mi round trip × ${billRate.toFixed(2)}/mi
+                    </div>
+                  )}
                 </PF>
                 <PF label="Other charges to client" icon={<DollarSign size={13} />}>
                   <input className="input" type="number" step="0.01" min="0"
@@ -1495,6 +1610,28 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                         style={{ width: 13, height: 13, cursor: 'pointer', accentColor: '#047857' }}
                       />
                       {r.client_pays ? 'Client buys' : 'You keep it'}
+                    </label>
+                    {/* Whoever laid out the cash gets it back. An item bought
+                        for the job defaults to reimbursable; stock off the van
+                        does not, because the business already owned it. */}
+                    <label
+                      title={r.reimburse
+                        ? 'Paid back to whoever bought it, on top of their labour'
+                        : 'Not reimbursed — company stock, already paid for'}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
+                        padding: '4px 9px', borderRadius: 999, cursor: 'pointer', flexShrink: 0,
+                        background: r.reimburse ? 'rgba(13,115,119,0.12)' : 'rgba(0,0,0,0.05)',
+                        color: r.reimburse ? 'var(--teal)' : '#777',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!r.reimburse}
+                        onChange={(e) => updateUsedRow(r.id, { reimburse: e.target.checked })}
+                        style={{ width: 13, height: 13, cursor: 'pointer', accentColor: 'var(--teal)' }}
+                      />
+                      {r.reimburse ? 'Pay it back' : 'No payback'}
                     </label>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#333', minWidth: 70, textAlign: 'right' }}>
                       {fmtMoney((Number(r.quantity) || 0) * (Number(r.unit_cost) || 0))}

@@ -38,7 +38,11 @@ export function woTechPayTotal(wo: WorkOrder): number {
 // Everything that goes out the door on a WO: tech pay plus mileage.
 // This is the number "paid in full" is measured against.
 export function woPayoutTotal(wo: WorkOrder): number {
-  return Math.round((woTechPayTotal(wo) + mileageReimbursement(wo.mileage_logs)) * 100) / 100;
+  return Math.round((
+    woTechPayTotal(wo)
+    + mileageReimbursement(wo.mileage_logs)
+    + materialsReimbursement(wo.materials_used)
+  ) * 100) / 100;
 }
 
 // What FAJ keeps: client price minus tech pay and mileage
@@ -105,7 +109,11 @@ export function contractorShareOfWO(wo: WorkOrder, name: string): number {
 // Everything a tech is owed on a WO: their pay share plus their logged mileage.
 // This is what Payables, payment auto-fill, and the overpay check measure against.
 export function contractorOwedOnWO(wo: WorkOrder, name: string): number {
-  return contractorShareOfWO(wo, name) + mileageForTech(wo.mileage_logs, name);
+  return Math.round((
+    contractorShareOfWO(wo, name)
+    + mileageForTech(wo.mileage_logs, name)
+    + materialsForTech(wo.materials_used, name, wo.contractor_name)
+  ) * 100) / 100;
 }
 
 export const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
@@ -192,7 +200,7 @@ export type WOBreakdown = {
 
 export function workOrderBreakdown(w: Pick<WorkOrder,
   'pay_type' | 'hourly_rate' | 'hours_worked' | 'total_amount'
-  | 'billable_travel' | 'billable_materials' | 'billable_other' | 'materials_used'
+  | 'billable_travel' | 'billable_miles' | 'billable_materials' | 'billable_other' | 'materials_used'
 >): WOBreakdown {
   // Normalise -0: the remainder is a subtraction, and floating point makes
   // "nothing left over" come out as -0, which reads oddly and compares badly.
@@ -216,7 +224,10 @@ export function workOrderBreakdownText(w: Parameters<typeof workOrderBreakdown>[
   const b = workOrderBreakdown(w);
   const parts: string[] = [];
   if (b.hourly) parts.push(`${b.hours}h × ${fmtMoney(b.rate)} = ${fmtMoney(b.labor)}`);
-  if (b.mileage) parts.push(`Travel ${fmtMoney(b.mileage)}`);
+  if (b.mileage) {
+    const mi = Number(w.billable_miles ?? 0);
+    parts.push(mi > 0 ? `Travel ${mi} mi = ${fmtMoney(b.mileage)}` : `Travel ${fmtMoney(b.mileage)}`);
+  }
   if (b.materials) parts.push(`Materials ${fmtMoney(b.materials)}`);
   // Name the remainder for what it is, rather than leaving a silent gap.
   if (b.other) parts.push(`${b.hourly || b.mileage || b.materials ? 'Other' : 'Job price'} ${fmtMoney(b.other)}`);
@@ -243,6 +254,34 @@ export function ownStockMaterials(rows: MaterialUsed[] | null | undefined): numb
   return Math.round(
     (rows ?? [])
       .filter((r) => !r.client_pays)
+      .reduce((s, r) => s + Number(r.quantity ?? 0) * Number(r.unit_cost ?? 0), 0) * 100,
+  ) / 100;
+}
+
+/**
+ * Materials to be paid back to whoever bought them.
+ *
+ * The payout counted labour and mileage but never materials, so a tech who put
+ * $120 of their own money into a job was out of pocket by exactly that much and
+ * nothing on the work order said so.
+ */
+export function materialsReimbursement(rows: MaterialUsed[] | null | undefined): number {
+  return Math.round(
+    (rows ?? [])
+      .filter((r) => r.reimburse)
+      .reduce((s, r) => s + Number(r.quantity ?? 0) * Number(r.unit_cost ?? 0), 0) * 100,
+  ) / 100;
+}
+
+/** One person's materials reimbursement. Unattributed rows go to the lead tech. */
+export function materialsForTech(
+  rows: MaterialUsed[] | null | undefined,
+  name: string,
+  leadTech?: string | null,
+): number {
+  return Math.round(
+    (rows ?? [])
+      .filter((r) => r.reimburse && ((r.bought_by || leadTech || '') === name))
       .reduce((s, r) => s + Number(r.quantity ?? 0) * Number(r.unit_cost ?? 0), 0) * 100,
   ) / 100;
 }

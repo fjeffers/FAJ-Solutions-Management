@@ -39,6 +39,7 @@ export async function proxy(request: NextRequest) {
     '/billing/',       // billing helper
     '/quote/',         // client quote
     '/site-report/',   // client site activity report
+    '/tech/login',     // tech portal sign-in / first-time signup
     '/reset-password', // request a reset — always logged out
     '/update-password',// set the new password from the emailed link
   ];
@@ -50,7 +51,10 @@ export async function proxy(request: NextRequest) {
 
   if (!user && !isAuthRoute && !isApiRoute) {
     const url = request.nextUrl.clone();
-    url.pathname = '/login';
+    // A tech whose session expired belongs back at the tech sign-in, not the
+    // owner's. Landing on the wrong login is how a tech concludes the app is
+    // broken and phones Fred.
+    url.pathname = pathname.startsWith('/tech') ? '/tech/login' : '/login';
     return NextResponse.redirect(url);
   }
 

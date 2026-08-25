@@ -256,6 +256,11 @@ body {
 
   /* Filter chips: wrap nicely */
   .filter-chips { flex-wrap: wrap; gap: 8px !important; }
+
+  /* iOS Safari zooms the whole page whenever a focused input's font-size is
+     under 16px, so every tap on a field jumped the layout and left the user
+     pinching back out. 16px is the threshold that stops it. */
+  .input, .select, textarea.input { font-size: 16px; }
 }
 
 /* ── Dark mode ── */

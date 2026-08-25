@@ -402,6 +402,84 @@ export type MaterialUsage = {
   created_at: string;
 };
 
+// ─── Tech accounts (migration-067) — a tech's own login ──────────────────────
+//
+// Shapes returned by the tech_* RPCs. Deliberately NARROWER than Contractor,
+// WorkOrder and Payment: what the database refuses to send, the type refuses
+// to describe. There is no `total_amount` or `contractor_pay` on TechJob
+// because a tech never sees job money — see migration 067.
+
+export type TechProfile = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  business_name: string | null;
+  entity_type: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  payment_method: string | null;
+  default_hourly_rate: number | null;
+  w9_received: boolean | null;
+  w9_submitted_at: string | null;
+  contract_signed_at: string | null;
+  portal_last_login_at: string | null;
+  created_at: string;
+};
+
+/** One job a tech worked. No money on it, by design. */
+export type TechJob = {
+  id: string;
+  wo_number: string | null;
+  title: string | null;
+  description: string | null;
+  scope_of_work: string | null;
+  service_type: string | null;
+  wo_status: string | null;
+  customer_name: string | null;
+  project_name: string | null;
+  site_name: string | null;
+  site_address: string | null;
+  site_city: string | null;
+  site_state: string | null;
+  site_zip: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  scheduled_date: string | null;
+  checked_in_at: string | null;
+  checked_out_at: string | null;
+  hours_worked: number | null;
+  closeout_notes: string | null;
+  archived_at: string | null;
+  /** Approved, Paid, or archived — the job is done and read-only. */
+  is_closed: boolean;
+  created_at: string;
+};
+
+/** One payout to this tech, with just enough job context to recognise it. */
+export type TechPayment = {
+  id: string;
+  payment_date: string | null;
+  amount: number;
+  method: string | null;
+  notes: string | null;
+  wo_number: string | null;
+  wo_title: string | null;
+  wo_site: string | null;
+  wo_id: string | null;
+};
+
+export type TechSummary = {
+  paid_all_time: number;
+  paid_this_year: number;
+  payment_count: number;
+  last_payment_at: string | null;
+  jobs_total: number;
+  jobs_open: number;
+};
+
 // ─── Site surveys (migration-066) — the front of the job pipeline ────────────
 
 export type SurveyStatus = 'draft' | 'completed' | 'quoted' | 'won' | 'lost';

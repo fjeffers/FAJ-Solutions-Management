@@ -835,9 +835,9 @@ export default function HomePage() {
   // The walk-through that starts a job. Its scope lines become quote lines, so
   // nothing between the site visit and the client's number gets re-typed.
 
-  const saveSurvey = async (sv: Partial<Survey>) => {
+  const saveSurvey = async (sv: Partial<Survey>): Promise<Survey | null> => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) return null;
     const payload = {
       survey_number: sv.survey_number!, customer_id: sv.customer_id ?? null,
       client_name: sv.client_name ?? null, client_email: sv.client_email ?? null,
@@ -849,17 +849,28 @@ export default function HomePage() {
       existing_conditions: sv.existing_conditions ?? null, findings: sv.findings ?? null,
       recommendations: sv.recommendations ?? null, notes: sv.notes ?? null,
       scope_items: sv.scope_items ?? [],
-      cameras: sv.cameras ?? [], documents: sv.documents ?? [],
+      survey_type: sv.survey_type ?? 'camera', last_page: sv.last_page ?? 1,
+      cameras: sv.cameras ?? [], cable_drops: sv.cable_drops ?? [], documents: sv.documents ?? [],
       head_end_notes: sv.head_end_notes ?? null, rack_space: sv.rack_space ?? null,
       switch_notes: sv.switch_notes ?? null, access_notes: sv.access_notes ?? null,
       labor_rate: sv.labor_rate ?? null, labor_hours: sv.labor_hours ?? null,
       tax_rate: Number(sv.tax_rate ?? 0), payment_terms: sv.payment_terms ?? null,
     };
-    const { error } = sv.id
-      ? await supabase.from('surveys').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', sv.id)
-      : await supabase.from('surveys').insert({ ...payload, user_id: user.id });
-    if (error) { toastError(`Couldn't save survey: ${error.message}`); return; }
+    const { data, error } = sv.id
+      ? await supabase.from('surveys').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', sv.id).select('*').single()
+      : await supabase.from('surveys').insert({ ...payload, user_id: user.id }).select('*').single();
+    if (error) { toastError(`Couldn't save survey: ${error.message}`); return null; }
     loadAll();
+    return (data as Survey) ?? null;
+  };
+
+  /**
+   * The wizard's last step. Saving first is what lets a brand-new survey go
+   * straight to a quote — buildQuoteFromSurvey needs a row with an id.
+   */
+  const saveSurveyAndQuote = async (sv: Partial<Survey>) => {
+    const saved = await saveSurvey(sv);
+    if (saved) await buildQuoteFromSurvey(saved);
   };
 
   const deleteSurvey = async (id: string) => {
@@ -1296,7 +1307,8 @@ export default function HomePage() {
         {view === 'surveys' && (
           <SurveysView
             surveys={surveys}
-            onSave={saveSurvey}
+            onSave={async (sv) => { await saveSurvey(sv); }}
+            onSaveAndQuote={saveSurveyAndQuote}
             onDelete={deleteSurvey}
             onBuildQuote={buildQuoteFromSurvey}
             onOpenQuote={() => setView('quotes')}

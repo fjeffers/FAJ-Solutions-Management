@@ -9,9 +9,10 @@
 // All money math lives here and is unit-tested. Views call it; they never
 // re-derive a total inline.
 import type {
-  Quote, QuoteLineItem, Survey, SurveyCamera, SurveyDocument,
-  SurveyDocumentKind, SurveyScopeItem,
+  CableDrop, Quote, QuoteLineItem, Survey, SurveyCamera, SurveyDocument,
+  SurveyDocumentKind, SurveyScopeItem, SurveyType,
 } from './types';
+import { scheduleKindFor } from './types';
 
 /** Next number in the S-<year>-NNN series, continuing the year already in use. */
 export function nextSurveyNumber(surveys: Pick<Survey, 'survey_number'>[], now = new Date()): string {
@@ -87,8 +88,10 @@ export function quoteFromSurvey(s: Survey, quoteNumber: string): Partial<Quote> 
   // line names the position, the area, how it mounts and its cable run.
   // Priced at zero so the rate is filled in on the quote rather than guessed
   // here — the survey records what goes where, not what it sells for.
+  const kind = scheduleKindFor(s.survey_type ?? 'camera');
   const lines = [
-    ...camerasToQuoteLines(s.cameras ?? []),
+    ...(kind === 'cameras' ? camerasToQuoteLines(s.cameras ?? []) : []),
+    ...(kind === 'drops' ? dropsToQuoteLines(s.cable_drops ?? []) : []),
     ...(s.scope_items ?? []).map(scopeItemToQuoteLine),
   ];
   const labor = surveyLabor(s);
@@ -149,6 +152,12 @@ export function newCamera(position: number): SurveyCamera {
   };
 }
 
+// ── Numbered schedules ──────────────────────────────────────────────────────
+// Cameras and cable drops are both numbered lists whose numbering has to hold.
+// The ordering lives here once and both schedules use it.
+
+type Positioned = { id: string; position: number };
+
 /**
  * Rewrite positions to 1..n in list order.
  *
@@ -157,26 +166,98 @@ export function newCamera(position: number): SurveyCamera {
  * happen on insert, delete and reorder alike or the schedule stops matching
  * the labels written on site.
  */
-export function renumberCameras(cameras: SurveyCamera[]): SurveyCamera[] {
-  return cameras.map((c, i) => (c.position === i + 1 ? c : { ...c, position: i + 1 }));
+export function renumber<T extends Positioned>(items: T[]): T[] {
+  return items.map((it, i) => (it.position === i + 1 ? it : { ...it, position: i + 1 }));
 }
 
-/** Move a camera one slot up or down, renumbering the whole list. */
-export function moveCamera(cameras: SurveyCamera[], id: string, dir: -1 | 1): SurveyCamera[] {
-  const i = cameras.findIndex((c) => c.id === id);
+/** Move one row up or down, renumbering the whole list. */
+export function movePositioned<T extends Positioned>(items: T[], id: string, dir: -1 | 1): T[] {
+  const i = items.findIndex((it) => it.id === id);
   const j = i + dir;
-  if (i < 0 || j < 0 || j >= cameras.length) return cameras;
-  const next = [...cameras];
+  if (i < 0 || j < 0 || j >= items.length) return items;
+  const next = [...items];
   [next[i], next[j]] = [next[j], next[i]];
-  return renumberCameras(next);
+  return renumber(next);
 }
+
+export function removePositioned<T extends Positioned>(items: T[], id: string): T[] {
+  return renumber(items.filter((it) => it.id !== id));
+}
+
+export const renumberCameras = renumber<SurveyCamera>;
+export const moveCamera = movePositioned<SurveyCamera>;
+export const removeCamera = removePositioned<SurveyCamera>;
 
 export function addCamera(cameras: SurveyCamera[]): SurveyCamera[] {
-  return renumberCameras([...cameras, newCamera(cameras.length + 1)]);
+  return renumber([...cameras, newCamera(cameras.length + 1)]);
 }
 
-export function removeCamera(cameras: SurveyCamera[], id: string): SurveyCamera[] {
-  return renumberCameras(cameras.filter((c) => c.id !== id));
+// ── Cable drops (migration-069) ─────────────────────────────────────────────
+
+export function newDrop(position: number): CableDrop {
+  return {
+    id: `drop-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    position,
+    location: '',
+    jack_count: 1,
+    cable_type: 'Cat6',
+    run_length: 'TBD',
+    termination: '',
+    mount: 'Wall plate',
+    notes: null,
+    photos: [],
+  };
+}
+
+export const renumberDrops = renumber<CableDrop>;
+export const moveDrop = movePositioned<CableDrop>;
+export const removeDrop = removePositioned<CableDrop>;
+
+export function addDrop(drops: CableDrop[]): CableDrop[] {
+  return renumber([...drops, newDrop(drops.length + 1)]);
+}
+
+/** The counts a cabling job is materialled and priced from. */
+export function dropCounts(drops: CableDrop[]): {
+  total: number; jacks: number; runsUnknown: number; byCable: { type: string; jacks: number }[];
+} {
+  const byCable = new Map<string, number>();
+  let jacks = 0;
+  for (const d of drops) {
+    const n = Number(d.jack_count) || 0;
+    jacks += n;
+    byCable.set(d.cable_type, (byCable.get(d.cable_type) ?? 0) + n);
+  }
+  return {
+    total: drops.length,
+    jacks,
+    runsUnknown: drops.filter((d) => !d.run_length.trim() || /tbd/i.test(d.run_length)).length,
+    byCable: [...byCable.entries()].map(([type, j]) => ({ type, jacks: j })).sort((a, b) => b.jacks - a.jacks),
+  };
+}
+
+/** One drop, as the line a client reads on the quote. */
+export function dropToQuoteLine(d: CableDrop, rate = 0): QuoteLineItem {
+  const where = d.location.trim() || `Drop ${d.position}`;
+  const jacks = Number(d.jack_count) || 0;
+  const spec = [
+    jacks > 0 ? `${jacks} jack${jacks !== 1 ? 's' : ''}` : '',
+    d.cable_type && d.cable_type !== 'TBD' ? d.cable_type : '',
+    d.mount ? d.mount.toLowerCase() : '',
+  ].filter((b) => b && b.trim()).join(', ');
+
+  const run = d.run_length.trim();
+  const runPart = run && !/tbd/i.test(run) ? `${run} run` : '';
+  const term = d.termination.trim() ? `terminates ${d.termination.trim()}` : '';
+
+  const description = [`Drop ${d.position} — ${where}`, spec, runPart, term]
+    .filter(Boolean).join(' · ');
+
+  return { id: `drop-${d.id}`, description, quantity: jacks || 1, rate };
+}
+
+export function dropsToQuoteLines(drops: CableDrop[], ratePerJack = 0): QuoteLineItem[] {
+  return [...drops].sort((a, b) => a.position - b.position).map((d) => dropToQuoteLine(d, ratePerJack));
 }
 
 /**
@@ -262,6 +343,114 @@ export function formatFileSize(bytes: number | null): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── The wizard's pages (migration-069) ──────────────────────────────────────
+
+export type SurveyPage = 1 | 2 | 3 | 4;
+
+export const SURVEY_PAGES: { page: SurveyPage; title: string; blurb: string }[] = [
+  { page: 1, title: 'Client & Site',  blurb: 'Who it is for and where' },
+  { page: 2, title: 'Survey Details', blurb: 'What the job needs' },
+  { page: 3, title: 'Placements',     blurb: 'Photos of the recommended spots' },
+  { page: 4, title: 'Summary',        blurb: 'Findings, labour and pricing' },
+];
+
+/** Every schedule row that can carry placement photos, whatever the type. */
+export type PlacementRow = {
+  id: string;
+  position: number;
+  label: string;
+  detail: string;
+  photos: string[];
+};
+
+export function placementRows(s: Pick<Survey, 'survey_type' | 'cameras' | 'cable_drops'>): PlacementRow[] {
+  const kind = scheduleKindFor(s.survey_type ?? 'camera');
+  if (kind === 'cameras') {
+    return [...(s.cameras ?? [])].sort((a, b) => a.position - b.position).map((c) => ({
+      id: c.id,
+      position: c.position,
+      label: `Camera ${c.position}`,
+      detail: [c.location, c.camera_type, c.mount ? `${c.mount.toLowerCase()} mount` : '']
+        .filter((x) => x && x.trim()).join(' · '),
+      photos: c.photos ?? [],
+    }));
+  }
+  if (kind === 'drops') {
+    return [...(s.cable_drops ?? [])].sort((a, b) => a.position - b.position).map((d) => ({
+      id: d.id,
+      position: d.position,
+      label: `Drop ${d.position}`,
+      detail: [d.location, d.cable_type, `${d.jack_count} jack${Number(d.jack_count) !== 1 ? 's' : ''}`]
+        .filter((x) => x && String(x).trim()).join(' · '),
+      photos: d.photos ?? [],
+    }));
+  }
+  return [];
+}
+
+/**
+ * What is still missing, per page. This is what turns "is the survey done?"
+ * into a list instead of a memory test — and it gates Build Quote, so a quote
+ * cannot be produced from a walk-through that never recorded the work.
+ */
+export function pageStatus(s: Survey): { page: SurveyPage; done: boolean; missing: string[] }[] {
+  const kind = scheduleKindFor(s.survey_type ?? 'camera');
+  const rows = placementRows(s);
+
+  const p1: string[] = [];
+  if (!(s.client_name ?? '').trim()) p1.push('client name');
+  if (!(s.site_name ?? '').trim() && !(s.site_address ?? '').trim()) p1.push('site name or address');
+
+  const p2: string[] = [];
+  if (kind === 'cameras') {
+    if ((s.cameras ?? []).length === 0) p2.push('at least one camera');
+    else {
+      const unnamed = (s.cameras ?? []).filter((c) => !c.location.trim()).length;
+      if (unnamed > 0) p2.push(`${unnamed} camera location${unnamed !== 1 ? 's' : ''}`);
+      const tbd = cameraCounts(s.cameras ?? []).runsUnknown;
+      if (tbd > 0) p2.push(`${tbd} cable run${tbd !== 1 ? 's' : ''} still TBD`);
+    }
+  } else if (kind === 'drops') {
+    if ((s.cable_drops ?? []).length === 0) p2.push('at least one drop');
+    else {
+      const unnamed = (s.cable_drops ?? []).filter((d) => !d.location.trim()).length;
+      if (unnamed > 0) p2.push(`${unnamed} drop location${unnamed !== 1 ? 's' : ''}`);
+      const tbd = dropCounts(s.cable_drops ?? []).runsUnknown;
+      if (tbd > 0) p2.push(`${tbd} run length${tbd !== 1 ? 's' : ''} still TBD`);
+    }
+  } else if (!(s.findings ?? '').trim() && !(s.recommendations ?? '').trim()) {
+    p2.push('findings or recommendations');
+  }
+
+  const p3: string[] = [];
+  if (rows.length > 0) {
+    const noPhoto = rows.filter((r) => r.photos.length === 0).length;
+    if (noPhoto > 0) p3.push(`${noPhoto} of ${rows.length} without a photo`);
+  }
+
+  const p4: string[] = [];
+  if (!(s.recommendations ?? '').trim()) p4.push('recommendations');
+  if (surveyLabor(s) === 0 && (s.scope_items ?? []).every((i) => scopeLineTotal(i) === 0)) {
+    p4.push('labour or a priced scope line');
+  }
+
+  return [
+    { page: 1, done: p1.length === 0, missing: p1 },
+    { page: 2, done: p2.length === 0, missing: p2 },
+    { page: 3, done: p3.length === 0, missing: p3 },
+    { page: 4, done: p4.length === 0, missing: p4 },
+  ];
+}
+
+/**
+ * Ready to quote? Pages 1, 2 and 4 must be clear. Page 3 is deliberately NOT
+ * required — a missing placement photo is worth flagging, not worth blocking a
+ * quote over.
+ */
+export function readyToQuote(s: Survey): boolean {
+  return pageStatus(s).filter((p) => p.page !== 3).every((p) => p.done);
 }
 
 function formatRate(n: number | null): string {

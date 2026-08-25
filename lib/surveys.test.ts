@@ -4,8 +4,10 @@ import {
   scopeItemToQuoteLine, quoteFromSurvey, surveyStage,
   renumberCameras, moveCamera, addCamera, removeCamera, cameraCounts,
   cameraToQuoteLine, documentKindFor, isImageDocument, formatFileSize,
+  addDrop, removeDrop, moveDrop, dropCounts, dropToQuoteLine,
+  placementRows, pageStatus, readyToQuote,
 } from './surveys';
-import type { Survey, SurveyCamera, SurveyScopeItem } from './types';
+import type { CableDrop, Survey, SurveyCamera, SurveyScopeItem } from './types';
 
 const scope = (over: Partial<SurveyScopeItem> = {}): SurveyScopeItem =>
   ({ id: 'sc1', description: 'Dome camera', quantity: 1, unit: null, rate: 0, notes: null, ...over });
@@ -18,7 +20,8 @@ const survey = (over: Partial<Survey> = {}): Survey => ({
   title: null, survey_date: '2026-08-20', surveyed_by: 'Fred', status: 'draft',
   existing_conditions: null, findings: null, recommendations: null, notes: null,
   scope_items: [], labor_rate: null, labor_hours: null, tax_rate: 0, payment_terms: null,
-  photos: [], cameras: [], documents: [],
+  photos: [], cameras: [], documents: [], cable_drops: [],
+  survey_type: 'camera', last_page: 1,
   head_end_notes: null, rack_space: null, switch_notes: null, access_notes: null,
   quote_id: null, work_order_id: null, share_token: null, archived_at: null,
   created_at: '2026-08-20T00:00:00Z', updated_at: '2026-08-20T00:00:00Z',
@@ -329,5 +332,137 @@ describe('cameras reach the quote', () => {
   it('a survey with no cameras still builds the same quote as before', () => {
     const s = survey({ scope_items: [scope({ quantity: 1, rate: 100 })] });
     expect(quoteFromSurvey(s, 'Q-1').line_items).toHaveLength(1);
+  });
+});
+
+// ── Drop schedule + wizard pages (migration-069) ────────────────────────────
+
+const drop = (over: Partial<CableDrop> = {}): CableDrop => ({
+  id: 'd1', position: 1, location: 'Reception desk', jack_count: 2,
+  cable_type: 'Cat6', run_length: '85 ft', termination: 'Patch panel A, ports 12-13',
+  mount: 'Wall plate', notes: null, photos: [], ...over,
+});
+
+describe('drop schedule', () => {
+  it('renumbers on add and remove like the camera schedule does', () => {
+    let drops = addDrop([drop({ id: 'a' })]);
+    expect(drops.map((d) => d.position)).toEqual([1, 2]);
+    drops = removeDrop(drops, 'a');
+    expect(drops.map((d) => d.position)).toEqual([1]);
+  });
+
+  it('moves a drop and reshuffles the numbering', () => {
+    const before = [drop({ id: 'a', location: 'A' }), drop({ id: 'b', position: 2, location: 'B' })];
+    const after = moveDrop(before, 'b', -1);
+    expect(after.map((d) => d.location)).toEqual(['B', 'A']);
+    expect(after.map((d) => d.position)).toEqual([1, 2]);
+  });
+
+  it('totals jacks and groups them by cable type', () => {
+    const c = dropCounts([
+      drop({ id: '1', jack_count: 2, cable_type: 'Cat6' }),
+      drop({ id: '2', jack_count: 1, cable_type: 'Cat6' }),
+      drop({ id: '3', jack_count: 4, cable_type: 'Cat6A' }),
+    ]);
+    expect(c.total).toBe(3);
+    expect(c.jacks).toBe(7);
+    expect(c.byCable[0]).toEqual({ type: 'Cat6A', jacks: 4 });
+  });
+
+  it('reads as a numbered line with jacks, cable and termination', () => {
+    expect(dropToQuoteLine(drop()).description)
+      .toBe('Drop 1 — Reception desk · 2 jacks, Cat6, wall plate · 85 ft run · terminates Patch panel A, ports 12-13');
+  });
+
+  it('bills per jack, not per location', () => {
+    expect(dropToQuoteLine(drop({ jack_count: 2 }), 125).quantity).toBe(2);
+    expect(dropToQuoteLine(drop({ jack_count: 2 }), 125).rate).toBe(125);
+  });
+});
+
+describe('survey type drives the quote', () => {
+  it('a cabling survey quotes drops, not cameras', () => {
+    const s = survey({
+      survey_type: 'cabling',
+      cable_drops: [drop({ id: 'a', position: 1 })],
+      cameras: [cam({ id: 'ignored', position: 1, location: 'Should not appear' })],
+    });
+    const lines = quoteFromSurvey(s, 'Q-1').line_items!;
+    expect(lines).toHaveLength(1);
+    expect(lines[0].description).toContain('Drop 1');
+  });
+
+  it('a general survey quotes only its scope lines', () => {
+    const s = survey({
+      survey_type: 'general',
+      cameras: [cam({ id: 'x', position: 1 })],
+      scope_items: [scope({ description: 'Consulting', quantity: 1, rate: 500 })],
+    });
+    const lines = quoteFromSurvey(s, 'Q-1').line_items!;
+    expect(lines).toHaveLength(1);
+    expect(lines[0].description).toBe('Consulting');
+  });
+});
+
+describe('placement rows', () => {
+  it('lists cameras for a camera survey', () => {
+    const rows = placementRows(survey({
+      cameras: [cam({ id: 'a', position: 1, location: 'Lobby', mount: 'Ceiling' })],
+    }));
+    expect(rows[0].label).toBe('Camera 1');
+    expect(rows[0].detail).toBe('Lobby · Dome · ceiling mount');
+  });
+
+  it('lists drops for a cabling survey', () => {
+    const rows = placementRows(survey({ survey_type: 'cabling', cable_drops: [drop()] }));
+    expect(rows[0].label).toBe('Drop 1');
+    expect(rows[0].detail).toBe('Reception desk · Cat6 · 2 jacks');
+  });
+
+  it('has nothing to place on a general survey', () => {
+    expect(placementRows(survey({ survey_type: 'general' }))).toEqual([]);
+  });
+});
+
+describe('page status', () => {
+  const complete = survey({
+    client_name: 'New Beginnings', site_name: 'Chester',
+    cameras: [cam({ id: 'a', position: 1, location: 'Lobby', cable_run: '25 ft', photos: ['u'] })],
+    recommendations: 'Replace all seven.', labor_hours: 8, labor_rate: 85,
+  });
+
+  it('a fully filled survey has every page clear and is ready to quote', () => {
+    expect(pageStatus(complete).every((p) => p.done)).toBe(true);
+    expect(readyToQuote(complete)).toBe(true);
+  });
+
+  it('names what page 1 is missing', () => {
+    const st = pageStatus(survey({ client_name: null, site_name: null, site_address: null }));
+    expect(st[0].done).toBe(false);
+    expect(st[0].missing).toContain('client name');
+  });
+
+  it('flags cameras with no location and runs still TBD', () => {
+    const st = pageStatus(survey({
+      client_name: 'X', site_name: 'Y',
+      cameras: [cam({ id: 'a', position: 1, location: '', cable_run: 'TBD' })],
+    }));
+    expect(st[1].done).toBe(false);
+    expect(st[1].missing.join(' ')).toMatch(/location/);
+    expect(st[1].missing.join(' ')).toMatch(/TBD/);
+  });
+
+  it('counts placements without a photo but does not block the quote for it', () => {
+    const s = { ...complete, cameras: [{ ...complete.cameras[0], photos: [] }] };
+    const st = pageStatus(s);
+    expect(st[2].done).toBe(false);
+    expect(st[2].missing[0]).toBe('1 of 1 without a photo');
+    expect(readyToQuote(s)).toBe(true);
+  });
+
+  it('will not call a survey ready with no labour and no priced scope', () => {
+    const s = { ...complete, labor_hours: null, labor_rate: null, scope_items: [] };
+    expect(readyToQuote(s)).toBe(false);
+    expect(pageStatus(s)[3].missing).toContain('labour or a priced scope line');
   });
 });

@@ -555,6 +555,54 @@ export const CABLE_RUN_PRESETS = [
   'Minimal, same room', '<50 ft', '50-100 ft', '100-150 ft', '150-200 ft', '200+ ft', 'TBD',
 ] as const;
 
+/**
+ * What kind of walk-through this is. Drives which page 2 the surveyor gets:
+ * a camera job counts mounts and covers, a cabling job counts jacks and
+ * terminations, and neither should be asked the other's questions.
+ */
+export type SurveyType = 'camera' | 'cabling' | 'network' | 'wireless' | 'general';
+
+export const SURVEY_TYPES: { value: SurveyType; label: string; blurb: string }[] = [
+  { value: 'camera',   label: 'Cameras / CCTV',   blurb: 'Camera positions, mounts, covers and cable runs' },
+  { value: 'cabling',  label: 'Structured Cabling', blurb: 'Drops, jacks, cable type and patch-panel terminations' },
+  { value: 'network',  label: 'Network / MDF-IDF', blurb: 'Racks, switches and the drops feeding them' },
+  { value: 'wireless', label: 'Wi-Fi / Starlink',  blurb: 'Coverage, mounting points and backhaul' },
+  { value: 'general',  label: 'General / Other',   blurb: 'Findings and a priced scope, no device schedule' },
+];
+
+/** Which schedule page 2 shows for a given survey type. */
+export function scheduleKindFor(t: SurveyType): 'cameras' | 'drops' | 'none' {
+  if (t === 'camera') return 'cameras';
+  if (t === 'cabling' || t === 'network') return 'drops';
+  return 'none';
+}
+
+/** One cable drop on a cabling or network walk-through. */
+export type CableDrop = {
+  id: string;
+  position: number;
+  location: string;
+  /** Jacks at this location — a dual drop is one location, two jacks. */
+  jack_count: number;
+  cable_type: string;
+  /** Free text, same reasoning as a camera's: "85 ft", "TBD". */
+  run_length: string;
+  /** Where it lands at the head end, e.g. "Patch panel A, ports 12-13". */
+  termination: string;
+  mount: string;
+  notes: string | null;
+  /** Photos of the recommended location for this drop. */
+  photos: string[];
+};
+
+export const CABLE_TYPES = [
+  'Cat6', 'Cat6A', 'Cat5e', 'Cat6A shielded', 'Fiber (MMF)', 'Fiber (SMF)', 'Coax', 'TBD',
+] as const;
+
+export const DROP_MOUNTS = [
+  'Wall plate', 'Floor box', 'Surface biscuit', 'Ceiling', 'Raceway', 'Rack', 'Other',
+] as const;
+
 export type SurveyDocumentKind = 'photo' | 'plan' | 'spec' | 'quote' | 'other';
 
 export const SURVEY_DOC_KINDS: SurveyDocumentKind[] = ['photo', 'plan', 'spec', 'quote', 'other'];
@@ -603,8 +651,14 @@ export type Survey = {
   tax_rate: number;
   payment_terms: string | null;
   photos: SurveyPhoto[];
+  /** (migration-069) which kind of walk-through, and so which pages apply. */
+  survey_type: SurveyType;
+  /** (migration-069) the page the surveyor last had open, to resume in the field. */
+  last_page: number;
   /** (migration-068) the numbered camera schedule the job is priced from. */
   cameras: SurveyCamera[];
+  /** (migration-069) the drop schedule, for cabling and network surveys. */
+  cable_drops: CableDrop[];
   /** (migration-068) site photos, plans, spec sheets, vendor quotes. */
   documents: SurveyDocument[];
   /** (migration-068) head-end / infrastructure findings from the same walk. */

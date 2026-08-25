@@ -402,6 +402,68 @@ export type MaterialUsage = {
   created_at: string;
 };
 
+// ─── Site surveys (migration-066) — the front of the job pipeline ────────────
+
+export type SurveyStatus = 'draft' | 'completed' | 'quoted' | 'won' | 'lost';
+export const SURVEY_STATUSES: SurveyStatus[] = ['draft', 'completed', 'quoted', 'won', 'lost'];
+
+/**
+ * One line of proposed work from the walk-through. description/quantity/rate
+ * are deliberately the same shape as QuoteLineItem, so building the quote is a
+ * copy rather than a re-type; `unit` and `notes` are survey-only colour that
+ * gets folded into the quote line's description.
+ */
+export type SurveyScopeItem = {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string | null;
+  rate: number;
+  notes: string | null;
+};
+
+export type SurveyPhoto = { url: string; caption: string | null };
+
+export type Survey = {
+  id: string;
+  user_id: string | null;
+  survey_number: string;
+  /** (migration-046) join key to the customer master. */
+  customer_id: string | null;
+  client_name: string | null;
+  client_email: string | null;
+  client_phone: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
+  site_name: string | null;
+  site_address: string | null;
+  site_city: string | null;
+  site_state: string | null;
+  site_zip: string | null;
+  title: string | null;
+  survey_date: string | null;
+  surveyed_by: string | null;
+  status: SurveyStatus;
+  existing_conditions: string | null;
+  findings: string | null;
+  recommendations: string | null;
+  notes: string | null;
+  scope_items: SurveyScopeItem[];
+  labor_rate: number | null;
+  labor_hours: number | null;
+  tax_rate: number;
+  payment_terms: string | null;
+  photos: SurveyPhoto[];
+  /** The quote this survey produced, once built. */
+  quote_id: string | null;
+  /** Stamped when that quote is accepted and becomes a job. */
+  work_order_id: string | null;
+  share_token: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 // ─── Quotes (pre-existing table, built outside this repo) ────────────────────
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
@@ -435,6 +497,8 @@ export type Quote = {
   work_order_id: string | null;
   /** (migration-046) join key to the customer master. */
   customer_id: string | null;
+  /** (migration-066) the walk-through this quote was built from. */
+  survey_id: string | null;
   /** (migration-044) powers the public /quote/<token> client page. */
   share_token: string | null;
   created_at: string;

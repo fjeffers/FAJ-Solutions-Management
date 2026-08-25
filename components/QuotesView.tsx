@@ -15,7 +15,7 @@ const STATUS_META: Record<QuoteStatus, { label: string; color: string; bg: strin
   expired:  { label: 'Expired',  color: '#999',    bg: 'rgba(0,0,0,0.04)' },
 };
 
-function nextQuoteNumber(quotes: Quote[]): string {
+export function nextQuoteNumber(quotes: Quote[]): string {
   const year = new Date().getFullYear();
   const thisYear = quotes.filter((q) => q.quote_number?.startsWith(`Q-${year}-`));
   const nums = thisYear.map((q) => parseInt(q.quote_number.split('-')[2] ?? '0', 10)).filter((n) => !isNaN(n));

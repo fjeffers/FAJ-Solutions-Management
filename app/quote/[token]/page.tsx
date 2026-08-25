@@ -4,8 +4,9 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createAdminClient } from '@/lib/supabase/admin';
-import type { Quote } from '@/lib/types';
+import type { Quote, Survey } from '@/lib/types';
 import PrintButton from '../../invoice/[token]/PrintButton';
+import QuotePlacements from './QuotePlacements';
 import { todayISO } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,13 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   const { data: quote } = await supabase
     .from('quotes').select('*').eq('share_token', token).maybeSingle<Quote>();
   if (!quote) notFound();
+
+  // The walk-through behind this quote, when there is one. It carries the
+  // placement photos and the site address; a quote written by hand simply
+  // has none, and the page renders without the section.
+  const { data: survey } = quote.survey_id
+    ? await supabase.from('surveys').select('*').eq('id', quote.survey_id).maybeSingle<Survey>()
+    : { data: null };
 
   const st = STATUS[quote.status] ?? STATUS.sent;
   const expired = quote.valid_until && quote.valid_until < todayISO();
@@ -76,6 +84,16 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
                 <div style={{ fontWeight: 700, fontSize: 16 }}>{quote.client_name || 'Client'}</div>
                 {quote.client_email && <div style={{ fontSize: 13, color: '#666' }}>{quote.client_email}</div>}
                 {quote.client_phone && <div style={{ fontSize: 13, color: '#666' }}>{quote.client_phone}</div>}
+                {survey && (survey.site_name || survey.site_address) && (
+                  <div style={{ fontSize: 13, color: '#666', marginTop: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, color: '#999', display: 'block' }}>SITE</span>
+                    {survey.site_name}
+                    {survey.site_address && <div>{survey.site_address}</div>}
+                    {(survey.site_city || survey.site_state || survey.site_zip) && (
+                      <div>{[survey.site_city, survey.site_state].filter(Boolean).join(', ')} {survey.site_zip}</div>
+                    )}
+                  </div>
+                )}
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, color: '#999' }}>FROM</div>
@@ -123,6 +141,8 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
                 </div>
               </div>
             </div>
+
+            {survey && <QuotePlacements survey={survey} />}
 
             {quote.notes && (
               <div style={{ background: '#f8f6f1', borderRadius: 12, padding: '12px 16px', marginTop: 18, fontSize: 13, color: '#555' }}>

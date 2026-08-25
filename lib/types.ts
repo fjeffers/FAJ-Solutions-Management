@@ -500,6 +500,77 @@ export type SurveyScopeItem = {
   notes: string | null;
 };
 
+/**
+ * One camera position on the walk-through. Mirrors the schedule Fred actually
+ * writes: number, location, indoor/outdoor, cable run — plus the detail that
+ * drives the estimate.
+ *
+ * `position` is stored, not inferred from array index: inserting a head-end
+ * camera at 1 shifts every other camera down, and that renumbering has to
+ * survive a save.
+ *
+ * `cable_run` is free text on purpose. Real answers are "Minimal, same room",
+ * "<50 ft", "50-100 ft" and "TBD" — forcing a number too early loses the
+ * honest "we don't know yet".
+ */
+export type SurveyCamera = {
+  id: string;
+  position: number;
+  location: string;
+  camera_type: string;
+  /** Housing/cover detail that belongs on the quote, e.g. "tinted cover". */
+  variant: string | null;
+  placement: 'Indoor' | 'Outdoor';
+  /** Ceiling, Wall, Corner… how it physically goes up. */
+  mount: string;
+  cable_run: string;
+  mount_height_ft: number | null;
+  resolution: string;
+  status: 'New' | 'Existing' | 'Replace';
+  notes: string | null;
+  /** Photos of the recommended mounting area for THIS camera. */
+  photos: string[];
+};
+
+export const CAMERA_TYPES = [
+  'Dome', 'Turret', 'Bullet', 'PTZ', 'Panoramic', 'Fisheye', 'Multi-sensor', 'Other',
+] as const;
+
+export const CAMERA_MOUNTS = [
+  'Ceiling', 'Wall', 'Corner', 'Pendant', 'Soffit', 'Pole', 'Recessed', 'Other',
+] as const;
+
+/** Housing/cover varieties, offered as a datalist but freely typeable. */
+export const CAMERA_VARIANTS = [
+  'Tinted cover', 'Clear cover', 'Vandal-resistant', 'IR', 'Varifocal',
+  'Weatherproof housing', 'Heater/blower', 'Junction box',
+] as const;
+
+export const CAMERA_RESOLUTIONS = ['2MP', '4MP', '5MP', '6MP', '8MP (4K)', '12MP', 'TBD'] as const;
+
+export const CAMERA_STATUSES = ['New', 'Existing', 'Replace'] as const;
+
+/** Common cable-run answers, offered as a datalist but freely typeable. */
+export const CABLE_RUN_PRESETS = [
+  'Minimal, same room', '<50 ft', '50-100 ft', '100-150 ft', '150-200 ft', '200+ ft', 'TBD',
+] as const;
+
+export type SurveyDocumentKind = 'photo' | 'plan' | 'spec' | 'quote' | 'other';
+
+export const SURVEY_DOC_KINDS: SurveyDocumentKind[] = ['photo', 'plan', 'spec', 'quote', 'other'];
+
+/** A file backing the survey up: site photo, existing plan, spec sheet, vendor quote. */
+export type SurveyDocument = {
+  id: string;
+  url: string;
+  name: string;
+  kind: SurveyDocumentKind;
+  /** Bytes, when the browser reported it. */
+  size: number | null;
+  caption: string | null;
+  uploaded_at: string;
+};
+
 export type SurveyPhoto = { url: string; caption: string | null };
 
 export type Survey = {
@@ -532,6 +603,15 @@ export type Survey = {
   tax_rate: number;
   payment_terms: string | null;
   photos: SurveyPhoto[];
+  /** (migration-068) the numbered camera schedule the job is priced from. */
+  cameras: SurveyCamera[];
+  /** (migration-068) site photos, plans, spec sheets, vendor quotes. */
+  documents: SurveyDocument[];
+  /** (migration-068) head-end / infrastructure findings from the same walk. */
+  head_end_notes: string | null;
+  rack_space: string | null;
+  switch_notes: string | null;
+  access_notes: string | null;
   /** The quote this survey produced, once built. */
   quote_id: string | null;
   /** Stamped when that quote is accepted and becomes a job. */

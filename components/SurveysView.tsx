@@ -2,11 +2,15 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Edit2, Trash2, X, ClipboardList, FileSignature, Briefcase, ArrowRight, MapPin,
+  Camera, Paperclip,
 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
   newScopeItem, scopeLineTotal, surveyTotals, surveyStage, nextSurveyNumber,
 } from '@/lib/surveys';
+import { newFolderKey } from '@/lib/survey-upload';
+import SurveyCameras from '@/components/SurveyCameras';
+import SurveyDocuments from '@/components/SurveyDocuments';
 import type { Survey, SurveyScopeItem, SurveyStatus } from '@/lib/types';
 import { SURVEY_STATUSES } from '@/lib/types';
 
@@ -92,6 +96,8 @@ export default function SurveysView({
             const t = surveyTotals(s);
             const site = [s.site_city, s.site_state].filter(Boolean).join(', ');
             const scopeCount = (s.scope_items ?? []).length;
+            const camCount = (s.cameras ?? []).length;
+            const docCount = (s.documents ?? []).length;
             return (
               <div key={s.id} className="glass card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 240 }}>
@@ -111,9 +117,19 @@ export default function SurveysView({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--teal)' }}>{fmtMoney(t.total)}</div>
-                    <div style={{ fontSize: 10, color: '#aaa' }}>
-                      {scopeCount} line{scopeCount !== 1 ? 's' : ''}
-                      {t.labor > 0 && ` + ${fmtMoney(t.labor)} labor`}
+                    <div style={{ fontSize: 10, color: '#aaa', display: 'flex', gap: 7, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      {camCount > 0 && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <Camera size={10} />{camCount}
+                        </span>
+                      )}
+                      {docCount > 0 && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <Paperclip size={10} />{docCount}
+                        </span>
+                      )}
+                      <span>{scopeCount} line{scopeCount !== 1 ? 's' : ''}</span>
+                      {t.labor > 0 && <span>+ {fmtMoney(t.labor)} labor</span>}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
@@ -123,7 +139,7 @@ export default function SurveysView({
                       <button
                         title="Build Quote from this survey"
                         onClick={() => onBuildQuote(s)}
-                        disabled={scopeCount === 0 && !s.labor_hours}
+                        disabled={scopeCount === 0 && camCount === 0 && !s.labor_hours}
                         style={{ ...ICON_BTN, color: '#7c3aed' }}
                       ><FileSignature size={15} /></button>
                     )}
@@ -167,8 +183,12 @@ function SurveyModal({
     title: '', survey_date: new Date().toISOString().slice(0, 10), surveyed_by: '',
     status: 'draft', existing_conditions: '', findings: '', recommendations: '', notes: '',
     scope_items: [newScopeItem()], labor_rate: null, labor_hours: null, tax_rate: 0, payment_terms: '',
+    cameras: [], documents: [],
+    head_end_notes: '', rack_space: '', switch_notes: '', access_notes: '',
     ...item,
   });
+  // Generated once per open: lets photos upload before the survey is ever saved.
+  const [folderKey] = useState(() => newFolderKey());
   const set = <K extends keyof Survey>(k: K, v: Survey[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const scopeItems = form.scope_items ?? [];
@@ -227,6 +247,28 @@ function SurveyModal({
           <Field label="Existing Conditions"><textarea className="input" rows={2} placeholder="What is on site today" value={form.existing_conditions ?? ''} onChange={(e) => set('existing_conditions', e.target.value)} /></Field>
           <Field label="Findings"><textarea className="input" rows={2} placeholder="Problems, gaps, anything that needs attention" value={form.findings ?? ''} onChange={(e) => set('findings', e.target.value)} /></Field>
           <Field label="Recommendations"><textarea className="input" rows={2} placeholder="What FAJ proposes — this becomes the quote's scope" value={form.recommendations ?? ''} onChange={(e) => set('recommendations', e.target.value)} /></Field>
+
+          <SectionLabel>Camera schedule</SectionLabel>
+          <SurveyCameras
+            cameras={form.cameras ?? []}
+            folderKey={folderKey}
+            onChange={(cameras) => set('cameras', cameras)}
+          />
+
+          <SectionLabel>Head-end &amp; infrastructure</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="Rack space available"><input className="input" placeholder="e.g. 9-12U" value={form.rack_space ?? ''} onChange={(e) => set('rack_space', e.target.value)} /></Field>
+            <Field label="PoE switch"><input className="input" placeholder="Make/model, or 'sourcing'" value={form.switch_notes ?? ''} onChange={(e) => set('switch_notes', e.target.value)} /></Field>
+          </div>
+          <Field label="Head-end / NVR notes"><textarea className="input" rows={2} placeholder="Existing rack, patch panel, cable bundle to ceiling…" value={form.head_end_notes ?? ''} onChange={(e) => set('head_end_notes', e.target.value)} /></Field>
+          <Field label="Access &amp; scheduling"><textarea className="input" rows={2} placeholder="Occupied during install? Permits? Attic/crawlspace access?" value={form.access_notes ?? ''} onChange={(e) => set('access_notes', e.target.value)} /></Field>
+
+          <SectionLabel>Documentation</SectionLabel>
+          <SurveyDocuments
+            documents={form.documents ?? []}
+            folderKey={folderKey}
+            onChange={(documents) => set('documents', documents)}
+          />
 
           <SectionLabel>Proposed scope and pricing</SectionLabel>
           <div>

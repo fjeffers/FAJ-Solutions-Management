@@ -849,6 +849,9 @@ export default function HomePage() {
       existing_conditions: sv.existing_conditions ?? null, findings: sv.findings ?? null,
       recommendations: sv.recommendations ?? null, notes: sv.notes ?? null,
       scope_items: sv.scope_items ?? [],
+      cameras: sv.cameras ?? [], documents: sv.documents ?? [],
+      head_end_notes: sv.head_end_notes ?? null, rack_space: sv.rack_space ?? null,
+      switch_notes: sv.switch_notes ?? null, access_notes: sv.access_notes ?? null,
       labor_rate: sv.labor_rate ?? null, labor_hours: sv.labor_hours ?? null,
       tax_rate: Number(sv.tax_rate ?? 0), payment_terms: sv.payment_terms ?? null,
     };

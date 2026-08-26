@@ -7,8 +7,8 @@ import { enrichWorkOrders, contractorOwedOnWO, woPayoutTotal, fmtMoney } from '@
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
-import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, Quote, Survey, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection } from '@/lib/types';
-import { BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList } from 'lucide-react';
+import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection } from '@/lib/types';
+import { BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -21,6 +21,7 @@ import DispatchMapView from '@/components/DispatchMapView';
 import MaterialsView from '@/components/MaterialsView';
 import QuotesView, { nextQuoteNumber } from '@/components/QuotesView';
 import SurveysView from '@/components/SurveysView';
+import ContractsView from '@/components/ContractsView';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
 import SiteLogView from '@/components/SiteLogView';
@@ -45,13 +46,14 @@ import { notifyContractor, sendPortalLink, sendOnboarding } from '@/lib/notify';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { stockAdjustments } from '@/lib/materials-used';
 import { quoteFromSurvey } from '@/lib/surveys';
+import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
-  'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys',
+  'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -72,7 +74,7 @@ function viewFromUrl(): View {
 const SECTION_OF_VIEW: Record<View, string> = {
   dashboard: 'main', financials: 'main', customers: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
   // Field Ops holds the whole job pipeline, work orders through site log
-  surveys: 'fieldops', workorders: 'fieldops', scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', sitelog: 'fieldops', maintenance: 'fieldops', 'import-queue': 'fieldops',
+  surveys: 'fieldops', contracts: 'fieldops', workorders: 'fieldops', scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', sitelog: 'fieldops', maintenance: 'fieldops', 'import-queue': 'fieldops',
   contractors: 'contractors', 'contractor-analytics': 'contractors', 'portal-admin': 'contractors',
   statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
   settings: 'settings',
@@ -164,6 +166,7 @@ export default function HomePage() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [importQueue, setImportQueue] = useState<ImportQueueItem[]>([]);
@@ -203,13 +206,14 @@ export default function HomePage() {
 
   // Everything else — loaded right after first paint so startup stays fast.
   const loadSecondary = async () => {
-    const [tRes, dtRes, ctlRes, matRes, qRes, svyRes, invRes, ipRes, iqRes, gcRes, qboRes] = await Promise.all([
+    const [tRes, dtRes, ctlRes, matRes, qRes, svyRes, ctrRes, invRes, ipRes, iqRes, gcRes, qboRes] = await Promise.all([
       supabase.from('question_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('deliverable_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('contractor_time_logs').select('*').order('updated_at', { ascending: false }),
       supabase.from('materials').select('*').order('name'),
       supabase.from('quotes').select('*').order('created_at', { ascending: false }),
       supabase.from('surveys').select('*').order('created_at', { ascending: false }),
+      supabase.from('contracts').select('*').order('created_at', { ascending: false }),
       supabase.from('invoices').select('*').order('created_at', { ascending: false }),
       supabase.from('invoice_payments').select('*').order('payment_date', { ascending: false }),
       supabase.from('import_queue').select('*').order('created_at', { ascending: false }),
@@ -223,6 +227,7 @@ export default function HomePage() {
     if (matRes.data) setMaterials(matRes.data as Material[]);
     if (qRes.data) setQuotes(qRes.data as Quote[]);
     if (svyRes.data) setSurveys(svyRes.data as Survey[]);
+    if (ctrRes.data) setContracts(ctrRes.data as Contract[]);
     if (invRes.data) setInvoices(invRes.data as Invoice[]);
     if (ipRes.data) setInvoicePayments(ipRes.data as InvoicePayment[]);
     if (iqRes.data) setImportQueue(iqRes.data as ImportQueueItem[]);
@@ -230,7 +235,7 @@ export default function HomePage() {
     setQboConnection((qboRes.data as QuickBooksConnection | null) ?? null);
     const failed = [
       tRes.error && 'templates', dtRes.error && 'deliverable templates', ctlRes.error && 'time logs',
-      matRes.error && 'materials', qRes.error && 'quotes', svyRes.error && 'surveys', invRes.error && 'invoices',
+      matRes.error && 'materials', qRes.error && 'quotes', svyRes.error && 'surveys', ctrRes.error && 'contracts', invRes.error && 'invoices',
       ipRes.error && 'invoice payments', iqRes.error && 'import queue',
     ].filter(Boolean);
     if (failed.length > 0) {
@@ -900,6 +905,47 @@ export default function HomePage() {
     loadAll();
   };
 
+  // ── Contracts (migration-070) ──────────────────────────────────────────────
+  // The last link: papered from the accepted quote so the scope and the money
+  // are inherited rather than restated.
+
+  const saveContract = async (c: Partial<Contract>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { id, created_at, ...rest } = c as Contract;
+    void created_at;
+    const { error } = id
+      ? await supabase.from('contracts').update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id)
+      : await supabase.from('contracts').insert({ ...rest, user_id: user.id });
+    if (error) { toastError(`Couldn't save contract: ${error.message}`); return; }
+    loadAll();
+  };
+
+  const deleteContract = async (id: string) => {
+    const { error } = await supabase.from('contracts').delete().eq('id', id);
+    if (error) { toastError(`Couldn't delete contract: ${error.message}`); return; }
+    loadAll();
+  };
+
+  /** Quote → Contract: one click, scope and money carried across. */
+  const buildContractFromQuote = async (q: Quote) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const survey = q.survey_id ? surveys.find((s) => s.id === q.survey_id) ?? null : null;
+    const draft = contractFromQuote(q, nextContractNumber(contracts), survey);
+    const { data: newContract, error } = await supabase.from('contracts')
+      .insert({ ...draft, user_id: user.id }).select('id, contract_number').single();
+    if (error) { toastError(`Couldn't build contract: ${error.message}`); return; }
+    if (newContract) {
+      const { error: qErr } = await supabase.from('quotes')
+        .update({ contract_id: newContract.id, updated_at: new Date().toISOString() }).eq('id', q.id);
+      if (qErr) toastError(`Contract created, but couldn't link it to the quote: ${qErr.message}`);
+      else toastSuccess(`Built ${newContract.contract_number} from ${q.quote_number}`);
+      setView('contracts');
+    }
+    loadAll();
+  };
+
   const saveQuote = async (q: Partial<Quote>) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -1192,6 +1238,7 @@ export default function HomePage() {
             <NI k="materials" icon={<Package size={15} />} label="Materials" />
             <NI k="surveys" icon={<ClipboardList size={15} />} label="Surveys" />
             <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
+            <NI k="contracts" icon={<FileCheck2 size={15} />} label="Contracts" />
             <NI k="network" icon={<Network size={15} />} label="Network" />
           </NavSection>
           <NavSection title="Contractors" open={sectionOpen('contractors')} onToggle={() => toggleSection('contractors')}>
@@ -1321,8 +1368,17 @@ export default function HomePage() {
             }}
           />
         )}
+        {view === 'contracts' && (
+          <ContractsView
+            contracts={contracts}
+            onSave={saveContract}
+            onDelete={deleteContract}
+            onOpenQuote={() => setView('quotes')}
+            onOpenSurvey={() => setView('surveys')}
+          />
+        )}
         {view === 'quotes' && (
-          <QuotesView quotes={quotes} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} />
+          <QuotesView quotes={quotes} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} onBuildContract={buildContractFromQuote} />
         )}
         {view === 'customers' && <CustomersView />}
         {view === 'portal-admin' && <PortalAdminView />}

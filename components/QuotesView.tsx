@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Printer, CheckCircle2, FileText, Share2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Printer, CheckCircle2, FileText, Share2, FileCheck2 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { printQuoteSheet } from '@/lib/signoff';
 import { createClient } from '@/lib/supabase/client';
@@ -32,11 +32,13 @@ export default function QuotesView({
   onSave,
   onDelete,
   onAccept,
+  onBuildContract,
 }: {
   quotes: Quote[];
   onSave: (q: Partial<Quote>) => Promise<void>;
   onDelete: (id: string) => void;
   onAccept: (quote: Quote) => Promise<void>;
+  onBuildContract: (quote: Quote) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<Partial<Quote> | null>(null);
   const supabase = createClient();
@@ -117,6 +119,12 @@ export default function QuotesView({
                     {q.status !== 'accepted' && (
                       <button title="Accept & Create Work Order" onClick={() => onAccept(q)} style={{ ...ICON_BTN, color: '#047857' }}><CheckCircle2 size={15} /></button>
                     )}
+                    <button
+                      title={q.contract_id ? 'Contract already built — see the Contracts tab' : 'Build Contract from this quote'}
+                      onClick={() => { if (!q.contract_id) onBuildContract(q); }}
+                      disabled={!!q.contract_id}
+                      style={{ ...ICON_BTN, color: '#7c3aed', opacity: q.contract_id ? 0.35 : 1 }}
+                    ><FileCheck2 size={15} /></button>
                     <button title="Delete" onClick={() => { if (confirm(`Delete quote ${q.quote_number}?`)) onDelete(q.id); }} style={{ ...ICON_BTN, color: '#b91c1c' }}><Trash2 size={15} /></button>
                   </div>
                 </div>

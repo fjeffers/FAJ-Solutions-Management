@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { X, Check, ChevronLeft, ChevronRight, FileSignature, Save, ClipboardList } from 'lucide-react';
+import { X, Check, ChevronLeft, ChevronRight, FileSignature, Save, ClipboardList, Wand2, Table2 } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
 import {
   newScopeItem, scopeLineTotal, surveyTotals, pageStatus, readyToQuote,
@@ -12,6 +12,7 @@ import SurveyDrops from '@/components/SurveyDrops';
 import SurveyDocuments from '@/components/SurveyDocuments';
 import SurveyPlacements from '@/components/SurveyPlacements';
 import SurveyQuestions from '@/components/SurveyQuestions';
+import SurveyGuide from '@/components/SurveyGuide';
 import type { QuestionTemplate, Survey, SurveyScopeItem, SurveyStatus, SurveyType } from '@/lib/types';
 import { SURVEY_STATUSES, SURVEY_TYPES, scheduleKindFor } from '@/lib/types';
 
@@ -52,6 +53,9 @@ export default function SurveyWizard({
   const [saving, setSaving] = useState(false);
   // Generated once per open: lets photos upload before the survey is ever saved.
   const [folderKey] = useState(() => newFolderKey());
+  // Guided is the default: standing in a building you want to be asked, not
+  // handed a table. The table stays one tap away for editing afterwards.
+  const [guided, setGuided] = useState(true);
 
   const set = <K extends keyof Survey>(k: K, v: Survey[K]) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -209,16 +213,32 @@ export default function SurveyWizard({
           {/* ── Page 2 — the type-specific questions ───────────────────── */}
           {page === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {kind === 'cameras' && (
+              {kind !== 'none' && (
                 <>
-                  <SectionLabel>Camera schedule</SectionLabel>
-                  <SurveyCameras cameras={form.cameras ?? []} folderKey={folderKey} onChange={(c) => set('cameras', c)} />
-                </>
-              )}
-              {kind === 'drops' && (
-                <>
-                  <SectionLabel>Drop schedule</SectionLabel>
-                  <SurveyDrops drops={form.cable_drops ?? []} folderKey={folderKey} onChange={(d) => set('cable_drops', d)} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    <SectionLabel>{kind === 'drops' ? 'Drop schedule' : 'Camera schedule'}</SectionLabel>
+                    <div style={{ display: 'flex', gap: 4, background: '#f4f1ea', borderRadius: 999, padding: 3 }}>
+                      <ModeBtn active={guided} onClick={() => setGuided(true)} icon={<Wand2 size={12} />} label="Guided" />
+                      <ModeBtn active={!guided} onClick={() => setGuided(false)} icon={<Table2 size={12} />} label="Table" />
+                    </div>
+                  </div>
+
+                  {guided ? (
+                    <SurveyGuide
+                      kind={kind}
+                      devices={kind === 'drops' ? (form.cable_drops ?? []) : (form.cameras ?? [])}
+                      folderKey={folderKey}
+                      onSwitchToTable={() => setGuided(false)}
+                      onChange={(next) => {
+                        if (kind === 'drops') set('cable_drops', next as Survey['cable_drops']);
+                        else set('cameras', next as Survey['cameras']);
+                      }}
+                    />
+                  ) : kind === 'drops' ? (
+                    <SurveyDrops drops={form.cable_drops ?? []} folderKey={folderKey} onChange={(d) => set('cable_drops', d)} />
+                  ) : (
+                    <SurveyCameras cameras={form.cameras ?? []} folderKey={folderKey} onChange={(c) => set('cameras', c)} />
+                  )}
                 </>
               )}
 
@@ -409,6 +429,22 @@ function Two({ children }: { children: React.ReactNode }) {
 }
 function Three({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>{children}</div>;
+}
+
+function ModeBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+        padding: '6px 13px', borderRadius: 999, border: 'none',
+        fontSize: 11.5, fontWeight: 700,
+        background: active ? 'white' : 'transparent',
+        color: active ? 'var(--teal)' : '#8a8578',
+        boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+      }}
+    >{icon} {label}</button>
+  );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {

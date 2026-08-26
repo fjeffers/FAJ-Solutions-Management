@@ -480,6 +480,52 @@ export type TechSummary = {
   jobs_open: number;
 };
 
+// ─── Contracts (migration-070) — the paper after the quote ───────────────────
+
+export type ContractStatus = 'draft' | 'sent' | 'signed' | 'declined' | 'void';
+export const CONTRACT_STATUSES: ContractStatus[] = ['draft', 'sent', 'signed', 'declined', 'void'];
+
+export type Contract = {
+  id: string;
+  user_id: string | null;
+  contract_number: string;
+  /** Where it came from. All SET NULL: deleting a quote never deletes paper. */
+  quote_id: string | null;
+  survey_id: string | null;
+  work_order_id: string | null;
+  customer_id: string | null;
+  client_name: string | null;
+  client_email: string | null;
+  site_name: string | null;
+  site_address: string | null;
+  title: string | null;
+  status: ContractStatus;
+  scope_of_work: string | null;
+  deliverables: string | null;
+  schedule_terms: string | null;
+  price_terms: string | null;
+  payment_terms: string | null;
+  change_orders: string | null;
+  warranty: string | null;
+  exclusions: string | null;
+  access_safety: string | null;
+  insurance: string | null;
+  termination: string | null;
+  governing_law: string | null;
+  total: number;
+  deposit_amount: number | null;
+  provider_signatory: string | null;
+  client_signatory: string | null;
+  signed_at: string | null;
+  signed_name: string | null;
+  signed_ip: string | null;
+  share_token: string | null;
+  sent_at: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 // ─── Site surveys (migration-066) — the front of the job pipeline ────────────
 
 export type SurveyStatus = 'draft' | 'completed' | 'quoted' | 'won' | 'lost';
@@ -527,6 +573,8 @@ export type SurveyCamera = {
   mount_height_ft: number | null;
   resolution: string;
   status: 'New' | 'Existing' | 'Replace';
+  /** What this camera sells for, installed. Drives the quote line. */
+  unit_price: number;
   notes: string | null;
   /** Photos of the recommended mounting area for THIS camera. */
   photos: string[];
@@ -590,6 +638,8 @@ export type CableDrop = {
   /** Where it lands at the head end, e.g. "Patch panel A, ports 12-13". */
   termination: string;
   mount: string;
+  /** Price PER JACK — a dual drop is one location billed twice. */
+  unit_price: number;
   notes: string | null;
   /** Photos of the recommended location for this drop. */
   photos: string[];
@@ -659,6 +709,8 @@ export type Survey = {
   cameras: SurveyCamera[];
   /** (migration-069) the drop schedule, for cabling and network surveys. */
   cable_drops: CableDrop[];
+  /** (migration-070) your own questions for this job, and their answers. */
+  custom_qa: CustomQAItem[];
   /** (migration-068) site photos, plans, spec sheets, vendor quotes. */
   documents: SurveyDocument[];
   /** (migration-068) head-end / infrastructure findings from the same walk. */
@@ -711,6 +763,8 @@ export type Quote = {
   customer_id: string | null;
   /** (migration-066) the walk-through this quote was built from. */
   survey_id: string | null;
+  /** (migration-070) the contract papered from this quote, once built. */
+  contract_id: string | null;
   /** (migration-044) powers the public /quote/<token> client page. */
   share_token: string | null;
   created_at: string;

@@ -851,6 +851,7 @@ export default function HomePage() {
       scope_items: sv.scope_items ?? [],
       survey_type: sv.survey_type ?? 'camera', last_page: sv.last_page ?? 1,
       cameras: sv.cameras ?? [], cable_drops: sv.cable_drops ?? [], documents: sv.documents ?? [],
+      custom_qa: sv.custom_qa ?? [],
       head_end_notes: sv.head_end_notes ?? null, rack_space: sv.rack_space ?? null,
       switch_notes: sv.switch_notes ?? null, access_notes: sv.access_notes ?? null,
       labor_rate: sv.labor_rate ?? null, labor_hours: sv.labor_hours ?? null,
@@ -1307,6 +1308,7 @@ export default function HomePage() {
         {view === 'surveys' && (
           <SurveysView
             surveys={surveys}
+            questionTemplates={questionTemplates}
             onSave={async (sv) => { await saveSurvey(sv); }}
             onSaveAndQuote={saveSurveyAndQuote}
             onDelete={deleteSurvey}

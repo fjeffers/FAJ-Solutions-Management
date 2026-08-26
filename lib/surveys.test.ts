@@ -4,6 +4,7 @@ import {
   scopeItemToQuoteLine, quoteFromSurvey, surveyStage,
   renumberCameras, moveCamera, addCamera, removeCamera, cameraCounts,
   cameraToQuoteLine, documentKindFor, isImageDocument, formatFileSize,
+  deviceTotal, unpricedDevices,
   addDrop, removeDrop, moveDrop, dropCounts, dropToQuoteLine,
   placementRows, pageStatus, readyToQuote,
 } from './surveys';
@@ -20,7 +21,7 @@ const survey = (over: Partial<Survey> = {}): Survey => ({
   title: null, survey_date: '2026-08-20', surveyed_by: 'Fred', status: 'draft',
   existing_conditions: null, findings: null, recommendations: null, notes: null,
   scope_items: [], labor_rate: null, labor_hours: null, tax_rate: 0, payment_terms: null,
-  photos: [], cameras: [], documents: [], cable_drops: [],
+  photos: [], cameras: [], documents: [], cable_drops: [], custom_qa: [],
   survey_type: 'camera', last_page: 1,
   head_end_notes: null, rack_space: null, switch_notes: null, access_notes: null,
   quote_id: null, work_order_id: null, share_token: null, archived_at: null,
@@ -159,7 +160,7 @@ describe('pipeline stage', () => {
 const cam = (over: Partial<SurveyCamera> = {}): SurveyCamera => ({
   id: 'c1', position: 1, location: 'Lobby', camera_type: 'Dome', variant: null,
   placement: 'Indoor', mount: 'Ceiling', cable_run: '<50 ft', mount_height_ft: null,
-  resolution: '4MP', status: 'New', notes: null, photos: [], ...over,
+  resolution: '4MP', status: 'New', unit_price: 0, notes: null, photos: [], ...over,
 });
 
 describe('camera schedule numbering', () => {
@@ -340,7 +341,7 @@ describe('cameras reach the quote', () => {
 const drop = (over: Partial<CableDrop> = {}): CableDrop => ({
   id: 'd1', position: 1, location: 'Reception desk', jack_count: 2,
   cable_type: 'Cat6', run_length: '85 ft', termination: 'Patch panel A, ports 12-13',
-  mount: 'Wall plate', notes: null, photos: [], ...over,
+  mount: 'Wall plate', unit_price: 0, notes: null, photos: [], ...over,
 });
 
 describe('drop schedule', () => {
@@ -427,7 +428,7 @@ describe('placement rows', () => {
 describe('page status', () => {
   const complete = survey({
     client_name: 'New Beginnings', site_name: 'Chester',
-    cameras: [cam({ id: 'a', position: 1, location: 'Lobby', cable_run: '25 ft', photos: ['u'] })],
+    cameras: [cam({ id: 'a', position: 1, location: 'Lobby', cable_run: '25 ft', unit_price: 245, photos: ['u'] })],
     recommendations: 'Replace all seven.', labor_hours: 8, labor_rate: 85,
   });
 
@@ -460,9 +461,100 @@ describe('page status', () => {
     expect(readyToQuote(s)).toBe(true);
   });
 
-  it('will not call a survey ready with no labour and no priced scope', () => {
-    const s = { ...complete, labor_hours: null, labor_rate: null, scope_items: [] };
+  it('will not call a survey ready when nothing is priced at all', () => {
+    const s = {
+      ...complete,
+      labor_hours: null, labor_rate: null, scope_items: [],
+      cameras: complete.cameras.map((c) => ({ ...c, unit_price: 0 })),
+    };
     expect(readyToQuote(s)).toBe(false);
-    expect(pageStatus(s)[3].missing).toContain('labour or a priced scope line');
+    expect(pageStatus(s)[3].missing).toContain('a price on something');
+  });
+});
+
+// ── Device pricing: the $0.00-quote bug ─────────────────────────────────────
+
+describe('device pricing', () => {
+  it('totals cameras at one each', () => {
+    expect(deviceTotal({
+      survey_type: 'camera',
+      cameras: [cam({ id: 'a', unit_price: 245 }), cam({ id: 'b', unit_price: 480 })],
+    })).toBe(725);
+  });
+
+  it('bills drops per jack, not per location', () => {
+    // One location, two jacks, $125 a jack = $250.
+    expect(deviceTotal({
+      survey_type: 'cabling',
+      cable_drops: [drop({ id: 'a', jack_count: 2, unit_price: 125 })],
+    })).toBe(250);
+  });
+
+  it('ignores the schedule that does not belong to the survey type', () => {
+    expect(deviceTotal({
+      survey_type: 'cabling',
+      cameras: [cam({ id: 'x', unit_price: 999 })],
+      cable_drops: [],
+    })).toBe(0);
+  });
+
+  it('counts rows still sitting at zero', () => {
+    expect(unpricedDevices({
+      survey_type: 'camera',
+      cameras: [cam({ id: 'a', unit_price: 245 }), cam({ id: 'b' }), cam({ id: 'c' })],
+    })).toBe(2);
+  });
+});
+
+describe('cameras reach the quote priced', () => {
+  const priced = survey({
+    cameras: [
+      cam({ id: 'a', position: 1, location: 'Network room', unit_price: 245, cable_run: '25 ft', photos: ['u'] }),
+      cam({ id: 'b', position: 2, location: 'Hallway', unit_price: 245, cable_run: '30 ft', photos: ['u'] }),
+    ],
+    labor_hours: 8, labor_rate: 85,
+    client_name: 'New Beginnings', site_name: 'Chester', recommendations: 'Replace all.',
+  });
+
+  it('the survey total includes the cameras', () => {
+    const t = surveyTotals(priced);
+    expect(t.devices).toBe(490);
+    expect(t.labor).toBe(680);
+    expect(t.total).toBe(1170);
+  });
+
+  it('each camera line carries its own price, not zero', () => {
+    const lines = quoteFromSurvey(priced, 'Q-1').line_items!;
+    expect(lines[0].rate).toBe(245);
+    expect(lines[1].rate).toBe(245);
+  });
+
+  it('the quote lines add up to the quote total', () => {
+    const q = quoteFromSurvey(priced, 'Q-1');
+    const sum = q.line_items!.reduce((n, li) => n + li.quantity * li.rate, 0);
+    expect(sum).toBe(q.total);
+  });
+
+  it('will not let an unpriced schedule reach a quote', () => {
+    const free = { ...priced, cameras: priced.cameras.map((c) => ({ ...c, unit_price: 0 })) };
+    expect(readyToQuote(free)).toBe(false);
+    expect(pageStatus(free)[3].missing.join(' ')).toMatch(/2 cameras with no price/);
+  });
+});
+
+describe('placements page status', () => {
+  it('does not claim Complete when there is nothing to photograph', () => {
+    const st = pageStatus(survey({ client_name: 'X', site_name: 'Y', cameras: [] }));
+    expect(st[2].done).toBe(false);
+    expect(st[2].missing[0]).toBe('nothing to photograph yet');
+  });
+
+  it('still does not block the quote over photos', () => {
+    const s = survey({
+      client_name: 'X', site_name: 'Y', recommendations: 'Do it.',
+      cameras: [cam({ id: 'a', position: 1, location: 'Lobby', cable_run: '25 ft', unit_price: 245, photos: [] })],
+    });
+    expect(pageStatus(s)[2].done).toBe(false);
+    expect(readyToQuote(s)).toBe(true);
   });
 });

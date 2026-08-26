@@ -7,7 +7,7 @@ import {
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { surveyTotals, surveyStage, nextSurveyNumber, readyToQuote } from '@/lib/surveys';
 import SurveyWizard from '@/components/SurveyWizard';
-import type { Survey, SurveyStatus } from '@/lib/types';
+import type { QuestionTemplate, Survey, SurveyStatus } from '@/lib/types';
 import { SURVEY_TYPES } from '@/lib/types';
 
 const STATUS_META: Record<SurveyStatus, { label: string; color: string; bg: string }> = {
@@ -39,9 +39,10 @@ function Pipeline({ s }: { s: Survey }) {
 }
 
 export default function SurveysView({
-  surveys, onSave, onSaveAndQuote, onDelete, onBuildQuote, onOpenQuote, onOpenWorkOrder,
+  surveys, questionTemplates, onSave, onSaveAndQuote, onDelete, onBuildQuote, onOpenQuote, onOpenWorkOrder,
 }: {
   surveys: Survey[];
+  questionTemplates: QuestionTemplate[];
   onSave: (s: Partial<Survey>) => Promise<void>;
   onSaveAndQuote: (s: Partial<Survey>) => Promise<void>;
   onDelete: (id: string) => void;
@@ -161,6 +162,7 @@ export default function SurveysView({
       {editing && (
         <SurveyWizard
           item={editing}
+          questionTemplates={questionTemplates}
           onSave={async (sv) => { await onSave(sv); setEditing(null); }}
           onSaveAndQuote={async (sv) => { await onSaveAndQuote(sv); setEditing(null); }}
           onClose={() => setEditing(null)}

@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { X, Check, ChevronLeft, ChevronRight, FileSignature, Save } from 'lucide-react';
+import { X, Check, ChevronLeft, ChevronRight, FileSignature, Save, ClipboardList } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
 import {
   newScopeItem, scopeLineTotal, surveyTotals, pageStatus, readyToQuote,
@@ -11,7 +11,8 @@ import SurveyCameras from '@/components/SurveyCameras';
 import SurveyDrops from '@/components/SurveyDrops';
 import SurveyDocuments from '@/components/SurveyDocuments';
 import SurveyPlacements from '@/components/SurveyPlacements';
-import type { Survey, SurveyScopeItem, SurveyStatus, SurveyType } from '@/lib/types';
+import SurveyQuestions from '@/components/SurveyQuestions';
+import type { QuestionTemplate, Survey, SurveyScopeItem, SurveyStatus, SurveyType } from '@/lib/types';
 import { SURVEY_STATUSES, SURVEY_TYPES, scheduleKindFor } from '@/lib/types';
 
 /**
@@ -27,9 +28,10 @@ import { SURVEY_STATUSES, SURVEY_TYPES, scheduleKindFor } from '@/lib/types';
  * is asked the other's questions.
  */
 export default function SurveyWizard({
-  item, onSave, onSaveAndQuote, onClose,
+  item, questionTemplates, onSave, onSaveAndQuote, onClose,
 }: {
   item: Partial<Survey>;
+  questionTemplates: QuestionTemplate[];
   onSave: (s: Partial<Survey>) => Promise<void>;
   onSaveAndQuote: (s: Partial<Survey>) => Promise<void>;
   onClose: () => void;
@@ -40,7 +42,7 @@ export default function SurveyWizard({
     site_name: '', site_address: '', site_city: '', site_state: '', site_zip: '',
     title: '', survey_date: new Date().toISOString().slice(0, 10), surveyed_by: '',
     status: 'draft', existing_conditions: '', findings: '', recommendations: '', notes: '',
-    scope_items: [], cameras: [], cable_drops: [], documents: [],
+    scope_items: [], cameras: [], cable_drops: [], documents: [], custom_qa: [],
     head_end_notes: '', rack_space: '', switch_notes: '', access_notes: '',
     labor_rate: null, labor_hours: null, tax_rate: 0, payment_terms: '',
     ...item,
@@ -68,24 +70,52 @@ export default function SurveyWizard({
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={onClose}>
-      <div className="glass card" style={{ width: 780, maxWidth: '95vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>
-              {item.id ? `Edit ${form.survey_number}` : `New Survey — ${form.survey_number}`}
+    // Full screen, not a dialog floating over a page. A survey is the whole
+    // task while you are standing in the building — nothing behind it matters,
+    // and a translucent card over the survey list was unreadable.
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 100, background: '#fdfcfa',
+      display: 'flex', flexDirection: 'column',
+    }}>
+      <header style={{
+        background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white',
+        padding: '16px 20px', flexShrink: 0,
+      }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 2 }}>
+              <ClipboardList size={14} color="var(--gold-light)" />
+              <span className="display" style={{ fontSize: 10, color: 'var(--gold-light)', fontWeight: 700, letterSpacing: 1.6 }}>
+                SITE SURVEY
+              </span>
             </div>
-            <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
-              {SURVEY_TYPES.find((t) => t.value === form.survey_type)?.label}
+            <div className="serif" style={{ fontSize: 25, fontWeight: 600, lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {form.title?.trim() || form.site_name?.trim() || form.client_name?.trim() || 'New survey'}
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
+              {form.survey_number} · {SURVEY_TYPES.find((t) => t.value === form.survey_type)?.label}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
+          <button
+            onClick={onClose} title="Close"
+            style={{
+              background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer',
+              borderRadius: 8, padding: '9px 13px', display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 600, flexShrink: 0,
+            }}
+          ><X size={15} /> Close</button>
         </div>
+      </header>
+
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+       <div style={{ maxWidth: 1000, margin: '0 auto', padding: '18px 20px 0' }}>
 
         {/* Step rail — every page's state visible at once, so "what's left?" is
             a glance rather than a hunt. */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 14, overflowX: 'auto' }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: 8, marginBottom: 20,
+        }}>
           {SURVEY_PAGES.map((p) => {
             const st = status.find((x) => x.page === p.page)!;
             const active = page === p.page;
@@ -93,10 +123,12 @@ export default function SurveyWizard({
               <button
                 key={p.page} onClick={() => setPage(p.page)}
                 style={{
-                  flex: '1 1 0', minWidth: 120, textAlign: 'left', cursor: 'pointer',
-                  padding: '8px 10px', borderRadius: 9,
-                  border: active ? '1px solid var(--teal)' : '1px solid #e4e4e4',
-                  background: active ? 'rgba(13,115,119,0.08)' : 'transparent',
+                  textAlign: 'left', cursor: 'pointer',
+                  padding: '11px 13px', borderRadius: 11,
+                  border: active ? '1px solid var(--teal)' : '1px solid #e8e5dd',
+                  background: active ? 'rgba(13,115,119,0.08)' : 'white',
+                  boxShadow: active ? '0 2px 10px rgba(13,115,119,0.10)' : 'none',
+                  transition: 'all 0.15s',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -107,9 +139,9 @@ export default function SurveyWizard({
                     background: st.done ? '#047857' : active ? 'var(--teal)' : '#ddd',
                     color: 'white',
                   }}>{st.done ? <Check size={10} /> : p.page}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: active ? 'var(--teal)' : '#555' }}>{p.title}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: active ? 'var(--teal)' : '#444' }}>{p.title}</span>
                 </div>
-                <div style={{ fontSize: 9, color: st.done ? '#047857' : '#b45309', marginTop: 3, minHeight: 12 }}>
+                <div style={{ fontSize: 10, color: st.done ? '#047857' : '#b45309', marginTop: 4, minHeight: 13, lineHeight: 1.3 }}>
                   {st.done ? 'Complete' : st.missing[0] ?? ''}
                 </div>
               </button>
@@ -117,7 +149,11 @@ export default function SurveyWizard({
           })}
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+        <div style={{
+          background: 'white', border: '1px solid #eee9df', borderRadius: 16,
+          padding: '22px 24px', marginBottom: 20,
+          boxShadow: '0 4px 24px rgba(13,115,119,0.05)',
+        }}>
           {/* ── Page 1 — Client & Site ─────────────────────────────────── */}
           {page === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -190,6 +226,14 @@ export default function SurveyWizard({
               <Field label="Existing Conditions"><textarea className="input" rows={2} placeholder="What is on site today" value={form.existing_conditions ?? ''} onChange={(e) => set('existing_conditions', e.target.value)} /></Field>
               <Field label="Findings"><textarea className="input" rows={2} placeholder="Problems, gaps, anything that needs attention" value={form.findings ?? ''} onChange={(e) => set('findings', e.target.value)} /></Field>
 
+              <SectionLabel>Questions for this job</SectionLabel>
+              <SurveyQuestions
+                items={form.custom_qa ?? []}
+                templates={questionTemplates}
+                surveyType={form.survey_type ?? 'camera'}
+                onChange={(qa) => set('custom_qa', qa)}
+              />
+
               {(kind !== 'none') && (
                 <>
                   <SectionLabel>Head-end &amp; infrastructure</SectionLabel>
@@ -236,7 +280,10 @@ export default function SurveyWizard({
               />
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 18, fontSize: 13, padding: '10px 0', borderTop: '1px solid #eee', flexWrap: 'wrap' }}>
-                <div>Scope: <strong>{fmtMoney(totals.scope)}</strong></div>
+                {totals.devices > 0 && (
+                  <div>{kind === 'drops' ? 'Drops' : 'Cameras'}: <strong>{fmtMoney(totals.devices)}</strong></div>
+                )}
+                {totals.scope > 0 && <div>Materials: <strong>{fmtMoney(totals.scope)}</strong></div>}
                 {totals.labor > 0 && <div>Labor: <strong>{fmtMoney(totals.labor)}</strong></div>}
                 {totals.tax > 0 && <div>Tax: <strong>{fmtMoney(totals.tax)}</strong></div>}
                 <div style={{ color: 'var(--teal)' }}>Total: <strong>{fmtMoney(totals.total)}</strong></div>
@@ -277,8 +324,15 @@ export default function SurveyWizard({
           )}
         </div>
 
-        {/* Footer: move between pages, save, and quote when it's earned. */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 14, borderTop: '1px solid #eee', alignItems: 'center', flexWrap: 'wrap' }}>
+       </div>
+      </div>
+
+      {/* Sticky action bar — Next and Save stay reachable, never scrolled past. */}
+      <div style={{
+        flexShrink: 0, borderTop: '1px solid #eee9df', background: 'white',
+        padding: '12px 20px', boxShadow: '0 -4px 20px rgba(0,0,0,0.04)',
+      }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             className="btn btn-ghost" disabled={page === 1}
             onClick={() => setPage((p) => (p - 1) as SurveyPage)}

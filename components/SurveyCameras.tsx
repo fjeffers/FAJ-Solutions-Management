@@ -1,6 +1,7 @@
 'use client';
 import { Plus, X, ChevronUp, ChevronDown, Camera } from 'lucide-react';
-import { addCamera, removeCamera, moveCamera, cameraCounts } from '@/lib/surveys';
+import { addCamera, removeCamera, moveCamera, cameraCounts, deviceTotal } from '@/lib/surveys';
+import { fmtMoney } from '@/lib/utils';
 import SurveyPhotoStrip from '@/components/SurveyPhotoStrip';
 import type { SurveyCamera } from '@/lib/types';
 import {
@@ -26,6 +27,7 @@ export default function SurveyCameras({
   onChange: (next: SurveyCamera[]) => void;
 }) {
   const counts = cameraCounts(cameras);
+  const scheduleValue = deviceTotal({ survey_type: 'camera', cameras });
   const update = (id: string, patch: Partial<SurveyCamera>) =>
     onChange(cameras.map((c) => (c.id === id ? { ...c, ...patch } : c)));
 
@@ -44,6 +46,9 @@ export default function SurveyCameras({
           </strong>
           <span>{counts.indoor} indoor · {counts.outdoor} outdoor</span>
           <span>{counts.poePorts} PoE port{counts.poePorts !== 1 ? 's' : ''} needed</span>
+          <span style={{ color: scheduleValue > 0 ? '#047857' : '#b45309', fontWeight: 700 }}>
+            {fmtMoney(scheduleValue)}{scheduleValue === 0 ? ' — unpriced' : ''}
+          </span>
           {counts.existing > 0 && <span>{counts.existing} existing</span>}
           {counts.runsUnknown > 0 && (
             <span style={{ color: '#b45309', fontWeight: 600 }}>
@@ -125,6 +130,13 @@ export default function SurveyCameras({
                   <select className="select input" value={c.status} onChange={(e) => update(c.id, { status: e.target.value as SurveyCamera['status'] })}>
                     {CAMERA_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
                   </select>
+                </Cell>
+                <Cell label="Price (installed)">
+                  <input
+                    className="input" type="number" step="0.01" min={0} inputMode="decimal"
+                    value={c.unit_price || ''} placeholder="0.00"
+                    onChange={(e) => update(c.id, { unit_price: Number(e.target.value) || 0 })}
+                  />
                 </Cell>
                 <Cell label="Mount ht (ft)">
                   <input

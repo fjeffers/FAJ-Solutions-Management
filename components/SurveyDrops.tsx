@@ -1,6 +1,7 @@
 'use client';
 import { Plus, X, ChevronUp, ChevronDown, Cable } from 'lucide-react';
-import { addDrop, removeDrop, moveDrop, dropCounts } from '@/lib/surveys';
+import { addDrop, removeDrop, moveDrop, dropCounts, deviceTotal } from '@/lib/surveys';
+import { fmtMoney } from '@/lib/utils';
 import SurveyPhotoStrip from '@/components/SurveyPhotoStrip';
 import type { CableDrop } from '@/lib/types';
 import { CABLE_TYPES, DROP_MOUNTS, CABLE_RUN_PRESETS } from '@/lib/types';
@@ -20,6 +21,7 @@ export default function SurveyDrops({
   onChange: (next: CableDrop[]) => void;
 }) {
   const counts = dropCounts(drops);
+  const scheduleValue = deviceTotal({ survey_type: 'cabling', cable_drops: drops });
   const update = (id: string, patch: Partial<CableDrop>) =>
     onChange(drops.map((d) => (d.id === id ? { ...d, ...patch } : d)));
 
@@ -36,6 +38,9 @@ export default function SurveyDrops({
           </strong>
           <span>{counts.jacks} jack{counts.jacks !== 1 ? 's' : ''}</span>
           {counts.byCable.map((c) => <span key={c.type}>{c.jacks}× {c.type}</span>)}
+          <span style={{ color: scheduleValue > 0 ? '#047857' : '#b45309', fontWeight: 700 }}>
+            {fmtMoney(scheduleValue)}{scheduleValue === 0 ? ' — unpriced' : ''}
+          </span>
           {counts.runsUnknown > 0 && (
             <span style={{ color: '#b45309', fontWeight: 600 }}>
               {counts.runsUnknown} run{counts.runsUnknown !== 1 ? 's' : ''} still TBD
@@ -94,6 +99,13 @@ export default function SurveyDrops({
                   <select className="select input" value={d.mount} onChange={(e) => update(d.id, { mount: e.target.value })}>
                     {DROP_MOUNTS.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
+                </Cell>
+                <Cell label="Price / jack">
+                  <input
+                    className="input" type="number" step="0.01" min={0} inputMode="decimal"
+                    value={d.unit_price || ''} placeholder="0.00"
+                    onChange={(e) => update(d.id, { unit_price: Number(e.target.value) || 0 })}
+                  />
                 </Cell>
                 <Cell label="Terminates at">
                   <input

@@ -49,14 +49,45 @@ export function surveyLabor(s: Pick<Survey, 'labor_hours' | 'labor_rate'>): numb
  * Labour is a line of its own so a survey can price hourly work (the $85/hr
  * kind) alongside fixed scope lines without double-counting either.
  */
-export function surveyTotals(s: Pick<Survey, 'scope_items' | 'labor_hours' | 'labor_rate' | 'tax_rate'>): {
-  scope: number; labor: number; subtotal: number; tax: number; total: number;
-} {
+export function surveyTotals(
+  s: Pick<Survey, 'scope_items' | 'labor_hours' | 'labor_rate' | 'tax_rate'>
+     & Partial<Pick<Survey, 'survey_type' | 'cameras' | 'cable_drops'>>,
+): { devices: number; scope: number; labor: number; subtotal: number; tax: number; total: number } {
+  const devices = deviceTotal(s);
   const scope = (s.scope_items ?? []).reduce((sum, i) => sum + scopeLineTotal(i), 0);
   const labor = surveyLabor(s);
-  const subtotal = scope + labor;
+  const subtotal = devices + scope + labor;
   const tax = subtotal * ((Number(s.tax_rate) || 0) / 100);
-  return { scope, labor, subtotal, tax, total: subtotal + tax };
+  return { devices, scope, labor, subtotal, tax, total: subtotal + tax };
+}
+
+/**
+ * What the device schedule is worth. Cameras are one each; drops bill per jack,
+ * because a dual drop is one location and two terminations.
+ */
+export function deviceTotal(
+  s: Partial<Pick<Survey, 'survey_type' | 'cameras' | 'cable_drops'>>,
+): number {
+  const kind = scheduleKindFor(s.survey_type ?? 'camera');
+  if (kind === 'cameras') {
+    return (s.cameras ?? []).reduce((sum, c) => sum + (Number(c.unit_price) || 0), 0);
+  }
+  if (kind === 'drops') {
+    return (s.cable_drops ?? []).reduce(
+      (sum, d) => sum + (Number(d.unit_price) || 0) * (Number(d.jack_count) || 0), 0,
+    );
+  }
+  return 0;
+}
+
+/** Device rows still sitting at zero — the "you are about to quote $0" check. */
+export function unpricedDevices(
+  s: Partial<Pick<Survey, 'survey_type' | 'cameras' | 'cable_drops'>>,
+): number {
+  const kind = scheduleKindFor(s.survey_type ?? 'camera');
+  if (kind === 'cameras') return (s.cameras ?? []).filter((c) => !(Number(c.unit_price) > 0)).length;
+  if (kind === 'drops') return (s.cable_drops ?? []).filter((d) => !(Number(d.unit_price) > 0)).length;
+  return 0;
 }
 
 /**
@@ -85,9 +116,9 @@ export function scopeItemToQuoteLine(item: SurveyScopeItem): QuoteLineItem {
  */
 export function quoteFromSurvey(s: Survey, quoteNumber: string): Partial<Quote> {
   // Cameras lead: the schedule is what the client is actually buying, and each
-  // line names the position, the area, how it mounts and its cable run.
-  // Priced at zero so the rate is filled in on the quote rather than guessed
-  // here — the survey records what goes where, not what it sells for.
+  // line names the position, the area, how it mounts and its cable run, at the
+  // price set on the survey row. The walk-through prices the job; the quote is
+  // a copy of it, not a second round of data entry.
   const kind = scheduleKindFor(s.survey_type ?? 'camera');
   const lines = [
     ...(kind === 'cameras' ? camerasToQuoteLines(s.cameras ?? []) : []),
@@ -147,6 +178,7 @@ export function newCamera(position: number): SurveyCamera {
     mount_height_ft: null,
     resolution: 'TBD',
     status: 'New',
+    unit_price: 0,
     notes: null,
     photos: [],
   };
@@ -204,6 +236,7 @@ export function newDrop(position: number): CableDrop {
     run_length: 'TBD',
     termination: '',
     mount: 'Wall plate',
+    unit_price: 0,
     notes: null,
     photos: [],
   };
@@ -237,7 +270,7 @@ export function dropCounts(drops: CableDrop[]): {
 }
 
 /** One drop, as the line a client reads on the quote. */
-export function dropToQuoteLine(d: CableDrop, rate = 0): QuoteLineItem {
+export function dropToQuoteLine(d: CableDrop, rate?: number): QuoteLineItem {
   const where = d.location.trim() || `Drop ${d.position}`;
   const jacks = Number(d.jack_count) || 0;
   const spec = [
@@ -253,10 +286,10 @@ export function dropToQuoteLine(d: CableDrop, rate = 0): QuoteLineItem {
   const description = [`Drop ${d.position} — ${where}`, spec, runPart, term]
     .filter(Boolean).join(' · ');
 
-  return { id: `drop-${d.id}`, description, quantity: jacks || 1, rate };
+  return { id: `drop-${d.id}`, description, quantity: jacks || 1, rate: rate ?? (Number(d.unit_price) || 0) };
 }
 
-export function dropsToQuoteLines(drops: CableDrop[], ratePerJack = 0): QuoteLineItem[] {
+export function dropsToQuoteLines(drops: CableDrop[], ratePerJack?: number): QuoteLineItem[] {
   return [...drops].sort((a, b) => a.position - b.position).map((d) => dropToQuoteLine(d, ratePerJack));
 }
 
@@ -294,7 +327,7 @@ export function cameraCounts(cameras: SurveyCamera[]): {
  * A cable run still marked TBD is simply left off rather than printed as "TBD
  * cable" on a document a client reads.
  */
-export function cameraToQuoteLine(c: SurveyCamera, rate = 0): QuoteLineItem {
+export function cameraToQuoteLine(c: SurveyCamera, rate?: number): QuoteLineItem {
   const where = c.location.trim() || `Camera ${c.position}`;
 
   const spec = [
@@ -311,11 +344,11 @@ export function cameraToQuoteLine(c: SurveyCamera, rate = 0): QuoteLineItem {
   const description = [`Camera ${c.position} — ${where}`, spec, runPart]
     .filter(Boolean).join(' · ');
 
-  return { id: `cam-${c.id}`, description, quantity: 1, rate };
+  return { id: `cam-${c.id}`, description, quantity: 1, rate: rate ?? (Number(c.unit_price) || 0) };
 }
 
 /** Every camera as a quote line, in schedule order. */
-export function camerasToQuoteLines(cameras: SurveyCamera[], ratePerCamera = 0): QuoteLineItem[] {
+export function camerasToQuoteLines(cameras: SurveyCamera[], ratePerCamera?: number): QuoteLineItem[] {
   return [...cameras]
     .sort((a, b) => a.position - b.position)
     .map((c) => cameraToQuoteLine(c, ratePerCamera));
@@ -425,16 +458,20 @@ export function pageStatus(s: Survey): { page: SurveyPage; done: boolean; missin
   }
 
   const p3: string[] = [];
-  if (rows.length > 0) {
+  if (rows.length === 0) {
+    p3.push(kind === 'none' ? 'no device schedule' : 'nothing to photograph yet');
+  } else {
     const noPhoto = rows.filter((r) => r.photos.length === 0).length;
     if (noPhoto > 0) p3.push(`${noPhoto} of ${rows.length} without a photo`);
   }
 
   const p4: string[] = [];
   if (!(s.recommendations ?? '').trim()) p4.push('recommendations');
-  if (surveyLabor(s) === 0 && (s.scope_items ?? []).every((i) => scopeLineTotal(i) === 0)) {
-    p4.push('labour or a priced scope line');
+  const unpriced = unpricedDevices(s);
+  if (unpriced > 0) {
+    p4.push(`${unpriced} ${kind === 'drops' ? 'drop' : 'camera'}${unpriced !== 1 ? 's' : ''} with no price`);
   }
+  if (surveyTotals(s).total === 0) p4.push('a price on something');
 
   return [
     { page: 1, done: p1.length === 0, missing: p1 },

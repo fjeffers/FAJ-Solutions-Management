@@ -168,7 +168,8 @@ export default function TechPortalPage() {
                   </div>
                   <MenuItem icon={<Briefcase size={15} />} label="My Jobs" badge={jobs.length}
                     onClick={() => { setTab('jobs'); setMenuOpen(false); }} />
-                  <MenuItem icon={<Inbox size={15} />} label="Open Work" badge={openJobs.length}
+                  <MenuItem icon={<Inbox size={15} />} label="Needs Your Answer" badge={openJobs.length}
+                    attention={openJobs.length > 0}
                     onClick={() => { setTab('open'); setMenuOpen(false); }} />
                   <MenuItem icon={<Wallet size={15} />} label="Pay History" badge={payments.length}
                     onClick={() => { setTab('pay'); setMenuOpen(false); }} />
@@ -203,7 +204,7 @@ export default function TechPortalPage() {
                 className="glass card"
                 style={{ padding: '12px 14px', textAlign: 'left', cursor: 'pointer', border: '1px solid rgba(13,115,119,0.25)' }}
               >
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: '#999', textTransform: 'uppercase' }}>Open work</div>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: '#999', textTransform: 'uppercase' }}>To accept</div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--teal)', marginTop: 3 }}>{openJobs.length}</div>
               </button>
             )}
@@ -243,7 +244,7 @@ export default function TechPortalPage() {
         <h2 className="serif" style={{ fontSize: 24, fontWeight: 600, margin: '0 0 14px' }}>
           {tab === 'jobs' ? 'My Jobs'
             : tab === 'pay' ? 'Pay History'
-            : tab === 'open' ? 'Open Work'
+            : tab === 'open' ? 'Needs Your Answer'
             : tab === 'chat' ? 'Chat'
             : tab === 'paperwork' ? 'W-9 & Agreement'
             : 'Profile'}

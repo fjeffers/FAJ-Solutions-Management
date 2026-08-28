@@ -7,14 +7,13 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import type { TechOpenJob } from '@/lib/types';
 
 /**
- * Work nobody has taken yet, and the two buttons that settle it.
+ * Jobs Fred sent this tech that they have not answered yet.
  *
- * Only genuinely unassigned jobs reach here — a job already under another
- * tech's name is invisible, which keeps the rule: your own work, your own pay,
- * and work that is going spare. There is no money on any of these cards.
+ * NOT a job board. Nothing appears here until their name is on the work order —
+ * a tech never browses unclaimed work or anyone else's. Answering either way
+ * removes it from this list; accepted work lives on in My Jobs.
  *
- * Accepting races honestly: the database only hands the job over while it is
- * still free, so if someone beat them to it they are told, and the card goes.
+ * No money on any of these cards, same as everywhere else in the portal.
  */
 export default function TechOpenWork({
   jobs, onChanged,
@@ -27,16 +26,18 @@ export default function TechOpenWork({
   const respond = async (job: TechOpenJob, response: 'accepted' | 'declined') => {
     const wo = job.wo_number;
     if (!wo) return;
-    if (response === 'declined' && !confirm(`Pass on WO ${wo}? It won't be offered to you again.`)) return;
+    if (response === 'declined' && !confirm(`Decline WO ${wo}? Fred will be told you can't take it.`)) return;
 
     setBusy(job.id);
     const { ok, reason } = await respondToOpenJob(wo, response);
     setBusy(null);
 
     if (ok) {
-      toastSuccess(response === 'accepted' ? `WO ${wo} is yours — see My Jobs` : `Passed on WO ${wo}`);
-    } else if (reason === 'already_taken') {
-      toastError(`WO ${wo} was just taken by someone else.`);
+      toastSuccess(response === 'accepted'
+        ? `Accepted WO ${wo} — it's in My Jobs`
+        : `Declined WO ${wo} — Fred has been told`);
+    } else if (reason === 'not_your_job') {
+      toastError(`WO ${wo} is no longer assigned to you.`);
     } else {
       toastError(`Couldn't respond to WO ${wo}.`);
     }
@@ -47,8 +48,8 @@ export default function TechOpenWork({
     return (
       <div className="glass card" style={{ textAlign: 'center', padding: '30px 20px', color: '#aaa', fontSize: 13 }}>
         <Inbox size={22} color="#ddd" style={{ marginBottom: 7 }} />
-        <div>Nothing going spare right now.</div>
-        <div style={{ fontSize: 12, marginTop: 5 }}>Unclaimed jobs show up here for you to take.</div>
+        <div>Nothing waiting on you.</div>
+        <div style={{ fontSize: 12, marginTop: 5 }}>New jobs Fred sends you will show up here to accept.</div>
       </div>
     );
   }
@@ -115,7 +116,7 @@ export default function TechOpenWork({
                 onClick={() => respond(j, 'declined')}
                 style={{ justifyContent: 'center', padding: '11px 18px', color: '#999' }}
               >
-                <X size={15} /> Pass
+                <X size={15} /> Decline
               </button>
             </div>
           </div>

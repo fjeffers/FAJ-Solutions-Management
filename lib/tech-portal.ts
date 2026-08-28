@@ -135,3 +135,16 @@ export async function fetchTechUnread(): Promise<number> {
   if (error) return 0;
   return Number(data) || 0;
 }
+
+/**
+ * The caller's OWN portal token, so the tech portal can reuse the existing,
+ * already-hardened W-9 and agreement flow instead of growing a second path
+ * that handles tax IDs. Grants nothing new — this is the same token already
+ * emailed to that contractor.
+ */
+export async function fetchTechPortalToken(): Promise<string | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_portal_token');
+  if (error) return null;
+  return (data as string | null) ?? null;
+}

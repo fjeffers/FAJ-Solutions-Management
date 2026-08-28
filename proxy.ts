@@ -70,5 +70,8 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // sw.js/manifest.json/icons must be served without an auth redirect, otherwise
   // the browser refuses to register the service worker ("behind a redirect").
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.json|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  // tech-manifest.json must be reachable logged-out, exactly like manifest.json:
+  // the browser fetches it before install, and a redirect there means the tech
+  // portal simply cannot be added to a home screen.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.json|tech-manifest\\.json|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };

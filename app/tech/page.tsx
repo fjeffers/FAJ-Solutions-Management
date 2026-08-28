@@ -4,17 +4,20 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechJobs, fetchTechPayments, fetchTechSummary,
-  fetchTechUnread, saveTechProfile, splitJobs, paymentsByYear, jobLocation,
+  fetchTechUnread, fetchTechPortalToken, saveTechProfile,
+  splitJobs, paymentsByYear, jobLocation,
 } from '@/lib/tech-portal';
 import TechChat from '@/components/TechChat';
+import TechInstall from '@/components/TechInstall';
+import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import type { TechJob, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
   HardHat, LogOut, Briefcase, Wallet, User, MapPin, Calendar, Clock,
-  CheckCircle2, Save, MessageSquare, ChevronDown,
+  CheckCircle2, Save, MessageSquare, ChevronDown, FileWarning, FileText,
 } from 'lucide-react';
 
-type Tab = 'jobs' | 'pay' | 'chat' | 'profile';
+type Tab = 'jobs' | 'pay' | 'chat' | 'profile' | 'paperwork';
 
 export default function TechPortalPage() {
   const router = useRouter();
@@ -30,6 +33,7 @@ export default function TechPortalPage() {
   const [summary, setSummary] = useState<TechSummary | null>(null);
   const [unread, setUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [portalToken, setPortalToken] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -40,10 +44,12 @@ export default function TechPortalPage() {
         const me = await fetchTechProfile();
         // Signed in but not a linked tech — Fred's own account lands here too.
         if (!me) { setDenied(true); setLoading(false); return; }
-        const [j, p, s, u] = await Promise.all([
+        const [j, p, s, u, tok] = await Promise.all([
           fetchTechJobs(), fetchTechPayments(), fetchTechSummary(), fetchTechUnread(),
+          fetchTechPortalToken(),
         ]);
         setProfile(me); setJobs(j); setPayments(p); setSummary(s); setUnread(u);
+        setPortalToken(tok);
       } catch {
         setDenied(true);
       }
@@ -58,6 +64,12 @@ export default function TechPortalPage() {
   };
 
   const { active, past } = useMemo(() => splitJobs(jobs), [jobs]);
+
+  // What is still unfiled. Fred cannot pay a tech with no W-9 on file, so this
+  // is worth a badge rather than a page they have to think to visit.
+  const paperworkDue =
+    (profile && !profile.w9_received ? 1 : 0) +
+    (profile && !profile.contract_signed_at ? 1 : 0);
 
   if (loading) {
     return (
@@ -152,6 +164,9 @@ export default function TechPortalPage() {
                     onClick={() => { setTab('chat'); setMenuOpen(false); }} />
                   <MenuItem icon={<User size={15} />} label="Profile"
                     onClick={() => { setTab('profile'); setMenuOpen(false); }} />
+                  <MenuItem icon={<FileText size={15} />} label="W-9 & Agreement"
+                    badge={paperworkDue} attention={paperworkDue > 0}
+                    onClick={() => { setTab('paperwork'); setMenuOpen(false); }} />
                   <div style={{ borderTop: '1px solid #f0ede6' }}>
                     <MenuItem icon={<LogOut size={15} />} label="Sign out" danger onClick={signOut} />
                   </div>
@@ -173,14 +188,65 @@ export default function TechPortalPage() {
           </div>
         )}
 
+        <TechInstall />
+
+        {/* Unfiled paperwork is money that cannot be paid out — say so once,
+            at the top, rather than hiding it behind a menu item. */}
+        {paperworkDue > 0 && tab !== 'paperwork' && (
+          <button
+            onClick={() => setTab('paperwork')}
+            style={{
+              width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: 16,
+              display: 'flex', alignItems: 'center', gap: 11,
+              background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.3)',
+              borderRadius: 12, padding: '12px 14px',
+            }}
+          >
+            <FileWarning size={18} color="#b45309" style={{ flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>
+                {profile && !profile.w9_received && !profile.contract_signed_at
+                  ? 'Your W-9 and agreement are outstanding'
+                  : profile && !profile.w9_received
+                    ? 'Your W-9 is outstanding'
+                    : 'Your contractor agreement is unsigned'}
+              </div>
+              <div style={{ fontSize: 11.5, color: '#a16207', marginTop: 2 }}>
+                Tap to complete it — takes a minute.
+              </div>
+            </div>
+          </button>
+        )}
+
         <h2 className="serif" style={{ fontSize: 24, fontWeight: 600, margin: '0 0 14px' }}>
-          {tab === 'jobs' ? 'My Jobs' : tab === 'pay' ? 'Pay History' : tab === 'chat' ? 'Chat' : 'Profile'}
+          {tab === 'jobs' ? 'My Jobs'
+            : tab === 'pay' ? 'Pay History'
+            : tab === 'chat' ? 'Chat'
+            : tab === 'paperwork' ? 'W-9 & Agreement'
+            : 'Profile'}
         </h2>
 
         {tab === 'jobs' && <JobsTab active={active} past={past} />}
         {tab === 'pay' && <PayTab payments={payments} />}
         {tab === 'chat' && <TechChat jobs={active} />}
         {tab === 'profile' && profile && <ProfileTab profile={profile} onSaved={(p) => setProfile(p)} />}
+        {tab === 'paperwork' && profile && (
+          portalToken ? (
+            // The SAME component and API route the emailed portal link uses.
+            // Tax IDs and bank details travel one audited path, not two.
+            <PortalDocuments
+              token={portalToken}
+              w9Received={!!profile.w9_received}
+              w9SubmittedAt={profile.w9_submitted_at}
+              contractUrl={null}
+              contractSignedAt={profile.contract_signed_at}
+              contractSignedName={null}
+              contractorName={profile.name}
+            />
+          ) : (
+            <Empty>Couldn&apos;t open your paperwork. Try signing out and back in.</Empty>
+          )
+        )}
       </div>
     </div>
   );
@@ -412,8 +478,9 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
-function MenuItem({ icon, label, badge, danger, onClick }: {
-  icon: React.ReactNode; label: string; badge?: number; danger?: boolean; onClick: () => void;
+function MenuItem({ icon, label, badge, danger, attention, onClick }: {
+  icon: React.ReactNode; label: string; badge?: number;
+  danger?: boolean; attention?: boolean; onClick: () => void;
 }) {
   return (
     <button
@@ -425,10 +492,14 @@ function MenuItem({ icon, label, badge, danger, onClick }: {
         color: danger ? '#b91c1c' : '#333',
       }}
     >
-      <span style={{ color: danger ? '#b91c1c' : 'var(--teal)', display: 'flex' }}>{icon}</span>
+      <span style={{ color: danger ? '#b91c1c' : attention ? '#b45309' : 'var(--teal)', display: 'flex' }}>{icon}</span>
       <span style={{ flex: 1 }}>{label}</span>
       {badge != null && badge > 0 && (
-        <span style={{ background: 'rgba(13,115,119,0.10)', color: 'var(--teal)', borderRadius: 999, fontSize: 10, fontWeight: 800, padding: '2px 7px' }}>
+        <span style={{
+          borderRadius: 999, fontSize: 10, fontWeight: 800, padding: '2px 7px',
+          background: attention ? 'rgba(245,158,11,0.18)' : 'rgba(13,115,119,0.10)',
+          color: attention ? '#92400e' : 'var(--teal)',
+        }}>
           {badge}
         </span>
       )}

@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Send, MessageSquare, ChevronLeft, Loader2 } from 'lucide-react';
+import { Send, MessageSquare, ChevronLeft, Loader2, Building2, Users } from 'lucide-react';
 import { fetchTechMessages, sendTechMessage, jobLocation } from '@/lib/tech-portal';
 import { toastError } from '@/lib/toast';
+import TechDirectChat from '@/components/TechDirectChat';
 import type { TechJob, TechMessage } from '@/lib/types';
 
 /**
@@ -15,9 +16,48 @@ import type { TechJob, TechMessage } from '@/lib/types';
  * Only active jobs are listed: once a job is approved or paid it is closed, and
  * a closed job is not a thing to still be arranging.
  */
-export default function TechChat({ jobs }: { jobs: TechJob[] }) {
+export default function TechChat({ jobs, onRead }: { jobs: TechJob[]; onRead: () => void }) {
+  const [mode, setMode] = useState<'office' | 'techs'>('office');
   const [openJob, setOpenJob] = useState<TechJob | null>(null);
 
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4, background: '#f4f1ea', borderRadius: 999, padding: 3, marginBottom: 16 }}>
+        <ModeBtn active={mode === 'office'} onClick={() => { setMode('office'); setOpenJob(null); }}
+          icon={<Building2 size={13} />} label="The office" />
+        <ModeBtn active={mode === 'techs'} onClick={() => setMode('techs')}
+          icon={<Users size={13} />} label="Other techs" />
+      </div>
+      {mode === 'techs'
+        ? <TechDirectChat onRead={onRead} />
+        : <OfficeChat jobs={jobs} openJob={openJob} setOpenJob={setOpenJob} />}
+    </div>
+  );
+}
+
+function ModeBtn({ active, onClick, icon, label }: {
+  active: boolean; onClick: () => void; icon: React.ReactNode; label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        padding: '8px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
+        fontSize: 12.5, fontWeight: 700,
+        background: active ? 'white' : 'transparent',
+        color: active ? 'var(--teal)' : '#8a8578',
+        boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+      }}
+    >{icon} {label}</button>
+  );
+}
+
+function OfficeChat({ jobs, openJob, setOpenJob }: {
+  jobs: TechJob[];
+  openJob: TechJob | null;
+  setOpenJob: (j: TechJob | null) => void;
+}) {
   if (jobs.length === 0) {
     return (
       <div className="glass card" style={{ textAlign: 'center', padding: '30px 20px', color: '#aaa', fontSize: 13 }}>

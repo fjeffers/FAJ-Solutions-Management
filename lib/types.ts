@@ -511,6 +511,21 @@ export type TechMessage = {
   created_at: string;
 };
 
+/** A tech in the roster, for the message dropdown. Names only, by design. */
+export type TechDirectoryEntry = {
+  id: string;
+  name: string;
+  unread: number;
+};
+
+/** One direct message between two techs. */
+export type TechDirectMessage = {
+  id: string;
+  mine: boolean;
+  content: string;
+  created_at: string;
+};
+
 export type TechSummary = {
   paid_all_time: number;
   paid_this_year: number;

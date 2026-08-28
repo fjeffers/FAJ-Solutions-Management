@@ -11,7 +11,8 @@
 // call it rather than re-deriving money inline.
 import { createClient } from '@/lib/supabase/client';
 import type {
-  TechJob, TechMessage, TechOpenJob, TechPayment, TechProfile, TechSummary,
+  TechDirectMessage, TechDirectoryEntry, TechJob, TechMessage, TechOpenJob,
+  TechPayment, TechProfile, TechSummary,
 } from './types';
 
 export async function fetchTechProfile(): Promise<TechProfile | null> {
@@ -176,4 +177,39 @@ export async function respondToOpenJob(
   if (error) return { ok: false, reason: error.message };
   const r = (data ?? {}) as { ok?: boolean; reason?: string };
   return { ok: !!r.ok, reason: r.reason ?? 'unknown' };
+}
+
+// ── Tech-to-tech messages (migration-075) ───────────────────────────────────
+// Not tied to a job. The directory is NAMES ONLY — a tech needs to know who
+// exists to pick someone, not everyone's phone number.
+
+export async function fetchTechDirectory(): Promise<TechDirectoryEntry[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_directory');
+  if (error) throw new Error(error.message);
+  return (data as TechDirectoryEntry[] | null) ?? [];
+}
+
+/** Opening a thread marks the other side's messages read. */
+export async function fetchTechDmThread(otherId: string): Promise<TechDirectMessage[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_dm_thread', { p_other_id: otherId });
+  if (error) throw new Error(error.message);
+  return (data as TechDirectMessage[] | null) ?? [];
+}
+
+export async function sendTechDm(otherId: string, content: string): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_send_dm', {
+    p_other_id: otherId, p_content: content,
+  });
+  if (error) throw new Error(error.message);
+  return !!(data as { ok?: boolean } | null)?.ok;
+}
+
+export async function fetchTechDmUnread(): Promise<number> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_dm_unread');
+  if (error) return 0;
+  return Number(data) || 0;
 }

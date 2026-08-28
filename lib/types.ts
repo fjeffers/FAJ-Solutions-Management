@@ -471,6 +471,15 @@ export type TechPayment = {
   wo_id: string | null;
 };
 
+/** One message on a job's thread, as a signed-in tech sees it. */
+export type TechMessage = {
+  id: string;
+  sender_name: string;
+  sender_role: string;
+  content: string;
+  created_at: string;
+};
+
 export type TechSummary = {
   paid_all_time: number;
   paid_this_year: number;

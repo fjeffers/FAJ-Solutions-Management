@@ -10,7 +10,7 @@
 // The grouping and totalling below is pure and unit-tested; the components
 // call it rather than re-deriving money inline.
 import { createClient } from '@/lib/supabase/client';
-import type { TechJob, TechPayment, TechProfile, TechSummary } from './types';
+import type { TechJob, TechMessage, TechPayment, TechProfile, TechSummary } from './types';
 
 export async function fetchTechProfile(): Promise<TechProfile | null> {
   const supabase = createClient();
@@ -107,4 +107,31 @@ export function paymentsByYear(payments: TechPayment[]): { year: string; total: 
 export function jobLocation(j: Pick<TechJob, 'site_name' | 'site_city' | 'site_state'>): string {
   return [j.site_name, [j.site_city, j.site_state].filter(Boolean).join(', ')]
     .filter((p) => p && p.trim()).join(' · ');
+}
+
+// ── Chat (migration-071) ────────────────────────────────────────────────────
+// Login-based twins of the token portal's messaging. Same table, same thread:
+// a message sent here and one sent from a portal link are one conversation.
+
+export async function fetchTechMessages(woNumber: string): Promise<TechMessage[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_messages', { p_wo_number: woNumber });
+  if (error) throw new Error(error.message);
+  return (data as TechMessage[] | null) ?? [];
+}
+
+export async function sendTechMessage(woNumber: string, content: string): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_send_message', {
+    p_wo_number: woNumber, p_content: content,
+  });
+  if (error) throw new Error(error.message);
+  return !!(data as { ok?: boolean } | null)?.ok;
+}
+
+export async function fetchTechUnread(): Promise<number> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_unread_count');
+  if (error) return 0;
+  return Number(data) || 0;
 }

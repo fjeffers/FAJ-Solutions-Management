@@ -4,16 +4,17 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechJobs, fetchTechPayments, fetchTechSummary,
-  saveTechProfile, splitJobs, paymentsByYear, jobLocation,
+  fetchTechUnread, saveTechProfile, splitJobs, paymentsByYear, jobLocation,
 } from '@/lib/tech-portal';
+import TechChat from '@/components/TechChat';
 import type { TechJob, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
   HardHat, LogOut, Briefcase, Wallet, User, MapPin, Calendar, Clock,
-  CheckCircle2, Save,
+  CheckCircle2, Save, MessageSquare, ChevronDown,
 } from 'lucide-react';
 
-type Tab = 'jobs' | 'pay' | 'profile';
+type Tab = 'jobs' | 'pay' | 'chat' | 'profile';
 
 export default function TechPortalPage() {
   const router = useRouter();
@@ -27,6 +28,8 @@ export default function TechPortalPage() {
   const [jobs, setJobs] = useState<TechJob[]>([]);
   const [payments, setPayments] = useState<TechPayment[]>([]);
   const [summary, setSummary] = useState<TechSummary | null>(null);
+  const [unread, setUnread] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -37,8 +40,10 @@ export default function TechPortalPage() {
         const me = await fetchTechProfile();
         // Signed in but not a linked tech — Fred's own account lands here too.
         if (!me) { setDenied(true); setLoading(false); return; }
-        const [j, p, s] = await Promise.all([fetchTechJobs(), fetchTechPayments(), fetchTechSummary()]);
-        setProfile(me); setJobs(j); setPayments(p); setSummary(s);
+        const [j, p, s, u] = await Promise.all([
+          fetchTechJobs(), fetchTechPayments(), fetchTechSummary(), fetchTechUnread(),
+        ]);
+        setProfile(me); setJobs(j); setPayments(p); setSummary(s); setUnread(u);
       } catch {
         setDenied(true);
       }
@@ -99,9 +104,61 @@ export default function TechPortalPage() {
               {profile?.name}
             </div>
           </div>
-          <button onClick={signOut} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
-            <LogOut size={14} /> Sign out
-          </button>
+          {/* One menu rather than a row of buttons: on a phone that is the
+              difference between reachable and cramped. */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu" aria-expanded={menuOpen}
+              style={{
+                background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer',
+                borderRadius: 999, padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 7,
+                fontSize: 12, fontWeight: 700,
+              }}
+            >
+              <span style={{
+                width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.22)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800,
+              }}>{initials(profile?.name)}</span>
+              Menu
+              {unread > 0 && (
+                <span style={{ background: 'var(--gold)', color: '#3b2f10', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px' }}>
+                  {unread}
+                </span>
+              )}
+              <ChevronDown size={14} style={{ transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+            </button>
+
+            {menuOpen && (
+              <>
+                <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+                <div
+                  role="menu"
+                  style={{
+                    position: 'absolute', right: 0, top: 'calc(100% + 8px)', zIndex: 31,
+                    minWidth: 212, background: 'white', borderRadius: 12,
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.18)', overflow: 'hidden', color: '#333',
+                  }}
+                >
+                  <div style={{ padding: '11px 14px', borderBottom: '1px solid #f0ede6' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{profile?.name}</div>
+                    {profile?.email && <div style={{ fontSize: 11, color: '#999' }}>{profile.email}</div>}
+                  </div>
+                  <MenuItem icon={<Briefcase size={15} />} label="My Jobs" badge={jobs.length}
+                    onClick={() => { setTab('jobs'); setMenuOpen(false); }} />
+                  <MenuItem icon={<Wallet size={15} />} label="Pay History" badge={payments.length}
+                    onClick={() => { setTab('pay'); setMenuOpen(false); }} />
+                  <MenuItem icon={<MessageSquare size={15} />} label="Chat" badge={unread || undefined}
+                    onClick={() => { setTab('chat'); setMenuOpen(false); }} />
+                  <MenuItem icon={<User size={15} />} label="Profile"
+                    onClick={() => { setTab('profile'); setMenuOpen(false); }} />
+                  <div style={{ borderTop: '1px solid #f0ede6' }}>
+                    <MenuItem icon={<LogOut size={15} />} label="Sign out" danger onClick={signOut} />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -116,15 +173,13 @@ export default function TechPortalPage() {
           </div>
         )}
 
-        {/* Tabs — big tap targets, scroll sideways rather than wrap on a phone */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <TabBtn active={tab === 'jobs'} onClick={() => setTab('jobs')} icon={<Briefcase size={14} />} label={`Jobs (${jobs.length})`} />
-          <TabBtn active={tab === 'pay'} onClick={() => setTab('pay')} icon={<Wallet size={14} />} label={`Pay (${payments.length})`} />
-          <TabBtn active={tab === 'profile'} onClick={() => setTab('profile')} icon={<User size={14} />} label="Profile" />
-        </div>
+        <h2 className="serif" style={{ fontSize: 24, fontWeight: 600, margin: '0 0 14px' }}>
+          {tab === 'jobs' ? 'My Jobs' : tab === 'pay' ? 'Pay History' : tab === 'chat' ? 'Chat' : 'Profile'}
+        </h2>
 
         {tab === 'jobs' && <JobsTab active={active} past={past} />}
         {tab === 'pay' && <PayTab payments={payments} />}
+        {tab === 'chat' && <TechChat jobs={active} />}
         {tab === 'profile' && profile && <ProfileTab profile={profile} onSaved={(p) => setProfile(p)} />}
       </div>
     </div>
@@ -357,21 +412,35 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
-function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function MenuItem({ icon, label, badge, danger, onClick }: {
+  icon: React.ReactNode; label: string; badge?: number; danger?: boolean; onClick: () => void;
+}) {
   return (
     <button
-      onClick={onClick}
+      role="menuitem" onClick={onClick}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
-        padding: '9px 14px', borderRadius: 999, cursor: 'pointer', fontSize: 13, fontWeight: 700,
-        border: active ? '1px solid var(--teal)' : '1px solid #e2e2e2',
-        background: active ? 'var(--teal)' : 'transparent',
-        color: active ? 'white' : '#666',
+        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer',
+        fontSize: 13.5, fontWeight: 600, textAlign: 'left',
+        color: danger ? '#b91c1c' : '#333',
       }}
     >
-      {icon} {label}
+      <span style={{ color: danger ? '#b91c1c' : 'var(--teal)', display: 'flex' }}>{icon}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+      {badge != null && badge > 0 && (
+        <span style={{ background: 'rgba(13,115,119,0.10)', color: 'var(--teal)', borderRadius: 999, fontSize: 10, fontWeight: 800, padding: '2px 7px' }}>
+          {badge}
+        </span>
+      )}
     </button>
   );
+}
+
+/** "Jere Jones" becomes "JJ", for the menu button. */
+function initials(name: string | null | undefined): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '.';
+  return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase();
 }
 
 function SectionHead({ children, noMargin }: { children: React.ReactNode; noMargin?: boolean }) {

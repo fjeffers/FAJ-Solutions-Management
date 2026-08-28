@@ -458,6 +458,37 @@ export type TechJob = {
   created_at: string;
 };
 
+/**
+ * An unassigned job a tech can pick up (migration-073). Same money-free shape
+ * as TechJob, plus the scheduling detail that decides whether they want it.
+ */
+export type TechOpenJob = {
+  id: string;
+  wo_number: string | null;
+  title: string | null;
+  description: string | null;
+  scope_of_work: string | null;
+  service_type: string | null;
+  wo_status: string | null;
+  customer_name: string | null;
+  project_name: string | null;
+  site_name: string | null;
+  site_address: string | null;
+  site_city: string | null;
+  site_state: string | null;
+  site_zip: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  scheduled_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  required_skills: string | null;
+  priority: string | null;
+  /** 'accepted' | 'declined' | null — whether this tech already answered. */
+  my_response: string | null;
+  created_at: string;
+};
+
 /** One payout to this tech, with just enough job context to recognise it. */
 export type TechPayment = {
   id: string;

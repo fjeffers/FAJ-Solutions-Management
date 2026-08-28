@@ -4,20 +4,21 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechJobs, fetchTechPayments, fetchTechSummary,
-  fetchTechUnread, fetchTechPortalToken, saveTechProfile,
+  fetchTechUnread, fetchTechPortalToken, fetchTechOpenJobs, saveTechProfile,
   splitJobs, paymentsByYear, jobLocation,
 } from '@/lib/tech-portal';
 import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
+import TechOpenWork from '@/components/TechOpenWork';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
-import type { TechJob, TechPayment, TechProfile, TechSummary } from '@/lib/types';
+import type { TechJob, TechOpenJob, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
   HardHat, LogOut, Briefcase, Wallet, User, MapPin, Calendar, Clock,
-  CheckCircle2, Save, MessageSquare, ChevronDown, FileWarning, FileText,
+  CheckCircle2, Save, MessageSquare, ChevronDown, FileWarning, FileText, Inbox,
 } from 'lucide-react';
 
-type Tab = 'jobs' | 'pay' | 'chat' | 'profile' | 'paperwork';
+type Tab = 'jobs' | 'open' | 'pay' | 'chat' | 'profile' | 'paperwork';
 
 export default function TechPortalPage() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function TechPortalPage() {
   const [unread, setUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [portalToken, setPortalToken] = useState<string | null>(null);
+  const [openJobs, setOpenJobs] = useState<TechOpenJob[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -44,12 +46,12 @@ export default function TechPortalPage() {
         const me = await fetchTechProfile();
         // Signed in but not a linked tech — Fred's own account lands here too.
         if (!me) { setDenied(true); setLoading(false); return; }
-        const [j, p, s, u, tok] = await Promise.all([
+        const [j, p, s, u, tok, open] = await Promise.all([
           fetchTechJobs(), fetchTechPayments(), fetchTechSummary(), fetchTechUnread(),
-          fetchTechPortalToken(),
+          fetchTechPortalToken(), fetchTechOpenJobs(),
         ]);
         setProfile(me); setJobs(j); setPayments(p); setSummary(s); setUnread(u);
-        setPortalToken(tok);
+        setPortalToken(tok); setOpenJobs(open);
       } catch {
         setDenied(true);
       }
@@ -57,6 +59,14 @@ export default function TechPortalPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Accepting moves a job from Open Work into My Jobs, so both lists reload.
+  const reloadJobs = async () => {
+    try {
+      const [mine, open] = await Promise.all([fetchTechJobs(), fetchTechOpenJobs()]);
+      setJobs(mine); setOpenJobs(open);
+    } catch { /* the toast from the action already said what happened */ }
+  };
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -158,6 +168,8 @@ export default function TechPortalPage() {
                   </div>
                   <MenuItem icon={<Briefcase size={15} />} label="My Jobs" badge={jobs.length}
                     onClick={() => { setTab('jobs'); setMenuOpen(false); }} />
+                  <MenuItem icon={<Inbox size={15} />} label="Open Work" badge={openJobs.length}
+                    onClick={() => { setTab('open'); setMenuOpen(false); }} />
                   <MenuItem icon={<Wallet size={15} />} label="Pay History" badge={payments.length}
                     onClick={() => { setTab('pay'); setMenuOpen(false); }} />
                   <MenuItem icon={<MessageSquare size={15} />} label="Chat" badge={unread || undefined}
@@ -185,6 +197,16 @@ export default function TechPortalPage() {
             <Stat label="Paid all time" value={fmtMoney(summary.paid_all_time)} />
             <Stat label="Open jobs" value={String(summary.jobs_open)} />
             <Stat label="Jobs worked" value={String(summary.jobs_total)} />
+            {openJobs.length > 0 && (
+              <button
+                onClick={() => setTab('open')}
+                className="glass card"
+                style={{ padding: '12px 14px', textAlign: 'left', cursor: 'pointer', border: '1px solid rgba(13,115,119,0.25)' }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: '#999', textTransform: 'uppercase' }}>Open work</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--teal)', marginTop: 3 }}>{openJobs.length}</div>
+              </button>
+            )}
           </div>
         )}
 
@@ -221,12 +243,14 @@ export default function TechPortalPage() {
         <h2 className="serif" style={{ fontSize: 24, fontWeight: 600, margin: '0 0 14px' }}>
           {tab === 'jobs' ? 'My Jobs'
             : tab === 'pay' ? 'Pay History'
+            : tab === 'open' ? 'Open Work'
             : tab === 'chat' ? 'Chat'
             : tab === 'paperwork' ? 'W-9 & Agreement'
             : 'Profile'}
         </h2>
 
         {tab === 'jobs' && <JobsTab active={active} past={past} />}
+        {tab === 'open' && <TechOpenWork jobs={openJobs} onChanged={reloadJobs} />}
         {tab === 'pay' && <PayTab payments={payments} />}
         {tab === 'chat' && <TechChat jobs={active} />}
         {tab === 'profile' && profile && <ProfileTab profile={profile} onSaved={(p) => setProfile(p)} />}

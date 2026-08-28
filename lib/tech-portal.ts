@@ -10,7 +10,9 @@
 // The grouping and totalling below is pure and unit-tested; the components
 // call it rather than re-deriving money inline.
 import { createClient } from '@/lib/supabase/client';
-import type { TechJob, TechMessage, TechPayment, TechProfile, TechSummary } from './types';
+import type {
+  TechJob, TechMessage, TechOpenJob, TechPayment, TechProfile, TechSummary,
+} from './types';
 
 export async function fetchTechProfile(): Promise<TechProfile | null> {
   const supabase = createClient();
@@ -147,4 +149,31 @@ export async function fetchTechPortalToken(): Promise<string | null> {
   const { data, error } = await supabase.rpc('tech_portal_token');
   if (error) return null;
   return (data as string | null) ?? null;
+}
+
+// ── Open work (migration-073) ───────────────────────────────────────────────
+
+/** Unassigned jobs this tech could take. Never anyone else's assigned work. */
+export async function fetchTechOpenJobs(): Promise<TechOpenJob[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_open_jobs');
+  if (error) throw new Error(error.message);
+  return (data as TechOpenJob[] | null) ?? [];
+}
+
+/**
+ * Take a job or pass on it. Accepting only succeeds while the job is still
+ * free — two techs tapping at once cannot both end up on it, and the second
+ * gets 'already_taken' rather than a silent double-booking.
+ */
+export async function respondToOpenJob(
+  woNumber: string, response: 'accepted' | 'declined',
+): Promise<{ ok: boolean; reason: string }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_respond_to_job', {
+    p_wo_number: woNumber, p_response: response,
+  });
+  if (error) return { ok: false, reason: error.message };
+  const r = (data ?? {}) as { ok?: boolean; reason?: string };
+  return { ok: !!r.ok, reason: r.reason ?? 'unknown' };
 }

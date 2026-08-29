@@ -4,7 +4,7 @@ import {
   scopeItemToQuoteLine, quoteFromSurvey, surveyStage,
   renumberCameras, moveCamera, addCamera, removeCamera, cameraCounts,
   cameraToQuoteLine, documentKindFor, isImageDocument, formatFileSize,
-  deviceTotal, unpricedDevices,
+  deviceTotal, unpricedDevices, parseRunFeet, cableEstimate,
   addDrop, removeDrop, moveDrop, dropCounts, dropToQuoteLine,
   placementRows, pageStatus, readyToQuote,
 } from './surveys';
@@ -160,7 +160,8 @@ describe('pipeline stage', () => {
 const cam = (over: Partial<SurveyCamera> = {}): SurveyCamera => ({
   id: 'c1', position: 1, location: 'Lobby', camera_type: 'Dome', variant: null,
   placement: 'Indoor', mount: 'Ceiling', cable_run: '<50 ft', mount_height_ft: null,
-  resolution: '4MP', status: 'New', unit_price: 0, notes: null, photos: [], ...over,
+  resolution: '4MP', status: 'New', unit_price: 0, origin_point: null,
+  pathway_notes: null, materials_needed: null, notes: null, photos: [], ...over,
 });
 
 describe('camera schedule numbering', () => {
@@ -341,7 +342,8 @@ describe('cameras reach the quote', () => {
 const drop = (over: Partial<CableDrop> = {}): CableDrop => ({
   id: 'd1', position: 1, location: 'Reception desk', jack_count: 2,
   cable_type: 'Cat6', run_length: '85 ft', termination: 'Patch panel A, ports 12-13',
-  mount: 'Wall plate', unit_price: 0, notes: null, photos: [], ...over,
+  mount: 'Wall plate', unit_price: 0, origin_point: null,
+  pathway_notes: null, materials_needed: null, notes: null, photos: [], ...over,
 });
 
 describe('drop schedule', () => {
@@ -556,5 +558,72 @@ describe('placements page status', () => {
     });
     expect(pageStatus(s)[2].done).toBe(false);
     expect(readyToQuote(s)).toBe(true);
+  });
+});
+
+// ── Cable estimating ────────────────────────────────────────────────────────
+
+describe('reading feet out of a free-text run', () => {
+  it('reads a plain number', () => {
+    expect(parseRunFeet('25 ft')).toBe(25);
+    expect(parseRunFeet('85ft')).toBe(85);
+  });
+
+  it('estimates a "<" ceiling and a range at the top, never the bottom', () => {
+    // Under-estimating cable is how a job runs short on site.
+    expect(parseRunFeet('<50 ft')).toBe(50);
+    expect(parseRunFeet('50-100 ft')).toBe(100);
+    expect(parseRunFeet('100–150 ft')).toBe(150);
+    expect(parseRunFeet('200+ ft')).toBe(200);
+  });
+
+  it('gives a same-room run real slack rather than zero', () => {
+    expect(parseRunFeet('Minimal, same room')).toBe(15);
+  });
+
+  it('refuses to invent a number it was not given', () => {
+    expect(parseRunFeet('TBD')).toBeNull();
+    expect(parseRunFeet('tbd')).toBeNull();
+    expect(parseRunFeet('')).toBeNull();
+    expect(parseRunFeet(null)).toBeNull();
+    expect(parseRunFeet('unknown')).toBeNull();
+  });
+});
+
+describe('cable estimate for the whole schedule', () => {
+  it('totals the runs it can read and counts the ones it cannot', () => {
+    const s = survey({
+      cameras: [
+        cam({ id: 'a', cable_run: '25 ft' }),
+        cam({ id: 'b', cable_run: '<50 ft' }),
+        cam({ id: 'c', cable_run: 'TBD' }),
+        cam({ id: 'd', cable_run: 'Minimal, same room' }),
+      ],
+    });
+    const e = cableEstimate(s);
+    expect(e.feet).toBe(90);          // 25 + 50 + 15
+    expect(e.known).toBe(3);
+    expect(e.unknown).toBe(1);        // the TBD is counted, not hidden
+  });
+
+  it('adds the 15% service loop and rounds up to whole boxes', () => {
+    const s = survey({ cameras: [cam({ id: 'a', cable_run: '900 ft' })] });
+    const e = cableEstimate(s);
+    expect(e.feetWithLoop).toBe(1035);  // 900 x 1.15
+    expect(e.boxes).toBe(2);            // 1035 ft needs two 1000 ft boxes
+  });
+
+  it('reads drop run lengths on a cabling survey', () => {
+    const s = survey({
+      survey_type: 'cabling',
+      cable_drops: [drop({ id: 'a', run_length: '85 ft' }), drop({ id: 'b', run_length: '120 ft' })],
+      cameras: [cam({ id: 'ignored', cable_run: '999 ft' })],
+    });
+    expect(cableEstimate(s).feet).toBe(205);
+  });
+
+  it('is all zeros with nothing to estimate', () => {
+    const e = cableEstimate(survey());
+    expect(e).toEqual({ known: 0, unknown: 0, feet: 0, feetWithLoop: 0, boxes: 0 });
   });
 });

@@ -82,6 +82,21 @@ export const CAMERA_SCRIPT: GuideStep[] = [
     optional: true,
   },
   {
+    field: 'origin_point',
+    prompt: (n) => `Where does camera ${n}'s cable run from?`,
+    kind: 'text',
+    placeholder: 'e.g. Network room / IDF-2',
+    optional: true,
+  },
+  {
+    field: 'pathway_notes',
+    prompt: (n) => `How does the cable get to camera ${n}?`,
+    kind: 'chips-or-text',
+    options: ['Drop ceiling / plenum', 'J-hooks', 'Existing conduit', 'New conduit', 'Surface raceway', 'Core drill'],
+    placeholder: 'Describe the pathway',
+    optional: true,
+  },
+  {
     field: 'unit_price',
     prompt: (n) => `What does camera ${n} sell for, installed?`,
     kind: 'money',
@@ -142,6 +157,21 @@ export const DROP_SCRIPT: GuideStep[] = [
     prompt: (n) => `Where does drop ${n} land at the head end?`,
     kind: 'text',
     placeholder: 'e.g. Patch panel A, ports 12-13',
+    optional: true,
+  },
+  {
+    field: 'origin_point',
+    prompt: (n) => `Where does drop ${n} run from?`,
+    kind: 'text',
+    placeholder: 'e.g. Network closet',
+    optional: true,
+  },
+  {
+    field: 'pathway_notes',
+    prompt: (n) => `How does the cable get to drop ${n}?`,
+    kind: 'chips-or-text',
+    options: ['Drop ceiling / plenum', 'J-hooks', 'Existing conduit', 'New conduit', 'Surface raceway', 'Core drill'],
+    placeholder: 'Describe the pathway',
     optional: true,
   },
   {

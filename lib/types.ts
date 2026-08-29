@@ -630,6 +630,12 @@ export type SurveyCamera = {
   status: 'New' | 'Existing' | 'Replace';
   /** What this camera sells for, installed. Drives the quote line. */
   unit_price: number;
+  /** Which closet/rack the run comes FROM. "Camera 3 runs from IDF-2." */
+  origin_point: string | null;
+  /** How the cable gets there: conduit, J-hooks, plenum, core drill. */
+  pathway_notes: string | null;
+  /** What this position needs beyond the camera itself. */
+  materials_needed: string | null;
   notes: string | null;
   /** Photos of the recommended mounting area for THIS camera. */
   photos: string[];
@@ -695,6 +701,12 @@ export type CableDrop = {
   mount: string;
   /** Price PER JACK — a dual drop is one location billed twice. */
   unit_price: number;
+  /** Which closet/rack the run comes FROM. */
+  origin_point: string | null;
+  /** How the cable gets there: conduit, J-hooks, plenum, core drill. */
+  pathway_notes: string | null;
+  /** What this drop needs beyond the cable itself. */
+  materials_needed: string | null;
   notes: string | null;
   /** Photos of the recommended location for this drop. */
   photos: string[];

@@ -1,6 +1,6 @@
 'use client';
 import { Plus, X, ChevronUp, ChevronDown, Cable } from 'lucide-react';
-import { addDrop, removeDrop, moveDrop, dropCounts, deviceTotal } from '@/lib/surveys';
+import { addDrop, removeDrop, moveDrop, dropCounts, deviceTotal, cableEstimate } from '@/lib/surveys';
 import { fmtMoney } from '@/lib/utils';
 import SurveyPhotoStrip from '@/components/SurveyPhotoStrip';
 import type { CableDrop } from '@/lib/types';
@@ -22,6 +22,7 @@ export default function SurveyDrops({
 }) {
   const counts = dropCounts(drops);
   const scheduleValue = deviceTotal({ survey_type: 'cabling', cable_drops: drops });
+  const cable = cableEstimate({ survey_type: 'cabling', cable_drops: drops });
   const update = (id: string, patch: Partial<CableDrop>) =>
     onChange(drops.map((d) => (d.id === id ? { ...d, ...patch } : d)));
 
@@ -41,6 +42,11 @@ export default function SurveyDrops({
           <span style={{ color: scheduleValue > 0 ? '#047857' : '#b45309', fontWeight: 700 }}>
             {fmtMoney(scheduleValue)}{scheduleValue === 0 ? ' — unpriced' : ''}
           </span>
+          {cable.feet > 0 && (
+            <span title={`${cable.feet} ft of run + 15% service loop`}>
+              ~{cable.feetWithLoop} ft cable · {cable.boxes} box{cable.boxes !== 1 ? 'es' : ''}
+            </span>
+          )}
           {counts.runsUnknown > 0 && (
             <span style={{ color: '#b45309', fontWeight: 600 }}>
               {counts.runsUnknown} run{counts.runsUnknown !== 1 ? 's' : ''} still TBD
@@ -111,6 +117,27 @@ export default function SurveyDrops({
                   <input
                     className="input" placeholder="Patch panel A, ports 12-13"
                     value={d.termination} onChange={(e) => update(d.id, { termination: e.target.value })}
+                  />
+                </Cell>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 8 }}>
+                <Cell label="Runs from">
+                  <input
+                    className="input" placeholder="e.g. IDF-2 / network room"
+                    value={d.origin_point ?? ''} onChange={(e) => update(d.id, { origin_point: e.target.value })}
+                  />
+                </Cell>
+                <Cell label="Pathway">
+                  <input
+                    className="input" placeholder="Plenum, J-hooks, conduit…"
+                    value={d.pathway_notes ?? ''} onChange={(e) => update(d.id, { pathway_notes: e.target.value })}
+                  />
+                </Cell>
+                <Cell label="Materials needed">
+                  <input
+                    className="input" placeholder="Mount, box, whip…"
+                    value={d.materials_needed ?? ''} onChange={(e) => update(d.id, { materials_needed: e.target.value })}
                   />
                 </Cell>
               </div>

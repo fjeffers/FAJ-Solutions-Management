@@ -13,6 +13,7 @@ import type {
   SurveyDocumentKind, SurveyScopeItem, SurveyType,
 } from './types';
 import { scheduleKindFor } from './types';
+import { withServiceLoop, cat6Boxes } from './floorplan';
 
 /** Next number in the S-<year>-NNN series, continuing the year already in use. */
 export function nextSurveyNumber(surveys: Pick<Survey, 'survey_number'>[], now = new Date()): string {
@@ -179,6 +180,9 @@ export function newCamera(position: number): SurveyCamera {
     resolution: 'TBD',
     status: 'New',
     unit_price: 0,
+    origin_point: null,
+    pathway_notes: null,
+    materials_needed: null,
     notes: null,
     photos: [],
   };
@@ -237,6 +241,9 @@ export function newDrop(position: number): CableDrop {
     termination: '',
     mount: 'Wall plate',
     unit_price: 0,
+    origin_point: null,
+    pathway_notes: null,
+    materials_needed: null,
     notes: null,
     photos: [],
   };
@@ -488,6 +495,77 @@ export function pageStatus(s: Survey): { page: SurveyPage; done: boolean; missin
  */
 export function readyToQuote(s: Survey): boolean {
   return pageStatus(s).filter((p) => p.page !== 3).every((p) => p.done);
+}
+
+// -- Cable estimating (migration-068/069 data) -------------------------------
+//
+// Cable runs are free text on purpose: "25 ft", "<50 ft", "Minimal, same room"
+// and "TBD" are all real answers on a walk, and forcing a number too early
+// makes people invent one. But "what is the estimated cable needed?" is a
+// question the survey should answer without anyone re-reading the table, so the
+// text is parsed where it can be and the unparseable rows are counted openly
+// rather than quietly dropped.
+
+/**
+ * Feet from a free-text run, or null when it does not say.
+ *
+ *   "25 ft"            -> 25
+ *   "<50 ft"           -> 50   (the stated ceiling; estimate high, not low)
+ *   "50-100 ft"        -> 100  (same reasoning: the top of the range)
+ *   "200+ ft"          -> 200
+ *   "Minimal, same room" -> 15 (a run still needs slack at both ends)
+ *   "TBD" / ""         -> null
+ */
+export function parseRunFeet(run: string | null | undefined): number | null {
+  const t = (run ?? '').trim().toLowerCase();
+  if (!t || /tbd|unknown/.test(t)) return null;
+  if (/minimal|same room/.test(t)) return 15;
+
+  const nums = t.match(/\d+(?:\.\d+)?/g);
+  if (!nums || nums.length === 0) return null;
+  const values = nums.map(Number).filter((n) => isFinite(n) && n > 0);
+  if (values.length === 0) return null;
+
+  // A range or a "<" ceiling both estimate to the largest number stated.
+  return Math.max(...values);
+}
+
+export type CableEstimate = {
+  /** Runs that gave a number. */
+  known: number;
+  /** Runs still TBD — the honest gap in the estimate. */
+  unknown: number;
+  /** Straight sum of the parsed runs. */
+  feet: number;
+  /** With the standard 15% service loop. */
+  feetWithLoop: number;
+  /** 1000 ft boxes of Cat6 that covers. */
+  boxes: number;
+};
+
+/** What the whole schedule needs in cable. */
+export function cableEstimate(
+  s: Partial<Pick<Survey, 'survey_type' | 'cameras' | 'cable_drops'>>,
+): CableEstimate {
+  const kind = scheduleKindFor(s.survey_type ?? 'camera');
+  const runs: (string | null)[] =
+    kind === 'drops' ? (s.cable_drops ?? []).map((d) => d.run_length)
+      : kind === 'cameras' ? (s.cameras ?? []).map((c) => c.cable_run)
+        : [];
+
+  let feet = 0, known = 0, unknown = 0;
+  for (const r of runs) {
+    const ft = parseRunFeet(r);
+    if (ft == null) { unknown++; continue; }
+    known++;
+    feet += ft;
+  }
+
+  return {
+    known, unknown, feet,
+    feetWithLoop: Math.round(withServiceLoop(feet)),
+    boxes: cat6Boxes(feet),
+  };
 }
 
 function formatRate(n: number | null): string {

@@ -1,6 +1,6 @@
 'use client';
 import { Plus, X, ChevronUp, ChevronDown, Camera } from 'lucide-react';
-import { addCamera, removeCamera, moveCamera, cameraCounts, deviceTotal } from '@/lib/surveys';
+import { addCamera, removeCamera, moveCamera, cameraCounts, deviceTotal, cableEstimate } from '@/lib/surveys';
 import { fmtMoney } from '@/lib/utils';
 import SurveyPhotoStrip from '@/components/SurveyPhotoStrip';
 import type { SurveyCamera } from '@/lib/types';
@@ -28,6 +28,7 @@ export default function SurveyCameras({
 }) {
   const counts = cameraCounts(cameras);
   const scheduleValue = deviceTotal({ survey_type: 'camera', cameras });
+  const cable = cableEstimate({ survey_type: 'camera', cameras });
   const update = (id: string, patch: Partial<SurveyCamera>) =>
     onChange(cameras.map((c) => (c.id === id ? { ...c, ...patch } : c)));
 
@@ -50,6 +51,11 @@ export default function SurveyCameras({
             {fmtMoney(scheduleValue)}{scheduleValue === 0 ? ' — unpriced' : ''}
           </span>
           {counts.existing > 0 && <span>{counts.existing} existing</span>}
+          {cable.feet > 0 && (
+            <span title={`${cable.feet} ft of run + 15% service loop`}>
+              ~{cable.feetWithLoop} ft cable · {cable.boxes} box{cable.boxes !== 1 ? 'es' : ''}
+            </span>
+          )}
           {counts.runsUnknown > 0 && (
             <span style={{ color: '#b45309', fontWeight: 600 }}>
               {counts.runsUnknown} run{counts.runsUnknown !== 1 ? 's' : ''} still TBD
@@ -143,6 +149,27 @@ export default function SurveyCameras({
                     className="input" type="number" step="0.5" inputMode="decimal"
                     value={c.mount_height_ft ?? ''}
                     onChange={(e) => update(c.id, { mount_height_ft: e.target.value === '' ? null : Number(e.target.value) })}
+                  />
+                </Cell>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 8 }}>
+                <Cell label="Runs from">
+                  <input
+                    className="input" placeholder="e.g. IDF-2 / network room"
+                    value={c.origin_point ?? ''} onChange={(e) => update(c.id, { origin_point: e.target.value })}
+                  />
+                </Cell>
+                <Cell label="Pathway">
+                  <input
+                    className="input" placeholder="Plenum, J-hooks, conduit…"
+                    value={c.pathway_notes ?? ''} onChange={(e) => update(c.id, { pathway_notes: e.target.value })}
+                  />
+                </Cell>
+                <Cell label="Materials needed">
+                  <input
+                    className="input" placeholder="Mount, box, whip…"
+                    value={c.materials_needed ?? ''} onChange={(e) => update(c.id, { materials_needed: e.target.value })}
                   />
                 </Cell>
               </div>

@@ -22,6 +22,7 @@ import MaterialsView from '@/components/MaterialsView';
 import QuotesView, { nextQuoteNumber } from '@/components/QuotesView';
 import SurveysView from '@/components/SurveysView';
 import ContractsView from '@/components/ContractsView';
+import AttentionPanel from '@/components/AttentionPanel';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
 import SiteLogView from '@/components/SiteLogView';
@@ -1324,6 +1325,17 @@ export default function HomePage() {
 
       {/* ── Main Content ── */}
       <main className="main-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
+        {view === 'dashboard' && (
+          <div className="view-inner" style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: 0 }}>
+            <AttentionPanel
+              data={{
+                surveys, quotes, contracts, workOrders: enrichedWOs,
+                invoices, invoicePayments,
+              }}
+              onGo={(v) => setView(v as typeof view)}
+            />
+          </div>
+        )}
         {view === 'dashboard' && (
           <DashboardView
             stats={stats}

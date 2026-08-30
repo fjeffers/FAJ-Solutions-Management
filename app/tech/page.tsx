@@ -318,13 +318,14 @@ function JobCard({ job, onChanged }: { job: TechJob; onChanged: () => void }) {
   const where = jobLocation(job);
   const when = job.scheduled_date || job.start_date;
   const payLine = jobPayLine(job);
+  const isLive = job.is_active ?? !job.is_closed;
   return (
     <div className="glass card" style={{ padding: 14 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--teal)' }}>WO {job.wo_number}</span>
-            <StatusPill closed={job.is_closed} status={job.wo_status} />
+            <StatusPill closed={job.is_closed} done={!isLive} status={job.wo_status} />
           </div>
           <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.3 }}>
             {job.title || job.customer_name || 'Work order'}
@@ -364,10 +365,20 @@ function JobCard({ job, onChanged }: { job: TechJob; onChanged: () => void }) {
   );
 }
 
-function StatusPill({ closed, status }: { closed: boolean; status: string | null }) {
+/**
+ * How the job reads to the tech. `done` covers the middle state: they have
+ * handed it back and it is finished as far as they are concerned, even though
+ * the office has not closed or archived it yet. Showing that in the same blue
+ * as live work made a finished job look like it never saved.
+ */
+function StatusPill({ closed, done, status }: {
+  closed: boolean; done?: boolean; status: string | null;
+}) {
   const s = closed
     ? { label: status === 'Paid' ? 'Paid' : 'Closed', color: '#047857', bg: 'rgba(16,185,129,0.12)' }
-    : { label: status || 'Open', color: '#1D4ED8', bg: 'rgba(59,130,246,0.12)' };
+    : done
+      ? { label: 'Done', color: '#047857', bg: 'rgba(16,185,129,0.12)' }
+      : { label: status || 'Open', color: '#1D4ED8', bg: 'rgba(59,130,246,0.12)' };
   return (
     <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: s.bg, color: s.color }}>
       {s.label}

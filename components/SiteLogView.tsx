@@ -21,6 +21,7 @@ import { downloadXLSX, downloadCSVText } from '@/lib/export';
 import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
 import EmailModal, { type EmailPayload } from './EmailModal';
+import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
 import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users, Archive, ArchiveRestore } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
@@ -608,9 +609,13 @@ export default function SiteLogView() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    // Skips numbers already in use. A plain "highest + 1" here could hand a
+    // converted visit a number an existing job already had, and because
+    // payments join work orders by wo_number that job's payouts would read as
+    // money paid on this one. migration-078 refuses it outright; this keeps us
+    // from walking into that error.
     const { data: wos } = await supabase.from('work_orders').select('wo_number');
-    const nums = (wos ?? []).map((w) => parseInt(w.wo_number, 10)).filter((n) => !isNaN(n));
-    const nextWo = String((nums.length ? Math.max(...nums) : 1000) + 1);
+    const nextWo = nextFreeWorkOrderNumber((wos ?? []).map((w) => w.wo_number));
 
     const addr = extractWorkOrderFields(v.address ?? '');
     const crew = techNames(techsOn(v, contractors));
@@ -657,7 +662,12 @@ export default function SiteLogView() {
       priority: 'Normal',
       schedule_type: 'Exact Time',
     }).select('id').single();
-    if (error || !created) { toastError(`Couldn't create the work order: ${error?.message ?? 'unknown error'}`); return; }
+    if (error || !created) {
+      toastError(error?.code === '23505'
+        ? `WO#${nextWo} already exists, so this visit was not converted. Try again — the number is worked out fresh each time.`
+        : `Couldn't create the work order: ${error?.message ?? 'unknown error'}`);
+      return;
+    }
 
     const upd = await supabase.from('site_visits')
       .update({ work_order_id: created.id, updated_at: new Date().toISOString() })

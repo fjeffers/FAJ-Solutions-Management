@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechJobs, fetchTechPayments, fetchTechSummary,
   fetchTechUnread, fetchTechDmUnread, fetchTechPortalToken, fetchTechOpenJobs, saveTechProfile,
-  splitJobs, paymentsByYear, jobLocation,
+  splitJobs, paymentsByYear, jobLocation, jobPayLine,
 } from '@/lib/tech-portal';
 import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
@@ -295,16 +295,16 @@ function JobsTab({ active, past, onChanged }: {
     <>
       <SectionHead>Active work{active.length > 0 && ` (${active.length})`}</SectionHead>
       {active.length === 0 ? (
-        <Empty>Nothing assigned right now.</Empty>
+        <Empty>Nothing on your plate right now.</Empty>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
           {active.map((j) => <JobCard key={j.id} job={j} onChanged={onChanged} />)}
         </div>
       )}
 
-      <SectionHead>Past jobs{past.length > 0 && ` (${past.length})`}</SectionHead>
+      <SectionHead>History{past.length > 0 && ` (${past.length})`}</SectionHead>
       {past.length === 0 ? (
-        <Empty>Finished jobs will show up here.</Empty>
+        <Empty>Finished jobs stay here, with what you were paid.</Empty>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {past.map((j) => <JobCard key={j.id} job={j} onChanged={onChanged} />)}
@@ -317,6 +317,7 @@ function JobsTab({ active, past, onChanged }: {
 function JobCard({ job, onChanged }: { job: TechJob; onChanged: () => void }) {
   const where = jobLocation(job);
   const when = job.scheduled_date || job.start_date;
+  const payLine = jobPayLine(job);
   return (
     <div className="glass card" style={{ padding: 14 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
@@ -345,6 +346,16 @@ function JobCard({ job, onChanged }: { job: TechJob; onChanged: () => void }) {
       {job.closeout_notes && (
         <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid #eee', fontSize: 12, color: '#666', lineHeight: 1.5 }}>
           {job.closeout_notes}
+        </div>
+      )}
+
+      {payLine && (
+        <div style={{
+          marginTop: 9, display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '6px 11px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+          background: 'rgba(4,120,87,0.08)', color: '#047857',
+        }}>
+          <Wallet size={13} /> {payLine}
         </div>
       )}
 

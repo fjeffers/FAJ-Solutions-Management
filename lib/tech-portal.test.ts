@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitJobs, paymentsTotal, paymentsByYear, jobLocation } from './tech-portal';
+import { splitJobs, paymentsTotal, paymentsByYear, jobLocation, jobPayLine } from './tech-portal';
 import type { TechJob, TechPayment } from './types';
 
 const job = (over: Partial<TechJob> = {}): TechJob => ({
@@ -29,6 +29,49 @@ describe('splitting jobs', () => {
 
   it('handles an empty list', () => {
     expect(splitJobs([])).toEqual({ active: [], past: [] });
+  });
+
+  it('moves a job out of active work the moment the tech says it is done', () => {
+    // The whole point of the handoff: a tech who finished should not keep
+    // staring at the job. Fred has not closed it yet, so is_closed is false.
+    const { active, past } = splitJobs([
+      job({ id: 'a', wo_status: 'In Progress', is_active: true, is_closed: false }),
+      job({ id: 'b', wo_status: 'Work Done', is_active: false, is_closed: false }),
+    ]);
+    expect(active.map((j) => j.id)).toEqual(['a']);
+    expect(past.map((j) => j.id)).toEqual(['b']);
+  });
+
+  it('falls back to is_closed when the RPC predates is_active', () => {
+    const { active, past } = splitJobs([
+      job({ id: 'a', is_closed: false }),
+      job({ id: 'b', is_closed: true }),
+    ]);
+    expect(active.map((j) => j.id)).toEqual(['a']);
+    expect(past.map((j) => j.id)).toEqual(['b']);
+  });
+});
+
+describe('what a tech was paid on a job', () => {
+  it('shows the amount and the date it was paid', () => {
+    expect(jobPayLine(job({ paid_total: 178.39, last_paid_on: '2026-08-28' })))
+      .toBe('Paid $178.39 on 2026-08-28');
+  });
+
+  it('shows the amount alone when the date is missing', () => {
+    expect(jobPayLine(job({ paid_total: 250, last_paid_on: null })))
+      .toBe('Paid $250.00');
+  });
+
+  it('says nothing on a job that has not been paid', () => {
+    expect(jobPayLine(job({ paid_total: 0 }))).toBeNull();
+    expect(jobPayLine(job())).toBeNull();
+  });
+
+  it('reads the date off the string, so a New Year payment keeps its day', () => {
+    // new Date('2026-01-01') is UTC midnight and reads as Dec 31 in Eastern.
+    expect(jobPayLine(job({ paid_total: 100, last_paid_on: '2026-01-01' })))
+      .toContain('2026-01-01');
   });
 });
 

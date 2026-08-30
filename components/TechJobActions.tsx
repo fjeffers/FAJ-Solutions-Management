@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { LogIn, LogOut, CheckCircle2, Save, Loader2 } from 'lucide-react';
+import { LogIn, LogOut, CheckCircle2, Save, Loader2, Undo2 } from 'lucide-react';
 import { techClock, setTechJobStatus, saveTechCloseout } from '@/lib/tech-portal';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { TechJob } from '@/lib/types';
@@ -14,6 +14,11 @@ import type { TechJob } from '@/lib/types';
  *
  * Once a job is Approved or Paid it is closed and these controls disappear, so
  * a finished job cannot be edited after the fact.
+ *
+ * Saying "work done" hands the job back to the office. From that moment the
+ * working controls go away and the card drops into History — a tech should not
+ * have to keep looking at a job they have finished. The one thing left is a way
+ * to undo a mistap, which is allowed only while the office has not closed it.
  */
 export default function TechJobActions({
   job, onChanged,
@@ -55,6 +60,31 @@ export default function TechJobActions({
     }
     setBusy(null);
   };
+
+  // Handed back to the office. Read-only, minus one way out of a mistap.
+  if (workDone) {
+    return (
+      <div style={{ marginTop: 11, paddingTop: 11, borderTop: '1px solid #eee' }}>
+        <div style={{
+          padding: '10px 12px', borderRadius: 10, fontSize: 12.5,
+          background: 'rgba(16,185,129,0.08)', color: '#047857', fontWeight: 600,
+          display: 'flex', alignItems: 'center', gap: 7,
+        }}>
+          <CheckCircle2 size={15} /> Work done — with Fred to approve and pay
+        </div>
+        <button
+          className="btn btn-ghost" disabled={busy !== null}
+          onClick={() => {
+            if (!confirm(`Reopen WO ${wo}? It goes back into your active work.`)) return;
+            run('reopen', () => setTechJobStatus(wo, 'In Progress'), 'Back in your active work');
+          }}
+          style={{ width: '100%', marginTop: 7, justifyContent: 'center', padding: '9px 0', fontSize: 12.5 }}
+        >
+          {busy === 'reopen' ? <Loader2 size={15} /> : <Undo2 size={14} />} Not done yet — reopen
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ marginTop: 11, paddingTop: 11, borderTop: '1px solid #eee' }}>
@@ -107,31 +137,21 @@ export default function TechJobActions({
         </div>
       )}
 
-      {!workDone ? (
-        <button
-          disabled={busy !== null}
-          onClick={() => {
-            if (!confirm(`Mark WO ${wo} as work done? Fred reviews it from here.`)) return;
-            run('done', () => setTechJobStatus(wo, 'Work Done'), 'Marked work done — Fred will review it');
-          }}
-          style={{
-            width: '100%', marginTop: 9, padding: '11px 0', borderRadius: 10, cursor: 'pointer',
-            border: '1px solid rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.08)',
-            color: '#047857', fontSize: 13.5, fontWeight: 700,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-          }}
-        >
-          {busy === 'done' ? <Loader2 size={15} /> : <CheckCircle2 size={15} />} Work done
-        </button>
-      ) : (
-        <div style={{
-          marginTop: 9, padding: '10px 12px', borderRadius: 10, fontSize: 12.5,
-          background: 'rgba(16,185,129,0.08)', color: '#047857', fontWeight: 600,
-          display: 'flex', alignItems: 'center', gap: 7,
-        }}>
-          <CheckCircle2 size={15} /> Work done — waiting on Fred to approve and pay
-        </div>
-      )}
+      <button
+        disabled={busy !== null}
+        onClick={() => {
+          if (!confirm(`Mark WO ${wo} as work done? It moves to your history and Fred takes it from there.`)) return;
+          run('done', () => setTechJobStatus(wo, 'Work Done'), 'Sent to Fred — it is in your history now');
+        }}
+        style={{
+          width: '100%', marginTop: 9, padding: '11px 0', borderRadius: 10, cursor: 'pointer',
+          border: '1px solid rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.08)',
+          color: '#047857', fontSize: 13.5, fontWeight: 700,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+        }}
+      >
+        {busy === 'done' ? <Loader2 size={15} /> : <CheckCircle2 size={15} />} Work done
+      </button>
     </div>
   );
 }

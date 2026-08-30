@@ -455,6 +455,15 @@ export type TechJob = {
   archived_at: string | null;
   /** Approved, Paid, or archived — the job is done and read-only. */
   is_closed: boolean;
+  /**
+   * Still this tech's to work. Saying "work done" ends it, so the job leaves
+   * their active list the moment they hand it back rather than lingering until
+   * the office closes it. Older RPCs omit this; callers fall back to is_closed.
+   */
+  is_active?: boolean;
+  /** What THIS tech was paid on this job. Never the job's price. */
+  paid_total?: number;
+  last_paid_on?: string | null;
   created_at: string;
 };
 

@@ -69,12 +69,31 @@ export async function saveTechProfile(p: {
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
-/** Active work first, history second — the order a tech actually cares about. */
+/**
+ * Active work first, history second — the order a tech actually cares about.
+ *
+ * "Active" means still theirs to do. A job they marked Work Done has been
+ * handed back to the office, so it drops into history straight away instead of
+ * sitting in their list looking unsaved. `is_active` comes from the RPC
+ * (migration-077); the is_closed fallback keeps an older response sane.
+ */
 export function splitJobs(jobs: TechJob[]): { active: TechJob[]; past: TechJob[] } {
+  const live = (j: TechJob) => (j.is_active ?? !j.is_closed);
   return {
-    active: jobs.filter((j) => !j.is_closed),
-    past: jobs.filter((j) => j.is_closed),
+    active: jobs.filter(live),
+    past: jobs.filter((j) => !live(j)),
   };
+}
+
+/** What this tech has been paid on a job, and when — their own money only. */
+export function jobPayLine(j: TechJob): string | null {
+  const paid = Number(j.paid_total ?? 0);
+  if (!(paid > 0)) return null;
+  const amount = paid.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  // payment_date is a DATE string; slicing avoids the UTC-midnight year/day
+  // shift that new Date('2026-01-01') causes in Eastern time.
+  const on = j.last_paid_on ? j.last_paid_on.slice(0, 10) : null;
+  return on ? `Paid ${amount} on ${on}` : `Paid ${amount}`;
 }
 
 export function paymentsTotal(payments: TechPayment[]): number {

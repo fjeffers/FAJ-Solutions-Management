@@ -10,6 +10,7 @@ import {
 import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
 import TechOpenWork from '@/components/TechOpenWork';
+import TechJobActions from '@/components/TechJobActions';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import type { TechJob, TechOpenJob, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import { fmtMoney, fmtDate } from '@/lib/utils';
@@ -250,7 +251,7 @@ export default function TechPortalPage() {
             : 'Profile'}
         </h2>
 
-        {tab === 'jobs' && <JobsTab active={active} past={past} />}
+        {tab === 'jobs' && <JobsTab active={active} past={past} onChanged={reloadJobs} />}
         {tab === 'open' && <TechOpenWork jobs={openJobs} onChanged={reloadJobs} />}
         {tab === 'pay' && <PayTab payments={payments} />}
         {tab === 'chat' && (
@@ -287,7 +288,9 @@ export default function TechPortalPage() {
 
 // ── Jobs ────────────────────────────────────────────────────────────────────
 
-function JobsTab({ active, past }: { active: TechJob[]; past: TechJob[] }) {
+function JobsTab({ active, past, onChanged }: {
+  active: TechJob[]; past: TechJob[]; onChanged: () => void;
+}) {
   return (
     <>
       <SectionHead>Active work{active.length > 0 && ` (${active.length})`}</SectionHead>
@@ -295,7 +298,7 @@ function JobsTab({ active, past }: { active: TechJob[]; past: TechJob[] }) {
         <Empty>Nothing assigned right now.</Empty>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
-          {active.map((j) => <JobCard key={j.id} job={j} />)}
+          {active.map((j) => <JobCard key={j.id} job={j} onChanged={onChanged} />)}
         </div>
       )}
 
@@ -304,14 +307,14 @@ function JobsTab({ active, past }: { active: TechJob[]; past: TechJob[] }) {
         <Empty>Finished jobs will show up here.</Empty>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {past.map((j) => <JobCard key={j.id} job={j} />)}
+          {past.map((j) => <JobCard key={j.id} job={j} onChanged={onChanged} />)}
         </div>
       )}
     </>
   );
 }
 
-function JobCard({ job }: { job: TechJob }) {
+function JobCard({ job, onChanged }: { job: TechJob; onChanged: () => void }) {
   const where = jobLocation(job);
   const when = job.scheduled_date || job.start_date;
   return (
@@ -344,6 +347,8 @@ function JobCard({ job }: { job: TechJob }) {
           {job.closeout_notes}
         </div>
       )}
+
+      <TechJobActions job={job} onChanged={onChanged} />
     </div>
   );
 }

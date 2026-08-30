@@ -213,3 +213,41 @@ export async function fetchTechDmUnread(): Promise<number> {
   if (error) return 0;
   return Number(data) || 0;
 }
+
+// ── Working the job (migration-076) ─────────────────────────────────────────
+// A tech may set only 'In Progress' or 'Work Done' — never Approved or Paid,
+// and never on a job that is already finished. The database enforces both.
+
+export async function setTechJobStatus(
+  woNumber: string, status: 'In Progress' | 'Work Done',
+): Promise<{ ok: boolean; reason: string }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_set_job_status', {
+    p_wo_number: woNumber, p_status: status,
+  });
+  if (error) return { ok: false, reason: error.message };
+  const r = (data ?? {}) as { ok?: boolean; reason?: string };
+  return { ok: !!r.ok, reason: r.reason ?? 'unknown' };
+}
+
+/** Start or stop the clock. Starting also moves an untouched job to In Progress. */
+export async function techClock(
+  woNumber: string, action: 'in' | 'out',
+): Promise<{ ok: boolean; reason: string }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_clock', {
+    p_wo_number: woNumber, p_action: action,
+  });
+  if (error) return { ok: false, reason: error.message };
+  const r = (data ?? {}) as { ok?: boolean; reason?: string };
+  return { ok: !!r.ok, reason: r.reason ?? 'unknown' };
+}
+
+export async function saveTechCloseout(woNumber: string, summary: string): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_save_closeout', {
+    p_wo_number: woNumber, p_summary: summary,
+  });
+  if (error) throw new Error(error.message);
+  return !!(data as { ok?: boolean } | null)?.ok;
+}

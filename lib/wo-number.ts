@@ -34,3 +34,34 @@ export function nextWorkOrderNumber(existing: (string | null | undefined)[]): st
   while (taken.has(String(next))) next += 1;
   return String(next);
 }
+
+/**
+ * The next free number continuing FAJ's live sequence.
+ *
+ * Differs from `nextWorkOrderNumber` above on purpose. That one deliberately
+ * restarts a clean sequence at 1001 and ignores the imported 8-digit range;
+ * this one carries on from whatever the highest number actually is, which is
+ * what the work order screen has always done and what the numbering on FAJ's
+ * paperwork follows.
+ *
+ * What it adds is the missing safety: it skips every number already in use.
+ * A plain "highest + 1" handed out 19101358 twice on 2026-08-30 — once to a
+ * closed Wendy's FOX STREET job and again to a new Swedesboro job — and
+ * because payments join by number, $179.95 of Bryant Knight's and Davis
+ * Sanders' pay crossed onto a $55 job that had never been worked.
+ *
+ * The unique index from migration-078 is the real guarantee. This keeps the
+ * app from walking into it.
+ */
+export function nextFreeWorkOrderNumber(existing: (string | null | undefined)[]): string {
+  const taken = new Set((existing ?? []).map((n) => (n ?? '').trim()).filter(Boolean));
+
+  const numeric = [...taken]
+    .filter((n) => /^\d+$/.test(n))
+    .map(Number)
+    .filter((n) => Number.isSafeInteger(n));
+
+  let next = numeric.length > 0 ? Math.max(...numeric) + 1 : FIRST_WO_NUMBER;
+  while (taken.has(String(next))) next += 1;
+  return String(next);
+}

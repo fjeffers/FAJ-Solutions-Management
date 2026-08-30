@@ -38,6 +38,7 @@ import SettingsView from '@/components/SettingsView';
 import PayablesView from '@/components/PayablesView';
 import LedgerView from '@/components/LedgerView';
 import GlobalSearch from '@/components/GlobalSearch';
+import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
 import ContractorModal from '@/components/ContractorModal';
 import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
@@ -290,13 +291,14 @@ export default function HomePage() {
     [importQueue],
   );
 
-  // Auto-suggest next WO number for new work orders
-  const nextWoNumber = useMemo(() => {
-    const nums = workOrders
-      .map((w) => parseInt(w.wo_number ?? '', 10))
-      .filter((n) => !isNaN(n));
-    return nums.length > 0 ? String(Math.max(...nums) + 1) : '1001';
-  }, [workOrders]);
+  // Auto-suggest next WO number for new work orders.
+  // Skips numbers already in use: a plain "highest + 1" handed 19101358 to a
+  // second job, and because payments join by wo_number another tech's payout
+  // read as money paid on it. See lib/wo-number.ts and migration-078.
+  const nextWoNumber = useMemo(
+    () => nextFreeWorkOrderNumber(workOrders.map((w) => w.wo_number)),
+    [workOrders],
+  );
 
   const stats = useMemo(() => {
     // total = revenue (client prices); paid/remaining track payouts to techs
@@ -455,7 +457,15 @@ export default function HomePage() {
       }
     } else {
       const { data: created, error } = await supabase.from('work_orders').insert({ ...payload, user_id: user.id }).select('id').single();
-      if (error) { toastError(`Couldn't save WO#${w.wo_number}: ${error.message}`); return; }
+      if (error) {
+        // migration-078 refuses a number that is already in use. Say so plainly
+        // rather than showing the raw constraint name — a repeated number is a
+        // real problem, because payments attach to jobs by number.
+        toastError(error.code === '23505'
+          ? `WO#${w.wo_number} already exists. Give this job a different number — two jobs sharing a number would mix up their payouts.`
+          : `Couldn't save WO#${w.wo_number}: ${error.message}`);
+        return;
+      }
       logAudit({ action: 'create', entityType: 'work_order', entityLabel: `WO#${w.wo_number}` });
       // Notify every assigned tech with their own accept/decline links and pay
       const assignedNames: string[] = (payload.contractor_names && payload.contractor_names.length > 0)

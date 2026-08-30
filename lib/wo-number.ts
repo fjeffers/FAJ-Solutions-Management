@@ -1,57 +1,35 @@
 // Picking the next work order number.
 //
-// FAJ's own numbering drifted. An early import stored a FieldNation ticket
-// (19101298) in wo_number, and because the next number was "highest + 1", every
-// internal job since inherited that range — 19101299, 19101300, and on. All 61
-// existing work orders are 8 digits, including ones FAJ raised itself.
+// There is one rule, used by every path that creates a job: continue from the
+// highest number in use, and skip anything already taken. The work order
+// screen, the site log's convert-to-work-order, and the import queue all call
+// the same function, so a job's number does not depend on which door it came
+// through.
 //
-// So the sequence is confined to a band. FAJ numbers live below 1,000,000;
-// anything above is an imported ticket and is ignored when picking the next one.
-// Nothing is lost by ignoring them — the platform's own reference is already
-// stored separately in external_wo_id.
+// That mattered on 2026-08-30. Each door had grown its own numbering, and one
+// of them handed 19101358 to a new Swedesboro job while a closed Wendy's FOX
+// STREET job already had it. Payments find their job by matching the number,
+// so $179.95 belonging to Bryant Knight and Davis Sanders immediately read as
+// money paid on a $55 job nobody had worked yet.
+//
+// Two guards sit under this now. migration-078 makes a number unique per
+// owner, so the database refuses a collision whatever code asks for it.
+// migration-079 makes a rename carry the job's payments, expenses and
+// materials with it, so changing a number can no longer strand money.
+//
+// On the numbers themselves: FAJ's sequence came from an early import that
+// stored a FieldNation ticket (19101298) in wo_number. Every internal job
+// since has continued that range, and FAJ's paperwork follows it, so the
+// sequence carries on from wherever it actually is rather than restarting.
 
-/** Below this is FAJ's own sequence; at or above it is an imported ticket. */
-export const OWN_NUMBER_CEILING = 1_000_000;
-
-/** Where the sequence starts when there are no FAJ-numbered jobs yet. */
+/** Where the sequence starts when there are no numbered jobs at all. */
 export const FIRST_WO_NUMBER = 1001;
 
 /**
- * Next number in FAJ's own sequence.
+ * The next free work order number.
  *
- * Skips anything already taken, so a manually typed number can't be handed out
- * twice, and ignores imported ticket numbers entirely.
- */
-export function nextWorkOrderNumber(existing: (string | null | undefined)[]): string {
-  const taken = new Set((existing ?? []).map((n) => (n ?? '').trim()).filter(Boolean));
-
-  const own = [...taken]
-    .filter((n) => /^\d+$/.test(n))
-    .map(Number)
-    .filter((n) => n >= FIRST_WO_NUMBER && n < OWN_NUMBER_CEILING);
-
-  let next = own.length > 0 ? Math.max(...own) + 1 : FIRST_WO_NUMBER;
-  while (taken.has(String(next))) next += 1;
-  return String(next);
-}
-
-/**
- * The next free number continuing FAJ's live sequence.
- *
- * Differs from `nextWorkOrderNumber` above on purpose. That one deliberately
- * restarts a clean sequence at 1001 and ignores the imported 8-digit range;
- * this one carries on from whatever the highest number actually is, which is
- * what the work order screen has always done and what the numbering on FAJ's
- * paperwork follows.
- *
- * What it adds is the missing safety: it skips every number already in use.
- * A plain "highest + 1" handed out 19101358 twice on 2026-08-30 — once to a
- * closed Wendy's FOX STREET job and again to a new Swedesboro job — and
- * because payments join by number, $179.95 of Bryant Knight's and Davis
- * Sanders' pay crossed onto a $55 job that had never been worked.
- *
- * The unique index from migration-078 is the real guarantee. This keeps the
- * app from walking into it.
+ * Continues from the highest number in use and steps over anything already
+ * taken, so the same number is never handed out twice.
  */
 export function nextFreeWorkOrderNumber(existing: (string | null | undefined)[]): string {
   const taken = new Set((existing ?? []).map((n) => (n ?? '').trim()).filter(Boolean));

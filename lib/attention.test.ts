@@ -230,3 +230,29 @@ describe('ordering and summary', () => {
     expect(attentionSummary(items)).toContain('$1,200');
   });
 });
+
+describe('the handoff back from the field', () => {
+  it('flags a job a tech marked Work Done as waiting on you', () => {
+    const items = attentionItems({
+      ...empty,
+      workOrders: [wo({ wo_status: 'Work Done', total_amount: 1138.25 })],
+    });
+    const item = items.find((i) => i.kind === 'work_awaiting_review')!;
+    expect(item.count).toBe(1);
+    expect(item.amount).toBe(1138.25);
+    expect(item.detail).toContain('$1,138');
+  });
+
+  it('stops flagging it once it is closed and archived', () => {
+    const items = attentionItems({
+      ...empty,
+      workOrders: [wo({ wo_status: 'Work Done', archived_at: '2026-08-30T00:00:00Z' })],
+    });
+    expect(items.find((i) => i.kind === 'work_awaiting_review')).toBeUndefined();
+  });
+
+  it('a job still in progress is not waiting on anyone', () => {
+    const items = attentionItems({ ...empty, workOrders: [wo({ wo_status: 'In Progress' })] });
+    expect(items.find((i) => i.kind === 'work_awaiting_review')).toBeUndefined();
+  });
+});

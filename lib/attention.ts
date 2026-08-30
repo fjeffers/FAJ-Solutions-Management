@@ -20,7 +20,7 @@ export type AttentionKind =
   | 'survey_unquoted' | 'survey_unpriced'
   | 'quote_stale' | 'quote_unbuilt'
   | 'contract_unsigned'
-  | 'work_unbilled' | 'invoice_overdue'
+  | 'work_awaiting_review' | 'work_unbilled' | 'invoice_overdue'
   | 'tech_owed' | 'assignment_unanswered';
 
 export type AttentionItem = {
@@ -148,6 +148,27 @@ export function attentionItems(input: AttentionInput): AttentionItem[] {
       count: unsigned.length,
       amount: value,
       view: 'contracts',
+    });
+  }
+
+  // ── A tech says it's finished and it is sitting on you ───────────────────
+  // This is the handoff back from the field. Without it, "Work Done" is a
+  // status nobody is watching and the job quietly stops moving.
+  const awaiting = input.workOrders.filter(
+    (w) => !w.archived_at && w.wo_status === 'Work Done',
+  );
+  if (awaiting.length > 0) {
+    const value = awaiting.reduce((sum, w) => sum + Number(w.total_amount || 0), 0);
+    items.push({
+      kind: 'work_awaiting_review',
+      severity: 'action',
+      title: `${awaiting.length} ${plural(awaiting.length, 'job')} finished, waiting on you`,
+      detail: value > 0
+        ? `${money(value)} — review and close them to bill`
+        : 'A tech marked the work done; close it to bill',
+      count: awaiting.length,
+      amount: value,
+      view: 'workorders',
     });
   }
 

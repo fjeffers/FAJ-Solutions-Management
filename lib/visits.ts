@@ -395,3 +395,29 @@ export function workOrderMoneyFromVisit(
     other_charges_note: other ? `Other charges: ${other.toFixed(2)}` : null,
   };
 }
+
+/**
+ * A rate that can be read two ways.
+ *
+ * The entry form writes "$55/hr" or "$55 flat" through buildRate, so anything
+ * it produces is unambiguous. Rows imported or typed before that carry a bare
+ * number — "55", "100" — and a bare number bills ONCE for the whole visit.
+ * On a visit with hours logged that is very likely wrong: a two-hour call at
+ * "55" bills $55, not $110.
+ *
+ * The app deliberately does not guess. It cannot know whether "540" meant
+ * $540 for the job or $540 an hour, and quietly picking one is how money goes
+ * missing. This only marks the visit as worth a look.
+ */
+export function rateIsAmbiguous(
+  v: Pick<SiteVisit, 'hours' | 'rate' | 'total_project_price'>,
+): boolean {
+  const text = (v.rate ?? '').trim();
+  if (!text) return false;
+  // A typed project price is an explicit decision and settles it.
+  if (v.total_project_price != null && !isNaN(Number(v.total_project_price))) return false;
+  if (HOURLY_RATE_RE.test(text)) return false;   // says hourly
+  if (/flat/i.test(text)) return false;          // says flat
+  if (!/\d/.test(text)) return false;            // a note, not a price
+  return Number(v.hours ?? 0) > 0;               // hours logged, so billing once is doubtful
+}

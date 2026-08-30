@@ -7,7 +7,7 @@ import { enrichWorkOrders, contractorOwedOnWO, woPayoutTotal, fmtMoney } from '@
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
-import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection } from '@/lib/types';
+import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
 import { BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -178,7 +178,9 @@ export default function HomePage() {
   /** Contractor id with an onboarding email or QuickBooks sync in flight. */
   const [contractorBusy, setContractorBusy] = useState<string | null>(null);
   /** Site visits that became work orders, so a job can show where it came from. */
-  const [linkedVisits, setLinkedVisits] = useState<LinkedVisit[]>([]);
+  // Every non-archived visit, in the partial shape the dashboard and the work
+  // order cards need. `linkedVisits` below is the subset that has a work order.
+  const [dashboardVisits, setDashboardVisits] = useState<SiteVisit[]>([]);
 
   // Core data every view needs — loaded before first paint.
   const loadCore = async (): Promise<boolean> => {
@@ -189,16 +191,19 @@ export default function HomePage() {
       supabase.from('contractors').select('*').order('name'),
       supabase.from('work_orders').select('*').order('wo_number'),
       supabase.from('payments').select('*').order('payment_date', { ascending: false }),
-      // Just enough of each linked visit for a work order to show where it came
-      // from. Visits with no work order are the Site Log's business, not this one.
+      // Enough of each visit for two jobs: showing a work order where it came
+      // from, and letting the dashboard see money walked but never billed.
+      // This used to fetch only visits that already had a work order, which
+      // made a visit billed straight to the client invisible to the monitor.
       supabase.from('site_visits')
-        .select('id, work_order_id, visit_date, site_name, site_code, hours, miles')
-        .not('work_order_id', 'is', null),
+        .select('id, work_order_id, visit_date, site_name, site_code, visit_type, hours, miles, '
+              + 'rate, invoice_status, travel_charge, materials_cost, other_charges, '
+              + 'total_project_price, archived_at'),
     ]);
     if (cRes.data) setContractors(cRes.data);
     if (wRes.data) setWorkOrders(wRes.data);
     if (pRes.data) setPayments(pRes.data);
-    if (svRes.data) setLinkedVisits(svRes.data as LinkedVisit[]);
+    if (svRes.data) setDashboardVisits(svRes.data as unknown as SiteVisit[]);
     const failed = [cRes.error && 'contractors', wRes.error && 'work orders', pRes.error && 'payments'].filter(Boolean);
     if (failed.length > 0) {
       toastError(`Couldn't load ${failed.join(', ')}. Check your connection and refresh.`);
@@ -289,6 +294,11 @@ export default function HomePage() {
   const pendingImportCount = useMemo(
     () => importQueue.filter((i) => i.status === 'pending').length,
     [importQueue],
+  );
+
+  const linkedVisits = useMemo(
+    () => dashboardVisits.filter((v) => v.work_order_id) as unknown as LinkedVisit[],
+    [dashboardVisits],
   );
 
   // Auto-suggest next WO number for new work orders.
@@ -1340,7 +1350,7 @@ export default function HomePage() {
             <AttentionPanel
               data={{
                 surveys, quotes, contracts, workOrders: enrichedWOs,
-                invoices, invoicePayments,
+                invoices, invoicePayments, siteVisits: dashboardVisits,
               }}
               onGo={(v) => setView(v as typeof view)}
             />

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
+
+import type { SiteVisit } from './types';
 
 // total_project_price is required on SiteVisit, so it belongs in the shared
 // fixture — individual cases override it when the price is the thing under test.
@@ -479,5 +481,39 @@ describe('workOrderMoneyFromVisit', () => {
   it('bills a travel charge that has no mileage recorded behind it', () => {
     const wo = workOrderMoneyFromVisit({ ...site, hours: 2, rate: '$55/hr', miles: null, travel_charge: 25 }, 'F');
     expect(wo.billable_travel).toBe(25);
+  });
+});
+
+describe('rateIsAmbiguous', () => {
+  const v = (rate: string | null, hours: number | null, price: number | null = null) =>
+    ({ rate, hours, total_project_price: price } as Pick<SiteVisit, 'hours' | 'rate' | 'total_project_price'>);
+
+  it('flags a bare number on a visit with hours', () => {
+    // Cherry Hill 2026-06-01: "55" on 2 hours bills $55, not $110.
+    expect(rateIsAmbiguous(v('55', 2))).toBe(true);
+    expect(rateIsAmbiguous(v('100', 3))).toBe(true);
+    expect(rateIsAmbiguous(v('540', 6.75))).toBe(true);
+  });
+
+  it('trusts a rate that states its unit', () => {
+    expect(rateIsAmbiguous(v('$55/hr', 2))).toBe(false);
+    expect(rateIsAmbiguous(v('55 / h', 2))).toBe(false);
+    expect(rateIsAmbiguous(v('$540 flat', 6.75))).toBe(false);
+  });
+
+  it('treats a typed project price as the decision', () => {
+    expect(rateIsAmbiguous(v('2600', 8, 2600))).toBe(false);
+  });
+
+  it('says nothing when there are no hours to bill', () => {
+    // A flat "2600" with no hours is exactly what it looks like.
+    expect(rateIsAmbiguous(v('2600', 0))).toBe(false);
+    expect(rateIsAmbiguous(v('2600', null))).toBe(false);
+  });
+
+  it('ignores a blank rate or a rate that is only a note', () => {
+    expect(rateIsAmbiguous(v(null, 2))).toBe(false);
+    expect(rateIsAmbiguous(v('', 2))).toBe(false);
+    expect(rateIsAmbiguous(v('see email', 2))).toBe(false);
   });
 });

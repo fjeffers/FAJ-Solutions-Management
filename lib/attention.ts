@@ -11,9 +11,10 @@
 // Everything is derived from state the app has already loaded, so the panel
 // costs one pass over arrays rather than a round trip.
 import type {
-  Contract, EnrichedWorkOrder, Invoice, InvoicePayment, Quote, Survey,
+  Contract, EnrichedWorkOrder, Invoice, InvoicePayment, Quote, SiteVisit, Survey,
 } from './types';
 import { surveyTotals, unpricedDevices, readyToQuote } from './surveys';
+import { visitAmount, rateIsAmbiguous } from './visits';
 import { todayISO } from './utils';
 
 export type AttentionKind =
@@ -21,7 +22,8 @@ export type AttentionKind =
   | 'quote_stale' | 'quote_unbuilt'
   | 'contract_unsigned'
   | 'work_awaiting_review' | 'work_unbilled' | 'invoice_overdue'
-  | 'tech_owed' | 'assignment_unanswered';
+  | 'tech_owed' | 'assignment_unanswered'
+  | 'visit_unbilled' | 'visit_rate_unclear';
 
 export type AttentionItem = {
   kind: AttentionKind;
@@ -57,6 +59,8 @@ export type AttentionInput = {
   workOrders: EnrichedWorkOrder[];
   invoices: Invoice[];
   invoicePayments: InvoicePayment[];
+  /** Site log visits. Optional so an older caller keeps working. */
+  siteVisits?: SiteVisit[];
   today?: string;
 };
 
@@ -236,6 +240,46 @@ export function attentionItems(input: AttentionInput): AttentionItem[] {
       count: owedWOs.length,
       amount: value,
       view: 'payables',
+    });
+  }
+
+  // ── Site visits walked but never billed ──────────────────────────────────
+  // These never reached the dashboard before, because it only loaded visits
+  // that already had a work order. A visit billed straight to the client
+  // without one was invisible, and invisible money does not get chased.
+  const visits = (input.siteVisits ?? []).filter((v) => !v.archived_at);
+  const unbilledVisits = visits.filter((v) => v.invoice_status !== 'invoiced');
+  if (unbilledVisits.length > 0) {
+    const value = unbilledVisits.reduce((sum, v) => sum + visitAmount(v), 0);
+    const oldest = unbilledVisits
+      .map((v) => daysUntil(v.visit_date, today))
+      .filter((d): d is number => d != null)
+      .sort((a, b) => a - b)[0];
+    items.push({
+      kind: 'visit_unbilled',
+      severity: 'money',
+      title: `${unbilledVisits.length} site ${plural(unbilledVisits.length, 'visit')} not invoiced`,
+      detail: oldest != null && oldest <= -30
+        ? `${money(value)} — the oldest has been sitting ${Math.abs(oldest)} days`
+        : `${money(value)} walked but never billed`,
+      count: unbilledVisits.length,
+      amount: value,
+      view: 'sitelog',
+    });
+  }
+
+  // ── Visits whose rate could be read two ways ─────────────────────────────
+  // A bare "55" bills once for the whole visit, not per hour. The app will not
+  // guess which was meant, so it says so instead of quietly under-billing.
+  const unclear = visits.filter(rateIsAmbiguous);
+  if (unclear.length > 0) {
+    items.push({
+      kind: 'visit_rate_unclear',
+      severity: 'action',
+      title: `${unclear.length} ${plural(unclear.length, 'visit')} with an unclear rate`,
+      detail: 'A rate with no "/hr" bills once for the whole visit — check these are right',
+      count: unclear.length,
+      view: 'sitelog',
     });
   }
 

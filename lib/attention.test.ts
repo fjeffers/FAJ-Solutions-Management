@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { attentionItems, attentionSummary, daysUntil, type AttentionInput } from './attention';
 import type {
-  Contract, EnrichedWorkOrder, Invoice, InvoicePayment, Quote, Survey,
+  Contract, EnrichedWorkOrder, Invoice, InvoicePayment, Quote, SiteVisit, Survey,
 } from './types';
 
 const TODAY = '2026-08-25';
@@ -54,6 +54,19 @@ const invoice = (over: Partial<Invoice> = {}): Invoice => ({
   work_order_ids: [], quote_id: null,
   ...over,
 } as Invoice);
+
+const visit = (over: Partial<SiteVisit> = {}): SiteVisit => ({
+  id: 'v1', user_id: 'u', program: "Wendy's", site_code: '1217', site_name: 'Cherry Hill',
+  address: null, visit_date: '2026-08-20', time_in: null, time_out: null,
+  hours: 2, rate: '$55/hr', visit_type: null,
+  invoice_status: 'not_invoiced', payment_status: null,
+  miles: null, travel_charge: null, notes: null, work_order_id: null,
+  created_at: '2026-08-20T00:00:00Z', updated_at: '2026-08-20T00:00:00Z',
+  sessions: [], customer_id: null, client_summary: null, contractor_id: null,
+  total_project_price: null, materials_description: null, materials_cost: null,
+  other_charges: null, additional_details: null, tech_ids: null, archived_at: null,
+  ...over,
+} as SiteVisit);
 
 describe('daysUntil', () => {
   it('is negative for a date already past', () => {
@@ -254,5 +267,73 @@ describe('the handoff back from the field', () => {
   it('a job still in progress is not waiting on anyone', () => {
     const items = attentionItems({ ...empty, workOrders: [wo({ wo_status: 'In Progress' })] });
     expect(items.find((i) => i.kind === 'work_awaiting_review')).toBeUndefined();
+  });
+});
+
+describe('the site log reaching the dashboard', () => {
+  it('flags visits walked but never invoiced, with what they are worth', () => {
+    const items = attentionItems({
+      ...empty,
+      siteVisits: [visit({ id: 'a' }), visit({ id: 'b', hours: 3 })],
+    });
+    const item = items.find((i) => i.kind === 'visit_unbilled')!;
+    expect(item.count).toBe(2);
+    expect(item.amount).toBe(275);          // 2h + 3h at $55
+    expect(item.view).toBe('sitelog');
+  });
+
+  it('says how long the oldest has been sitting once it is over a month', () => {
+    const items = attentionItems({
+      ...empty,
+      siteVisits: [visit({ visit_date: '2026-06-01' })],   // 85 days before TODAY
+    });
+    expect(items.find((i) => i.kind === 'visit_unbilled')!.detail).toContain('85 days');
+  });
+
+  it('leaves an invoiced visit alone', () => {
+    const items = attentionItems({
+      ...empty,
+      siteVisits: [visit({ invoice_status: 'invoiced' })],
+    });
+    expect(items.find((i) => i.kind === 'visit_unbilled')).toBeUndefined();
+  });
+
+  it('ignores an archived visit', () => {
+    const items = attentionItems({
+      ...empty,
+      siteVisits: [visit({ archived_at: '2026-08-21T00:00:00Z' })],
+    });
+    expect(items.find((i) => i.kind === 'visit_unbilled')).toBeUndefined();
+  });
+
+  it('flags a bare rate on a visit with hours, because it bills only once', () => {
+    // Cherry Hill, 2026-06-01: rate "55" on a 2-hour visit bills $55, not $110.
+    const items = attentionItems({ ...empty, siteVisits: [visit({ rate: '55' })] });
+    const item = items.find((i) => i.kind === 'visit_rate_unclear')!;
+    expect(item.count).toBe(1);
+    expect(item.severity).toBe('action');
+  });
+
+  it('does not flag a rate that says what it means', () => {
+    const items = attentionItems({
+      ...empty,
+      siteVisits: [visit({ rate: '$55/hr' }), visit({ id: 'x', rate: '$540 flat' })],
+    });
+    expect(items.find((i) => i.kind === 'visit_rate_unclear')).toBeUndefined();
+  });
+
+  it('does not flag a bare rate when a project price was typed', () => {
+    // The typed price is the explicit decision; the rate text is then a note.
+    const items = attentionItems({
+      ...empty,
+      siteVisits: [visit({ rate: '2600', total_project_price: 2600 })],
+    });
+    expect(items.find((i) => i.kind === 'visit_rate_unclear')).toBeUndefined();
+  });
+
+  it('says nothing about the site log when none was passed', () => {
+    const items = attentionItems(empty);
+    expect(items.find((i) => i.kind === 'visit_unbilled')).toBeUndefined();
+    expect(items.find((i) => i.kind === 'visit_rate_unclear')).toBeUndefined();
   });
 });

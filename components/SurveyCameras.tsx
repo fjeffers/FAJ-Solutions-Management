@@ -8,6 +8,7 @@ import {
 } from '@/lib/surveys';
 import { fmtMoney } from '@/lib/utils';
 import SurveyPhotoStrip from '@/components/SurveyPhotoStrip';
+import SurveyPhotoRead from '@/components/SurveyPhotoRead';
 import type { SurveyCamera } from '@/lib/types';
 import {
   CAMERA_TYPES, CAMERA_RESOLUTIONS, CAMERA_STATUSES, CABLE_RUN_PRESETS,
@@ -314,6 +315,12 @@ function Row({
             photos={c.photos ?? []} folderKey={folderKey}
             alt={`Camera ${c.position} area`} size={64}
             onChange={(photos) => onUpdate({ photos })}
+          />
+          <SurveyPhotoRead
+            photoUrl={(c.photos ?? [])[0]}
+            position={c.position}
+            noun="camera"
+            onAccept={(patch) => onUpdate(patch as Partial<SurveyCamera>)}
           />
 
           {/* Row actions live here, out of the way until the row is open. */}

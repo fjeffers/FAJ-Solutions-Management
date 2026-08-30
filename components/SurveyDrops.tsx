@@ -8,6 +8,7 @@ import {
 } from '@/lib/surveys';
 import { fmtMoney } from '@/lib/utils';
 import SurveyPhotoStrip from '@/components/SurveyPhotoStrip';
+import SurveyPhotoRead from '@/components/SurveyPhotoRead';
 import type { CableDrop } from '@/lib/types';
 import { CABLE_TYPES, DROP_MOUNTS, CABLE_RUN_PRESETS } from '@/lib/types';
 
@@ -286,6 +287,12 @@ function Row({
             photos={d.photos ?? []} folderKey={folderKey}
             alt={`Drop ${d.position} location`} size={64}
             onChange={(photos) => onUpdate({ photos })}
+          />
+          <SurveyPhotoRead
+            photoUrl={(d.photos ?? [])[0]}
+            position={d.position}
+            noun="drop"
+            onAccept={(patch) => onUpdate(patch as Partial<CableDrop>)}
           />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 18, paddingTop: 14, borderTop: '1px solid #f2eee3' }}>

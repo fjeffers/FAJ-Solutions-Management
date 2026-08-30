@@ -9,6 +9,7 @@ import {
 } from '@/lib/survey-guide';
 import { newCamera, newDrop, renumber } from '@/lib/surveys';
 import SurveyPhotoStrip from '@/components/SurveyPhotoStrip';
+import SurveyPhotoRead from '@/components/SurveyPhotoRead';
 import { fmtMoney } from '@/lib/utils';
 import type { CableDrop, SurveyCamera } from '@/lib/types';
 
@@ -169,6 +170,8 @@ export default function SurveyGuide({
         <AnswerControl
           step={step} device={device} folderKey={folderKey}
           position={position} noun={noun} onAnswer={answer}
+          onAcceptSuggestion={(patch) =>
+            onChange(devices.map((d, i) => (i === index ? { ...d, ...patch } as Device : d)))}
         />
       </div>
 
@@ -205,7 +208,7 @@ export default function SurveyGuide({
 // ── The answer control for one question ─────────────────────────────────────
 
 function AnswerControl({
-  step, device, folderKey, position, noun, onAnswer,
+  step, device, folderKey, position, noun, onAnswer, onAcceptSuggestion,
 }: {
   step: GuideStep;
   device: Record<string, unknown>;
@@ -213,16 +216,27 @@ function AnswerControl({
   position: number;
   noun: string;
   onAnswer: (v: unknown) => void;
+  /** Photo suggestions fill fields other than the one being asked about. */
+  onAcceptSuggestion: (patch: Record<string, string>) => void;
 }) {
   const value = device[step.field];
 
   if (step.kind === 'photo') {
+    const photos = (value as string[]) ?? [];
     return (
-      <SurveyPhotoStrip
-        photos={(value as string[]) ?? []} folderKey={folderKey}
-        alt={`${noun} ${position} location`} size={84} addLabel="Take photo"
-        onChange={(photos) => onAnswer(photos)}
-      />
+      <div>
+        <SurveyPhotoStrip
+          photos={photos} folderKey={folderKey}
+          alt={`${noun} ${position} location`} size={84} addLabel="Take photo"
+          onChange={(next) => onAnswer(next)}
+        />
+        <SurveyPhotoRead
+          photoUrl={photos[0]}
+          position={position}
+          noun={noun === 'drop' ? 'drop' : 'camera'}
+          onAccept={onAcceptSuggestion}
+        />
+      </div>
     );
   }
 

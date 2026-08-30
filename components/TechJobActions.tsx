@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { LogIn, LogOut, CheckCircle2, Save, Loader2, Undo2 } from 'lucide-react';
+import { LogIn, LogOut, CheckCircle2, Save, Loader2 } from 'lucide-react';
 import { techClock, setTechJobStatus, saveTechCloseout } from '@/lib/tech-portal';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { TechJob } from '@/lib/types';
@@ -15,10 +15,10 @@ import type { TechJob } from '@/lib/types';
  * Once a job is Approved or Paid it is closed and these controls disappear, so
  * a finished job cannot be edited after the fact.
  *
- * Saying "work done" hands the job back to the office. From that moment the
- * working controls go away and the card drops into History — a tech should not
- * have to keep looking at a job they have finished. The one thing left is a way
- * to undo a mistap, which is allowed only while the office has not closed it.
+ * Saying "work done" hands the job back to the office, and the job then leaves
+ * the tech's portal altogether until it is closed and paid (migration-080). A
+ * tech should not have to keep looking at work they have finished, and undoing
+ * a handover is the office's call rather than theirs.
  */
 export default function TechJobActions({
   job, onChanged,
@@ -61,7 +61,10 @@ export default function TechJobActions({
     setBusy(null);
   };
 
-  // Handed back to the office. Read-only, minus one way out of a mistap.
+  // Handed back to the office (migration-080). The job leaves the tech's
+  // portal entirely on the next load, so this only shows in the moment between
+  // the tap and the refresh. Nothing here is actionable: undoing a handover is
+  // the office's call, not the tech's.
   if (workDone) {
     return (
       <div style={{ marginTop: 11, paddingTop: 11, borderTop: '1px solid #eee' }}>
@@ -70,18 +73,8 @@ export default function TechJobActions({
           background: 'rgba(16,185,129,0.08)', color: '#047857', fontWeight: 600,
           display: 'flex', alignItems: 'center', gap: 7,
         }}>
-          <CheckCircle2 size={15} /> Work done — with Fred to approve and pay
+          <CheckCircle2 size={15} /> Sent to Fred — it comes back here once it's paid
         </div>
-        <button
-          className="btn btn-ghost" disabled={busy !== null}
-          onClick={() => {
-            if (!confirm(`Reopen WO ${wo}? It goes back into your active work.`)) return;
-            run('reopen', () => setTechJobStatus(wo, 'In Progress'), 'Back in your active work');
-          }}
-          style={{ width: '100%', marginTop: 7, justifyContent: 'center', padding: '9px 0', fontSize: 12.5 }}
-        >
-          {busy === 'reopen' ? <Loader2 size={15} /> : <Undo2 size={14} />} Not done yet — reopen
-        </button>
       </div>
     );
   }
@@ -140,8 +133,8 @@ export default function TechJobActions({
       <button
         disabled={busy !== null}
         onClick={() => {
-          if (!confirm(`Mark WO ${wo} as work done? It moves to your history and Fred takes it from there.`)) return;
-          run('done', () => setTechJobStatus(wo, 'Work Done'), 'Sent to Fred — it is in your history now');
+          if (!confirm(`Mark WO ${wo} as work done? It leaves your list and Fred takes it from here.`)) return;
+          run('done', () => setTechJobStatus(wo, 'Work Done'), 'Sent to Fred — off your list now');
         }}
         style={{
           width: '100%', marginTop: 9, padding: '11px 0', borderRadius: 10, cursor: 'pointer',

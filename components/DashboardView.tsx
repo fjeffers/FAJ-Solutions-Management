@@ -17,7 +17,18 @@ type Stats = { total: number; paid: number; remaining: number; paidCount: number
 
 export default function DashboardView({ stats, workOrders, payments, onView }: { stats: Stats; workOrders: EnrichedWorkOrder[]; payments: Payment[]; onView: (v: string) => void }) {
   const recentPayments = [...payments].slice(0, 5);
-  const urgentJobs = workOrders.filter((w) => w.payment_status !== 'paid').slice(0, 5);
+  // Closed jobs are done with. They used to stay in Outstanding Jobs forever,
+  // because nothing here looked at archived_at — so closing a job changed
+  // nothing on the dashboard and it read as though the close hadn't saved.
+  const liveJobs = useMemo(() => workOrders.filter((w) => !w.archived_at), [workOrders]);
+  const urgentJobs = liveJobs.filter((w) => w.payment_status !== 'paid').slice(0, 5);
+  // The same rule the Work Orders board uses for its tab counts, so the two
+  // screens cannot disagree about how many jobs are outstanding.
+  const liveCounts = useMemo(() => ({
+    paid:    liveJobs.filter((w) => w.payment_status === 'paid').length,
+    partial: liveJobs.filter((w) => w.payment_status === 'partial').length,
+    pending: liveJobs.filter((w) => w.payment_status === 'pending').length,
+  }), [liveJobs]);
   // Progress = how much of what techs are owed has been paid out
   const payoutTotal = stats.paid + stats.remaining;
   const pct = payoutTotal > 0 ? Math.round((stats.paid / payoutTotal) * 100) : 0;
@@ -49,9 +60,9 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 28 }}>
         {[
-          { label: 'Paid Jobs', count: stats.paidCount, color: '#047857', bg: 'rgba(16,185,129,0.1)' },
-          { label: 'Partial', count: stats.partialCount, color: '#b45309', bg: 'rgba(245,158,11,0.1)' },
-          { label: 'Pending', count: stats.pendingCount, color: '#b91c1c', bg: 'rgba(239,68,68,0.1)' },
+          { label: 'Paid Jobs', count: liveCounts.paid, color: '#047857', bg: 'rgba(16,185,129,0.1)' },
+          { label: 'Partial', count: liveCounts.partial, color: '#b45309', bg: 'rgba(245,158,11,0.1)' },
+          { label: 'Pending', count: liveCounts.pending, color: '#b91c1c', bg: 'rgba(239,68,68,0.1)' },
         ].map((s) => (
           <div key={s.label} style={{ background: s.bg, borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
             <div style={{ fontSize: 28, fontWeight: 700, color: s.color, fontFamily: "'Cormorant Garamond', serif" }}>{s.count}</div>

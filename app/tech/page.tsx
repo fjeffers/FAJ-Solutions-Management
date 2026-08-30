@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechJobs, fetchTechPayments, fetchTechSummary,
-  fetchTechUnread, fetchTechPortalToken, fetchTechOpenJobs, saveTechProfile,
+  fetchTechUnread, fetchTechDmUnread, fetchTechPortalToken, fetchTechOpenJobs, saveTechProfile,
   splitJobs, paymentsByYear, jobLocation,
 } from '@/lib/tech-portal';
 import TechChat from '@/components/TechChat';
@@ -46,11 +46,11 @@ export default function TechPortalPage() {
         const me = await fetchTechProfile();
         // Signed in but not a linked tech — Fred's own account lands here too.
         if (!me) { setDenied(true); setLoading(false); return; }
-        const [j, p, s, u, tok, open] = await Promise.all([
+        const [j, p, s, u, dmU, tok, open] = await Promise.all([
           fetchTechJobs(), fetchTechPayments(), fetchTechSummary(), fetchTechUnread(),
-          fetchTechPortalToken(), fetchTechOpenJobs(),
+          fetchTechDmUnread(), fetchTechPortalToken(), fetchTechOpenJobs(),
         ]);
-        setProfile(me); setJobs(j); setPayments(p); setSummary(s); setUnread(u);
+        setProfile(me); setJobs(j); setPayments(p); setSummary(s); setUnread(u + dmU);
         setPortalToken(tok); setOpenJobs(open);
       } catch {
         setDenied(true);
@@ -253,7 +253,15 @@ export default function TechPortalPage() {
         {tab === 'jobs' && <JobsTab active={active} past={past} />}
         {tab === 'open' && <TechOpenWork jobs={openJobs} onChanged={reloadJobs} />}
         {tab === 'pay' && <PayTab payments={payments} />}
-        {tab === 'chat' && <TechChat jobs={active} />}
+        {tab === 'chat' && (
+          <TechChat
+            jobs={active}
+            onRead={async () => {
+              const [u, dmU] = await Promise.all([fetchTechUnread(), fetchTechDmUnread()]);
+              setUnread(u + dmU);
+            }}
+          />
+        )}
         {tab === 'profile' && profile && <ProfileTab profile={profile} onSaved={(p) => setProfile(p)} />}
         {tab === 'paperwork' && profile && (
           portalToken ? (

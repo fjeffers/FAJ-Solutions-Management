@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, visitMilesTotal, visitMileageTotal, visitMaterialsTotal, visitDays, isMultiDay, syncVisitTotals, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
 
 import type { SiteVisit } from './types';
 
@@ -515,5 +515,123 @@ describe('rateIsAmbiguous', () => {
     expect(rateIsAmbiguous(v(null, 2))).toBe(false);
     expect(rateIsAmbiguous(v('', 2))).toBe(false);
     expect(rateIsAmbiguous(v('see email', 2))).toBe(false);
+  });
+});
+
+describe('the two-trip job: go out, buy parts, come back', () => {
+  // Fred's own words: "go to the site today but they dont have meterials i
+  // have to buy meterials and return to finish the job". One visit, two days,
+  // two round trips, parts bought in between.
+  const twoTrip = {
+    visit_date: '2026-09-01',
+    site_name: 'Swedesboro', site_code: '9291', visit_type: 'T&M',
+    rate: '$55/hr',
+    sessions: [
+      { in: '2026-09-01T13:00:00Z', out: '2026-09-01T15:00:00Z' }, // Mon, 2h
+      { in: '2026-09-02T13:00:00Z', out: '2026-09-02T17:00:00Z' }, // Tue, 4h
+    ],
+    hours: 6,
+    miles: null, travel_charge: null,
+    materials_cost: null, materials_description: null, other_charges: null,
+    total_project_price: null,
+    mileage_logs: [
+      { id: 'm1', contractor_name: 'Fred', miles: 40, rate: 0.5, note: 'out', on: '2026-09-01' },
+      { id: 'm2', contractor_name: 'Fred', miles: 40, rate: 0.5, note: 'back', on: '2026-09-02' },
+    ],
+    materials_used: [
+      { id: 'p1', material_id: null, name: 'Faceplates', quantity: 4, unit_cost: 12, on: '2026-09-02' },
+      { id: 'p2', material_id: null, name: 'Cat6 box', quantity: 1, unit_cost: 180, on: '2026-09-02' },
+    ],
+  } as unknown as SiteVisit;
+
+  it('adds up every drive, not just one', () => {
+    expect(visitMilesTotal(twoTrip)).toBe(80);
+    expect(visitMileageTotal(twoTrip)).toBe(40);   // 80 mi @ $0.50
+  });
+
+  it('adds up every part, quantity included', () => {
+    expect(visitMaterialsTotal(twoTrip)).toBe(228); // 4x$12 + 1x$180
+  });
+
+  it('bills labour plus both trips plus both parts', () => {
+    // 6h @ $55 = 330, + $40 driving, + $228 parts
+    expect(visitAmount(twoTrip)).toBe(598);
+  });
+
+  it('splits the visit into the days it actually happened on', () => {
+    const days = visitDays(twoTrip);
+    expect(days.map((d) => d.date)).toEqual(['2026-09-01', '2026-09-02']);
+    expect(days[0]).toMatchObject({ hours: 2, miles: 40, travel: 20, materials: 0 });
+    expect(days[1]).toMatchObject({ hours: 4, miles: 40, travel: 20, materials: 228 });
+    expect(isMultiDay(twoTrip)).toBe(true);
+  });
+
+  it('counts a day that had a drive but no clock-in', () => {
+    // Dropping parts off without working is still a day and still a drive.
+    const v = { ...twoTrip, sessions: [twoTrip.sessions![0]] } as SiteVisit;
+    const days = visitDays(v);
+    expect(days).toHaveLength(2);
+    expect(days[1]).toMatchObject({ date: '2026-09-02', hours: 0, miles: 40 });
+  });
+
+  it('brings the single columns back into line with the rows', () => {
+    const synced = syncVisitTotals(twoTrip);
+    expect(synced.miles).toBe(80);
+    expect(synced.travel_charge).toBe(40);
+    expect(synced.materials_cost).toBe(228);
+    expect(synced.materials_description).toBe('Faceplates, Cat6 box');
+  });
+
+  it('names three or more parts without an unreadable run-on', () => {
+    const synced = syncVisitTotals({
+      ...twoTrip,
+      materials_used: [
+        { id: 'a', material_id: null, name: 'Faceplates', quantity: 1, unit_cost: 1 },
+        { id: 'b', material_id: null, name: 'Cat6 box', quantity: 1, unit_cost: 1 },
+        { id: 'c', material_id: null, name: 'Jacks', quantity: 1, unit_cost: 1 },
+        { id: 'd', material_id: null, name: 'Patch cords', quantity: 1, unit_cost: 1 },
+      ],
+    } as SiteVisit);
+    expect(synced.materials_description).toBe('Faceplates, Cat6 box +2 more');
+  });
+
+  it('carries every part onto the work order instead of one lumped line', () => {
+    const money = workOrderMoneyFromVisit(twoTrip, 'Frederick Jeffers');
+    expect(money.materials_used).toHaveLength(2);
+    expect(money.materials_used.map((m) => m.name)).toEqual(['Faceplates', 'Cat6 box']);
+    expect(money.materials_used[0].quantity).toBe(4);
+    expect(money.materials_used[1].on).toBe('2026-09-02');
+    expect(money.total_amount).toBe(598);
+    // Reimbursing the tech for driving stays a separate decision, as before.
+    expect(money.mileage_logs).toEqual([]);
+  });
+});
+
+describe('a visit with no rows behaves exactly as it always did', () => {
+  const plain = {
+    visit_date: '2026-08-20', site_name: 'Easton', site_code: '1', visit_type: 'T&M',
+    rate: '$55/hr', hours: 2, sessions: null,
+    miles: 100, travel_charge: 50, materials_cost: 30, materials_description: 'Cable',
+    other_charges: null, total_project_price: null,
+    mileage_logs: [], materials_used: [],
+  } as unknown as SiteVisit;
+
+  it('falls back to the single columns', () => {
+    expect(visitMilesTotal(plain)).toBe(100);
+    expect(visitMileageTotal(plain)).toBe(50);
+    expect(visitMaterialsTotal(plain)).toBe(30);
+    expect(visitAmount(plain)).toBe(190);   // 2h x 55 + 50 + 30
+  });
+
+  it('is a single day', () => {
+    expect(isMultiDay(plain)).toBe(false);
+    expect(visitDays(plain).map((d) => d.date)).toEqual(['2026-08-20']);
+  });
+
+  it('leaves the single columns untouched when there are no rows', () => {
+    const synced = syncVisitTotals(plain);
+    expect(synced.miles).toBe(100);
+    expect(synced.materials_cost).toBe(30);
+    expect(synced.materials_description).toBe('Cable');
   });
 });

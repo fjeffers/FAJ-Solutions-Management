@@ -342,6 +342,13 @@ export type MileageLog = {
   miles: number;
   rate: number;            // dollars per mile
   note: string | null;     // e.g. "round trip to site"
+  /**
+   * (migration-081) Which day this drive was, on a site visit that spans more
+   * than one. A job where the parts weren't there means driving out, going for
+   * materials, and driving back another day — two round trips, not one.
+   * Work orders ignore this; they have their own dates.
+   */
+  on?: string | null;
 };
 
 export type MaterialUsed = {
@@ -370,6 +377,12 @@ export type MaterialUsed = {
   reimburse?: boolean;
   /** Who paid for it. Empty means the job's lead tech. */
   bought_by?: string | null;
+  /**
+   * (migration-081) The day it was bought, on a multi-day site visit. Parts
+   * are often bought partway through — go out, find nothing on site, buy what
+   * is needed, come back. Recording the day is what makes that legible later.
+   */
+  on?: string | null;
 };
 
 export type Material = {
@@ -1222,6 +1235,15 @@ export type SiteVisit = {
   payment_status: 'unpaid' | 'paid' | 'na';
   miles: number | null;
   travel_charge: number | null;
+  /**
+   * (migration-081) Every part and every drive, one row each.
+   *
+   * The single columns below are kept as their TOTALS, because the statement,
+   * the Excel export and the invoice builder all read them. Rows are the truth;
+   * the totals are derived from them by syncVisitTotals on save.
+   */
+  materials_used: MaterialUsed[] | null;
+  mileage_logs: MileageLog[] | null;
   /** (migration-057) Master Entry columns M, N, O and T. */
   materials_description: string | null;
   materials_cost: number | null;

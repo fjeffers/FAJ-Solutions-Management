@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession, FormulaColumn } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from '@/lib/visits';
+import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit, syncVisitTotals } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { laborOf } from '@/lib/site-sheet';
 import { deriveTimesAndHours } from '@/lib/visit-sync';
@@ -22,6 +22,7 @@ import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
 import EmailModal, { type EmailPayload } from './EmailModal';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
+import { MileageRows, MaterialRows, VisitDayBreakdown } from './VisitItems';
 import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users, Archive, ArchiveRestore } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
@@ -475,7 +476,11 @@ export default function SiteLogView() {
   const saveVisit = async (v: Partial<SiteVisit>) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { id, created_at: _c, updated_at: _u, user_id: _uid, ...rest } = v;
+    // Rows are the truth; miles, travel_charge and materials_cost are their
+    // totals. Everything downstream reads those columns, so they are brought
+    // back into line here rather than left to drift (migration-081).
+    const synced = syncVisitTotals(v);
+    const { id, created_at: _c, updated_at: _u, user_id: _uid, ...rest } = synced;
     const clean = {
       ...rest,
       program: rest.program?.toString().trim() || null,
@@ -548,7 +553,19 @@ export default function SiteLogView() {
         : null;
     }
 
-    const full = { ...patch, ...derived };
+    let full: Partial<SiteVisit> = { ...patch, ...derived };
+    // Editing rows from the grid keeps the totals honest the same way the card
+    // does, so the two entry points cannot disagree.
+    if ('mileage_logs' in patch || 'materials_used' in patch) {
+      const merged = syncVisitTotals({ ...next, ...full });
+      full = {
+        ...full,
+        miles: merged.miles,
+        travel_charge: merged.travel_charge,
+        materials_cost: merged.materials_cost,
+        materials_description: merged.materials_description,
+      };
+    }
     setVisits((list) => list.map((v) => (v.id === id ? { ...v, ...full } : v)));
     const { error } = await supabase.from('site_visits')
       .update({ ...full, updated_at: new Date().toISOString() }).eq('id', id);
@@ -1338,23 +1355,37 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
   const set = <K extends keyof SiteVisit>(k: K, v: SiteVisit[K]) => setForm((f) => ({ ...f, [k]: v }));
   const canSave = !!(form.site_name?.trim() || form.site_code?.trim() || form.address?.trim());
 
-  // Miles drive the travel charge: miles × this customer's rate, editable after.
-  const setMiles = (mi: number | null) => setForm((f) => {
-    const rate = rateFor(f.program);
-    return {
-      ...f,
-      miles: mi,
-      travel_charge: mi != null && rate > 0 ? Math.round(mi * rate * 100) / 100 : f.travel_charge,
-    };
-  });
-
+  /**
+   * Routed round trip, added as a trip of its own.
+   *
+   * It appends rather than overwriting, because a two-day job means two drives
+   * and the second should not wipe the first. Priced at this customer's rate,
+   * editable afterwards like any other row.
+   */
   const autoMiles = async () => {
     if (!homeBase || !form.address?.trim()) return;
     setCalcing(true);
     const mi = await roundTripMiles(homeBase, form.address.trim());
     setCalcing(false);
-    if (mi == null) toastError("Couldn't route that address — make sure it has street, city, and state.");
-    else setMiles(mi);
+    if (mi == null) {
+      toastError("Couldn't route that address — make sure it has street, city, and state.");
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      mileage_logs: [
+        ...(f.mileage_logs ?? []),
+        {
+          id: `auto${Date.now().toString(36)}`,
+          contractor_name: '',
+          miles: mi,
+          rate: rateFor(f.program),
+          note: 'Round trip',
+          on: f.visit_date ?? null,
+        },
+      ],
+    }));
+    toastSuccess(`Added a ${mi} mi round trip`);
   };
 
   // Sessions drive the times: hours = sum of completed stints, and
@@ -1548,45 +1579,50 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
                   </select>
                 </Field>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Round Trip Miles">
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input className="input" style={{ flex: 1, minWidth: 0 }} type="number" step="0.1" value={form.miles ?? ''} onChange={(e) => setMiles(e.target.value === '' ? null : Number(e.target.value))} />
-                    <button
-                      className="btn btn-ghost"
-                      disabled={calcing || !homeBase || !form.address?.trim()}
-                      title={!homeBase ? 'Set your home base on the Site Log first' : !form.address?.trim() ? 'Enter the site address first' : `Driving round trip from ${homeBase}`}
-                      onClick={autoMiles}
-                    >
-                      {calcing ? '…' : 'Auto'}
-                    </button>
-                  </div>
-                </Field>
-                <Field label={`Travel Charge $ (auto: miles × $${rateFor(form.program).toFixed(2)})`}><input className="input" type="number" step="0.01" value={form.travel_charge ?? ''} onChange={(e) => set('travel_charge', e.target.value === '' ? null : Number(e.target.value))} /></Field>
-              </div>
-
-              {/* Materials and other charges. These existed in the spreadsheet
-                  view and in the Line Total, but had no fields here at all, so
-                  parts fitted on a job could not be billed from the card. */}
-              <Field label="Materials Used">
-                <input className="input" value={form.materials_description ?? ''}
-                  onChange={(e) => set('materials_description', e.target.value || null)}
-                  placeholder="2× 4U rack shelf, 300ft CAT6…" />
+              {/* Trips and parts, one row each (migration-081).
+                  A job where the parts aren't on site means driving out, going
+                  for materials, and coming back another day. That is two round
+                  trips and a parts run, and a single Miles box could only ever
+                  record one of them. `syncVisitTotals` keeps miles /
+                  travel_charge / materials_cost in step with these rows, so the
+                  statement, the Excel export and the invoice builder are
+                  untouched by the change. */}
+              <Field label="Trips">
+                <MileageRows
+                  rows={form.mileage_logs ?? []}
+                  defaultRate={rateFor(form.program)}
+                  defaultDate={form.visit_date ?? null}
+                  onChange={(rows) => set('mileage_logs', rows)}
+                />
+                <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
+                  <button
+                    className="btn btn-ghost"
+                    disabled={calcing || !homeBase || !form.address?.trim()}
+                    title={!homeBase ? 'Set your home base on the Site Log first' : !form.address?.trim() ? 'Enter the site address first' : `Driving round trip from ${homeBase}`}
+                    onClick={autoMiles}
+                    style={{ fontSize: 12.5 }}
+                  >
+                    {calcing ? '…' : 'Auto round trip'}
+                  </button>
+                </div>
               </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Materials Cost $">
-                  <input className="input" type="number" step="0.01" inputMode="decimal"
-                    value={form.materials_cost ?? ''}
-                    onChange={(e) => set('materials_cost', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="0.00" />
-                </Field>
-                <Field label="Other Charges $ (permits, parking, rental)">
-                  <input className="input" type="number" step="0.01" inputMode="decimal"
-                    value={form.other_charges ?? ''}
-                    onChange={(e) => set('other_charges', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="0.00" />
-                </Field>
-              </div>
+
+              <Field label="Materials">
+                <MaterialRows
+                  rows={form.materials_used ?? []}
+                  defaultDate={form.visit_date ?? null}
+                  onChange={(rows) => set('materials_used', rows)}
+                />
+              </Field>
+
+              <VisitDayBreakdown visit={form} />
+
+              <Field label="Other Charges $ (permits, parking, rental)">
+                <input className="input" type="number" step="0.01" inputMode="decimal"
+                  value={form.other_charges ?? ''}
+                  onChange={(e) => set('other_charges', e.target.value === '' ? null : Number(e.target.value))}
+                  placeholder="0.00" />
+              </Field>
 
               <Field label="Notes"><textarea className="input" rows={3} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="What you did on site, punch list, follow-ups…" /></Field>
               {/* migration-050: the client-facing line. Notes are internal and can

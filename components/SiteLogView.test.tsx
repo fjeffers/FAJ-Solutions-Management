@@ -200,16 +200,43 @@ describe('Site Log visit editor', () => {
 
   // The spreadsheet carried these columns while the card had no fields at all,
   // so parts fitted on a job could not be billed from the card view.
+  // Materials and Trips became row editors in migration-081; the requirement is
+  // unchanged — everything the spreadsheet holds must be reachable here.
   it('has every field the spreadsheet has', async () => {
     const user = userEvent.setup();
     await openVisit(user);
     const labels = [...document.querySelectorAll('label')].map((l) => l.textContent ?? '');
     for (const needed of [
-      'Materials Used', 'Materials Cost', 'Other Charges',
+      'Materials', 'Trips', 'Other Charges',
       'Scope of Work', 'Additional Details',
     ]) {
       expect(labels.some((l) => l.includes(needed))).toBe(true);
     }
+  });
+
+  it('records more than one part, and more than one trip', async () => {
+    // Fred's job: drive out, find no materials, buy them, drive back to finish.
+    const user = userEvent.setup();
+    await openVisit(user);
+
+    await user.click(screen.getByRole('button', { name: /add materials/i }));
+    await user.click(screen.getByRole('button', { name: /add another item/i }));
+    expect(screen.getAllByPlaceholderText(/4U rack shelf/i)).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: /add a trip/i }));
+    await user.click(screen.getByRole('button', { name: /add another trip/i }));
+    expect(screen.getAllByPlaceholderText(/round trip, parts run/i)).toHaveLength(2);
+  });
+
+  it('totals the parts as they are entered', async () => {
+    const user = userEvent.setup();
+    await openVisit(user);
+    await user.click(screen.getByRole('button', { name: /add materials/i }));
+    const [qty] = screen.getAllByPlaceholderText('1');
+    const [each] = screen.getAllByPlaceholderText('0.00');
+    await user.clear(qty); await user.type(qty, '4');
+    await user.clear(each); await user.type(each, '12');
+    expect(screen.getByText('$48.00')).toBeTruthy();
   });
 
   it('names the work order a visit became, and links to it', async () => {

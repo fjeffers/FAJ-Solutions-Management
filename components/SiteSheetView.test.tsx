@@ -27,6 +27,7 @@ const visit = (over: Record<string, unknown>): SiteVisit => ({
   hours: 2, rate: '$55/hr', total_project_price: null, visit_type: 'T&M',
   invoice_status: 'not_invoiced', payment_status: 'unpaid',
   miles: 117.4, travel_charge: 58.7,
+  materials_used: [], mileage_logs: [],
   materials_description: null, materials_cost: null, other_charges: null,
   additional_details: null, notes: null, client_summary: null,
   work_order_id: null, customer_id: null, contractor_id: null, tech_ids: [],

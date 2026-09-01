@@ -207,11 +207,17 @@ export function billsAtMinimum(
  */
 export function visitAmount(
   v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price'>
-    & Partial<Pick<SiteVisit, 'materials_cost' | 'other_charges'>>,
+    & Partial<Pick<SiteVisit, 'materials_cost' | 'other_charges' | 'miles'
+                            | 'mileage_logs' | 'materials_used'>>,
 ): number {
   const li = visitLineItem(v);
   const labor = li.quantity * li.rate;
-  const extras = (v.travel_charge ?? 0) + (v.materials_cost ?? 0) + (v.other_charges ?? 0);
+  // Itemised drives and parts win over the single columns when they exist, so
+  // a two-trip, three-part visit bills what its rows actually say. With no
+  // rows these fall straight back to the old fields, unchanged.
+  const travel = visitMileageTotal(v as SiteVisit);
+  const materials = visitMaterialsTotal(v as SiteVisit);
+  const extras = travel + materials + (v.other_charges ?? 0);
   return Math.round((labor + extras) * 100) / 100;
 }
 
@@ -337,7 +343,8 @@ export function visitInvoiceTotal(lines: VisitLine[]): number {
  */
 export function workOrderMoneyFromVisit(
   v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price'>
-    & Partial<Pick<SiteVisit, 'miles' | 'materials_cost' | 'other_charges' | 'materials_description'>>,
+    & Partial<Pick<SiteVisit, 'miles' | 'materials_cost' | 'other_charges' | 'materials_description'
+                            | 'mileage_logs' | 'materials_used'>>,
   contractorName: string,
 ): {
   total_amount: number;
@@ -361,24 +368,42 @@ export function workOrderMoneyFromVisit(
   other_charges_note: string | null;
 } {
   const hourly = (v.rate ?? '').match(/\$?\s*(\d+(?:\.\d+)?)\s*\/\s*h/i);
-  const travel = Number(v.travel_charge ?? 0);
-  const miles = Number(v.miles ?? 0);
-  const materials = Number(v.materials_cost ?? 0);
+  const travel = visitMileageTotal(v as SiteVisit);
+  const miles = visitMilesTotal(v as SiteVisit);
+  const materials = visitMaterialsTotal(v as SiteVisit);
   const other = Number(v.other_charges ?? 0);
 
   // The materials the visit recorded are what the job consumed. Most of what
   // Fred buys stays HIS, so a row is not marked as the client's unless he says
   // so — it is his cost until then.
-  const materials_used: MaterialUsed[] = materials
-    ? [{
-        id: `sv-materials`,
-        material_id: null,
-        name: v.materials_description?.trim() || 'Materials',
-        quantity: 1,
-        unit_cost: materials,
-        client_pays: false,
-      }]
-    : [];
+  //
+  // An itemised visit carries its rows across one for one (migration-081):
+  // three parts bought on two different days stay three rows on the work
+  // order, with their flags and their dates. Squashing them into one line was
+  // exactly the detail that went missing before.
+  const rows = v.materials_used ?? [];
+  const materials_used: MaterialUsed[] = rows.length > 0
+    ? rows.map((r, i) => ({
+        id: r.id || `sv-materials-${i + 1}`,
+        material_id: r.material_id ?? null,
+        name: r.name?.trim() || 'Materials',
+        quantity: Number(r.quantity) || 0,
+        unit_cost: r.unit_cost ?? null,
+        client_pays: r.client_pays ?? false,
+        reimburse: r.reimburse,
+        bought_by: r.bought_by,
+        on: r.on,
+      }))
+    : materials
+      ? [{
+          id: 'sv-materials',
+          material_id: null,
+          name: v.materials_description?.trim() || 'Materials',
+          quantity: 1,
+          unit_cost: materials,
+          client_pays: false,
+        }]
+      : [];
 
   return {
     total_amount: visitAmount(v),
@@ -420,4 +445,156 @@ export function rateIsAmbiguous(
   if (/flat/i.test(text)) return false;          // says flat
   if (!/\d/.test(text)) return false;            // a note, not a price
   return Number(v.hours ?? 0) > 0;               // hours logged, so billing once is doubtful
+}
+
+// ── Multi-day visits, itemised mileage and materials (migration-081) ────────
+//
+// The job Fred described: go to site, the parts aren't there, drive off and
+// buy them, come back another day and finish. That is one visit, two days,
+// two round trips and at least one materials purchase — and until now the
+// visit had room for exactly one of each.
+//
+// Rows are the truth. The single columns (miles, travel_charge,
+// materials_cost) are kept as their totals so the statement, the Excel export
+// and the invoice builder keep working untouched.
+
+/** Miles driven across every logged drive, falling back to the single field. */
+export function visitMilesTotal(
+  v: Pick<SiteVisit, 'miles'> & Partial<Pick<SiteVisit, 'mileage_logs'>>,
+): number {
+  const rows = v.mileage_logs ?? [];
+  if (rows.length === 0) return Number(v.miles ?? 0) || 0;
+  return round2(rows.reduce((sum, r) => sum + (Number(r.miles) || 0), 0));
+}
+
+/** What the driving is worth, falling back to the single travel charge. */
+export function visitMileageTotal(
+  v: Pick<SiteVisit, 'travel_charge'> & Partial<Pick<SiteVisit, 'mileage_logs'>>,
+): number {
+  const rows = v.mileage_logs ?? [];
+  if (rows.length === 0) return Number(v.travel_charge ?? 0) || 0;
+  return round2(rows.reduce(
+    (sum, r) => sum + (Number(r.miles) || 0) * (Number(r.rate) || 0), 0,
+  ));
+}
+
+/** What the parts cost, falling back to the single materials cost. */
+export function visitMaterialsTotal(
+  v: Pick<SiteVisit, 'materials_cost'> & Partial<Pick<SiteVisit, 'materials_used'>>,
+): number {
+  const rows = v.materials_used ?? [];
+  if (rows.length === 0) return Number(v.materials_cost ?? 0) || 0;
+  return round2(rows.reduce(
+    (sum, r) => sum + (Number(r.quantity) || 0) * (Number(r.unit_cost) || 0), 0,
+  ));
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+export type VisitDay = {
+  /** YYYY-MM-DD */
+  date: string;
+  hours: number;
+  miles: number;
+  travel: number;
+  materials: number;
+};
+
+/** The local calendar date of a timestamp, as YYYY-MM-DD. */
+function dayOf(iso: string): string | null {
+  const t = new Date(iso);
+  if (isNaN(t.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+}
+
+/**
+ * A visit broken into the days it actually happened on, oldest first.
+ *
+ * Days come from wherever there is evidence of one: a clock-in, a drive, or a
+ * materials purchase. A second trip to fit parts bought the day before shows
+ * as its own day even if nobody clocked in for it.
+ *
+ * Hours are read off the session timestamps, so a stint that runs past
+ * midnight counts on the day it started — which is how the day is billed and
+ * how the tech would describe it.
+ */
+export function visitDays(
+  v: Pick<SiteVisit, 'visit_date' | 'sessions'>
+    & Partial<Pick<SiteVisit, 'mileage_logs' | 'materials_used'>>,
+): VisitDay[] {
+  const days = new Map<string, VisitDay>();
+  const touch = (date: string): VisitDay => {
+    let d = days.get(date);
+    if (!d) { d = { date, hours: 0, miles: 0, travel: 0, materials: 0 }; days.set(date, d); }
+    return d;
+  };
+
+  for (const s of v.sessions ?? []) {
+    if (!s.in) continue;
+    const date = dayOf(s.in);
+    if (!date) continue;
+    const d = touch(date);
+    if (s.out) {
+      const ms = new Date(s.out).getTime() - new Date(s.in).getTime();
+      if (ms > 0) d.hours = round2(d.hours + ms / 3600000);
+    }
+  }
+
+  for (const r of v.mileage_logs ?? []) {
+    const date = (r.on ?? '').slice(0, 10) || v.visit_date;
+    if (!date) continue;
+    const d = touch(date);
+    d.miles = round2(d.miles + (Number(r.miles) || 0));
+    d.travel = round2(d.travel + (Number(r.miles) || 0) * (Number(r.rate) || 0));
+  }
+
+  for (const r of v.materials_used ?? []) {
+    const date = (r.on ?? '').slice(0, 10) || v.visit_date;
+    if (!date) continue;
+    const d = touch(date);
+    d.materials = round2(d.materials + (Number(r.quantity) || 0) * (Number(r.unit_cost) || 0));
+  }
+
+  // A visit with a date but nothing logged against it is still one day.
+  if (days.size === 0 && v.visit_date) touch(v.visit_date);
+
+  return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** True when the work spilled over more than one calendar day. */
+export function isMultiDay(
+  v: Pick<SiteVisit, 'visit_date' | 'sessions'>
+    & Partial<Pick<SiteVisit, 'mileage_logs' | 'materials_used'>>,
+): boolean {
+  return visitDays(v).length > 1;
+}
+
+/**
+ * The single columns brought back into line with the rows.
+ *
+ * Call this whenever rows change, before saving. Everything downstream — the
+ * statement, the Excel export, the invoice builder, the work order conversion
+ * — reads miles / travel_charge / materials_cost, and they must not drift from
+ * what the rows say or the visit bills one figure and shows another.
+ */
+export function syncVisitTotals<T extends Partial<SiteVisit>>(v: T): T {
+  const rows = v.mileage_logs ?? [];
+  const mats = v.materials_used ?? [];
+  const out = { ...v };
+  if (rows.length > 0) {
+    out.miles = visitMilesTotal(v as SiteVisit);
+    out.travel_charge = visitMileageTotal(v as SiteVisit);
+  }
+  if (mats.length > 0) {
+    out.materials_cost = visitMaterialsTotal(v as SiteVisit);
+    // Keep the one-line description readable: name the parts, or count them.
+    const names = mats.map((m) => m.name?.trim()).filter(Boolean) as string[];
+    out.materials_description = names.length <= 2
+      ? names.join(', ')
+      : `${names[0]}, ${names[1]} +${names.length - 2} more`;
+  }
+  return out;
 }

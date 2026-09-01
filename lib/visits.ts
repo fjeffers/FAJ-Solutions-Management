@@ -598,3 +598,47 @@ export function syncVisitTotals<T extends Partial<SiteVisit>>(v: T): T {
   }
   return out;
 }
+
+/**
+ * Longer than anyone works in one stint.
+ *
+ * Not a billing rule — a smell test. A tech can pull a 12-hour day; nobody
+ * clocks 30 hours without going home, so a stint past this is a timer someone
+ * forgot to stop rather than work someone did.
+ */
+export const LONG_SESSION_HOURS = 16;
+
+export type SuspectSession = { in: string; out: string | null; hours: number | null };
+
+/**
+ * Stints that cannot be real work.
+ *
+ * On 2026-09-01 a Swedesboro visit carried a clock started on 31 July and
+ * closed on 1 September — 769.5 hours in one stint, 787.5 on the visit, which
+ * at $55/hr would have billed $43,312.50 for a $55 call. It sat there for a
+ * month and nothing said a word.
+ *
+ * Returns the offending stints so they can be named rather than just counted:
+ * an open clock (never stopped) or one that ran past LONG_SESSION_HOURS.
+ */
+export function suspectSessions(
+  v: Pick<SiteVisit, 'sessions'>,
+): SuspectSession[] {
+  const out: SuspectSession[] = [];
+  for (const s of v.sessions ?? []) {
+    if (!s.in) continue;
+    if (!s.out) { out.push({ in: s.in, out: null, hours: null }); continue; }
+    const ms = new Date(s.out).getTime() - new Date(s.in).getTime();
+    if (!isFinite(ms)) continue;
+    const hours = ms / 3600000;
+    if (hours > LONG_SESSION_HOURS) {
+      out.push({ in: s.in, out: s.out, hours: Math.round(hours * 10) / 10 });
+    }
+  }
+  return out;
+}
+
+/** True when a visit carries a stint that cannot be real work. */
+export function hoursLookWrong(v: Pick<SiteVisit, 'sessions'>): boolean {
+  return suspectSessions(v).length > 0;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, visitMilesTotal, visitMileageTotal, visitMaterialsTotal, visitDays, isMultiDay, syncVisitTotals, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, visitMilesTotal, visitMileageTotal, visitMaterialsTotal, visitDays, isMultiDay, syncVisitTotals, suspectSessions, hoursLookWrong, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
 
 import type { SiteVisit } from './types';
 
@@ -633,5 +633,41 @@ describe('a visit with no rows behaves exactly as it always did', () => {
     expect(synced.miles).toBe(100);
     expect(synced.materials_cost).toBe(30);
     expect(synced.materials_description).toBe('Cable');
+  });
+});
+
+describe('a clock somebody forgot to stop', () => {
+  // The real one: a Swedesboro visit with a stint from 31 July to 1 September.
+  // 787.5 hours on the visit, which at $55/hr bills $43,312.50 for a $55 call.
+  const runaway = {
+    sessions: [
+      { in: '2026-08-30T05:30:00.000Z', out: '2026-08-30T23:30:00.000Z' },
+      { in: '2026-07-31T10:30:00.000Z', out: '2026-09-01T12:00:00.000Z' },
+    ],
+  } as SiteVisit;
+
+  it('names the stint that cannot be real', () => {
+    const bad = suspectSessions(runaway);
+    expect(bad).toHaveLength(2);          // 18h and 769.5h both exceed 16h
+    expect(bad[1].hours).toBe(769.5);
+    expect(hoursLookWrong(runaway)).toBe(true);
+  });
+
+  it('flags a clock that was never stopped', () => {
+    const open = { sessions: [{ in: '2026-09-01T12:00:00Z', out: null }] } as SiteVisit;
+    expect(suspectSessions(open)).toEqual([{ in: '2026-09-01T12:00:00Z', out: null, hours: null }]);
+  });
+
+  it('leaves a long but believable day alone', () => {
+    // Twelve hours on site is a hard day, not a mistake.
+    const longDay = {
+      sessions: [{ in: '2026-09-01T11:00:00Z', out: '2026-09-01T23:00:00Z' }],
+    } as SiteVisit;
+    expect(hoursLookWrong(longDay)).toBe(false);
+  });
+
+  it('says nothing about a visit with no stints', () => {
+    expect(hoursLookWrong({ sessions: null } as SiteVisit)).toBe(false);
+    expect(hoursLookWrong({ sessions: [] } as unknown as SiteVisit)).toBe(false);
   });
 });

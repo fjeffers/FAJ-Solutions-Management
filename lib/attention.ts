@@ -14,7 +14,7 @@ import type {
   Contract, EnrichedWorkOrder, Invoice, InvoicePayment, Quote, SiteVisit, Survey,
 } from './types';
 import { surveyTotals, unpricedDevices, readyToQuote } from './surveys';
-import { visitAmount, rateIsAmbiguous } from './visits';
+import { visitAmount, rateIsAmbiguous, hoursLookWrong, suspectSessions } from './visits';
 import { todayISO } from './utils';
 
 export type AttentionKind =
@@ -23,7 +23,7 @@ export type AttentionKind =
   | 'contract_unsigned'
   | 'work_awaiting_review' | 'work_unbilled' | 'invoice_overdue'
   | 'tech_owed' | 'assignment_unanswered'
-  | 'visit_unbilled' | 'visit_rate_unclear';
+  | 'visit_unbilled' | 'visit_rate_unclear' | 'visit_hours_wrong';
 
 export type AttentionItem = {
   kind: AttentionKind;
@@ -279,6 +279,29 @@ export function attentionItems(input: AttentionInput): AttentionItem[] {
       title: `${unclear.length} ${plural(unclear.length, 'visit')} with an unclear rate`,
       detail: 'A rate with no "/hr" bills once for the whole visit — check these are right',
       count: unclear.length,
+      view: 'sitelog',
+    });
+  }
+
+  // ── A clock nobody stopped ───────────────────────────────────────────────
+  // The most expensive thing that can sit quietly in the site log. A stint
+  // running from 31 July to 1 September put 787.5 hours on a $55 call — over
+  // $43,000 if it had been invoiced — and nothing anywhere said a word.
+  const badHours = visits.filter(hoursLookWrong);
+  if (badHours.length > 0) {
+    const worst = badHours
+      .flatMap(suspectSessions)
+      .reduce((max, s) => Math.max(max, s.hours ?? 0), 0);
+    const atRisk = badHours.reduce((sum, v) => sum + visitAmount(v), 0);
+    items.push({
+      kind: 'visit_hours_wrong',
+      severity: 'money',
+      title: `${badHours.length} ${plural(badHours.length, 'visit')} with impossible hours`,
+      detail: worst > 0
+        ? `One stint runs ${Math.round(worst)} hours — would bill ${money(atRisk)}`
+        : `A clock was never stopped — would bill ${money(atRisk)}`,
+      count: badHours.length,
+      amount: atRisk,
       view: 'sitelog',
     });
   }

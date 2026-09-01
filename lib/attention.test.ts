@@ -337,3 +337,31 @@ describe('the site log reaching the dashboard', () => {
     expect(items.find((i) => i.kind === 'visit_rate_unclear')).toBeUndefined();
   });
 });
+
+describe('a clock nobody stopped', () => {
+  it('flags the visit and says what it would bill', () => {
+    // The real Swedesboro visit: a stint from 31 July to 1 September.
+    const items = attentionItems({
+      ...empty,
+      siteVisits: [visit({
+        rate: '$55/hr', hours: 787.5,
+        sessions: [{ in: '2026-07-31T10:30:00Z', out: '2026-09-01T12:00:00Z' }],
+      })],
+    });
+    const item = items.find((i) => i.kind === 'visit_hours_wrong')!;
+    expect(item.count).toBe(1);
+    expect(item.detail).toContain('770 hours');
+    expect(item.detail).toContain('$43,313');
+    expect(item.severity).toBe('money');
+  });
+
+  it('says nothing about an ordinary long day', () => {
+    const items = attentionItems({
+      ...empty,
+      siteVisits: [visit({
+        sessions: [{ in: '2026-08-20T11:00:00Z', out: '2026-08-20T23:00:00Z' }],
+      })],
+    });
+    expect(items.find((i) => i.kind === 'visit_hours_wrong')).toBeUndefined();
+  });
+});

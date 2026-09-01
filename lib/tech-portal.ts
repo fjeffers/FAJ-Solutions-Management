@@ -44,6 +44,24 @@ export async function fetchTechSummary(): Promise<TechSummary | null> {
 }
 
 /**
+ * Does this login belong in the tech portal rather than the owner app?
+ *
+ * True only for a contractor of a business they do not own. An owner who is
+ * also a contractor on their own jobs — which Fred is — stays in the owner
+ * app, because redirecting him would lock him out of his own business.
+ *
+ * The decision lives in the database (migration-082) so the app cannot get it
+ * subtly wrong, and it fails SAFE: any error leaves the person where they are
+ * rather than bouncing them somewhere they may not belong.
+ */
+export async function belongsInTechPortal(): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('belongs_in_tech_portal');
+  if (error) return false;
+  return data === true;
+}
+
+/**
  * Bind this login to its contractor record. Safe to call on every sign-in —
  * once linked it short-circuits. Returns false when no contractor matches, which
  * is how the login page tells a tech from Fred.

@@ -39,6 +39,7 @@ import PayablesView from '@/components/PayablesView';
 import LedgerView from '@/components/LedgerView';
 import GlobalSearch from '@/components/GlobalSearch';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
+import { belongsInTechPortal } from '@/lib/tech-portal';
 import ContractorModal from '@/components/ContractorModal';
 import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
@@ -186,6 +187,13 @@ export default function HomePage() {
   const loadCore = async (): Promise<boolean> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return false; }
+
+    // A tech signed in here belongs in their own portal, not the owner app.
+    // The login page already routed them there; this catches the session that
+    // was already open. Without it, a tech opening the app root got the full
+    // owner UI and everything they created was filed under their own account —
+    // invisible to Fred AND to the tech portal (migration-082).
+    if (await belongsInTechPortal()) { router.replace('/tech'); return false; }
 
     const [cRes, wRes, pRes, svRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),

@@ -27,7 +27,14 @@ export default function TechPortalPage() {
 
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
-  const [tab, setTab] = useState<Tab>('jobs');
+  // The installed app's "My pay" shortcut opens straight on that tab, so it is
+  // a real shortcut rather than one that lands on the same screen as the icon.
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === 'undefined') return 'jobs';
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return (['jobs', 'open', 'pay', 'chat', 'profile', 'paperwork'] as const)
+      .includes(t as Tab) ? (t as Tab) : 'jobs';
+  });
 
   const [profile, setProfile] = useState<TechProfile | null>(null);
   const [jobs, setJobs] = useState<TechJob[]>([]);

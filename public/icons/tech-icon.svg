@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- The tech portal's own mark. Deliberately the inverse of the owner app's
+       teal square with a gold F: gold ground, teal hard hat. On a phone home
+       screen the two sat side by side with identical icons, so a tech tapping
+       "FAJ" landed in an owner app they cannot sign into. -->
+  <rect width="512" height="512" rx="64" fill="#E4CC8F"/>
+  <path d="M136 322 C136 208 186 156 256 156 C326 156 376 208 376 322 Z" fill="#0D7377"/>
+  <rect x="100" y="322" width="312" height="48" rx="24" fill="#0D7377"/>
+  <rect x="238" y="120" width="36" height="44" rx="14" fill="#0D7377"/>
+</svg>

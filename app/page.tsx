@@ -75,14 +75,37 @@ function viewFromUrl(): View {
 
 // Which sidebar dropdown each view lives under — used to auto-open the right
 // section when navigating (including via search, dashboard links, or the URL).
+/**
+ * Which collapsible section a view lives in — 'daily' meaning none, because
+ * those five sit above the sections and are always on screen.
+ *
+ * The sidebar used to give a feature with 83 rows the same weight as one with
+ * none, and buried the Site Log fifth under Field Ops even though it is where
+ * every job starts. Only one section can be open at a time, so the ordinary
+ * round of Site Log → Work Order → pay the tech meant collapsing and opening
+ * a section at each step.
+ *
+ * So the daily loop is always visible and everything else is grouped by what
+ * it is for. Nothing was removed: every screen that existed still exists.
+ */
 const SECTION_OF_VIEW: Record<View, string> = {
-  dashboard: 'main', financials: 'main', customers: 'main', payments: 'main', payables: 'main', ledger: 'main', invoices: 'main',
-  // Field Ops holds the whole job pipeline, work orders through site log
-  surveys: 'fieldops', contracts: 'fieldops', workorders: 'fieldops', scheduling: 'fieldops', dispatch: 'fieldops', materials: 'fieldops', quotes: 'fieldops', network: 'fieldops', sitelog: 'fieldops', maintenance: 'fieldops', 'import-queue': 'fieldops',
-  contractors: 'contractors', 'contractor-analytics': 'contractors', 'portal-admin': 'contractors',
-  statements: 'reports', '1099': 'reports', w9: 'reports', quickbooks: 'reports',
+  // Always on screen — the round Fred actually does.
+  dashboard: 'daily', sitelog: 'daily', workorders: 'daily',
+  payables: 'daily', 'import-queue': 'daily',
+
+  payments: 'money', financials: 'money', ledger: 'money',
+  customers: 'money', quickbooks: 'money', invoices: 'money',
+
+  contractors: 'techs', 'contractor-analytics': 'techs', 'portal-admin': 'techs',
+  statements: 'techs', '1099': 'techs', w9: 'techs',
+
+  surveys: 'pipeline', quotes: 'pipeline', contracts: 'pipeline',
+  scheduling: 'pipeline', dispatch: 'pipeline',
+
+  materials: 'onsite', maintenance: 'onsite', network: 'onsite',
+
   settings: 'settings',
-};
+} as Record<View, string>;
 
 // Collapsible sidebar section. Open/closed state is owned by HomePage and
 // persisted to localStorage so the layout survives refreshes.
@@ -1278,24 +1301,26 @@ Go ahead?`)) return;
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
-          <NavSection title="Main" open={sectionOpen('main')} onToggle={() => toggleSection('main')}>
-            <NI k="dashboard"   icon={<BarChart3 size={15} />}    label="Dashboard" />
-            <NI k="financials"  icon={<TrendingUp size={15} />}   label="Financials" />
-            <NI k="customers"   icon={<Building2 size={15} />}    label="Customers" />
-            <NI k="payments"    icon={<CreditCard size={15} />}   label="Payments" />
-            <NI k="payables"    icon={<Wallet size={15} />}       label="Payables" />
-            <NI k="ledger"      icon={<BookOpen size={15} />}     label="Ledger" />
-            <NI k="invoices"    icon={<Receipt size={15} />}      label="Invoices" />
-          </NavSection>
-          {/* The job pipeline in working order: jobs arrive (Import), become
-              Work Orders, get Scheduled, dispatched, and logged on site. */}
-          <NavSection
-            title="Field Ops"
-            open={sectionOpen('fieldops')}
-            onToggle={() => toggleSection('fieldops')}
-            badge={pendingImportCount}
-          >
-            <NI k="workorders"  icon={<Briefcase size={15} />}    label="Work Orders" />
+          {/* The daily round, always on screen. Site Log first because that is
+              where a job starts: walk the site, turn it into a work order, pay
+              the tech. Those four plus the dashboard are ~90% of the use, and
+              they used to be spread across two collapsible sections that could
+              not both be open. */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 2,
+            paddingBottom: 12, marginBottom: 10,
+            borderBottom: '1px solid rgba(255,255,255,0.09)',
+          }}>
+            <div style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase',
+              color: 'rgba(255,255,255,0.35)', padding: '2px 12px 6px',
+            }}>
+              Every day
+            </div>
+            <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
+            <NI k="sitelog"    icon={<Timer size={15} />}     label="Site Log" />
+            <NI k="workorders" icon={<Briefcase size={15} />} label="Work Orders" />
+            <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
               <Inbox size={15} /> Import
               {pendingImportCount > 0 && (
@@ -1307,26 +1332,16 @@ Go ahead?`)) return;
                 </span>
               )}
             </button>
-            <NI k="scheduling" icon={<Calendar size={15} />} label="Scheduling" />
-            <NI k="dispatch" icon={<Map size={15} />} label="Dispatch Map" />
-            <NI k="sitelog" icon={<Timer size={15} />} label="Site Log" />
-            <NI k="maintenance" icon={<Wrench size={15} />} label="Maintenance" />
-            <NI k="materials" icon={<Package size={15} />} label="Materials" />
-            <NI k="surveys" icon={<ClipboardList size={15} />} label="Surveys" />
-            <NI k="quotes" icon={<FileSignature size={15} />} label="Quotes" />
-            <NI k="contracts" icon={<FileCheck2 size={15} />} label="Contracts" />
-            <NI k="network" icon={<Network size={15} />} label="Network" />
-          </NavSection>
-          <NavSection title="Contractors" open={sectionOpen('contractors')} onToggle={() => toggleSection('contractors')}>
-            <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
-            <NI k="contractor-analytics" icon={<Award size={15} />} label="Performance" />
-            <NI k="portal-admin" icon={<ShieldCheck size={15} />} label="Portal & Review" />
-          </NavSection>
-          <NavSection title="Reports" open={sectionOpen('reports')} onToggle={() => toggleSection('reports')}>
-            <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
-            <NI k="1099"        icon={<ClipboardCheck size={15} />} label="1099s" />
-            <NI k="w9"          icon={<BookOpen size={15} />}     label="W-9s" />
-            <NI k="quickbooks"  icon={<TrendingUp size={15} />}   label="QuickBooks" />
+          </div>
+
+          <NavSection title="Money" open={sectionOpen('money')} onToggle={() => toggleSection('money')}>
+            <NI k="payments"   icon={<CreditCard size={15} />} label="Payments Made" />
+            <NI k="financials" icon={<TrendingUp size={15} />} label="Financials" />
+            <NI k="ledger"     icon={<BookOpen size={15} />}   label="Ledger" />
+            <NI k="customers"  icon={<Building2 size={15} />}  label="Customers" />
+            <NI k="quickbooks" icon={<TrendingUp size={15} />} label="QuickBooks" />
+            {/* Client billing happens in QuickBooks and NetView, so these two
+                sit here rather than competing with the daily round. */}
             <a
               className="nav-btn"
               href={NETVIEW_FORM_URL}
@@ -1338,7 +1353,32 @@ Go ahead?`)) return;
             >
               <FileText size={15} /> NetView Invoice
             </a>
+            <NI k="invoices"   icon={<Receipt size={15} />}    label="Invoices" />
           </NavSection>
+
+          <NavSection title="Techs" open={sectionOpen('techs')} onToggle={() => toggleSection('techs')}>
+            <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
+            <NI k="contractor-analytics" icon={<Award size={15} />} label="Performance" />
+            <NI k="portal-admin" icon={<ShieldCheck size={15} />} label="Portal & Review" />
+            <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
+            <NI k="1099"        icon={<ClipboardCheck size={15} />} label="1099s" />
+            <NI k="w9"          icon={<BookOpen size={15} />}     label="W-9s" />
+          </NavSection>
+
+          <NavSection title="Winning work" open={sectionOpen('pipeline')} onToggle={() => toggleSection('pipeline')}>
+            <NI k="surveys"    icon={<ClipboardList size={15} />}  label="Surveys" />
+            <NI k="quotes"     icon={<FileSignature size={15} />}  label="Quotes" />
+            <NI k="contracts"  icon={<FileCheck2 size={15} />}     label="Contracts" />
+            <NI k="scheduling" icon={<Calendar size={15} />}       label="Scheduling" />
+            <NI k="dispatch"   icon={<Map size={15} />}            label="Dispatch Map" />
+          </NavSection>
+
+          <NavSection title="On site" open={sectionOpen('onsite')} onToggle={() => toggleSection('onsite')}>
+            <NI k="materials"   icon={<Package size={15} />} label="Materials" />
+            <NI k="maintenance" icon={<Wrench size={15} />}  label="Maintenance" />
+            <NI k="network"     icon={<Network size={15} />} label="Network" />
+          </NavSection>
+
           <NavSection title="Settings" open={sectionOpen('settings')} onToggle={() => toggleSection('settings')}>
             <NI k="settings"    icon={<Settings size={15} />}     label="Settings" />
           </NavSection>

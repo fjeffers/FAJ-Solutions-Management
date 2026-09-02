@@ -343,15 +343,23 @@ export default function HomePage() {
   );
 
   const stats = useMemo(() => {
-    // total = revenue (client prices); paid/remaining track payouts to techs
+    // total = revenue (client prices); paid/remaining track payouts to techs.
+    //
+    // What is still OWED counts live jobs only. A closed job with no pay split
+    // recorded falls back to "the tech gets the whole client price", so 27
+    // archived import stubs were adding $22,465 of debt that does not exist —
+    // and the alert panel above, which already excluded closed jobs, disagreed
+    // with this figure on the same screen.
+    const live  = enrichedWOs.filter((w) => !w.archived_at);
     const total = enrichedWOs.reduce((s, w) => s + Number(w.total_amount), 0);
     const paid  = enrichedWOs.reduce((s, w) => s + w.paid, 0);
     return {
-      total, paid, remaining: enrichedWOs.reduce((s, w) => s + w.remaining, 0),
-      paidCount:    enrichedWOs.filter((w) => w.payment_status === 'paid').length,
-      partialCount: enrichedWOs.filter((w) => w.payment_status === 'partial').length,
-      pendingCount: enrichedWOs.filter((w) => w.payment_status === 'pending').length,
-      jobCount:     enrichedWOs.length,
+      total, paid,
+      remaining: live.reduce((s, w) => s + w.remaining, 0),
+      paidCount:    live.filter((w) => w.payment_status === 'paid').length,
+      partialCount: live.filter((w) => w.payment_status === 'partial').length,
+      pendingCount: live.filter((w) => w.payment_status === 'pending').length,
+      jobCount:     live.length,
     };
   }, [enrichedWOs]);
 

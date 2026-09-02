@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { SiteVisit, SiteVisitType, VisitSession, FormulaColumn } from '@/lib/types';
 import { SITE_VISIT_TYPES } from '@/lib/types';
-import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit, syncVisitTotals } from '@/lib/visits';
+import { visitLineItem, visitAmount, billableHours, actualHours, hoursDisagree, readPricing, writePricing, type RateUnit, type Pricing, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit, syncVisitTotals, workOrderFieldsFromVisit } from '@/lib/visits';
 import { techsOn, techSummary, techNames, normalizeCrew, toggleTech } from '@/lib/visit-techs';
 import { laborOf } from '@/lib/site-sheet';
 import { deriveTimesAndHours } from '@/lib/visit-sync';
@@ -635,7 +635,13 @@ export default function SiteLogView() {
     const nextWo = nextFreeWorkOrderNumber((wos ?? []).map((w) => w.wo_number));
 
     const addr = extractWorkOrderFields(v.address ?? '');
-    const crew = techNames(techsOn(v, contractors));
+    const techs = techsOn(v, contractors);
+    const crew = techNames(techs);
+    // Everything the job should inherit from the visit it came from. The site
+    // log is the backbone: the conversion used to carry the money and the
+    // address and quietly drop the rest, so the work order read as a different
+    // record about the same site and the detail had to be typed twice.
+    const carried = workOrderFieldsFromVisit(v, techs);
     // Every part of the visit's money, each landing somewhere the work order
     // can actually show it.
     const money = workOrderMoneyFromVisit(v, crew || 'Unassigned');
@@ -643,22 +649,32 @@ export default function SiteLogView() {
     const { data: created, error } = await supabase.from('work_orders').insert({
       user_id: user.id,
       wo_number: nextWo,
-      // Carry the crew across. This used to be blank, so the tech recorded on
-      // the visit was lost the moment it became a work order.
-      contractor_name: techNames(techsOn(v, contractors)),
+      // The crew as a list, and who leads it. Only a joined name string went
+      // across before, so a two-tech visit became a job with nobody assignable.
+      contractor_name: carried.contractor_name,
+      contractor_names: carried.contractor_names,
+      lead_contractor_name: carried.lead_contractor_name,
       title: [v.program, v.site_name || v.site_code].filter(Boolean).join(' — ') || 'Site visit',
       customer_name: v.program ?? null,
+      // The join to the customer master. Losing it orphaned the job from the
+      // client record it plainly belongs to.
+      customer_id: carried.customer_id,
       client_reference: v.site_code ?? null,
-      description: [
-        `Converted from Site Log${v.visit_date ? ` — visit on ${v.visit_date}` : ''}${v.hours ? ` (${v.hours}h logged)` : ''}.`,
-        v.notes ?? '',
-      ].filter(Boolean).join('\n'),
+      description: carried.description,
+      // What the client reads, and what kind of work it was.
+      scope_of_work: carried.scope_of_work,
+      service_type: carried.service_type,
+      // The clock records, so the job knows when the crew was actually on site.
+      checked_in_at: carried.checked_in_at,
+      checked_out_at: carried.checked_out_at,
       site_name: v.site_name ?? null,
       site_address: addr.site_address ?? v.address ?? null,
       site_city: addr.site_city ?? null,
       site_state: addr.site_state ?? null,
       site_zip: addr.site_zip ?? null,
-      start_date: v.visit_date ?? null,
+      start_date: carried.start_date,
+      // A visit that ran more than one day gives the job its last day too.
+      end_date: carried.end_date,
       total_amount: money.total_amount,
       pay_type: money.pay_type,
       hourly_rate: money.hourly_rate,

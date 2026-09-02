@@ -21,7 +21,7 @@ export type AttentionKind =
   | 'survey_unquoted' | 'survey_unpriced'
   | 'quote_stale' | 'quote_unbuilt'
   | 'contract_unsigned'
-  | 'work_awaiting_review' | 'work_unbilled' | 'invoice_overdue'
+  | 'work_awaiting_review' | 'invoice_overdue'
   | 'tech_owed' | 'assignment_unanswered'
   | 'visit_unbilled' | 'visit_rate_unclear' | 'visit_hours_wrong';
 
@@ -176,30 +176,15 @@ export function attentionItems(input: AttentionInput): AttentionItem[] {
     });
   }
 
-  // ── Work finished but never invoiced ─────────────────────────────────────
-  // A work order is billed when its number appears on any invoice.
-  const billed = new Set<string>();
-  for (const inv of input.invoices) {
-    for (const id of inv.work_order_ids ?? []) billed.add(id);
-  }
-  const unbilled = input.workOrders.filter(
-    (w) => !w.archived_at
-      && (w.wo_status === 'Approved' || w.wo_status === 'Work Done' || w.wo_status === 'Paid')
-      && !billed.has(w.id)
-      && Number(w.total_amount || 0) > 0,
-  );
-  if (unbilled.length > 0) {
-    const value = unbilled.reduce((sum, w) => sum + Number(w.total_amount || 0), 0);
-    items.push({
-      kind: 'work_unbilled',
-      severity: 'money',
-      title: `${unbilled.length} finished ${plural(unbilled.length, 'job')} not invoiced`,
-      detail: `${money(value)} earned but never billed`,
-      count: unbilled.length,
-      amount: value,
-      view: 'invoices',
-    });
-  }
+  // ── Client billing does not happen here ──────────────────────────────────
+  // Fred bills clients through QuickBooks and the NetView portal, never from
+  // this app: three invoices exist and all three are still drafts, against
+  // $54k of work. A "finished but not invoiced" warning read off this app's
+  // invoice table was therefore permanently true and permanently useless, and
+  // it was reporting a backlog at him that did not exist.
+  //
+  // The site log's own invoice_status is different and is kept — Fred sets
+  // that flag himself, so it says what HE knows about what has been billed.
 
   // ── Invoices past due ────────────────────────────────────────────────────
   const paidByInvoice = new Map<string, number>();

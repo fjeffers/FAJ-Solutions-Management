@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, visitMilesTotal, visitMileageTotal, visitMaterialsTotal, visitDays, isMultiDay, syncVisitTotals, suspectSessions, hoursLookWrong, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, visitMilesTotal, visitMileageTotal, visitMaterialsTotal, visitDays, isMultiDay, syncVisitTotals, suspectSessions, hoursLookWrong, workOrderFieldsFromVisit, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
 
 import type { SiteVisit } from './types';
 
@@ -669,5 +669,81 @@ describe('a clock somebody forgot to stop', () => {
   it('says nothing about a visit with no stints', () => {
     expect(hoursLookWrong({ sessions: null } as SiteVisit)).toBe(false);
     expect(hoursLookWrong({ sessions: [] } as unknown as SiteVisit)).toBe(false);
+  });
+});
+
+describe('the site log is the backbone: a job inherits its visit', () => {
+  // Fred: "site logs is suppost to be the back bone for the work orders and
+  // when i create the site logs then create the work order all info should
+  // reflect on every way this my life line."
+  const crew = [{ id: 't1', name: 'Frederick Jeffers' }, { id: 't2', name: 'Bryant Knight' }];
+  const walked = {
+    program: "Wendy's", site_code: '9291', site_name: 'Swedesboro',
+    visit_date: '2026-09-01', visit_type: 'T&M',
+    customer_id: 'cust-77',
+    client_summary: 'Replaced two data drops and re-terminated the rack.',
+    additional_details: 'Gate code 4417, ask for Marcus',
+    notes: 'Long internal note pasted from the dispatch email.',
+    time_in: '2026-09-01T13:00:00Z', time_out: '2026-09-02T17:00:00Z',
+    hours: 6,
+    sessions: [
+      { in: '2026-09-01T13:00:00Z', out: '2026-09-01T15:00:00Z' },
+      { in: '2026-09-02T13:00:00Z', out: '2026-09-02T17:00:00Z' },
+    ],
+  } as unknown as SiteVisit;
+
+  const job = workOrderFieldsFromVisit(walked, crew);
+
+  it('keeps the customer link instead of orphaning the job', () => {
+    expect(job.customer_id).toBe('cust-77');
+  });
+
+  it('carries the whole crew, and who leads it', () => {
+    expect(job.contractor_names).toEqual(['Frederick Jeffers', 'Bryant Knight']);
+    expect(job.lead_contractor_name).toBe('Frederick Jeffers');
+    expect(job.contractor_name).toBe('Frederick Jeffers, Bryant Knight');
+  });
+
+  it('carries the client-facing scope, not the internal notes', () => {
+    expect(job.scope_of_work).toBe('Replaced two data drops and re-terminated the rack.');
+    expect(job.scope_of_work).not.toContain('dispatch email');
+  });
+
+  it('carries the visit type as the service type', () => {
+    expect(job.service_type).toBe('T&M');
+  });
+
+  it('carries the clock records', () => {
+    expect(job.checked_in_at).toBe('2026-09-01T13:00:00Z');
+    expect(job.checked_out_at).toBe('2026-09-02T17:00:00Z');
+  });
+
+  it('gives a multi-day visit both its first and last day', () => {
+    expect(job.start_date).toBe('2026-09-01');
+    expect(job.end_date).toBe('2026-09-02');
+  });
+
+  it('leaves end_date empty on a one-day visit', () => {
+    const oneDay = { ...walked, sessions: [walked.sessions![0]] } as SiteVisit;
+    expect(workOrderFieldsFromVisit(oneDay, crew).end_date).toBeNull();
+  });
+
+  it('takes the gate code and the on-site contact to the job', () => {
+    // The tech who turns up is the one who needs these.
+    expect(job.description).toContain('Gate code 4417, ask for Marcus');
+    expect(job.description).toContain('across 2 days');
+    expect(job.description).toContain('Long internal note');
+  });
+
+  it('says nothing about a scope that was never written', () => {
+    const bare = { ...walked, client_summary: null } as SiteVisit;
+    expect(workOrderFieldsFromVisit(bare, crew).scope_of_work).toBeNull();
+  });
+
+  it('survives a visit with no crew recorded', () => {
+    const solo = workOrderFieldsFromVisit(walked, []);
+    expect(solo.contractor_names).toEqual([]);
+    expect(solo.lead_contractor_name).toBeNull();
+    expect(solo.contractor_name).toBe('');
   });
 });

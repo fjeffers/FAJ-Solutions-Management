@@ -642,3 +642,70 @@ export function suspectSessions(
 export function hoursLookWrong(v: Pick<SiteVisit, 'sessions'>): boolean {
   return suspectSessions(v).length > 0;
 }
+
+/**
+ * Everything a work order should inherit from the visit it came from.
+ *
+ * The site log is the backbone: a visit is walked, then it becomes the job.
+ * The conversion used to carry the money and the address and quietly drop
+ * everything else — the customer link, who was actually on site, the scope of
+ * work the client reads, the clock records, the visit type, and the last day
+ * of a job that ran more than one. The work order then looked like a different
+ * record about the same site, and the detail had to be typed twice.
+ *
+ * Money stays in workOrderMoneyFromVisit. This is the rest of it, kept pure so
+ * the correspondence between the two records can be tested rather than trusted.
+ */
+export function workOrderFieldsFromVisit(
+  v: Pick<SiteVisit, 'program' | 'site_code' | 'site_name' | 'visit_date' | 'visit_type'
+                  | 'notes' | 'client_summary' | 'additional_details' | 'customer_id'
+                  | 'time_in' | 'time_out' | 'hours' | 'sessions'>
+    & Partial<Pick<SiteVisit, 'mileage_logs' | 'materials_used'>>,
+  crew: { id: string; name: string }[],
+): {
+  customer_id: string | null;
+  contractor_name: string;
+  contractor_names: string[];
+  lead_contractor_name: string | null;
+  scope_of_work: string | null;
+  service_type: string | null;
+  checked_in_at: string | null;
+  checked_out_at: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  description: string;
+} {
+  const names = crew.map((t) => t.name).filter(Boolean);
+  const days = visitDays(v as SiteVisit);
+  const first = days[0]?.date ?? v.visit_date ?? null;
+  const last = days.length > 1 ? days[days.length - 1].date : null;
+
+  // The client-facing line survives as the work order's scope. Falling back to
+  // notes would be wrong: notes can be a whole pasted email, and this is the
+  // field a client reads.
+  const scope = v.client_summary?.trim() || null;
+
+  // Gate codes and on-site contacts belong with the job, not left behind on
+  // the visit — the tech who shows up needs them.
+  const description = [
+    `Converted from Site Log${v.visit_date ? ` — visit on ${v.visit_date}` : ''}${
+      v.hours ? ` (${v.hours}h logged)` : ''}${
+      days.length > 1 ? ` across ${days.length} days` : ''}.`,
+    v.additional_details?.trim() ? `On site: ${v.additional_details.trim()}` : '',
+    v.notes?.trim() ?? '',
+  ].filter(Boolean).join('\n');
+
+  return {
+    customer_id: v.customer_id ?? null,
+    contractor_name: names.join(', '),
+    contractor_names: names,
+    lead_contractor_name: names[0] ?? null,
+    scope_of_work: scope,
+    service_type: v.visit_type ?? null,
+    checked_in_at: v.time_in ?? null,
+    checked_out_at: v.time_out ?? null,
+    start_date: first,
+    end_date: last,
+    description,
+  };
+}

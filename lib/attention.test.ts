@@ -149,22 +149,17 @@ describe('quotes', () => {
 });
 
 describe('money owed and money not asked for', () => {
-  it('flags finished work that was never invoiced', () => {
+  it('says nothing about a job having no invoice in this app', () => {
+    // Fred bills clients through QuickBooks and the NetView portal, never from
+    // here — three invoices exist and all three are still drafts against $54k
+    // of work. A warning read off this app's invoice table was permanently
+    // true and permanently useless, so it is gone. What HE marks as billed on
+    // a site visit is still reported; see 'the site log reaching the dashboard'.
     const items = attentionItems({
       ...empty,
       workOrders: [wo({ id: 'w1', wo_status: 'Approved', total_amount: 1840 })],
     });
-    const unbilled = items.find((i) => i.kind === 'work_unbilled')!;
-    expect(unbilled.amount).toBe(1840);
-  });
-
-  it('does not flag work already on an invoice', () => {
-    const items = attentionItems({
-      ...empty,
-      workOrders: [wo({ id: 'w1', wo_status: 'Approved', total_amount: 1840 })],
-      invoices: [invoice({ work_order_ids: ['w1'] })],
-    });
-    expect(items.find((i) => i.kind === 'work_unbilled')).toBeUndefined();
+    expect(items.some((i) => i.kind.includes('unbilled') && i.view === 'invoices')).toBe(false);
   });
 
   it('flags an overdue invoice for the unpaid balance only', () => {
@@ -236,9 +231,11 @@ describe('ordering and summary', () => {
   });
 
   it('sums the cash sitting still into one line', () => {
+    // $200 owed to a tech, plus a $1,000 overdue invoice.
     const items = attentionItems({
       ...empty,
-      workOrders: [wo({ id: 'a', wo_status: 'Approved', total_amount: 1000, remaining: 200 })],
+      workOrders: [wo({ id: 'a', remaining: 200 })],
+      invoices: [invoice({ id: 'i1', total: 1000, due_date: '2026-08-01' })],
     });
     expect(attentionSummary(items)).toContain('$1,200');
   });

@@ -74,7 +74,9 @@ export default function TechPortalPage() {
     router.replace('/tech/login');
   };
 
-  const { active, past } = useMemo(() => splitJobs(jobs), [jobs]);
+  // tech_my_jobs returns live work only (migration-083); splitJobs still runs
+  // so an older cached response cannot slip a finished job onto the screen.
+  const { active } = useMemo(() => splitJobs(jobs), [jobs]);
 
   // What is still unfiled. Fred cannot pay a tech with no W-9 on file, so this
   // is worth a badge rather than a page they have to think to visit.
@@ -251,7 +253,7 @@ export default function TechPortalPage() {
             : 'Profile'}
         </h2>
 
-        {tab === 'jobs' && <JobsTab active={active} past={past} onChanged={reloadJobs} />}
+        {tab === 'jobs' && <JobsTab active={active} onChanged={reloadJobs} onSeePay={() => setTab('pay')} />}
         {tab === 'open' && <TechOpenWork jobs={openJobs} onChanged={reloadJobs} />}
         {tab === 'pay' && <PayTab payments={payments} />}
         {tab === 'chat' && (
@@ -288,28 +290,39 @@ export default function TechPortalPage() {
 
 // ── Jobs ────────────────────────────────────────────────────────────────────
 
-function JobsTab({ active, past, onChanged }: {
-  active: TechJob[]; past: TechJob[]; onChanged: () => void;
+/**
+ * Live work only (migration-083).
+ *
+ * A finished or closed job leaves this list entirely rather than piling up
+ * underneath it. What a tech worked and was paid for is not lost — it is in
+ * Pay History, which names the work order, the site and the amount for every
+ * payout. This screen answers one question: what is still mine to do.
+ */
+function JobsTab({ active, onChanged, onSeePay }: {
+  active: TechJob[]; onChanged: () => void; onSeePay: () => void;
 }) {
   return (
     <>
-      <SectionHead>Active work{active.length > 0 && ` (${active.length})`}</SectionHead>
+      <SectionHead>Your work{active.length > 0 && ` (${active.length})`}</SectionHead>
       {active.length === 0 ? (
         <Empty>Nothing on your plate right now.</Empty>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {active.map((j) => <JobCard key={j.id} job={j} onChanged={onChanged} />)}
         </div>
       )}
 
-      <SectionHead>History{past.length > 0 && ` (${past.length})`}</SectionHead>
-      {past.length === 0 ? (
-        <Empty>Finished jobs stay here, with what you were paid.</Empty>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {past.map((j) => <JobCard key={j.id} job={j} onChanged={onChanged} />)}
-        </div>
-      )}
+      <button
+        onClick={onSeePay}
+        style={{
+          marginTop: 18, width: '100%', padding: '11px 0', borderRadius: 10,
+          border: '1px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.06)',
+          color: 'var(--teal)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+          fontFamily: 'Lato, sans-serif',
+        }}
+      >
+        Finished jobs and what you were paid →
+      </button>
     </>
   );
 }

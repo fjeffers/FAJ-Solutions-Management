@@ -1,7 +1,7 @@
 'use client';
 import { useState, useMemo } from 'react';
 import { Plus, Search, Edit2, Trash2, TrendingUp, DollarSign, Users, CreditCard, RefreshCw, CheckCircle2, Calendar, Wallet, Printer } from 'lucide-react';
-import { fmtMoney, fmtDate, contractorOwedOnWO } from '@/lib/utils';
+import { fmtMoney, fmtDate, contractorOwedOnWO, woPayoutTotal, hasPaySplit } from '@/lib/utils';
 import type { Payment, WorkOrder, Contractor } from '@/lib/types';
 import WOPaymentHistoryModal from './WOPaymentHistoryModal';
 
@@ -111,6 +111,10 @@ export default function PaymentsView({ payments, workOrders, contractors = [], o
       const names = (w.contractor_names && w.contractor_names.length > 0)
         ? w.contractor_names
         : (w.contractor_name ? [w.contractor_name] : []);
+      // No agreed pay means the share is UNKNOWN, not the client price. The
+      // legacy fallback valued it at the whole job, so an unpriced job read as
+      // a large debt to the tech — the same guard Payables already applies.
+      if (!hasPaySplit(w)) continue;
       for (const name of names) {
         const share = contractorOwedOnWO(w, name);
         if (share <= 0) continue;
@@ -376,11 +380,33 @@ export default function PaymentsView({ payments, workOrders, contractors = [], o
         {selectedWO && (
           <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.05)', border: '1px solid rgba(13,115,119,0.15)', display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
             <span style={{ fontWeight: 700, color: 'var(--teal)' }}>#{selectedWO.wo_number}{selectedWO.title ? ` — ${selectedWO.title}` : ''}</span>
-            <span>Job total: <strong>{fmtMoney(Number(selectedWO.total_amount))}</strong></span>
-            <span style={{ color: '#047857' }}>Paid: <strong>{fmtMoney(selectedWOPaid)}</strong></span>
-            <span style={{ color: Number(selectedWO.total_amount) - selectedWOPaid > 0 ? '#b91c1c' : '#047857' }}>
-              Remaining: <strong>{fmtMoney(Math.max(0, Number(selectedWO.total_amount) - selectedWOPaid))}</strong>
-            </span>
+            {/* Two sides of the ledger, kept apart. "Remaining" used to subtract
+                what the TECH was paid from what the CLIENT pays, which is not a
+                debt at all — it read the whole margin as money still owed. What
+                a tech is still owed is measured against their agreed pay. */}
+            <span>Client pays: <strong>{fmtMoney(Number(selectedWO.total_amount))}</strong></span>
+            {hasPaySplit(selectedWO) ? (() => {
+              const techPay = woPayoutTotal(selectedWO);
+              const owed = Math.max(0, techPay - selectedWOPaid);
+              const profit = Math.round((Number(selectedWO.total_amount) - techPay) * 100) / 100;
+              return (
+                <>
+                  <span style={{ color: '#b45309' }}>Tech gets: <strong>{fmtMoney(techPay)}</strong></span>
+                  <span style={{ color: '#047857' }}>Paid to tech: <strong>{fmtMoney(selectedWOPaid)}</strong></span>
+                  <span style={{ color: owed > 0 ? '#b91c1c' : '#047857' }}>
+                    Still owed: <strong>{fmtMoney(owed)}</strong>
+                  </span>
+                  <span style={{ color: profit >= 0 ? '#047857' : '#b91c1c' }}>
+                    Your profit: <strong>{fmtMoney(profit)}</strong>
+                  </span>
+                </>
+              );
+            })() : (
+              <>
+                <span style={{ color: '#047857' }}>Paid to tech: <strong>{fmtMoney(selectedWOPaid)}</strong></span>
+                <span style={{ color: '#b45309', fontWeight: 700 }}>Tech pay not set — profit unknown</span>
+              </>
+            )}
             <button style={{ fontSize: 11, color: '#b91c1c', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => setWoFilter('all')}>x Clear</button>
           </div>
         )}

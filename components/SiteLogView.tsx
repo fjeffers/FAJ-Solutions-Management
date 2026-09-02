@@ -23,7 +23,7 @@ import SiteSheetView from './SiteSheetView';
 import EmailModal, { type EmailPayload } from './EmailModal';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
 import { MileageRows, MaterialRows, VisitDayBreakdown } from './VisitItems';
-import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users, Archive, ArchiveRestore } from 'lucide-react';
+import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users, Archive, ArchiveRestore, CalendarDays } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
   'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
@@ -56,6 +56,36 @@ function toLocalInput(iso: string | null | undefined): string {
 // Each site/project keeps its own log: every visit to Roselle #5798 stacks
 // under one heading inside the customer's section. Grouped by site code
 // (name/address as fallback), newest activity first.
+//
+// Fred also works day by day — "what did I do on the 28th" — and grouping by
+// site scatters a single day's work across the page. dateGroupsOf answers that
+// question instead, and the Site Log lets him switch between the two.
+function dateGroupsOf(list: SiteVisit[]): { key: string; title: string; visits: SiteVisit[] }[] {
+  const m = new Map<string, SiteVisit[]>();
+  for (const v of list) {
+    const k = v.visit_date ?? 'undated';
+    m.set(k, [...(m.get(k) ?? []), v]);
+  }
+  return [...m.entries()]
+    .map(([key, visits]) => ({
+      key,
+      title: key === 'undated'
+        ? 'No date yet'
+        // Noon avoids the UTC-midnight shift that reads a date as the day before.
+        : new Date(`${key}T12:00:00`).toLocaleDateString('en-US', {
+            weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+          }),
+      visits: [...visits].sort((a, b) =>
+        (a.site_name ?? '').localeCompare(b.site_name ?? '')),
+    }))
+    // Undated last; everything else newest first.
+    .sort((a, b) => {
+      if (a.key === 'undated') return 1;
+      if (b.key === 'undated') return -1;
+      return b.key.localeCompare(a.key);
+    });
+}
+
 function siteGroupsOf(list: SiteVisit[]): { key: string; title: string; visits: SiteVisit[] }[] {
   const m = new Map<string, SiteVisit[]>();
   for (const v of list) {
@@ -97,6 +127,9 @@ export default function SiteLogView() {
   // Per-customer overrides (site_programs.mileage_rate); null = use default.
   const [programRates, setProgramRates] = useState<Record<string, number | null>>({});
   const [collapsedProgs, setCollapsedProgs] = useState<Set<string>>(new Set());
+  // Day by day is how the work actually happened, so it leads. Grouping by site
+  // is still a click away for "everything we have ever done at this store".
+  const [groupBy, setGroupBy] = useState<'date' | 'site'>('date');
   const [milesProgress, setMilesProgress] = useState<string | null>(null);
   /** Just id + name — the Site Log never needs pay or banking details. */
   const [contractors, setContractors] = useState<{ id: string; name: string }[]>([]);
@@ -823,6 +856,17 @@ export default function SiteLogView() {
             title={sheetMode ? 'Back to cards' : 'Edit every site in one grid, like a spreadsheet'}>
             {sheetMode ? <><LayoutGrid size={14} /> Cards</> : <><Table2 size={14} /> Spreadsheet</>}
           </button>
+          {!sheetMode && (
+            <button
+              className="btn btn-ghost"
+              onClick={() => setGroupBy((g) => (g === 'date' ? 'site' : 'date'))}
+              title={groupBy === 'date'
+                ? 'Currently day by day. Switch to grouping every visit by site.'
+                : 'Currently grouped by site. Switch to day by day.'}
+            >
+              <CalendarDays size={14} /> {groupBy === 'date' ? 'By date' : 'By site'}
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={() => setEditing({ visit_date: todayISO(), visit_type: 'T&M', invoice_status: 'not_invoiced', payment_status: 'unpaid' })}>
             <Plus size={14} /> Add Visit
           </button>
@@ -1053,7 +1097,7 @@ export default function SiteLogView() {
                   </button>
                 )}
               </div>
-              {!isCollapsed && siteGroupsOf(progVisits).map((sg) => (
+              {!isCollapsed && (groupBy === 'date' ? dateGroupsOf(progVisits) : siteGroupsOf(progVisits)).map((sg) => (
                 <div key={sg.key} style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: '#888', letterSpacing: 1, textTransform: 'uppercase', margin: '0 2px 8px' }}>
               {sg.title}

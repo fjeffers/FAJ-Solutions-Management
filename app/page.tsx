@@ -40,6 +40,7 @@ import LedgerView from '@/components/LedgerView';
 import GlobalSearch from '@/components/GlobalSearch';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
 import { belongsInTechPortal } from '@/lib/tech-portal';
+import { reassignWorkOrder, describeReassignment } from '@/lib/reassign';
 import ContractorModal from '@/components/ContractorModal';
 import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
@@ -666,6 +667,52 @@ export default function HomePage() {
   // FieldNation-style close: fully-paid jobs close as Paid; jobs closed early
   // close as Approved. Either way they leave the active board (archived, not
   // deleted — Ledger, Payments, and the Closed tab still have them).
+  /**
+   * Hand a job from one tech to another.
+   *
+   * The money rule is not obvious, so lib/reassign works it out and it is unit
+   * tested: whatever the outgoing tech has already been PAID stays theirs and
+   * they stay on the job for that share, and only the unpaid remainder
+   * transfers. Otherwise a part-paid job would be paid for twice.
+   */
+  const reassignJob = async (w: EnrichedWorkOrder, from: string, to: string) => {
+    const plan = reassignWorkOrder(w as unknown as WorkOrder, payments, from, to);
+    if (!plan) { toastError("That move doesn't work — check who is on the job."); return; }
+    if (!confirm(`${describeReassignment(plan, from, to)}
+
+Go ahead?`)) return;
+
+    const { error } = await supabase.from('work_orders').update({
+      contractor_name: plan.contractor_name,
+      contractor_names: plan.contractor_names,
+      lead_contractor_name: plan.lead_contractor_name,
+      contractor_pay: plan.contractor_pay,
+      assignment_responses: plan.assignment_responses,
+      updated_at: new Date().toISOString(),
+    }).eq('id', w.id);
+    if (error) { toastError(`Couldn't hand the job over: ${error.message}`); return; }
+
+    logAudit({ action: 'update', entityType: 'work_order', entityId: w.id,
+               entityLabel: `WO#${w.wo_number} reassigned ${from} → ${to}` });
+
+    // Tell the incoming tech, the same way a new assignment is announced.
+    const c = contractors.find((x) => x.name === to);
+    if (c?.email) {
+      notifyContractor({
+        type: 'wo_assigned',
+        contractor_email: c.email,
+        contractor_name: c.name,
+        wo_number: w.wo_number,
+        title: w.title ?? undefined,
+        wo_id: w.id,
+        portal_token: c.portal_token ?? null,
+        pay: plan.movedToIncoming,
+      });
+    }
+    toastSuccess(`WO#${w.wo_number} is ${to}'s now`);
+    loadAll();
+  };
+
   const closeWorkOrder = async (w: EnrichedWorkOrder) => {
     const finalStatus = w.remaining <= 0 && w.paid > 0 ? 'Paid' : 'Approved';
     const { error } = await supabase
@@ -1452,6 +1499,8 @@ export default function HomePage() {
             workOrders={enrichedWOs}
             stats={stats}
             contractors={contractors}
+            payments={payments}
+            onReassign={reassignJob}
             onAdd={() => setModal({ type: 'wo', item: null })}
             onAddFromAI={(fields) => setModal({ type: 'wo', item: null, prefill: fields })}
             onEdit={(w) => setModal({ type: 'wo', item: w })}

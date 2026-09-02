@@ -1,8 +1,9 @@
 'use client';
-import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { reassignWorkOrder, describeReassignment } from '@/lib/reassign';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer, UserCog } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO, workOrderBreakdownText } from '@/lib/utils';
-import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor } from '@/lib/types';
+import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor, Payment } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
 
@@ -30,7 +31,7 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob,
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [],
 }: {
   workOrders: EnrichedWorkOrder[];
   /** Pre-fill the search, so a link can point at one work order. */
@@ -49,8 +50,13 @@ export default function WorkOrdersView({
   onArchive: (id: string) => void;
   onUnarchive: (id: string) => void;
   onCloseJob: (w: EnrichedWorkOrder) => void;
+  /** Hand a job from one tech to another. */
+  onReassign: (w: EnrichedWorkOrder, from: string, to: string) => Promise<void>;
+  /** Needed to know what each tech has already been paid on a job. */
+  payments?: Payment[];
 }) {
   const [aiOpen, setAiOpen] = useState(false);
+  const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
   // looking at that work order rather than at a list to hunt through.
   const [search, setSearch] = useState(initialSearch);
@@ -196,11 +202,20 @@ export default function WorkOrdersView({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} onCloseJob={onCloseJob} siteVisits={siteVisits} />)}
+          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} onCloseJob={onCloseJob} siteVisits={siteVisits} onReassign={() => setReassigning(w)} />)}
         </div>
       )}
 
       {emailPayload && <EmailModal payload={emailPayload} onClose={() => setEmailPayload(null)} />}
+      {reassigning && (
+        <ReassignModal
+          wo={reassigning}
+          contractors={contractors}
+          payments={payments}
+          onClose={() => setReassigning(null)}
+          onConfirm={async (from, to) => { await onReassign(reassigning, from, to); setReassigning(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -228,6 +243,7 @@ function WOCard({
   onArchive,
   onUnarchive,
   onCloseJob,
+  onReassign,
   siteVisits = [],
 }: {
   w: EnrichedWorkOrder;
@@ -243,6 +259,7 @@ function WOCard({
   onArchive: (id: string) => void;
   onUnarchive: (id: string) => void;
   onCloseJob: (w: EnrichedWorkOrder) => void;
+  onReassign: () => void;
 }) {
   const visitsForWO = siteVisits.filter((v) => v.work_order_id === w.id);
   const breakdownText = workOrderBreakdownText(w);
@@ -393,6 +410,15 @@ function WOCard({
                 }}
               >
                 <CheckCircle2 size={11} /> Close
+              </button>
+            )}
+            {!isArchived && (w.contractor_names?.length || w.contractor_name) && (
+              <button
+                className="icon-btn"
+                title="Hand this job to another tech"
+                onClick={(e) => { e.stopPropagation(); onReassign(); }}
+              >
+                <UserCog size={14} />
               </button>
             )}
             <button className="icon-btn" onClick={() => onEdit(w)} title="Edit"><Edit2 size={14} /></button>
@@ -578,6 +604,90 @@ function AIGenerateModal({
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={generate} disabled={loading || !prompt.trim()}>
             {loading ? 'Generating…' : 'Generate'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Handing a job from one tech to another.
+ *
+ * Shows what the move will actually do to the money BEFORE it happens, because
+ * the answer is not obvious: a tech already part-paid keeps what they were
+ * paid and stays on the job for that share, and only the unpaid remainder
+ * transfers. All of that is worked out and tested in lib/reassign.
+ */
+function ReassignModal({ wo, contractors, payments, onClose, onConfirm }: {
+  wo: EnrichedWorkOrder;
+  contractors: Contractor[];
+  payments: Payment[];
+  onClose: () => void;
+  onConfirm: (from: string, to: string) => Promise<void>;
+}) {
+  const crew = (wo.contractor_names && wo.contractor_names.length > 0)
+    ? wo.contractor_names
+    : [wo.contractor_name].filter(Boolean);
+  const [from, setFrom] = useState(crew[0] ?? '');
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const plan = useMemo(
+    () => (from && to ? reassignWorkOrder(wo as unknown as WorkOrder, payments, from, to) : null),
+    [wo, payments, from, to],
+  );
+
+  const available = contractors
+    .map((c) => c.name)
+    .filter((n) => n && !crew.includes(n))
+    .sort((a, b) => a.localeCompare(b));
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}
+      onClick={onClose}
+    >
+      <div className="modal-solid" style={{ maxWidth: 460, width: '100%', padding: 22, borderRadius: 14 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+          <div className="serif" style={{ fontSize: 20, fontWeight: 600 }}>Hand this job over</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
+        </div>
+        <div style={{ fontSize: 12.5, color: '#777', marginBottom: 16 }}>
+          WO #{wo.wo_number}{wo.title ? ` · ${wo.title}` : ''}
+        </div>
+
+        <label className="stat-label" style={{ display: 'block', marginBottom: 5 }}>Take it off</label>
+        <select className="input" value={from} onChange={(e) => setFrom(e.target.value)} style={{ marginBottom: 13 }}>
+          {crew.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+
+        <label className="stat-label" style={{ display: 'block', marginBottom: 5 }}>Give it to</label>
+        <select className="input" value={to} onChange={(e) => setTo(e.target.value)} style={{ marginBottom: 13 }}>
+          <option value="">Choose a tech…</option>
+          {available.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+
+        {plan && (
+          <div style={{
+            padding: '11px 13px', borderRadius: 10, fontSize: 12.5, lineHeight: 1.55,
+            background: 'rgba(13,115,119,0.07)', color: '#0a5a5d', marginBottom: 14,
+          }}>
+            {describeReassignment(plan, from, to)}
+            <div style={{ marginTop: 6, color: '#666' }}>
+              {to} will be asked to accept or decline — they do not inherit anyone else&apos;s answer.
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            className="btn btn-primary"
+            disabled={!plan || busy}
+            onClick={async () => { setBusy(true); await onConfirm(from, to); setBusy(false); }}
+          >
+            {busy ? 'Moving…' : 'Hand it over'}
           </button>
         </div>
       </div>

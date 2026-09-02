@@ -1557,7 +1557,7 @@ Go ahead?`)) return;
               // Strip identity + computed fields so saveWorkOrder does an INSERT, not UPDATE.
               // materials_used stays behind too — it records what THAT job consumed.
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const { id, created_at, updated_at, paid, remaining, payment_status, payout_total, archived_at, materials_used, mileage_logs, ...copy } = w;
+              const { id, created_at, updated_at, paid, remaining, payment_status, payout_total, pay_set, archived_at, materials_used, mileage_logs, ...copy } = w;
               setModal({ type: 'wo', item: { ...copy, wo_number: '' } as WorkOrder });
             }}
             onPay={handlePayWO}

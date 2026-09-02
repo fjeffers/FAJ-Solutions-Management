@@ -10,15 +10,20 @@ const pay = (over: Partial<Payment>): Payment =>
   ({ wo_number: '1001', amount: 0, payment_date: '2026-01-02', ...over } as Payment);
 
 describe('enrichWorkOrders', () => {
+  // These state the tech's pay outright. They used to rely on the legacy
+  // "no split means the tech gets the whole client price" guess to supply a
+  // payout figure, which is exactly the assumption that made every unpriced
+  // job show a fictional debt and $0 profit.
+
   it('marks a WO with no payments as pending with full amount remaining', () => {
-    const [e] = enrichWorkOrders([wo({ total_amount: 500 })], []);
+    const [e] = enrichWorkOrders([wo({ total_amount: 500, contractor_pay: { Tech: 500 } })], []);
     expect(e.payment_status).toBe('pending');
     expect(e.paid).toBe(0);
     expect(e.remaining).toBe(500);
   });
 
   it('marks a partially paid WO as partial and tracks remaining', () => {
-    const [e] = enrichWorkOrders([wo({ total_amount: 500 })], [pay({ amount: 200 })]);
+    const [e] = enrichWorkOrders([wo({ total_amount: 500, contractor_pay: { Tech: 500 } })], [pay({ amount: 200 })]);
     expect(e.payment_status).toBe('partial');
     expect(e.paid).toBe(200);
     expect(e.remaining).toBe(300);
@@ -26,7 +31,7 @@ describe('enrichWorkOrders', () => {
 
   it('sums multiple payments for the same WO', () => {
     const [e] = enrichWorkOrders(
-      [wo({ total_amount: 500 })],
+      [wo({ total_amount: 500, contractor_pay: { Tech: 500 } })],
       [pay({ amount: 200 }), pay({ amount: 150 }), pay({ amount: 150 })],
     );
     expect(e.payment_status).toBe('paid');
@@ -35,15 +40,15 @@ describe('enrichWorkOrders', () => {
   });
 
   it('never reports negative remaining on overpayment', () => {
-    const [e] = enrichWorkOrders([wo({ total_amount: 100 })], [pay({ amount: 150 })]);
+    const [e] = enrichWorkOrders([wo({ total_amount: 100, contractor_pay: { Tech: 100 } })], [pay({ amount: 150 })]);
     expect(e.payment_status).toBe('paid');
     expect(e.remaining).toBe(0);
   });
 
   it('only counts payments matching the WO number', () => {
     const [a, b] = enrichWorkOrders(
-      [wo({ wo_number: '1001', total_amount: 100, created_at: '2026-01-02T00:00:00Z' }),
-       wo({ wo_number: '1002', total_amount: 100, created_at: '2026-01-01T00:00:00Z' })],
+      [wo({ wo_number: '1001', total_amount: 100, contractor_pay: { Tech: 100 }, created_at: '2026-01-02T00:00:00Z' }),
+       wo({ wo_number: '1002', total_amount: 100, contractor_pay: { Tech: 100 }, created_at: '2026-01-01T00:00:00Z' })],
       [pay({ wo_number: '1002', amount: 100 })],
     );
     // sorted newest-first: a = 1001, b = 1002
@@ -54,7 +59,7 @@ describe('enrichWorkOrders', () => {
 
   it('handles string amounts from the database', () => {
     const [e] = enrichWorkOrders(
-      [wo({ total_amount: 300 })],
+      [wo({ total_amount: 300, contractor_pay: { Tech: 300 } })],
       [pay({ amount: '100.50' as unknown as number }), pay({ amount: '99.50' as unknown as number })],
     );
     expect(e.paid).toBe(200);
@@ -158,6 +163,8 @@ describe('client price vs tech pay', () => {
 describe('mileage in owed math', () => {
   const mileageWO = wo({
     contractor_name: 'Jere', total_amount: 400,
+    // Jere's labour, stated rather than guessed from the client price.
+    contractor_pay: { Jere: 400 },
     mileage_logs: [
       { id: 'm1', contractor_name: 'Jere', miles: 50, rate: 0.7, note: null },
     ],
@@ -541,5 +548,50 @@ describe('a pay line does hours or miles as readily as a flat figure', () => {
     ];
     expect(billableAddons(lines)).toBe(168.7);      // what Wendy's pays
     expect(payAddonsTotal(lines)).toBe(109.64);     // 110 labour − 0.36 tax
+  });
+});
+
+describe('a job with no agreed tech pay', () => {
+  // Eight of Fred's nine live jobs were in this state. The app assumed the tech
+  // got the entire client price, so a $1,138.25 Wendy's job read as $1,138.25
+  // owed and $0 profit — on work nobody had been paid a penny for.
+  it('states no debt, because nobody has agreed a figure', () => {
+    const [e] = enrichWorkOrders([wo({ total_amount: 1138.25, contractor_pay: null })], []);
+    expect(e.pay_set).toBe(false);
+    expect(e.remaining).toBe(0);
+    expect(e.payout_total).toBe(0);
+  });
+
+  it('is never called settled while the figure is missing', () => {
+    const [e] = enrichWorkOrders(
+      [wo({ total_amount: 500, contractor_pay: null })],
+      [pay({ amount: 500 })],
+    );
+    expect(e.payment_status).toBe('pending');
+  });
+
+  it('still owes the tech what they laid out', () => {
+    // Mileage and materials are money the tech actually spent. Those are known
+    // even when the labour is not, so they must not vanish with the guess.
+    const [e] = enrichWorkOrders([wo({
+      total_amount: 800,
+      contractor_pay: null,
+      mileage_logs: [{ id: 'm', contractor_name: 'Tech', miles: 100, rate: 0.5, note: null }],
+    })], []);
+    expect(e.pay_set).toBe(false);
+    expect(e.payout_total).toBe(50);
+    expect(e.remaining).toBe(50);
+  });
+
+  it('reports a real figure the moment one is entered', () => {
+    const [e] = enrichWorkOrders(
+      [wo({ total_amount: 1138.25, contractor_pay: { 'Frederick Jeffers': 400 } })],
+      [],
+    );
+    expect(e.pay_set).toBe(true);
+    expect(e.payout_total).toBe(400);
+    expect(e.remaining).toBe(400);
+    // and the profit the card shows
+    expect(Math.round((1138.25 - e.payout_total) * 100) / 100).toBe(738.25);
   });
 });

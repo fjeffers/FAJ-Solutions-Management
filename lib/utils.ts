@@ -31,6 +31,22 @@ export function billableExtras(
 }
 
 // The techs' pay pool for a WO (before mileage)
+/**
+ * Has a real tech pay figure been recorded on this job?
+ *
+ * The difference is the whole margin. With no figure the app used to assume
+ * the tech gets the entire client price, so a $1,138 Wendy's job read as
+ * $1,138 owed and $0 profit — on a job Fred had not paid a penny on yet. Eight
+ * of nine live jobs were in that state.
+ *
+ * Payables already refused to raise a payable without one (a guess like that
+ * produced $9,125 of payments that never happened on 7 Aug 2026). Everything
+ * else kept believing it.
+ */
+export function hasPaySplit(wo: Pick<WorkOrder, 'contractor_pay'>): boolean {
+  return Boolean(wo.contractor_pay && Object.keys(wo.contractor_pay).length > 0);
+}
+
 export function woTechPayTotal(wo: WorkOrder): number {
   if (wo.contractor_pay && Object.keys(wo.contractor_pay).length > 0) {
     return Object.values(wo.contractor_pay).reduce((s, v) => s + (Number(v) || 0), 0);
@@ -54,6 +70,19 @@ export function woPayoutTotal(wo: WorkOrder): number {
 }
 
 // What FAJ keeps: client price minus tech pay and mileage
+/**
+ * What the job makes — or null when nobody has said what the tech gets.
+ *
+ * Null is the honest answer to an unanswered question. Reporting $0 made a
+ * profitable job look break-even; reporting the full client price would make
+ * an unpaid job look like pure margin. Callers show "not set" and offer to
+ * fix it, rather than printing either lie.
+ */
+export function woProfitOrNull(wo: WorkOrder): number | null {
+  if (!hasPaySplit(wo)) return null;
+  return Math.round((Number(wo.total_amount) - woPayoutTotal(wo)) * 100) / 100;
+}
+
 export function woProfit(wo: WorkOrder): number {
   // Rounded to the cent: this is money on screen, and a subtraction of two
   // decimals otherwise reads as 58.69999999999999.
@@ -88,11 +117,30 @@ export function enrichWorkOrders(workOrders: WorkOrder[], payments: Payment[]): 
       const paid = payments
         .filter((p) => p.wo_number === wo.wo_number)
         .reduce((s, p) => s + Number(p.amount), 0);
-      const payout_total = woPayoutTotal(wo);
+      // With no agreed tech pay there is no debt to state. Valuing the tech's
+      // share at the whole client price turned every unpriced job into a large
+      // fictional payable — $22,465 of it across the archived import stubs
+      // alone — and made the profit on real work read as exactly zero.
+      const pay_set = hasPaySplit(wo);
+      // With no agreed labour figure, what the tech is owed is UNKNOWN — but
+      // what they laid out is not. Mileage, materials and add-ons are real
+      // money they are owed back whether or not the labour has been settled,
+      // so those still count; only the guessed labour drops out.
+      const payout_total = pay_set
+        ? woPayoutTotal(wo)
+        : Math.round((
+            mileageReimbursement(wo.mileage_logs)
+            + materialsReimbursement(wo.materials_used)
+            + payAddonsTotal(wo.pay_addons)
+          ) * 100) / 100;
       const remaining = Math.max(0, payout_total - paid);
       const payment_status: 'paid' | 'partial' | 'pending' =
-        paid <= 0 ? 'pending' : paid >= payout_total ? 'paid' : 'partial';
-      return { ...wo, paid, remaining, payment_status, payout_total };
+        // Nothing can be called settled while the labour figure is missing.
+        !pay_set ? 'pending'
+        : paid <= 0 ? 'pending'
+        : paid >= payout_total ? 'paid'
+        : 'partial';
+      return { ...wo, paid, remaining, payment_status, payout_total, pay_set };
     })
   ) as EnrichedWorkOrder[];
 }

@@ -271,6 +271,11 @@ export type EnrichedWorkOrder = WorkOrder & {
   payment_status: 'paid' | 'partial' | 'pending';
   // Job price + mileage reimbursements — what "paid in full" means for this WO
   payout_total: number;
+  /**
+   * Has a real tech pay figure been recorded? When false the payout is
+   * UNKNOWN, not zero and not the client price — see hasPaySplit.
+   */
+  pay_set: boolean;
 };
 
 // ─── Payment ──────────────────────────────────────────────────────────────────

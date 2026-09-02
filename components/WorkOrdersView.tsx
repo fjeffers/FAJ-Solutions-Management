@@ -479,25 +479,53 @@ function WOCard({
               label={[fmtDate(w.start_date), w.start_time].filter(Boolean).join(' ')}
             />
           )}
-          {/* Amount + pay breakdown */}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 20, alignItems: 'flex-end' }}>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: '#aaa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>Total</div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', fontFamily: 'Lato, sans-serif' }}>
-                {fmtMoney(Number(w.total_amount))}
-              </div>
-              <div style={{ fontSize: 10, color: '#aaa' }}>{w.pay_type}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: '#aaa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>Paid</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#047857' }}>{fmtMoney(w.paid)}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: '#aaa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>Due</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: w.remaining > 0 ? '#b91c1c' : '#047857' }}>
-                {fmtMoney(w.remaining)}
-              </div>
-            </div>
+          {/* What the client pays, what the tech gets, and what is left — the
+              three numbers the business actually runs on. The card used to show
+              Total / Paid / Due, which never said what the job MADE.
+
+              With no tech pay recorded the middle number is unknown, so it says
+              so and offers to fix it. Printing $0 profit (the old behaviour) or
+              the whole client price would each be a different lie. */}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 18, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <Money label="Client pays" value={fmtMoney(Number(w.total_amount))} big sub={w.pay_type} />
+
+            {w.pay_set ? (
+              <>
+                <Money
+                  label="Tech gets"
+                  value={fmtMoney(w.payout_total)}
+                  color="#b45309"
+                  sub={w.remaining > 0 ? `${fmtMoney(w.remaining)} still due` : 'paid in full'}
+                />
+                {(() => {
+                  const profit = Math.round((Number(w.total_amount) - w.payout_total) * 100) / 100;
+                  return (
+                    <Money
+                      label="Your profit"
+                      value={fmtMoney(profit)}
+                      color={profit >= 0 ? '#047857' : '#b91c1c'}
+                      sub={profit < 0 ? 'paid out more than billed' : undefined}
+                    />
+                  );
+                })()}
+              </>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit(w); }}
+                title="No tech pay recorded, so this job's profit is unknown. Set it here."
+                style={{
+                  textAlign: 'left', border: '1px dashed rgba(180,83,9,0.45)', background: 'rgba(245,158,11,0.07)',
+                  borderRadius: 9, padding: '6px 11px', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >
+                <div style={{ fontSize: 10, color: '#b45309', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  Tech pay not set
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>
+                  Profit unknown — set it
+                </div>
+              </button>
+            )}
           </div>
         </div>
 
@@ -691,6 +719,26 @@ function ReassignModal({ wo, contractors, payments, onClose, onConfirm }: {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** One figure on a work order card, with its label and an optional note under it. */
+function Money({ label, value, color, sub, big }: {
+  label: string; value: string; color?: string; sub?: string; big?: boolean;
+}) {
+  return (
+    <div style={{ textAlign: 'right' }}>
+      <div style={{ fontSize: 11, color: '#aaa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: big ? 16 : 14, fontWeight: big ? 800 : 700,
+        color: color ?? '#1a1a1a', fontFamily: 'Lato, sans-serif',
+      }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 10, color: '#aaa' }}>{sub}</div>}
     </div>
   );
 }

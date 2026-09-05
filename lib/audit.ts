@@ -14,12 +14,18 @@ export async function logAudit(params: {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
 
-  await supabase.from('audit_log').insert({
+  // The table stores the label and the changed fields together in `details`.
+  // It has no entity_label/changes columns of its own — writing those made
+  // PostgREST reject every single audit row with a 400, so nothing was being
+  // recorded at all. Keep this shape matched to the table.
+  const { error } = await supabase.from('audit_log').insert({
     user_id: user.id,
     action: params.action,
     entity_type: params.entityType,
     entity_id: params.entityId ?? null,
-    entity_label: params.entityLabel,
-    changes: params.changes ?? {},
+    details: { label: params.entityLabel, ...(params.changes ?? {}) },
   });
+  // An audit row is a record of work, not the work itself: never block a save
+  // on it, but do not swallow the failure in silence either.
+  if (error) console.warn('[audit] could not record', params.action, params.entityType, error.message);
 }

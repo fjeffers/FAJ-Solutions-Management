@@ -49,6 +49,7 @@ import { logAudit } from '@/lib/audit';
 import { notifyContractor, sendPortalLink, sendOnboarding } from '@/lib/notify';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { stockAdjustments } from '@/lib/materials-used';
+import type { StockInPlan } from '@/lib/stock-in';
 import { quoteFromSurvey } from '@/lib/surveys';
 import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
@@ -923,18 +924,31 @@ Go ahead?`)) return;
   // ── Materials ──────────────────────────────────────────────────────────────
 
   const saveMaterial = async (m: Partial<Material>) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    // Every failure here used to be silent: no user meant a bare return, and a
+    // thrown request meant nothing at all. Clicking Save and seeing nothing
+    // happen is the worst possible answer, so each path now says something.
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      toastError('You appear to be signed out — refresh the page and sign in again');
+      return;
+    }
+    if (!m.name?.trim()) { toastError('An item needs a name'); return; }
     const payload = {
-      name: m.name!, description: m.description ?? null, category: m.category ?? null,
+      name: m.name.trim(), description: m.description ?? null, category: m.category ?? null,
       unit: m.unit || 'each', stock_quantity: Number(m.stock_quantity ?? 0),
       low_stock_threshold: m.low_stock_threshold ?? null, unit_cost: Number(m.unit_cost ?? 0),
       supplier: m.supplier ?? null, sku: m.sku ?? null, location: m.location ?? null, notes: m.notes ?? null,
     };
-    const { error } = m.id
-      ? await supabase.from('materials').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', m.id)
-      : await supabase.from('materials').insert({ ...payload, user_id: user.id });
-    if (error) { toastError(`Couldn't save material: ${error.message}`); return; }
+    try {
+      const { error } = m.id
+        ? await supabase.from('materials').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', m.id)
+        : await supabase.from('materials').insert({ ...payload, user_id: user.id });
+      if (error) { toastError(`Couldn't save material: ${error.message}`); return; }
+    } catch {
+      toastError("Couldn't save that item — check your connection and try again");
+      return;
+    }
+    toastSuccess(`"${payload.name}" saved`);
     loadAll();
   };
 
@@ -944,27 +958,74 @@ Go ahead?`)) return;
     loadAll();
   };
 
+  // Stock in: what came back from the store goes on the shelf. Top-ups raise
+  // an existing item's count and refresh its cost; the rest become new items.
+  // Deliberately sequential and all-or-nothing-reported: a half-applied run
+  // that claims success is how inventory quietly stops matching the shelf.
+  const stockIn = async (plan: StockInPlan) => {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      toastError('You appear to be signed out — refresh the page and sign in again');
+      return;
+    }
+    let done = 0;
+    const failed: string[] = [];
+    try {
+      for (const t of plan.topUps) {
+        const { error } = await supabase.from('materials')
+          .update({ stock_quantity: t.newQuantity, unit_cost: t.newUnitCost, updated_at: new Date().toISOString() })
+          .eq('id', t.material.id);
+        if (error) failed.push(t.material.name); else done += 1;
+      }
+      for (const c of plan.creates) {
+        const { error } = await supabase.from('materials').insert({
+          name: c.name, unit: 'each', stock_quantity: c.quantity, unit_cost: c.unit_cost,
+          low_stock_threshold: null, user_id: user.id,
+        });
+        if (error) failed.push(c.name); else done += 1;
+      }
+    } catch {
+      toastError("Couldn't finish adding to inventory — check your connection");
+      loadAll();
+      return;
+    }
+    if (failed.length > 0) {
+      toastError(`Added ${done}, but these failed: ${failed.join(', ')}`);
+    } else {
+      toastSuccess(`Inventory updated — ${plan.topUps.length} topped up, ${plan.creates.length} new`);
+    }
+    loadAll();
+  };
+
   // ── Material kits (migration-084) ──────────────────────────────────────────
   //
   // A saved recipe of materials. Saving or deleting a kit never touches stock —
   // inventory moves only when a work order that used one is saved.
 
   const saveMaterialKit = async (k: Partial<MaterialKit>) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      toastError('You appear to be signed out — refresh the page and sign in again');
+      return;
+    }
     const payload = {
       name: (k.name ?? '').trim(),
       description: k.description?.trim() || null,
       items: (k.items ?? []).filter((i) => (i.name ?? '').trim() !== ''),
     };
     if (!payload.name) { toastError('A kit needs a name'); return; }
-    const { error } = k.id
-      ? await supabase.from('material_kits').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', k.id)
-      : await supabase.from('material_kits').insert({ ...payload, user_id: user.id });
-    if (error) {
-      toastError(error.code === '23505'
-        ? 'You already have a kit called "' + payload.name + '"'
-        : "Couldn't save kit: " + error.message);
+    try {
+      const { error } = k.id
+        ? await supabase.from('material_kits').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', k.id)
+        : await supabase.from('material_kits').insert({ ...payload, user_id: user.id });
+      if (error) {
+        toastError(error.code === '23505'
+          ? 'You already have a kit called "' + payload.name + '"'
+          : "Couldn't save kit: " + error.message);
+        return;
+      }
+    } catch {
+      toastError("Couldn't save that kit — check your connection and try again");
       return;
     }
     toastSuccess('Kit "' + payload.name + '" saved');
@@ -1521,7 +1582,7 @@ Go ahead?`)) return;
           />
         )}
         {view === 'materials' && (
-          <MaterialsView materials={materials} kits={materialKits} onSave={saveMaterial} onDelete={deleteMaterial} onSaveKit={saveMaterialKit} onDeleteKit={deleteMaterialKit} />
+          <MaterialsView materials={materials} kits={materialKits} onSave={saveMaterial} onDelete={deleteMaterial} onSaveKit={saveMaterialKit} onDeleteKit={deleteMaterialKit} onStockIn={stockIn} />
         )}
         {view === 'surveys' && (
           <SurveysView

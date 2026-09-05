@@ -1,8 +1,10 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, X, AlertTriangle, Package, Layers } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, AlertTriangle, Package, Layers, Receipt, ScanLine, Camera } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
+import { toastError, toastSuccess } from '@/lib/toast';
 import { kitCost, newKitItem } from '@/lib/material-kits';
+import { matchToInventory, planStockIn, stockInCost, findByCode, type StockInRow, type StockInPlan } from '@/lib/stock-in';
 import type { Material, MaterialKit, MaterialKitItem } from '@/lib/types';
 
 type Severity = 'out' | 'critical' | 'low' | 'ok';
@@ -30,6 +32,7 @@ export default function MaterialsView({
   onDelete,
   onSaveKit,
   onDeleteKit,
+  onStockIn,
 }: {
   materials: Material[];
   kits: MaterialKit[];
@@ -37,6 +40,7 @@ export default function MaterialsView({
   onDelete: (id: string) => void;
   onSaveKit: (k: Partial<MaterialKit>) => Promise<void>;
   onDeleteKit: (id: string) => void;
+  onStockIn: (plan: StockInPlan) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<Partial<Material> | null>(null);
   const [editingKit, setEditingKit] = useState<Partial<MaterialKit> | null>(null);
@@ -90,6 +94,14 @@ export default function MaterialsView({
           <Layers size={12} style={{ marginRight: 5, verticalAlign: -1 }} />Kits
         </button>
       </div>
+
+      {section === 'inventory' && (
+        <ScanTools
+          materials={materials}
+          onStockIn={onStockIn}
+          onAddNew={(prefill) => setEditing(prefill)}
+        />
+      )}
 
       {section === 'inventory' && (rows.length === 0 ? (
         <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>
@@ -167,6 +179,323 @@ export default function MaterialsView({
 const ICON_BTN: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: '#888', marginLeft: 2,
 };
+
+// ─── Scanning into inventory ────────────────────────────────────────────────
+//
+// The Closeout tab's scanner records what a job CONSUMED. This one is the
+// other direction: what came back from the store and goes on the shelf.
+//
+// Two doors, same as closeout: a receipt (photo, or pasted text which needs no
+// AI at all), and a single item scanned off its barcode or shelf label. Both
+// end in a review list — nothing touches stock until the numbers are agreed.
+
+/**
+ * Read a barcode in the browser where the platform can do it: instant, free,
+ * and it never leaves the phone. Returns null when unsupported or unreadable,
+ * and the caller falls back to the photo route.
+ */
+async function readBarcodeLocally(file: File): Promise<string | null> {
+  const Detector = (window as unknown as { BarcodeDetector?: new () => { detect: (s: ImageBitmapSource) => Promise<{ rawValue?: string }[]> } }).BarcodeDetector;
+  if (!Detector || typeof createImageBitmap !== 'function') return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const found = await new Detector().detect(bitmap);
+    return found?.[0]?.rawValue?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function ScanTools({
+  materials, onStockIn, onAddNew,
+}: {
+  materials: Material[];
+  onStockIn: (plan: StockInPlan) => Promise<void>;
+  onAddNew: (prefill: Partial<Material>) => void;
+}) {
+  const [open, setOpen] = useState<'none' | 'receipt' | 'item'>('none');
+  const [busy, setBusy] = useState(false);
+
+  // Receipt → review rows
+  const [receiptText, setReceiptText] = useState('');
+  const [rows, setRows] = useState<StockInRow[]>([]);
+  const [vendor, setVendor] = useState<string | null>(null);
+
+  // Single item scan
+  const [code, setCode] = useState('');
+  const [found, setFound] = useState<Material | null>(null);
+  const [searched, setSearched] = useState(false);
+  const [scannedName, setScannedName] = useState<string | null>(null);
+  const [scannedCost, setScannedCost] = useState<number | null>(null);
+
+  const importReceipt = async (payload: { file?: File; text?: string }) => {
+    setBusy(true);
+    try {
+      let res: Response;
+      if (payload.file) {
+        const fd = new FormData();
+        fd.append('file', payload.file);
+        res = await fetch('/api/materials/from-receipt', { method: 'POST', body: fd });
+      } else {
+        res = await fetch('/api/materials/from-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: payload.text ?? '' }),
+        });
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toastError(data.error || 'Could not read that receipt'); return; }
+      const matched = matchToInventory(data.items ?? [], materials);
+      if (matched.length === 0) { toastError('No priced items found on that receipt'); return; }
+      setRows(matched);
+      setVendor(data.vendor ?? null);
+      setReceiptText('');
+      const known = matched.filter((r) => r.match).length;
+      toastSuccess(matched.length + ' item' + (matched.length === 1 ? '' : 's') + ' read'
+        + (known > 0 ? ' — ' + known + ' already in your inventory' : '') + '. Check the numbers, then add.');
+    } catch {
+      toastError('Could not read that receipt — check your connection');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const lookup = (value: string) => {
+    setSearched(true);
+    setFound(findByCode(materials, value));
+  };
+
+  const scanItemPhoto = async (file: File) => {
+    setBusy(true);
+    setScannedName(null);
+    setScannedCost(null);
+    try {
+      // On-device barcode first — no round trip, no AI cost.
+      const local = await readBarcodeLocally(file);
+      if (local) {
+        setCode(local);
+        lookup(local);
+        toastSuccess('Barcode read: ' + local);
+        return;
+      }
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/materials/scan-item', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toastError(data.error || 'Could not read that photo'); return; }
+      const value = (data.code as string | null) ?? (data.name as string | null) ?? '';
+      setCode(value);
+      setScannedName((data.name as string | null) ?? null);
+      setScannedCost((data.unit_cost as number | null) ?? null);
+      lookup(value);
+    } catch {
+      toastError('Could not read that photo — check your connection');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateRow = (id: string, patch: Partial<StockInRow>) =>
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  const commit = async () => {
+    const plan = planStockIn(rows);
+    if (plan.topUps.length === 0 && plan.creates.length === 0) {
+      toastError('Nothing ticked to add');
+      return;
+    }
+    setBusy(true);
+    try {
+      await onStockIn(plan);
+      setRows([]);
+      setVendor(null);
+      setOpen('none');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const plan = planStockIn(rows);
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ fontSize: 12, color: open === 'receipt' ? 'var(--teal)' : undefined }}
+          onClick={() => setOpen((o) => (o === 'receipt' ? 'none' : 'receipt'))}
+        >
+          <Receipt size={13} /> Add from receipt
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ fontSize: 12, color: open === 'item' ? 'var(--teal)' : undefined }}
+          onClick={() => setOpen((o) => (o === 'item' ? 'none' : 'item'))}
+        >
+          <ScanLine size={13} /> Scan an item
+        </button>
+      </div>
+
+      {/* ── Receipt → stock ── */}
+      {open === 'receipt' && (
+        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
+            Bought a load of stock? Snap the receipt or paste the emailed text. Anything you already
+            track gets topped up; anything new becomes a new item. Nothing changes until you press
+            Add to inventory.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label className="btn btn-ghost" style={{ fontSize: 12, cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Camera size={13} /> {busy ? 'Reading…' : 'Photo or PDF'}
+              <input
+                type="file" accept="image/*,application/pdf" capture="environment" disabled={busy}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) importReceipt({ file: f }); e.target.value = ''; }}
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
+          <textarea
+            className="input" rows={3} value={receiptText}
+            onChange={(e) => setReceiptText(e.target.value)}
+            placeholder={'Or paste receipt text, e.g.\nCAT6 BOX 550MHZ  118.00\nKEYSTONE JACK  4 @ 2.99  11.96'}
+            style={{ fontSize: 12, fontFamily: 'monospace' }}
+          />
+          <button
+            type="button" className="btn btn-primary"
+            disabled={busy || !receiptText.trim()}
+            onClick={() => importReceipt({ text: receiptText })}
+            style={{ fontSize: 12, alignSelf: 'flex-start', opacity: busy || !receiptText.trim() ? 0.6 : 1 }}
+          >
+            {busy ? 'Reading…' : 'Read items from text'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Review before anything is written ── */}
+      {rows.length > 0 && (
+        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.35)', background: '#fff', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>
+            Ready to add{vendor ? ' — from ' + vendor : ''}
+          </div>
+          {rows.map((r) => (
+            <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, flexWrap: 'wrap', opacity: r.include ? 1 : 0.45, background: r.match ? 'rgba(13,115,119,0.04)' : 'rgba(245,158,11,0.05)', border: '1px solid rgba(0,0,0,0.08)' }}>
+              <input type="checkbox" checked={r.include} onChange={(e) => updateRow(r.id, { include: e.target.checked })} />
+              <span style={{
+                fontSize: 9, fontWeight: 800, letterSpacing: 0.5, padding: '2px 7px', borderRadius: 999, flexShrink: 0,
+                background: r.match ? 'rgba(13,115,119,0.12)' : 'rgba(245,158,11,0.15)',
+                color: r.match ? 'var(--teal)' : '#92400e',
+              }}>
+                {r.match ? 'TOP UP' : 'NEW'}
+              </span>
+              <input
+                className="input" value={r.name}
+                onChange={(e) => updateRow(r.id, { name: e.target.value })}
+                style={{ flex: '2 1 160px', fontSize: 13, padding: '7px 10px', fontWeight: 600 }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#888' }}>
+                Qty
+                <input className="input" type="number" min="0" step="1" value={r.quantity || ''}
+                  onChange={(e) => updateRow(r.id, { quantity: Number(e.target.value) })}
+                  style={{ width: 64, fontSize: 12, padding: '6px 8px', textAlign: 'right' }} />
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#888' }}>
+                $ each
+                <input className="input" type="number" min="0" step="0.01" value={r.unit_cost || ''}
+                  onChange={(e) => updateRow(r.id, { unit_cost: Number(e.target.value) })}
+                  style={{ width: 80, fontSize: 12, padding: '6px 8px', textAlign: 'right' }} />
+              </label>
+              {r.match && (
+                <span style={{ fontSize: 11, color: '#666' }}>
+                  {r.match.stock_quantity} &rarr; <strong>{(Number(r.match.stock_quantity) || 0) + (Number(r.quantity) || 0)}</strong>
+                </span>
+              )}
+              <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.id !== r.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4, marginLeft: 'auto' }}>
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: '1px solid #f0f0f0', paddingTop: 10 }}>
+            <span style={{ fontSize: 12, color: '#666' }}>
+              {plan.topUps.length} topped up &middot; {plan.creates.length} new &middot; <strong>{fmtMoney(stockInCost(rows))}</strong>
+            </span>
+            <span style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => { setRows([]); setVendor(null); }}>Discard</button>
+              <button type="button" className="btn btn-primary" style={{ fontSize: 12 }} disabled={busy} onClick={commit}>
+                {busy ? 'Adding…' : 'Add to inventory'}
+              </button>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Scan one item ── */}
+      {open === 'item' && (
+        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
+            Point the camera at a barcode or shelf label to see whether you already stock it, and how
+            many you have. Or type the number in.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <label className="btn btn-ghost" style={{ fontSize: 12, cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Camera size={13} /> {busy ? 'Reading…' : 'Scan barcode'}
+              <input
+                type="file" accept="image/*" capture="environment" disabled={busy}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) scanItemPhoto(f); e.target.value = ''; }}
+                style={{ display: 'none' }}
+              />
+            </label>
+            <input
+              className="input"
+              value={code}
+              onChange={(e) => { setCode(e.target.value); setSearched(false); setFound(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') lookup(code); }}
+              placeholder="or type a barcode / part number"
+              style={{ flex: '1 1 200px', fontSize: 13 }}
+            />
+            <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => lookup(code)} disabled={!code.trim()}>
+              Look up
+            </button>
+          </div>
+
+          {searched && found && (
+            <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{found.name}</div>
+              <div style={{ fontSize: 12.5, color: '#444', marginTop: 4, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                <span>In stock: <strong>{found.stock_quantity} {found.unit || 'each'}</strong></span>
+                {found.unit_cost != null && <span>Cost: <strong>{fmtMoney(found.unit_cost)}</strong></span>}
+                {found.location && <span>Where: <strong>{found.location}</strong></span>}
+                {found.sku && <span>SKU: {found.sku}</span>}
+              </div>
+              <button type="button" className="btn btn-ghost" style={{ fontSize: 12, marginTop: 8 }} onClick={() => onAddNew(found)}>
+                <Edit2 size={12} /> Open / adjust stock
+              </button>
+            </div>
+          )}
+
+          {searched && !found && code.trim() && (
+            <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                Not in your inventory yet.
+              </div>
+              <button
+                type="button" className="btn btn-primary" style={{ fontSize: 12 }}
+                onClick={() => onAddNew({
+                  sku: /^[0-9-]+$/.test(code.trim()) ? code.trim() : null,
+                  name: scannedName ?? (/^[0-9-]+$/.test(code.trim()) ? '' : code.trim()),
+                  unit_cost: scannedCost ?? 0,
+                })}
+              >
+                <Plus size={12} /> Add it as a new item
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Kits ───────────────────────────────────────────────────────────────────
 //
@@ -275,7 +604,7 @@ function KitModal({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="Kit Name"><input className="input" value={form.name ?? ''} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Standard camera drop" /></Field>
+          <Field label="Kit Name (required)"><input className="input" value={form.name ?? ''} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Standard camera drop" autoFocus /></Field>
           <Field label="Description"><input className="input" value={form.description ?? ''} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="When you would use this kit" /></Field>
 
           <div>
@@ -352,7 +681,10 @@ function KitModal({
 
         <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave(form)} disabled={!form.name?.trim()}>Save Kit</button>
+          <button className="btn btn-primary" onClick={() => {
+            if (!form.name?.trim()) { toastError('Give the kit a name first — it is the top field'); return; }
+            onSave({ ...form, name: form.name.trim() });
+          }}>Save Kit</button>
         </div>
       </div>
     </div>
@@ -381,7 +713,7 @@ function MaterialModal({
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="Name"><input className="input" value={form.name ?? ''} onChange={(e) => set('name', e.target.value)} /></Field>
+          <Field label="Name (required)"><input className="input" value={form.name ?? ''} onChange={(e) => set('name', e.target.value)} placeholder="What the item is called" autoFocus /></Field>
           <Field label="Category"><input className="input" value={form.category ?? ''} onChange={(e) => set('category', e.target.value)} placeholder="e.g. electrical, plumbing" /></Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <Field label="Stock Quantity"><input className="input" type="number" value={form.stock_quantity ?? 0} onChange={(e) => set('stock_quantity', Number(e.target.value))} /></Field>
@@ -400,7 +732,12 @@ function MaterialModal({
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave(form)} disabled={!form.name}>Save</button>
+          {/* Deliberately NOT disabled. A greyed-out button that does nothing when
+              clicked reads as "the app is broken" — say what is missing instead. */}
+          <button className="btn btn-primary" onClick={() => {
+            if (!form.name?.trim()) { toastError('Give the item a name first'); return; }
+            onSave({ ...form, name: form.name.trim() });
+          }}>Save</button>
         </div>
       </div>
     </div>

@@ -390,6 +390,17 @@ export type MaterialUsed = {
   on?: string | null;
 };
 
+/**
+ * One line read off a receipt or a product label (migration-084 era scanning).
+ * sku is only present when a barcode was read.
+ */
+export type ReceiptItemLike = {
+  name: string;
+  quantity: number;
+  unit_cost: number;
+  sku?: string | null;
+};
+
 export type Material = {
   id: string;
   user_id: string | null;

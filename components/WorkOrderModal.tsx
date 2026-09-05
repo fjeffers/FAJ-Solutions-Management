@@ -343,6 +343,49 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const removeUsedRow = (id: string) =>
     setMaterialsUsed((rows) => rows.filter((r) => r.id !== id));
 
+  // ── Closeout: receipt → materials ─────────────────────────────────────────
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptText, setReceiptText] = useState('');
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const importReceipt = async (payload: { file?: File; text?: string }) => {
+    setReceiptBusy(true);
+    try {
+      let res: Response;
+      if (payload.file) {
+        const fd = new FormData();
+        fd.append('file', payload.file);
+        res = await fetch('/api/materials/from-receipt', { method: 'POST', body: fd });
+      } else {
+        res = await fetch('/api/materials/from-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: payload.text ?? '' }),
+        });
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toastError(data.error || 'Could not read that receipt'); return; }
+      const items: { name: string; quantity: number; unit_cost: number }[] = data.items ?? [];
+      setMaterialsUsed((rows) => [
+        ...rows,
+        ...items.map((it) => ({
+          id: `mu-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          material_id: null,
+          name: data.vendor ? `${it.name} (${data.vendor})` : it.name,
+          quantity: it.quantity,
+          unit_cost: it.unit_cost,
+        })),
+      ]);
+      const total = items.reduce((s, it) => s + it.quantity * it.unit_cost, 0);
+      toastSuccess(`${items.length} item${items.length === 1 ? '' : 's'} added — ${fmtMoney(total)}${data.vendor ? ` from ${data.vendor}` : ''}. Review, then Save.`);
+      setReceiptText('');
+      setReceiptOpen(false);
+    } catch {
+      toastError('Could not read that receipt — check your connection');
+    } finally {
+      setReceiptBusy(false);
+    }
+  };
+
   // ── Closeout: mileage ─────────────────────────────────────────────────────
   const [mileageLogs, setMileageLogs] = useState<MileageLog[]>(() => item?.mileage_logs ?? []);
   const addMileageRow = () =>
@@ -1659,7 +1702,58 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               <button type="button" className="btn btn-ghost" onClick={() => addUsedRow(null)} style={{ fontSize: 12 }}>
                 <Plus size={13} /> Other item (bought for job)
               </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setReceiptOpen((o) => !o)}
+                title="Snap or paste a store receipt — items and costs land here automatically"
+                style={{ fontSize: 12, color: 'var(--teal)' }}
+              >
+                🧾 Add from receipt
+              </button>
             </div>
+
+            {receiptOpen && (
+              <div style={{ padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
+                  <strong>Photo:</strong> snap the receipt with your camera.{' '}
+                  <strong>Or paste:</strong> copy the emailed receipt text below. Items and prices are read
+                  automatically and added as EXTRA materials for you to review.
+                </div>
+                <label className="btn btn-ghost" style={{ fontSize: 12, cursor: receiptBusy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}>
+                  <Camera size={13} /> {receiptBusy ? 'Reading…' : 'Photo or PDF'}
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    capture="environment"
+                    disabled={receiptBusy}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) importReceipt({ file: f });
+                      e.target.value = '';
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+                <textarea
+                  className="input"
+                  rows={4}
+                  value={receiptText}
+                  onChange={(e) => setReceiptText(e.target.value)}
+                  placeholder={'Or paste receipt text, e.g.\n2X4X8 KD STUD  3.98\nROMEX 14/2 50FT  45.97'}
+                  style={{ fontSize: 12, fontFamily: 'monospace' }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={receiptBusy || !receiptText.trim()}
+                  onClick={() => importReceipt({ text: receiptText })}
+                  style={{ fontSize: 12, alignSelf: 'flex-end', opacity: receiptBusy || !receiptText.trim() ? 0.6 : 1 }}
+                >
+                  {receiptBusy ? 'Reading…' : 'Read items from text'}
+                </button>
+              </div>
+            )}
 
             {/* Rows */}
             {materialsUsed.length === 0 ? (

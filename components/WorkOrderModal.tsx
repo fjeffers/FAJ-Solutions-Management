@@ -5,10 +5,11 @@ import {
   MapPin, Clock, Wrench, ChevronDown, ClipboardList,
   Phone, Mail, HelpCircle, Plus, Paperclip,
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
-  CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package,
+  CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package, Layers,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MileageLog, PayAddon, PayAddonKind } from '@/lib/types';
+import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
+import { kitToMaterialsUsed, materialsUsedToKitItems, kitCost } from '@/lib/material-kits';
 import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE, mileageForTech } from '@/lib/mileage';
 import { roundTripMiles } from '@/lib/driving';
 import { toastError, toastSuccess } from '@/lib/toast';
@@ -167,9 +168,11 @@ type Props = {
   onDeletePayment?: (id: string) => Promise<void>;
   onEditPayment?: (p: Payment) => void;
   materials?: Material[];
+  kits?: MaterialKit[];
+  onSaveKit?: (k: Partial<MaterialKit>) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, materials = [] }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, materials = [], kits = [], onSaveKit }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
@@ -342,6 +345,27 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     setMaterialsUsed((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const removeUsedRow = (id: string) =>
     setMaterialsUsed((rows) => rows.filter((r) => r.id !== id));
+
+  // -- Closeout: kits -------------------------------------------------------
+  // A saved recipe of materials, dropped in whole. Stock rows still only move
+  // inventory when the work order is saved, exactly as a hand-added row does.
+  const addKit = (kitId: string) => {
+    const kit = kits.find((k) => k.id === kitId);
+    if (!kit) return;
+    const rows = kitToMaterialsUsed(kit.items, materials);
+    if (rows.length === 0) { toastError(kit.name + ' has nothing in it yet'); return; }
+    setMaterialsUsed((prev) => [...prev, ...rows]);
+    toastSuccess(kit.name + ' added — ' + rows.length + ' line' + (rows.length === 1 ? '' : 's') + ', ' + fmtMoney(kitCost(kit.items)) + '. Adjust quantities, then Save.');
+  };
+
+  const saveAsKit = async () => {
+    if (!onSaveKit) return;
+    const items = materialsUsedToKitItems(materialsUsed);
+    if (items.length === 0) { toastError('Add some materials first'); return; }
+    const name = window.prompt('Name this kit, so you can add the same list to the next job:', '');
+    if (!name || !name.trim()) return;
+    await onSaveKit({ name: name.trim(), description: null, items });
+  };
 
   // ── Closeout: receipt → materials ─────────────────────────────────────────
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -1699,6 +1723,25 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 </select>
                 <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
               </div>
+              {kits.length > 0 && (
+                <div style={{ position: 'relative', flex: '1 1 200px' }}>
+                  <select
+                    className="select input"
+                    value=""
+                    onChange={(e) => { if (e.target.value) addKit(e.target.value); e.target.value = ''; }}
+                    title="Drop in a saved list of materials for this kind of job"
+                    style={{ fontSize: 12 }}
+                  >
+                    <option value="">+ Add from kit&hellip;</option>
+                    {[...kits].sort((a, b) => a.name.localeCompare(b.name)).map((k) => (
+                      <option key={k.id} value={k.id}>
+                        {k.name} ({(k.items ?? []).length} line{(k.items ?? []).length === 1 ? '' : 's'} · {fmtMoney(kitCost(k.items))})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                </div>
+              )}
               <button type="button" className="btn btn-ghost" onClick={() => addUsedRow(null)} style={{ fontSize: 12 }}>
                 <Plus size={13} /> Other item (bought for job)
               </button>
@@ -1809,9 +1852,21 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                     </button>
                   </div>
                 ))}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', padding: '4px 10px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase' }}>Materials cost</span>
-                  <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--teal)' }}>{fmtMoney(materialsUsedCost(materialsUsed))}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', padding: '4px 10px', flexWrap: 'wrap' }}>
+                  {onSaveKit ? (
+                    <button
+                      type="button"
+                      onClick={saveAsKit}
+                      title="Save this list as a kit you can drop into the next job like it"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--teal)', fontSize: 12, fontWeight: 600, padding: 0 }}
+                    >
+                      <Layers size={12} style={{ verticalAlign: -2, marginRight: 4 }} />Save these as a kit
+                    </button>
+                  ) : <span />}
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase' }}>Materials cost</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--teal)' }}>{fmtMoney(materialsUsedCost(materialsUsed))}</span>
+                  </span>
                 </div>
               </div>
             )}

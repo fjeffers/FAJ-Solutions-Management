@@ -1,11 +1,12 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Printer, CheckCircle2, FileText, Share2, FileCheck2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Printer, CheckCircle2, FileText, Share2, FileCheck2, Layers } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { printQuoteSheet } from '@/lib/signoff';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
-import type { Quote, QuoteLineItem, QuoteStatus } from '@/lib/types';
+import { kitCost, kitToQuoteLine, kitToQuoteLines } from '@/lib/material-kits';
+import type { Material, MaterialKit, Quote, QuoteLineItem, QuoteStatus } from '@/lib/types';
 
 const STATUS_META: Record<QuoteStatus, { label: string; color: string; bg: string }> = {
   draft:    { label: 'Draft',    color: '#666',    bg: 'rgba(0,0,0,0.06)' },
@@ -29,12 +30,16 @@ function newLineItem(): QuoteLineItem {
 
 export default function QuotesView({
   quotes,
+  materials = [],
+  kits = [],
   onSave,
   onDelete,
   onAccept,
   onBuildContract,
 }: {
   quotes: Quote[];
+  materials?: Material[];
+  kits?: MaterialKit[];
   onSave: (q: Partial<Quote>) => Promise<void>;
   onDelete: (id: string) => void;
   onAccept: (quote: Quote) => Promise<void>;
@@ -137,6 +142,8 @@ export default function QuotesView({
       {editing && (
         <QuoteModal
           item={editing}
+          materials={materials}
+          kits={kits}
           onSave={async (q) => { await onSave(q); setEditing(null); }}
           onClose={() => setEditing(null)}
         />
@@ -148,9 +155,11 @@ export default function QuotesView({
 const ICON_BTN: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: '#888' };
 
 function QuoteModal({
-  item, onSave, onClose,
+  item, materials, kits, onSave, onClose,
 }: {
   item: Partial<Quote>;
+  materials: Material[];
+  kits: MaterialKit[];
   onSave: (q: Partial<Quote>) => void;
   onClose: () => void;
 }) {
@@ -171,6 +180,22 @@ function QuoteModal({
     set('line_items', lineItems.map((li) => (li.id === id ? { ...li, ...patch } : li)));
   const addLine = () => set('line_items', [...lineItems, newLineItem()]);
   const removeLine = (id: string) => set('line_items', lineItems.filter((li) => li.id !== id));
+
+  // A saved materials kit, priced into the quote before the work starts.
+  // Rolled into ONE line by default: a quote is a client-facing document, and
+  // an itemised parts list publishes what FAJ pays for every part on it.
+  const [itemiseKit, setItemiseKit] = useState(false);
+  const addKit = (kitId: string) => {
+    const kit = kits.find((k) => k.id === kitId);
+    if (!kit) return;
+    const added = itemiseKit
+      ? kitToQuoteLines(kit.items, materials)
+      : [kitToQuoteLine(kit.name, kit.items, materials)];
+    if (added.length === 0) { toastError(kit.name + ' has nothing in it yet'); return; }
+    // A quote starts with one blank line; drop it rather than leave a stray row.
+    const kept = lineItems.filter((li) => li.description.trim() !== '' || li.quantity !== 1 || li.rate !== 0);
+    set('line_items', [...kept, ...added]);
+  };
 
   const handleSave = () => onSave({ ...form, subtotal, tax_amount: taxAmount, total });
 
@@ -207,6 +232,31 @@ function QuoteModal({
               ))}
             </div>
             <button className="btn btn-ghost" style={{ marginTop: 8, fontSize: 12 }} onClick={addLine}><Plus size={12} /> Add Line</button>
+            {kits.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'rgba(13,115,119,0.04)', border: '1px solid rgba(13,115,119,0.15)' }}>
+                <Layers size={13} style={{ color: 'var(--teal)', flexShrink: 0 }} />
+                <select
+                  className="select input"
+                  value=""
+                  onChange={(e) => { if (e.target.value) addKit(e.target.value); e.target.value = ''; }}
+                  style={{ fontSize: 12, flex: '1 1 200px' }}
+                >
+                  <option value="">Price in a materials kit&hellip;</option>
+                  {[...kits].sort((a, b) => a.name.localeCompare(b.name)).map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.name} ({fmtMoney(kitCost(k.items))} at cost)
+                    </option>
+                  ))}
+                </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#555', whiteSpace: 'nowrap' }} title="Off: one line for the whole kit, so the client does not see what each part costs you. On: every part listed separately.">
+                  <input type="checkbox" checked={itemiseKit} onChange={(e) => setItemiseKit(e.target.checked)} />
+                  List every part
+                </label>
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+              Kit lines come in at your cost. Set the rate to what the client pays before you send it.
+            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 20, fontSize: 13, padding: '10px 0', borderTop: '1px solid #eee' }}>

@@ -7,7 +7,7 @@ import { enrichWorkOrders, contractorOwedOnWO, woPayoutTotal, fmtMoney } from '@
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
-import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
+import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
 import { BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2 } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
@@ -191,6 +191,7 @@ export default function HomePage() {
   const [deliverableTemplates, setDeliverableTemplates] = useState<DeliverableTemplate[]>([]);
   const [contractorTimeLogs, setContractorTimeLogs] = useState<ContractorTimeLog[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [materialKits, setMaterialKits] = useState<MaterialKit[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -245,11 +246,12 @@ export default function HomePage() {
 
   // Everything else — loaded right after first paint so startup stays fast.
   const loadSecondary = async () => {
-    const [tRes, dtRes, ctlRes, matRes, qRes, svyRes, ctrRes, invRes, ipRes, iqRes, gcRes, qboRes] = await Promise.all([
+    const [tRes, dtRes, ctlRes, matRes, kitRes, qRes, svyRes, ctrRes, invRes, ipRes, iqRes, gcRes, qboRes] = await Promise.all([
       supabase.from('question_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('deliverable_templates').select('*').order('created_at', { ascending: false }),
       supabase.from('contractor_time_logs').select('*').order('updated_at', { ascending: false }),
       supabase.from('materials').select('*').order('name'),
+      supabase.from('material_kits').select('*').order('name'),
       supabase.from('quotes').select('*').order('created_at', { ascending: false }),
       supabase.from('surveys').select('*').order('created_at', { ascending: false }),
       supabase.from('contracts').select('*').order('created_at', { ascending: false }),
@@ -264,6 +266,7 @@ export default function HomePage() {
     if (dtRes.data) setDeliverableTemplates(dtRes.data as DeliverableTemplate[]);
     if (ctlRes.data) setContractorTimeLogs(ctlRes.data as ContractorTimeLog[]);
     if (matRes.data) setMaterials(matRes.data as Material[]);
+    if (kitRes.data) setMaterialKits(kitRes.data as MaterialKit[]);
     if (qRes.data) setQuotes(qRes.data as Quote[]);
     if (svyRes.data) setSurveys(svyRes.data as Survey[]);
     if (ctrRes.data) setContracts(ctrRes.data as Contract[]);
@@ -274,7 +277,7 @@ export default function HomePage() {
     setQboConnection((qboRes.data as QuickBooksConnection | null) ?? null);
     const failed = [
       tRes.error && 'templates', dtRes.error && 'deliverable templates', ctlRes.error && 'time logs',
-      matRes.error && 'materials', qRes.error && 'quotes', svyRes.error && 'surveys', ctrRes.error && 'contracts', invRes.error && 'invoices',
+      matRes.error && 'materials', kitRes.error && 'material kits', qRes.error && 'quotes', svyRes.error && 'surveys', ctrRes.error && 'contracts', invRes.error && 'invoices',
       ipRes.error && 'invoice payments', iqRes.error && 'import queue',
     ].filter(Boolean);
     if (failed.length > 0) {
@@ -941,6 +944,39 @@ Go ahead?`)) return;
     loadAll();
   };
 
+  // ── Material kits (migration-084) ──────────────────────────────────────────
+  //
+  // A saved recipe of materials. Saving or deleting a kit never touches stock —
+  // inventory moves only when a work order that used one is saved.
+
+  const saveMaterialKit = async (k: Partial<MaterialKit>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const payload = {
+      name: (k.name ?? '').trim(),
+      description: k.description?.trim() || null,
+      items: (k.items ?? []).filter((i) => (i.name ?? '').trim() !== ''),
+    };
+    if (!payload.name) { toastError('A kit needs a name'); return; }
+    const { error } = k.id
+      ? await supabase.from('material_kits').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', k.id)
+      : await supabase.from('material_kits').insert({ ...payload, user_id: user.id });
+    if (error) {
+      toastError(error.code === '23505'
+        ? 'You already have a kit called "' + payload.name + '"'
+        : "Couldn't save kit: " + error.message);
+      return;
+    }
+    toastSuccess('Kit "' + payload.name + '" saved');
+    loadAll();
+  };
+
+  const deleteMaterialKit = async (id: string) => {
+    const { error } = await supabase.from('material_kits').delete().eq('id', id);
+    if (error) { toastError("Couldn't delete kit: " + error.message); return; }
+    loadAll();
+  };
+
   // ── Quotes ─────────────────────────────────────────────────────────────────
 
   // ── Surveys (migration-066) ────────────────────────────────────────────────
@@ -1485,7 +1521,7 @@ Go ahead?`)) return;
           />
         )}
         {view === 'materials' && (
-          <MaterialsView materials={materials} onSave={saveMaterial} onDelete={deleteMaterial} />
+          <MaterialsView materials={materials} kits={materialKits} onSave={saveMaterial} onDelete={deleteMaterial} onSaveKit={saveMaterialKit} onDeleteKit={deleteMaterialKit} />
         )}
         {view === 'surveys' && (
           <SurveysView
@@ -1513,7 +1549,7 @@ Go ahead?`)) return;
           />
         )}
         {view === 'quotes' && (
-          <QuotesView quotes={quotes} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} onBuildContract={buildContractFromQuote} />
+          <QuotesView quotes={quotes} materials={materials} kits={materialKits} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} onBuildContract={buildContractFromQuote} />
         )}
         {view === 'customers' && <CustomersView />}
         {view === 'portal-admin' && <PortalAdminView />}
@@ -1676,6 +1712,8 @@ Go ahead?`)) return;
           onDeletePayment={deletePayment}
           onEditPayment={(p) => setModal({ type: 'payment', item: p })}
           materials={materials}
+          kits={materialKits}
+          onSaveKit={saveMaterialKit}
         />
       )}
       {modal?.type === 'contractor' && (

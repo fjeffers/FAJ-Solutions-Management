@@ -408,6 +408,30 @@ export type Material = {
   updated_at: string;
 };
 
+// ─── Material kits (migration-084) — a saved "recipe" of materials ──────────
+//
+// The parts list for a job you do over and over, saved once. Adding a kit to a
+// work order copies its rows into materials_used; adding it to a quote turns
+// them into line items. A kit itself never moves stock — the work order does.
+
+export type MaterialKitItem = {
+  id: string;                 // row id within the kit (client-generated)
+  material_id: string | null; // inventory link, or null for a buy-it item
+  name: string;
+  quantity: number;
+  unit_cost: number | null;
+};
+
+export type MaterialKit = {
+  id: string;
+  user_id: string | null;
+  name: string;
+  description: string | null;
+  items: MaterialKitItem[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type MaterialUsage = {
   id: string;
   user_id: string | null;

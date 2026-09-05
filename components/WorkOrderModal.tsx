@@ -1759,16 +1759,18 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             {receiptOpen && (
               <div style={{ padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
-                  <strong>Photo:</strong> snap the receipt with your camera.{' '}
-                  <strong>Or paste:</strong> copy the emailed receipt text below. Items and prices are read
+                  <strong>Scan or upload:</strong> the camera, a screenshot of the emailed receipt, or a saved PDF.{' '}
+                  <strong>Or paste:</strong> copy the receipt text below. Items and prices are read
                   automatically and added as EXTRA materials for you to review.
                 </div>
+                {/* No `capture`: forcing the camera hides the gallery and Files,
+                    so a receipt that is already a screenshot or a PDF could
+                    never be picked. Left off, the phone offers all three. */}
                 <label className="btn btn-ghost" style={{ fontSize: 12, cursor: receiptBusy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}>
-                  <Camera size={13} /> {receiptBusy ? 'Reading…' : 'Photo or PDF'}
+                  <Camera size={13} /> {receiptBusy ? 'Reading…' : 'Scan or upload a receipt'}
                   <input
                     type="file"
                     accept="image/*,application/pdf"
-                    capture="environment"
                     disabled={receiptBusy}
                     onChange={(e) => {
                       const f = e.target.files?.[0];

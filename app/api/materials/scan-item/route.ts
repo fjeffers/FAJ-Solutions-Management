@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-// Photo of a product, barcode or shelf label → { code, name }.
+// Photo, screenshot or PDF of a product, barcode or shelf label → { code, name }.
 //
 // The browser tries first: where BarcodeDetector exists it reads the barcode
 // on-device, instantly and for free, and this route is never called. This is
@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/server';
 // readable barcode at all, where the printed part number is the only clue).
 const MODEL = 'claude-haiku-4-5';
 
-const PROMPT = `Look at this photo of a product, its barcode, or a shelf label. Return ONLY valid JSON (no markdown fences):
+const PROMPT = `Look at this image or document of a product, its barcode, or a shelf label. Return ONLY valid JSON (no markdown fences):
 {
   "code": string | null (the barcode digits, UPC/EAN, or the printed SKU/part number — digits and dashes only),
   "name": string | null (the product name as printed, cleaned up, max 80 chars),
@@ -25,15 +25,17 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({
-      error: 'Photo scanning needs the AI key, which is not set up yet. Type the code in instead.',
+      error: "Reading a photo needs the AI key, which isn't set up on this site yet. Use \"Scan barcode\" to read it with the camera instead — that runs on your phone and needs no key — or type the number in.",
     }, { status: 422 });
   }
 
   const form = await req.formData().catch(() => null);
   const file = form?.get('file');
-  if (!(file instanceof File)) return NextResponse.json({ error: 'No photo received.' }, { status: 400 });
-  if (file.size > 15 * 1024 * 1024) return NextResponse.json({ error: 'That photo is over 15MB — try a smaller one.' }, { status: 413 });
+  if (!(file instanceof File)) return NextResponse.json({ error: 'No file received.' }, { status: 400 });
+  if (file.size > 15 * 1024 * 1024) return NextResponse.json({ error: 'That file is over 15MB — try a smaller one.' }, { status: 413 });
 
+  // A photo, a screenshot and a PDF spec sheet are all the same job to us.
+  const isPdf = file.type === 'application/pdf';
   const media = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type) ? file.type : 'image/jpeg';
   const b64 = Buffer.from(await file.arrayBuffer()).toString('base64');
 
@@ -46,7 +48,9 @@ export async function POST(req: NextRequest) {
       messages: [{
         role: 'user',
         content: [
-          { type: 'image', source: { type: 'base64', media_type: media, data: b64 } },
+          isPdf
+            ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
+            : { type: 'image', source: { type: 'base64', media_type: media, data: b64 } },
           { type: 'text', text: PROMPT },
         ],
       }],

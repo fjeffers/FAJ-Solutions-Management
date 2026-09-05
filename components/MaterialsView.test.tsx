@@ -103,6 +103,30 @@ describe('saving without a name', () => {
   });
 });
 
+describe('getting a receipt in', () => {
+  it('accepts a screenshot or a saved PDF, not just the camera', async () => {
+    // `capture` sends the phone straight to the camera and hides the gallery
+    // and Files. With it set, a receipt that is already a screenshot or a PDF
+    // is unreachable — which is exactly what happened on Fred's phone.
+    const user = userEvent.setup();
+    renderView();
+    await user.click(screen.getByText('Add from receipt'));
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.getAttribute('accept')).toContain('application/pdf');
+    expect(input.getAttribute('accept')).toContain('image/*');
+    expect(input.hasAttribute('capture')).toBe(false);
+  });
+
+  it('offers one way in, not a row of them', async () => {
+    const user = userEvent.setup();
+    renderView();
+    await user.click(screen.getByText('Add from receipt'));
+    expect(document.querySelectorAll('input[type="file"]').length).toBe(1);
+    expect(screen.getByText('Scan or upload a receipt')).toBeTruthy();
+  });
+});
+
 describe('barcode lookup', () => {
   it('finds a stocked item by its barcode and shows how many are on the shelf', async () => {
     const user = userEvent.setup();

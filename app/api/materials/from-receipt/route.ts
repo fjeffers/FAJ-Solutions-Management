@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({
-      error: 'Photo scanning needs the AI key, which isn\'t set up yet. Paste the receipt text instead — or add an Anthropic API key to enable photos.',
+      error: "Reading a receipt image or PDF needs the AI key, which isn't set up on this site yet. Paste the receipt TEXT into the box instead — that works right now and needs no key.",
     }, { status: 422 });
   }
 

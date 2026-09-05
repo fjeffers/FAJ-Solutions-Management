@@ -1,10 +1,11 @@
 'use client';
-import { useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, X, AlertTriangle, Package, Layers, Receipt, ScanLine, Camera } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Edit2, Trash2, X, AlertTriangle, Package, Layers, Receipt, ScanLine, Camera, Paperclip } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { kitCost, newKitItem } from '@/lib/material-kits';
 import { matchToInventory, planStockIn, stockInCost, findByCode, type StockInRow, type StockInPlan } from '@/lib/stock-in';
+import { supportsLiveScan, readBarcodeFromFile, startLiveScan, type LiveScan } from '@/lib/barcode';
 import type { Material, MaterialKit, MaterialKitItem } from '@/lib/types';
 
 type Severity = 'out' | 'critical' | 'low' | 'ok';
@@ -189,23 +190,6 @@ const ICON_BTN: React.CSSProperties = {
 // AI at all), and a single item scanned off its barcode or shelf label. Both
 // end in a review list — nothing touches stock until the numbers are agreed.
 
-/**
- * Read a barcode in the browser where the platform can do it: instant, free,
- * and it never leaves the phone. Returns null when unsupported or unreadable,
- * and the caller falls back to the photo route.
- */
-async function readBarcodeLocally(file: File): Promise<string | null> {
-  const Detector = (window as unknown as { BarcodeDetector?: new () => { detect: (s: ImageBitmapSource) => Promise<{ rawValue?: string }[]> } }).BarcodeDetector;
-  if (!Detector || typeof createImageBitmap !== 'function') return null;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const found = await new Detector().detect(bitmap);
-    return found?.[0]?.rawValue?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
 function ScanTools({
   materials, onStockIn, onAddNew,
 }: {
@@ -260,9 +244,46 @@ function ScanTools({
     }
   };
 
+  // Live camera scan. canScanLive is resolved after mount, never during
+  // render: touching navigator on the server would break the page outright.
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scanRef = useRef<LiveScan | null>(null);
+  const [liveOn, setLiveOn] = useState(false);
+  const [canScanLive, setCanScanLive] = useState(false);
+  useEffect(() => { setCanScanLive(supportsLiveScan()); }, []);
+
+  const stopLive = () => {
+    scanRef.current?.stop();
+    scanRef.current = null;
+    setLiveOn(false);
+  };
+
+  // Release the camera whatever happens — panel closed, tab switched, page
+  // left. A light still on after the user has moved away is unforgivable.
+  useEffect(() => () => { scanRef.current?.stop(); scanRef.current = null; }, []);
+  useEffect(() => { if (open !== 'item') stopLive(); }, [open]);
+
   const lookup = (value: string) => {
     setSearched(true);
     setFound(findByCode(materials, value));
+  };
+
+  const startLive = async () => {
+    setLiveOn(true);
+    // Let React paint the <video> before handing it a stream.
+    await new Promise((r) => setTimeout(r, 0));
+    const el = videoRef.current;
+    if (!el) { setLiveOn(false); return; }
+    scanRef.current = await startLiveScan(
+      el,
+      (value) => {
+        stopLive();
+        setCode(value);
+        lookup(value);
+        toastSuccess('Barcode read: ' + value);
+      },
+      (message) => { stopLive(); toastError(message); },
+    );
   };
 
   const scanItemPhoto = async (file: File) => {
@@ -271,7 +292,7 @@ function ScanTools({
     setScannedCost(null);
     try {
       // On-device barcode first — no round trip, no AI cost.
-      const local = await readBarcodeLocally(file);
+      const local = await readBarcodeFromFile(file);
       if (local) {
         setCode(local);
         lookup(local);
@@ -342,15 +363,20 @@ function ScanTools({
       {open === 'receipt' && (
         <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
-            Bought a load of stock? Snap the receipt or paste the emailed text. Anything you already
-            track gets topped up; anything new becomes a new item. Nothing changes until you press
-            Add to inventory.
+            Bought a load of stock? Use the camera, upload a screenshot or a saved PDF, or paste the
+            emailed text. Anything you already track gets topped up; anything new becomes a new item.
+            Nothing changes until you press Add to inventory.
           </div>
+          {/* ONE button for all four ways in. Deliberately no `capture`: that
+              attribute sends the phone straight to the camera and hides the
+              gallery and Files, which is exactly wrong for a receipt that is
+              already a screenshot or a saved PDF. Left off, the phone shows its
+              own Camera / Photos / Files chooser and every case works. */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <label className="btn btn-ghost" style={{ fontSize: 12, cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Camera size={13} /> {busy ? 'Reading…' : 'Photo or PDF'}
+            <label className="btn btn-primary" style={{ fontSize: 12, cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Camera size={13} /> {busy ? 'Reading…' : 'Scan or upload a receipt'}
               <input
-                type="file" accept="image/*,application/pdf" capture="environment" disabled={busy}
+                type="file" accept="image/*,application/pdf" disabled={busy}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) importReceipt({ file: f }); e.target.value = ''; }}
                 style={{ display: 'none' }}
               />
@@ -434,25 +460,49 @@ function ScanTools({
       {open === 'item' && (
         <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
-            Point the camera at a barcode or shelf label to see whether you already stock it, and how
-            many you have. Or type the number in.
+            Point the camera at a barcode to see whether you already stock it, and how many you have.
+            Or type the number in.
           </div>
+
+          {/* Live camera scan — reads the barcode on the phone itself, so it
+              needs no key, costs nothing, and works with no signal. */}
+          {liveOn && (
+            <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
+              <video ref={videoRef} style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }} />
+              <div style={{ position: 'absolute', inset: '18% 10%', border: '3px solid rgba(255,255,255,0.85)', borderRadius: 10, boxShadow: '0 0 0 9999px rgba(0,0,0,0.25)', pointerEvents: 'none' }} />
+              <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.55)' }}>
+                <span style={{ color: '#fff', fontSize: 12 }}>Hold the barcode inside the box…</span>
+                <button type="button" className="btn btn-ghost" style={{ fontSize: 12, color: '#fff', borderColor: 'rgba(255,255,255,0.5)' }} onClick={stopLive}>
+                  Stop
+                </button>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {canScanLive && !liveOn && (
+              <button type="button" className="btn btn-primary" style={{ fontSize: 12 }} onClick={startLive} disabled={busy}>
+                <ScanLine size={13} /> Scan barcode
+              </button>
+            )}
             <label className="btn btn-ghost" style={{ fontSize: 12, cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Camera size={13} /> {busy ? 'Reading…' : 'Scan barcode'}
+              <Paperclip size={13} /> {busy ? 'Reading…' : 'Scan or upload a photo'}
               <input
-                type="file" accept="image/*" capture="environment" disabled={busy}
+                type="file" accept="image/*,application/pdf" disabled={busy}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) scanItemPhoto(f); e.target.value = ''; }}
                 style={{ display: 'none' }}
               />
             </label>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <input
               className="input"
               value={code}
               onChange={(e) => { setCode(e.target.value); setSearched(false); setFound(null); }}
               onKeyDown={(e) => { if (e.key === 'Enter') lookup(code); }}
               placeholder="or type a barcode / part number"
-              style={{ flex: '1 1 200px', fontSize: 13 }}
+              style={{ flex: '1 1 200px', fontSize: 16 }}
             />
             <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => lookup(code)} disabled={!code.trim()}>
               Look up

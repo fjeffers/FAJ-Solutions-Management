@@ -186,3 +186,109 @@ export async function createExpensePurchase(
   const data = await res.json();
   return data.Purchase.Id;
 }
+
+// ─── Invoices (money IN) ────────────────────────────────────────────────────
+//
+// Everything above this line moves money OUT — vendors, expenses, 1099s. This
+// section is the other direction, and it exists so QuickBooks can be the only
+// place invoices are ever raised. The app describes the work; QuickBooks
+// issues the document, owns the number and records the payment.
+
+/** Look up a customer by the name FAJ bills, creating it only if truly absent. */
+export async function findOrCreateCustomer(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+  name: string,
+): Promise<string> {
+  type QboCustomer = { Id: string };
+  const escaped = name.replace(/'/g, "\'");
+  const existing = await qboQuery<QboCustomer>(
+    environment, realmId, accessToken,
+    `SELECT Id FROM Customer WHERE DisplayName = '${escaped}'`,
+  );
+  if (existing.length > 0) return existing[0].Id;
+
+  const res = await fetch(`${apiBase(environment)}/${realmId}/customer?minorversion=65`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ DisplayName: name }),
+  });
+  if (!res.ok) throw new Error(`QuickBooks customer create failed: ${await res.text()}`);
+  const data = await res.json();
+  return data.Customer.Id;
+}
+
+/**
+ * The Service item every invoice line is booked against.
+ *
+ * QuickBooks requires an ItemRef on a sales line. FAJ bills labour, travel and
+ * materials as free-text descriptions rather than a product catalogue, so one
+ * generic service item carries them all and the description does the talking.
+ */
+export async function findOrCreateServiceItem(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+  name = 'Field Services',
+): Promise<string> {
+  type QboItem = { Id: string };
+  const escaped = name.replace(/'/g, "\'");
+  const existing = await qboQuery<QboItem>(
+    environment, realmId, accessToken,
+    `SELECT Id FROM Item WHERE Name = '${escaped}'`,
+  );
+  if (existing.length > 0) return existing[0].Id;
+
+  // A Service item needs an income account to post to. Pick the company's own
+  // income account rather than guessing at a name that may not exist.
+  const income = await qboQuery<{ Id: string }>(
+    environment, realmId, accessToken,
+    `SELECT Id FROM Account WHERE AccountType = 'Income' MAXRESULTS 1`,
+  );
+  if (income.length === 0) {
+    throw new Error('QuickBooks has no income account to book invoice lines against.');
+  }
+
+  const res = await fetch(`${apiBase(environment)}/${realmId}/item?minorversion=65`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      Name: name,
+      Type: 'Service',
+      IncomeAccountRef: { value: income[0].Id },
+    }),
+  });
+  if (!res.ok) throw new Error(`QuickBooks item create failed: ${await res.text()}`);
+  const data = await res.json();
+  return data.Item.Id;
+}
+
+/**
+ * Create the invoice and hand back what QuickBooks decided.
+ *
+ * DocNumber is deliberately NOT sent: QuickBooks owns the sequence. The number
+ * it returns is the one written back onto the visits, so the app and the
+ * ledger refer to the same document forever after.
+ */
+export async function createInvoice(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+  payload: Record<string, unknown>,
+): Promise<{ id: string; docNumber: string; total: number; balance: number }> {
+  const res = await fetch(`${apiBase(environment)}/${realmId}/invoice?minorversion=65`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`QuickBooks invoice create failed: ${await res.text()}`);
+  const data = await res.json();
+  const inv = data.Invoice;
+  return {
+    id: String(inv.Id),
+    docNumber: String(inv.DocNumber ?? ''),
+    total: Number(inv.TotalAmt ?? 0),
+    balance: Number(inv.Balance ?? 0),
+  };
+}

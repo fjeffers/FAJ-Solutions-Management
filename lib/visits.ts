@@ -493,6 +493,101 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// ── The math, shown ─────────────────────────────────────────────────────────
+
+export type VisitBreakdownLine = {
+  key: 'labor' | 'travel' | 'materials' | 'other';
+  label: string;
+  /** How the amount was arrived at, in words: "4h on site → 2h × 2 days…" */
+  detail: string;
+  amount: number;
+};
+
+export type VisitBreakdown = {
+  lines: VisitBreakdownLine[];
+  /** Equal to visitAmount by construction — both sum the same four parts. */
+  total: number;
+  /** The 2-hour minimum lifted the billed hours above the logged ones. */
+  atMinimum: boolean;
+  /** A bare "55"-style rate with hours logged — bills ONCE, not per hour. */
+  rateAmbiguous: boolean;
+  /**
+   * Parts in this total that are NOT ticked "billed to client".
+   *
+   * The materials rows carry a client_pays tick, but visitAmount — and so the
+   * statement, the Excel export and the invoice builder — bills every part
+   * regardless. Rather than quietly change what bills, the breakdown says so.
+   */
+  materialsUnticked: number;
+};
+
+/**
+ * The visit's price, taken apart so Fred can check it line by line:
+ * labor, travel, materials, other — and how each number came to be.
+ *
+ * This is a review panel, not an invoice: zero lines are kept (an invoice
+ * hides a $0 row; a checker wants to see that materials are, in fact, zero).
+ * Every figure comes from the same helpers the statement and the invoice
+ * builder use, so what this shows is exactly what will bill.
+ */
+export function visitBreakdown(
+  v: Pick<SiteVisit, 'visit_date' | 'site_name' | 'site_code' | 'visit_type' | 'hours' | 'rate' | 'travel_charge' | 'total_project_price' | 'miles'>
+    & Partial<Pick<SiteVisit, 'materials_cost' | 'other_charges' | 'mileage_logs' | 'materials_used'>>,
+): VisitBreakdown {
+  const li = visitLineItem(v);
+  const labor = round2(li.quantity * li.rate);
+
+  // Say how the labor number happened, mirroring visitLineItem's branches.
+  const logged = v.hours != null ? Number(v.hours) : null;
+  let laborDetail: string;
+  if (v.total_project_price != null && !isNaN(Number(v.total_project_price))) {
+    laborDetail = `project price${logged ? ` · ${logged}h on site` : ''}`;
+  } else if (rateUnit(v.rate) === 'hr' && rateAmount(v.rate)) {
+    laborDetail = logged != null && li.quantity > logged
+      ? `${logged}h on site → ${li.quantity}h minimum × $${li.rate}/hr`
+      : `${li.quantity}h × $${li.rate}/hr`;
+  } else if (rateAmount(v.rate)) {
+    laborDetail = `flat rate${logged ? ` · ${logged}h on site` : ''}`;
+  } else {
+    laborDetail = 'no rate set';
+  }
+
+  const miles = visitMilesTotal(v);
+  const trips = (v.mileage_logs ?? []).length;
+  const travel = visitMileageTotal(v);
+  const travelDetail = trips > 0
+    ? `${miles} mi · ${trips} trip${trips === 1 ? '' : 's'}`
+    : miles > 0 ? `${miles} mi` : 'no trips logged';
+
+  const parts = (v.materials_used ?? []).length;
+  const materials = visitMaterialsTotal({
+    materials_cost: v.materials_cost ?? null,
+    materials_used: v.materials_used,
+  });
+  const materialsDetail = parts > 0
+    ? `${parts} item${parts === 1 ? '' : 's'}`
+    : materials > 0 ? 'materials cost' : 'none logged';
+
+  const other = round2(Number(v.other_charges ?? 0) || 0);
+
+  const materialsUnticked = round2((v.materials_used ?? [])
+    .filter((r) => !r.client_pays)
+    .reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_cost) || 0), 0));
+
+  return {
+    lines: [
+      { key: 'labor',     label: 'Labor',         detail: laborDetail,     amount: labor },
+      { key: 'travel',    label: 'Travel',        detail: travelDetail,    amount: travel },
+      { key: 'materials', label: 'Materials',     detail: materialsDetail, amount: materials },
+      { key: 'other',     label: 'Other charges', detail: other > 0 ? 'permits, parking, rental…' : 'none', amount: other },
+    ],
+    total: round2(labor + travel + materials + other),
+    atMinimum: billsAtMinimum(v),
+    rateAmbiguous: rateIsAmbiguous(v),
+    materialsUnticked,
+  };
+}
+
 export type VisitDay = {
   /** YYYY-MM-DD */
   date: string;

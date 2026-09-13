@@ -22,7 +22,7 @@ import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
 import EmailModal, { type EmailPayload } from './EmailModal';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
-import { MileageRows, MaterialRows, VisitDayBreakdown } from './VisitItems';
+import { MileageRows, MaterialRows, VisitDayBreakdown, VisitBillingBreakdown } from './VisitItems';
 import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users, Archive, ArchiveRestore, CalendarDays } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
@@ -1683,6 +1683,11 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
                   onChange={(e) => set('other_charges', e.target.value === '' ? null : Number(e.target.value))}
                   placeholder="0.00" />
               </Field>
+
+              {/* Live arithmetic check: labor + travel + materials + other,
+                  recomputed from the form on every keystroke via lib/visits —
+                  the panel shows exactly what the statement will bill. */}
+              <VisitBillingBreakdown visit={form} />
 
               <Field label="Notes"><textarea className="input" rows={3} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="What you did on site, punch list, follow-ups…" /></Field>
               {/* migration-050: the client-facing line. Notes are internal and can

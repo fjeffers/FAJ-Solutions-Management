@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, visitMilesTotal, visitMileageTotal, visitMaterialsTotal, visitDays, isMultiDay, syncVisitTotals, suspectSessions, hoursLookWrong, workOrderFieldsFromVisit, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit } from './visits';
+import { visitLineItem, visitAmount, deriveSiteName, billableHours, actualHours, expectedHours, hoursDisagree, rateAmount, rateUnit, buildRate, readPricing, writePricing, billsAtMinimum, rateIsAmbiguous, visitMilesTotal, visitMileageTotal, visitMaterialsTotal, visitDays, isMultiDay, syncVisitTotals, suspectSessions, hoursLookWrong, workOrderFieldsFromVisit, MINIMUM_BILLABLE_HOURS, visitInvoiceLines, visitInvoiceTotal, workOrderMoneyFromVisit, visitBreakdown } from './visits';
 
 import type { SiteVisit } from './types';
 
@@ -745,5 +745,67 @@ describe('the site log is the backbone: a job inherits its visit', () => {
     expect(solo.contractor_names).toEqual([]);
     expect(solo.lead_contractor_name).toBeNull();
     expect(solo.contractor_name).toBe('');
+  });
+});
+
+describe('visitBreakdown', () => {
+  const trip = (miles: number, rate: number) =>
+    ({ id: 'm1', contractor_name: '', miles, rate, note: null, on: null });
+  const part = (quantity: number, unit_cost: number) =>
+    ({ id: 'p1', material_id: null, name: 'part', quantity, unit_cost, on: null });
+
+  it('foots with visitAmount for a full T&M visit (labor + trips + parts + other)', () => {
+    const v = {
+      ...base, hours: 10.42, rate: '$55/hr', travel_charge: null, miles: null,
+      mileage_logs: [trip(87, 0.5), trip(87, 0.5), trip(87, 0.5)],
+      materials_used: [part(2, 12.5), part(1, 59.12)],
+      other_charges: 25,
+    };
+    const b = visitBreakdown(v);
+    expect(b.total).toBe(visitAmount(v));
+    expect(b.lines.find((l) => l.key === 'labor')!.amount).toBe(573.1);
+    expect(b.lines.find((l) => l.key === 'travel')!.amount).toBe(130.5);
+    expect(b.lines.find((l) => l.key === 'travel')!.detail).toBe('261 mi · 3 trips');
+    expect(b.lines.find((l) => l.key === 'materials')!.amount).toBe(84.12);
+    expect(b.lines.find((l) => l.key === 'materials')!.detail).toBe('2 items');
+    expect(b.lines.find((l) => l.key === 'other')!.amount).toBe(25);
+    expect(b.atMinimum).toBe(false);
+    expect(b.rateAmbiguous).toBe(false);
+  });
+
+  it('shows the 2-hour minimum in words and flags it', () => {
+    const v = { ...base, hours: 0.75, rate: '$55/hr', travel_charge: null, miles: null };
+    const b = visitBreakdown(v);
+    expect(b.atMinimum).toBe(true);
+    expect(b.lines[0].detail).toBe(`0.75h on site → ${MINIMUM_BILLABLE_HOURS}h minimum × $55/hr`);
+    expect(b.lines[0].amount).toBe(110);
+    expect(b.total).toBe(visitAmount(v));
+  });
+
+  it('flags the bare-number rate trap', () => {
+    const v = { ...base, hours: 5, rate: '55', travel_charge: null, miles: null };
+    const b = visitBreakdown(v);
+    expect(b.rateAmbiguous).toBe(true);
+    expect(b.lines[0].detail).toContain('flat rate');
+    expect(b.lines[0].amount).toBe(55); // bills once — exactly the trap
+    expect(b.total).toBe(visitAmount(v));
+  });
+
+  it('project price outranks the rate and says so', () => {
+    const v = { ...base, hours: 9, rate: '$55/hr', total_project_price: 2600, travel_charge: 56.65, miles: 113 };
+    const b = visitBreakdown(v);
+    expect(b.lines[0].detail).toBe('project price · 9h on site');
+    expect(b.lines[0].amount).toBe(2600);
+    expect(b.lines[1].detail).toBe('113 mi');
+    expect(b.total).toBe(visitAmount(v));
+  });
+
+  it('keeps zero lines visible and totals an empty visit at zero', () => {
+    const v = { ...base, hours: null, rate: null, travel_charge: null, miles: null };
+    const b = visitBreakdown(v);
+    expect(b.lines).toHaveLength(4);
+    expect(b.lines[0].detail).toBe('no rate set');
+    expect(b.total).toBe(0);
+    expect(b.total).toBe(visitAmount(v));
   });
 });

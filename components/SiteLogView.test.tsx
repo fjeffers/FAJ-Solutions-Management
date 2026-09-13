@@ -7,7 +7,7 @@
 // stopped moving the Hours. These render the component, type into it, and read
 // back what a person would actually see.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const VISIT = {
@@ -236,7 +236,27 @@ describe('Site Log visit editor', () => {
     const [each] = screen.getAllByPlaceholderText('0.00');
     await user.clear(qty); await user.type(qty, '4');
     await user.clear(each); await user.type(each, '12');
-    expect(screen.getByText('$48.00')).toBeTruthy();
+    // Twice over now: the materials section's own total, and the same figure
+    // on the billing breakdown's Materials line.
+    expect(screen.getAllByText('$48.00').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('breaks the visit price into labor, travel, materials and other', async () => {
+    const user = userEvent.setup();
+    await openVisit(user);
+    // Scope to the panel: "Labor" and "Materials" also head other sections.
+    const panel = screen.getByText('Billing breakdown').parentElement as HTMLElement;
+    for (const label of ['Labor', 'Travel', 'Materials', 'Other charges', 'VISIT TOTAL']) {
+      expect(within(panel).getByText(label)).toBeTruthy();
+    }
+
+    // Adding a part moves the Materials line and the total together.
+    await user.click(screen.getByRole('button', { name: /add materials/i }));
+    const [qty] = screen.getAllByPlaceholderText('1');
+    const [each] = screen.getAllByPlaceholderText('0.00');
+    await user.clear(qty); await user.type(qty, '2');
+    await user.clear(each); await user.type(each, '25');
+    expect(screen.getAllByText('$50.00').length).toBeGreaterThanOrEqual(2);
   });
 
   it('names the work order a visit became, and links to it', async () => {

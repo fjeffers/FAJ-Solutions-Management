@@ -1,7 +1,7 @@
 'use client';
 import { Plus, Trash2, Calendar } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
-import { visitDays, type VisitDay } from '@/lib/visits';
+import { visitDays, visitBreakdown, type VisitDay } from '@/lib/visits';
 import type { MaterialUsed, MileageLog, SiteVisit } from '@/lib/types';
 
 /**
@@ -66,6 +66,72 @@ function Total({ label, value, sub }: { label: string; value: string; sub?: stri
       <span style={{ fontSize: 14, fontWeight: 700 }}>
         {value}{sub && <span style={{ fontSize: 11.5, color: '#777', fontWeight: 600 }}> · {sub}</span>}
       </span>
+    </div>
+  );
+}
+
+// ── Billing breakdown ──────────────────────────────────────────────────────
+
+/**
+ * The visit's price taken apart — labor, travel, materials, other — with the
+ * arithmetic spelled out on each line, live as the form is edited.
+ *
+ * Every number comes from lib/visits (the same helpers the statement and the
+ * invoice builder use), so what this panel shows is exactly what will bill.
+ * Zero lines stay visible: this is for checking the bill, and "Materials $0"
+ * answers a question that hiding the row would leave open.
+ */
+export function VisitBillingBreakdown({ visit }: { visit: Partial<SiteVisit> }) {
+  const b = visitBreakdown(visit as SiteVisit);
+  return (
+    <div style={{
+      borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.22)',
+      background: 'rgba(13,115,119,0.04)', padding: '12px 14px',
+    }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: 'var(--teal)', marginBottom: 8 }}>
+        Billing breakdown
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {b.lines.map((l) => (
+          <div key={l.key} style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: l.amount ? '#333' : '#9aa0a6', flexShrink: 0 }}>
+              {l.label}
+            </span>
+            <span style={{ fontSize: 11.5, color: '#8a9096', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {l.detail}
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: l.amount ? '#1a1a1a' : '#b6bbc1', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+              {fmtMoney(l.amount)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+        marginTop: 9, paddingTop: 9, borderTop: '1.5px solid rgba(13,115,119,0.2)',
+      }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--teal)', letterSpacing: 0.4 }}>VISIT TOTAL</span>
+        <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>
+          {fmtMoney(b.total)}
+        </span>
+      </div>
+      {b.atMinimum && (
+        <div style={{ marginTop: 7, fontSize: 11.5, color: '#92400e', fontWeight: 600 }}>
+          ⏱ 2-hour minimum applied — billing more hours than were logged.
+        </div>
+      )}
+      {b.rateAmbiguous && (
+        <div style={{ marginTop: 7, fontSize: 11.5, color: '#b91c1c', fontWeight: 700 }}>
+          ⚠ This rate bills ONCE as a flat fee even though hours are logged. If it should be
+          per hour, switch the price to “/hr”.
+        </div>
+      )}
+      {b.materialsUnticked > 0 && (
+        <div style={{ marginTop: 7, fontSize: 11.5, color: '#92400e', fontWeight: 600 }}>
+          🧾 {fmtMoney(b.materialsUnticked)} of parts isn’t ticked “billed to client”, but it is
+          still in this total — untick it here and it still bills.
+        </div>
+      )}
     </div>
   );
 }

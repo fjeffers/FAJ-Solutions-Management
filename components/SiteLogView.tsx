@@ -1415,6 +1415,26 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
   const set = <K extends keyof SiteVisit>(k: K, v: SiteVisit[K]) => setForm((f) => ({ ...f, [k]: v }));
   const canSave = !!(form.site_name?.trim() || form.site_code?.trim() || form.address?.trim());
 
+  // Typed-in work must never vanish by accident. A stray click on the dim
+  // backdrop used to close the card and throw away everything entered, with
+  // no warning — so every way out now asks first when anything has changed.
+  const [initial] = useState(() => JSON.stringify(form));
+  const dirty = JSON.stringify(form) !== initial;
+  const requestClose = () => {
+    if (dirty && !window.confirm('You have unsaved changes on this visit. Close without saving?')) return;
+    onClose();
+  };
+  const submit = () => {
+    if (!canSave) return;
+    onSave({ ...form, sessions: (form.sessions ?? []).filter((s) => s.in) });
+  };
+  // Ctrl+Enter (Cmd+Enter on a Mac) saves from any field; Escape closes, with
+  // the same unsaved-changes check as the X.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); requestClose(); }
+  };
+
   /**
    * Routed round trip, added as a trip of its own.
    *
@@ -1479,13 +1499,13 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
   });
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
-      <div className="glass card modal-solid" style={{ width: 520, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={requestClose}>
+      <div className="glass card modal-solid" style={{ width: 520, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', paddingBottom: 0 }} onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{title}</div>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             {onDelete && <button onClick={onDelete} title="Delete visit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', padding: 6 }}><Trash2 size={15} /></button>}
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
+            <button onClick={requestClose} title="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1709,9 +1729,13 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
             </>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave({ ...form, sessions: (form.sessions ?? []).filter((s) => s.in) })} disabled={!canSave} style={quick ? { fontSize: 15, padding: '12px 18px' } : undefined}>
+        {/* Pinned to the bottom of the card so Save is always in reach —
+            it used to sit below Notes, Scope and Additional Details, a long
+            scroll away on a phone. */}
+        <div style={{ position: 'sticky', bottom: 0, background: 'inherit', display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginTop: 20, padding: '12px 0 16px', borderTop: '1px solid rgba(0,0,0,0.08)', zIndex: 1 }}>
+          {dirty && !quick && <span style={{ marginRight: 'auto', fontSize: 12, fontWeight: 600, color: '#b45309' }}>Unsaved changes</span>}
+          <button className="btn btn-ghost" onClick={requestClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!canSave} title="Save (Ctrl+Enter)" style={quick ? { fontSize: 15, padding: '12px 18px' } : undefined}>
             {quick ? <><Timer size={15} /> Start Timer</> : 'Save'}
           </button>
         </div>

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { Contractor, EntityType } from '@/lib/types';
 import { ENTITY_TYPES } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 type Tab = 'contact' | 'w9' | 'banking';
 
@@ -54,7 +55,7 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
   ];
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>

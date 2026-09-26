@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { X, Send, CheckCircle2, Loader2, Mail } from 'lucide-react';
+import { backdropClose } from '@/lib/backdrop';
 
 export type EmailType = 'work_order' | 'payment_confirmation' | 'w9_request' | 'accountant_summary' | 'invoice';
 export type EmailPayload = {
@@ -62,7 +63,7 @@ export default function EmailModal({ payload, onClose, onSent }: { payload: Emai
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>

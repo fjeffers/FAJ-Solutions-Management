@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { PAYMENT_METHODS } from '@/lib/types';
 import type { Invoice, InvoiceLineItem, InvoicePayment, InvoiceStatus, WorkOrder } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 // Display statuses go beyond the four stored ones: partial and overdue are
 // derived from payments and due_date at render time.
@@ -321,7 +322,7 @@ function InvoiceModal({
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} {...backdropClose(onClose)}>
       <div className="glass card" style={{ width: 640, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{item.id ? `Edit ${form.invoice_number}` : `New Invoice — ${form.invoice_number}`}</div>
@@ -413,7 +414,7 @@ function RecordPaymentModal({
   const [reference, setReference] = useState<string>('');
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} {...backdropClose(onClose)}>
       <div className="glass card" style={{ width: 440, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>Record Payment — {invoice.invoice_number}</div>

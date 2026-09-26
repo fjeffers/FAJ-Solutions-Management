@@ -7,6 +7,7 @@ import { kitCost, newKitItem } from '@/lib/material-kits';
 import { matchToInventory, planStockIn, stockInCost, findByCode, type StockInRow, type StockInPlan } from '@/lib/stock-in';
 import { supportsLiveScan, readBarcodeFromFile, startLiveScan, type LiveScan } from '@/lib/barcode';
 import type { Material, MaterialKit, MaterialKitItem } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 type Severity = 'out' | 'critical' | 'low' | 'ok';
 
@@ -642,7 +643,7 @@ function KitModal({
   const removeItem = (id: string) => setItems(items.filter((i) => i.id !== id));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} {...backdropClose(onClose)}>
       <div className="glass card" style={{ width: 600, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{item.id ? 'Edit Kit' : 'New Kit'}</div>
@@ -756,7 +757,7 @@ function MaterialModal({
   const set = <K extends keyof Material>(k: K, v: Material[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} {...backdropClose(onClose)}>
       <div className="glass card" style={{ width: 480, maxWidth: '90vw', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{item.id ? 'Edit Material' : 'Add Material'}</div>

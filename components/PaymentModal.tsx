@@ -7,6 +7,7 @@ import {
 import { fmtMoney, sortByWO, contractorOwedOnWO } from '@/lib/utils';
 import type { Payment, WorkOrder, Contractor } from '@/lib/types';
 import { PAYMENT_METHODS } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 function techsOnWO(w: WorkOrder): string[] {
   return (w.contractor_names && w.contractor_names.length > 0)
@@ -132,7 +133,7 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
   })();
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>

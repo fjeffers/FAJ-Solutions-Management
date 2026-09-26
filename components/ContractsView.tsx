@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { Contract, ContractStatus } from '@/lib/types';
 import { CONTRACT_STATUSES } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 const STATUS_META: Record<ContractStatus, { label: string; color: string; bg: string }> = {
   draft:    { label: 'Draft',    color: '#666',    bg: 'rgba(0,0,0,0.06)' },
@@ -192,7 +193,7 @@ function ContractModal({
   const set = <K extends keyof Contract>(k: K, v: Contract[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} {...backdropClose(onClose)}>
       <div className="glass card modal-solid" style={{ width: 760, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div>

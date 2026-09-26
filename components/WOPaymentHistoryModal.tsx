@@ -2,6 +2,7 @@
 import { X, CreditCard, DollarSign, TrendingDown, CheckCircle2 } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
 import type { Payment, WorkOrder } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 type Props = {
   wo: WorkOrder;
@@ -20,7 +21,7 @@ export default function WOPaymentHistoryModal({ wo, payments, onClose }: Props) 
   const paidOff = remaining !== null && remaining <= 0;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}

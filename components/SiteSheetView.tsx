@@ -25,6 +25,7 @@ import {
   GROUP_BY_LABEL, FORMULA_COLUMN_NAMES, type GroupBy, type SortKey, type SortDir,
 } from '@/lib/site-board';
 import { runFormula, checkFormula, formatFormulaValue, FUNCTION_NAMES, type FormulaFormat } from '@/lib/formula';
+import { backdropClose } from '@/lib/backdrop';
 
 type Col = {
   key: keyof SiteVisit;
@@ -706,7 +707,7 @@ function FormulaEditor({
   const canSave = name.trim() !== '' && expression.trim() !== '' && (check?.ok ?? false);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
           <div>

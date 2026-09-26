@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react';
 import { Plus, Edit2, Trash2, X, GripVertical, ChevronDown, Paperclip, Upload } from 'lucide-react';
 import type { QuestionTemplate, QuestionField, QuestionFieldType } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 const FIELD_TYPES: { value: QuestionFieldType; label: string }[] = [
   { value: 'text',     label: 'Short Text' },
@@ -73,7 +74,7 @@ function TemplateModal({
   const canSave = name.trim() && questions.some((q) => q.label.trim());
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>

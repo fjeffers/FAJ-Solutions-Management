@@ -6,6 +6,7 @@ import { fmtMoney, fmtDate, sortByWO, workOrderBreakdownText } from '@/lib/utils
 import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor, Payment } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
+import { backdropClose } from '@/lib/backdrop';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -608,7 +609,7 @@ function AIGenerateModal({
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} {...backdropClose(onClose)}>
       <div className="glass card" style={{ width: 480, maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15 }}>
@@ -674,7 +675,7 @@ function ReassignModal({ wo, contractors, payments, onClose, onConfirm }: {
   return (
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <div className="modal-solid" style={{ maxWidth: 460, width: '100%', padding: 22, borderRadius: 14 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>

@@ -23,6 +23,7 @@ import {
   Plus, X, Search, Trash2, Building2, Phone, Mail, User, MessageSquarePlus,
   AlertTriangle, ChevronLeft, Share2, Download,
 } from 'lucide-react';
+import { backdropClose } from '@/lib/backdrop';
 
 const STATUSES: CustomerStatus[] = ['lead', 'prospect', 'active', 'dormant', 'lost'];
 
@@ -470,7 +471,7 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
 
 function Modal({ title, onClose, onSave, children }: { title: string; onClose: () => void; onSave: () => void; children: React.ReactNode }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdropClose(onClose)}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
           <div className="serif" style={{ fontSize: 19, fontWeight: 600 }}>{title}</div>

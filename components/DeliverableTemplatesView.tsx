@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, X, GripVertical } from 'lucide-react';
 import type { DeliverableTemplate } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 // ─── Template Edit Modal ──────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ function TemplateModal({
   const canSave = name.trim() && items.some((item) => item.trim());
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>

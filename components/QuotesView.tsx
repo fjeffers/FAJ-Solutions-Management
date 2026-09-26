@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { kitCost, kitToQuoteLine, kitToQuoteLines } from '@/lib/material-kits';
 import type { Material, MaterialKit, Quote, QuoteLineItem, QuoteStatus } from '@/lib/types';
+import { backdropClose } from '@/lib/backdrop';
 
 const STATUS_META: Record<QuoteStatus, { label: string; color: string; bg: string }> = {
   draft:    { label: 'Draft',    color: '#666',    bg: 'rgba(0,0,0,0.06)' },
@@ -200,7 +201,7 @@ function QuoteModal({
   const handleSave = () => onSave({ ...form, subtotal, tax_amount: taxAmount, total });
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} {...backdropClose(onClose)}>
       <div className="glass card" style={{ width: 620, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{item.id ? `Edit ${form.quote_number}` : `New Quote — ${form.quote_number}`}</div>

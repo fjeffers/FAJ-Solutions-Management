@@ -25,6 +25,7 @@ import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
   Plus, X, Check, Ban, Link2, Clock, MapPin, ShieldCheck, AlertTriangle, Users,
 } from 'lucide-react';
+import { backdropClose } from '@/lib/backdrop';
 
 type Tab = 'review' | 'access';
 
@@ -480,7 +481,7 @@ function Modal({ title, onClose, onSave, saveLabel, children }: {
   title: string; onClose: () => void; onSave: () => void; saveLabel?: string; children: React.ReactNode;
 }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdropClose(onClose)}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
           <div className="serif" style={{ fontSize: 19, fontWeight: 600 }}>{title}</div>

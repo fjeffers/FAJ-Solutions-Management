@@ -11,6 +11,7 @@ import { genTargetLabel } from '@/lib/network';
 import type { NetworkProject, NetworkSite, NetworkSwitch, NetworkPatchPanel, NetworkDrop, NetworkDropStatus } from '@/lib/types';
 import { Plus, Edit2, Trash2, X, Search, AlertTriangle, Server, Cable, Network, Tag } from 'lucide-react';
 import FloorPlanView from '@/components/FloorPlanView';
+import { backdropClose } from '@/lib/backdrop';
 
 const DEFAULT_SCHEME = '{room}-{jack}';
 
@@ -569,7 +570,7 @@ function EntityModal({ title, onClose, onDelete, children }: {
   children: (close: () => void) => React.ReactNode;
 }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} {...backdropClose(onClose)}>
       <div className="glass card modal-solid" style={{ width: 520, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{title}</div>

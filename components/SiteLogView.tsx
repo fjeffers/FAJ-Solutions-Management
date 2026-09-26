@@ -22,6 +22,7 @@ import { toCSV } from '@/lib/csv';
 import SiteSheetView from './SiteSheetView';
 import EmailModal, { type EmailPayload } from './EmailModal';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
+import { backdropClose } from '@/lib/backdrop';
 import { MileageRows, MaterialRows, VisitDayBreakdown, VisitBillingBreakdown } from './VisitItems';
 import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users, Archive, ArchiveRestore, CalendarDays } from 'lucide-react';
 
@@ -1499,7 +1500,7 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
   });
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={requestClose}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} {...backdropClose(requestClose)}>
       <div className="glass card modal-solid" style={{ width: 520, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', paddingBottom: 0 }} onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{title}</div>

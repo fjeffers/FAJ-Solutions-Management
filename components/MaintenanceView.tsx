@@ -20,6 +20,7 @@ import {
   visitFromPlan, todayISO, DUE_STATE_LABEL, DUE_STATE_COLOR, INTERVAL_PRESETS,
   ASSET_TYPES, ASSET_STATUS_LABEL,
 } from '@/lib/maintenance';
+import { backdropClose } from '@/lib/backdrop';
 
 type Tab = 'due' | 'assets';
 
@@ -381,7 +382,7 @@ function AssetModal({ item, onSave, onClose }: {
   const [f, setF] = useState<Partial<Asset>>(item);
   const set = <K extends keyof Asset>(k: K, v: Asset[K]) => setF((p) => ({ ...p, [k]: v }));
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
         <Head title={item.id ? 'Edit equipment' : 'Add equipment'} onClose={onClose} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
@@ -437,7 +438,7 @@ function PlanModal({ item, assets, onSave, onClose }: {
   const set = <K extends keyof MaintenancePlan>(k: K, v: MaintenancePlan[K]) => setF((p) => ({ ...p, [k]: v }));
   const asset = f.asset_id ? assets.find((a) => a.id === f.asset_id) : null;
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
         <Head title={item.id ? 'Edit scheduled work' : 'Schedule recurring work'} onClose={onClose} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>

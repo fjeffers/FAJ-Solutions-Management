@@ -9,8 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchCrewSites, fetchCrewTime, fetchCrewReceipts, fetchCrewBoard, fetchCrewMessages,
   logCrewTime, deleteCrewTime, addCrewReceipt, deleteCrewReceipt, claimCrewSite,
-  releaseCrewSite, sendCrewMessage, receiptUrl,
-  type TechCrewSite, type TechCrewEntry, type TechCrewReceipt, type TechCrewBoard, type TechCrewMessage,
+  releaseCrewSite, sendCrewMessage, receiptUrl, fetchCrewToday, punchCrew,
+  type CrewToday, type PunchKind, type TechCrewSite, type TechCrewEntry, type TechCrewReceipt, type TechCrewBoard, type TechCrewMessage,
 } from '@/lib/crew-portal';
 import {
   SITE_STATUS_META, RECEIPT_CATEGORIES, crewReason, hoursBetween, projectWeeks, ymd,
@@ -18,7 +18,7 @@ import {
 } from '@/lib/crew';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { MapPin, Clock, Camera, Calendar, Send, Trash2, Receipt, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { MapPin, Clock, Camera, Calendar, Send, Trash2, Receipt, ChevronDown, ChevronUp, Loader2, LogIn, LogOut, Coffee, Utensils, Play } from 'lucide-react';
 
 type Sub = 'sites' | 'pick' | 'messages';
 
@@ -130,14 +130,16 @@ function SiteCard({ site, entries, receipts, onChanged }: {
         </div>
       )}
 
+      <TimeClock site={site} onChanged={onChanged} />
+
       <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-        <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center', minWidth: 130 }}
-          onClick={() => setOpen(open === 'hours' ? 'none' : 'hours')}>
-          <Clock size={14} /> Log hours
-        </button>
         <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', minWidth: 130 }}
           onClick={() => setOpen(open === 'receipt' ? 'none' : 'receipt')}>
           <Camera size={14} /> Add receipt
+        </button>
+        <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', minWidth: 130 }}
+          onClick={() => setOpen(open === 'hours' ? 'none' : 'hours')}>
+          <Clock size={14} /> Missed a day? Type hours
         </button>
       </div>
 
@@ -152,6 +154,116 @@ function SiteCard({ site, entries, receipts, onChanged }: {
         </button>
       )}
       {showLog && <SiteLog entries={entries} receipts={receipts} onChanged={onChanged} />}
+    </div>
+  );
+}
+
+/**
+ * Today's time clock on one site. Sign in on arrival, break and meal as they
+ * happen, sign out at the end of the day. The database accepts only the next
+ * sensible tap, works out the day's hours, and takes meals off paid time.
+ */
+function TimeClock({ site, onChanged }: { site: TechCrewSite; onChanged: () => void }) {
+  const [today, setToday] = useState<CrewToday | null>(null);
+  const [busy, setBusy] = useState<PunchKind | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  const load = useCallback(async () => {
+    try { setToday(await fetchCrewToday(site.id)); } catch { /* keep last state */ }
+  }, [site.id]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!today || today.state === 'off') return;
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, [today]);
+
+  const tap = async (kind: PunchKind) => {
+    if (kind === 'out' && !confirm('Sign out for the day?')) return;
+    setBusy(kind);
+    const r = await punchCrew(site.id, kind);
+    setBusy(null);
+    if (!r.ok) { toastError(crewReason(r.reason)); load(); return; }
+    const msg: Record<PunchKind, string> = {
+      in: 'Signed in', out: 'Signed out for the day', break_start: 'Break started',
+      break_end: 'Back from break', meal_start: 'Meal started', meal_end: 'Back from meal',
+    };
+    toastSuccess(msg[kind]);
+    await load();
+    onChanged();
+  };
+
+  if (!today) return null;
+  const state = today.state;
+  const firstIn = today.punches.find((p) => p.kind === 'in');
+  const signedOut = state === 'off' && today.punches.some((p) => p.kind === 'out');
+  const sinceIn = firstIn ? (now - new Date(firstIn.at).getTime()) / 3600000 : 0;
+  const t = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const label: Record<PunchKind, string> = {
+    in: 'In', out: 'Out', break_start: 'Break', break_end: 'Back',
+    meal_start: 'Meal', meal_end: 'Back',
+  };
+
+  const banner = {
+    off: signedOut
+      ? { text: `Done for today · ${Number(today.entry?.hours ?? 0)} hrs`, bg: 'rgba(16,185,129,0.10)', color: '#047857' }
+      : { text: 'Not signed in today', bg: 'rgba(107,114,128,0.08)', color: '#555' },
+    on: { text: `On site · ${sinceIn.toFixed(1)} hrs since ${firstIn ? t(firstIn.at) : ''}`, bg: 'rgba(13,115,119,0.10)', color: 'var(--teal)' },
+    break: { text: 'On break', bg: 'rgba(245,158,11,0.12)', color: '#b45309' },
+    meal: { text: 'At meal (unpaid)', bg: 'rgba(245,158,11,0.12)', color: '#b45309' },
+  }[state];
+
+  const big: React.CSSProperties = { flex: 1, justifyContent: 'center', minWidth: 120, padding: '13px 0', fontSize: 15 };
+
+  return (
+    <div style={{ marginTop: 10, borderRadius: 12, border: '1px solid rgba(13,115,119,0.15)', padding: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: '#999', textTransform: 'uppercase' }}>
+          Today · {fmtDate(today.work_date)}
+        </span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: banner.bg, color: banner.color }}>
+          {banner.text}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {state === 'off' && !signedOut && (
+          <button className="btn btn-primary" style={big} onClick={() => tap('in')} disabled={!!busy}>
+            {busy ? <Loader2 size={16} /> : <LogIn size={16} />} Sign in
+          </button>
+        )}
+        {state === 'off' && signedOut && (
+          <button className="btn btn-ghost" style={big} onClick={() => tap('in')} disabled={!!busy}>
+            <LogIn size={16} /> Sign back in
+          </button>
+        )}
+        {state === 'on' && (
+          <>
+            <button className="btn btn-ghost" style={big} onClick={() => tap('break_start')} disabled={!!busy}><Coffee size={16} /> Break</button>
+            <button className="btn btn-ghost" style={big} onClick={() => tap('meal_start')} disabled={!!busy}><Utensils size={16} /> Meal</button>
+          </>
+        )}
+        {state === 'break' && (
+          <button className="btn btn-primary" style={big} onClick={() => tap('break_end')} disabled={!!busy}><Play size={16} /> End break</button>
+        )}
+        {state === 'meal' && (
+          <button className="btn btn-primary" style={big} onClick={() => tap('meal_end')} disabled={!!busy}><Play size={16} /> End meal</button>
+        )}
+        {state !== 'off' && (
+          <button className="btn btn-danger" style={big} onClick={() => tap('out')} disabled={!!busy}><LogOut size={16} /> Sign out</button>
+        )}
+      </div>
+
+      {today.punches.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 8, fontSize: 11.5, color: '#888' }}>
+          {today.punches.map((p, i) => <span key={i}>{label[p.kind]} {t(p.at)}</span>)}
+        </div>
+      )}
+      {today.entry && (today.entry.meal_minutes > 0 || today.entry.break_minutes > 0) && (
+        <div style={{ fontSize: 11.5, color: '#888', marginTop: 4 }}>
+          Breaks {today.entry.break_minutes} min · Meals {today.entry.meal_minutes} min
+        </div>
+      )}
     </div>
   );
 }

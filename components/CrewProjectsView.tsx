@@ -470,7 +470,14 @@ function HoursTab({ project, teams, sites, entries, ownerId, supabase, onChanged
                   <td style={TD}>{fmtDate(e.work_date)}</td>
                   <td style={TD}>{siteName(e.site_id)}</td>
                   <td style={TD}>{teamName(e.team_id)}</td>
-                  <td style={TD}>{e.start_time ? `${e.start_time.slice(0, 5)}–${e.end_time?.slice(0, 5) ?? '?'}` : '—'}</td>
+                  <td style={TD}>
+                    {e.start_time ? `${e.start_time.slice(0, 5)}–${e.end_time?.slice(0, 5) ?? 'now'}` : '—'}
+                    {e.open_since && <div style={{ fontSize: 10.5, color: '#b45309', fontWeight: 700 }}>Still signed in</div>}
+                    {!!(e.break_minutes || e.meal_minutes) && (
+                      <div style={{ fontSize: 10.5, color: '#999' }}>break {e.break_minutes ?? 0}m · meal {e.meal_minutes ?? 0}m</div>
+                    )}
+                    {e.from_clock && <div style={{ fontSize: 10.5, color: '#0D7377' }}>time clock</div>}
+                  </td>
                   <td style={{ ...TD, fontWeight: 700 }}>{Number(e.hours)}</td>
                   <td style={TD}>{e.helper_present ? 'Yes' : <span style={{ color: '#b45309' }}>No</span>}</td>
                   <td style={{ ...TD, maxWidth: 220 }}>{e.note ?? ''}{e.entered_by ? <div style={{ fontSize: 10.5, color: '#aaa' }}>by {e.entered_by}</div> : null}</td>
@@ -832,12 +839,15 @@ function SetupTab({ project, teams, contractors, onSavedProject, onChanged, supa
   const [weeks, setWeeks] = useState(String(project?.weeks ?? 7));
   const [skip, setSkip] = useState((project?.skip_weeks ?? (project ? [] : ['2026-11-23'])).join(', '));
   const [notes, setNotes] = useState(project?.notes ?? '');
+  const [deductMeals, setDeductMeals] = useState(project?.deduct_meals ?? true);
+  const [deductBreaks, setDeductBreaks] = useState(project?.deduct_breaks ?? false);
 
   useEffect(() => {
     setName(project?.name ?? 'LDS Meetinghouse Refresh'); setClient(project?.client ?? 'NetView');
     setBillRate(String(project?.bill_rate ?? 90)); setCap(String(project?.travel_cap ?? 3000));
     setStart(project?.start_date ?? '2026-10-19'); setWeeks(String(project?.weeks ?? 7));
     setSkip((project?.skip_weeks ?? (project ? [] : ['2026-11-23'])).join(', ')); setNotes(project?.notes ?? '');
+    setDeductMeals(project?.deduct_meals ?? true); setDeductBreaks(project?.deduct_breaks ?? false);
   }, [project]);
 
   const saveProject = async () => {
@@ -846,6 +856,7 @@ function SetupTab({ project, teams, contractors, onSavedProject, onChanged, supa
       name: name.trim(), client: client.trim() || null, bill_rate: Number(billRate) || 0,
       travel_cap: Number(cap) || 0, start_date: start || null, weeks: Math.max(1, Math.min(52, Number(weeks) || 1)),
       skip_weeks: skipList, notes: notes.trim() || null, updated_at: new Date().toISOString(),
+      deduct_meals: deductMeals, deduct_breaks: deductBreaks,
     };
     if (!row.name) { toastError('Give the project a name.'); return; }
     const res = project
@@ -900,6 +911,16 @@ function SetupTab({ project, teams, contractors, onSavedProject, onChanged, supa
           <Labeled label="Weeks off (Mondays, comma-separated)"><input className="input" value={skip} onChange={(e) => setSkip(e.target.value)} placeholder="2026-11-23" /></Labeled>
         </div>
         <Labeled label="Notes"><textarea className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Mon–Fri only, no weekends. Site code of conduct: no tobacco, coffee or tea on the property." /></Labeled>
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: 13 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <input type="checkbox" checked={deductMeals} onChange={(e) => setDeductMeals(e.target.checked)} style={{ width: 17, height: 17 }} />
+            Meals are unpaid (time clock subtracts them)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <input type="checkbox" checked={deductBreaks} onChange={(e) => setDeductBreaks(e.target.checked)} style={{ width: 17, height: 17 }} />
+            Short breaks are unpaid
+          </label>
+        </div>
         <button className="btn btn-primary" onClick={saveProject} style={{ marginTop: 10 }}><Check size={14} /> {project ? 'Save project' : 'Create project'}</button>
       </div>
 

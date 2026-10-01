@@ -23,6 +23,8 @@ export type CrewProject = {
   skip_weeks: string[];
   notes: string | null;
   archived_at: string | null;
+  deduct_meals?: boolean;    // meals come off paid time (default true)
+  deduct_breaks?: boolean;   // short breaks come off paid time (default false)
 };
 
 export type CrewTeam = {
@@ -67,6 +69,10 @@ export type CrewTimeEntry = {
   note: string | null;
   status: CrewEntryStatus;
   entered_by: string | null;
+  break_minutes?: number;
+  meal_minutes?: number;
+  from_clock?: boolean;
+  open_since?: string | null;   // still signed in
 };
 
 export type CrewReceiptCategory = 'hotel' | 'fuel' | 'meals' | 'tolls' | 'parking' | 'other';
@@ -279,6 +285,7 @@ export function crewReason(reason: string): string {
     case 'week_full': return 'Your team already has a site that week.';
     case 'started': return 'Work has already started there, so it can’t be changed from here. Message Fred.';
     case 'empty': return 'Type a message first.';
+    case 'wrong_step': return 'That button doesn’t fit where the day is. Refresh and try again.';
     default: return reason || 'Something went wrong.';
   }
 }

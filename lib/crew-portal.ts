@@ -16,6 +16,7 @@ export type TechCrewSite = {
 export type TechCrewEntry = {
   id: string; site_id: string; work_date: string; start_time: string | null; end_time: string | null;
   hours: number; helper_present: boolean; note: string | null; status: CrewEntryStatus;
+  break_minutes?: number; meal_minutes?: number; from_clock?: boolean; open_since?: string | null;
 };
 
 export type TechCrewReceipt = {
@@ -129,4 +130,47 @@ export async function receiptUrl(path: string): Promise<string | null> {
   const supabase = createClient();
   const { data } = await supabase.storage.from('crew-receipts').createSignedUrl(path, 60 * 10);
   return data?.signedUrl ?? null;
+}
+
+// ── Time clock (migration-090) ──────────────────────────────────────────────
+
+export type PunchKind = 'in' | 'out' | 'break_start' | 'break_end' | 'meal_start' | 'meal_end';
+export type DayState = 'off' | 'on' | 'break' | 'meal';
+
+export type CrewToday = {
+  work_date: string;
+  state: DayState;
+  punches: { kind: PunchKind; at: string }[];
+  entry: { hours: number; break_minutes: number; meal_minutes: number; status: string } | null;
+};
+
+export async function fetchCrewToday(siteId: string): Promise<CrewToday | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_crew_today', { p_site: siteId });
+  if (error) throw new Error(error.message);
+  return (data as CrewToday | null) ?? null;
+}
+
+/** Best-effort location: never blocks the tap for more than a few seconds. */
+function whereAmI(): Promise<{ lat: number; lng: number } | null> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const done = setTimeout(() => resolve(null), 4000);
+    navigator.geolocation.getCurrentPosition(
+      (p) => { clearTimeout(done); resolve({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+      () => { clearTimeout(done); resolve(null); },
+      { enableHighAccuracy: false, maximumAge: 120000, timeout: 3500 },
+    );
+  });
+}
+
+export async function punchCrew(siteId: string, kind: PunchKind): Promise<CrewResult & { state?: DayState }> {
+  const supabase = createClient();
+  const loc = await whereAmI();
+  const { data, error } = await supabase.rpc('tech_crew_punch', {
+    p_site: siteId, p_kind: kind, p_lat: loc?.lat ?? null, p_lng: loc?.lng ?? null,
+  });
+  if (error) return { ok: false, reason: error.message };
+  const r = (data ?? {}) as { ok?: boolean; reason?: string; state?: DayState };
+  return { ok: !!r.ok, reason: r.reason ?? 'unknown', state: r.state };
 }

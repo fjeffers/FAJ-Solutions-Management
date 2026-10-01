@@ -87,7 +87,7 @@ function SiteCard({ site, entries, receipts, onChanged }: {
   const meta = SITE_STATUS_META[site.status];
   const spent = Number(site.travel_spent);
   const cap = Number(site.travel_cap);
-  const where = [site.address, site.city, site.state].filter(Boolean).join(', ');
+  const where = [site.address, site.city, [site.state, site.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const mapUrl = where ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(where)}` : null;
 
   return (
@@ -97,7 +97,14 @@ function SiteCard({ site, entries, receipts, onChanged }: {
           <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.3 }}>{site.name}</div>
           {site.week_start && (
             <div style={{ fontSize: 12, color: '#777', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Calendar size={12} /> Week of {fmtDate(site.week_start)}
+              <Calendar size={12} /> Cabling week of {fmtDate(site.week_start)}
+            </div>
+          )}
+          {(site.property_id || site.survey_date) && (
+            <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
+              {site.property_id && <>Property ID {site.property_id}</>}
+              {site.property_id && site.survey_date && ' · '}
+              {site.survey_date && <>Survey {fmtDate(site.survey_date)}</>}
             </div>
           )}
           {where && (
@@ -384,7 +391,7 @@ function PickBoard({ board, onChanged }: { board: TechCrewBoard; onChanged: () =
                 <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #f0ede6' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{s.name}</div>
-                    <div style={{ fontSize: 12, color: '#888' }}>{[s.address, s.city, s.state].filter(Boolean).join(', ')}</div>
+                    <div style={{ fontSize: 12, color: '#888' }}>{[s.address, s.city, s.state].filter(Boolean).join(', ')}{s.property_id ? ` · #${s.property_id}` : ''}</div>
                   </div>
                   <button className="btn btn-primary" onClick={() => claim(s.id)} disabled={busy === s.id}
                     style={{ flexShrink: 0, padding: '7px 12px' }}>

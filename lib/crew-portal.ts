@@ -6,6 +6,7 @@ import type { CrewReceiptCategory, CrewReceiptStatus, CrewSiteStatus, CrewEntryS
 
 export type TechCrewSite = {
   id: string; name: string; address: string | null; city: string | null; state: string | null;
+  zip: string | null; property_id: string | null; survey_date: string | null;
   week_start: string | null; status: CrewSiteStatus; notes: string | null;
   project_name: string; client: string | null; travel_cap: number;
   team_name: string; helper_name: string | null;
@@ -29,6 +30,7 @@ export type TechCrewBoard = {
   my_team_ids: string[];
   teams: { id: string; name: string; lead_name: string | null; lead_id: string | null }[];
   sites: { id: string; name: string; address: string | null; city: string | null; state: string | null;
+           zip: string | null; property_id: string | null; survey_date: string | null;
            team_id: string | null; week_start: string | null; status: CrewSiteStatus }[];
 };
 

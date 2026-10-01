@@ -11,8 +11,8 @@ const project: CrewProject = {
 const teamA: CrewTeam = { id: 'A', project_id: 'p', lead_contractor_id: 'c1', name: 'Fred', helper_name: 'Davis', pay_rate: 80, sort: 0 };
 const teamB: CrewTeam = { id: 'B', project_id: 'p', lead_contractor_id: 'c2', name: 'James', helper_name: null, pay_rate: 85, sort: 1 };
 const sites: CrewSite[] = [
-  { id: 's1', project_id: 'p', team_id: 'A', week_start: '2026-10-19', name: 'Wilmington', address: null, city: null, state: null, status: 'in_progress', notes: null },
-  { id: 's2', project_id: 'p', team_id: 'B', week_start: '2026-10-19', name: 'Gaffney', address: null, city: null, state: null, status: 'in_progress', notes: null },
+  { id: 's1', project_id: 'p', team_id: 'A', week_start: '2026-10-19', name: 'Wilmington', address: null, city: null, state: null, zip: null, property_id: null, survey_date: null, status: 'in_progress', notes: null },
+  { id: 's2', project_id: 'p', team_id: 'B', week_start: '2026-10-19', name: 'Gaffney', address: null, city: null, state: null, zip: null, property_id: null, survey_date: null, status: 'in_progress', notes: null },
 ];
 const entry = (id: string, team: string, site: string, hours: number, status: CrewTimeEntry['status']): CrewTimeEntry => ({
   id, team_id: team, site_id: site, work_date: '2026-10-19', start_time: null, end_time: null,
@@ -110,7 +110,7 @@ describe('site upload', () => {
       ['', '', '', ''],
       ['Gaffney', 'Gaffney Branch', 'SC', null],
     ]);
-    expect(out).toEqual([
+    expect(out).toMatchObject([
       { name: 'Wilmington Ward', address: '123 Market St', city: 'Wilmington', state: 'NC' },
       { name: 'Gaffney Branch', address: null, city: 'Gaffney', state: 'SC' },
     ]);
@@ -118,9 +118,31 @@ describe('site upload', () => {
   it('reads pasted lines without headers and splits "City, ST"', async () => {
     const { parseSiteRows, splitPasted } = await import('./crew');
     const out = parseSiteRows(splitPasted('Beaufort Ward\t10 Bay St\tBeaufort, SC\nBeaufort Ward\t10 Bay St\tBeaufort, SC\nPinehurst | 5 Pine Rd | Pinehurst | NC'));
-    expect(out).toEqual([
+    expect(out).toMatchObject([
       { name: 'Beaufort Ward', address: '10 Bay St', city: 'Beaufort', state: 'SC' },
       { name: 'Pinehurst', address: '5 Pine Rd', city: 'Pinehurst', state: 'NC' },
     ]);
+  });
+});
+
+describe('NetView site sheet', () => {
+  it('reads the columns Mike Wise sends (no name column, US dates, ALL CAPS city)', async () => {
+    const { parseSiteRows } = await import('./crew');
+    const out = parseSiteRows([
+      ['Survey Date', 'Survey Tech', 'Cabling Date', 'Tech Name', 'Tech Phone', 'Tech Email', 'Property ID', 'Address', 'City', 'State', 'Zip'],
+      ['10/5/2026', '', '11/9/2026', 'Team 1', '', '', '5011876', '701 West Buford Street', 'GAFFNEY', 'SC', '29340'],
+      ['10/7/2026', '', '12/14/2026', 'Team 1', '', '', '5015765', '405 Wake Boulevard', 'PORT ROYAL', 'SC', '29935'],
+    ]);
+    expect(out[0]).toEqual({
+      name: 'Gaffney Meetinghouse', address: '701 West Buford Street', city: 'Gaffney', state: 'SC',
+      zip: '29340', property_id: '5011876', survey_date: '2026-10-05', week_start: '2026-11-09',
+    });
+    expect(out[1].name).toBe('Port Royal Meetinghouse');
+    expect(out[1].week_start).toBe('2026-12-14');
+  });
+  it('turns a mid-week cabling date into that week\'s Monday', async () => {
+    const { parseSiteRows } = await import('./crew');
+    const out = parseSiteRows([['City', 'Property ID', 'Cabling Date'], ['Laurens', '1', '11/18/2026']]);
+    expect(out[0].week_start).toBe('2026-11-16');
   });
 });

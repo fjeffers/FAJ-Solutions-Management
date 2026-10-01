@@ -209,7 +209,7 @@ function ScheduleTab({ project, teams, sites, contractors, supabase, onChanged }
                           <div key={s.id} style={{ background: meta.bg, color: meta.color, borderRadius: 8, padding: '5px 7px', marginBottom: 4, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 700, lineHeight: 1.25 }}>{s.name}</div>
-                              <div style={{ fontSize: 10.5, opacity: 0.85 }}>{[s.city, s.state].filter(Boolean).join(', ')} · {meta.label}</div>
+                              <div style={{ fontSize: 10.5, opacity: 0.85 }}>{[s.city, s.state].filter(Boolean).join(', ')}{s.property_id ? ` · #${s.property_id}` : ''} · {meta.label}</div>
                             </div>
                             <button onClick={() => unplace(s)} title="Unschedule" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}><X size={12} /></button>
                           </div>
@@ -277,12 +277,20 @@ function SitesTab({ project, teams, sites, entries, receipts, supabase, onChange
   };
 
   const existingKey = new Set(sites.map((s) => `${s.name}|${s.city ?? ''}`.toLowerCase()));
-  const fresh = preview.filter((d) => !existingKey.has(`${d.name}|${d.city ?? ''}`.toLowerCase()));
+  const existingPid = new Set(sites.map((s) => s.property_id).filter(Boolean));
+  const fresh = preview.filter((d) => d.property_id
+    ? !existingPid.has(d.property_id)
+    : !existingKey.has(`${d.name}|${d.city ?? ''}`.toLowerCase()));
 
   const save = async () => {
     if (fresh.length === 0) { toastError('Nothing new to add.'); return; }
     setSaving(true);
-    const { error } = await supabase.from('crew_sites').insert(fresh.map((d) => ({ ...d, project_id: project.id })));
+    const { error } = await supabase.from('crew_sites').insert(fresh.map((d) => ({
+      name: d.name, address: d.address, city: d.city, state: d.state,
+      zip: d.zip ?? null, property_id: d.property_id ?? null,
+      survey_date: d.survey_date ?? null, week_start: d.week_start ?? null,
+      project_id: project.id,
+    })));
     setSaving(false);
     if (error) { toastError(error.message); return; }
     toastSuccess(`${fresh.length} site${fresh.length === 1 ? '' : 's'} added`);
@@ -310,7 +318,7 @@ function SitesTab({ project, teams, sites, entries, receipts, supabase, onChange
       <div className="glass card" style={{ padding: 16 }}>
         <SectionHead>Upload sites</SectionHead>
         <div style={{ fontSize: 13, color: '#666', marginBottom: 10, lineHeight: 1.5 }}>
-          Drop in the spreadsheet NetView sends (Excel or CSV with a Name or Site column), or paste lines:
+          Drop in the site sheet NetView sends (Excel or CSV; Property ID, Address, City, State, Zip, Survey Date and Cabling Date are all read), or paste lines:
           <span style={{ fontFamily: 'monospace', fontSize: 12 }}> Name, Address, City, State</span>. Sites already on the project are skipped.
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -329,7 +337,8 @@ function SitesTab({ project, teams, sites, entries, receipts, supabase, onChange
             <div style={{ maxHeight: 200, overflowY: 'auto', fontSize: 12.5, border: '1px solid #eee', borderRadius: 8 }}>
               {fresh.map((d, i) => (
                 <div key={i} style={{ padding: '5px 8px', borderBottom: '1px solid #f3f3f3' }}>
-                  <b>{d.name}</b> <span style={{ color: '#888' }}>{[d.address, d.city, d.state].filter(Boolean).join(', ')}</span>
+                  <b>{d.name}</b> <span style={{ color: '#888' }}>{[d.address, d.city, d.state].filter(Boolean).join(', ')}
+                    {d.property_id ? ` · #${d.property_id}` : ''}{d.survey_date ? ` · survey ${fmtDate(d.survey_date)}` : ''}{d.week_start ? ` · cabling wk ${fmtDate(d.week_start)}` : ''}</span>
                 </div>
               ))}
             </div>
@@ -354,8 +363,9 @@ function SitesTab({ project, teams, sites, entries, receipts, supabase, onChange
                 return (
                   <tr key={s.id}>
                     <td style={TD}>
-                      <div style={{ fontWeight: 700 }}>{s.name}</div>
-                      <div style={{ fontSize: 11, color: '#888' }}>{[s.address, s.city, s.state].filter(Boolean).join(', ')}</div>
+                      <div style={{ fontWeight: 700 }}>{s.name}{s.property_id && <span style={{ fontWeight: 400, color: '#888' }}> · #{s.property_id}</span>}</div>
+                      <div style={{ fontSize: 11, color: '#888' }}>{[s.address, s.city, [s.state, s.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')}</div>
+                      {s.survey_date && <div style={{ fontSize: 11, color: '#0D7377' }}>Survey {fmtDate(s.survey_date)}</div>}
                     </td>
                     <td style={TD}>
                       <select className="select" value={s.team_id ?? ''} style={SMALL_SELECT}

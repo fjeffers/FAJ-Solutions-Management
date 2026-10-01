@@ -46,6 +46,9 @@ export type CrewSite = {
   address: string | null;
   city: string | null;
   state: string | null;
+  zip: string | null;
+  property_id: string | null;   // NetView's id for the site
+  survey_date: string | null;   // site survey, usually weeks before cabling
   status: CrewSiteStatus;
   notes: string | null;
 };
@@ -282,14 +285,40 @@ export function crewReason(reason: string): string {
 
 // ── Site upload ─────────────────────────────────────────────────────────────
 
-export type SiteDraft = { name: string; address: string | null; city: string | null; state: string | null };
+export type SiteDraft = {
+  name: string; address: string | null; city: string | null; state: string | null;
+  zip?: string | null; property_id?: string | null;
+  survey_date?: string | null; week_start?: string | null;   // 'YYYY-MM-DD'
+};
 
 const HEADER_ALIASES: Record<keyof SiteDraft, string[]> = {
   name: ['name', 'site', 'site name', 'meetinghouse', 'building', 'location', 'facility'],
   address: ['address', 'street', 'street address', 'address 1', 'address1'],
   city: ['city', 'town'],
   state: ['state', 'st'],
+  zip: ['zip', 'zip code', 'zipcode', 'postal code'],
+  property_id: ['property id', 'property', 'prop id', 'property #', 'site id'],
+  survey_date: ['survey date', 'survey'],
+  week_start: ['cabling date', 'install date', 'cabling', 'start date', 'week'],
 };
+
+/** '10/5/2026', '2026-10-05', or an Excel serial day number → 'YYYY-MM-DD'. */
+export function parseSheetDate(v: string): string | null {
+  const t = v.trim();
+  if (!t) return null;
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) {
+    const y = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  }
+  if (/^\d{5}$/.test(t)) {             // Excel serial (days since 1899-12-30)
+    const d = new Date(Date.UTC(1899, 11, 30) + Number(t) * 86400000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  return null;
+}
 
 /**
  * Turn spreadsheet rows (or pasted lines split on tabs/commas/pipes) into
@@ -303,33 +332,48 @@ export function parseSiteRows(rows: (string | number | null | undefined)[][]): S
     .filter((r) => r.some((c) => c !== ''));
   if (clean.length === 0) return [];
 
-  let idx: Record<keyof SiteDraft, number> = { name: 0, address: 1, city: 2, state: 3 };
+  let idx: Record<keyof SiteDraft, number>;
   const head = clean[0].map((c) => c.toLowerCase());
   const found = (Object.keys(HEADER_ALIASES) as (keyof SiteDraft)[])
     .map((k) => [k, head.findIndex((h) => HEADER_ALIASES[k].includes(h))] as const);
   let body = clean;
-  if (found.some(([k, i]) => k === 'name' && i >= 0)) {
-    idx = Object.fromEntries(found) as Record<keyof SiteDraft, number>;
+  const hit = Object.fromEntries(found) as Record<keyof SiteDraft, number>;
+  // A header row names the site, or (NetView's sheets) gives a city plus a
+  // Property ID with no name column at all.
+  const headed = hit.name >= 0 || (hit.city >= 0 && (hit.property_id >= 0 || hit.address >= 0));
+  if (headed) {
+    idx = hit;
     body = clean.slice(1);
+  } else {
+    idx = { name: 0, address: 1, city: 2, state: 3, zip: -1, property_id: -1, survey_date: -1, week_start: -1 };
   }
 
   const seen = new Set<string>();
   const out: SiteDraft[] = [];
   for (const r of body) {
-    const get = (i: number) => (i >= 0 && r[i] ? r[i] : null);
-    const name = get(idx.name);
-    if (!name) continue;
+    const get = (i: number | undefined) => (i != null && i >= 0 && r[i] ? r[i] : null);
     let city = get(idx.city);
     let state = get(idx.state);
+    // No name column: call it after the town, the way the crews talk about it.
+    const name = get(idx.name) ?? (city ? `${titleCase(city)} Meetinghouse` : null);
+    if (!name) continue;
     // "Wilmington, NC" in one cell
     if (city && !state) {
       const m = city.match(/^(.*?),\s*([A-Za-z]{2})$/);
       if (m) { city = m[1]; state = m[2]; }
     }
-    const key = `${name}|${city ?? ''}`.toLowerCase();
+    if (city && city === city.toUpperCase()) city = titleCase(city);
+    const property_id = get(idx.property_id);
+    const key = property_id ? `pid|${property_id}` : `${name}|${city ?? ''}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ name, address: get(idx.address), city, state: state ? state.toUpperCase() : null });
+    const week = get(idx.week_start);
+    out.push({
+      name, address: get(idx.address), city, state: state ? state.toUpperCase() : null,
+      zip: get(idx.zip), property_id,
+      survey_date: (() => { const v = get(idx.survey_date); return v ? parseSheetDate(v) : null; })(),
+      week_start: week ? (() => { const d = parseSheetDate(week); return d ? mondayOf(d) : null; })() : null,
+    });
   }
   return out;
 }
@@ -341,4 +385,8 @@ export function splitPasted(text: string): string[][] {
     if (line.includes('|')) return line.split('|');
     return line.split(',');
   });
+}
+
+function titleCase(s: string): string {
+  return s.toLowerCase().split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');
 }

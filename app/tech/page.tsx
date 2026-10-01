@@ -11,15 +11,17 @@ import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
 import TechOpenWork from '@/components/TechOpenWork';
 import TechJobActions from '@/components/TechJobActions';
+import TechCrew from '@/components/TechCrew';
+import { fetchCrewBoard } from '@/lib/crew-portal';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import type { TechJob, TechOpenJob, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import {
   HardHat, LogOut, Briefcase, Wallet, User, MapPin, Calendar, Clock,
-  CheckCircle2, Save, MessageSquare, ChevronDown, FileWarning, FileText, Inbox,
+  CheckCircle2, Save, MessageSquare, ChevronDown, FileWarning, FileText, Inbox, Users,
 } from 'lucide-react';
 
-type Tab = 'jobs' | 'open' | 'pay' | 'chat' | 'profile' | 'paperwork';
+type Tab = 'jobs' | 'open' | 'pay' | 'chat' | 'profile' | 'paperwork' | 'crew';
 
 export default function TechPortalPage() {
   const router = useRouter();
@@ -32,7 +34,7 @@ export default function TechPortalPage() {
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window === 'undefined') return 'jobs';
     const t = new URLSearchParams(window.location.search).get('tab');
-    return (['jobs', 'open', 'pay', 'chat', 'profile', 'paperwork'] as const)
+    return (['jobs', 'open', 'pay', 'chat', 'profile', 'paperwork', 'crew'] as const)
       .includes(t as Tab) ? (t as Tab) : 'jobs';
   });
 
@@ -44,6 +46,8 @@ export default function TechPortalPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [portalToken, setPortalToken] = useState<string | null>(null);
   const [openJobs, setOpenJobs] = useState<TechOpenJob[]>([]);
+  // Crew projects (migration-087): only leads on one see the menu item.
+  const [onCrew, setOnCrew] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -60,6 +64,8 @@ export default function TechPortalPage() {
         ]);
         setProfile(me); setJobs(j); setPayments(p); setSummary(s); setUnread(u + dmU);
         setPortalToken(tok); setOpenJobs(open);
+        // A crew lookup failing must not lock a tech out of their normal jobs.
+        fetchCrewBoard().then((b) => setOnCrew(b.length > 0)).catch(() => {});
       } catch {
         setDenied(true);
       }
@@ -178,6 +184,10 @@ export default function TechPortalPage() {
                   </div>
                   <MenuItem icon={<Briefcase size={15} />} label="My Jobs" badge={jobs.length}
                     onClick={() => { setTab('jobs'); setMenuOpen(false); }} />
+                  {onCrew && (
+                    <MenuItem icon={<Users size={15} />} label="Crew Project"
+                      onClick={() => { setTab('crew'); setMenuOpen(false); }} />
+                  )}
                   <MenuItem icon={<Inbox size={15} />} label="Needs Your Answer" badge={openJobs.length}
                     attention={openJobs.length > 0}
                     onClick={() => { setTab('open'); setMenuOpen(false); }} />
@@ -223,6 +233,27 @@ export default function TechPortalPage() {
 
         <TechInstall />
 
+        {/* A crew lead's daily errand — hours and receipts — one tap from home. */}
+        {onCrew && tab !== 'crew' && (
+          <button
+            onClick={() => setTab('crew')}
+            style={{
+              width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: 16,
+              display: 'flex', alignItems: 'center', gap: 11,
+              background: 'rgba(13,115,119,0.07)', border: '1px solid rgba(13,115,119,0.25)',
+              borderRadius: 12, padding: '12px 14px',
+            }}
+          >
+            <Users size={18} color="var(--teal)" style={{ flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--teal)' }}>Crew project</div>
+              <div style={{ fontSize: 11.5, color: '#666', marginTop: 2 }}>
+                Log today&apos;s hours, add receipts, pick sites, message the crew.
+              </div>
+            </div>
+          </button>
+        )}
+
         {/* Unfiled paperwork is money that cannot be paid out — say so once,
             at the top, rather than hiding it behind a menu item. */}
         {paperworkDue > 0 && tab !== 'paperwork' && (
@@ -257,11 +288,13 @@ export default function TechPortalPage() {
             : tab === 'open' ? 'Needs Your Answer'
             : tab === 'chat' ? 'Chat'
             : tab === 'paperwork' ? 'W-9 & Agreement'
+            : tab === 'crew' ? 'Crew Project'
             : 'Profile'}
         </h2>
 
         {tab === 'jobs' && <JobsTab active={active} onChanged={reloadJobs} onSeePay={() => setTab('pay')} />}
         {tab === 'open' && <TechOpenWork jobs={openJobs} onChanged={reloadJobs} />}
+        {tab === 'crew' && <TechCrew />}
         {tab === 'pay' && <PayTab payments={payments} />}
         {tab === 'chat' && (
           <TechChat

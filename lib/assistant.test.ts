@@ -127,7 +127,8 @@ describe('small things', () => {
 describe('roles', () => {
   it('sends each staff role to its own section, and an unknown role nowhere', () => {
     expect(sectionForRole('assistant')).toBe('/assistant');
-    expect(sectionForRole('accountant')).toBeNull();
+    expect(sectionForRole('accountant')).toBe('/accountant');
+    expect(sectionForRole('developer')).toBeNull();
     expect(sectionForRole(undefined)).toBeNull();
   });
   it('only offers roles that have a section to sign in to', () => {

@@ -7,7 +7,7 @@ import {
 } from '@/lib/assistant';
 import { fmtDate } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { UserPlus, Copy, Trash2, Plus, CheckCircle2, Circle, Power, ExternalLink } from 'lucide-react';
+import { UserPlus, Copy, Trash2, Plus, CheckCircle2, Circle, Power, ExternalLink, Code2 } from 'lucide-react';
 
 /**
  * Everyone who can sign in to the app, with their role (migrations 092-094):
@@ -45,7 +45,11 @@ export default function TeamView({ onOpenContractors }: { onOpenContractors?: ()
   const [due, setDue] = useState('');
   const [savingTask, setSavingTask] = useState(false);
 
-  const signInLink = typeof window !== 'undefined' ? `${window.location.origin}/assistant/login` : '/assistant/login';
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const signInLinks: [string, string][] = [
+    ['Assistant', `${origin}/assistant/login`],
+    ['Accountant', `${origin}/accountant/login`],
+  ];
 
   const load = async () => {
     const [s, t, a, c] = await Promise.all([
@@ -124,13 +128,24 @@ export default function TeamView({ onOpenContractors }: { onOpenContractors?: ()
     await load();
   };
 
-  const copyLink = async () => {
+  const copyLink = async (link: string) => {
     try {
-      await navigator.clipboard.writeText(signInLink);
+      await navigator.clipboard.writeText(link);
       toastSuccess('Sign-in link copied.');
     } catch {
-      toastError(`Couldn't copy. The link is ${signInLink}`);
+      toastError(`Couldn't copy. The link is ${link}`);
     }
+  };
+
+  // A tech's login on or off, right here — the same switch the tech portal
+  // checks (contractors.portal_enabled, migration-067). Off is immediate.
+  const toggleTech = async (t: TechLogin) => {
+    const turningOff = t.portal_enabled !== false;
+    if (turningOff && !window.confirm(`Turn off ${t.name}'s tech login? They can't sign in until you turn it back on.`)) return;
+    const { error } = await supabase.from('contractors').update({ portal_enabled: !turningOff }).eq('id', t.id);
+    if (error) { toastError(`Couldn't change it: ${error.message}`); return; }
+    toastSuccess(turningOff ? `${t.name}'s login is off.` : `${t.name}'s login is back on.`);
+    await load();
   };
 
   const techSignIn = typeof window !== 'undefined' ? `${window.location.origin}/tech/login` : '/tech/login';
@@ -217,6 +232,9 @@ export default function TeamView({ onOpenContractors }: { onOpenContractors?: ()
                   : t.auth_user_id ? `Has a login${t.portal_last_login_at ? ` · last in ${fmtDate(t.portal_last_login_at)}` : ''}`
                   : 'No login yet'}
               </div>
+              <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => toggleTech(t)}>
+                <Power size={13} /> {t.portal_enabled === false ? 'Turn on' : 'Turn off'}
+              </button>
             </div>
           ))}
           {onOpenContractors && (
@@ -252,16 +270,38 @@ export default function TeamView({ onOpenContractors }: { onOpenContractors?: ()
         </form>
 
         <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', fontSize: 12.5, lineHeight: 1.6 }}>
-          <b>How an assistant gets in:</b> send them this link. They tap &ldquo;First time? Create your login&rdquo;, use the
-          email you added, and choose their own password. You never need to know it.
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-            <code style={{ background: 'white', padding: '6px 10px', borderRadius: 6, fontSize: 12 }}>{signInLink}</code>
-            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={copyLink}><Copy size={13} /> Copy link</button>
-          </div>
+          <b>How they get in:</b> send each person the link for their role. They tap &ldquo;First time? Create your
+          login&rdquo;, use the email you added, and choose their own password. You never need to know it.
+          {signInLinks.map(([label, link]) => (
+            <div key={label} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+              <span style={{ width: 84, fontWeight: 700 }}>{label}</span>
+              <code style={{ background: 'white', padding: '6px 10px', borderRadius: 6, fontSize: 12, wordBreak: 'break-all' }}>{link}</code>
+              <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => copyLink(link)}><Copy size={13} /> Copy</button>
+            </div>
+          ))}
           <div style={{ marginTop: 10 }}>
             <b>Techs</b> sign in at <code style={{ background: 'white', padding: '2px 6px', borderRadius: 4 }}>{techSignIn}</code> with
             the email on their contractor record. Each tech sees only their own jobs and pay.
           </div>
+        </div>
+      </div>
+
+      {/* ── Developer ── */}
+      <div className="glass card" style={{ padding: 20, marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}><Code2 size={16} /> Developer</div>
+        <div style={{ fontSize: 13, color: '#555', lineHeight: 1.65 }}>
+          A developer fixes and improves the app as you direct. They work in the app&apos;s code on GitHub, not inside
+          your live app, so they never see your clients, money or techs&apos; tax details. Every change they make waits
+          for review before it goes live.
+          <ol style={{ margin: '10px 0 0', paddingLeft: 20 }}>
+            <li>Have them sign an agreement (confidentiality and who owns the code) before you give access.</li>
+            <li>
+              Give or take away access on GitHub: <a href="https://github.com/fjeffers/faj-payment-solutions/settings/access"
+                target="_blank" rel="noreferrer" style={{ color: 'var(--teal)', fontWeight: 700 }}>Collaborators for your app&apos;s code</a>.
+              Add their GitHub username to give access; press Remove to take it away. It takes effect at once.
+            </li>
+            <li>Ask Claude to set up a practice copy of the app with fake data for them to test on.</li>
+          </ol>
         </div>
       </div>
 
@@ -317,9 +357,10 @@ export default function TeamView({ onOpenContractors }: { onOpenContractors?: ()
 
       {/* ── Everything they did ── */}
       <div className="glass card" style={{ padding: 20, marginTop: 18 }}>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>Everything your assistants did</div>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Everything your team did</div>
         <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
-          Every sign-in, every change to a job, and every task they finished or reopened. Newest first.
+          Every sign-in by an assistant or accountant, every change to a job, every task finished or reopened, and
+          every time the accountant showed a tax ID or opened a W-9. Newest first. Only you see this.
         </div>
         {loaded && activity.length === 0 && <div style={{ fontSize: 13, color: '#888' }}>Nothing yet.</div>}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -380,6 +421,7 @@ const ROLE_COLORS: Record<string, React.CSSProperties> = {
   owner: { background: 'rgba(212,175,55,0.2)', color: '#7a5c00' },
   tech: { background: 'rgba(13,115,119,0.12)', color: 'var(--teal)' },
   assistant: { background: 'rgba(107,45,139,0.12)', color: '#6B2D8B' },
+  accountant: { background: 'rgba(28,40,51,0.1)', color: '#1c2833' },
 };
 
 const LABEL: React.CSSProperties = {

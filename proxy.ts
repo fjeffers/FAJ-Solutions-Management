@@ -41,6 +41,7 @@ export async function proxy(request: NextRequest) {
     '/site-report/',   // client site activity report
     '/tech/login',     // tech portal sign-in / first-time signup
     '/assistant/login',// assistant sign-in / first-time signup
+    '/accountant/login',// accountant sign-in / first-time signup
     '/reset-password', // request a reset — always logged out
     '/update-password',// set the new password from the emailed link
   ];
@@ -57,6 +58,7 @@ export async function proxy(request: NextRequest) {
     // broken and phones Fred.
     url.pathname = pathname.startsWith('/tech') ? '/tech/login'
       : pathname.startsWith('/assistant') ? '/assistant/login'
+      : pathname.startsWith('/accountant') ? '/accountant/login'
       : '/login';
     return NextResponse.redirect(url);
   }

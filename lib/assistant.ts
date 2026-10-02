@@ -145,6 +145,18 @@ export async function claimAssistantAccount(): Promise<RpcResult & { role?: stri
 }
 
 /**
+ * Which staff section this login belongs in (/assistant, /accountant), or null
+ * for the owner and everyone else. Fails SAFE: an error leaves them where they are.
+ */
+export async function myStaffSection(): Promise<string | null> {
+  try {
+    return sectionForRole(await rpc<string | null>('my_staff_role'));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Should this login be in the assistant section rather than the owner app?
  * Fails SAFE: an error leaves the person where they are.
  */
@@ -178,7 +190,7 @@ export const addStaffMember = (name: string, email: string, role: StaffRole = 'a
  * `canAdd: true`. A role becomes addable only when its section exists — the
  * database (staff_role_allowed, migration-094) refuses any other.
  */
-export type StaffRole = 'assistant';
+export type StaffRole = 'assistant' | 'accountant';
 export interface RoleInfo {
   key: 'owner' | 'tech' | StaffRole | 'accountant' | 'developer';
   label: string;
@@ -191,7 +203,7 @@ export const ROLES: RoleInfo[] = [
   { key: 'owner', label: 'Owner', sees: 'Everything, including all money. That is you.', canAdd: false },
   { key: 'tech', label: 'Tech', sees: "Only their own jobs and their own pay. Never anyone else's.", canAdd: false, addedWhere: 'Contractors screen' },
   { key: 'assistant', label: 'Assistant', sees: 'All jobs, the schedule, tech contacts and their to-do list. No money.', canAdd: true },
-  { key: 'accountant', label: 'Accountant', sees: 'Not set up yet. Money only, read-only, once you decide what they need.', canAdd: false },
+  { key: 'accountant', label: 'Accountant', sees: 'Audit and taxes, read-only: 1099s and W-9s, what techs were paid, income, and each job\'s revenue and profit. Tax IDs show the last 4 until they press Show, and you see every Show.', canAdd: true },
   { key: 'developer', label: 'Developer', sees: 'No login to your live app. They get the code and a practice copy with fake data.', canAdd: false },
 ];
 
@@ -199,6 +211,7 @@ export const ROLES: RoleInfo[] = [
 export function sectionForRole(role: string | null | undefined): string | null {
   switch (role) {
     case 'assistant': return '/assistant';
+    case 'accountant': return '/accountant';
     default: return null;
   }
 }
@@ -221,7 +234,9 @@ export function staffReasonText(reason: string): string {
     case 'bad_date': return "That date isn't valid.";
     case 'not_an_assistant': return 'Your login is no longer set up as an assistant. Ask Fred.';
     case 'nothing_to_save': return 'Nothing changed.';
-    case 'no_matching_assistant': return 'Signed in, but this email is not set up as an assistant yet. Ask Fred to add it.';
+    case 'no_matching_assistant': return 'Signed in, but this email is not set up on the Team screen yet. Ask Fred to add it.';
+    case 'not_an_accountant': return 'Your login is no longer set up as an accountant. Ask Fred.';
+    case 'no_tax_id': return 'No tax ID on file for this tech.';
     case 'email_not_confirmed': return 'Check your inbox and confirm your email address, then sign in again.';
     case 'turned_off': return 'Your assistant login is turned off. Ask Fred to turn it back on.';
     case 'is_owner': return 'This is a business owner login. Use the main app instead.';

@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import { Printer, AlertTriangle, CheckCircle } from 'lucide-react';
 import { fmtMoney } from '@/lib/utils';
+import { form1099Threshold, needs1099 as overThreshold, thresholdNeedsCheck } from '@/lib/tax1099';
 import type { Contractor, Payment } from '@/lib/types';
 
 export default function TenNinetyNineView({ contractors, payments, year, setYear }: { contractors: Contractor[]; payments: Payment[]; year: number; setYear: (y: number) => void }) {
@@ -15,11 +16,12 @@ export default function TenNinetyNineView({ contractors, payments, year, setYear
     const yearPayments = payments.filter((p) => new Date(p.payment_date).getFullYear() === year);
     return contractors.map((c) => {
       const paid = yearPayments.filter((p) => p.contractor_name === c.name).reduce((s, p) => s + Number(p.amount), 0);
-      return { ...c, paid, needs1099: paid >= 600 };
+      return { ...c, paid, needs1099: overThreshold(paid, year) };
     }).filter((r) => r.paid > 0).sort((a, b) => b.paid - a.paid);
   }, [contractors, payments, year]);
 
   const needs1099 = rows.filter((r) => r.needs1099);
+  const threshold = form1099Threshold(year);
   const total = rows.reduce((s, r) => s + r.paid, 0);
 
   return (
@@ -29,7 +31,11 @@ export default function TenNinetyNineView({ contractors, payments, year, setYear
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>1099 Summary</h1>
-            <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Contractors paid $600+ require a 1099-NEC</p>
+            <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>
+              Contractors paid {fmtMoney(threshold)} or more in {year} need a 1099-NEC
+              {year >= 2026 ? ' (the line rose from $600 to $2,000 for 2026 payments)' : ''}
+              {thresholdNeedsCheck(year) ? '. Confirm the inflation-adjusted amount with your accountant.' : ''}
+            </p>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <select className="select input" value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ width: 100 }}>
@@ -58,7 +64,7 @@ export default function TenNinetyNineView({ contractors, payments, year, setYear
       {needs1099.length > 0 && (
         <div style={{ padding: '12px 16px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
           <AlertTriangle size={16} color="#b91c1c" />
-          <span><strong>{needs1099.length} contractor{needs1099.length !== 1 ? 's' : ''}</strong> paid $600 or more in {year} — 1099-NEC forms required by January 31, {year + 1}.</span>
+          <span><strong>{needs1099.length} contractor{needs1099.length !== 1 ? 's' : ''}</strong> paid {fmtMoney(threshold)} or more in {year} — 1099-NEC forms required by January 31, {year + 1}.</span>
         </div>
       )}
 

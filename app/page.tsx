@@ -42,7 +42,7 @@ import LedgerView from '@/components/LedgerView';
 import GlobalSearch from '@/components/GlobalSearch';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
 import { belongsInTechPortal } from '@/lib/tech-portal';
-import { belongsInAssistantSection } from '@/lib/assistant';
+import { myStaffSection } from '@/lib/assistant';
 import { reassignWorkOrder, describeReassignment } from '@/lib/reassign';
 import ContractorModal from '@/components/ContractorModal';
 import WorkOrderModal from '@/components/WorkOrderModal';
@@ -224,11 +224,12 @@ export default function HomePage() {
     // owner UI and everything they created was filed under their own account —
     // invisible to Fred AND to the tech portal (migration-082).
     if (await belongsInTechPortal()) { router.replace('/tech'); return false; }
-    // Same for an assistant (migration-092): their section shows the work with
-    // no money. The owner app would hand them an empty shell — RLS gives an
-    // assistant's session zero rows — and anything they created here would be
-    // filed under their own account, invisible to Fred.
-    if (await belongsInAssistantSection()) { router.replace('/assistant'); return false; }
+    // Same for staff (migrations 092-095): an assistant or accountant has their
+    // own section. The owner app would hand them an empty shell — RLS gives a
+    // staff session zero rows — and anything they created here would be filed
+    // under their own account, invisible to Fred.
+    const staffSection = await myStaffSection();
+    if (staffSection) { router.replace(staffSection); return false; }
 
     const [cRes, wRes, pRes, svRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),

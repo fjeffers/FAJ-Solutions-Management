@@ -82,7 +82,8 @@ export function TimeClockCard({ job, enabled, busy, onToggle }: {
         <Timer size={20} color="var(--wf-navy)" />
         <div style={{ fontWeight: 600, fontSize: 15 }}>Time in / out</div>
       </div>
-      <div className="wf-display" style={{ fontSize: 40, fontWeight: 700, textAlign: 'center', margin: '14px 0 2px', fontVariantNumeric: 'tabular-nums', color: on ? 'var(--wf-navy)' : 'var(--wf-text)' }}>
+      {/* Fred, 2026-10-02: "timer is too big" — 40px became 26px. */}
+      <div className="wf-display" style={{ fontSize: 26, fontWeight: 600, textAlign: 'center', margin: '8px 0 0', fontVariantNumeric: 'tabular-nums', color: on ? 'var(--wf-navy)' : 'var(--wf-text)' }}>
         {formatClock(total)}
       </div>
       <div className="wf-subtle" style={{ textAlign: 'center', fontSize: 12.5 }}>
@@ -90,7 +91,7 @@ export function TimeClockCard({ job, enabled, busy, onToggle }: {
       </div>
       <button
         className={`wf-btn ${on ? 'wf-btn-danger' : 'wf-btn-gold'}`}
-        style={{ width: '100%', marginTop: 14 }}
+        style={{ width: '100%', marginTop: 10 }}
         disabled={!enabled || busy}
         onClick={onToggle}
       >

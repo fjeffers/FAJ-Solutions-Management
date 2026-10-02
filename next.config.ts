@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@supabase/ssr", "@supabase/supabase-js"],
+  // WorkFlow (Fred's Flutter app, built into public/workflow by
+  // scripts/build-workflow.mjs) is one page that routes itself with #/… —
+  // so the folder address serves its index.html.
+  async rewrites() {
+    return [
+      { source: "/workflow", destination: "/workflow/index.html" },
+      { source: "/workflow/", destination: "/workflow/index.html" },
+    ];
+  },
   async headers() {
     return [
       {

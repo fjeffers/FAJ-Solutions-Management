@@ -362,7 +362,7 @@ function ScanTools({
 
       {/* ── Receipt → stock ── */}
       {open === 'receipt' && (
-        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(14,27,46,0.25)', background: 'rgba(14,27,46,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
             Bought a load of stock? Use the camera, upload a screenshot or a saved PDF, or paste the
             emailed text. Anything you already track gets topped up; anything new becomes a new item.
@@ -402,16 +402,16 @@ function ScanTools({
 
       {/* ── Review before anything is written ── */}
       {rows.length > 0 && (
-        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.35)', background: '#fff', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(14,27,46,0.35)', background: '#fff', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ fontWeight: 700, fontSize: 13 }}>
             Ready to add{vendor ? ' — from ' + vendor : ''}
           </div>
           {rows.map((r) => (
-            <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, flexWrap: 'wrap', opacity: r.include ? 1 : 0.45, background: r.match ? 'rgba(13,115,119,0.04)' : 'rgba(245,158,11,0.05)', border: '1px solid rgba(0,0,0,0.08)' }}>
+            <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, flexWrap: 'wrap', opacity: r.include ? 1 : 0.45, background: r.match ? 'rgba(14,27,46,0.04)' : 'rgba(245,158,11,0.05)', border: '1px solid rgba(0,0,0,0.08)' }}>
               <input type="checkbox" checked={r.include} onChange={(e) => updateRow(r.id, { include: e.target.checked })} />
               <span style={{
                 fontSize: 9, fontWeight: 800, letterSpacing: 0.5, padding: '2px 7px', borderRadius: 999, flexShrink: 0,
-                background: r.match ? 'rgba(13,115,119,0.12)' : 'rgba(245,158,11,0.15)',
+                background: r.match ? 'rgba(14,27,46,0.12)' : 'rgba(245,158,11,0.15)',
                 color: r.match ? 'var(--teal)' : '#92400e',
               }}>
                 {r.match ? 'TOP UP' : 'NEW'}
@@ -459,7 +459,7 @@ function ScanTools({
 
       {/* ── Scan one item ── */}
       {open === 'item' && (
-        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(14,27,46,0.25)', background: 'rgba(14,27,46,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
             Point the camera at a barcode to see whether you already stock it, and how many you have.
             Or type the number in.
@@ -688,10 +688,10 @@ function KitModal({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {items.map((i) => (
-                  <div key={i.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: i.material_id ? 'rgba(13,115,119,0.04)' : 'rgba(245,158,11,0.05)', border: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
+                  <div key={i.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: i.material_id ? 'rgba(14,27,46,0.04)' : 'rgba(245,158,11,0.05)', border: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
                     <span style={{
                       fontSize: 9, fontWeight: 800, letterSpacing: 0.5, padding: '2px 7px', borderRadius: 999, flexShrink: 0,
-                      background: i.material_id ? 'rgba(13,115,119,0.12)' : 'rgba(245,158,11,0.15)',
+                      background: i.material_id ? 'rgba(14,27,46,0.12)' : 'rgba(245,158,11,0.15)',
                       color: i.material_id ? 'var(--teal)' : '#92400e',
                     }}>
                       {i.material_id ? 'STOCK' : 'BUY'}

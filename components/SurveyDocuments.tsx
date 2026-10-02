@@ -98,7 +98,7 @@ export default function SurveyDocuments({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={d.url} alt={d.caption ?? d.name} style={{ width: '100%', height: 100, objectFit: 'cover', display: 'block' }} />
                 ) : (
-                  <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(13,115,119,0.06)' }}>
+                  <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(14,27,46,0.06)' }}>
                     <FileText size={26} color="var(--teal)" />
                   </div>
                 )}

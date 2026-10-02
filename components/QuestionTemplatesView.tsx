@@ -107,7 +107,7 @@ function TemplateModal({
             Vendor Paperwork (optional)
           </label>
           {attachmentUrl ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', border: '1.5px solid rgba(13,115,119,0.15)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(14,27,46,0.06)', border: '1.5px solid rgba(14,27,46,0.15)' }}>
               <Paperclip size={14} color="var(--teal)" />
               <a
                 href={attachmentUrl}
@@ -314,14 +314,14 @@ export default function QuestionTemplatesView({
                     <div style={{ fontSize: 17, fontWeight: 700 }}>{t.name}</div>
                     {t.attachment_url && (
                       <a href={t.attachment_url} target="_blank" rel="noopener noreferrer"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(201,169,97,0.12)', color: '#b8944a', textDecoration: 'none' }}>
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(201,162,75,0.12)', color: '#b8944a', textDecoration: 'none' }}>
                         <Paperclip size={10} /> {fileName(t.attachment_url)}
                       </a>
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {t.questions.slice(0, 6).map((q) => (
-                      <span key={q.id} style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, background: 'rgba(13,115,119,0.08)', color: 'var(--teal)', fontWeight: 600 }}>
+                      <span key={q.id} style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, background: 'rgba(14,27,46,0.08)', color: 'var(--teal)', fontWeight: 600 }}>
                         {q.label}
                       </span>
                     ))}

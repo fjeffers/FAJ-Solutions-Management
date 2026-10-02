@@ -128,7 +128,7 @@ export default function StatementView({ contractors, workOrders, payments, selec
 
         {displayJobs.length > 0 && (
           <div style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--teal)', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid rgba(201,169,97,0.4)' }}>Work Orders</div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--teal)', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid rgba(201,162,75,0.4)' }}>Work Orders</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #eee' }}>
@@ -158,7 +158,7 @@ export default function StatementView({ contractors, workOrders, payments, selec
         )}
 
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--teal)', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid rgba(201,169,97,0.4)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--teal)', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid rgba(201,162,75,0.4)' }}>
             Payments — {periodLabel}
           </div>
           {sortedPays.length === 0 ? (
@@ -178,7 +178,7 @@ export default function StatementView({ contractors, workOrders, payments, selec
                     <td style={{ padding: '10px 10px', color: '#555' }}>{fmtDate(p.payment_date)}</td>
                     <td style={{ padding: '10px 10px', fontWeight: 700, color: 'var(--teal)' }}>#{p.wo_number}</td>
                     <td style={{ padding: '10px 10px' }}>
-                      <span style={{ padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: p.method === 'Zelle' ? 'rgba(107,45,139,0.12)' : 'rgba(13,115,119,0.08)', color: p.method === 'Zelle' ? '#6B2D8B' : 'var(--teal)' }}>{p.method}</span>
+                      <span style={{ padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: p.method === 'Zelle' ? 'rgba(107,45,139,0.12)' : 'rgba(14,27,46,0.08)', color: p.method === 'Zelle' ? '#6B2D8B' : 'var(--teal)' }}>{p.method}</span>
                     </td>
                     <td style={{ padding: '10px 10px', color: '#888', fontSize: 12 }}>{p.notes || '—'}</td>
                     <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700, color: '#047857' }}>{fmtMoney(Number(p.amount))}</td>
@@ -193,7 +193,7 @@ export default function StatementView({ contractors, workOrders, payments, selec
           )}
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: 40, paddingTop: 20, borderTop: '1px solid rgba(201,169,97,0.3)', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
+        <div style={{ textAlign: 'center', marginTop: 40, paddingTop: 20, borderTop: '1px solid rgba(201,162,75,0.3)', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
           Prepared by FAJ Solutions for {name} · {periodLabel}<br />
           Please verify all amounts. Contact fajsolutions@gmail.com with any questions.
         </div>
@@ -206,7 +206,7 @@ function SR({ label, value, accent, warning }: { label: string; value: string; a
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <span style={{ fontSize: 13, color: '#666' }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 700, color: warning ? '#b91c1c' : accent ? '#047857' : 'var(--ink)', fontFamily: 'Cormorant Garamond, serif' }}>{value}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: warning ? '#b91c1c' : accent ? '#047857' : 'var(--ink)', fontFamily: "'Playfair Display', serif" }}>{value}</span>
     </div>
 
   );

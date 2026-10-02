@@ -81,7 +81,7 @@ export default function GlobalSearch({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search work orders, contractors, payments..."
-            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, fontFamily: 'Lato, sans-serif', background: 'transparent', color: 'inherit' }}
+            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, fontFamily: 'Inter, sans-serif', background: 'transparent', color: 'inherit' }}
           />
           <button onClick={() => { onClose(); setQ(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa' }}>
             <X size={18} />
@@ -94,7 +94,7 @@ export default function GlobalSearch({
               <button
                 key={i}
                 onClick={() => { onSelect(r); onClose(); setQ(''); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', width: '100%', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid #f5f5f5', fontFamily: 'Lato, sans-serif' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', width: '100%', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid #f5f5f5', fontFamily: 'Inter, sans-serif' }}
                 onMouseOver={(e) => (e.currentTarget.style.background = '#f9fafb')}
                 onMouseOut={(e) => (e.currentTarget.style.background = 'none')}
               >

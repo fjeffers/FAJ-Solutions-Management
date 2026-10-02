@@ -261,7 +261,7 @@ export default function PortalTimeLog({
 
       {/* Action button — one at a time, advances the phase */}
       {phase === 'idle' && (
-        <button onClick={handleOnMyWay} disabled={busy} style={actionBtn('white', '#0D7377')}>
+        <button onClick={handleOnMyWay} disabled={busy} style={actionBtn('white', '#0E1B2E')}>
           {busy ? '…' : '🚗  On My Way'}
         </button>
       )}

@@ -51,15 +51,15 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
         {/* Brand bar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 4px 18px', flexWrap: 'wrap', gap: 10 }}>
           <div>
-            <div className="display" style={{ fontSize: 20, fontWeight: 700, color: '#0D7377', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
+            <div className="display" style={{ fontSize: 20, fontWeight: 700, color: '#0E1B2E', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
             <div style={{ fontSize: 11, color: '#8a6d2f', fontWeight: 700, letterSpacing: 2 }}>FIELD SERVICES · NETWORKING · LLC</div>
           </div>
           <PrintButton />
         </div>
 
         {/* Invoice card */}
-        <div style={{ background: 'white', borderRadius: 18, boxShadow: '0 18px 60px rgba(13,115,119,0.13)', overflow: 'hidden' }}>
-          <div style={{ background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white', padding: '26px 28px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ background: 'white', borderRadius: 18, boxShadow: '0 18px 60px rgba(14,27,46,0.13)', overflow: 'hidden' }}>
+          <div style={{ background: 'linear-gradient(135deg, #0E1B2E 0%, #13284A 100%)', color: 'white', padding: '26px 28px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
             <div>
               <div style={{ fontSize: 11, letterSpacing: 2, opacity: 0.75, fontWeight: 700 }}>INVOICE</div>
               <div className="serif" style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.1 }}>{invoice.invoice_number}</div>
@@ -101,7 +101,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
               <thead>
                 <tr>
                   {['Description', 'Qty', 'Rate', 'Amount'].map((h, i) => (
-                    <th key={h} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '8px 6px', borderBottom: '2px solid #0D7377', fontSize: 10, letterSpacing: 1.2, color: '#0D7377' }}>{h.toUpperCase()}</th>
+                    <th key={h} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '8px 6px', borderBottom: '2px solid #0E1B2E', fontSize: 10, letterSpacing: 1.2, color: '#0E1B2E' }}>{h.toUpperCase()}</th>
                   ))}
                 </tr>
               </thead>
@@ -124,7 +124,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
                 {Number(invoice.tax_amount) > 0 && <TotalRow label={`Tax (${invoice.tax_rate}%)`} value={money(Number(invoice.tax_amount))} />}
                 <TotalRow label="Total" value={money(Number(invoice.total))} bold />
                 {paid > 0 && <TotalRow label="Payments received" value={`− ${money(paid)}`} color="#047857" />}
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 6px', marginTop: 6, borderTop: '2px solid #0D7377', fontSize: 18, fontWeight: 800 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 6px', marginTop: 6, borderTop: '2px solid #0E1B2E', fontSize: 18, fontWeight: 800 }}>
                   <span>Balance Due</span>
                   <span style={{ color: statusColor }}>{money(balance)}</span>
                 </div>
@@ -140,7 +140,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
 
           <div style={{ borderTop: '1px solid #f0ede6', padding: '16px 28px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, fontSize: 12, color: '#999' }}>
             <span>Thank you for your business.</span>
-            <span className="display" style={{ letterSpacing: 2, color: '#C9A961', fontWeight: 700 }}>FAJ SOLUTIONS LLC</span>
+            <span className="display" style={{ letterSpacing: 2, color: '#C9A24B', fontWeight: 700 }}>FAJ SOLUTIONS LLC</span>
           </div>
         </div>
 

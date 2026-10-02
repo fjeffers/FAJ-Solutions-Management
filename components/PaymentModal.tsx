@@ -168,12 +168,12 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
             <div style={{ display: 'flex', gap: 0, marginBottom: 8, borderRadius: 8, overflow: 'hidden', border: '1px solid #e0e0e0' }}>
               <button type="button" onClick={() => setManualWO(false)}
                 style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer',
-                  background: !manualWO ? 'var(--teal, #0D7377)' : 'white', color: !manualWO ? 'white' : '#888' }}>
+                  background: !manualWO ? 'var(--teal, #0E1B2E)' : 'white', color: !manualWO ? 'white' : '#888' }}>
                 Select Existing
               </button>
               <button type="button" onClick={() => setManualWO(true)}
                 style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer',
-                  background: manualWO ? 'var(--teal, #0D7377)' : 'white', color: manualWO ? 'white' : '#888' }}>
+                  background: manualWO ? 'var(--teal, #0E1B2E)' : 'white', color: manualWO ? 'white' : '#888' }}>
                 Enter WO# Manually
               </button>
             </div>
@@ -218,13 +218,13 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
 
           {/* Prior payments panel — shown when a WO is selected */}
           {form.wo_number && (
-            <div style={{ borderRadius: 12, border: '1.5px solid rgba(13,115,119,0.2)', background: 'rgba(13,115,119,0.04)', overflow: 'hidden' }}>
+            <div style={{ borderRadius: 12, border: '1.5px solid rgba(14,27,46,0.2)', background: 'rgba(14,27,46,0.04)', overflow: 'hidden' }}>
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px',
-                borderBottom: priorPayments.length > 0 ? '1px solid rgba(13,115,119,0.12)' : undefined }}>
+                borderBottom: priorPayments.length > 0 ? '1px solid rgba(14,27,46,0.12)' : undefined }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CreditCard size={13} color="var(--teal, #0D7377)" />
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--teal, #0D7377)' }}>
+                  <CreditCard size={13} color="var(--teal, #0E1B2E)" />
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--teal, #0E1B2E)' }}>
                     Payment History — WO#{form.wo_number}
                   </span>
                 </div>
@@ -259,8 +259,8 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1 }}>
                         <span style={{ fontSize: 11, color: '#888', minWidth: 78 }}>{p.payment_date}</span>
                         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, padding: '2px 7px', borderRadius: 99,
-                          background: p.method === 'Zelle' ? 'rgba(107,45,139,0.12)' : 'rgba(13,115,119,0.1)',
-                          color: p.method === 'Zelle' ? '#6B2D8B' : 'var(--teal, #0D7377)' }}>
+                          background: p.method === 'Zelle' ? 'rgba(107,45,139,0.12)' : 'rgba(14,27,46,0.1)',
+                          color: p.method === 'Zelle' ? '#6B2D8B' : 'var(--teal, #0E1B2E)' }}>
                           {p.method ?? 'Check'}
                         </span>
                         {p.notes && (
@@ -277,7 +277,7 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
                   ))}
                   {/* Totals row */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '8px 14px', background: 'rgba(13,115,119,0.07)', borderTop: '1.5px solid rgba(13,115,119,0.15)' }}>
+                    padding: '8px 14px', background: 'rgba(14,27,46,0.07)', borderTop: '1.5px solid rgba(14,27,46,0.15)' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase' }}>
                       Total Paid ({priorPayments.length} payment{priorPayments.length !== 1 ? 's' : ''})
                     </span>

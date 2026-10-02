@@ -170,7 +170,7 @@ function Row({
     <div style={{
       border: open ? '1px solid var(--teal)' : '1px solid #eae5d8',
       borderRadius: 14, background: 'white', overflow: 'hidden',
-      boxShadow: open ? '0 4px 18px rgba(13,115,119,0.08)' : 'none',
+      boxShadow: open ? '0 4px 18px rgba(14,27,46,0.08)' : 'none',
       transition: 'border-color 0.15s',
     }}>
       <button

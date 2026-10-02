@@ -52,7 +52,7 @@ function statusBadge(wo: WorkOrder) {
     Assigned:      { bg: 'rgba(59,130,246,0.15)',  color: '#1D4ED8', label: 'Assigned' },
     'In Progress': { bg: 'rgba(245,158,11,0.15)',  color: '#B45309', label: 'In Progress' },
     'Work Done':   { bg: 'rgba(16,185,129,0.15)',  color: '#047857', label: 'Work Done' },
-    Approved:      { bg: 'rgba(13,115,119,0.15)',  color: '#0D7377', label: 'Approved' },
+    Approved:      { bg: 'rgba(14,27,46,0.15)',  color: '#0E1B2E', label: 'Approved' },
   };
   const s = map[wo.wo_status] ?? map['Open'];
   return (
@@ -161,11 +161,11 @@ export default async function PortalPage({ params, searchParams }: {
     }}>
       {/* Header */}
       <div style={{
-        background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)',
+        background: 'linear-gradient(135deg, #0E1B2E 0%, #13284A 100%)',
         padding: '24px 20px 20px',
       }}>
         <div style={{ maxWidth: 680, margin: '0 auto' }}>
-          <div style={{ color: '#C9A961', fontSize: 10, fontWeight: 700, letterSpacing: 3, marginBottom: 4 }}>
+          <div style={{ color: '#C9A24B', fontSize: 10, fontWeight: 700, letterSpacing: 3, marginBottom: 4 }}>
             FAJ SOLUTIONS
           </div>
           <div style={{ color: 'white', fontSize: 22, fontWeight: 700, marginBottom: 2 }}>
@@ -206,7 +206,7 @@ export default async function PortalPage({ params, searchParams }: {
         {!paperworkOnly && pending.length > 0 && (
           <div style={{ marginBottom: 32 }}>
             <div style={{
-              fontSize: 11, fontWeight: 700, color: '#0D7377', letterSpacing: 2,
+              fontSize: 11, fontWeight: 700, color: '#0E1B2E', letterSpacing: 2,
               textTransform: 'uppercase', marginBottom: 12,
             }}>
               ⚡ New Jobs — Action Required ({pending.length})
@@ -295,20 +295,20 @@ function WOCard({
     <div style={{
       background: 'white',
       borderRadius: 16,
-      border: `2px solid ${isNew ? '#0D7377' : '#e5e7eb'}`,
+      border: `2px solid ${isNew ? '#0E1B2E' : '#e5e7eb'}`,
       overflow: 'hidden',
-      boxShadow: isNew ? '0 4px 20px rgba(13,115,119,0.12)' : '0 1px 4px rgba(0,0,0,0.06)',
+      boxShadow: isNew ? '0 4px 20px rgba(14,27,46,0.12)' : '0 1px 4px rgba(0,0,0,0.06)',
     }}>
       {/* Card header */}
       <div style={{
         padding: '14px 20px',
-        background: isNew ? 'rgba(13,115,119,0.06)' : '#fafafa',
+        background: isNew ? 'rgba(14,27,46,0.06)' : '#fafafa',
         borderBottom: '1px solid #f0f0f0',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: 12, flexWrap: 'wrap',
       }}>
         <div>
-          <div style={{ fontSize: 11, color: '#0D7377', fontWeight: 700, letterSpacing: 1, marginBottom: 2 }}>
+          <div style={{ fontSize: 11, color: '#0E1B2E', fontWeight: 700, letterSpacing: 1, marginBottom: 2 }}>
             WO #{wo.wo_number}
           </div>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>
@@ -329,9 +329,9 @@ function WOCard({
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 14,
             padding: '5px 12px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-            background: isLead ? 'rgba(13,115,119,0.1)' : 'rgba(99,102,241,0.1)',
-            color: isLead ? '#0D7377' : '#4338ca',
-            border: isLead ? '1px solid rgba(13,115,119,0.2)' : '1px solid rgba(99,102,241,0.2)',
+            background: isLead ? 'rgba(14,27,46,0.1)' : 'rgba(99,102,241,0.1)',
+            color: isLead ? '#0E1B2E' : '#4338ca',
+            border: isLead ? '1px solid rgba(14,27,46,0.2)' : '1px solid rgba(99,102,241,0.2)',
           }}>
             <span>{isLead ? '⭐' : '🔧'}</span>
             <span>{isLead ? 'Lead Technician' : 'Assistant Technician'}</span>
@@ -341,7 +341,7 @@ function WOCard({
         {/* ── On-site reference: the number to give at check-in ── */}
         {(wo.external_wo_id || wo.client_reference) && (
           <InfoRow icon="🔖" label="On-Site Reference">
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#0D7377' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0E1B2E' }}>
               {wo.source_platform && wo.source_platform !== 'Internal' ? `${wo.source_platform} ` : ''}
               #{wo.external_wo_id || wo.client_reference}
             </div>
@@ -373,7 +373,7 @@ function WOCard({
               href={`https://maps.google.com/?q=${encodeURIComponent(site)}`}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ display: 'inline-block', marginTop: 5, fontSize: 12, color: '#0D7377', fontWeight: 600, textDecoration: 'none' }}
+              style={{ display: 'inline-block', marginTop: 5, fontSize: 12, color: '#0E1B2E', fontWeight: 600, textDecoration: 'none' }}
             >
               Open in Maps ↗
             </a>
@@ -471,25 +471,25 @@ function WOCard({
         {/* ── Site Contacts (multi-contact, migration-019) ── */}
         {wo.contacts && wo.contacts.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#0D7377', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#0E1B2E', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>
               📋 Site Contacts
             </div>
             {wo.contacts.map((c) => (
-              <div key={c.id} style={{ border: '1px solid rgba(13,115,119,0.18)', borderRadius: 10, padding: '10px 14px', background: 'rgba(13,115,119,0.03)' }}>
+              <div key={c.id} style={{ border: '1px solid rgba(14,27,46,0.18)', borderRadius: 10, padding: '10px 14px', background: 'rgba(14,27,46,0.03)' }}>
                 {c.label && (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#0D7377', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#0E1B2E', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
                     {c.label}
                   </div>
                 )}
                 {c.name && <div style={{ fontSize: 14, fontWeight: 600, color: '#1a3a3a' }}>{c.name}</div>}
                 <div style={{ display: 'flex', gap: 16, marginTop: c.name ? 4 : 0, flexWrap: 'wrap' }}>
                   {c.phone && (
-                    <a href={`tel:${c.phone}`} style={{ fontSize: 13, color: '#0D7377', textDecoration: 'none', fontWeight: 600 }}>
+                    <a href={`tel:${c.phone}`} style={{ fontSize: 13, color: '#0E1B2E', textDecoration: 'none', fontWeight: 600 }}>
                       📞 {c.phone}
                     </a>
                   )}
                   {c.email && (
-                    <a href={`mailto:${c.email}`} style={{ fontSize: 13, color: '#0D7377', textDecoration: 'none' }}>
+                    <a href={`mailto:${c.email}`} style={{ fontSize: 13, color: '#0E1B2E', textDecoration: 'none' }}>
                       ✉️ {c.email}
                     </a>
                   )}
@@ -502,7 +502,7 @@ function WOCard({
           <InfoRow icon="👤" label="Point of Contact">
             {wo.poc_name  && <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{wo.poc_name}</div>}
             {wo.poc_phone && (
-              <a href={`tel:${wo.poc_phone}`} style={{ fontSize: 13, color: '#0D7377', textDecoration: 'none', fontWeight: 600 }}>
+              <a href={`tel:${wo.poc_phone}`} style={{ fontSize: 13, color: '#0E1B2E', textDecoration: 'none', fontWeight: 600 }}>
                 {wo.poc_phone}
               </a>
             )}
@@ -514,12 +514,12 @@ function WOCard({
         {wo.support_contact && (
           <div style={{
             padding: '10px 14px',
-            background: 'rgba(13,115,119,0.06)',
+            background: 'rgba(14,27,46,0.06)',
             borderRadius: 10,
-            border: '1px solid rgba(13,115,119,0.15)',
+            border: '1px solid rgba(14,27,46,0.15)',
             marginBottom: 12,
           }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#0D7377', marginBottom: 4, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#0E1B2E', marginBottom: 4, letterSpacing: 0.5, textTransform: 'uppercase' }}>
               📞 Support Contact
             </div>
             <div style={{ fontSize: 13, color: '#1a3a3a', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
@@ -536,8 +536,8 @@ function WOCard({
             rel="noopener noreferrer"
             style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-              background: 'rgba(201,169,97,0.1)', borderRadius: 10,
-              border: '1px solid rgba(201,169,97,0.25)', marginBottom: 12,
+              background: 'rgba(201,162,75,0.1)', borderRadius: 10,
+              border: '1px solid rgba(201,162,75,0.25)', marginBottom: 12,
               textDecoration: 'none', color: '#b8944a', fontWeight: 600, fontSize: 13,
             }}
           >
@@ -594,7 +594,7 @@ function WOCard({
                   {wo.custom_qa.map((q) => (
                     <span key={q.id} style={{
                       padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                      background: 'rgba(13,115,119,0.08)', color: '#0D7377',
+                      background: 'rgba(14,27,46,0.08)', color: '#0E1B2E',
                     }}>
                       {q.label}
                     </span>

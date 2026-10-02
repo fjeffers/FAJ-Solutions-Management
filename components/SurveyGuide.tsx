@@ -114,7 +114,7 @@ export default function SurveyGuide({
         <div style={{ height: 5, borderRadius: 999, background: '#eee9df', overflow: 'hidden' }}>
           <div style={{
             width: `${progress.percent}%`, height: '100%', borderRadius: 999,
-            background: 'linear-gradient(90deg, #0D7377, #14b8b8)', transition: 'width 0.25s',
+            background: 'linear-gradient(90deg, #0E1B2E, #14b8b8)', transition: 'width 0.25s',
           }} />
         </div>
       </div>
@@ -135,7 +135,7 @@ export default function SurveyGuide({
                 width: 34, height: 34, borderRadius: '50%', cursor: 'pointer',
                 fontSize: 12, fontWeight: 800,
                 border: active ? '2px solid var(--teal)' : '1px solid #e2ddd2',
-                background: complete ? '#047857' : active ? 'rgba(13,115,119,0.10)' : 'white',
+                background: complete ? '#047857' : active ? 'rgba(14,27,46,0.10)' : 'white',
                 color: complete ? 'white' : active ? 'var(--teal)' : '#999',
               }}
             >{complete ? <Check size={13} /> : p}</button>
@@ -154,7 +154,7 @@ export default function SurveyGuide({
       {/* The question */}
       <div style={{
         border: '1px solid #eee9df', borderRadius: 14, padding: '20px 20px 18px',
-        background: 'white', boxShadow: '0 2px 14px rgba(13,115,119,0.05)',
+        background: 'white', boxShadow: '0 2px 14px rgba(14,27,46,0.05)',
       }}>
         <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.2, color: '#bbb', textTransform: 'uppercase', marginBottom: 7 }}>
           Question {stepAt + 1} of {script.length}

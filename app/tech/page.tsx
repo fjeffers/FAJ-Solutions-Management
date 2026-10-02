@@ -256,7 +256,7 @@ export default function TechPortalPage() {
       <nav className={`wf-rail${railOpen ? ' open' : ''}`} aria-label="Tech portal">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 10 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/wf/logo.png" alt="" width={36} height={36} style={{ borderRadius: 8, objectFit: 'contain', background: 'rgba(255,255,255,0.06)' }} />
+          <img src="/wf/logo-mark.png" alt="" width={38} height={38} style={{ flexShrink: 0 }} />
           <div style={{ minWidth: 0 }}>
             <div className="wf-display" style={{ fontSize: 11, letterSpacing: 1.4, color: 'var(--wf-gold)', fontWeight: 700 }}>FAJ SOLUTIONS</div>
             <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.name}</div>

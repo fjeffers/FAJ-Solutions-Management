@@ -58,7 +58,7 @@ export default function PortalChat({ token, woNumber }: { token: string; woNumbe
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#0D7377', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#0E1B2E', letterSpacing: 0.5, textTransform: 'uppercase' }}>
         💬 Messages
       </div>
       <div
@@ -77,7 +77,7 @@ export default function PortalChat({ token, woNumber }: { token: string; woNumbe
             style={{
               alignSelf: m.sender_role === 'contractor' ? 'flex-end' : 'flex-start',
               maxWidth: '80%',
-              background: m.sender_role === 'contractor' ? '#0D7377' : 'white',
+              background: m.sender_role === 'contractor' ? '#0E1B2E' : 'white',
               color: m.sender_role === 'contractor' ? 'white' : '#1a1a1a',
               border: m.sender_role === 'contractor' ? 'none' : '1px solid #e5e7eb',
               borderRadius: 12,
@@ -85,7 +85,7 @@ export default function PortalChat({ token, woNumber }: { token: string; woNumbe
             }}
           >
             {m.sender_role === 'admin' && (
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#0D7377', marginBottom: 2 }}>{m.sender_name}</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#0E1B2E', marginBottom: 2 }}>{m.sender_name}</div>
             )}
             <div style={{ fontSize: 13, lineHeight: 1.4, whiteSpace: 'pre-line' }}>{m.content}</div>
             <div style={{ fontSize: 9, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>{fmtTime(m.created_at)}</div>
@@ -104,7 +104,7 @@ export default function PortalChat({ token, woNumber }: { token: string; woNumbe
           onClick={send}
           disabled={sending || !draft.trim()}
           style={{
-            padding: '10px 18px', borderRadius: 10, border: 'none', background: '#0D7377', color: 'white',
+            padding: '10px 18px', borderRadius: 10, border: 'none', background: '#0E1B2E', color: 'white',
             fontWeight: 700, fontSize: 13, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.6 : 1,
           }}
         >

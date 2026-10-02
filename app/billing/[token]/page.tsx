@@ -49,12 +49,12 @@ export default async function BillingPage({ params }: { params: Promise<{ token:
     <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg, #f4f1ea 0%, #eef2f2 100%)', padding: '24px 12px 48px' }}>
       <div style={{ maxWidth: 760, margin: '0 auto' }}>
         <div style={{ padding: '8px 4px 18px' }}>
-          <div className="display" style={{ fontSize: 20, fontWeight: 700, color: '#0D7377', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
+          <div className="display" style={{ fontSize: 20, fontWeight: 700, color: '#0E1B2E', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
           <div style={{ fontSize: 11, color: '#8a6d2f', fontWeight: 700, letterSpacing: 2 }}>BILLING — NEEDS INVOICING · {today.toUpperCase()}</div>
         </div>
 
-        <div style={{ background: 'white', borderRadius: 18, boxShadow: '0 18px 60px rgba(13,115,119,0.13)', overflow: 'hidden' }}>
-          <div style={{ background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white', padding: '22px 26px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ background: 'white', borderRadius: 18, boxShadow: '0 18px 60px rgba(14,27,46,0.13)', overflow: 'hidden' }}>
+          <div style={{ background: 'linear-gradient(135deg, #0E1B2E 0%, #13284A 100%)', color: 'white', padding: '22px 26px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div className="serif" style={{ fontSize: 26, fontWeight: 600 }}>To Be Invoiced</div>
               <div style={{ fontSize: 13, opacity: 0.85 }}>{visits.length} visit{visits.length !== 1 ? 's' : ''} waiting</div>
@@ -75,8 +75,8 @@ export default async function BillingPage({ params }: { params: Promise<{ token:
               const progTotal = progVisits.reduce((s, v) => s + visitAmount(v), 0);
               return (
                 <div key={prog} style={{ marginTop: 18 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '2px solid #0D7377', padding: '6px 2px' }}>
-                    <span style={{ fontWeight: 800, fontSize: 16, color: '#0D7377' }}>{prog}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '2px solid #0E1B2E', padding: '6px 2px' }}>
+                    <span style={{ fontWeight: 800, fontSize: 16, color: '#0E1B2E' }}>{prog}</span>
                     <span style={{ fontWeight: 800 }}>{money(progTotal)}</span>
                   </div>
                   {progVisits.map((v) => (
@@ -105,7 +105,7 @@ export default async function BillingPage({ params }: { params: Promise<{ token:
 
           <div style={{ borderTop: '1px solid #f0ede6', padding: '14px 26px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, fontSize: 12, color: '#999' }}>
             <span>Live view — reload for the latest. Read-only.</span>
-            <span className="display" style={{ letterSpacing: 2, color: '#C9A961', fontWeight: 700 }}>FAJ SOLUTIONS LLC</span>
+            <span className="display" style={{ letterSpacing: 2, color: '#C9A24B', fontWeight: 700 }}>FAJ SOLUTIONS LLC</span>
           </div>
         </div>
       </div>

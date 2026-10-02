@@ -113,7 +113,7 @@ export default function LedgerView({
         <div style={{ overflowX: 'auto' }}>
           <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ background: 'rgba(13,115,119,0.05)', borderBottom: '1px solid rgba(13,115,119,0.1)' }}>
+              <tr style={{ background: 'rgba(14,27,46,0.05)', borderBottom: '1px solid rgba(14,27,46,0.1)' }}>
                 {['Date', 'Paid To', 'Job', 'Method', 'Paid', 'Paid So Far', 'Left To Pay'].map((h, i) => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: i >= 4 ? 'right' : 'left', fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -121,7 +121,7 @@ export default function LedgerView({
             </thead>
             <tbody>
               {/* Opening line: where the balance starts */}
-              <tr style={{ borderBottom: '1px solid #f0f0f0', background: 'rgba(13,115,119,0.03)' }}>
+              <tr style={{ borderBottom: '1px solid #f0f0f0', background: 'rgba(14,27,46,0.03)' }}>
                 <td colSpan={5} style={{ padding: '10px 16px', fontSize: 12, fontWeight: 700, color: 'var(--teal)' }}>
                   STARTING BALANCE — total tech pay across all jobs
                 </td>

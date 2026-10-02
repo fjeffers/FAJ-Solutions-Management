@@ -234,7 +234,7 @@ function QuoteModal({
             </div>
             <button className="btn btn-ghost" style={{ marginTop: 8, fontSize: 12 }} onClick={addLine}><Plus size={12} /> Add Line</button>
             {kits.length > 0 && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'rgba(13,115,119,0.04)', border: '1px solid rgba(13,115,119,0.15)' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'rgba(14,27,46,0.04)', border: '1px solid rgba(14,27,46,0.15)' }}>
                 <Layers size={13} style={{ color: 'var(--teal)', flexShrink: 0 }} />
                 <select
                   className="select input"

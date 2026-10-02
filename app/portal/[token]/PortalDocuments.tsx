@@ -26,7 +26,7 @@ const label: React.CSSProperties = {
   textTransform: 'uppercase', color: '#999',
 };
 const btn: React.CSSProperties = {
-  background: '#0D7377', color: '#fff', border: 'none', borderRadius: 8,
+  background: '#0E1B2E', color: '#fff', border: 'none', borderRadius: 8,
   padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
 };
 const done: React.CSSProperties = {
@@ -154,7 +154,7 @@ export default function PortalDocuments({
       )}
 
       {/* ══ FORM 1 — W-9 ══ */}
-      <div style={{ ...card, borderLeft: `3px solid ${w9Done ? '#047857' : '#0D7377'}` }}>
+      <div style={{ ...card, borderLeft: `3px solid ${w9Done ? '#047857' : '#0E1B2E'}` }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
           <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>
             <span style={{ color: '#999', fontWeight: 800 }}>FORM 1 · </span>W-9 tax form
@@ -330,7 +330,7 @@ export default function PortalDocuments({
       </div>
 
       {/* ══ FORM 2 — Contractor agreement ══ */}
-      <div style={{ ...card, borderLeft: `3px solid ${signedAt ? '#047857' : '#0D7377'}` }}>
+      <div style={{ ...card, borderLeft: `3px solid ${signedAt ? '#047857' : '#0E1B2E'}` }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
           <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>
             <span style={{ color: '#999', fontWeight: 800 }}>FORM 2 · </span>Contractor agreement
@@ -348,7 +348,7 @@ export default function PortalDocuments({
         {contractUrl ? (
           <div style={{ margin: '7px 0' }}>
             <a href={contractUrl} target="_blank" rel="noopener noreferrer"
-              style={{ fontSize: 12.5, color: '#0D7377', fontWeight: 700 }}>
+              style={{ fontSize: 12.5, color: '#0E1B2E', fontWeight: 700 }}>
               Read the agreement →
             </a>
           </div>

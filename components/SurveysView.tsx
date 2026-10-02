@@ -105,7 +105,7 @@ export default function SurveysView({
                     <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--teal)' }}>{s.survey_number}</span>
                     <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: sm.bg, color: sm.color }}>{sm.label}</span>
                     {typeLabel && (
-                      <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: 'rgba(13,115,119,0.08)', color: 'var(--teal)' }}>{typeLabel}</span>
+                      <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: 'rgba(14,27,46,0.08)', color: 'var(--teal)' }}>{typeLabel}</span>
                     )}
                   </div>
                   <div style={{ fontWeight: 700, fontSize: 15 }}>{s.title || s.site_name || s.client_name || 'Untitled survey'}</div>

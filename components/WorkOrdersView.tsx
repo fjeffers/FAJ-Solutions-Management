@@ -17,7 +17,7 @@ type Stats = {
 };
 
 const WO_STATUS_META: Record<WorkOrderStatus, { bg: string; color: string; accent: string }> = {
-  'Open':        { bg: 'rgba(13,115,119,0.09)',  color: '#0D7377',  accent: '#0D7377' },
+  'Open':        { bg: 'rgba(14,27,46,0.09)',  color: '#0E1B2E',  accent: '#0E1B2E' },
   'Assigned':    { bg: 'rgba(245,158,11,0.12)',  color: '#b45309',  accent: '#f59e0b' },
   'In Progress': { bg: 'rgba(249,115,22,0.12)',  color: '#c2410c',  accent: '#f97316' },
   'Work Done':   { bg: 'rgba(99,102,241,0.12)',  color: '#4338ca',  accent: '#6366f1' },
@@ -148,7 +148,7 @@ export default function WorkOrdersView({
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div role="group" aria-label="How to show work orders" style={{ display: 'flex', borderRadius: 999, border: '1px solid rgba(13,115,119,0.25)', overflow: 'hidden' }}>
+            <div role="group" aria-label="How to show work orders" style={{ display: 'flex', borderRadius: 999, border: '1px solid rgba(14,27,46,0.25)', overflow: 'hidden' }}>
               {([['workflow', 'WorkFlow', <Workflow key="w" size={14} />], ['board', 'Board', <Columns3 key="b" size={14} />], ['list', 'List', <List key="l" size={14} />]] as const).map(([m, label, icon]) => (
                 <button
                   key={m} onClick={() => chooseMode(m)} aria-pressed={mode === m}
@@ -247,7 +247,7 @@ export default function WorkOrdersView({
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0,
                   padding: '13px 14px', border: 'none', background: 'none', cursor: 'pointer',
-                  fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 12,
+                  fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 12,
                   color: active ? (isClosedTab ? '#6d28d9' : 'var(--teal)') : '#888',
                   borderBottom: active
                     ? `2.5px solid ${isClosedTab ? '#6d28d9' : 'var(--teal)'}`
@@ -259,7 +259,7 @@ export default function WorkOrdersView({
                 {t.label}
                 <span style={{
                   fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 999,
-                  background: active ? (isClosedTab ? 'rgba(109,40,217,0.12)' : 'rgba(13,115,119,0.12)') : 'rgba(0,0,0,0.06)',
+                  background: active ? (isClosedTab ? 'rgba(109,40,217,0.12)' : 'rgba(14,27,46,0.12)') : 'rgba(0,0,0,0.06)',
                   color: active ? (isClosedTab ? '#6d28d9' : 'var(--teal)') : '#999',
                 }}>
                   {t.count}
@@ -392,7 +392,7 @@ function WOCard({
         cursor: 'pointer',
         transition: 'box-shadow 0.2s, border-color 0.2s',
       }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px rgba(13,115,119,0.15)'; (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(13,115,119,0.3)'; }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 16px rgba(14,27,46,0.15)'; (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(14,27,46,0.3)'; }}
       onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)'; (e.currentTarget as HTMLDivElement).style.borderColor = isArchived ? 'rgba(109,40,217,0.25)' : '#e5e7eb'; }}
     >
       {/* Archived banner */}
@@ -414,7 +414,7 @@ function WOCard({
         {/* ── Row 1: WO # + badges + actions ── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--teal)', fontFamily: 'Lato, sans-serif' }}>
+            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--teal)', fontFamily: 'Inter, sans-serif' }}>
               #{w.wo_number}
             </span>
             {/* WO status badge */}
@@ -440,10 +440,10 @@ function WOCard({
               onClick={() => onSend(w)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
-                padding: '6px 12px', borderRadius: 8, border: '1.5px solid rgba(13,115,119,0.35)',
-                background: 'rgba(13,115,119,0.06)', cursor: 'pointer',
+                padding: '6px 12px', borderRadius: 8, border: '1.5px solid rgba(14,27,46,0.35)',
+                background: 'rgba(14,27,46,0.06)', cursor: 'pointer',
                 fontSize: 11, fontWeight: 700, color: 'var(--teal)',
-                fontFamily: 'Lato, sans-serif',
+                fontFamily: 'Inter, sans-serif',
               }}
             >
               <Send size={11} /> Send WO
@@ -471,7 +471,7 @@ function WOCard({
                   cursor: portalSending ? 'wait' : 'pointer',
                   fontSize: 11, fontWeight: 700,
                   color: portalSent ? '#047857' : '#4338ca',
-                  fontFamily: 'Lato, sans-serif',
+                  fontFamily: 'Inter, sans-serif',
                   opacity: portalSending ? 0.6 : 1,
                 }}
               >
@@ -491,7 +491,7 @@ function WOCard({
                   padding: '6px 12px', borderRadius: 8, border: '1.5px solid rgba(4,120,87,0.35)',
                   background: 'rgba(4,120,87,0.07)', cursor: 'pointer',
                   fontSize: 11, fontWeight: 700, color: '#047857',
-                  fontFamily: 'Lato, sans-serif',
+                  fontFamily: 'Inter, sans-serif',
                 }}
               >
                 <DollarSign size={11} /> Pay
@@ -509,7 +509,7 @@ function WOCard({
                   border: '1.5px solid rgba(4,120,87,0.4)',
                   background: '#047857', cursor: 'pointer',
                   fontSize: 11, fontWeight: 700, color: 'white',
-                  fontFamily: 'Lato, sans-serif',
+                  fontFamily: 'Inter, sans-serif',
                 }}
               >
                 <CheckCircle2 size={11} /> Close
@@ -618,7 +618,7 @@ function WOCard({
                 title="No tech pay recorded, so this job's profit is unknown. Set it here."
                 style={{
                   textAlign: 'left', border: '1px dashed rgba(180,83,9,0.45)', background: 'rgba(245,158,11,0.07)',
-                  borderRadius: 9, padding: '6px 11px', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                  borderRadius: 9, padding: '6px 11px', cursor: 'pointer', fontFamily: 'Inter, sans-serif',
                 }}
               >
                 <div style={{ fontSize: 10, color: '#b45309', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>
@@ -802,7 +802,7 @@ function ReassignModal({ wo, contractors, payments, onClose, onConfirm }: {
         {plan && (
           <div style={{
             padding: '11px 13px', borderRadius: 10, fontSize: 12.5, lineHeight: 1.55,
-            background: 'rgba(13,115,119,0.07)', color: '#0a5a5d', marginBottom: 14,
+            background: 'rgba(14,27,46,0.07)', color: '#13284A', marginBottom: 14,
           }}>
             {describeReassignment(plan, from, to)}
             <div style={{ marginTop: 6, color: '#666' }}>
@@ -837,7 +837,7 @@ function Money({ label, value, color, sub, big }: {
       </div>
       <div style={{
         fontSize: big ? 16 : 14, fontWeight: big ? 800 : 700,
-        color: color ?? '#1a1a1a', fontFamily: 'Lato, sans-serif',
+        color: color ?? '#1a1a1a', fontFamily: 'Inter, sans-serif',
       }}>
         {value}
       </div>

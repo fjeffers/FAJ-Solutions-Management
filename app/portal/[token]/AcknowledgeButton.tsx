@@ -42,15 +42,15 @@ export default function AcknowledgeButton({ woId, woNumber, onAcknowledge }: Pro
       style={{
         width: '100%',
         padding: '14px 24px',
-        background: loading ? '#e0f2f1' : 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)',
-        color: loading ? '#0D7377' : 'white',
+        background: loading ? '#e0f2f1' : 'linear-gradient(135deg, #0E1B2E 0%, #13284A 100%)',
+        color: loading ? '#0E1B2E' : 'white',
         border: 'none',
         borderRadius: 10,
         fontSize: 15,
         fontWeight: 700,
         cursor: loading ? 'wait' : 'pointer',
         letterSpacing: 0.3,
-        boxShadow: loading ? 'none' : '0 4px 14px rgba(13,115,119,0.3)',
+        boxShadow: loading ? 'none' : '0 4px 14px rgba(14,27,46,0.3)',
         transition: 'all 0.15s',
       }}
     >

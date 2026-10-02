@@ -192,7 +192,7 @@ export default function DeliverableTemplatesView({
                   <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>{t.name}</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {t.items.slice(0, 5).map((item, i) => (
-                      <span key={i} style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, background: 'rgba(13,115,119,0.08)', color: 'var(--teal)', fontWeight: 600 }}>
+                      <span key={i} style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, background: 'rgba(14,27,46,0.08)', color: 'var(--teal)', fontWeight: 600 }}>
                         {item}
                       </span>
                     ))}

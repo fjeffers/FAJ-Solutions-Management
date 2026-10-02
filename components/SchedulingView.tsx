@@ -127,7 +127,7 @@ export default function SchedulingView({
                         {...provided.droppableProps}
                         style={{
                           minHeight: 96, borderRadius: 8, padding: 6,
-                          background: snapshot.isDraggingOver ? 'rgba(13,115,119,0.08)' : inMonth ? '#fff' : '#fafafa',
+                          background: snapshot.isDraggingOver ? 'rgba(14,27,46,0.08)' : inMonth ? '#fff' : '#fafafa',
                           border: isToday ? '1.5px solid var(--teal)' : '1px solid #eee',
                           opacity: inMonth ? 1 : 0.5,
                         }}
@@ -145,7 +145,7 @@ export default function SchedulingView({
                                   {...dragProvided.dragHandleProps}
                                   style={{
                                     padding: '4px 6px', borderRadius: 5, fontSize: 10, fontWeight: 700,
-                                    background: 'rgba(13,115,119,0.1)', color: 'var(--teal)', cursor: 'grab',
+                                    background: 'rgba(14,27,46,0.1)', color: 'var(--teal)', cursor: 'grab',
                                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                                     ...dragProvided.draggableProps.style,
                                   }}
@@ -179,7 +179,7 @@ export default function SchedulingView({
                     {...provided.droppableProps}
                     style={{
                       display: 'flex', flexDirection: 'column', gap: 6, minHeight: 60, maxHeight: 400, overflowY: 'auto',
-                      background: snapshot.isDraggingOver ? 'rgba(13,115,119,0.06)' : 'transparent', borderRadius: 8, padding: 4,
+                      background: snapshot.isDraggingOver ? 'rgba(14,27,46,0.06)' : 'transparent', borderRadius: 8, padding: 4,
                     }}
                   >
                     {pool.length === 0 && (
@@ -223,7 +223,7 @@ export default function SchedulingView({
                         style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                           padding: '8px 10px', borderRadius: 8,
-                          background: snapshot.isDraggingOver ? 'rgba(13,115,119,0.1)' : '#fafafa',
+                          background: snapshot.isDraggingOver ? 'rgba(14,27,46,0.1)' : '#fafafa',
                           border: snapshot.isDraggingOver ? '1px dashed var(--teal)' : '1px solid #f0f0f0',
                         }}
                       >

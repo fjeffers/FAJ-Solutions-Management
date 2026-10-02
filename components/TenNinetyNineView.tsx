@@ -71,7 +71,7 @@ export default function TenNinetyNineView({ contractors, payments, year, setYear
       <div className="glass card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            <tr style={{ background: 'rgba(13,115,119,0.05)', borderBottom: '1px solid rgba(13,115,119,0.1)' }}>
+            <tr style={{ background: 'rgba(14,27,46,0.05)', borderBottom: '1px solid rgba(14,27,46,0.1)' }}>
               {['Contractor', 'Business Name', 'Tax ID', 'Entity', 'Total Paid', 'W-9', '1099 Required'].map((h, i) => (
                 <th key={h} style={{ padding: '12px 16px', textAlign: i >= 4 ? 'right' : 'left', fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase' }}>{h}</th>
               ))}

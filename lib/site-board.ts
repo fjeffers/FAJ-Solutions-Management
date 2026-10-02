@@ -198,7 +198,7 @@ export function pillFor(value: string | null | undefined): Pill {
 }
 
 /** A colour band per group header, so groups are told apart at a glance. */
-const GROUP_COLORS = ['#0D7377', '#6d28d9', '#c2410c', '#1D4ED8', '#047857', '#b45309', '#be123c', '#0369a1'];
+const GROUP_COLORS = ['#0E1B2E', '#6d28d9', '#c2410c', '#1D4ED8', '#047857', '#b45309', '#be123c', '#0369a1'];
 
 export function groupColor(index: number): string {
   return GROUP_COLORS[index % GROUP_COLORS.length];

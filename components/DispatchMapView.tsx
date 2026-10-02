@@ -140,8 +140,8 @@ export default function DispatchMapView({
                     }}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '8px 12px', borderRadius: 8, border: nc.miles <= 25 ? '1px solid rgba(13,115,119,0.3)' : '1px solid #eee',
-                      background: nc.miles <= 25 ? 'rgba(13,115,119,0.05)' : '#fafafa', cursor: 'pointer', textAlign: 'left',
+                      padding: '8px 12px', borderRadius: 8, border: nc.miles <= 25 ? '1px solid rgba(14,27,46,0.3)' : '1px solid #eee',
+                      background: nc.miles <= 25 ? 'rgba(14,27,46,0.05)' : '#fafafa', cursor: 'pointer', textAlign: 'left',
                     }}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600 }}>

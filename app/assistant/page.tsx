@@ -95,7 +95,7 @@ export default function AssistantPage() {
     <div style={{ minHeight: '100vh', paddingBottom: 40 }}>
       <Toaster />
       <header style={{
-        background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white',
+        background: 'linear-gradient(135deg, #0E1B2E 0%, #13284A 100%)', color: 'white',
         padding: '18px 16px 0', position: 'sticky', top: 0, zIndex: 20,
       }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>

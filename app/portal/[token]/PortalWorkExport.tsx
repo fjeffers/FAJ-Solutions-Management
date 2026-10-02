@@ -113,7 +113,7 @@ export default function PortalWorkExport({ workOrders, contractorName }: Props) 
         onClick={download}
         disabled={busy}
         style={{
-          background: '#0D7377', color: '#fff', border: 'none', borderRadius: 8,
+          background: '#0E1B2E', color: '#fff', border: 'none', borderRadius: 8,
           padding: '10px 16px', fontSize: 13, fontWeight: 700,
           cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
           display: 'inline-flex', alignItems: 'center', gap: 6,

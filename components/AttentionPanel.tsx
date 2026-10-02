@@ -51,14 +51,14 @@ export default function AttentionPanel({
               style={{
                 display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left', cursor: 'pointer',
                 padding: '13px 14px', borderRadius: 13, background: 'white',
-                border: `1px solid ${isMoney ? 'rgba(13,115,119,0.25)' : '#eae5d8'}`,
+                border: `1px solid ${isMoney ? 'rgba(14,27,46,0.25)' : '#eae5d8'}`,
                 boxShadow: '0 1px 6px rgba(0,0,0,0.03)',
               }}
             >
               <span style={{
                 width: 32, height: 32, borderRadius: 9, flexShrink: 0,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                background: isMoney ? 'rgba(13,115,119,0.10)' : 'rgba(245,158,11,0.12)',
+                background: isMoney ? 'rgba(14,27,46,0.10)' : 'rgba(245,158,11,0.12)',
               }}>
                 {isMoney
                   ? <DollarSign size={16} color="var(--teal)" />

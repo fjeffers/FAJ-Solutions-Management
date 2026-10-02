@@ -76,7 +76,7 @@ function ContractorCard({ log }: { log: TimeLog }) {
         <div style={{
           width: 28, height: 28,
           borderRadius: '50%',
-          background: 'var(--teal, #0D7377)',
+          background: 'var(--teal, #0E1B2E)',
           color: '#fff',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 12, fontWeight: 700,
@@ -126,7 +126,7 @@ function ContractorCard({ log }: { log: TimeLog }) {
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0 2px', marginTop: 4, borderTop: '2px solid #f3f4f6' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 }}>Total Time</div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: totalDur === '—' ? '#d1d5db' : '#0D7377' }}>{totalDur}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: totalDur === '—' ? '#d1d5db' : '#0E1B2E' }}>{totalDur}</div>
             </div>
           </>
         )}
@@ -211,7 +211,7 @@ export default function WOTimeLogs({ woId }: Props) {
                     <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 600, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {log.contractor_name}
                     </div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: dur === '—' ? '#d1d5db' : '#0D7377' }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: dur === '—' ? '#d1d5db' : '#0E1B2E' }}>
                       {dur}
                     </div>
                     <div style={{ fontSize: 10, color: '#9ca3af' }}>on-site</div>

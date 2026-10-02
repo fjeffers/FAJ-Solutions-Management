@@ -97,8 +97,8 @@ export default function WOPaymentHistoryModal({ wo, payments, onClose }: Props) 
                   {p.notes || 'No notes'}
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, padding: '3px 9px', borderRadius: 99, textAlign: 'center',
-                  background: p.method === 'Zelle' ? 'rgba(107,45,139,0.1)' : p.method === 'Direct Deposit' ? 'rgba(5,150,105,0.1)' : 'rgba(13,115,119,0.1)',
-                  color: p.method === 'Zelle' ? '#6B2D8B' : p.method === 'Direct Deposit' ? '#059669' : 'var(--teal, #0D7377)',
+                  background: p.method === 'Zelle' ? 'rgba(107,45,139,0.1)' : p.method === 'Direct Deposit' ? 'rgba(5,150,105,0.1)' : 'rgba(14,27,46,0.1)',
+                  color: p.method === 'Zelle' ? '#6B2D8B' : p.method === 'Direct Deposit' ? '#059669' : 'var(--teal, #0E1B2E)',
                   minWidth: 72, marginRight: 12 }}>
                   {p.method ?? 'Check'}
                 </span>
@@ -110,7 +110,7 @@ export default function WOPaymentHistoryModal({ wo, payments, onClose }: Props) 
 
             {/* Totals row */}
             <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr auto auto', gap: 0,
-              padding: '10px 14px', background: 'rgba(13,115,119,0.06)', borderTop: '2px solid rgba(13,115,119,0.15)' }}>
+              padding: '10px 14px', background: 'rgba(14,27,46,0.06)', borderTop: '2px solid rgba(14,27,46,0.15)' }}>
               <span></span>
               <span style={{ fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                 Total Paid

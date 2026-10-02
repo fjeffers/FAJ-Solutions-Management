@@ -178,7 +178,7 @@ export const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string 
   Assigned:    { bg: 'rgba(59,130,246,0.15)',  color: '#1D4ED8' },
   'In Progress':{ bg: 'rgba(245,158,11,0.15)', color: '#B45309' },
   'Work Done': { bg: 'rgba(16,185,129,0.15)',  color: '#047857' },
-  Approved:    { bg: 'rgba(13,115,119,0.15)',  color: 'var(--teal)' },
+  Approved:    { bg: 'rgba(14,27,46,0.15)',  color: 'var(--teal)' },
   Paid:        { bg: 'rgba(5,150,105,0.2)',    color: '#065F46' },
 };
 

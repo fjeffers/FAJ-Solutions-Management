@@ -1390,12 +1390,10 @@ Go ahead?`)) return;
       <div
         className="no-print"
         id="mobile-header"
-        style={{ position: 'sticky', top: 0, zIndex: 50, padding: '12px 16px', background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white', alignItems: 'center', justifyContent: 'space-between' }}
+        style={{ position: 'sticky', top: 0, zIndex: 50, padding: '12px 16px', background: 'linear-gradient(135deg, #13284A 0%, #0E1B2E 100%)', color: 'white', alignItems: 'center', justifyContent: 'space-between' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Sparkles size={16} color="var(--gold-light)" />
-          <span className="display" style={{ fontSize: 12, color: 'var(--gold-light)', fontWeight: 700 }}>FAJ SOLUTIONS</span>
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/wf/logo-wide.png" alt="FAJ Solutions" style={{ height: 34, width: 'auto' }} />
         <button onClick={() => setMobileNavOpen(!mobileNavOpen)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
           {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
@@ -1408,11 +1406,9 @@ Go ahead?`)) return;
         style={{ width: 250, padding: '24px 16px', position: 'sticky', top: 0, height: '100vh', flexDirection: 'column', gap: 2 }}
       >
         <div style={{ padding: '0 12px 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <Sparkles size={20} color="var(--gold-light)" />
-            <div className="display" style={{ fontSize: 13, color: 'var(--gold-light)', fontWeight: 700 }}>FAJ</div>
-          </div>
-          <div className="serif" style={{ fontSize: 20, fontWeight: 600, color: 'white', lineHeight: 1.2 }}>Business Manager</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/wf/logo-wide.png" alt="FAJ Solutions" style={{ width: '100%', maxWidth: 196, height: 'auto', display: 'block', marginBottom: 6 }} />
+          <div className="display" style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold-light)', letterSpacing: 1.6, textTransform: 'uppercase' }}>Business Manager</div>
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>

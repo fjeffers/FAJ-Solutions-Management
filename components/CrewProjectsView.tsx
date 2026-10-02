@@ -236,7 +236,7 @@ function ScheduleTab({ project, teams, sites, contractors, supabase, onChanged }
         {open.length === 0 ? <div style={{ fontSize: 13, color: '#999' }}>Every site has a team and a week.</div> : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {open.map((s) => (
-              <span key={s.id} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 999, background: 'rgba(13,115,119,0.07)', color: '#333' }}>
+              <span key={s.id} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 999, background: 'rgba(14,27,46,0.07)', color: '#333' }}>
                 {s.name}{s.city ? ` · ${s.city}, ${s.state ?? ''}` : ''}
               </span>
             ))}
@@ -365,7 +365,7 @@ function SitesTab({ project, teams, sites, entries, receipts, supabase, onChange
                     <td style={TD}>
                       <div style={{ fontWeight: 700 }}>{s.name}{s.property_id && <span style={{ fontWeight: 400, color: '#888' }}> · #{s.property_id}</span>}</div>
                       <div style={{ fontSize: 11, color: '#888' }}>{[s.address, s.city, [s.state, s.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')}</div>
-                      {s.survey_date && <div style={{ fontSize: 11, color: '#0D7377' }}>Survey {fmtDate(s.survey_date)}</div>}
+                      {s.survey_date && <div style={{ fontSize: 11, color: '#0E1B2E' }}>Survey {fmtDate(s.survey_date)}</div>}
                     </td>
                     <td style={TD}>
                       <select className="select" value={s.team_id ?? ''} style={SMALL_SELECT}
@@ -476,7 +476,7 @@ function HoursTab({ project, teams, sites, entries, ownerId, supabase, onChanged
                     {!!(e.break_minutes || e.meal_minutes) && (
                       <div style={{ fontSize: 10.5, color: '#999' }}>break {e.break_minutes ?? 0}m · meal {e.meal_minutes ?? 0}m</div>
                     )}
-                    {e.from_clock && <div style={{ fontSize: 10.5, color: '#0D7377' }}>time clock</div>}
+                    {e.from_clock && <div style={{ fontSize: 10.5, color: '#0E1B2E' }}>time clock</div>}
                   </td>
                   <td style={{ ...TD, fontWeight: 700 }}>{Number(e.hours)}</td>
                   <td style={TD}>{e.helper_present ? 'Yes' : <span style={{ color: '#b45309' }}>No</span>}</td>
@@ -805,7 +805,7 @@ function MessagesTab({ project, teams, contractors, messages, ownerId, supabase,
               </div>
               <div style={{
                 padding: '8px 12px', borderRadius: 12, fontSize: 13.5, lineHeight: 1.45, whiteSpace: 'pre-wrap',
-                background: mine ? 'var(--teal)' : (m.to_office || m.to_contractor_id) ? 'rgba(245,158,11,0.12)' : 'rgba(13,115,119,0.08)',
+                background: mine ? 'var(--teal)' : (m.to_office || m.to_contractor_id) ? 'rgba(245,158,11,0.12)' : 'rgba(14,27,46,0.08)',
                 color: mine ? 'white' : '#333',
               }}>{m.content}</div>
             </div>
@@ -980,7 +980,7 @@ function TabBtn({ on, onClick, icon, label, badge, disabled }: {
     <button onClick={onClick} disabled={disabled} style={{
       display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 999,
       fontSize: 12.5, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
-      border: on ? '1px solid var(--teal)' : '1px solid rgba(13,115,119,0.2)',
+      border: on ? '1px solid var(--teal)' : '1px solid rgba(14,27,46,0.2)',
       background: on ? 'var(--teal)' : 'white', color: on ? 'white' : 'var(--teal)',
     }}>
       {icon}{label}

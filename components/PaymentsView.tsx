@@ -37,7 +37,7 @@ const MC: Record<string, { bg: string; color: string }> = {
   Cash: { bg: 'rgba(16,185,129,0.1)', color: '#047857' },
   Venmo: { bg: 'rgba(0,156,235,0.1)', color: '#0284C7' },
 };
-const mc = (m: string) => MC[m] ?? { bg: 'rgba(13,115,119,0.08)', color: 'var(--teal)' };
+const mc = (m: string) => MC[m] ?? { bg: 'rgba(14,27,46,0.08)', color: 'var(--teal)' };
 
 function Bar({ pct, color }: { pct: number; color: string }) {
   return (
@@ -378,7 +378,7 @@ export default function PaymentsView({ payments, workOrders, contractors = [], o
           </div>
         </div>
         {selectedWO && (
-          <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.05)', border: '1px solid rgba(13,115,119,0.15)', display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
+          <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: 'rgba(14,27,46,0.05)', border: '1px solid rgba(14,27,46,0.15)', display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
             <span style={{ fontWeight: 700, color: 'var(--teal)' }}>#{selectedWO.wo_number}{selectedWO.title ? ` — ${selectedWO.title}` : ''}</span>
             {/* Two sides of the ledger, kept apart. "Remaining" used to subtract
                 what the TECH was paid from what the CLIENT pays, which is not a
@@ -413,7 +413,7 @@ export default function PaymentsView({ payments, workOrders, contractors = [], o
         {contractorFilter !== 'all' && (
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, color: '#666' }}>Filtered:</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal)', background: 'rgba(13,115,119,0.08)', padding: '2px 10px', borderRadius: 999 }}>{contractorFilter}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal)', background: 'rgba(14,27,46,0.08)', padding: '2px 10px', borderRadius: 999 }}>{contractorFilter}</span>
             <button style={{ fontSize: 11, color: '#b91c1c', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => setContractorFilter('all')}>x Clear</button>
           </div>
         )}
@@ -422,7 +422,7 @@ export default function PaymentsView({ payments, workOrders, contractors = [], o
       <div className="glass card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            <tr style={{ background: 'rgba(13,115,119,0.05)', borderBottom: '1px solid rgba(13,115,119,0.1)' }}>
+            <tr style={{ background: 'rgba(14,27,46,0.05)', borderBottom: '1px solid rgba(14,27,46,0.1)' }}>
               {['Date', 'Contractor', 'Job / WO', 'Method', 'Notes / Purpose', 'Amount', ''].map((h, i) => (
                 <th key={h + i} style={{ padding: '12px 16px', textAlign: i === 5 ? 'right' : 'left', fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase' }}>{h}</th>
               ))}

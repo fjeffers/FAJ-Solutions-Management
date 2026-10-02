@@ -160,8 +160,14 @@ describe('lists', () => {
     expect(jobs.filter((j) => matchesWf(j, 'jere')).map((j) => j.number)).toEqual(['31']);
     expect(jobs.filter((j) => matchesWf(j, '32')).map((j) => j.number)).toEqual(['32']);
   });
-  it('soonest first, unscheduled last', () => {
-    expect(sortWf(jobs).map((j) => j.number)).toEqual(['31', '30', '32']);
+  it('coming up first, then the most recent past, unscheduled last', () => {
+    expect(sortWf(jobs, '2026-10-03').map((j) => j.number)).toEqual(['30', '31', '32']);
+    expect(sortWf(jobs, '2026-10-01').map((j) => j.number)).toEqual(['31', '30', '32']);
+    const past = [
+      wfJobFromOwner({ id: 'm', wo_number: '1', wo_status: 'Open', scheduled_date: '2026-05-29' }),
+      wfJobFromOwner({ id: 's', wo_number: '2', wo_status: 'Open', scheduled_date: '2026-09-30' }),
+    ];
+    expect(sortWf(past, '2026-10-02').map((j) => j.number)).toEqual(['2', '1']);
   });
   it("the office's three numbers", () => {
     expect(ownerCounts(jobs, '2026-10-05')).toEqual({ needTech: 1, waiting: 1, today: 1, workDone: 1 });

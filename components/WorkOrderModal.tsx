@@ -121,8 +121,8 @@ const BUILT_IN_QA_PACKETS: {
 ];
 
 const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
-  'Open':        { bg: 'rgba(13,115,119,0.1)',   color: 'var(--teal)' },
-  'Assigned':    { bg: 'rgba(201,169,97,0.15)',   color: '#b8944a' },
+  'Open':        { bg: 'rgba(14,27,46,0.1)',   color: 'var(--teal)' },
+  'Assigned':    { bg: 'rgba(201,162,75,0.15)',   color: '#b8944a' },
   'In Progress': { bg: 'rgba(245,158,11,0.15)',   color: '#b45309' },
   'Work Done':   { bg: 'rgba(99,102,241,0.12)',   color: '#4338ca' },
   'Approved':    { bg: 'rgba(16,185,129,0.12)',   color: '#047857' },
@@ -724,7 +724,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '9px 12px', border: 'none', background: 'none', cursor: 'pointer',
-              fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 11,
+              fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 11,
               color: tab === t.key ? 'var(--teal)' : '#999',
               borderBottom: tab === t.key ? '2px solid var(--teal)' : '2px solid transparent',
               marginBottom: -1, transition: 'all 0.2s', whiteSpace: 'nowrap', flexShrink: 0,
@@ -766,8 +766,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                       <div key={name} style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '6px 10px', borderRadius: 10,
-                        background: isLead ? 'rgba(13,115,119,0.08)' : 'rgba(0,0,0,0.04)',
-                        border: isLead ? '1px solid rgba(13,115,119,0.25)' : '1px solid rgba(0,0,0,0.1)',
+                        background: isLead ? 'rgba(14,27,46,0.08)' : 'rgba(0,0,0,0.04)',
+                        border: isLead ? '1px solid rgba(14,27,46,0.25)' : '1px solid rgba(0,0,0,0.1)',
                       }}>
                         {/* Lead radio — only show when 2+ contractors */}
                         {isMulti && (
@@ -799,7 +799,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                           <span style={{
                             fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
                             padding: '2px 7px', borderRadius: 999,
-                            background: isLead ? 'rgba(13,115,119,0.15)' : 'rgba(0,0,0,0.08)',
+                            background: isLead ? 'rgba(14,27,46,0.15)' : 'rgba(0,0,0,0.08)',
                             color: isLead ? 'var(--teal)' : '#888',
                           }}>
                             {isLead ? 'LEAD' : 'ASSISTANT'}
@@ -905,8 +905,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                                 setContractorPay(next);
                               }}
                               style={{
-                                fontSize: 11, fontWeight: 700, color: 'var(--teal)', background: 'rgba(13,115,119,0.08)',
-                                border: '1px solid rgba(13,115,119,0.2)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
+                                fontSize: 11, fontWeight: 700, color: 'var(--teal)', background: 'rgba(14,27,46,0.08)',
+                                border: '1px solid rgba(14,27,46,0.2)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
                               }}
                             >
                               Split evenly
@@ -975,10 +975,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               onClick={() => setTab('documents')}
               style={{
                 width: '100%', padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
-                background: hasDocFiles ? 'rgba(13,115,119,0.07)' : 'rgba(0,0,0,0.03)',
-                border: hasDocFiles ? '1.5px solid rgba(13,115,119,0.25)' : '1.5px solid rgba(0,0,0,0.08)',
+                background: hasDocFiles ? 'rgba(14,27,46,0.07)' : 'rgba(0,0,0,0.03)',
+                border: hasDocFiles ? '1.5px solid rgba(14,27,46,0.25)' : '1.5px solid rgba(0,0,0,0.08)',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                fontFamily: 'Lato, sans-serif', transition: 'background 0.15s',
+                fontFamily: 'Inter, sans-serif', transition: 'background 0.15s',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1074,10 +1074,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 {PAY_TYPES.map((pt) => (
                   <button key={pt} type="button" onClick={() => set('pay_type', pt)} style={{
                     padding: '12px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                    fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 12,
-                    background: form.pay_type === pt ? 'var(--teal)' : 'rgba(13,115,119,0.06)',
+                    fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 12,
+                    background: form.pay_type === pt ? 'var(--teal)' : 'rgba(14,27,46,0.06)',
                     color: form.pay_type === pt ? 'white' : 'var(--teal)',
-                    boxShadow: form.pay_type === pt ? '0 4px 12px rgba(13,115,119,0.3)' : 'none',
+                    boxShadow: form.pay_type === pt ? '0 4px 12px rgba(14,27,46,0.3)' : 'none',
                     transition: 'all 0.2s',
                   }}>{pt}</button>
                 ))}
@@ -1321,7 +1321,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* ── SCHEDULE TAB ── */}
         {tab === 'schedule' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
+            <div style={{ padding: '12px 16px', background: 'rgba(14,27,46,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
               Set the date and time window for when the work should be performed.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -1374,7 +1374,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             {/* Deliverables + Closeout in one card */}
             <div style={{ border: '1.5px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
               <div style={{ padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <ClipboardList size={13} style={{ color: 'var(--teal, #0D7377)' }} />
+                <ClipboardList size={13} style={{ color: 'var(--teal, #0E1B2E)' }} />
                 <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 }}>Deliverables &amp; Closeout Instructions</span>
               </div>
               <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1412,7 +1412,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             {/* Tools + Parts in one card */}
             <div style={{ border: '1.5px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
               <div style={{ padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Wrench size={13} style={{ color: 'var(--teal, #0D7377)' }} />
+                <Wrench size={13} style={{ color: 'var(--teal, #0E1B2E)' }} />
                 <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 }}>Tools &amp; Materials</span>
               </div>
               <div style={{ padding: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -1459,7 +1459,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* ── CONTACTS TAB ── */}
         {tab === 'contacts' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
+            <div style={{ padding: '12px 16px', background: 'rgba(14,27,46,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
               Add all site contacts. Contractors will see this info in their portal.
             </div>
 
@@ -1545,7 +1545,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {tab === 'questions' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Built-in packets */}
-            <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10 }}>
+            <div style={{ padding: '12px 16px', background: 'rgba(14,27,46,0.05)', borderRadius: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
                 Built-in Paperwork
               </div>
@@ -1557,7 +1557,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                     style={{
                       padding: '12px 14px',
                       borderRadius: 10,
-                      border: '1.5px solid rgba(13,115,119,0.22)',
+                      border: '1.5px solid rgba(14,27,46,0.22)',
                       background: 'white',
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -1578,7 +1578,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
             {/* Template picker */}
             {questionTemplates.length > 0 && (
-              <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10 }}>
+              <div style={{ padding: '12px 16px', background: 'rgba(14,27,46,0.05)', borderRadius: 10 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
                   Load from Template
                 </div>
@@ -1588,7 +1588,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                       key={tpl.id}
                       onClick={() => applyTemplate(tpl.id)}
                       style={{
-                        padding: '6px 14px', borderRadius: 20, border: '1.5px solid rgba(13,115,119,0.3)',
+                        padding: '6px 14px', borderRadius: 20, border: '1.5px solid rgba(14,27,46,0.3)',
                         background: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600,
                         color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 6,
                       }}
@@ -1604,7 +1604,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
             {/* Vendor attachment (from template or WO) */}
             {form.attachment_url && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(201,169,97,0.08)', border: '1.5px solid rgba(201,169,97,0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(201,162,75,0.08)', border: '1.5px solid rgba(201,162,75,0.2)' }}>
                 <Paperclip size={13} color="#b8944a" />
                 <a href={form.attachment_url} target="_blank" rel="noopener noreferrer"
                   style={{ flex: 1, fontSize: 13, color: '#b8944a', fontWeight: 600, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1757,7 +1757,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             </div>
 
             {receiptOpen && (
-              <div style={{ padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ padding: '14px 16px', borderRadius: 10, border: '1.5px solid rgba(14,27,46,0.25)', background: 'rgba(14,27,46,0.03)', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
                   <strong>Scan or upload:</strong> the camera, a screenshot of the emailed receipt, or a saved PDF.{' '}
                   <strong>Or paste:</strong> copy the receipt text below. Items and prices are read
@@ -1808,10 +1808,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {materialsUsed.map((r) => (
-                  <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: r.material_id ? 'rgba(13,115,119,0.04)' : 'rgba(245,158,11,0.05)', border: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
+                  <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: r.material_id ? 'rgba(14,27,46,0.04)' : 'rgba(245,158,11,0.05)', border: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
                     <span style={{
                       fontSize: 9, fontWeight: 800, letterSpacing: 0.5, padding: '2px 7px', borderRadius: 999, flexShrink: 0,
-                      background: r.material_id ? 'rgba(13,115,119,0.12)' : 'rgba(245,158,11,0.15)',
+                      background: r.material_id ? 'rgba(14,27,46,0.12)' : 'rgba(245,158,11,0.15)',
                       color: r.material_id ? 'var(--teal)' : '#92400e',
                     }}>
                       {r.material_id ? 'STOCK' : 'EXTRA'}
@@ -1892,7 +1892,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               {mileageLogs.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
                   {mileageLogs.map((r) => (
-                    <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: 'rgba(13,115,119,0.04)', border: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
+                    <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: 'rgba(14,27,46,0.04)', border: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
                       <div style={{ position: 'relative', flex: '1 1 140px' }}>
                         <select
                           className="select input"
@@ -2033,7 +2033,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
             {/* Inline log-payment form */}
             {showPayForm ? (
-              <div style={{ padding: '16px 18px', borderRadius: 12, border: '1.5px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.03)' }}>
+              <div style={{ padding: '16px 18px', borderRadius: 12, border: '1.5px solid rgba(14,27,46,0.25)', background: 'rgba(14,27,46,0.03)' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 14 }}>
                   Log Payment
                 </div>
@@ -2159,9 +2159,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
             {/* ── Sign-Off Sheet ── */}
-            <div style={{ border: '1.5px solid rgba(13,115,119,0.25)', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ padding: '10px 14px', background: 'rgba(13,115,119,0.06)', borderBottom: '1px solid rgba(13,115,119,0.12)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Printer size={14} style={{ color: 'var(--teal, #0D7377)' }} />
+            <div style={{ border: '1.5px solid rgba(14,27,46,0.25)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 14px', background: 'rgba(14,27,46,0.06)', borderBottom: '1px solid rgba(14,27,46,0.12)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Printer size={14} style={{ color: 'var(--teal, #0E1B2E)' }} />
                 <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 }}>Client Sign-Off Sheet</span>
               </div>
               <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -2187,8 +2187,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 Vendor Paperwork
               </div>
               {form.attachment_url ? (
-                <div style={{ border: '1.5px solid rgba(201,169,97,0.3)', borderRadius: 10, overflow: 'hidden' }}>
-                  <div style={{ padding: '10px 14px', background: 'rgba(201,169,97,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ border: '1.5px solid rgba(201,162,75,0.3)', borderRadius: 10, overflow: 'hidden' }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(201,162,75,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#b8944a' }}>Attached</span>
                     <button onClick={() => set('attachment_url', null)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#aaa', display: 'flex' }}>
                       <X size={13} />
@@ -2211,7 +2211,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                   )}
                 </div>
               ) : (
-                <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(201,169,97,0.05)', border: '1.5px dashed rgba(201,169,97,0.3)', fontSize: 12, color: '#aaa' }}>
+                <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(201,162,75,0.05)', border: '1.5px dashed rgba(201,162,75,0.3)', fontSize: 12, color: '#aaa' }}>
                   No vendor paperwork attached. Load from a template on the Questions tab.
                 </div>
               )}
@@ -2268,10 +2268,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                     onClick={() => docFileRef.current?.click()}
                     disabled={docUploading}
                     style={{
-                      padding: '16px 12px', border: '2px dashed rgba(13,115,119,0.35)', borderRadius: 10,
-                      background: 'rgba(13,115,119,0.04)', cursor: docUploading ? 'not-allowed' : 'pointer',
+                      padding: '16px 12px', border: '2px dashed rgba(14,27,46,0.35)', borderRadius: 10,
+                      background: 'rgba(14,27,46,0.04)', cursor: docUploading ? 'not-allowed' : 'pointer',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                      color: 'var(--teal)', fontFamily: 'Lato, sans-serif', opacity: docUploading ? 0.6 : 1,
+                      color: 'var(--teal)', fontFamily: 'Inter, sans-serif', opacity: docUploading ? 0.6 : 1,
                     }}
                   >
                     <Upload size={20} color="var(--teal)" />
@@ -2283,10 +2283,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                     onClick={() => photoFileRef.current?.click()}
                     disabled={docUploading}
                     style={{
-                      padding: '16px 12px', border: '2px dashed rgba(201,169,97,0.4)', borderRadius: 10,
-                      background: 'rgba(201,169,97,0.05)', cursor: docUploading ? 'not-allowed' : 'pointer',
+                      padding: '16px 12px', border: '2px dashed rgba(201,162,75,0.4)', borderRadius: 10,
+                      background: 'rgba(201,162,75,0.05)', cursor: docUploading ? 'not-allowed' : 'pointer',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                      color: '#b8944a', fontFamily: 'Lato, sans-serif', opacity: docUploading ? 0.6 : 1,
+                      color: '#b8944a', fontFamily: 'Inter, sans-serif', opacity: docUploading ? 0.6 : 1,
                     }}
                   >
                     <Camera size={20} color="#b8944a" />
@@ -2389,7 +2389,7 @@ function SaveAsTemplateRow({
   };
 
   return (
-    <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(13,115,119,0.05)', border: '1.5px dashed rgba(13,115,119,0.2)' }}>
+    <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(14,27,46,0.05)', border: '1.5px dashed rgba(14,27,46,0.2)' }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
         Save as Template
       </div>
@@ -2462,7 +2462,7 @@ function PF({ label, icon, children }: { label: string; icon?: React.ReactNode; 
 
 function TotalPreview({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', border: '1.5px solid rgba(13,115,119,0.15)', textAlign: 'right' }}>
+    <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(14,27,46,0.06)', border: '1.5px solid rgba(14,27,46,0.15)', textAlign: 'right' }}>
       <div style={{ fontSize: 11, color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--teal)' }}>{fmtMoney(value)}</div>
     </div>
@@ -2489,7 +2489,7 @@ function MoneyInput({ value, onChange }: { value: number | null | undefined; onC
 
 function RequirementToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: checked ? 'rgba(13,115,119,0.07)' : '#fafafa', border: `1.5px solid ${checked ? 'rgba(13,115,119,0.22)' : '#e5e7eb'}`, cursor: 'pointer' }}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: checked ? 'rgba(14,27,46,0.07)' : '#fafafa', border: `1.5px solid ${checked ? 'rgba(14,27,46,0.22)' : '#e5e7eb'}`, cursor: 'pointer' }}>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       <span style={{ fontSize: 12, color: checked ? 'var(--teal)' : '#555', fontWeight: 700 }}>{label}</span>
     </label>
@@ -2500,7 +2500,7 @@ function SummaryTile({ label, value, color }: { label: string; value: string; co
   return (
     <div style={{ padding: '14px 16px', borderRadius: 10, background: '#fafafa', border: '1.5px solid #e5e7eb', textAlign: 'center' }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: 'Lato, sans-serif' }}>{value}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: 'Inter, sans-serif' }}>{value}</div>
     </div>
   );
 }

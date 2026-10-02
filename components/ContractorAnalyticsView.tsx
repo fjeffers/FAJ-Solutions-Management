@@ -12,7 +12,7 @@ function daysBetween(a: string, b: string): number {
 
 function ratingTier(score: number): { label: string; color: string; bg: string } {
   if (score >= 90) return { label: 'Excellent', color: '#047857', bg: 'rgba(16,185,129,0.12)' };
-  if (score >= 75) return { label: 'Good', color: '#0D7377', bg: 'rgba(13,115,119,0.12)' };
+  if (score >= 75) return { label: 'Good', color: '#0E1B2E', bg: 'rgba(14,27,46,0.12)' };
   if (score >= 60) return { label: 'Fair', color: '#b45309', bg: 'rgba(245,158,11,0.12)' };
   return { label: 'Needs Improvement', color: '#b91c1c', bg: 'rgba(239,68,68,0.12)' };
 }

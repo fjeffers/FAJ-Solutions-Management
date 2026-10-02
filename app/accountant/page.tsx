@@ -92,7 +92,7 @@ export default function AccountantPage() {
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 40 }}>
       <Toaster />
-      <header style={{ background: 'linear-gradient(135deg, #1c2833 0%, #0D7377 100%)', color: 'white', padding: '18px 16px 0', position: 'sticky', top: 0, zIndex: 20 }}>
+      <header style={{ background: 'linear-gradient(135deg, #1c2833 0%, #0E1B2E 100%)', color: 'white', padding: '18px 16px 0', position: 'sticky', top: 0, zIndex: 20 }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -296,7 +296,7 @@ function Stats({ items }: { items: [string, string, boolean?][] }) {
 }
 
 function Note({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 12.5, color: '#555', background: 'rgba(13,115,119,0.06)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.6 }}>{children}</div>;
+  return <div style={{ fontSize: 12.5, color: '#555', background: 'rgba(14,27,46,0.06)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.6 }}>{children}</div>;
 }
 
 function Toolbar({ onExport }: { onExport: () => void }) {
@@ -320,7 +320,7 @@ function Table({ headers, rows, empty }: { headers: string[]; rows: React.ReactN
     <div className="glass card" style={{ padding: 0, overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
         <thead>
-          <tr style={{ background: 'rgba(13,115,119,0.05)' }}>
+          <tr style={{ background: 'rgba(14,27,46,0.05)' }}>
             {headers.map((h) => <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontWeight: 700, letterSpacing: 1, color: '#888', textTransform: 'uppercase' }}>{h}</th>)}
           </tr>
         </thead>

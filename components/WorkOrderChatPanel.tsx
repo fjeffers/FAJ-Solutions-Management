@@ -81,7 +81,7 @@ export default function WorkOrderChatPanel({ woNumber }: { woNumber: string | un
             style={{
               alignSelf: m.sender_role === 'admin' ? 'flex-end' : 'flex-start',
               maxWidth: '75%',
-              background: m.sender_role === 'admin' ? '#0D7377' : 'white',
+              background: m.sender_role === 'admin' ? '#0E1B2E' : 'white',
               color: m.sender_role === 'admin' ? 'white' : '#1a1a1a',
               border: m.sender_role === 'admin' ? 'none' : '1px solid #e5e7eb',
               borderRadius: 12,
@@ -89,7 +89,7 @@ export default function WorkOrderChatPanel({ woNumber }: { woNumber: string | un
             }}
           >
             {m.sender_role === 'contractor' && (
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#0D7377', marginBottom: 2 }}>{m.sender_name}</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#0E1B2E', marginBottom: 2 }}>{m.sender_name}</div>
             )}
             <div style={{ fontSize: 13, lineHeight: 1.4, whiteSpace: 'pre-line' }}>{m.content}</div>
             <div style={{ fontSize: 9, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>{fmtTime(m.created_at)}</div>

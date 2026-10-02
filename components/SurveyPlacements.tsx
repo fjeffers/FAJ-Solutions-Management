@@ -59,7 +59,7 @@ export default function SurveyPlacements({
     <div>
       <div style={{
         display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 12,
-        padding: '9px 12px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', fontSize: 12, color: '#555',
+        padding: '9px 12px', borderRadius: 10, background: 'rgba(14,27,46,0.06)', fontSize: 12, color: '#555',
       }}>
         <strong style={{ color: withPhoto === rows.length ? '#047857' : 'var(--teal)' }}>
           {withPhoto} of {rows.length} photographed

@@ -139,7 +139,7 @@ export default function PayablesView({
             {/* Grand total tile */}
             <div style={{ padding: '12px 20px', borderRadius: 10, background: 'rgba(185,28,28,0.06)', border: '1.5px solid rgba(185,28,28,0.15)', textAlign: 'right' }}>
               <div style={{ fontSize: 11, color: '#b91c1c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total Owed</div>
-              <div style={{ fontSize: 26, fontWeight: 800, color: '#b91c1c', fontFamily: 'Lato, sans-serif' }}>{fmtMoney(grandTotal)}</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: '#b91c1c', fontFamily: 'Inter, sans-serif' }}>{fmtMoney(grandTotal)}</div>
               {grandOverpaid > 0.009 && (
                 <div style={{ fontSize: 11.5, color: '#047857', fontWeight: 700, marginTop: 2 }}>
                   {fmtMoney(grandOverpaid)} already overpaid elsewhere
@@ -241,7 +241,7 @@ function ContractorGroup({
   return (
     <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
       {/* Contractor header */}
-      <div style={{ padding: '14px 20px', background: 'rgba(13,115,119,0.04)', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+      <div style={{ padding: '14px 20px', background: 'rgba(14,27,46,0.04)', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontWeight: 800, fontSize: 16, color: '#1a1a1a' }}>{name}</div>
           {hasBanking && (
@@ -264,7 +264,7 @@ function ContractorGroup({
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>Total Owed</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#b91c1c', fontFamily: 'Lato, sans-serif' }}>{fmtMoney(total)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#b91c1c', fontFamily: 'Inter, sans-serif' }}>{fmtMoney(total)}</div>
           {overpaid > 0.009 && (
             <div style={{ fontSize: 12, color: '#047857', fontWeight: 700, marginTop: 3 }}>
               −{fmtMoney(overpaid)} already overpaid
@@ -329,7 +329,7 @@ function ContractorGroup({
                     {pm.label}
                   </span>
                   {isSplit && (
-                    <span style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: 'rgba(13,115,119,0.1)', color: 'var(--teal)', whiteSpace: 'nowrap' }}>
+                    <span style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: 'rgba(14,27,46,0.1)', color: 'var(--teal)', whiteSpace: 'nowrap' }}>
                       their share
                     </span>
                   )}
@@ -350,7 +350,7 @@ function ContractorGroup({
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '7px 16px', borderRadius: 8, border: 'none',
                       cursor: 'pointer', background: 'var(--teal)', color: 'white',
-                      fontFamily: 'Lato, sans-serif', fontSize: 12, fontWeight: 700,
+                      fontFamily: 'Inter, sans-serif', fontSize: 12, fontWeight: 700,
                       whiteSpace: 'nowrap',
                     }}
                   >

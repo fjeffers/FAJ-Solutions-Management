@@ -116,7 +116,7 @@ function WoCard({ w, accent, onOpen }: { w: EnrichedWorkOrder; accent: string; o
 
 function Kpi({ icon, label, value, tone, note }: { icon: React.ReactNode; label: string; value: string; tone?: 'ok' | 'warn' | 'act'; note?: string }) {
   const color = tone === 'warn' ? '#b45309' : tone === 'act' ? '#4338ca' : 'var(--teal)';
-  const bg = tone === 'warn' ? 'rgba(245,158,11,0.12)' : tone === 'act' ? 'rgba(99,102,241,0.12)' : 'rgba(13,115,119,0.1)';
+  const bg = tone === 'warn' ? 'rgba(245,158,11,0.12)' : tone === 'act' ? 'rgba(99,102,241,0.12)' : 'rgba(14,27,46,0.1)';
   return (
     <div className="glass card" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
       <div style={{ width: 38, height: 38, borderRadius: 10, background: bg, color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>

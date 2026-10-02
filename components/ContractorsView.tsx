@@ -82,13 +82,13 @@ export default function ContractorsView({
           return (
             <div key={c.id} className="glass card" style={{ cursor: 'pointer', transition: 'box-shadow 0.15s, transform 0.12s', border: '1px solid #e8ecf0' }}
               onClick={() => setSelected(c)}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 18px rgba(13,115,119,0.12)'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 18px rgba(14,27,46,0.12)'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = ''; (e.currentTarget as HTMLElement).style.transform = ''; }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(13,115,119,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: 'var(--teal)', flexShrink: 0 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(14,27,46,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: 'var(--teal)', flexShrink: 0 }}>
                       {c.name.charAt(0).toUpperCase()}
                     </div>
                     <div>

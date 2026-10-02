@@ -8,7 +8,7 @@ import type { WorkOrderStatus, WoTask } from './types';
 export type ColumnKey = 'open' | 'assigned' | 'progress' | 'done' | 'closed';
 
 export const BOARD_COLUMNS: { key: ColumnKey; label: string; hint: string; accent: string }[] = [
-  { key: 'open',     label: 'Needs a tech',    hint: 'Open, nobody on it yet',       accent: '#0D7377' },
+  { key: 'open',     label: 'Needs a tech',    hint: 'Open, nobody on it yet',       accent: '#0E1B2E' },
   { key: 'assigned', label: 'Assigned',        hint: 'A tech or team has it',         accent: '#f59e0b' },
   { key: 'progress', label: 'In progress',     hint: 'Being worked on now',           accent: '#f97316' },
   { key: 'done',     label: 'Work done',       hint: 'Finished: check, close, bill',  accent: '#6366f1' },

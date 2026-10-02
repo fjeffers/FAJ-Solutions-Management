@@ -44,11 +44,11 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
       <div style={{ maxWidth: 860, margin: '0 auto', overflowWrap: 'anywhere' }}>
 
         <div style={{ padding: '0 4px 16px' }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#0D7377', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#0E1B2E', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#8a6d2f', letterSpacing: 2 }}>SITE ACTIVITY REPORT</div>
         </div>
 
-        <div style={{ background: 'linear-gradient(135deg,#0D7377,#0a5a5d)', borderRadius: '16px 16px 0 0', color: '#fff', padding: '22px 26px' }}>
+        <div style={{ background: 'linear-gradient(135deg,#0E1B2E,#13284A)', borderRadius: '16px 16px 0 0', color: '#fff', padding: '22px 26px' }}>
           <div style={{ fontSize: 24, fontWeight: 700 }}>{customer.name}</div>
           {place && <div style={{ fontSize: 13, opacity: 0.85, marginTop: 2 }}>{place}</div>}
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
@@ -68,7 +68,7 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
             ].map(([label, value]) => (
               <div key={label} style={{ background: '#fff', border: '1px solid #eee', borderRadius: 12, padding: '13px 15px' }}>
                 <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1, color: '#999', textTransform: 'uppercase' }}>{label}</div>
-                <div style={{ fontSize: 21, fontWeight: 800, color: '#0D7377' }}>{value}</div>
+                <div style={{ fontSize: 21, fontWeight: 800, color: '#0E1B2E' }}>{value}</div>
               </div>
             ))}
           </div>
@@ -97,7 +97,7 @@ export default async function SiteReportPage({ params }: { params: Promise<{ tok
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', alignItems: 'baseline' }}>
                       <div style={{ fontSize: 13, fontWeight: 700, minWidth: 110 }}>{fmtDay(v.visit_date) || '—'}</div>
                       {times && <div style={{ fontSize: 12, color: '#555' }}>{times}</div>}
-                      {v.hours != null && <div style={{ fontSize: 12, fontWeight: 700, color: '#0D7377' }}>{v.hours}h</div>}
+                      {v.hours != null && <div style={{ fontSize: 12, fontWeight: 700, color: '#0E1B2E' }}>{v.hours}h</div>}
                       {v.visit_type && (
                         <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', color: '#7c3aed' }}>
                           {v.visit_type}

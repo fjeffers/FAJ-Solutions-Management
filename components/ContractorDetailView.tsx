@@ -157,7 +157,7 @@ export default function ContractorDetailView({
       style={{
         padding: '8px 18px', border: 'none', borderRadius: 8, fontSize: 13,
         fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-        background: tab === key ? 'var(--teal, #0D7377)' : 'transparent',
+        background: tab === key ? 'var(--teal, #0E1B2E)' : 'transparent',
         color: tab === key ? 'white' : '#666', transition: 'all 0.15s',
       }}
     >
@@ -171,7 +171,7 @@ export default function ContractorDetailView({
         onClick={onBack}
         style={{
           display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
-          cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--teal, #0D7377)',
+          cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--teal, #0E1B2E)',
           marginBottom: 20, padding: 0,
         }}
       >
@@ -179,20 +179,20 @@ export default function ContractorDetailView({
       </button>
 
       <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e8ecf0', overflow: 'hidden', marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-        <div style={{ height: 6, background: 'linear-gradient(90deg, #0D7377, #14a085)' }} />
+        <div style={{ height: 6, background: 'linear-gradient(90deg, #0E1B2E, #14a085)' }} />
         <div style={{ padding: '24px 28px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
             <div>
               <h1 className="serif" style={{ fontSize: 28, fontWeight: 700, margin: 0, color: '#1a1a2e' }}>{contractor.name}</h1>
               {contractor.business_name && (
                 <div style={{ fontSize: 14, color: '#555', marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Building2 size={13} color="var(--teal, #0D7377)" />{contractor.business_name}
+                  <Building2 size={13} color="var(--teal, #0E1B2E)" />{contractor.business_name}
                 </div>
               )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
-                {contractor.phone && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Phone size={12} color="#0D7377" /> {contractor.phone}</span>}
-                {contractor.email && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Mail size={12} color="#0D7377" /> {contractor.email}</span>}
-                {contractor.tax_id && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Hash size={12} color="#0D7377" /> {contractor.tax_id_type || 'Tax ID'}: {contractor.tax_id}</span>}
+                {contractor.phone && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Phone size={12} color="#0E1B2E" /> {contractor.phone}</span>}
+                {contractor.email && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Mail size={12} color="#0E1B2E" /> {contractor.email}</span>}
+                {contractor.tax_id && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Hash size={12} color="#0E1B2E" /> {contractor.tax_id_type || 'Tax ID'}: {contractor.tax_id}</span>}
                 <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 5 }}>
                   {contractor.w9_received
                     ? <><CheckCircle size={13} color="#047857" /><span style={{ color: '#047857', fontWeight: 600 }}>W-9 On File</span></>
@@ -203,13 +203,13 @@ export default function ContractorDetailView({
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 onClick={() => onAddJob({ contractor_name: contractor.name })}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: 'none', background: 'var(--teal, #0D7377)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(13,115,119,0.25)' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: 'none', background: 'var(--teal, #0E1B2E)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(14,27,46,0.25)' }}
               >
                 <Plus size={14} /> Add Job
               </button>
               <button
                 onClick={() => onAddPayment({ contractor_name: contractor.name })}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: '1.5px solid var(--teal, #0D7377)', background: 'transparent', color: 'var(--teal, #0D7377)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: '1.5px solid var(--teal, #0E1B2E)', background: 'transparent', color: 'var(--teal, #0E1B2E)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
               >
                 <DollarSign size={14} /> Log Payment
               </button>
@@ -263,7 +263,7 @@ export default function ContractorDetailView({
                       style={{ display: 'grid', gridTemplateColumns: '90px 1fr 100px 120px 90px 90px 28px', gap: 0, padding: '13px 20px', alignItems: 'center', cursor: 'pointer', transition: 'background 0.1s' }}
                       onClick={() => setExpandedWO(expanded ? null : wo.id)}
                     >
-                      <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#0D7377' }}>#{wo.wo_number}</span>
+                      <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#0E1B2E' }}>#{wo.wo_number}</span>
                       <span style={{ fontSize: 13, color: '#1a1a2e', fontWeight: 600 }}>{wo.title || wo.service_type || '—'}</span>
                       <span style={{ fontSize: 12, color: '#90a4ae' }}>{wo.start_date ? fmtDate(wo.start_date) : '—'}</span>
                       <span style={{ fontSize: 11, color: '#555' }}>{payLabel(wo)}</span>
@@ -311,7 +311,7 @@ export default function ContractorDetailView({
                             )}
                             <button
                               onClick={(e) => { e.stopPropagation(); onAddPayment({ contractor_name: contractor.name, wo_number: wo.wo_number }); }}
-                              style={{ marginTop: 10, fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 7, border: '1.5px solid #0D7377', background: 'transparent', color: '#0D7377', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+                              style={{ marginTop: 10, fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 7, border: '1.5px solid #0E1B2E', background: 'transparent', color: '#0E1B2E', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
                             >
                               <Plus size={11} /> Add Payment
                             </button>
@@ -348,14 +348,14 @@ export default function ContractorDetailView({
                   onClick={() => onEditPayment(p)}
                 >
                   <span style={{ fontSize: 13, color: '#555' }}>{fmtDate(p.payment_date)}</span>
-                  <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#0D7377' }}>#{p.wo_number}</span>
+                  <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#0E1B2E' }}>#{p.wo_number}</span>
                   <span style={{ fontSize: 12, color: '#90a4ae', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.notes || '—'}</span>
                   <span style={{ fontSize: 12, color: '#555' }}>{p.method}</span>
                   <span style={{ fontSize: 14, fontWeight: 800, color: '#047857', textAlign: 'right' }}>+{fmtMoney(Number(p.amount))}</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e', textAlign: 'right' }}>{fmtMoney(p.running)}</span>
                 </div>
               ))}
-              <div style={{ padding: '14px 20px', background: 'rgba(13,115,119,0.04)', borderTop: '2px solid #eef0f4', display: 'flex', justifyContent: 'flex-end', gap: 32 }}>
+              <div style={{ padding: '14px 20px', background: 'rgba(14,27,46,0.04)', borderTop: '2px solid #eef0f4', display: 'flex', justifyContent: 'flex-end', gap: 32 }}>
                 <span style={{ fontSize: 13, color: '#555' }}>Total Billed: <strong>{fmtMoney(totalBilled)}</strong></span>
                 <span style={{ fontSize: 13, color: '#047857' }}>Total Paid: <strong>{fmtMoney(totalPaid)}</strong></span>
                 <span style={{ fontSize: 13, color: balance > 0 ? '#b91c1c' : '#047857', fontWeight: 700 }}>Balance: {fmtMoney(balance)}</span>
@@ -392,7 +392,7 @@ export default function ContractorDetailView({
             return (
               <div style={{ padding: '0 24px 24px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, margin: '20px 0' }}>
-                  {[{ label: `Jobs in ${qbYear}`, value: String(yrJobs.length), color: '#0D7377' }, { label: 'Total Billed', value: fmtMoney(yrBilled), color: '#1a1a2e' }, { label: 'Total Paid', value: fmtMoney(yrPaid), color: '#047857' }].map(({ label, value, color }) => (
+                  {[{ label: `Jobs in ${qbYear}`, value: String(yrJobs.length), color: '#0E1B2E' }, { label: 'Total Billed', value: fmtMoney(yrBilled), color: '#1a1a2e' }, { label: 'Total Paid', value: fmtMoney(yrPaid), color: '#047857' }].map(({ label, value, color }) => (
                     <div key={label} style={{ padding: '16px', borderRadius: 10, background: '#f7f9fc', border: '1px solid #eef0f4', textAlign: 'center' }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
                       <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
@@ -406,11 +406,11 @@ export default function ContractorDetailView({
                   </div>
                 )}
                 <div style={{ marginBottom: 24 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0D7377', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 }}>Work Orders — {qbYear}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0E1B2E', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 }}>Work Orders — {qbYear}</div>
                   {yrJobs.length === 0 ? <div style={{ fontSize: 13, color: '#aaa', padding: '16px 0' }}>No jobs in {qbYear}.</div> : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead><tr style={{ background: '#f7f9fc', borderBottom: '1px solid #eee' }}>{['WO #', 'Title', 'Date', 'Pay Type', 'Hours', 'Amount', 'Status'].map((h, i) => <th key={h} style={{ padding: '8px 10px', textAlign: i >= 4 ? 'right' : 'left', fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1 }}>{h}</th>)}</tr></thead>
-                      <tbody>{yrJobs.map((w) => (<tr key={w.id} style={{ borderBottom: '1px solid #f5f5f5' }}><td style={{ padding: '10px 10px', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#0D7377' }}>#{w.wo_number}</td><td style={{ padding: '10px 10px', color: '#333' }}>{w.title || w.service_type || '—'}</td><td style={{ padding: '10px 10px', color: '#888' }}>{w.start_date ? fmtDate(w.start_date) : '—'}</td><td style={{ padding: '10px 10px', color: '#555' }}>{w.pay_type}</td><td style={{ padding: '10px 10px', textAlign: 'right', color: '#555' }}>{w.hours_worked ?? '—'}</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700 }}>{fmtMoney(Number(w.total_amount))}</td><td style={{ padding: '10px 10px', textAlign: 'right' }}><span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: `${STATUS_DOT[w.wo_status ?? 'Open']}18`, color: STATUS_DOT[w.wo_status ?? 'Open'] }}>{w.wo_status}</span></td></tr>))}</tbody>
+                      <tbody>{yrJobs.map((w) => (<tr key={w.id} style={{ borderBottom: '1px solid #f5f5f5' }}><td style={{ padding: '10px 10px', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#0E1B2E' }}>#{w.wo_number}</td><td style={{ padding: '10px 10px', color: '#333' }}>{w.title || w.service_type || '—'}</td><td style={{ padding: '10px 10px', color: '#888' }}>{w.start_date ? fmtDate(w.start_date) : '—'}</td><td style={{ padding: '10px 10px', color: '#555' }}>{w.pay_type}</td><td style={{ padding: '10px 10px', textAlign: 'right', color: '#555' }}>{w.hours_worked ?? '—'}</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700 }}>{fmtMoney(Number(w.total_amount))}</td><td style={{ padding: '10px 10px', textAlign: 'right' }}><span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: `${STATUS_DOT[w.wo_status ?? 'Open']}18`, color: STATUS_DOT[w.wo_status ?? 'Open'] }}>{w.wo_status}</span></td></tr>))}</tbody>
                       <tfoot><tr style={{ borderTop: '2px solid #eee' }}><td colSpan={5} style={{ padding: '10px 10px', fontWeight: 700, color: '#555', fontSize: 12 }}>Total</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#1a1a2e' }}>{fmtMoney(yrBilled)}</td><td /></tr></tfoot>
                     </table>
                   )}
@@ -420,7 +420,7 @@ export default function ContractorDetailView({
                   {yrPmts.length === 0 ? <div style={{ fontSize: 13, color: '#aaa', padding: '16px 0' }}>No payments in {qbYear}.</div> : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead><tr style={{ background: '#f7f9fc', borderBottom: '1px solid #eee' }}>{['Date', 'WO #', 'Method', 'Notes', 'Amount'].map((h, i) => <th key={h} style={{ padding: '8px 10px', textAlign: i === 4 ? 'right' : 'left', fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1 }}>{h}</th>)}</tr></thead>
-                      <tbody>{[...yrPmts].sort((a, b) => new Date(a.payment_date).getTime() - new Date(b.payment_date).getTime()).map((p) => (<tr key={p.id} style={{ borderBottom: '1px solid #f5f5f5' }}><td style={{ padding: '10px 10px', color: '#555' }}>{fmtDate(p.payment_date)}</td><td style={{ padding: '10px 10px', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#0D7377' }}>#{p.wo_number}</td><td style={{ padding: '10px 10px', color: '#555' }}>{p.method}</td><td style={{ padding: '10px 10px', color: '#aaa' }}>{p.notes || '—'}</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700, color: '#047857' }}>{fmtMoney(Number(p.amount))}</td></tr>))}</tbody>
+                      <tbody>{[...yrPmts].sort((a, b) => new Date(a.payment_date).getTime() - new Date(b.payment_date).getTime()).map((p) => (<tr key={p.id} style={{ borderBottom: '1px solid #f5f5f5' }}><td style={{ padding: '10px 10px', color: '#555' }}>{fmtDate(p.payment_date)}</td><td style={{ padding: '10px 10px', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#0E1B2E' }}>#{p.wo_number}</td><td style={{ padding: '10px 10px', color: '#555' }}>{p.method}</td><td style={{ padding: '10px 10px', color: '#aaa' }}>{p.notes || '—'}</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700, color: '#047857' }}>{fmtMoney(Number(p.amount))}</td></tr>))}</tbody>
                       <tfoot><tr style={{ borderTop: '2px solid #eee' }}><td colSpan={4} style={{ padding: '10px 10px', fontWeight: 700, color: '#555', fontSize: 12 }}>Total Paid</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#047857' }}>{fmtMoney(yrPaid)}</td></tr></tfoot>
                     </table>
                   )}
@@ -437,7 +437,7 @@ export default function ContractorDetailView({
 function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-      <span style={{ color: 'var(--teal, #0D7377)', display: 'flex' }}>{icon}</span>
+      <span style={{ color: 'var(--teal, #0E1B2E)', display: 'flex' }}>{icon}</span>
       <span style={{ color: '#aaa', minWidth: 90 }}>{label}</span>
       <span style={{ color: '#333', fontWeight: 600 }}>{value}</span>
     </div>

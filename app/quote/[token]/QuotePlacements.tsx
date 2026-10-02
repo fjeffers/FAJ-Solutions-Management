@@ -29,7 +29,7 @@ export default function QuotePlacements({ survey }: { survey: Survey }) {
         <h2 className="serif" style={{ fontSize: 22, fontWeight: 600, margin: 0, color: '#123' }}>
           {heading}
         </h2>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: '#0D7377' }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: '#0E1B2E' }}>
           {rows.length} {noun.toUpperCase()}{rows.length !== 1 ? 'S' : ''}
         </div>
       </div>
@@ -60,7 +60,7 @@ export default function QuotePlacements({ survey }: { survey: Survey }) {
                 <span style={{
                   position: 'absolute', top: 10, left: 10,
                   minWidth: 30, height: 30, padding: '0 9px', borderRadius: 999,
-                  background: 'rgba(13,115,119,0.95)', color: 'white',
+                  background: 'rgba(14,27,46,0.95)', color: 'white',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 13, fontWeight: 800, letterSpacing: 0.5,
                   boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
@@ -85,7 +85,7 @@ export default function QuotePlacements({ survey }: { survey: Survey }) {
                 padding: '0 14px', borderBottom: '1px solid #f0ede6',
               }}>
                 <span style={{
-                  minWidth: 30, height: 30, borderRadius: 999, background: '#0D7377', color: 'white',
+                  minWidth: 30, height: 30, borderRadius: 999, background: '#0E1B2E', color: 'white',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 13, fontWeight: 800,
                 }}>{r.position}</span>
@@ -94,7 +94,7 @@ export default function QuotePlacements({ survey }: { survey: Survey }) {
             )}
 
             <figcaption style={{ padding: '12px 14px 14px' }}>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.3, color: '#C9A961' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.3, color: '#C9A24B' }}>
                 {noun.toUpperCase()} {r.position}
               </div>
               <div style={{ fontWeight: 700, fontSize: 14, marginTop: 2, lineHeight: 1.35, color: '#123' }}>

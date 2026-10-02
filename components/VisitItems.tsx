@@ -57,7 +57,7 @@ function Total({ label, value, sub }: { label: string; value: string; sub?: stri
   return (
     <div style={{
       marginTop: 8, padding: '8px 11px', borderRadius: 9,
-      background: 'rgba(13,115,119,0.07)', display: 'flex',
+      background: 'rgba(14,27,46,0.07)', display: 'flex',
       alignItems: 'baseline', justifyContent: 'space-between', gap: 10,
     }}>
       <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--teal)', letterSpacing: 0.4 }}>
@@ -85,8 +85,8 @@ export function VisitBillingBreakdown({ visit }: { visit: Partial<SiteVisit> }) 
   const b = visitBreakdown(visit as SiteVisit);
   return (
     <div style={{
-      borderRadius: 10, border: '1.5px solid rgba(13,115,119,0.22)',
-      background: 'rgba(13,115,119,0.04)', padding: '12px 14px',
+      borderRadius: 10, border: '1.5px solid rgba(14,27,46,0.22)',
+      background: 'rgba(14,27,46,0.04)', padding: '12px 14px',
     }}>
       <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: 'var(--teal)', marginBottom: 8 }}>
         Billing breakdown
@@ -108,7 +108,7 @@ export function VisitBillingBreakdown({ visit }: { visit: Partial<SiteVisit> }) 
       </div>
       <div style={{
         display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-        marginTop: 9, paddingTop: 9, borderTop: '1.5px solid rgba(13,115,119,0.2)',
+        marginTop: 9, paddingTop: 9, borderTop: '1.5px solid rgba(14,27,46,0.2)',
       }}>
         <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--teal)', letterSpacing: 0.4 }}>VISIT TOTAL</span>
         <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--teal)', fontVariantNumeric: 'tabular-nums' }}>
@@ -279,7 +279,7 @@ export function VisitDayBreakdown({ visit }: { visit: Partial<SiteVisit> }) {
   return (
     <div style={{
       marginTop: 10, padding: '11px 13px', borderRadius: 10,
-      background: 'rgba(13,115,119,0.05)', border: '1px solid rgba(13,115,119,0.15)',
+      background: 'rgba(14,27,46,0.05)', border: '1px solid rgba(14,27,46,0.15)',
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,

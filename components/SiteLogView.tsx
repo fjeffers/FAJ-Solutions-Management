@@ -27,7 +27,7 @@ import { MileageRows, MaterialRows, VisitDayBreakdown, VisitBillingBreakdown } f
 import { Plus, Trash2, X, Search, MapPin, Timer, Square as StopIcon, Navigation, Receipt, Home, Car, ChevronDown, Share2, FileSpreadsheet, Table2, LayoutGrid, Briefcase, Users, Archive, ArchiveRestore, CalendarDays } from 'lucide-react';
 
 const TYPE_COLORS: Record<SiteVisitType, { color: string; bg: string }> = {
-  'Project': { color: '#0D7377', bg: 'rgba(13,115,119,0.1)' },
+  'Project': { color: '#0E1B2E', bg: 'rgba(14,27,46,0.1)' },
   'T&M':     { color: '#2563eb', bg: 'rgba(37,99,235,0.1)' },
   'Revisit': { color: '#b45309', bg: 'rgba(245,158,11,0.12)' },
   'Survey':  { color: '#7c3aed', bg: 'rgba(124,58,237,0.1)' },
@@ -938,8 +938,8 @@ export default function SiteLogView() {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
           marginBottom: 12, padding: '8px 12px', borderRadius: 10,
-          background: picked.size > 0 ? 'rgba(13,115,119,0.06)' : 'transparent',
-          border: picked.size > 0 ? '1px solid rgba(13,115,119,0.2)' : '1px solid transparent',
+          background: picked.size > 0 ? 'rgba(14,27,46,0.06)' : 'transparent',
+          border: picked.size > 0 ? '1px solid rgba(14,27,46,0.2)' : '1px solid transparent',
         }}>
           <span style={{ fontSize: 12.5, color: picked.size > 0 ? 'var(--teal)' : '#999', fontWeight: picked.size > 0 ? 700 : 500 }}>
             {picked.size > 0
@@ -1079,7 +1079,7 @@ export default function SiteLogView() {
               {/* Customer section header */}
               <div
                 onClick={() => toggleProg(prog)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '10px 12px', background: 'rgba(13,115,119,0.07)', borderRadius: 10, marginBottom: 10, flexWrap: 'wrap' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '10px 12px', background: 'rgba(14,27,46,0.07)', borderRadius: 10, marginBottom: 10, flexWrap: 'wrap' }}
               >
                 <ChevronDown size={15} style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--teal)' }} />
                 <span style={{ fontWeight: 800, fontSize: 16 }}>{prog}</span>
@@ -1112,7 +1112,7 @@ export default function SiteLogView() {
                     style={{
                       padding: '12px 14px', cursor: 'pointer',
                       border: picked.has(v.id) ? '1.5px solid var(--teal)' : undefined,
-                      background: picked.has(v.id) ? 'rgba(13,115,119,0.05)' : undefined,
+                      background: picked.has(v.id) ? 'rgba(14,27,46,0.05)' : undefined,
                     }}
                     onClick={() => setEditing(v)}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
@@ -1296,8 +1296,8 @@ export default function SiteLogView() {
                           style={{
                             display: 'inline-flex', alignItems: 'center', gap: 4,
                             padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
-                            border: '1.5px solid rgba(13,115,119,0.35)', background: 'rgba(13,115,119,0.06)',
-                            fontSize: 10, fontWeight: 800, color: 'var(--teal)', fontFamily: 'Lato, sans-serif',
+                            border: '1.5px solid rgba(14,27,46,0.35)', background: 'rgba(14,27,46,0.06)',
+                            fontSize: 10, fontWeight: 800, color: 'var(--teal)', fontFamily: 'Inter, sans-serif',
                           }}
                         >
                           <Briefcase size={10} /> → WORK ORDER
@@ -1598,7 +1598,7 @@ function VisitModal({ title, item, programs, contractors, homeBase, rateFor, def
                         style={{
                           padding: '5px 11px',
                           border: `1px solid ${on ? 'var(--teal)' : '#ddd'}`,
-                          background: on ? 'rgba(13,115,119,0.09)' : '#fff',
+                          background: on ? 'rgba(14,27,46,0.09)' : '#fff',
                           color: on ? 'var(--teal)' : '#666',
                           fontWeight: on ? 700 : 500,
                           fontSize: 13,
@@ -1766,7 +1766,7 @@ function TotalTile({ label, value, sub, accent = false, onEdit }: {
 }) {
   return (
     <div style={{
-      background: accent ? 'rgba(13,115,119,0.07)' : '#fff',
+      background: accent ? 'rgba(14,27,46,0.07)' : '#fff',
       padding: '10px 12px',
       display: 'flex', flexDirection: 'column', gap: 2,
     }}>

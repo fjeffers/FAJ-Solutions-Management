@@ -326,13 +326,18 @@ export function matchesWf(j: WfJob, query: string): boolean {
     .some((v) => v.toLowerCase().includes(q));
 }
 
-/** Soonest first; unscheduled jobs last; then by WO number. */
-export function sortWf(jobs: WfJob[]): WfJob[] {
+/**
+ * The order a list reads in: today and what is coming up first (soonest
+ * first), then past jobs (most recent first), then jobs with no date.
+ * Oldest-first put May's leftovers at the top of the office list.
+ */
+export function sortWf(jobs: WfJob[], today: string = todayISO()): WfJob[] {
+  const rank = (j: WfJob) => (!j.date ? 2 : j.date >= today ? 0 : 1);
   return [...jobs].sort((a, b) => {
-    if (a.date !== b.date) {
-      if (!a.date) return 1;
-      if (!b.date) return -1;
-      return a.date < b.date ? -1 : 1;
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (a.date !== b.date && a.date && b.date) {
+      return ra === 0 ? (a.date < b.date ? -1 : 1) : (a.date < b.date ? 1 : -1);
     }
     return a.number.localeCompare(b.number, undefined, { numeric: true });
   });

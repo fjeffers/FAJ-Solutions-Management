@@ -483,7 +483,7 @@ function PlanModal({ item, assets, onSave, onClose }: {
             </F>
           </div>
 
-          <div style={{ fontSize: 12, color: '#666', background: 'rgba(13,115,119,0.06)', padding: '9px 12px', borderRadius: 8 }}>
+          <div style={{ fontSize: 12, color: '#666', background: 'rgba(14,27,46,0.06)', padding: '9px 12px', borderRadius: 8 }}>
             {nextDue(f as MaintenancePlan)
               ? <>Next due <strong>{nextDue(f as MaintenancePlan)}</strong> — {duePhrase({ ...f, active: true } as MaintenancePlan)}</>
               : 'No due date yet. Put in when it was last done, or set the next date.'}

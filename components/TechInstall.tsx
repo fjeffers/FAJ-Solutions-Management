@@ -66,7 +66,7 @@ export default function TechInstall() {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16,
-      background: 'rgba(13,115,119,0.06)', border: '1px solid rgba(13,115,119,0.15)',
+      background: 'rgba(14,27,46,0.06)', border: '1px solid rgba(14,27,46,0.15)',
       borderRadius: 12, padding: '12px 14px',
     }}>
       <Download size={18} color="var(--teal)" style={{ flexShrink: 0 }} />

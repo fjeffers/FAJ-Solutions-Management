@@ -208,7 +208,7 @@ function TimeClock({ site, onChanged }: { site: TechCrewSite; onChanged: () => v
     off: signedOut
       ? { text: `Done for today · ${Number(today.entry?.hours ?? 0)} hrs`, bg: 'rgba(16,185,129,0.10)', color: '#047857' }
       : { text: 'Not signed in today', bg: 'rgba(107,114,128,0.08)', color: '#555' },
-    on: { text: `On site · ${sinceIn.toFixed(1)} hrs since ${firstIn ? t(firstIn.at) : ''}`, bg: 'rgba(13,115,119,0.10)', color: 'var(--teal)' },
+    on: { text: `On site · ${sinceIn.toFixed(1)} hrs since ${firstIn ? t(firstIn.at) : ''}`, bg: 'rgba(14,27,46,0.10)', color: 'var(--teal)' },
     break: { text: 'On break', bg: 'rgba(245,158,11,0.12)', color: '#b45309' },
     meal: { text: 'At meal (unpaid)', bg: 'rgba(245,158,11,0.12)', color: '#b45309' },
   }[state];
@@ -216,7 +216,7 @@ function TimeClock({ site, onChanged }: { site: TechCrewSite; onChanged: () => v
   const big: React.CSSProperties = { flex: 1, justifyContent: 'center', minWidth: 120, padding: '13px 0', fontSize: 15 };
 
   return (
-    <div style={{ marginTop: 10, borderRadius: 12, border: '1px solid rgba(13,115,119,0.15)', padding: 10 }}>
+    <div style={{ marginTop: 10, borderRadius: 12, border: '1px solid rgba(14,27,46,0.15)', padding: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: '#999', textTransform: 'uppercase' }}>
           Today · {fmtDate(today.work_date)}
@@ -354,7 +354,7 @@ function ReceiptForm({ site, onDone }: { site: TechCrewSite; onDone: () => void 
     <div style={FORM_BOX}>
       <label style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: preview ? 0 : '18px 0',
-        border: '2px dashed rgba(13,115,119,0.3)', borderRadius: 12, cursor: 'pointer', overflow: 'hidden',
+        border: '2px dashed rgba(14,27,46,0.3)', borderRadius: 12, cursor: 'pointer', overflow: 'hidden',
         color: 'var(--teal)', fontWeight: 700, fontSize: 14,
       }}>
         {preview
@@ -579,7 +579,7 @@ function Channel({ board }: { board: TechCrewBoard }) {
             </div>
             <div style={{
               padding: '8px 12px', borderRadius: 12, fontSize: 14, lineHeight: 1.45, whiteSpace: 'pre-wrap',
-              background: m.mine ? 'var(--teal)' : (m.to_office || m.to_id) ? 'rgba(245,158,11,0.12)' : 'rgba(13,115,119,0.08)',
+              background: m.mine ? 'var(--teal)' : (m.to_office || m.to_id) ? 'rgba(245,158,11,0.12)' : 'rgba(14,27,46,0.08)',
               color: m.mine ? 'white' : '#333',
             }}>{m.content}</div>
           </div>
@@ -607,8 +607,8 @@ function Channel({ board }: { board: TechCrewBoard }) {
 // ── Small pieces ────────────────────────────────────────────────────────────
 
 const FORM_BOX: React.CSSProperties = {
-  marginTop: 10, padding: 12, borderRadius: 12, background: 'rgba(13,115,119,0.04)',
-  border: '1px solid rgba(13,115,119,0.12)', display: 'flex', flexDirection: 'column', gap: 10,
+  marginTop: 10, padding: 12, borderRadius: 12, background: 'rgba(14,27,46,0.04)',
+  border: '1px solid rgba(14,27,46,0.12)', display: 'flex', flexDirection: 'column', gap: 10,
 };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -624,7 +624,7 @@ function Pill({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   return (
     <button onClick={onClick} style={{
       padding: '7px 13px', borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-      border: on ? '1px solid var(--teal)' : '1px solid rgba(13,115,119,0.2)',
+      border: on ? '1px solid var(--teal)' : '1px solid rgba(14,27,46,0.2)',
       background: on ? 'var(--teal)' : 'white', color: on ? 'white' : 'var(--teal)',
     }}>{children}</button>
   );
@@ -632,7 +632,7 @@ function Pill({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 
 function MiniStat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
   return (
-    <div style={{ background: warn ? 'rgba(245,158,11,0.10)' : 'rgba(13,115,119,0.05)', borderRadius: 10, padding: '8px 10px' }}>
+    <div style={{ background: warn ? 'rgba(245,158,11,0.10)' : 'rgba(14,27,46,0.05)', borderRadius: 10, padding: '8px 10px' }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
       <div style={{ fontSize: 14, fontWeight: 800, color: warn ? '#b45309' : '#333', marginTop: 2 }}>{value}</div>
     </div>

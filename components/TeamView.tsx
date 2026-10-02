@@ -269,7 +269,7 @@ export default function TeamView({ onOpenContractors }: { onOpenContractors?: ()
           </button>
         </form>
 
-        <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', fontSize: 12.5, lineHeight: 1.6 }}>
+        <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 10, background: 'rgba(14,27,46,0.06)', fontSize: 12.5, lineHeight: 1.6 }}>
           <b>How they get in:</b> send each person the link for their role. They tap &ldquo;First time? Create your
           login&rdquo;, use the email you added, and choose their own password. You never need to know it.
           {signInLinks.map(([label, link]) => (
@@ -419,7 +419,7 @@ const ROLE_PILL: React.CSSProperties = {
 
 const ROLE_COLORS: Record<string, React.CSSProperties> = {
   owner: { background: 'rgba(212,175,55,0.2)', color: '#7a5c00' },
-  tech: { background: 'rgba(13,115,119,0.12)', color: 'var(--teal)' },
+  tech: { background: 'rgba(14,27,46,0.12)', color: 'var(--teal)' },
   assistant: { background: 'rgba(107,45,139,0.12)', color: '#6B2D8B' },
   accountant: { background: 'rgba(28,40,51,0.1)', color: '#1c2833' },
 };

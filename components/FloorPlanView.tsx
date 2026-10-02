@@ -387,12 +387,12 @@ export default function FloorPlanView({ site, drops, projectName, onSaved }: {
                 <g key={r.id} onPointerDown={(e) => startDrag(e, 'room', r.id, r.x, r.y)} style={{ cursor: tool === 'select' ? 'move' : undefined }}>
                   <rect
                     x={r.x} y={r.y} width={r.w} height={r.h} rx={4}
-                    fill={r.kind === 'closet' ? 'rgba(201,169,97,0.18)' : r.kind === 'open' ? 'rgba(13,115,119,0.04)' : 'rgba(13,115,119,0.08)'}
-                    stroke={sel?.kind === 'room' && sel.id === r.id ? '#C9A961' : r.kind === 'closet' ? '#a8863d' : '#0D7377'}
+                    fill={r.kind === 'closet' ? 'rgba(201,162,75,0.18)' : r.kind === 'open' ? 'rgba(14,27,46,0.04)' : 'rgba(14,27,46,0.08)'}
+                    stroke={sel?.kind === 'room' && sel.id === r.id ? '#C9A24B' : r.kind === 'closet' ? '#a8863d' : '#0E1B2E'}
                     strokeWidth={sel?.kind === 'room' && sel.id === r.id ? 3 : 1.5}
                     strokeDasharray={r.kind === 'open' ? '6 4' : undefined}
                   />
-                  <text x={r.x + r.w / 2} y={r.y + 16} textAnchor="middle" fontSize={13} fontWeight={700} fill={r.kind === 'closet' ? '#8a6d2f' : '#0D7377'}>
+                  <text x={r.x + r.w / 2} y={r.y + 16} textAnchor="middle" fontSize={13} fontWeight={700} fill={r.kind === 'closet' ? '#8a6d2f' : '#0E1B2E'}>
                     {r.name}{r.kind === 'closet' ? ' 🔧' : ''}
                   </text>
                 </g>
@@ -404,10 +404,10 @@ export default function FloorPlanView({ site, drops, projectName, onSaved }: {
                 return (
                   <g key={it.id} onPointerDown={(e) => startDrag(e, 'item', it.id, it.x, it.y)} style={{ cursor: tool === 'select' ? 'move' : undefined }}>
                     <title>{[meta.label, it.variant, it.label, it.ports].filter(Boolean).join(' · ')}</title>
-                    {isSel && <circle cx={it.x} cy={it.y} r={16} fill="none" stroke="#C9A961" strokeWidth={2.5} />}
+                    {isSel && <circle cx={it.x} cy={it.y} r={16} fill="none" stroke="#C9A24B" strokeWidth={2.5} />}
                     <circle cx={it.x} cy={it.y} r={11} fill={meta.color} />
                     <text x={it.x} y={it.y + 4} textAnchor="middle" fontSize={11} fontWeight={800} fill="white">{meta.glyph}</text>
-                    {it.photos.length > 0 && <circle cx={it.x + 9} cy={it.y - 9} r={4.5} fill="#C9A961" stroke="white" strokeWidth={1} />}
+                    {it.photos.length > 0 && <circle cx={it.x + 9} cy={it.y - 9} r={4.5} fill="#C9A24B" stroke="white" strokeWidth={1} />}
                     {it.label && (
                       <text x={it.x} y={it.y + 26} textAnchor="middle" fontSize={10} fontWeight={600} fill="#555">{it.label}</text>
                     )}
@@ -428,7 +428,7 @@ export default function FloorPlanView({ site, drops, projectName, onSaved }: {
                     style={{ cursor: tool === 'select' ? 'pointer' : undefined }}
                   >
                     <polyline points={ptsStr} fill="none" stroke="transparent" strokeWidth={14} />
-                    <polyline points={ptsStr} fill="none" stroke={isSel ? '#C9A961' : '#e8590c'} strokeWidth={isSel ? 3 : 2} strokeDasharray="8 5" />
+                    <polyline points={ptsStr} fill="none" stroke={isSel ? '#C9A24B' : '#e8590c'} strokeWidth={isSel ? 3 : 2} strokeDasharray="8 5" />
                     <text x={mid.x} y={mid.y - 8} textAnchor="middle" fontSize={11} fontWeight={700} fill="#e8590c">
                       {ft != null ? `${Math.round(ft)} ft` : `${Math.round(len)} u`}
                     </text>
@@ -438,12 +438,12 @@ export default function FloorPlanView({ site, drops, projectName, onSaved }: {
               {runDraft && runDraft.length > 0 && (
                 <polyline points={runDraft.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#e8590c" strokeWidth={2} strokeDasharray="4 4" opacity={0.7} />
               )}
-              {scalePt && <circle cx={scalePt.x} cy={scalePt.y} r={5} fill="#C9A961" stroke="white" strokeWidth={1.5} />}
+              {scalePt && <circle cx={scalePt.x} cy={scalePt.y} r={5} fill="#C9A24B" stroke="white" strokeWidth={1.5} />}
               {draft && (
                 <rect
                   x={Math.min(draft.x0, draft.x1)} y={Math.min(draft.y0, draft.y1)}
                   width={Math.abs(draft.x1 - draft.x0)} height={Math.abs(draft.y1 - draft.y0)}
-                  fill="rgba(13,115,119,0.08)" stroke="#0D7377" strokeDasharray="6 4" strokeWidth={1.5}
+                  fill="rgba(14,27,46,0.08)" stroke="#0E1B2E" strokeDasharray="6 4" strokeWidth={1.5}
                 />
               )}
             </svg>
@@ -521,7 +521,7 @@ export default function FloorPlanView({ site, drops, projectName, onSaved }: {
                   </select>
                 </PanelField>
                 {linkedDrop && (
-                  <div style={{ fontSize: 12, background: 'rgba(13,115,119,0.07)', borderRadius: 8, padding: '8px 10px', color: '#333' }}>
+                  <div style={{ fontSize: 12, background: 'rgba(14,27,46,0.07)', borderRadius: 8, padding: '8px 10px', color: '#333' }}>
                     <div><b>{linkedDrop.room}</b>{linkedDrop.assigned_to ? ` · ${linkedDrop.assigned_to}` : ''}</div>
                     {linkedDrop.target_label && <div>New label: <b style={{ color: 'var(--teal)' }}>{linkedDrop.target_label}</b></div>}
                     {linkedDrop.switch_port != null && <div>Switch port: {linkedDrop.switch_port}</div>}

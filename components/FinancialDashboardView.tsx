@@ -10,7 +10,7 @@ import type { EnrichedWorkOrder } from '@/lib/types';
 import { exportFinancialSummaryCSV } from '@/lib/export';
 import { mileageAcrossWOs } from '@/lib/mileage';
 
-const PIE_COLORS = ['#0D7377', '#C9A961', '#4338ca', '#b45309', '#047857', '#b91c1c', '#6b7280'];
+const PIE_COLORS = ['#0E1B2E', '#C9A24B', '#4338ca', '#b45309', '#047857', '#b91c1c', '#6b7280'];
 
 function monthKey(dateStr: string | null): string | null {
   if (!dateStr) return null;
@@ -94,7 +94,7 @@ export default function FinancialDashboardView({ workOrders }: { workOrders: Enr
           <select
             value={months}
             onChange={(e) => setMonths(Number(e.target.value))}
-            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 12, fontFamily: 'Lato, sans-serif' }}
+            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 12, fontFamily: 'Inter, sans-serif' }}
           >
             <option value={6}>Last 6 months</option>
             <option value={12}>Last 12 months</option>

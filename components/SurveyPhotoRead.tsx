@@ -88,7 +88,7 @@ export default function SurveyPhotoRead({
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'pointer',
           padding: '9px 14px', borderRadius: 999,
-          border: '1px solid rgba(13,115,119,0.3)', background: 'rgba(13,115,119,0.06)',
+          border: '1px solid rgba(14,27,46,0.3)', background: 'rgba(14,27,46,0.06)',
           color: 'var(--teal)', fontSize: 12.5, fontWeight: 700,
         }}
       >
@@ -99,7 +99,7 @@ export default function SurveyPhotoRead({
       {entries.length > 0 && (
         <div style={{
           marginTop: 10, padding: '12px 13px', borderRadius: 12,
-          background: 'rgba(13,115,119,0.04)', border: '1px solid rgba(13,115,119,0.15)',
+          background: 'rgba(14,27,46,0.04)', border: '1px solid rgba(14,27,46,0.15)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 9 }}>
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: 'var(--teal)', textTransform: 'uppercase' }}>

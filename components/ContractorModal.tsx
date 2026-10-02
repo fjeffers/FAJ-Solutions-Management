@@ -74,7 +74,7 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
           {TABS.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer',
-              fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 13,
+              fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13,
               color: tab === t.key ? 'var(--teal)' : '#999',
               borderBottom: tab === t.key ? '2px solid var(--teal)' : '2px solid transparent',
               marginBottom: -1, transition: 'all 0.2s',
@@ -160,7 +160,7 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
           {/* ── Banking / Direct Deposit ── */}
           {tab === 'banking' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ padding: '12px 16px', background: 'rgba(13,115,119,0.05)', borderRadius: 10, fontSize: 12, color: '#666', lineHeight: 1.5 }}>
+              <div style={{ padding: '12px 16px', background: 'rgba(14,27,46,0.05)', borderRadius: 10, fontSize: 12, color: '#666', lineHeight: 1.5 }}>
                 <strong>For reference only</strong> — store banking details to track Direct Deposit payments. FAJ Solutions does not process ACH transfers directly.
               </div>
 
@@ -181,8 +181,8 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
                       onClick={() => set('account_type', t)}
                       style={{
                         flex: 1, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                        fontFamily: 'Lato, sans-serif', fontWeight: 700, fontSize: 13,
-                        background: form.account_type === t ? 'var(--teal)' : 'rgba(13,115,119,0.07)',
+                        fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13,
+                        background: form.account_type === t ? 'var(--teal)' : 'rgba(14,27,46,0.07)',
                         color: form.account_type === t ? 'white' : 'var(--teal)',
                         textTransform: 'capitalize',
                       }}
@@ -235,7 +235,7 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
 
               {/* Summary card if fully filled */}
               {form.routing_number?.length === 9 && form.account_number && (
-                <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', border: '1.5px solid rgba(13,115,119,0.2)' }}>
+                <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(14,27,46,0.06)', border: '1.5px solid rgba(14,27,46,0.2)' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>Direct Deposit Summary</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 13 }}>
                     <div><span style={{ color: '#888' }}>Bank:</span> {form.bank_name || '—'}</div>

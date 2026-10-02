@@ -296,7 +296,7 @@ export default function PortalAdminView() {
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 9 }}>
                   {g.capabilities.map((c) => (
-                    <span key={c} style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', background: 'rgba(13,115,119,0.1)', borderRadius: 999, padding: '2px 9px' }}>
+                    <span key={c} style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', background: 'rgba(14,27,46,0.1)', borderRadius: 999, padding: '2px 9px' }}>
                       {PORTAL_CAPABILITIES.find((p) => p.key === c)?.label ?? c}
                     </span>
                   ))}
@@ -370,7 +370,7 @@ export default function PortalAdminView() {
               );
             })}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', background: 'rgba(13,115,119,0.06)', borderRadius: 8, padding: '9px 11px' }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', background: 'rgba(14,27,46,0.06)', borderRadius: 8, padding: '9px 11px' }}>
             <ShieldCheck size={12} style={{ verticalAlign: -2, marginRight: 5 }} />
             A helper never sees pay, and can never file the tech&apos;s W-9 or sign their contract.
           </div>

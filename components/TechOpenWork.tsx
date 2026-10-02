@@ -72,7 +72,7 @@ export default function TechOpenWork({
                 </span>
               )}
               {j.service_type && (
-                <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: 'rgba(13,115,119,0.10)', color: 'var(--teal)' }}>
+                <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: 'rgba(14,27,46,0.10)', color: 'var(--teal)' }}>
                   {j.service_type}
                 </span>
               )}

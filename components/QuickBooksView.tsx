@@ -200,7 +200,7 @@ export default function QuickBooksView({ payments, workOrders, contractors, conn
             { label: 'Transactions', value: String(filtered.length) },
             { label: 'Contractors', value: String(contractorSummary.length) },
           ].map((k) => (
-            <div key={k.label} style={{ textAlign: 'center', padding: '16px', background: 'rgba(13,115,119,0.04)', borderRadius: 10 }}>
+            <div key={k.label} style={{ textAlign: 'center', padding: '16px', background: 'rgba(14,27,46,0.04)', borderRadius: 10 }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: '#aaa', textTransform: 'uppercase', marginBottom: 6 }}>{k.label}</div>
               <div className="serif" style={{ fontSize: 26, fontWeight: 600, color: 'var(--teal)' }}>{k.value}</div>
             </div>
@@ -291,7 +291,7 @@ export default function QuickBooksView({ payments, workOrders, contractors, conn
                   <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{fmtMoney(Number(p.amount))}</td>
                 </tr>
               ))}
-              <tr style={{ background: 'rgba(13,115,119,0.08)', fontWeight: 700, borderTop: '2px solid var(--teal)' }}>
+              <tr style={{ background: 'rgba(14,27,46,0.08)', fontWeight: 700, borderTop: '2px solid var(--teal)' }}>
                 <td colSpan={5} style={{ padding: '10px 12px', textAlign: 'right', fontSize: 12 }}>TOTAL</td>
                 <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--teal)', fontSize: 14 }}>{fmtMoney(totalPaid)}</td>
               </tr>
@@ -299,7 +299,7 @@ export default function QuickBooksView({ payments, workOrders, contractors, conn
           </table>
         </Section>
 
-        <div style={{ textAlign: 'center', marginTop: 40, paddingTop: 20, borderTop: '1px solid rgba(201,169,97,0.3)', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
+        <div style={{ textAlign: 'center', marginTop: 40, paddingTop: 20, borderTop: '1px solid rgba(201,162,75,0.3)', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
           FAJ Solutions · {rangeLabel} · Generated {fmtDate(new Date().toISOString())}<br />
           For accounting purposes only. Verify all figures before filing.
         </div>
@@ -311,7 +311,7 @@ export default function QuickBooksView({ payments, workOrders, contractors, conn
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 32 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--teal)', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid rgba(201,169,97,0.4)' }}>{title}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: 'var(--teal)', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid rgba(201,162,75,0.4)' }}>{title}</div>
       {children}
     </div>
   );

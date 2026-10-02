@@ -520,7 +520,7 @@ export default function SiteSheetView({
                   </tr>
                 )}
                 {!collapsed.has(g.key) && g.rows.map((v) => (
-              <tr key={v.id} style={{ background: picked.has(v.id) ? 'rgba(13,115,119,0.06)' : undefined }}>
+              <tr key={v.id} style={{ background: picked.has(v.id) ? 'rgba(14,27,46,0.06)' : undefined }}>
                 <td style={{ ...td, textAlign: 'center', ...frozen(0, 1, picked.has(v.id) ? '#eef5f5' : '#fff') }}>
                   <input type="checkbox" checked={picked.has(v.id)}
                     onChange={() => onTogglePicked(v.id)}
@@ -591,7 +591,7 @@ export default function SiteSheetView({
                   );
                 })}
 
-                <td style={{ ...td, textAlign: 'right', padding: '7px 9px', fontVariantNumeric: 'tabular-nums', color: '#555', background: 'rgba(13,115,119,0.03)' }}>
+                <td style={{ ...td, textAlign: 'right', padding: '7px 9px', fontVariantNumeric: 'tabular-nums', color: '#555', background: 'rgba(14,27,46,0.03)' }}>
                   {fmtMoney(laborOf(v))}
                 </td>
                 <td style={{ ...td, textAlign: 'right', padding: '7px 9px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
@@ -600,7 +600,7 @@ export default function SiteSheetView({
                 {formulaColumns.map((fc, ci) => {
                   const r = computed.get(v.id)?.[ci];
                   return (
-                    <td key={fc.id} style={{ ...td, textAlign: 'right', padding: '7px 9px', fontVariantNumeric: 'tabular-nums', background: 'rgba(13,115,119,0.03)' }}>
+                    <td key={fc.id} style={{ ...td, textAlign: 'right', padding: '7px 9px', fontVariantNumeric: 'tabular-nums', background: 'rgba(14,27,46,0.03)' }}>
                       {r?.ok
                         ? formatFormulaValue(r.value, fc.format)
                         : <span title={r?.error} style={{ color: '#b91c1c', fontSize: 11, fontWeight: 700 }}>error</span>}
@@ -744,7 +744,7 @@ function FormulaEditor({
           {check && (
             <div style={{
               fontSize: 12, padding: '9px 12px', borderRadius: 8, lineHeight: 1.6,
-              background: check.ok ? 'rgba(13,115,119,0.07)' : 'rgba(239,68,68,0.08)',
+              background: check.ok ? 'rgba(14,27,46,0.07)' : 'rgba(239,68,68,0.08)',
               color: check.ok ? '#155e5f' : '#b91c1c',
             }}>
               {check.ok

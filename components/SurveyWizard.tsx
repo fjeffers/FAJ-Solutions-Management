@@ -82,7 +82,7 @@ export default function SurveyWizard({
       display: 'flex', flexDirection: 'column',
     }}>
       <header style={{
-        background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white',
+        background: 'linear-gradient(135deg, #0E1B2E 0%, #13284A 100%)', color: 'white',
         padding: '16px 20px', flexShrink: 0,
       }}>
         <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -130,8 +130,8 @@ export default function SurveyWizard({
                   textAlign: 'left', cursor: 'pointer',
                   padding: '11px 13px', borderRadius: 11,
                   border: active ? '1px solid var(--teal)' : '1px solid #e8e5dd',
-                  background: active ? 'rgba(13,115,119,0.08)' : 'white',
-                  boxShadow: active ? '0 2px 10px rgba(13,115,119,0.10)' : 'none',
+                  background: active ? 'rgba(14,27,46,0.08)' : 'white',
+                  boxShadow: active ? '0 2px 10px rgba(14,27,46,0.10)' : 'none',
                   transition: 'all 0.15s',
                 }}
               >
@@ -156,7 +156,7 @@ export default function SurveyWizard({
         <div style={{
           background: 'white', border: '1px solid #eee9df', borderRadius: 16,
           padding: '22px 24px', marginBottom: 20,
-          boxShadow: '0 4px 24px rgba(13,115,119,0.05)',
+          boxShadow: '0 4px 24px rgba(14,27,46,0.05)',
         }}>
           {/* ── Page 1 — Client & Site ─────────────────────────────────── */}
           {page === 1 && (
@@ -171,7 +171,7 @@ export default function SurveyWizard({
                       style={{
                         textAlign: 'left', padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
                         border: active ? '1px solid var(--teal)' : '1px solid #e4e4e4',
-                        background: active ? 'rgba(13,115,119,0.08)' : 'transparent',
+                        background: active ? 'rgba(14,27,46,0.08)' : 'transparent',
                       }}
                     >
                       <div style={{ fontWeight: 700, fontSize: 13, color: active ? 'var(--teal)' : '#333' }}>{t.label}</div>

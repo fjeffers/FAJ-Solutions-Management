@@ -87,7 +87,7 @@ export default function PortalTasks({ woId, token, tasks: initialTasks }: Props)
               width: `${pct}%`,
               background: pct === 100
                 ? 'linear-gradient(90deg, #059669, #047857)'
-                : 'linear-gradient(90deg, #0D7377, #0a5a5d)',
+                : 'linear-gradient(90deg, #0E1B2E, #13284A)',
               borderRadius: 3,
               transition: 'width 0.3s ease',
             }} />

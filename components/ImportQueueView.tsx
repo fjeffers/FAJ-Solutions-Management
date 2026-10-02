@@ -225,7 +225,7 @@ Each one also opens a site visit at that address.`)) return;
 
       <div className="glass card" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <ClipboardPaste size={18} color="#0D7377" />
+          <ClipboardPaste size={18} color="#0E1B2E" />
           <div style={{ fontWeight: 700, fontSize: 13 }}>Paste an email</div>
         </div>
         <div style={{ fontSize: 11, color: '#999', marginBottom: 10, lineHeight: 1.5 }}>

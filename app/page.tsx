@@ -26,7 +26,7 @@ import AttentionPanel from '@/components/AttentionPanel';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
 import CrewProjectsView from '@/components/CrewProjectsView';
-import AssistantAdminView from '@/components/AssistantAdminView';
+import TeamView from '@/components/TeamView';
 import SiteLogView from '@/components/SiteLogView';
 import MaintenanceView from '@/components/MaintenanceView';
 import CustomersView from '@/components/CustomersView';
@@ -62,7 +62,7 @@ const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'crew', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
-  'assistant',
+  'team',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -96,7 +96,7 @@ function viewFromUrl(): View {
 const SECTION_OF_VIEW: Record<View, string> = {
   // Always on screen — the round Fred actually does.
   dashboard: 'daily', sitelog: 'daily', crew: 'daily', workorders: 'daily',
-  payables: 'daily', 'import-queue': 'daily', assistant: 'daily',
+  payables: 'daily', 'import-queue': 'daily', team: 'daily',
 
   payments: 'money', financials: 'money', ledger: 'money',
   customers: 'money', quickbooks: 'money', invoices: 'money',
@@ -1436,7 +1436,7 @@ Go ahead?`)) return;
             <NI k="crew"       icon={<Users size={15} />}     label="Crew Projects" />
             <NI k="workorders" icon={<Briefcase size={15} />} label="Work Orders" />
             <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
-            <NI k="assistant"  icon={<UserCog size={15} />}   label="Assistant" />
+            <NI k="team"       icon={<UserCog size={15} />}   label="Team" />
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
               <Inbox size={15} /> Import
               {pendingImportCount > 0 && (
@@ -1628,7 +1628,7 @@ Go ahead?`)) return;
         {view === 'network' && <NetworkView />}
         {view === 'sitelog' && <SiteLogView />}
         {view === 'crew' && <CrewProjectsView />}
-        {view === 'assistant' && <AssistantAdminView />}
+        {view === 'team' && <TeamView onOpenContractors={() => navigate('contractors')} />}
         {view === 'maintenance' && <MaintenanceView />}
         {view === 'invoices' && (
           <InvoicesView

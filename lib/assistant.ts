@@ -132,10 +132,13 @@ export const saveAssistantJob = (id: string, patch: AssistantJobPatch) =>
 export const setAssistantTask = (id: string, done: boolean, note: string) =>
   rpc<RpcResult>('asst_task_set', { p_id: id, p_done: done, p_note: note });
 
-/** Binds this login to its assistant row on first sign-in. Safe to call every time. */
-export async function claimAssistantAccount(): Promise<RpcResult> {
+/**
+ * Binds this login to its staff row on first sign-in and says which role it
+ * has. Safe to call every time (it also records the sign-in for Fred).
+ */
+export async function claimAssistantAccount(): Promise<RpcResult & { role?: string }> {
   try {
-    return await rpc<RpcResult>('staff_claim_account');
+    return await rpc<RpcResult & { role?: string }>('staff_claim_account');
   } catch {
     return { ok: false, reason: 'error' };
   }
@@ -159,14 +162,46 @@ export interface StaffMember {
   id: string;
   name: string;
   email: string;
+  role: string;
   enabled: boolean;
   auth_user_id: string | null;
   last_login_at: string | null;
   created_at: string;
 }
 
-export const addStaffMember = (name: string, email: string) =>
-  rpc<RpcResult>('owner_staff_add', { p_name: name, p_email: email });
+export const addStaffMember = (name: string, email: string, role: StaffRole = 'assistant') =>
+  rpc<RpcResult>('owner_staff_add', { p_name: name, p_email: email, p_role: role });
+
+/**
+ * Every kind of person on the app, and what each one can see. Owner and tech
+ * have their own models; the staff_members roles are the ones with
+ * `canAdd: true`. A role becomes addable only when its section exists — the
+ * database (staff_role_allowed, migration-094) refuses any other.
+ */
+export type StaffRole = 'assistant';
+export interface RoleInfo {
+  key: 'owner' | 'tech' | StaffRole | 'accountant' | 'developer';
+  label: string;
+  sees: string;
+  canAdd: boolean;
+  /** Where to add this kind of person, when it is not the Team screen. */
+  addedWhere?: string;
+}
+export const ROLES: RoleInfo[] = [
+  { key: 'owner', label: 'Owner', sees: 'Everything, including all money. That is you.', canAdd: false },
+  { key: 'tech', label: 'Tech', sees: "Only their own jobs and their own pay. Never anyone else's.", canAdd: false, addedWhere: 'Contractors screen' },
+  { key: 'assistant', label: 'Assistant', sees: 'All jobs, the schedule, tech contacts and their to-do list. No money.', canAdd: true },
+  { key: 'accountant', label: 'Accountant', sees: 'Not set up yet. Money only, read-only, once you decide what they need.', canAdd: false },
+  { key: 'developer', label: 'Developer', sees: 'No login to your live app. They get the code and a practice copy with fake data.', canAdd: false },
+];
+
+/** The section a staff role signs in to. */
+export function sectionForRole(role: string | null | undefined): string | null {
+  switch (role) {
+    case 'assistant': return '/assistant';
+    default: return null;
+  }
+}
 export const setStaffEnabled = (id: string, enabled: boolean) =>
   rpc<RpcResult>('owner_staff_set_enabled', { p_id: id, p_enabled: enabled });
 export const removeStaffMember = (id: string) =>
@@ -176,6 +211,7 @@ export const removeStaffMember = (id: string) =>
 export function staffReasonText(reason: string): string {
   switch (reason) {
     case 'name_required': return 'Type their name.';
+    case 'bad_role': return "That role isn't set up yet.";
     case 'bad_email': return "That doesn't look like an email address.";
     case 'own_email': return "That's your own email. Your assistant needs their own.";
     case 'duplicate': return 'That email is already on your list.';

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   jobStatusLabel, isClosedJob, jobPlace, jobAddress, mergeWork, crewStatusLabel, workBucket,
-  groupWork, todayEastern, openTaskCount, matchesWork, staffReasonText,
+  groupWork, todayEastern, openTaskCount, matchesWork, staffReasonText, sectionForRole, ROLES,
   type AssistantJob, type AssistantCrewSite, type StaffTask,
 } from './assistant';
 
@@ -121,5 +121,21 @@ describe('small things', () => {
   it('turns every reason code into plain English', () => {
     expect(staffReasonText('own_email')).toMatch(/own email/);
     expect(staffReasonText('something_new')).toMatch(/went wrong/);
+  });
+});
+
+describe('roles', () => {
+  it('sends each staff role to its own section, and an unknown role nowhere', () => {
+    expect(sectionForRole('assistant')).toBe('/assistant');
+    expect(sectionForRole('accountant')).toBeNull();
+    expect(sectionForRole(undefined)).toBeNull();
+  });
+  it('only offers roles that have a section to sign in to', () => {
+    for (const r of ROLES.filter((x) => x.canAdd)) {
+      expect(sectionForRole(r.key), r.key).not.toBeNull();
+    }
+  });
+  it('lists owner, tech, assistant, accountant and developer', () => {
+    expect(ROLES.map((r) => r.key)).toEqual(['owner', 'tech', 'assistant', 'accountant', 'developer']);
   });
 });

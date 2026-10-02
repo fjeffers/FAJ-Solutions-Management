@@ -2,23 +2,36 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
-  addStaffMember, setStaffEnabled, removeStaffMember, staffReasonText, todayEastern,
-  type StaffMember, type StaffTask,
+  addStaffMember, setStaffEnabled, removeStaffMember, staffReasonText, todayEastern, ROLES,
+  type StaffMember, type StaffTask, type StaffRole,
 } from '@/lib/assistant';
 import { fmtDate } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { UserPlus, Copy, Trash2, Plus, CheckCircle2, Circle, Power } from 'lucide-react';
+import { UserPlus, Copy, Trash2, Plus, CheckCircle2, Circle, Power, ExternalLink } from 'lucide-react';
 
 /**
- * Fred's side of the assistant section (migration-092): who the assistant is,
- * whether their login is on, and the to-do list they work from.
+ * Everyone who can sign in to the app, with their role (migrations 092-094):
+ * Fred as owner, every tech with a login, and every assistant. Fred adds and
+ * turns off assistants here, gives them their to-do list, and sees everything
+ * they did. Techs are still added on the Contractors screen.
  *
  * Nothing here emails anyone. Fred copies the sign-in link and sends it
- * himself, and the assistant picks their own password.
+ * himself, and each person picks their own password.
  */
-export default function AssistantAdminView() {
+interface TechLogin {
+  id: string;
+  name: string;
+  email: string | null;
+  auth_user_id: string | null;
+  portal_enabled: boolean | null;
+  portal_last_login_at: string | null;
+}
+
+export default function TeamView({ onOpenContractors }: { onOpenContractors?: () => void }) {
   const supabase = createClient();
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [techs, setTechs] = useState<TechLogin[]>([]);
+  const [role, setRole] = useState<StaffRole>('assistant');
   const [tasks, setTasks] = useState<(StaffTask & { staff_id: string | null })[]>([]);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -35,19 +48,21 @@ export default function AssistantAdminView() {
   const signInLink = typeof window !== 'undefined' ? `${window.location.origin}/assistant/login` : '/assistant/login';
 
   const load = async () => {
-    const [s, t, a] = await Promise.all([
-      supabase.from('staff_members').select('id, name, email, enabled, auth_user_id, last_login_at, created_at').order('created_at'),
+    const [s, t, a, c] = await Promise.all([
+      supabase.from('staff_members').select('id, name, email, role, enabled, auth_user_id, last_login_at, created_at').order('created_at'),
       supabase.from('staff_tasks').select('id, staff_id, title, details, due_date, status, done_at, done_note, created_at')
         .order('status').order('due_date', { ascending: true, nullsFirst: false }).order('created_at'),
       // Every sign-in, job change and finished task (migrations 092-093).
       supabase.from('audit_log').select('id, action, entity_type, details, created_at')
         .not('details->by_assistant', 'is', null)
         .order('created_at', { ascending: false }).limit(200),
+      supabase.from('contractors').select('id, name, email, auth_user_id, portal_enabled, portal_last_login_at').order('name'),
     ]);
     if (s.error || t.error) toastError("Couldn't load the assistant screen. Refresh to try again.");
     setStaff((s.data ?? []) as StaffMember[]);
     setTasks((t.data ?? []) as (StaffTask & { staff_id: string | null })[]);
     setActivity((a.data ?? []) as ActivityRow[]);
+    setTechs((c.data ?? []) as TechLogin[]);
     setLoaded(true);
   };
 
@@ -57,7 +72,7 @@ export default function AssistantAdminView() {
     e.preventDefault();
     setAdding(true);
     try {
-      const r = await addStaffMember(name, email);
+      const r = await addStaffMember(name, email, role);
       if (!r.ok) { toastError(staffReasonText(r.reason)); return; }
       toastSuccess(`${name.trim()} added. Send them the sign-in link below.`);
       setName(''); setEmail('');
@@ -118,6 +133,8 @@ export default function AssistantAdminView() {
     }
   };
 
+  const techSignIn = typeof window !== 'undefined' ? `${window.location.origin}/tech/login` : '/tech/login';
+  const roleLabel = (key: string) => ROLES.find((r) => r.key === key)?.label ?? key;
   const today = todayEastern();
   const open = tasks.filter((t) => t.status === 'open');
   const done = tasks.filter((t) => t.status === 'done');
@@ -125,25 +142,48 @@ export default function AssistantAdminView() {
   return (
     <div style={{ maxWidth: 980 }}>
       <div style={{ marginBottom: 22 }}>
-        <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 2, marginBottom: 4 }}>YOUR TEAM</div>
-        <h1 className="serif" style={{ fontSize: 32, margin: 0, fontWeight: 600 }}>Assistant</h1>
+        <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 2, marginBottom: 4 }}>WHO CAN SIGN IN</div>
+        <h1 className="serif" style={{ fontSize: 32, margin: 0, fontWeight: 600 }}>Team</h1>
         <p style={{ color: '#666', fontSize: 13, margin: '6px 0 0', lineHeight: 1.6, maxWidth: 680 }}>
-          Your assistant sees the work, the schedule, the techs&apos; contact details and their to-do list.
-          They never see money: no client prices, no tech pay, no profit, no invoices, no bank or tax details.
-          They can change a job&apos;s date, times, site contact and access notes. Status, which tech is on a
-          job, and anything priced stay with you.
+          Everyone who can sign in to your app, and what their role lets them see. Each person has their own
+          login and picks their own password. You see everything.
         </p>
+      </div>
+
+      {/* ── Roles ── */}
+      <div className="glass card" style={{ padding: 20, marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 10 }}>Roles</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {ROLES.map((r) => (
+            <div key={r.key} style={{ display: 'flex', gap: 12, fontSize: 13, alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <span style={{ ...ROLE_PILL, ...(ROLE_COLORS[r.key] ?? {}) }}>{r.label}</span>
+              <span style={{ color: '#555', flex: 1, minWidth: 220 }}>
+                {r.sees}{r.addedWhere ? ` Added on the ${r.addedWhere}.` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, color: '#777', marginTop: 12, lineHeight: 1.6 }}>
+          An assistant can change a job&apos;s date, times, site contact and access notes. Status, which tech is
+          on a job, and anything priced stay with you.
+        </div>
       </div>
 
       {/* ── People ── */}
       <div className="glass card" style={{ padding: 20, marginBottom: 18 }}>
-        <div style={{ fontWeight: 700, marginBottom: 12 }}>Who has an assistant login</div>
-        {loaded && staff.length === 0 && (
-          <div style={{ fontSize: 13, color: '#888', marginBottom: 14 }}>Nobody yet. Add your assistant below.</div>
-        )}
+        <div style={{ fontWeight: 700, marginBottom: 12 }}>People</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          <div style={PERSON_ROW}>
+            <span style={{ ...ROLE_PILL, ...ROLE_COLORS.owner }}>Owner</span>
+            <div style={{ flex: 1, minWidth: 200, fontWeight: 700 }}>You</div>
+            <div style={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>Everything</div>
+          </div>
+          {loaded && staff.length === 0 && (
+            <div style={{ fontSize: 13, color: '#888', padding: '4px 12px' }}>No assistants yet. Add one below.</div>
+          )}
           {staff.map((m) => (
-            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 12px', borderRadius: 10, background: 'rgba(0,0,0,0.025)' }}>
+            <div key={m.id} style={PERSON_ROW}>
+              <span style={{ ...ROLE_PILL, ...(ROLE_COLORS[m.role] ?? {}) }}>{roleLabel(m.role)}</span>
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontWeight: 700 }}>{m.name}</div>
                 <div style={{ fontSize: 12, color: '#777' }}>{m.email}</div>
@@ -163,33 +203,71 @@ export default function AssistantAdminView() {
           ))}
         </div>
 
-        <form onSubmit={add} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
-          <div>
+        {/* Techs: one row each, managed on the Contractors screen. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          {techs.map((t) => (
+            <div key={t.id} style={PERSON_ROW}>
+              <span style={{ ...ROLE_PILL, ...ROLE_COLORS.tech }}>Tech</span>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontWeight: 700 }}>{t.name}</div>
+                {t.email && <div style={{ fontSize: 12, color: '#777' }}>{t.email}</div>}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.portal_enabled === false ? '#b91c1c' : t.auth_user_id ? '#047857' : '#b45309' }}>
+                {t.portal_enabled === false ? 'Login turned off'
+                  : t.auth_user_id ? `Has a login${t.portal_last_login_at ? ` · last in ${fmtDate(t.portal_last_login_at)}` : ''}`
+                  : 'No login yet'}
+              </div>
+            </div>
+          ))}
+          {onOpenContractors && (
+            <button className="btn btn-ghost" style={{ fontSize: 12, alignSelf: 'flex-start' }} onClick={onOpenContractors}>
+              <ExternalLink size={13} /> Add or change techs on the Contractors screen
+            </button>
+          )}
+        </div>
+
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Add a person</div>
+        <form onSubmit={add} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: '2 1 200px' }}>
             <label style={LABEL} htmlFor="staff-name">Name</label>
             <input id="staff-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Their full name" required />
           </div>
-          <div>
+          <div style={{ flex: '2 1 200px' }}>
             <label style={LABEL} htmlFor="staff-email">Their email</label>
             <input id="staff-email" className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" required />
           </div>
+          <div style={{ flex: '1 1 160px' }}>
+            <label style={LABEL} htmlFor="staff-role">Role</label>
+            <select id="staff-role" className="select input" value={role} onChange={(e) => setRole(e.target.value as StaffRole)}>
+              {ROLES.filter((r) => r.key !== 'owner').map((r) => (
+                <option key={r.key} value={r.key} disabled={!r.canAdd}>
+                  {r.label}{r.canAdd ? '' : r.addedWhere ? ` (add on the ${r.addedWhere})` : ' (not set up yet)'}
+                </option>
+              ))}
+            </select>
+          </div>
           <button className="btn btn-primary" type="submit" disabled={adding} style={{ height: 42 }}>
-            <UserPlus size={14} /> {adding ? 'Adding…' : 'Add assistant'}
+            <UserPlus size={14} /> {adding ? 'Adding…' : `Add ${roleLabel(role).toLowerCase()}`}
           </button>
         </form>
 
         <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 10, background: 'rgba(13,115,119,0.06)', fontSize: 12.5, lineHeight: 1.6 }}>
-          <b>How they get in:</b> send them this link. They tap &ldquo;First time? Create your login&rdquo;, use the
+          <b>How an assistant gets in:</b> send them this link. They tap &ldquo;First time? Create your login&rdquo;, use the
           email you added, and choose their own password. You never need to know it.
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
             <code style={{ background: 'white', padding: '6px 10px', borderRadius: 6, fontSize: 12 }}>{signInLink}</code>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={copyLink}><Copy size={13} /> Copy link</button>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <b>Techs</b> sign in at <code style={{ background: 'white', padding: '2px 6px', borderRadius: 4 }}>{techSignIn}</code> with
+            the email on their contractor record. Each tech sees only their own jobs and pay.
           </div>
         </div>
       </div>
 
       {/* ── To-do list ── */}
       <div className="glass card" style={{ padding: 20 }}>
-        <div style={{ fontWeight: 700, marginBottom: 12 }}>Their to-do list ({open.length} open)</div>
+        <div style={{ fontWeight: 700, marginBottom: 12 }}>Assistants&apos; to-do list ({open.length} open)</div>
         <form onSubmit={addTask} style={{ display: 'grid', gap: 10, marginBottom: 18 }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: '3 1 260px' }}>
@@ -239,7 +317,7 @@ export default function AssistantAdminView() {
 
       {/* ── Everything they did ── */}
       <div className="glass card" style={{ padding: 20, marginTop: 18 }}>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>Everything they did</div>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Everything your assistants did</div>
         <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
           Every sign-in, every change to a job, and every task they finished or reopened. Newest first.
         </div>
@@ -286,6 +364,23 @@ function activityChanges(row: ActivityRow): [string, string][] {
     .filter(([k, v]) => k in FIELD_NAMES && !(k === 'note' && !v))
     .map(([k, v]) => [FIELD_NAMES[k], String(v ?? '')]);
 }
+
+const PERSON_ROW: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+  padding: '10px 12px', borderRadius: 10, background: 'rgba(0,0,0,0.025)',
+};
+
+const ROLE_PILL: React.CSSProperties = {
+  fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase',
+  padding: '3px 10px', borderRadius: 999, minWidth: 82, textAlign: 'center', flexShrink: 0,
+  background: 'rgba(0,0,0,0.06)', color: '#555',
+};
+
+const ROLE_COLORS: Record<string, React.CSSProperties> = {
+  owner: { background: 'rgba(212,175,55,0.2)', color: '#7a5c00' },
+  tech: { background: 'rgba(13,115,119,0.12)', color: 'var(--teal)' },
+  assistant: { background: 'rgba(107,45,139,0.12)', color: '#6B2D8B' },
+};
 
 const LABEL: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#555',

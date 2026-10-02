@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { claimAssistantAccount, staffReasonText } from '@/lib/assistant';
+import { claimAssistantAccount, sectionForRole, staffReasonText } from '@/lib/assistant';
 import { ClipboardList, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 
@@ -33,7 +33,8 @@ export default function AssistantLoginPage() {
   const finishSignIn = async () => {
     // Binds this login to the assistant row Fred created. Safe every time.
     const claim = await claimAssistantAccount();
-    if (claim.ok) { router.push('/assistant'); router.refresh(); return; }
+    const section = claim.ok ? sectionForRole(claim.role) : null;
+    if (section) { router.push(section); router.refresh(); return; }
     setError(staffReasonText(claim.reason));
     await supabase.auth.signOut();
     setLoading(false);

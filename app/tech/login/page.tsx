@@ -38,6 +38,14 @@ export default function TechLoginPage() {
     const claim = await claimTechAccount();
     if (claim.ok) { router.push('/tech'); router.refresh(); return; }
 
+    // Not a tech. Fred's own (owner) login belongs in management, where
+    // WorkFlow is — take him there rather than turning him away (2026-10-02:
+    // he signed in here with his owner email and was signed straight out).
+    const { data: who } = await supabase.rpc('wf_role');
+    const role = (who as { role?: string } | null)?.role;
+    if (role === 'owner') { window.location.assign('/?view=workorders'); return; }
+    if (role === 'staff') { window.location.assign('/'); return; }
+
     // Signed in, but this account is not a tech. Rather than dropping them on
     // an empty screen, say which case it is.
     if (claim.reason === 'no_matching_contractor') {
@@ -67,6 +75,17 @@ export default function TechLoginPage() {
       options: { emailRedirectTo: `${window.location.origin}/tech` },
     });
     if (error) { setError(friendlyError(error.message)); setLoading(false); return; }
+
+    // The email already has a login. Supabase answers "fine" but sends NOTHING
+    // (so nobody can probe which emails exist) — it hands back a user with no
+    // identities. Saying "check your email" here left Fred waiting for an email
+    // that never comes (2026-10-02).
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      setMode('signin');
+      setError('There is already a login for this email, so no email was sent. Sign in with your password, or tap "Forgot password?" below to set a new one.');
+      setLoading(false);
+      return;
+    }
 
     // With email confirmation on, there is no session yet — the tech has to
     // click the link first. With it off, Supabase returns a session and we can

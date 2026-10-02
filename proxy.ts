@@ -78,7 +78,7 @@ export const config = {
   // tech-manifest.json must be reachable logged-out, exactly like manifest.json:
   // the browser fetches it before install, and a redirect there means the tech
   // portal simply cannot be added to a home screen.
-  // workflow is the WorkFlow app's static files (public/workflow): it signs
-  // people in itself, so the office login redirect must never touch it.
+  // workflow/ holds only the retirement worker for phones that opened the old
+  // separate WorkFlow app; it must load signed out, like sw.js.
   matcher: ['/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.json|tech-manifest\\.json|icons/|workflow|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };

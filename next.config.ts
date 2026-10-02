@@ -1,21 +1,16 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@supabase/ssr", "@supabase/supabase-js"],
-  // WorkFlow (Fred's Flutter app, built into public/workflow by
-  // scripts/build-workflow.mjs) is one page that routes itself with #/… —
-  // so the folder address serves its index.html.
-  // Switchover (Fred, 2026-10-02): techs now work in WorkFlow. The old tech
-  // portal stays reachable as a fallback at /tech?classic=1.
+  // One app (Fred, 2026-10-02: "all one app with a tech portal"). WorkFlow's
+  // features and look now live in the FAJ app itself — Work Orders for Fred,
+  // /tech for techs. The old separate WorkFlow address sends people to the tech
+  // portal; a tech on it is in the right place, and anyone else is shown the way
+  // to the office app from there.
   async redirects() {
     return [
-      { source: "/tech", missing: [{ type: "query", key: "classic" }], destination: "/workflow", permanent: false },
-      { source: "/tech/login", missing: [{ type: "query", key: "classic" }], destination: "/workflow", permanent: false },
-    ];
-  },
-  async rewrites() {
-    return [
-      { source: "/workflow", destination: "/workflow/index.html" },
-      { source: "/workflow/", destination: "/workflow/index.html" },
+      { source: "/workflow", destination: "/tech", permanent: false },
+      { source: "/workflow/", destination: "/tech", permanent: false },
+      { source: "/workflow/index.html", destination: "/tech", permanent: false },
     ];
   },
   async headers() {
@@ -32,9 +27,10 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // WorkFlow's offline worker lives in /workflow/ but must also cover the
-        // page at /workflow itself (no trailing slash), and must never be cached
-        // stale, or phones would keep an old copy of the app.
+        // Phones that opened the separate WorkFlow app still have its offline
+        // worker. It is now a retirement worker (public/workflow/wf-sw.js) that
+        // clears itself away; the header lets the browser fetch that update for
+        // the old /workflow scope, and no-cache makes sure it is picked up.
         source: "/workflow/wf-sw.js",
         headers: [
           { key: "Service-Worker-Allowed", value: "/workflow" },

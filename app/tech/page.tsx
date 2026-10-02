@@ -52,7 +52,7 @@ export default function TechPortalPage() {
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.replace('/tech/login?classic=1'); return; }
+      if (!user) { router.replace('/tech/login'); return; }
 
       try {
         const me = await fetchTechProfile();
@@ -84,7 +84,7 @@ export default function TechPortalPage() {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    router.replace('/tech/login?classic=1');
+    router.replace('/tech/login');
   };
 
   // tech_my_jobs returns live work only (migration-083); splitJobs still runs

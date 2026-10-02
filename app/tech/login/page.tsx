@@ -77,24 +77,26 @@ export default function TechLoginPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div className="glass card" style={{ maxWidth: 420, width: '100%', padding: 40 }}>
-        <div style={{ textAlign: 'center', marginBottom: 30 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <HardHat size={22} color="var(--gold)" />
-            <span className="display" style={{ fontSize: 14, color: 'var(--gold)', fontWeight: 700 }}>FAJ SOLUTIONS</span>
+    // WorkFlow's look (Fred, 2026-10-02): the night-photo header over a white card.
+    <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="wf-card" style={{ maxWidth: 420, width: '100%', overflow: 'hidden' }}>
+        <div className="wf-hero" style={{ borderRadius: 0, textAlign: 'center', padding: '28px 24px' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <HardHat size={18} color="var(--wf-gold)" />
+            <span className="wf-display" style={{ fontSize: 12, letterSpacing: 1.6, color: 'var(--wf-gold)', fontWeight: 700 }}>FAJ SOLUTIONS</span>
           </div>
-          <div className="serif" style={{ fontSize: 34, fontWeight: 600, lineHeight: 1 }}>Tech Portal</div>
-          <div style={{ color: '#666', marginTop: 8, fontSize: 13 }}>
+          <div className="wf-hero-greet" style={{ fontSize: 30 }}>Tech Portal</div>
+          <div style={{ color: 'rgba(255,255,255,0.82)', marginTop: 6, fontSize: 13 }}>
             {mode === 'signin' ? 'Your jobs, your hours, your pay.' : 'Set up your login with the email Fred has on file.'}
           </div>
         </div>
+        <div style={{ padding: 24 }}>
 
         <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label style={LABEL}>Email</label>
             <input
-              className="input" type="email" required autoComplete="email"
+              className="wf-input" type="email" required autoComplete="email"
               value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
             />
@@ -104,7 +106,7 @@ export default function TechLoginPage() {
             <label style={LABEL}>Password</label>
             <div style={{ position: 'relative' }}>
               <input
-                className="input" type={showPassword ? 'text' : 'password'} required
+                className="wf-input" type={showPassword ? 'text' : 'password'} required
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 minLength={8}
                 value={password} onChange={(e) => setPassword(e.target.value)}
@@ -132,7 +134,7 @@ export default function TechLoginPage() {
             </div>
           )}
 
-          <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: '100%', justifyContent: 'center', padding: '11px 0' }}>
+          <button className="wf-btn wf-btn-navy" type="submit" disabled={loading} style={{ width: '100%' }}>
             {loading ? 'Working…' : mode === 'signin' ? 'Sign In' : 'Create Login'}
           </button>
         </form>
@@ -144,7 +146,7 @@ export default function TechLoginPage() {
                 First time? Create your login
               </button>
               <div style={{ marginTop: 8 }}>
-                <Link href="/reset-password" style={{ color: 'var(--teal)', fontSize: 12 }}>Forgot password?</Link>
+                <Link href="/reset-password" style={{ color: 'var(--wf-navy)', fontSize: 12 }}>Forgot password?</Link>
               </div>
             </>
           ) : (
@@ -158,17 +160,17 @@ export default function TechLoginPage() {
           Use the email address Fred has on file for you. Your login only ever
           shows your own jobs and your own pay.
         </div>
+        </div>
       </div>
     </div>
   );
 }
 
 const LABEL: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#555',
-  textTransform: 'uppercase', display: 'block', marginBottom: 5,
+  fontSize: 12, fontWeight: 600, color: 'var(--wf-subtle)', display: 'block', marginBottom: 5,
 };
 
 const LINK_BTN: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer',
-  color: 'var(--teal)', fontSize: 13, fontWeight: 600, padding: 0,
+  color: 'var(--wf-navy)', fontSize: 13, fontWeight: 600, padding: 0, fontFamily: 'inherit',
 };

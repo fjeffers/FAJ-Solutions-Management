@@ -1,84 +1,30 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { BOARD_COLUMNS, woColumn, crewColumn, taskProgress, boardCounts, hasTech, type ColumnKey } from '@/lib/work-board';
+import { useMemo } from 'react';
+import { BOARD_COLUMNS, woColumn, taskProgress, boardCounts, hasTech, type ColumnKey } from '@/lib/work-board';
 import { todayEastern } from '@/lib/assistant';
 import { fmtMoney, fmtDate } from '@/lib/utils';
-import type { EnrichedWorkOrder, Contractor } from '@/lib/types';
-import { MapPin, Users, CalendarDays, HardHat, AlertCircle, CheckCircle2, Wallet, Inbox } from 'lucide-react';
+import type { EnrichedWorkOrder } from '@/lib/types';
+import { MapPin, Users, CalendarDays, AlertCircle, CheckCircle2, Wallet, Inbox } from 'lucide-react';
 
-/** A crew-project site, as much of it as a board card shows. */
-interface BoardSite {
-  id: string;
-  name: string;
-  city: string | null;
-  state: string | null;
-  week_start: string | null;
-  status: string | null;
-  project: string;
-  team: string | null;
-  lead: string | null;
-  helper: string | null;
-}
-
-type Card =
-  | { kind: 'wo'; id: string; col: ColumnKey; sort: string; wo: EnrichedWorkOrder }
-  | { kind: 'crew'; id: string; col: ColumnKey; sort: string; site: BoardSite };
+type Card = { id: string; col: ColumnKey; sort: string; wo: EnrichedWorkOrder };
 
 /**
- * Work orders and crew-project sites on one board, a column per stage —
- * Fred's "merge Projects and Work Orders". A work order card opens the same
- * editor the list uses; a crew card opens Crew Projects.
+ * Work orders on one board, a column per stage. A card opens the job's WorkFlow
+ * screen. Crew-project sites used to share the board; Fred took them off on
+ * 2026-10-02 ("crew jobs can go") — they live in Crew Projects.
  */
-export default function WorkBoard({ workOrders, contractors, owedToTechs, onEdit, onOpenCrew, search }: {
+export default function WorkBoard({ workOrders, owedToTechs, onEdit }: {
   /** Live (not closed) work orders, already narrowed by the search box. */
   workOrders: EnrichedWorkOrder[];
-  contractors: Contractor[];
   owedToTechs: number;
   onEdit: (w: EnrichedWorkOrder) => void;
-  onOpenCrew?: () => void;
-  search: string;
 }) {
-  const supabase = createClient();
-  const [sites, setSites] = useState<BoardSite[]>([]);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('crew_sites')
-        .select('id, name, city, state, week_start, status, crew_projects!inner(name, archived_at), crew_teams(name, helper_name, lead_contractor_id)')
-        .is('crew_projects.archived_at', null);
-      type Row = {
-        id: string; name: string; city: string | null; state: string | null; week_start: string | null; status: string | null;
-        crew_projects: { name: string } | { name: string }[] | null;
-        crew_teams: { name: string | null; helper_name: string | null; lead_contractor_id: string | null } | { name: string | null; helper_name: string | null; lead_contractor_id: string | null }[] | null;
-      };
-      const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v);
-      setSites(((data ?? []) as Row[]).map((r) => {
-        const team = one(r.crew_teams);
-        return {
-          id: r.id, name: r.name, city: r.city, state: r.state, week_start: r.week_start, status: r.status,
-          project: one(r.crew_projects)?.name ?? 'Crew project',
-          team: team?.name ?? null, helper: team?.helper_name ?? null,
-          lead: contractors.find((c) => c.id === team?.lead_contractor_id)?.name ?? null,
-        };
-      }));
-    })();
-    // Contractors only supply lead names; re-reading crew sites when they change is not needed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const q = search.trim().toLowerCase();
-  const shownSites = useMemo(() => sites.filter((s) => !q
-    || [s.name, s.city, s.state, s.project, s.lead, s.helper, s.team].some((v) => (v ?? '').toLowerCase().includes(q))), [sites, q]);
-
   const today = todayEastern();
-  const counts = boardCounts(workOrders, shownSites, today);
+  const counts = boardCounts(workOrders, [], today);
 
-  const cards: Card[] = useMemo(() => [
-    ...workOrders.map((wo): Card => ({ kind: 'wo', id: wo.id, col: woColumn(wo.wo_status, hasTech(wo)), sort: (wo.scheduled_date ?? '9999') + wo.wo_number, wo })),
-    ...shownSites.map((site): Card => ({ kind: 'crew', id: site.id, col: crewColumn(site.status), sort: (site.week_start ?? '9999') + site.name, site })),
-  ].sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0)), [workOrders, shownSites]);
+  const cards: Card[] = useMemo(() => workOrders
+    .map((wo): Card => ({ id: wo.id, col: woColumn(wo.wo_status, hasTech(wo)), sort: (wo.scheduled_date ?? '9999') + wo.wo_number, wo }))
+    .sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0)), [workOrders]);
 
   return (
     <div>
@@ -110,9 +56,7 @@ export default function WorkBoard({ workOrders, contractors, owedToTechs, onEdit
                     Nothing here
                   </div>
                 )}
-                {list.map((c) => c.kind === 'wo'
-                  ? <WoCard key={`wo-${c.id}`} w={c.wo} accent={col.accent} onOpen={() => onEdit(c.wo)} />
-                  : <CrewCard key={`crew-${c.id}`} s={c.site} onOpen={onOpenCrew} />)}
+                {list.map((c) => <WoCard key={`wo-${c.id}`} w={c.wo} accent={col.accent} onOpen={() => onEdit(c.wo)} />)}
               </div>
             </section>
           );
@@ -165,24 +109,6 @@ function WoCard({ w, accent, onOpen }: { w: EnrichedWorkOrder; accent: string; o
             {w.payment_status === 'paid' ? 'Tech paid' : w.payment_status === 'partial' ? 'Tech part-paid' : 'Tech not paid'}
           </span>
         ))}
-      </div>
-    </button>
-  );
-}
-
-function CrewCard({ s, onOpen }: { s: BoardSite; onOpen?: () => void }) {
-  const who = [s.lead, s.helper].filter(Boolean).join(' + ') || s.team;
-  return (
-    <button onClick={onOpen} className="board-card" style={{ ...CARD, borderLeft: '3px solid #6B2D8B', background: 'rgba(107,45,139,0.04)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: '#6B2D8B', textTransform: 'uppercase', display: 'flex', gap: 4, alignItems: 'center' }}><HardHat size={11} /> Crew project</span>
-        {s.week_start && <span style={{ fontSize: 11, color: '#777' }}>Wk of {fmtDate(s.week_start)}</span>}
-      </div>
-      <div style={{ fontWeight: 700, fontSize: 13.5, lineHeight: 1.3, margin: '5px 0 3px' }}>{s.name}</div>
-      <div style={{ fontSize: 11.5, color: '#777' }}>{s.project}</div>
-      {(s.city || s.state) && <div style={{ fontSize: 11.5, color: '#666', marginTop: 4, display: 'flex', gap: 4, alignItems: 'center' }}><MapPin size={12} />{[s.city, s.state].filter(Boolean).join(', ')}</div>}
-      <div style={{ fontSize: 11.5, marginTop: 3, display: 'flex', gap: 4, alignItems: 'center', color: who ? '#555' : '#b45309', fontWeight: who ? 500 : 700 }}>
-        {who ? <Users size={12} /> : <AlertCircle size={12} />}{who || 'No team yet'}
       </div>
     </button>
   );

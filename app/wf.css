@@ -1,0 +1,175 @@
+/* ── WorkFlow look (Fred, 2026-10-02: "I like it, keep it") ─────────────────
+   The WorkFlow app's design, now part of the FAJ app: the WorkFlow screen in
+   management (components/WorkFlowView.tsx) and the tech portal (/tech). Navy
+   and gold, Inter for reading, Space Grotesk for numbers and titles, Playfair
+   for the greeting. Scoped under .wf so it cannot leak into other screens. */
+.wf {
+  --wf-navy: #0E1B2E;
+  --wf-navy-2: #13284A;
+  --wf-night: #020409;
+  --wf-gold: #C9A24B;
+  --wf-gold-dark: #A8862F;
+  --wf-gold-ink: #1A1405;
+  --wf-surface: #F6F4EF;
+  --wf-card: #FFFFFF;
+  --wf-line: #E4DFD3;
+  --wf-text: #1B1C1F;
+  --wf-subtle: #5E6470;
+  --wf-success: #047857;
+  --wf-warning: #B45309;
+  --wf-danger: #C62828;
+  font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  color: var(--wf-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.wf-page { background: var(--wf-surface); min-height: 100vh; }
+.wf-serif { font-family: 'Playfair Display', Georgia, serif; }
+.wf-display { font-family: 'Space Grotesk', 'Inter', sans-serif; }
+.wf-subtle { color: var(--wf-subtle); }
+.wf-label { font-size: 12px; font-weight: 500; color: var(--wf-subtle); }
+.wf-title { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 19px; font-weight: 600; margin: 0; }
+.wf-h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 26px; font-weight: 600; margin: 0; }
+
+.wf-card {
+  background: var(--wf-card);
+  border: 1px solid var(--wf-line);
+  border-radius: 16px;
+}
+.wf-card-click { cursor: pointer; transition: transform 0.12s ease, box-shadow 0.18s ease; text-align: left; font: inherit; color: inherit; width: 100%; padding: 0; }
+.wf-card-click:hover { box-shadow: 0 6px 20px rgba(14, 27, 46, 0.08); }
+.wf-card-click:active { transform: scale(0.985); }
+
+.wf-hero {
+  position: relative; overflow: hidden; color: #fff;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(2, 4, 9, 0.72) 0%, #13284A 100%),
+    url('/wf/hero.jpg') center / cover no-repeat;
+  padding: 24px;
+}
+.wf-hero-date { font-size: 11.5px; letter-spacing: 1.2px; text-transform: uppercase; color: rgba(255, 255, 255, 0.82); font-weight: 600; }
+.wf-hero-greet { font-family: 'Playfair Display', Georgia, serif; font-size: 27px; font-weight: 600; margin: 4px 0 0; line-height: 1.2; }
+.wf-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-top: 20px; }
+.wf-stat {
+  padding: 12px; border-radius: 12px; text-align: left;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(201, 162, 75, 0.45);
+  color: #fff; font: inherit;
+}
+button.wf-stat { cursor: pointer; }
+button.wf-stat:hover { background: rgba(255, 255, 255, 0.22); }
+.wf-stat-value { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 21px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wf-stat-label { font-size: 11.5px; color: rgba(255, 255, 255, 0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.wf-chip {
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  padding: 3px 11px; border-radius: 28px; font-size: 11.5px; font-weight: 700;
+}
+.wf-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.wf-filter {
+  padding: 7px 14px; border-radius: 28px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--wf-line); background: var(--wf-card); color: var(--wf-text);
+}
+.wf-filter[aria-pressed="true"] { background: var(--wf-navy); border-color: var(--wf-navy); color: #fff; }
+.wf-filter .wf-count { margin-left: 6px; font-size: 11px; opacity: 0.7; }
+
+.wf-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 44px; padding: 0 16px; border-radius: 12px; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap;
+  border: 1px solid transparent; transition: filter 0.15s ease, background 0.15s ease;
+}
+.wf-btn:disabled { opacity: 0.5; cursor: default; }
+.wf-btn-sm { min-height: 38px; padding: 0 12px; font-size: 13px; border-radius: 10px; }
+.wf-btn-navy { background: var(--wf-navy); color: #fff; }
+.wf-btn-gold { background: var(--wf-gold); color: var(--wf-gold-ink); }
+.wf-btn-danger { background: var(--wf-danger); color: #fff; }
+.wf-btn-success { background: var(--wf-success); color: #fff; }
+.wf-btn-navy:hover, .wf-btn-gold:hover, .wf-btn-danger:hover, .wf-btn-success:hover { filter: brightness(1.08); }
+.wf-btn-outline { background: var(--wf-card); color: var(--wf-text); border-color: #C9C4B8; }
+.wf-btn-outline:hover { background: #FBFAF6; }
+.wf-btn-ghost { background: transparent; color: var(--wf-navy); }
+.wf-btn-ghost:hover { background: rgba(14, 27, 46, 0.06); }
+.wf-btn-warn { background: var(--wf-card); color: var(--wf-danger); border-color: rgba(198, 40, 40, 0.35); }
+
+.wf-input {
+  width: 100%; min-height: 44px; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--wf-line); background: var(--wf-card); color: var(--wf-text);
+  font: inherit; font-size: 14px; outline: none;
+}
+.wf-input:focus { border: 2px solid var(--wf-gold); padding: 9px 11px; }
+textarea.wf-input { resize: vertical; }
+
+.wf-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px 16px 0; }
+.wf-progress { height: 5px; border-radius: 8px; background: #ECE8DF; overflow: hidden; }
+.wf-progress > span { display: block; height: 100%; border-radius: 8px; }
+.wf-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--wf-gold); animation: wf-pulse 0.8s ease-in-out infinite alternate; }
+@keyframes wf-pulse { from { opacity: 1; } to { opacity: 0.2; } }
+@keyframes wf-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.wf-rise { animation: wf-rise 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .wf-rise, .wf-dot { animation: none; } }
+
+.wf-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .wf-detail-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.wf-overlay {
+  position: fixed; inset: 0; z-index: 70; background: rgba(2, 4, 9, 0.5);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.wf-dialog {
+  background: var(--wf-surface); border-radius: 20px; width: 100%; max-width: 480px;
+  max-height: 90vh; overflow-y: auto; padding: 20px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+}
+@media (max-width: 768px) {
+  .wf-overlay { align-items: flex-end; padding: 0; }
+  .wf-dialog { border-radius: 20px 20px 0 0; max-height: 92vh; }
+}
+
+/* Tech portal shell: menu on the left, bar on top (Fred: "left to right
+   navigation bar and up"). On a phone the menu slides in from the left. */
+.wf-shell { display: flex; min-height: 100vh; background: var(--wf-surface); }
+.wf-rail {
+  width: 236px; flex-shrink: 0; background: var(--wf-navy); color: #fff;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 18px 12px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.wf-rail-item {
+  display: flex; align-items: center; gap: 11px; width: 100%; padding: 11px 12px;
+  border-radius: 12px; border: none; background: transparent; color: rgba(255, 255, 255, 0.78);
+  font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer;
+}
+.wf-rail-item:hover { background: rgba(255, 255, 255, 0.07); color: #fff; }
+.wf-rail-item[aria-current="page"] { background: rgba(201, 162, 75, 0.18); color: #fff; box-shadow: inset 3px 0 0 var(--wf-gold); }
+.wf-rail-badge { margin-left: auto; background: var(--wf-gold); color: var(--wf-gold-ink); border-radius: 999px; font-size: 11px; font-weight: 800; padding: 1px 7px; }
+.wf-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wf-topbar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px;
+  min-height: 58px; padding: 8px 16px; background: rgba(246, 244, 239, 0.94);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--wf-line);
+}
+.wf-menu-btn { display: none !important; }
+.wf-drawer-backdrop { position: fixed; inset: 0; background: rgba(2, 4, 9, 0.5); z-index: 49; }
+.wf-content { width: 100%; max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+@media (max-width: 900px) {
+  .wf-rail { position: fixed; left: 0; top: 0; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.22s ease; height: 100dvh; }
+  .wf-rail.open { transform: none; box-shadow: 0 0 44px rgba(0, 0, 0, 0.4); }
+  .wf-menu-btn { display: inline-flex !important; }
+  .wf-hero { border-radius: 20px; padding: 20px; }
+  .wf-hero-greet { font-size: 24px; }
+}
+@media (max-width: 768px) {
+  /* Same iOS rule as .input: 16px or the page zooms in on every tap. */
+  .wf-input { font-size: 16px; }
+}
+
+/* The tech's clock sits first on a phone, at the top of the right column on a
+   wide screen — one card, shown in one place at a time. */
+.wf-only-wide { display: block; }
+.wf-only-narrow { display: none; }
+@media (max-width: 1100px) {
+  .wf-only-wide { display: none; }
+  .wf-only-narrow { display: block; }
+}
+.wf .spin { animation: wf-spin 0.9s linear infinite; }
+@keyframes wf-spin { to { transform: rotate(360deg); } }

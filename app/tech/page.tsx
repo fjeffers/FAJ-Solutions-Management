@@ -1,478 +1,688 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+// The tech portal — WorkFlow's look and features inside the FAJ app (Fred,
+// 2026-10-02: "all one app with a tech portal", "I like it, keep it").
+//
+// A tech signs in here and sees only their own work: jobs, offers to accept,
+// the checklist, the clock, messages to the office, their pay history and
+// their paperwork. Never the client price, never anyone else's job.
+//
+// No signal: the last copy of their lists is kept on the phone, and taps
+// (clock, checklist, accept/decline, work done) wait in the outbox
+// (lib/wf-outbox.ts) and go to the office, in order and with the time they were
+// really made, as soon as there is signal.
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
-  fetchTechProfile, fetchTechJobs, fetchTechPayments, fetchTechSummary,
-  fetchTechUnread, fetchTechDmUnread, fetchTechPortalToken, fetchTechOpenJobs, saveTechProfile,
-  splitJobs, paymentsByYear, jobLocation, jobPayLine,
+  fetchTechProfile, fetchTechPayments, fetchTechSummary, fetchTechUnread, fetchTechDmUnread,
+  fetchTechPortalToken, saveTechProfile, paymentsByYear, fetchTechMessages, sendTechMessage,
 } from '@/lib/tech-portal';
+import { fetchWfTechJobs, registerTechHandlers, applyPending, toChatJob } from '@/lib/tech-wf';
+import {
+  Outbox, browserStorage, saveCopy, loadCopy, lastUid, clearCopies, isNoSignal, makeAction, outcomeMessage,
+  type PendingAction,
+} from '@/lib/wf-outbox';
+import {
+  techCounts, matchesWf, sortWf, statusesPresent, wfStatusLabel, canWork, isClockedIn, isFinished, formatDuration,
+  fullAddress, type WfJob, type WfStatus, type WfTask,
+} from '@/lib/wf';
+import { fmtMoney, fmtDate } from '@/lib/utils';
+import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
+import Toaster from '@/components/Toaster';
 import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
-import TechOpenWork from '@/components/TechOpenWork';
-import TechJobActions from '@/components/TechJobActions';
 import TechCrew from '@/components/TechCrew';
 import { fetchCrewBoard } from '@/lib/crew-portal';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
-import type { TechJob, TechOpenJob, TechPayment, TechProfile, TechSummary } from '@/lib/types';
-import { fmtMoney, fmtDate } from '@/lib/utils';
+import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
+import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
+import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  HardHat, LogOut, Briefcase, Wallet, User, MapPin, Calendar, Clock,
-  CheckCircle2, Save, MessageSquare, ChevronDown, FileWarning, FileText, Inbox, Users,
+  Briefcase, CheckCircle2, CloudOff, FileText, FileWarning, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  RefreshCw, Save, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X,
 } from 'lucide-react';
 
-type Tab = 'jobs' | 'open' | 'pay' | 'chat' | 'profile' | 'paperwork' | 'crew';
+type Tab = 'jobs' | 'offers' | 'crew' | 'pay' | 'chat' | 'profile' | 'paperwork';
+const TABS: Tab[] = ['jobs', 'offers', 'crew', 'pay', 'chat', 'profile', 'paperwork'];
+const COPIES = ['profile', 'jobs', 'payments', 'summary'];
+const TAB_TITLE: Record<Tab, string> = {
+  jobs: 'My jobs', offers: 'Offers', crew: 'Crew project', pay: 'Pay history',
+  chat: 'Messages', profile: 'Profile', paperwork: 'W-9 & agreement',
+};
 
 export default function TechPortalPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const kv = useMemo(() => browserStorage(), []);
 
-  const [loading, setLoading] = useState(true);
-  const [denied, setDenied] = useState(false);
-  // The installed app's "My pay" shortcut opens straight on that tab, so it is
-  // a real shortcut rather than one that lands on the same screen as the icon.
+  const [phase, setPhase] = useState<'loading' | 'denied' | 'nodata' | 'ready'>('loading');
+  const [uid, setUid] = useState<string | null>(null);
+  // The installed app's "My pay" shortcut opens straight on that tab.
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window === 'undefined') return 'jobs';
     const t = new URLSearchParams(window.location.search).get('tab');
-    return (['jobs', 'open', 'pay', 'chat', 'profile', 'paperwork', 'crew'] as const)
-      .includes(t as Tab) ? (t as Tab) : 'jobs';
+    return t === 'open' ? 'offers' : TABS.includes(t as Tab) ? (t as Tab) : 'jobs';
   });
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [railOpen, setRailOpen] = useState(false);
 
   const [profile, setProfile] = useState<TechProfile | null>(null);
-  const [jobs, setJobs] = useState<TechJob[]>([]);
+  const [officeJobs, setOfficeJobs] = useState<WfJob[]>([]);
   const [payments, setPayments] = useState<TechPayment[]>([]);
   const [summary, setSummary] = useState<TechSummary | null>(null);
   const [unread, setUnread] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [portalToken, setPortalToken] = useState<string | null>(null);
-  const [openJobs, setOpenJobs] = useState<TechOpenJob[]>([]);
-  // Crew projects (migration-087): only leads on one see the menu item.
   const [onCrew, setOnCrew] = useState(false);
+  /** When the lists on screen are the phone's saved copy, when it was saved. */
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const boxRef = useRef<Outbox | null>(null);
+  const [, bump] = useReducer((n: number) => n + 1, 0);
+  const box = boxRef.current;
+  const pending = box?.pending ?? [];
+  const jobs = useMemo(() => applyPending(officeJobs, pending), [officeJobs, pending]);
+
+  const loadLive = useCallback(async (u: string, quiet: boolean) => {
+    setRefreshing(true);
+    try {
+      const me = await fetchTechProfile();
+      if (!me) {
+        // Not a tech. The owner belongs in management, where WorkFlow is.
+        const { data } = await supabase.rpc('wf_role');
+        if ((data as { role?: string } | null)?.role === 'owner') { router.replace('/?view=workorders'); return; }
+        setPhase('denied');
+        return;
+      }
+      const [j, p, s, u1, u2, tok] = await Promise.all([
+        fetchWfTechJobs(), fetchTechPayments(), fetchTechSummary(), fetchTechUnread(), fetchTechDmUnread(), fetchTechPortalToken(),
+      ]);
+      setProfile(me); setOfficeJobs(j); setPayments(p); setSummary(s); setUnread(u1 + u2); setPortalToken(tok);
+      saveCopy(kv, u, 'profile', me);
+      saveCopy(kv, u, 'jobs', j);
+      saveCopy(kv, u, 'payments', p);
+      saveCopy(kv, u, 'summary', s);
+      setSavedAt(null);
+      boxRef.current?.noteSignal(true);
+      setPhase('ready');
+      // A crew lookup failing must not lock a tech out of their normal jobs.
+      fetchCrewBoard().then((b) => setOnCrew(b.length > 0)).catch(() => {});
+    } catch (e) {
+      if (isNoSignal(e)) {
+        boxRef.current?.noteSignal(false);
+        if (!quiet) toastInfo('No signal — showing what was saved on this phone.');
+        setPhase((ph) => (ph === 'loading' ? 'nodata' : ph));
+      } else {
+        toastError("Couldn't load your jobs. Tap refresh to try again.");
+        setPhase((ph) => (ph === 'loading' ? 'ready' : ph));
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [kv, router, supabase]);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.replace('/tech/login'); return; }
-
+      let u: string | null = null;
       try {
-        const me = await fetchTechProfile();
-        // Signed in but not a linked tech — Fred's own account lands here too.
-        if (!me) { setDenied(true); setLoading(false); return; }
-        const [j, p, s, u, dmU, tok, open] = await Promise.all([
-          fetchTechJobs(), fetchTechPayments(), fetchTechSummary(), fetchTechUnread(),
-          fetchTechDmUnread(), fetchTechPortalToken(), fetchTechOpenJobs(),
-        ]);
-        setProfile(me); setJobs(j); setPayments(p); setSummary(s); setUnread(u + dmU);
-        setPortalToken(tok); setOpenJobs(open);
-        // A crew lookup failing must not lock a tech out of their normal jobs.
-        fetchCrewBoard().then((b) => setOnCrew(b.length > 0)).catch(() => {});
-      } catch {
-        setDenied(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        u = session?.user.id ?? null;
+      } catch { /* with no signal an expired sign-in cannot be refreshed */ }
+      // No signal and no usable sign-in: open on the copy saved for the last
+      // person who used the portal on this phone. Taps still queue, and go out
+      // once the sign-in refreshes with signal.
+      if (!u && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        const last = lastUid(kv);
+        if (last && loadCopy(kv, last, 'profile')) u = last;
       }
-      setLoading(false);
+      if (!u) { router.replace('/tech/login'); return; }
+      if (cancelled) return;
+      setUid(u);
+
+      const b = new Outbox(kv, u);
+      registerTechHandlers(b);
+      b.subscribe(bump);
+      // Taps that waited for signal went out: fetch the office's copy again.
+      b.onFlushed = () => { void loadLive(u, true); };
+      boxRef.current = b;
+
+      const cp = loadCopy<TechProfile>(kv, u, 'profile');
+      const cj = loadCopy<WfJob[]>(kv, u, 'jobs');
+      if (cp && cj) {
+        setProfile(cp.value);
+        setOfficeJobs(cj.value);
+        setPayments(loadCopy<TechPayment[]>(kv, u, 'payments')?.value ?? []);
+        setSummary(loadCopy<TechSummary>(kv, u, 'summary')?.value ?? null);
+        setSavedAt(cj.at);
+        setPhase('ready');
+      }
+      await loadLive(u, !(cp && cj));
+      if (b.pending.length > 0) void b.flush();
     })();
+    return () => { cancelled = true; boxRef.current?.dispose(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Accepting moves a job from Open Work into My Jobs, so both lists reload.
-  const reloadJobs = async () => {
-    try {
-      const [mine, open] = await Promise.all([fetchTechJobs(), fetchTechOpenJobs()]);
-      setJobs(mine); setOpenJobs(open);
-    } catch { /* the toast from the action already said what happened */ }
-  };
+  // Signal back: send what is waiting, and refresh.
+  useEffect(() => {
+    if (!uid) return;
+    const back = () => { void boxRef.current?.flush(); void loadLive(uid, true); };
+    window.addEventListener('online', back);
+    return () => window.removeEventListener('online', back);
+  }, [uid, loadLive]);
+
+  /** Every tap goes through here: shown at once, sent now or kept for later. */
+  const act = useCallback(async (action: PendingAction, sent?: string) => {
+    const b = boxRef.current;
+    if (!b || !uid) return;
+    setOfficeJobs((js) => applyPending(js, [action]));
+    const outcome = await b.run(action);
+    const msg = outcomeMessage(outcome, sent);
+    if (outcome.status === 'refused') toastError(msg ?? "That didn't go through.");
+    else if (outcome.status === 'queued') toastInfo(msg ?? '');
+    else if (msg) toastSuccess(msg);
+    if (outcome.status !== 'queued') void loadLive(uid, true);
+  }, [uid, loadLive]);
 
   const signOut = async () => {
+    const waiting = boxRef.current?.pending.length ?? 0;
+    if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} reached the office yet. They stay on this phone and go out the next time you sign in. Sign out anyway?`)) return;
+    if (uid) clearCopies(kv, uid, COPIES);
     await supabase.auth.signOut();
     router.replace('/tech/login');
   };
 
-  // tech_my_jobs returns live work only (migration-083); splitJobs still runs
-  // so an older cached response cannot slip a finished job onto the screen.
-  const { active } = useMemo(() => splitJobs(jobs), [jobs]);
+  const go = (t: Tab) => { setTab(t); setOpenId(null); setRailOpen(false); window.scrollTo({ top: 0 }); };
 
-  // What is still unfiled. Fred cannot pay a tech with no W-9 on file, so this
-  // is worth a badge rather than a page they have to think to visit.
-  const paperworkDue =
-    (profile && !profile.w9_received ? 1 : 0) +
-    (profile && !profile.contract_signed_at ? 1 : 0);
+  const counts = techCounts(jobs);
+  const offers = jobs.filter((j) => j.status === 'offered');
+  const paperworkDue = (profile && !profile.w9_received ? 1 : 0) + (profile && !profile.contract_signed_at ? 1 : 0);
+  const openJob = openId ? jobs.find((j) => j.id === openId) ?? null : null;
 
-  if (loading) {
+  if (phase === 'loading') {
     return (
-      <Centered>
-        <HardHat size={26} color="var(--gold)" style={{ marginBottom: 12 }} />
-        <div className="serif" style={{ fontSize: 20, color: 'var(--teal)' }}>Loading your account…</div>
-      </Centered>
+      <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <RefreshCw size={26} color="var(--wf-gold)" className="spin" />
+          <div className="wf-h1" style={{ marginTop: 10, fontSize: 21 }}>Loading your jobs…</div>
+        </div>
+      </div>
     );
   }
 
-  if (denied) {
+  if (phase === 'denied') {
     return (
-      <Centered>
-        <div className="glass card" style={{ maxWidth: 420, padding: 32, textAlign: 'center' }}>
-          <HardHat size={26} color="#bbb" style={{ marginBottom: 10 }} />
-          <div className="serif" style={{ fontSize: 22, marginBottom: 8 }}>Not a tech account</div>
-          <p style={{ color: '#666', fontSize: 13, lineHeight: 1.6, margin: '0 0 18px' }}>
+      <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="wf-card" style={{ maxWidth: 420, padding: 28, textAlign: 'center' }}>
+          <div className="wf-h1" style={{ fontSize: 22 }}>Not a tech account</div>
+          <p className="wf-subtle" style={{ margin: '8px 0 18px' }}>
             You&apos;re signed in, but this login isn&apos;t linked to a contractor record.
             If you&apos;re a tech, ask Fred to add your email to your contractor profile.
           </p>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <a className="btn btn-ghost" href="/">Owner app</a>
-            <button className="btn btn-primary" onClick={signOut}>Sign out</button>
+            <a className="wf-btn wf-btn-outline" href="/">Management app</a>
+            <button className="wf-btn wf-btn-navy" onClick={signOut}>Sign out</button>
           </div>
         </div>
-      </Centered>
+      </div>
+    );
+  }
+
+  if (phase === 'nodata') {
+    return (
+      <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <Empty
+          icon={<CloudOff size={34} />}
+          title="No signal"
+          message="Nothing is saved on this phone yet. Open the portal once with signal and your jobs will be here next time, signal or not."
+          action={<button className="wf-btn wf-btn-navy" onClick={() => uid && loadLive(uid, false)}><RefreshCw size={16} /> Try again</button>}
+        />
+      </div>
+    );
+  }
+
+  const railItem = (t: Tab, icon: React.ReactNode, badge?: number) => (
+    <button className="wf-rail-item" aria-current={tab === t ? 'page' : undefined} onClick={() => go(t)}>
+      {icon} {TAB_TITLE[t]}
+      {badge != null && badge > 0 && <span className="wf-rail-badge">{badge}</span>}
+    </button>
+  );
+
+  return (
+    <div className="wf wf-shell">
+      <Toaster />
+      {railOpen && <div className="wf-drawer-backdrop" onClick={() => setRailOpen(false)} />}
+      <nav className={`wf-rail${railOpen ? ' open' : ''}`} aria-label="Tech portal">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 10 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/wf/logo.png" alt="" width={36} height={36} style={{ borderRadius: 8, objectFit: 'contain', background: 'rgba(255,255,255,0.06)' }} />
+          <div style={{ minWidth: 0 }}>
+            <div className="wf-display" style={{ fontSize: 11, letterSpacing: 1.4, color: 'var(--wf-gold)', fontWeight: 700 }}>FAJ SOLUTIONS</div>
+            <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.name}</div>
+          </div>
+        </div>
+        {railItem('jobs', <Briefcase size={18} />)}
+        {railItem('offers', <Inbox size={18} />, offers.length)}
+        {onCrew && railItem('crew', <Users size={18} />)}
+        {railItem('pay', <Wallet size={18} />)}
+        {railItem('chat', <MessageSquare size={18} />, unread)}
+        {railItem('profile', <User size={18} />)}
+        {railItem('paperwork', <FileText size={18} />, paperworkDue)}
+        <div style={{ flex: 1 }} />
+        <button className="wf-rail-item" onClick={signOut}><LogOut size={18} /> Sign out</button>
+      </nav>
+
+      <div className="wf-main">
+        <header className="wf-topbar">
+          <button className="wf-btn wf-btn-ghost wf-btn-sm wf-menu-btn" onClick={() => setRailOpen(true)} aria-label="Open the menu">
+            <Menu size={20} />
+          </button>
+          <div className="wf-title" style={{ flex: 1, fontSize: 17, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {openJob ? `WO ${openJob.number}` : TAB_TITLE[tab]}
+          </div>
+          <SyncStatus box={box} savedAt={savedAt} />
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" aria-label="Refresh" disabled={refreshing}
+            onClick={() => { if (uid) { void box?.flush(); void loadLive(uid, false); } }}>
+            <RefreshCw size={17} className={refreshing ? 'spin' : undefined} />
+          </button>
+        </header>
+
+        <main className="wf-content">
+          {box && box.problems.length > 0 && (
+            <div className="wf-card" style={{ padding: 14, marginBottom: 14, borderColor: 'rgba(198,40,40,0.35)', background: 'rgba(198,40,40,0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontWeight: 700, color: 'var(--wf-danger)', flex: 1 }}>The office didn&apos;t accept {box.problems.length === 1 ? 'one tap' : `${box.problems.length} taps`} made with no signal</div>
+                <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => box.clearProblems()} aria-label="Dismiss"><X size={16} /></button>
+              </div>
+              {box.problems.map((p) => <div key={p} style={{ fontSize: 13, marginTop: 4 }}>{p}</div>)}
+            </div>
+          )}
+
+          {openJob ? (
+            <TechJobScreen job={openJob} onBack={() => setOpenId(null)} act={act}
+              onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
+          ) : tab === 'jobs' ? (
+            <JobsHome
+              name={profile?.name ?? ''} jobs={jobs} counts={counts} offers={offers.length} onCrew={onCrew}
+              paperworkDue={paperworkDue} profile={profile}
+              onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} go={go}
+            />
+          ) : tab === 'offers' ? (
+            <OffersList jobs={offers} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} act={act} />
+          ) : tab === 'crew' ? (
+            <TechCrew />
+          ) : tab === 'pay' ? (
+            <PayTab payments={payments} summary={summary} />
+          ) : tab === 'chat' ? (
+            <TechChat
+              jobs={jobs.filter((j) => !isFinished(j) && j.status !== 'declined').map(toChatJob)}
+              onRead={async () => {
+                const [u1, u2] = await Promise.all([fetchTechUnread(), fetchTechDmUnread()]);
+                setUnread(u1 + u2);
+              }}
+            />
+          ) : tab === 'profile' && profile ? (
+            <ProfileTab profile={profile} onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }} />
+          ) : tab === 'paperwork' && profile ? (
+            portalToken ? (
+              // The SAME component and API route the emailed portal link uses.
+              // Tax IDs and bank details travel one audited path, not two.
+              <PortalDocuments
+                token={portalToken}
+                w9Received={!!profile.w9_received}
+                w9SubmittedAt={profile.w9_submitted_at}
+                contractUrl={null}
+                contractSignedAt={profile.contract_signed_at}
+                contractSignedName={null}
+                contractorName={profile.name}
+              />
+            ) : (
+              <Empty title="Couldn't open your paperwork" message="It needs signal. Try again, or sign out and back in." />
+            )
+          ) : null}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ── The bar's signal / waiting indicator ────────────────────────────────────
+
+function SyncStatus({ box, savedAt }: { box: Outbox | null; savedAt: string | null }) {
+  if (!box) return null;
+  const waiting = box.pending.length;
+  if (waiting > 0) {
+    return (
+      <button className="wf-chip" onClick={() => void box.flush()} title="Send now"
+        style={{ border: 'none', cursor: 'pointer', color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.12)', padding: '6px 11px' }}>
+        <CloudOff size={14} /> {waiting} waiting · Send now
+      </button>
+    );
+  }
+  if (box.offline) {
+    return (
+      <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.12)', padding: '6px 11px' }}
+        title={savedAt ? `Showing the copy saved ${new Date(savedAt).toLocaleString()}` : undefined}>
+        <CloudOff size={14} /> No signal
+      </span>
+    );
+  }
+  return null;
+}
+
+// ── My jobs ─────────────────────────────────────────────────────────────────
+
+function JobsHome({ name, jobs, counts, offers, onCrew, paperworkDue, profile, onOpen, go }: {
+  name: string; jobs: WfJob[]; counts: ReturnType<typeof techCounts>; offers: number; onCrew: boolean;
+  paperworkDue: number; profile: TechProfile | null; onOpen: (id: string) => void; go: (t: Tab) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<WfStatus | 'all'>('all');
+  const mine = jobs.filter((j) => j.status !== 'declined' && j.status !== 'offered');
+  const searched = mine.filter((j) => matchesWf(j, search));
+  const shown = sortWf(searched.filter((j) => filter === 'all' || j.status === filter));
+  const first = name.trim().split(/\s+/)[0] ?? '';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Hero
+        title={first ? `${greeting()}, ${first}` : greeting()}
+        stats={[
+          { value: String(counts.today), label: 'Jobs today' },
+          { value: String(counts.inProgress), label: 'In progress' },
+          { value: formatDuration(counts.workedTodayMs), label: 'Logged today' },
+        ]}
+      />
+      <TechInstall />
+      {offers > 0 && (
+        <Banner title="Offers" subtitle={`${offers} ${offers === 1 ? 'job is' : 'jobs are'} waiting for your answer`} onClick={() => go('offers')} />
+      )}
+      {paperworkDue > 0 && profile && (
+        <button className="wf-card wf-card-click" onClick={() => go('paperwork')}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderColor: 'rgba(180,83,9,0.35)', background: 'rgba(180,83,9,0.05)' }}>
+          <FileWarning size={22} color="var(--wf-warning)" />
+          <span style={{ flex: 1 }}>
+            <span style={{ display: 'block', fontWeight: 700, color: 'var(--wf-warning)' }}>
+              {!profile.w9_received && !profile.contract_signed_at ? 'Your W-9 and agreement are outstanding'
+                : !profile.w9_received ? 'Your W-9 is outstanding' : 'Your contractor agreement is unsigned'}
+            </span>
+            <span className="wf-subtle" style={{ fontSize: 12.5 }}>Fred can&apos;t pay you without it. Tap to finish — it takes a minute.</span>
+          </span>
+        </button>
+      )}
+      {onCrew && (
+        <button className="wf-card wf-card-click" onClick={() => go('crew')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14 }}>
+          <Users size={22} color="var(--wf-navy)" />
+          <span style={{ flex: 1 }}>
+            <span style={{ display: 'block', fontWeight: 600 }}>Crew project</span>
+            <span className="wf-subtle" style={{ fontSize: 12.5 }}>Log today&apos;s hours, add receipts, pick sites, message the crew.</span>
+          </span>
+        </button>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <h2 className="wf-title" style={{ flex: 1 }}>My jobs</h2>
+        <span className="wf-display" style={{ fontWeight: 600 }}>{shown.length}</span>
+      </div>
+      <input className="wf-input" value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search WO number, client, city…" aria-label="Search your jobs" />
+      <Filters<WfStatus>
+        value={filter} onChange={setFilter}
+        options={statusesPresent(mine).map((st) => ({ key: st, label: wfStatusLabel(st, false), count: searched.filter((j) => j.status === st).length }))}
+      />
+      {shown.length === 0 ? (
+        <Empty
+          title={mine.length === 0 ? 'No jobs yet' : 'No jobs here'}
+          message={mine.length === 0 ? 'When Fred gives you a job it shows up under Offers, then here once you accept.' : 'Nothing matches this filter or search.'}
+        />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 400px), 1fr))', gap: 12 }}>
+          {shown.map((j, i) => <JobCard key={j.id} job={j} index={i} onOpen={() => onOpen(j.id)} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Offers ──────────────────────────────────────────────────────────────────
+
+function OffersList({ jobs, onOpen, act }: {
+  jobs: WfJob[]; onOpen: (id: string) => void; act: (a: PendingAction, sent?: string) => Promise<void>;
+}) {
+  if (jobs.length === 0) {
+    return <Empty icon={<Inbox size={34} />} title="Nothing waiting on you" message="New jobs Fred sends you show up here to accept." />;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="wf-subtle">Fred sent you {jobs.length === 1 ? 'this job' : 'these jobs'}. Open one to see everything, or answer here.</div>
+      {jobs.map((j, i) => (
+        <div key={j.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <JobCard job={j} index={i} onOpen={() => onOpen(j.id)} />
+          <OfferButtons job={j} act={act} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OfferButtons({ job, act }: { job: WfJob; act: (a: PendingAction, sent?: string) => Promise<void> }) {
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      <button className="wf-btn wf-btn-outline" style={{ flex: 1 }}
+        onClick={() => {
+          if (!confirm(`Not interested in WO ${job.number}? It goes back to the office so Fred can give it to someone else.`)) return;
+          void act(makeAction('respond', { number: job.number, accept: false }, `Decline WO ${job.number}`), 'Sent back to the office.');
+        }}>
+        <ThumbsDown size={16} /> Not interested
+      </button>
+      <button className="wf-btn wf-btn-gold" style={{ flex: 2 }}
+        onClick={() => void act(makeAction('respond', { number: job.number, accept: true }, `Accept WO ${job.number}`), 'Accepted. It is in My jobs.')}>
+        <ThumbsUp size={16} /> Accept
+      </button>
+    </div>
+  );
+}
+
+// ── One job ─────────────────────────────────────────────────────────────────
+
+function TechJobScreen({ job, onBack, act, onRefresh, refreshing }: {
+  job: WfJob; onBack: () => void; act: (a: PendingAction, sent?: string) => Promise<void>;
+  onRefresh: () => void; refreshing: boolean;
+}) {
+  const [chatOpen, setChatOpen] = useState(false);
+  const [doneOpen, setDoneOpen] = useState(false);
+  const working = canWork(job);
+
+  const toggleClock = () => {
+    const on = isClockedIn(job);
+    void act(
+      makeAction('clock', { number: job.number, action: on ? 'out' : 'in' }, `Clock ${on ? 'out of' : 'in on'} WO ${job.number}`),
+      on ? 'Clocked out.' : 'Clocked in. The job is in progress.',
+    );
+  };
+  const toggleTask = (t: WfTask, done: boolean) => {
+    void act(makeAction('task', { number: job.number, task: t.id, done }, `${done ? 'Tick' : 'Untick'} "${t.label}" on WO ${job.number}`));
+  };
+
+  const showClock = !isFinished(job) && job.status !== 'declined' && job.status !== 'offered';
+  let bottom: React.ReactNode = null;
+  if (job.status === 'offered') bottom = <OfferButtons job={job} act={act} />;
+  else if (working) {
+    bottom = (
+      <button className="wf-btn wf-btn-navy" style={{ width: '100%' }} onClick={() => setDoneOpen(true)}>
+        <CheckCircle2 size={18} /> Work done
+      </button>
+    );
+  } else if (job.status === 'workDone') {
+    bottom = (
+      <div className="wf-card" style={{ padding: 12, textAlign: 'center', color: 'var(--wf-success)', fontWeight: 600 }}>
+        Sent to Fred — the office takes it from here.
+      </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', paddingBottom: 40 }}>
-      {/* Header — stacks on a phone, spreads on a laptop */}
-      <header style={{
-        background: 'linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%)', color: 'white',
-        padding: '18px 16px', position: 'sticky', top: 0, zIndex: 20,
-      }}>
-        <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <HardHat size={15} color="var(--gold-light)" />
-              <span className="display" style={{ fontSize: 10, color: 'var(--gold-light)', fontWeight: 700, letterSpacing: 1.5 }}>FAJ SOLUTIONS</span>
-            </div>
-            <div className="serif" style={{ fontSize: 21, fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {profile?.name}
-            </div>
-          </div>
-          {/* One menu rather than a row of buttons: on a phone that is the
-              difference between reachable and cramped. */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-haspopup="menu" aria-expanded={menuOpen}
-              style={{
-                background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer',
-                borderRadius: 999, padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 7,
-                fontSize: 12, fontWeight: 700,
-              }}
-            >
-              <span style={{
-                width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.22)',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800,
-              }}>{initials(profile?.name)}</span>
-              Menu
-              {unread > 0 && (
-                <span style={{ background: 'var(--gold)', color: '#3b2f10', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px' }}>
-                  {unread}
-                </span>
-              )}
-              <ChevronDown size={14} style={{ transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-            </button>
-
-            {menuOpen && (
-              <>
-                <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
-                <div
-                  role="menu"
-                  style={{
-                    position: 'absolute', right: 0, top: 'calc(100% + 8px)', zIndex: 31,
-                    minWidth: 212, background: 'white', borderRadius: 12,
-                    boxShadow: '0 12px 40px rgba(0,0,0,0.18)', overflow: 'hidden', color: '#333',
-                  }}
-                >
-                  <div style={{ padding: '11px 14px', borderBottom: '1px solid #f0ede6' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{profile?.name}</div>
-                    {profile?.email && <div style={{ fontSize: 11, color: '#999' }}>{profile.email}</div>}
-                  </div>
-                  <MenuItem icon={<Briefcase size={15} />} label="My Jobs" badge={jobs.length}
-                    onClick={() => { setTab('jobs'); setMenuOpen(false); }} />
-                  {onCrew && (
-                    <MenuItem icon={<Users size={15} />} label="Crew Project"
-                      onClick={() => { setTab('crew'); setMenuOpen(false); }} />
-                  )}
-                  <MenuItem icon={<Inbox size={15} />} label="Needs Your Answer" badge={openJobs.length}
-                    attention={openJobs.length > 0}
-                    onClick={() => { setTab('open'); setMenuOpen(false); }} />
-                  <MenuItem icon={<Wallet size={15} />} label="Pay History" badge={payments.length}
-                    onClick={() => { setTab('pay'); setMenuOpen(false); }} />
-                  <MenuItem icon={<MessageSquare size={15} />} label="Chat" badge={unread || undefined}
-                    onClick={() => { setTab('chat'); setMenuOpen(false); }} />
-                  <MenuItem icon={<User size={15} />} label="Profile"
-                    onClick={() => { setTab('profile'); setMenuOpen(false); }} />
-                  <MenuItem icon={<FileText size={15} />} label="W-9 & Agreement"
-                    badge={paperworkDue} attention={paperworkDue > 0}
-                    onClick={() => { setTab('paperwork'); setMenuOpen(false); }} />
-                  <div style={{ borderTop: '1px solid #f0ede6' }}>
-                    <MenuItem icon={<LogOut size={15} />} label="Sign out" danger onClick={signOut} />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '18px 16px 0' }}>
-        {/* Money up top: what they were paid, never what the job billed. */}
-        {summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 18 }}>
-            <Stat label="Paid this year" value={fmtMoney(summary.paid_this_year)} accent />
-            <Stat label="Paid all time" value={fmtMoney(summary.paid_all_time)} />
-            <Stat label="Open jobs" value={String(summary.jobs_open)} />
-            <Stat label="Jobs worked" value={String(summary.jobs_total)} />
-            {openJobs.length > 0 && (
-              <button
-                onClick={() => setTab('open')}
-                className="glass card"
-                style={{ padding: '12px 14px', textAlign: 'left', cursor: 'pointer', border: '1px solid rgba(13,115,119,0.25)' }}
-              >
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: '#999', textTransform: 'uppercase' }}>To accept</div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--teal)', marginTop: 3 }}>{openJobs.length}</div>
-              </button>
-            )}
-          </div>
-        )}
-
-        <TechInstall />
-
-        {/* A crew lead's daily errand — hours and receipts — one tap from home. */}
-        {onCrew && tab !== 'crew' && (
-          <button
-            onClick={() => setTab('crew')}
-            style={{
-              width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: 16,
-              display: 'flex', alignItems: 'center', gap: 11,
-              background: 'rgba(13,115,119,0.07)', border: '1px solid rgba(13,115,119,0.25)',
-              borderRadius: 12, padding: '12px 14px',
-            }}
-          >
-            <Users size={18} color="var(--teal)" style={{ flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--teal)' }}>Crew project</div>
-              <div style={{ fontSize: 11.5, color: '#666', marginTop: 2 }}>
-                Log today&apos;s hours, add receipts, pick sites, message the crew.
-              </div>
-            </div>
-          </button>
-        )}
-
-        {/* Unfiled paperwork is money that cannot be paid out — say so once,
-            at the top, rather than hiding it behind a menu item. */}
-        {paperworkDue > 0 && tab !== 'paperwork' && (
-          <button
-            onClick={() => setTab('paperwork')}
-            style={{
-              width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: 16,
-              display: 'flex', alignItems: 'center', gap: 11,
-              background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.3)',
-              borderRadius: 12, padding: '12px 14px',
-            }}
-          >
-            <FileWarning size={18} color="#b45309" style={{ flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>
-                {profile && !profile.w9_received && !profile.contract_signed_at
-                  ? 'Your W-9 and agreement are outstanding'
-                  : profile && !profile.w9_received
-                    ? 'Your W-9 is outstanding'
-                    : 'Your contractor agreement is unsigned'}
-              </div>
-              <div style={{ fontSize: 11.5, color: '#a16207', marginTop: 2 }}>
-                Tap to complete it — takes a minute.
-              </div>
-            </div>
-          </button>
-        )}
-
-        <h2 className="serif" style={{ fontSize: 24, fontWeight: 600, margin: '0 0 14px' }}>
-          {tab === 'jobs' ? 'My Jobs'
-            : tab === 'pay' ? 'Pay History'
-            : tab === 'open' ? 'Needs Your Answer'
-            : tab === 'chat' ? 'Chat'
-            : tab === 'paperwork' ? 'W-9 & Agreement'
-            : tab === 'crew' ? 'Crew Project'
-            : 'Profile'}
-        </h2>
-
-        {tab === 'jobs' && <JobsTab active={active} onChanged={reloadJobs} onSeePay={() => setTab('pay')} />}
-        {tab === 'open' && <TechOpenWork jobs={openJobs} onChanged={reloadJobs} />}
-        {tab === 'crew' && <TechCrew />}
-        {tab === 'pay' && <PayTab payments={payments} />}
-        {tab === 'chat' && (
-          <TechChat
-            jobs={active}
-            onRead={async () => {
-              const [u, dmU] = await Promise.all([fetchTechUnread(), fetchTechDmUnread()]);
-              setUnread(u + dmU);
-            }}
-          />
-        )}
-        {tab === 'profile' && profile && <ProfileTab profile={profile} onSaved={(p) => setProfile(p)} />}
-        {tab === 'paperwork' && profile && (
-          portalToken ? (
-            // The SAME component and API route the emailed portal link uses.
-            // Tax IDs and bank details travel one audited path, not two.
-            <PortalDocuments
-              token={portalToken}
-              w9Received={!!profile.w9_received}
-              w9SubmittedAt={profile.w9_submitted_at}
-              contractUrl={null}
-              contractSignedAt={profile.contract_signed_at}
-              contractSignedName={null}
-              contractorName={profile.name}
-            />
-          ) : (
-            <Empty>Couldn&apos;t open your paperwork. Try signing out and back in.</Empty>
-          )
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Jobs ────────────────────────────────────────────────────────────────────
-
-/**
- * Live work only (migration-083).
- *
- * A finished or closed job leaves this list entirely rather than piling up
- * underneath it. What a tech worked and was paid for is not lost — it is in
- * Pay History, which names the work order, the site and the amount for every
- * payout. This screen answers one question: what is still mine to do.
- */
-function JobsTab({ active, onChanged, onSeePay }: {
-  active: TechJob[]; onChanged: () => void; onSeePay: () => void;
-}) {
-  return (
     <>
-      <SectionHead>Your work{active.length > 0 && ` (${active.length})`}</SectionHead>
-      {active.length === 0 ? (
-        <Empty>Nothing on your plate right now.</Empty>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {active.map((j) => <JobCard key={j.id} job={j} onChanged={onChanged} />)}
-        </div>
+      <WfJobDetail
+        job={job}
+        ownerView={false}
+        onBack={onBack}
+        onRefresh={onRefresh}
+        refreshing={refreshing}
+        actions={<>
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setChatOpen((v) => !v)} aria-pressed={chatOpen}>
+            <MessageSquare size={15} /> Messages
+          </button>
+          {fullAddress(job) && (
+            <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={15} /> Directions</a>
+          )}
+        </>}
+        clock={showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} onToggle={toggleClock} /> : undefined}
+        onToggleTask={working ? toggleTask : undefined}
+        below={chatOpen ? <JobMessages number={job.number} /> : undefined}
+        bottom={bottom}
+      />
+      {doneOpen && (
+        <WorkDoneDialog
+          job={job}
+          onClose={() => setDoneOpen(false)}
+          onConfirm={(notes) => {
+            setDoneOpen(false);
+            void act(
+              makeAction('workdone', { number: job.number, notes, clockOut: isClockedIn(job) }, `Work done on WO ${job.number}`),
+              'Work done. The office has it.',
+            );
+          }}
+        />
       )}
-
-      <button
-        onClick={onSeePay}
-        style={{
-          marginTop: 18, width: '100%', padding: '11px 0', borderRadius: 10,
-          border: '1px solid rgba(13,115,119,0.25)', background: 'rgba(13,115,119,0.06)',
-          color: 'var(--teal)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-          fontFamily: 'Lato, sans-serif',
-        }}
-      >
-        Finished jobs and what you were paid →
-      </button>
     </>
   );
 }
 
-function JobCard({ job, onChanged }: { job: TechJob; onChanged: () => void }) {
-  const where = jobLocation(job);
-  const when = job.scheduled_date || job.start_date;
-  const payLine = jobPayLine(job);
-  const isLive = job.is_active ?? !job.is_closed;
+function WorkDoneDialog({ job, onClose, onConfirm }: { job: WfJob; onClose: () => void; onConfirm: (notes: string) => void }) {
+  const [notes, setNotes] = useState(job.closeoutNotes);
   return (
-    <div className="glass card" style={{ padding: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--teal)' }}>WO {job.wo_number}</span>
-            <StatusPill closed={job.is_closed} done={!isLive} status={job.wo_status} />
-          </div>
-          <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.3 }}>
-            {job.title || job.customer_name || 'Work order'}
-          </div>
-          {job.customer_name && job.title && (
-            <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>{job.customer_name}</div>
-          )}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: 9, fontSize: 12, color: '#777' }}>
-        {where && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MapPin size={12} />{where}</span>}
-        {when && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Calendar size={12} />{fmtDate(when)}</span>}
-        {job.hours_worked != null && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Clock size={12} />{job.hours_worked} hr</span>
-        )}
-      </div>
-
-      {job.closeout_notes && (
-        <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid #eee', fontSize: 12, color: '#666', lineHeight: 1.5 }}>
-          {job.closeout_notes}
-        </div>
-      )}
-
-      {payLine && (
-        <div style={{
-          marginTop: 9, display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '6px 11px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-          background: 'rgba(4,120,87,0.08)', color: '#047857',
-        }}>
-          <Wallet size={13} /> {payLine}
-        </div>
-      )}
-
-      <TechJobActions job={job} onChanged={onChanged} />
-    </div>
+    <Dialog
+      title="Mark the work done?"
+      onClose={onClose}
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="wf-btn wf-btn-navy" onClick={() => onConfirm(notes)}><CheckCircle2 size={16} /> Work done</button>
+      </>}
+    >
+      <p style={{ marginTop: 0 }}>
+        {isClockedIn(job) ? 'You will be clocked out, and the office is told the job is finished.' : 'The office is told the job is finished.'}
+      </p>
+      <label className="wf-label" htmlFor="wf-done-notes" style={{ display: 'block', marginBottom: 4 }}>What was done (optional)</label>
+      <textarea id="wf-done-notes" className="wf-input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
+        placeholder="Work completed, anything left, anything the client said" />
+    </Dialog>
   );
 }
 
-/**
- * How the job reads to the tech. `done` covers the middle state: they have
- * handed it back and it is finished as far as they are concerned, even though
- * the office has not closed or archived it yet. Showing that in the same blue
- * as live work made a finished job look like it never saved.
- */
-function StatusPill({ closed, done, status }: {
-  closed: boolean; done?: boolean; status: string | null;
-}) {
-  const s = closed
-    ? { label: status === 'Paid' ? 'Paid' : 'Closed', color: '#047857', bg: 'rgba(16,185,129,0.12)' }
-    : done
-      ? { label: 'Done', color: '#047857', bg: 'rgba(16,185,129,0.12)' }
-      : { label: status || 'Open', color: '#1D4ED8', bg: 'rgba(59,130,246,0.12)' };
+/** The job's thread with the office — the same one Fred sees on the job in WorkFlow. */
+function JobMessages({ number }: { number: string }) {
+  const [messages, setMessages] = useState<TechMessage[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const bottom = useRef<HTMLDivElement>(null);
+
+  const load = useCallback(async () => {
+    try { setMessages(await fetchTechMessages(number)); setFailed(false); }
+    catch { setFailed(true); }
+  }, [number]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages?.length]);
+
+  const send = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    setSending(true);
+    try {
+      if (await sendTechMessage(number, body)) { setDraft(''); await load(); }
+      else toastError("Couldn't send that message.");
+    } catch (e) {
+      toastError(isNoSignal(e) ? 'No signal — messages need signal to send. Your text is still in the box.' : "Couldn't send that message.");
+    }
+    setSending(false);
+  };
+
   return (
-    <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: s.bg, color: s.color }}>
-      {s.label}
-    </span>
+    <Section title="Messages" subtitle="With the office, about this job">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '46vh', overflowY: 'auto', marginBottom: 10 }}>
+        {failed ? <div className="wf-subtle">Messages need signal. Try again when you have it.</div>
+          : messages === null ? <div className="wf-subtle">Loading…</div>
+          : messages.length === 0 ? <div className="wf-subtle">No messages yet. Ask the office anything about this job.</div>
+          : messages.map((m) => {
+            const mine = m.sender_role === 'contractor';
+            return (
+              <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '84%', padding: '9px 13px', borderRadius: 14,
+                  background: mine ? 'var(--wf-navy)' : '#F1EEE6', color: mine ? '#fff' : 'var(--wf-text)',
+                }}>
+                  {!mine && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--wf-gold-dark)' }}>{m.sender_name}</div>}
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                  <div style={{ fontSize: 10.5, opacity: 0.65, marginTop: 3, textAlign: 'right' }}>
+                    {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        <div ref={bottom} />
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <textarea className="wf-input" rows={2} value={draft} placeholder="Message the office…" style={{ flex: 1, resize: 'none' }}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
+        <button className="wf-btn wf-btn-navy" onClick={send} disabled={sending || !draft.trim()} aria-label="Send"><Send size={17} /></button>
+      </div>
+    </Section>
   );
 }
 
-// ── Pay ─────────────────────────────────────────────────────────────────────
+// ── Pay history (their own pay only — never on a job) ──────────────────────
 
-function PayTab({ payments }: { payments: TechPayment[] }) {
+function PayTab({ payments, summary }: { payments: TechPayment[]; summary: TechSummary | null }) {
   const years = useMemo(() => paymentsByYear(payments), [payments]);
-
-  if (payments.length === 0) {
-    return <Empty>No payments recorded yet.</Empty>;
-  }
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-      {years.map((y) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {summary && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div className="wf-card" style={{ padding: 14 }}>
+            <div className="wf-label">Paid this year</div>
+            <div className="wf-display" style={{ fontSize: 22, fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(summary.paid_this_year)}</div>
+          </div>
+          <div className="wf-card" style={{ padding: 14 }}>
+            <div className="wf-label">Paid all time</div>
+            <div className="wf-display" style={{ fontSize: 22, fontWeight: 700 }}>{fmtMoney(summary.paid_all_time)}</div>
+          </div>
+          <div className="wf-card" style={{ padding: 14 }}>
+            <div className="wf-label">Jobs worked</div>
+            <div className="wf-display" style={{ fontSize: 22, fontWeight: 700 }}>{summary.jobs_total}</div>
+          </div>
+        </div>
+      )}
+      {payments.length === 0 ? <Empty icon={<Wallet size={34} />} title="No payments recorded yet" /> : years.map((y) => (
         <div key={y.year}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-            <SectionHead noMargin>{y.year}</SectionHead>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--teal)' }}>{fmtMoney(y.total)}</div>
+            <h3 className="wf-title" style={{ fontSize: 17 }}>{y.year}</h3>
+            <div className="wf-display" style={{ fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(y.total)}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {y.payments.map((p) => (
-              <div key={p.id} className="glass card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>
-                    {p.wo_title || p.wo_site || (p.wo_number ? `WO ${p.wo_number}` : 'Payment')}
+              <div key={p.id} className="wf-card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>{p.wo_title || p.wo_site || (p.wo_number ? `WO ${p.wo_number}` : 'Payment')}</div>
+                  <div className="wf-subtle" style={{ fontSize: 12.5 }}>
+                    {[p.payment_date && fmtDate(p.payment_date), p.wo_number && `WO ${p.wo_number}`, p.method].filter(Boolean).join(' · ')}
                   </div>
-                  <div style={{ fontSize: 12, color: '#888', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: '2px 8px' }}>
-                    {p.payment_date && <span>{fmtDate(p.payment_date)}</span>}
-                    {p.wo_number && <span>· WO {p.wo_number}</span>}
-                    {p.method && <span>· {p.method}</span>}
-                  </div>
-                  {p.notes && <div style={{ fontSize: 11, color: '#999', marginTop: 3 }}>{p.notes}</div>}
+                  {p.notes && <div className="wf-subtle" style={{ fontSize: 12 }}>{p.notes}</div>}
                 </div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: '#047857', flexShrink: 0 }}>
-                  {fmtMoney(p.amount)}
-                </div>
+                <div className="wf-display" style={{ fontSize: 17, fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(p.amount)}</div>
               </div>
             ))}
           </div>
@@ -491,168 +701,65 @@ function ProfileTab({ profile, onSaved }: { profile: TechProfile; onSaved: (p: T
   const [state, setState] = useState(profile.state ?? '');
   const [zip, setZip] = useState(profile.zip ?? '');
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
 
   const save = async () => {
-    setSaving(true); setMsg(null);
+    setSaving(true);
     try {
       await saveTechProfile({ phone, address, city, state, zip });
       onSaved({ ...profile, phone, address, city, state, zip });
-      setMsg('Saved.');
+      toastSuccess('Saved. The office has your new details.');
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Couldn't save.");
+      toastError(isNoSignal(e) ? 'No signal — try saving again when you have it.' : "Couldn't save your details.");
     }
     setSaving(false);
   };
 
+  const field = (label: string, value: string, set: (v: string) => void, mode?: 'tel' | 'numeric') => (
+    <label style={{ display: 'block' }}>
+      <span className="wf-label" style={{ display: 'block', marginBottom: 4 }}>{label}</span>
+      <input className="wf-input" value={value} onChange={(e) => set(e.target.value)} inputMode={mode} />
+    </label>
+  );
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div className="glass card" style={{ padding: 16 }}>
-        <SectionHead noMargin>Your details</SectionHead>
-        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <ReadOnly label="Name" value={profile.name} />
-          <ReadOnly label="Email" value={profile.email ?? '—'} />
-          {profile.business_name && <ReadOnly label="Business" value={profile.business_name} />}
-          <div>
-            <label style={LABEL}>Phone</label>
-            <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
-          </div>
-          <div>
-            <label style={LABEL}>Address</label>
-            <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} />
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 640 }}>
+      <Section title="Your details">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div><div className="wf-label">Name</div><div style={{ fontWeight: 600 }}>{profile.name}</div></div>
+          <div><div className="wf-label">Email</div><div style={{ fontWeight: 600 }}>{profile.email ?? '—'}</div></div>
+          {profile.business_name && <div><div className="wf-label">Business</div><div style={{ fontWeight: 600 }}>{profile.business_name}</div></div>}
+          {field('Phone', phone, setPhone, 'tel')}
+          {field('Street address', address, setAddress)}
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8 }}>
-            <div>
-              <label style={LABEL}>City</label>
-              <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
-            </div>
-            <div>
-              <label style={LABEL}>State</label>
-              <input className="input" value={state} onChange={(e) => setState(e.target.value)} />
-            </div>
-            <div>
-              <label style={LABEL}>ZIP</label>
-              <input className="input" value={zip} onChange={(e) => setZip(e.target.value)} inputMode="numeric" />
-            </div>
+            {field('City', city, setCity)}
+            {field('State', state, setState)}
+            {field('ZIP', zip, setZip, 'numeric')}
           </div>
-          {msg && <div style={{ fontSize: 12, color: msg === 'Saved.' ? '#047857' : '#b91c1c' }}>{msg}</div>}
-          <button className="btn btn-primary" onClick={save} disabled={saving} style={{ justifyContent: 'center', padding: '10px 0' }}>
-            <Save size={14} /> {saving ? 'Saving…' : 'Save changes'}
-          </button>
+          <button className="wf-btn wf-btn-navy" onClick={save} disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save details'}</button>
         </div>
-      </div>
-
-      <div className="glass card" style={{ padding: 16 }}>
-        <SectionHead noMargin>Paperwork</SectionHead>
-        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-          <CheckRow ok={!!profile.w9_received} label="W-9 on file"
-            detail={profile.w9_submitted_at ? `Submitted ${fmtDate(profile.w9_submitted_at)}` : 'Not received yet'} />
-          <CheckRow ok={!!profile.contract_signed_at} label="Contractor agreement"
-            detail={profile.contract_signed_at ? `Signed ${fmtDate(profile.contract_signed_at)}` : 'Not signed yet'} />
+      </Section>
+      <Section title="Paperwork">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Check ok={!!profile.w9_received} label="W-9 on file" detail={profile.w9_submitted_at ? `Submitted ${fmtDate(profile.w9_submitted_at)}` : 'Not received yet'} />
+          <Check ok={!!profile.contract_signed_at} label="Contractor agreement" detail={profile.contract_signed_at ? `Signed ${fmtDate(profile.contract_signed_at)}` : 'Not signed yet'} />
         </div>
-        <div style={{ marginTop: 12, fontSize: 11, color: '#999', lineHeight: 1.5 }}>
-          Banking and tax ID details are never shown here. To change them, use the
-          secure W-9 link Fred sends you.
+        <div className="wf-subtle" style={{ fontSize: 12, marginTop: 12 }}>
+          Your W-9 has your Social Security or tax number, so it is filed through the secure W-9 page — never kept on this phone.
+          You are paid by direct deposit through QuickBooks, which collects your bank details itself.
         </div>
-      </div>
+      </Section>
     </div>
   );
 }
 
-function CheckRow({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
+function Check({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-      <CheckCircle2 size={16} color={ok ? '#047857' : '#ccc'} style={{ flexShrink: 0 }} />
-      <div style={{ minWidth: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <CheckCircle2 size={20} color={ok ? 'var(--wf-success)' : '#C9C4B8'} />
+      <div>
         <div style={{ fontWeight: 600 }}>{label}</div>
-        <div style={{ fontSize: 11, color: '#999' }}>{detail}</div>
+        <div className="wf-subtle" style={{ fontSize: 12 }}>{detail}</div>
       </div>
     </div>
   );
 }
-
-function ReadOnly({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <label style={LABEL}>{label}</label>
-      <div style={{ fontSize: 14, fontWeight: 600, padding: '2px 0' }}>{value}</div>
-    </div>
-  );
-}
-
-// ── Small shared pieces ─────────────────────────────────────────────────────
-
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div className="glass card" style={{ padding: '12px 14px' }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: '#999', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: accent ? 'var(--teal)' : '#333', marginTop: 3 }}>{value}</div>
-    </div>
-  );
-}
-
-function MenuItem({ icon, label, badge, danger, attention, onClick }: {
-  icon: React.ReactNode; label: string; badge?: number;
-  danger?: boolean; attention?: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      role="menuitem" onClick={onClick}
-      style={{
-        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-        padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer',
-        fontSize: 13.5, fontWeight: 600, textAlign: 'left',
-        color: danger ? '#b91c1c' : '#333',
-      }}
-    >
-      <span style={{ color: danger ? '#b91c1c' : attention ? '#b45309' : 'var(--teal)', display: 'flex' }}>{icon}</span>
-      <span style={{ flex: 1 }}>{label}</span>
-      {badge != null && badge > 0 && (
-        <span style={{
-          borderRadius: 999, fontSize: 10, fontWeight: 800, padding: '2px 7px',
-          background: attention ? 'rgba(245,158,11,0.18)' : 'rgba(13,115,119,0.10)',
-          color: attention ? '#92400e' : 'var(--teal)',
-        }}>
-          {badge}
-        </span>
-      )}
-    </button>
-  );
-}
-
-/** "Jere Jones" becomes "JJ", for the menu button. */
-function initials(name: string | null | undefined): string {
-  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '.';
-  return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase();
-}
-
-function SectionHead({ children, noMargin }: { children: React.ReactNode; noMargin?: boolean }) {
-  return (
-    <div style={{
-      fontSize: 10, fontWeight: 800, letterSpacing: 1.2, color: 'var(--teal)',
-      textTransform: 'uppercase', marginBottom: noMargin ? 0 : 9,
-    }}>{children}</div>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="glass card" style={{ textAlign: 'center', padding: '30px 20px', color: '#aaa', fontSize: 13, marginBottom: 20 }}>
-      {children}
-    </div>
-  );
-}
-
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ textAlign: 'center' }}>{children}</div>
-    </div>
-  );
-}
-
-const LABEL: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#555',
-  textTransform: 'uppercase', display: 'block', marginBottom: 4,
-};

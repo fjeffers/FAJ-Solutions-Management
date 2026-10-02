@@ -8,6 +8,8 @@ import { WO_STATUSES } from '@/lib/types';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
 import { backdropClose } from '@/lib/backdrop';
 import WorkBoard from '@/components/WorkBoard';
+import WorkFlowView from '@/components/WorkFlowView';
+import { Workflow } from 'lucide-react';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -33,7 +35,7 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onOpenCrew,
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred',
 }: {
   workOrders: EnrichedWorkOrder[];
   /** Pre-fill the search, so a link can point at one work order. */
@@ -56,20 +58,31 @@ export default function WorkOrdersView({
   onReassign: (w: EnrichedWorkOrder, from: string, to: string) => Promise<void>;
   /** Needed to know what each tech has already been paid on a job. */
   payments?: Payment[];
-  /** Crew-project cards on the board open Crew Projects. */
-  onOpenCrew?: () => void;
+  /** Reload the jobs after a change made on the WorkFlow screen. */
+  onRefresh: () => Promise<void> | void;
+  /** For the WorkFlow greeting. */
+  ownerFirstName?: string;
 }) {
-  // Board (columns by stage, crew sites included) or the original list.
-  // Remembered on this device; the board is the default.
-  const [mode, setMode] = useState<'board' | 'list'>('board');
+  // WorkFlow (Fred, 2026-10-02: "rename to WorkFlow, I like it and keep it")
+  // is the default; the board and the original list are one tap away. A new
+  // storage key, so a device that last chose the list still opens on WorkFlow.
+  const [mode, setMode] = useState<'workflow' | 'board' | 'list'>('workflow');
   useEffect(() => {
-    try { if (localStorage.getItem('wo-view-mode') === 'list') setMode('list'); } catch { /* private window */ }
+    try {
+      const m = localStorage.getItem('wo-view-mode-v2');
+      if (m === 'board' || m === 'list') setMode(m);
+    } catch { /* private window */ }
   }, []);
-  const chooseMode = (m: 'board' | 'list') => {
+  const chooseMode = (m: 'workflow' | 'board' | 'list') => {
     setMode(m);
-    try { localStorage.setItem('wo-view-mode', m); } catch { /* private window */ }
+    try { localStorage.setItem('wo-view-mode-v2', m); } catch { /* private window */ }
   };
   const [aiOpen, setAiOpen] = useState(false);
+  // The job open on WorkFlow's job screen — from the WorkFlow list or a Board
+  // card. A link to one work order (?wo=…) opens it straight away.
+  const [wfOpen, setWfOpen] = useState<string | null>(() =>
+    initialSearch ? workOrders.find((w) => w.wo_number === initialSearch)?.id ?? null : null);
+  const showWf = mode === 'workflow' || wfOpen !== null;
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
   // looking at that work order rather than at a list to hunt through.
@@ -120,7 +133,8 @@ export default function WorkOrdersView({
 
   return (
     <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
-      {/* ── Header ── */}
+      {/* ── Header (Board and List; WorkFlow has its own) ── */}
+      {!showWf && (
       <div style={{ marginBottom: 28 }}>
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>WORK ORDERS</div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -135,7 +149,7 @@ export default function WorkOrdersView({
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <div role="group" aria-label="How to show work orders" style={{ display: 'flex', borderRadius: 999, border: '1px solid rgba(13,115,119,0.25)', overflow: 'hidden' }}>
-              {([['board', 'Board', <Columns3 key="b" size={14} />], ['list', 'List', <List key="l" size={14} />]] as const).map(([m, label, icon]) => (
+              {([['workflow', 'WorkFlow', <Workflow key="w" size={14} />], ['board', 'Board', <Columns3 key="b" size={14} />], ['list', 'List', <List key="l" size={14} />]] as const).map(([m, label, icon]) => (
                 <button
                   key={m} onClick={() => chooseMode(m)} aria-pressed={mode === m}
                   style={{
@@ -150,6 +164,41 @@ export default function WorkOrdersView({
           </div>
         </div>
       </div>
+      )}
+
+      {showWf && (
+        <div className="wf">
+          <WorkFlowView
+            workOrders={workOrders}
+            contractors={contractors}
+            ownerFirstName={ownerFirstName}
+            initialSearch={initialSearch}
+            owedToTechs={stats.remaining}
+            modeSwitch={
+              <div role="group" aria-label="How to show work orders" className="wf-filters">
+                {([['workflow', 'WorkFlow'], ['board', 'Board'], ['list', 'List']] as const).map(([m, label]) => (
+                  <button key={m} className="wf-filter" aria-pressed={mode === m} onClick={() => chooseMode(m)}>{label}</button>
+                ))}
+              </div>
+            }
+            onAdd={onAdd}
+            onAI={() => setAiOpen(true)}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onDuplicate={onDuplicate}
+            onPay={onPay}
+            onSend={openSendModal}
+            onSendPortal={onSendPortal}
+            onArchive={onArchive}
+            onUnarchive={onUnarchive}
+            onCloseJob={onCloseJob}
+            onReassign={(w) => setReassigning(w)}
+            onRefresh={onRefresh}
+            openId={wfOpen}
+            onOpenChange={setWfOpen}
+          />
+        </div>
+      )}
 
       {aiOpen && (
         <AIGenerateModal
@@ -158,7 +207,7 @@ export default function WorkOrdersView({
         />
       )}
 
-      {mode === 'board' && (
+      {!showWf && mode === 'board' && (
         <>
           <div className="glass card" style={{ marginBottom: 16, padding: '12px 16px', position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
@@ -170,20 +219,17 @@ export default function WorkOrdersView({
           </div>
           <WorkBoard
             workOrders={sorted.filter((w) => w.archived_at === null && matchesSearch(w, search))}
-            contractors={contractors}
             owedToTechs={stats.remaining}
-            onEdit={onEdit}
-            onOpenCrew={onOpenCrew}
-            search={search}
+            onEdit={(w) => { setWfOpen(w.id); window.scrollTo({ top: 0 }); }}
           />
           <div style={{ fontSize: 12, color: '#888', marginTop: 12 }}>
-            Click a work order to open it. Sending, paying, closing and archiving are on each job and in the List view.
+            Click a work order to open it in WorkFlow, where sending, paying, closing and archiving are.
             Closed jobs ({archivedCount}) are in the List view under Closed.
           </div>
         </>
       )}
 
-      {mode === 'list' && (<>
+      {!showWf && mode === 'list' && (<>
       {/* ── FieldNation-style status board tabs ── */}
       <div className="glass card" style={{ marginBottom: 20, padding: '0 16px' }}>
         <div style={{ display: 'flex', gap: 2, overflowX: 'auto', borderBottom: '1px solid #eee' }}>

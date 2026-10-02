@@ -8,7 +8,7 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
-import { BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog } from 'lucide-react';
+import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -1435,7 +1435,8 @@ Go ahead?`)) return;
             <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
             <NI k="sitelog"    icon={<Timer size={15} />}     label="Site Log" />
             <NI k="crew"       icon={<Users size={15} />}     label="Crew Projects" />
-            <NI k="workorders" icon={<Briefcase size={15} />} label="Work Orders" />
+            {/* Fred, 2026-10-02: "rename to WorkFlow, I like it and keep it". */}
+            <NI k="workorders" icon={<Workflow size={15} />} label="WorkFlow" />
             <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
             <NI k="team"       icon={<UserCog size={15} />}   label="Team" />
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
@@ -1676,7 +1677,7 @@ Go ahead?`)) return;
             onArchive={handleArchive}
             onCloseJob={closeWorkOrder}
             onUnarchive={handleUnarchive}
-            onOpenCrew={() => navigate('crew')}
+            onRefresh={loadAll}
           />
         )}
         {view === 'payments' && (

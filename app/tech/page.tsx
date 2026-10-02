@@ -27,6 +27,7 @@ import {
   fullAddress, type WfJob, type WfStatus, type WfTask,
 } from '@/lib/wf';
 import { fmtMoney, fmtDate } from '@/lib/utils';
+import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
 import TechChat from '@/components/TechChat';
@@ -723,6 +724,7 @@ function ProfileTab({ profile, onSaved }: { profile: TechProfile; onSaved: (p: T
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 640 }}>
+      <UsernameCard />
       <Section title="Your details">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div><div className="wf-label">Name</div><div style={{ fontWeight: 600 }}>{profile.name}</div></div>
@@ -761,5 +763,54 @@ function Check({ ok, label, detail }: { ok: boolean; label: string; detail: stri
         <div className="wf-subtle" style={{ fontSize: 12 }}>{detail}</div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Pick or change the username used to sign in (migration-099). Logins made
+ * before usernames existed sign in by email until one is picked here.
+ */
+function UsernameCard() {
+  const [current, setCurrent] = useState<string | null | undefined>(undefined);
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    createClient().rpc('my_username').then(({ data, error }) => {
+      if (error) { setCurrent(null); return; }
+      setCurrent((data as string | null) ?? null);
+      setValue((data as string | null) ?? '');
+    });
+  }, []);
+
+  const save = async () => {
+    const problem = usernameProblem(value);
+    if (problem) { toastError(problem); return; }
+    setSaving(true);
+    const { data, error } = await createClient().rpc('set_my_username', { p_username: value });
+    setSaving(false);
+    const r = (data ?? {}) as { ok?: boolean; reason?: string; username?: string };
+    if (error) { toastError(isNoSignal(error) ? 'No signal — try again when you have it.' : "Couldn't save your username."); return; }
+    if (!r.ok) {
+      toastError(r.reason === 'taken' ? 'That username is taken. Try another.' : usernameProblem(value) ?? "Couldn't save your username.");
+      return;
+    }
+    setCurrent(r.username ?? value);
+    setValue(r.username ?? value);
+    toastSuccess(`Saved. Sign in with "${r.username}" from now on.`);
+  };
+
+  return (
+    <Section title="Your login" subtitle={current ? `You sign in as ${current}` : 'Pick a username to sign in with'}>
+      <label style={{ display: 'block' }}>
+        <span className="wf-label" style={{ display: 'block', marginBottom: 4 }}>Username</span>
+        <input className="wf-input" value={value} onChange={(e) => setValue(e.target.value)}
+          autoCapitalize="none" spellCheck={false} placeholder="e.g. jere.jones" />
+      </label>
+      <div className="wf-subtle" style={{ fontSize: 12, margin: '4px 0 10px' }}>{USERNAME_RULE}. You can still sign in with your email too.</div>
+      <button className="wf-btn wf-btn-navy" onClick={save} disabled={saving || current === undefined || value.trim().toLowerCase() === (current ?? '')}>
+        <Save size={16} /> {saving ? 'Saving…' : current ? 'Change username' : 'Save username'}
+      </button>
+    </Section>
   );
 }

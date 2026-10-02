@@ -20,6 +20,7 @@ export default function AssistantAdminView() {
   const supabase = createClient();
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [tasks, setTasks] = useState<(StaffTask & { staff_id: string | null })[]>([]);
+  const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   const [name, setName] = useState('');
@@ -34,14 +35,19 @@ export default function AssistantAdminView() {
   const signInLink = typeof window !== 'undefined' ? `${window.location.origin}/assistant/login` : '/assistant/login';
 
   const load = async () => {
-    const [s, t] = await Promise.all([
+    const [s, t, a] = await Promise.all([
       supabase.from('staff_members').select('id, name, email, enabled, auth_user_id, last_login_at, created_at').order('created_at'),
       supabase.from('staff_tasks').select('id, staff_id, title, details, due_date, status, done_at, done_note, created_at')
         .order('status').order('due_date', { ascending: true, nullsFirst: false }).order('created_at'),
+      // Every sign-in, job change and finished task (migrations 092-093).
+      supabase.from('audit_log').select('id, action, entity_type, details, created_at')
+        .not('details->by_assistant', 'is', null)
+        .order('created_at', { ascending: false }).limit(200),
     ]);
     if (s.error || t.error) toastError("Couldn't load the assistant screen. Refresh to try again.");
     setStaff((s.data ?? []) as StaffMember[]);
     setTasks((t.data ?? []) as (StaffTask & { staff_id: string | null })[]);
+    setActivity((a.data ?? []) as ActivityRow[]);
     setLoaded(true);
   };
 
@@ -230,8 +236,55 @@ export default function AssistantAdminView() {
           })}
         </div>
       </div>
+
+      {/* ── Everything they did ── */}
+      <div className="glass card" style={{ padding: 20, marginTop: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>Everything they did</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
+          Every sign-in, every change to a job, and every task they finished or reopened. Newest first.
+        </div>
+        {loaded && activity.length === 0 && <div style={{ fontSize: 13, color: '#888' }}>Nothing yet.</div>}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {activity.map((row) => (
+            <div key={row.id} style={{ display: 'flex', gap: 12, padding: '9px 0', borderBottom: '1px solid rgba(0,0,0,0.05)', fontSize: 13 }}>
+              <div style={{ width: 132, flexShrink: 0, color: '#999', fontSize: 12 }}>
+                {new Date(row.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div>{row.details?.label ?? row.action}</div>
+                {activityChanges(row).length > 0 && (
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                    {activityChanges(row).map(([k, v]) => <div key={k}>{k}: <b>{v || '(cleared)'}</b></div>)}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
+}
+
+interface ActivityRow {
+  id: string;
+  action: string;
+  entity_type: string;
+  created_at: string;
+  details: Record<string, string | null> & { label?: string; by_assistant?: string };
+}
+
+/** The changed fields on a job edit, in words, e.g. ["Scheduled date", "2026-10-20"]. */
+const FIELD_NAMES: Record<string, string> = {
+  scheduled_date: 'Scheduled date', start_time: 'Start time', end_time: 'End time',
+  poc_name: 'Site contact', poc_phone: 'Contact phone', poc_email: 'Contact email',
+  access_instructions: 'How to get in', parking_instructions: 'Parking',
+  special_instructions: 'Special instructions', note: 'Their note',
+};
+function activityChanges(row: ActivityRow): [string, string][] {
+  return Object.entries(row.details ?? {})
+    .filter(([k, v]) => k in FIELD_NAMES && !(k === 'note' && !v))
+    .map(([k, v]) => [FIELD_NAMES[k], String(v ?? '')]);
 }
 
 const LABEL: React.CSSProperties = {

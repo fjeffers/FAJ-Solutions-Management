@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { BOARD_COLUMNS, woColumn, crewColumn, taskProgress, boardCounts, type ColumnKey } from '@/lib/work-board';
+import { BOARD_COLUMNS, woColumn, crewColumn, taskProgress, boardCounts, hasTech, type ColumnKey } from '@/lib/work-board';
 import { todayEastern } from '@/lib/assistant';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { EnrichedWorkOrder, Contractor } from '@/lib/types';
@@ -76,7 +76,7 @@ export default function WorkBoard({ workOrders, contractors, owedToTechs, onEdit
   const counts = boardCounts(workOrders, shownSites, today);
 
   const cards: Card[] = useMemo(() => [
-    ...workOrders.map((wo): Card => ({ kind: 'wo', id: wo.id, col: woColumn(wo.wo_status), sort: (wo.scheduled_date ?? '9999') + wo.wo_number, wo })),
+    ...workOrders.map((wo): Card => ({ kind: 'wo', id: wo.id, col: woColumn(wo.wo_status, hasTech(wo)), sort: (wo.scheduled_date ?? '9999') + wo.wo_number, wo })),
     ...shownSites.map((site): Card => ({ kind: 'crew', id: site.id, col: crewColumn(site.status), sort: (site.week_start ?? '9999') + site.name, site })),
   ].sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0)), [workOrders, shownSites]);
 
@@ -87,7 +87,8 @@ export default function WorkBoard({ workOrders, contractors, owedToTechs, onEdit
         <Kpi icon={<Inbox size={18} />} label="Needs a tech" value={String(counts.needsTech)} tone={counts.needsTech > 0 ? 'warn' : 'ok'} />
         <Kpi icon={<CalendarDays size={18} />} label="Scheduled this week" value={String(counts.thisWeek)} />
         <Kpi icon={<CheckCircle2 size={18} />} label="Work done: close & bill" value={String(counts.readyToClose)} tone={counts.readyToClose > 0 ? 'act' : 'ok'} />
-        <Kpi icon={<Wallet size={18} />} label="Still owed to techs" value={fmtMoney(owedToTechs)} tone={owedToTechs > 0 ? 'warn' : 'ok'} />
+        <Kpi icon={<Wallet size={18} />} label="Still owed to techs" value={fmtMoney(owedToTechs)} tone={owedToTechs > 0 || counts.paySetMissing > 0 ? 'warn' : 'ok'}
+          note={counts.paySetMissing > 0 ? `+ ${counts.paySetMissing} job${counts.paySetMissing === 1 ? '' : 's'} with no tech pay set` : undefined} />
       </div>
 
       {/* ── Columns: side by side on a computer, swipe across on a phone ── */}
@@ -150,7 +151,12 @@ function WoCard({ w, accent, onOpen }: { w: EnrichedWorkOrder; accent: string; o
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 9, paddingTop: 8, borderTop: '1px solid #f1f1f1', gap: 6 }}>
         <span style={{ fontWeight: 800, fontSize: 13 }}>{Number(w.total_amount) > 0 ? fmtMoney(Number(w.total_amount)) : <span style={{ color: '#aaa', fontWeight: 500 }}>No price</span>}</span>
-        {afterWork && (
+        {afterWork && techs.length > 0 && (w.pay_set === false && w.payment_status !== 'paid' ? (
+          // No pay figure recorded: what the tech is owed is unknown, not zero.
+          <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: 'rgba(245,158,11,0.14)', color: '#b45309' }}>
+            Pay not set
+          </span>
+        ) : (
           <span style={{
             fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 999,
             background: w.payment_status === 'paid' ? 'rgba(16,185,129,0.12)' : w.payment_status === 'partial' ? 'rgba(245,158,11,0.14)' : 'rgba(239,68,68,0.1)',
@@ -158,7 +164,7 @@ function WoCard({ w, accent, onOpen }: { w: EnrichedWorkOrder; accent: string; o
           }}>
             {w.payment_status === 'paid' ? 'Tech paid' : w.payment_status === 'partial' ? 'Tech part-paid' : 'Tech not paid'}
           </span>
-        )}
+        ))}
       </div>
     </button>
   );
@@ -182,7 +188,7 @@ function CrewCard({ s, onOpen }: { s: BoardSite; onOpen?: () => void }) {
   );
 }
 
-function Kpi({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone?: 'ok' | 'warn' | 'act' }) {
+function Kpi({ icon, label, value, tone, note }: { icon: React.ReactNode; label: string; value: string; tone?: 'ok' | 'warn' | 'act'; note?: string }) {
   const color = tone === 'warn' ? '#b45309' : tone === 'act' ? '#4338ca' : 'var(--teal)';
   const bg = tone === 'warn' ? 'rgba(245,158,11,0.12)' : tone === 'act' ? 'rgba(99,102,241,0.12)' : 'rgba(13,115,119,0.1)';
   return (
@@ -191,6 +197,7 @@ function Kpi({ icon, label, value, tone }: { icon: React.ReactNode; label: strin
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.6, color: '#999', textTransform: 'uppercase' }}>{label}</div>
         <div style={{ fontSize: 21, fontWeight: 800, color }}>{value}</div>
+        {note && <div style={{ fontSize: 11, color: '#b45309', fontWeight: 700, marginTop: 1 }}>{note}</div>}
       </div>
     </div>
   );

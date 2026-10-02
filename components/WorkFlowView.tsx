@@ -10,7 +10,7 @@
 // functions the tech portal uses (migration-098), so both sides always agree.
 import { useMemo, useState, type ReactNode } from 'react';
 import {
-  Archive, ArchiveRestore, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, MessageSquare, Navigation,
+  Archive, ArchiveRestore, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, MessageSquare, MoreHorizontal, Navigation,
   Plus, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -217,22 +217,15 @@ function OwnerJob({
   const archived = !!w.archived_at;
   const address = fullAddress(job);
 
+  // Fred, 2026-10-02: "make it readable and manageable". The everyday
+  // buttons stay in view; the rarer ones sit under More.
   const actions = (
     <>
+      <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => onEdit(w)}><Edit2 size={15} /> Edit job</button>
       <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setChatOpen((v) => !v)} aria-pressed={chatOpen}>
         <MessageSquare size={15} /> Messages
       </button>
-      {address && (
-        <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={15} /> Directions</a>
-      )}
-      <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => onEdit(w)}><Edit2 size={15} /> Edit job</button>
       <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onSend(w)}><Send size={15} /> Send to tech</button>
-      {canSendPortal && (
-        <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={portalBusy}
-          onClick={async () => { setPortalBusy(true); try { await onSendPortal(w); } finally { setPortalBusy(false); } }}>
-          <CalendarDays size={15} /> {portalBusy ? 'Sending…' : 'Portal link'}
-        </button>
-      )}
       {w.remaining > 0 && (
         <button className="wf-btn wf-btn-success wf-btn-sm" onClick={() => onPay(w)}><DollarSign size={15} /> Pay tech</button>
       )}
@@ -242,13 +235,18 @@ function OwnerJob({
           <CheckCircle2 size={15} /> Close job
         </button>
       )}
-      <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onDuplicate(w)}><Copy size={15} /> Duplicate</button>
-      {archived
-        ? <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onUnarchive(w.id)}><ArchiveRestore size={15} /> Restore</button>
-        : <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onArchive(w.id)}><Archive size={15} /> Archive</button>}
-      <button className="wf-btn wf-btn-warn wf-btn-sm" onClick={() => { if (confirm(`Delete WO ${w.wo_number}? This cannot be undone.`)) onDelete(w.id); }}>
-        <Trash2 size={15} /> Delete
-      </button>
+      <MoreMenu items={[
+        address ? { label: 'Directions', icon: <Navigation size={15} />, href: mapsDirections(job) } : null,
+        canSendPortal ? {
+          label: portalBusy ? 'Sending portal link…' : 'Send portal link', icon: <CalendarDays size={15} />,
+          onClick: async () => { setPortalBusy(true); try { await onSendPortal(w); } finally { setPortalBusy(false); } },
+        } : null,
+        { label: 'Duplicate', icon: <Copy size={15} />, onClick: () => onDuplicate(w) },
+        archived
+          ? { label: 'Restore from Closed', icon: <ArchiveRestore size={15} />, onClick: () => onUnarchive(w.id) }
+          : { label: 'Archive', icon: <Archive size={15} />, onClick: () => onArchive(w.id) },
+        { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => { if (confirm(`Delete WO ${w.wo_number}? This cannot be undone.`)) onDelete(w.id); } },
+      ]} />
     </>
   );
 
@@ -436,5 +434,41 @@ function TechPicker({ w, job, contractors, onClose, onSaved, onReassign }: {
         New techs get the job as an offer to accept in their portal. Pay left blank shows as &ldquo;Pay not set&rdquo; until you fill it in.
       </div>
     </Dialog>
+  );
+}
+
+type MoreItem = { label: string; icon: ReactNode; onClick?: () => void; href?: string; danger?: boolean };
+
+/** "More ▾": the job's less frequent buttons, out of the way until needed. */
+function MoreMenu({ items }: { items: (MoreItem | null)[] }) {
+  const [open, setOpen] = useState(false);
+  const list = items.filter((i): i is MoreItem => !!i);
+  const row: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', background: 'none',
+    font: 'inherit', fontSize: 14, fontWeight: 500, textAlign: 'left', cursor: 'pointer', textDecoration: 'none', color: 'var(--wf-text)',
+  };
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className="wf-btn wf-btn-outline wf-btn-sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <MoreHorizontal size={16} /> More
+      </button>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 30 }} onClick={() => setOpen(false)} />
+          <div role="menu" className="wf-card" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 31, minWidth: 220, padding: '6px 0', boxShadow: '0 12px 36px rgba(14,27,46,0.16)' }}>
+            {list.map((i) => i.href ? (
+              <a key={i.label} role="menuitem" href={i.href} target="_blank" rel="noopener noreferrer" style={row} onClick={() => setOpen(false)}>
+                {i.icon} {i.label}
+              </a>
+            ) : (
+              <button key={i.label} role="menuitem" style={{ ...row, color: i.danger ? 'var(--wf-danger)' : row.color }}
+                onClick={() => { setOpen(false); i.onClick?.(); }}>
+                {i.icon} {i.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

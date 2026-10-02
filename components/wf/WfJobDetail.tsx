@@ -76,22 +76,23 @@ export function TimeClockCard({ job, enabled, busy, onToggle }: {
   }, [on]);
   const total = workedMs(job, now);
   const since = job.checkedInAt ? new Date(job.checkedInAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+  // Fred, 2026-10-02: "timer is too big … make it readable and manageable".
+  // One compact row: the time and what it means on the left, the button on the
+  // right. On a narrow phone the button drops underneath, full width.
   return (
-    <div className="wf-card" style={{ padding: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Timer size={20} color="var(--wf-navy)" />
-        <div style={{ fontWeight: 600, fontSize: 15 }}>Time in / out</div>
-      </div>
-      {/* Fred, 2026-10-02: "timer is too big" — 40px became 26px. */}
-      <div className="wf-display" style={{ fontSize: 26, fontWeight: 600, textAlign: 'center', margin: '8px 0 0', fontVariantNumeric: 'tabular-nums', color: on ? 'var(--wf-navy)' : 'var(--wf-text)' }}>
-        {formatClock(total)}
-      </div>
-      <div className="wf-subtle" style={{ textAlign: 'center', fontSize: 12.5 }}>
-        {on ? `Clocked in since ${since}` : job.checkedInAt ? 'Total time logged on this job' : 'Not started yet'}
+    <div className="wf-card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <Timer size={22} color={on ? 'var(--wf-gold)' : 'var(--wf-subtle)'} style={{ flexShrink: 0 }} />
+      <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+        <div className="wf-display" style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums', color: on ? 'var(--wf-navy)' : 'var(--wf-text)' }}>
+          {formatClock(total)}
+        </div>
+        <div className="wf-subtle" style={{ fontSize: 12.5 }}>
+          {on ? `On the clock since ${since}` : job.checkedInAt ? 'Time logged on this job' : 'Not started yet'}
+        </div>
       </div>
       <button
         className={`wf-btn ${on ? 'wf-btn-danger' : 'wf-btn-gold'}`}
-        style={{ width: '100%', marginTop: 10 }}
+        style={{ flex: '1 1 140px', maxWidth: 220 }}
         disabled={!enabled || busy}
         onClick={onToggle}
       >
@@ -240,10 +241,11 @@ export default function WfJobDetail({
   return (
     <div className="wf-rise">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={onBack} aria-label="Back to the list" style={{ width: 40, padding: 0, borderRadius: 999 }}>
-          <ArrowLeft size={18} />
+        {/* The WO number is in the header card below; saying it twice was clutter. */}
+        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onBack} aria-label="Back to the list">
+          <ArrowLeft size={17} /> Back
         </button>
-        <div className="wf-title" style={{ flex: 1 }}>WO {job.number}</div>
+        <div style={{ flex: 1 }} />
         {onRefresh && (
           <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onRefresh} disabled={refreshing} aria-label="Refresh">
             <RefreshCw size={17} className={refreshing ? 'spin' : undefined} />

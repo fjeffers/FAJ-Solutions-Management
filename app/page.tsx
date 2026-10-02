@@ -230,6 +230,16 @@ export default function HomePage() {
     // under their own account, invisible to Fred.
     const staffSection = await myStaffSection();
     if (staffSection) { router.replace(staffSection); return false; }
+    // Only the business owner gets the management app (Fred, 2026-10-02:
+    // "need to be separate from admin — admin sees everything, tech just sees
+    // their portal"). Any other login — a tech arriving from their
+    // confirmation email before their login is linked, or a login nobody set
+    // up — goes to the tech portal, which links a tech by email or says plainly
+    // that the login is not set up. A network error lets the owner through
+    // rather than locking Fred out of his own business; RLS still shows any
+    // other login nothing.
+    const { data: who, error: whoErr } = await supabase.rpc('wf_role');
+    if (!whoErr && (who as { role?: string } | null)?.role === 'none') { router.replace('/tech'); return false; }
 
     const [cRes, wRes, pRes, svRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),

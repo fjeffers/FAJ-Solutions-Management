@@ -41,18 +41,18 @@ export default function TechLoginPage() {
     const claim = await claimTechAccount();
     if (claim.ok) { router.push('/tech'); router.refresh(); return; }
 
-    // Not a tech. Fred's own (owner) login belongs in management, where
-    // WorkFlow is — take him there rather than turning him away (2026-10-02:
-    // he signed in here with his owner email and was signed straight out).
+    // Not a tech. The tech portal and the admin app stay separate (Fred,
+    // 2026-10-02: "need to be separate from admin"): an owner or staff login is
+    // told so and signed out here, never carried into admin from this page.
     const { data: who } = await supabase.rpc('wf_role');
     const role = (who as { role?: string } | null)?.role;
-    if (role === 'owner') { window.location.assign('/?view=workorders'); return; }
-    if (role === 'staff') { window.location.assign('/'); return; }
 
-    // Signed in, but this account is not a tech. Rather than dropping them on
-    // an empty screen, say which case it is.
-    if (claim.reason === 'no_matching_contractor') {
-      setError('Signed in, but this email is not set up as a tech yet. Ask Fred to add it to your contractor record.');
+    if (role === 'owner') {
+      setError("That's the management (owner) login. The tech portal only opens with a tech login — sign in here with a tech username.");
+    } else if (role === 'staff') {
+      setError("That login is for the office (assistant or accountant), not the tech portal.");
+    } else if (claim.reason === 'no_matching_contractor') {
+      setError("Signed in, but this login's email isn't on any tech record. Ask Fred to put this email on your tech record, then sign in again.");
     } else if (claim.reason === 'email_not_confirmed') {
       setError('Check your inbox and confirm your email address, then sign in again.');
     } else {

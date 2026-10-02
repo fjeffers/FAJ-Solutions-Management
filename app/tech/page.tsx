@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechPayments, fetchTechSummary, fetchTechUnread, fetchTechDmUnread,
-  fetchTechPortalToken, saveTechProfile, paymentsByYear, fetchTechMessages, sendTechMessage,
+  fetchTechPortalToken, saveTechProfile, paymentsByYear, fetchTechMessages, sendTechMessage, claimTechAccount,
 } from '@/lib/tech-portal';
 import { fetchWfTechJobs, registerTechHandlers, applyPending, toChatJob } from '@/lib/tech-wf';
 import {
@@ -57,6 +57,7 @@ export default function TechPortalPage() {
   const kv = useMemo(() => browserStorage(), []);
 
   const [phase, setPhase] = useState<'loading' | 'denied' | 'nodata' | 'ready'>('loading');
+  const [deniedAs, setDeniedAs] = useState<'owner' | 'other'>('other');
   const [uid, setUid] = useState<string | null>(null);
   // The installed app's "My pay" shortcut opens straight on that tab.
   const [tab, setTab] = useState<Tab>(() => {
@@ -87,11 +88,20 @@ export default function TechPortalPage() {
   const loadLive = useCallback(async (u: string, quiet: boolean) => {
     setRefreshing(true);
     try {
-      const me = await fetchTechProfile();
+      let me = await fetchTechProfile();
       if (!me) {
-        // Not a tech. The owner belongs in management, where WorkFlow is.
+        // A tech arriving straight from their confirmation email has never
+        // been through the sign-in page, so link the login to their tech
+        // record by email here (safe to repeat; it only matches a confirmed
+        // email on Fred's contractor list).
+        const claim = await claimTechAccount();
+        if (claim.ok) me = await fetchTechProfile();
+      }
+      if (!me) {
+        // Not a tech. The tech portal and the admin app stay separate: say
+        // which login this is, never carry it into admin.
         const { data } = await supabase.rpc('wf_role');
-        if ((data as { role?: string } | null)?.role === 'owner') { router.replace('/?view=workorders'); return; }
+        setDeniedAs((data as { role?: string } | null)?.role === 'owner' ? 'owner' : 'other');
         setPhase('denied');
         return;
       }
@@ -216,15 +226,30 @@ export default function TechPortalPage() {
     return (
       <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div className="wf-card" style={{ maxWidth: 420, padding: 28, textAlign: 'center' }}>
-          <div className="wf-h1" style={{ fontSize: 22 }}>Not a tech account</div>
-          <p className="wf-subtle" style={{ margin: '8px 0 18px' }}>
-            You&apos;re signed in, but this login isn&apos;t linked to a contractor record.
-            If you&apos;re a tech, ask Fred to add your email to your contractor profile.
-          </p>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <a className="wf-btn wf-btn-outline" href="/">Management app</a>
-            <button className="wf-btn wf-btn-navy" onClick={signOut}>Sign out</button>
-          </div>
+          {deniedAs === 'owner' ? (
+            <>
+              <div className="wf-h1" style={{ fontSize: 22 }}>This is the management login</div>
+              <p className="wf-subtle" style={{ margin: '8px 0 18px' }}>
+                The tech portal only opens with a tech login. Sign out, then sign in here with a tech username —
+                or go back to management, where you see everything.
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <a className="wf-btn wf-btn-outline" href="/">Back to management</a>
+                <button className="wf-btn wf-btn-navy" onClick={signOut}>Sign out</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="wf-h1" style={{ fontSize: 22 }}>Not a tech account</div>
+              <p className="wf-subtle" style={{ margin: '8px 0 18px' }}>
+                You&apos;re signed in, but this login&apos;s email isn&apos;t on any tech record.
+                If you&apos;re a tech, ask Fred to put this email on your tech record, then sign in again.
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button className="wf-btn wf-btn-navy" onClick={signOut}>Sign out</button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );

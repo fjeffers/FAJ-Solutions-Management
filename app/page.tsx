@@ -8,7 +8,7 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
-import { BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2 } from 'lucide-react';
+import { BarChart3, Briefcase, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -26,6 +26,7 @@ import AttentionPanel from '@/components/AttentionPanel';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
 import CrewProjectsView from '@/components/CrewProjectsView';
+import AssistantAdminView from '@/components/AssistantAdminView';
 import SiteLogView from '@/components/SiteLogView';
 import MaintenanceView from '@/components/MaintenanceView';
 import CustomersView from '@/components/CustomersView';
@@ -41,6 +42,7 @@ import LedgerView from '@/components/LedgerView';
 import GlobalSearch from '@/components/GlobalSearch';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
 import { belongsInTechPortal } from '@/lib/tech-portal';
+import { belongsInAssistantSection } from '@/lib/assistant';
 import { reassignWorkOrder, describeReassignment } from '@/lib/reassign';
 import ContractorModal from '@/components/ContractorModal';
 import WorkOrderModal from '@/components/WorkOrderModal';
@@ -60,6 +62,7 @@ const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'crew', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
+  'assistant',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -93,7 +96,7 @@ function viewFromUrl(): View {
 const SECTION_OF_VIEW: Record<View, string> = {
   // Always on screen — the round Fred actually does.
   dashboard: 'daily', sitelog: 'daily', crew: 'daily', workorders: 'daily',
-  payables: 'daily', 'import-queue': 'daily',
+  payables: 'daily', 'import-queue': 'daily', assistant: 'daily',
 
   payments: 'money', financials: 'money', ledger: 'money',
   customers: 'money', quickbooks: 'money', invoices: 'money',
@@ -221,6 +224,11 @@ export default function HomePage() {
     // owner UI and everything they created was filed under their own account —
     // invisible to Fred AND to the tech portal (migration-082).
     if (await belongsInTechPortal()) { router.replace('/tech'); return false; }
+    // Same for an assistant (migration-092): their section shows the work with
+    // no money. The owner app would hand them an empty shell — RLS gives an
+    // assistant's session zero rows — and anything they created here would be
+    // filed under their own account, invisible to Fred.
+    if (await belongsInAssistantSection()) { router.replace('/assistant'); return false; }
 
     const [cRes, wRes, pRes, svRes] = await Promise.all([
       supabase.from('contractors').select('*').order('name'),
@@ -1428,6 +1436,7 @@ Go ahead?`)) return;
             <NI k="crew"       icon={<Users size={15} />}     label="Crew Projects" />
             <NI k="workorders" icon={<Briefcase size={15} />} label="Work Orders" />
             <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
+            <NI k="assistant"  icon={<UserCog size={15} />}   label="Assistant" />
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
               <Inbox size={15} /> Import
               {pendingImportCount > 0 && (
@@ -1619,6 +1628,7 @@ Go ahead?`)) return;
         {view === 'network' && <NetworkView />}
         {view === 'sitelog' && <SiteLogView />}
         {view === 'crew' && <CrewProjectsView />}
+        {view === 'assistant' && <AssistantAdminView />}
         {view === 'maintenance' && <MaintenanceView />}
         {view === 'invoices' && (
           <InvoicesView

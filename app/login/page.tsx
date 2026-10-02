@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { claimTechAccount } from '@/lib/tech-portal';
+import { claimAssistantAccount } from '@/lib/assistant';
 import { Sparkles, Mail, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 
@@ -37,8 +38,11 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError(friendlyError(error.message)); setLoading(false); return; }
 
-    // Techs land on their own portal. The owner app would show them an empty
-    // shell — RLS is keyed to Fred's user id, so they'd get zero rows.
+    // Assistants and techs land in their own sections. The owner app would
+    // show them an empty shell — RLS is keyed to Fred's user id, so they'd get
+    // zero rows. Both claims refuse a business owner, so Fred always lands here.
+    const asst = await claimAssistantAccount();
+    if (asst.ok) { router.push('/assistant'); router.refresh(); return; }
     const claim = await claimTechAccount();
     router.push(claim.ok ? '/tech' : '/');
     router.refresh();

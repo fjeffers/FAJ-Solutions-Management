@@ -1,12 +1,13 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { reassignWorkOrder, describeReassignment } from '@/lib/reassign';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer, UserCog } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer, UserCog, Columns3, List } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO, workOrderBreakdownText } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor, Payment } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
 import { backdropClose } from '@/lib/backdrop';
+import WorkBoard from '@/components/WorkBoard';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -32,7 +33,7 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob, onReassign, payments = [],
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onOpenCrew,
 }: {
   workOrders: EnrichedWorkOrder[];
   /** Pre-fill the search, so a link can point at one work order. */
@@ -55,7 +56,19 @@ export default function WorkOrdersView({
   onReassign: (w: EnrichedWorkOrder, from: string, to: string) => Promise<void>;
   /** Needed to know what each tech has already been paid on a job. */
   payments?: Payment[];
+  /** Crew-project cards on the board open Crew Projects. */
+  onOpenCrew?: () => void;
 }) {
+  // Board (columns by stage, crew sites included) or the original list.
+  // Remembered on this device; the board is the default.
+  const [mode, setMode] = useState<'board' | 'list'>('board');
+  useEffect(() => {
+    try { if (localStorage.getItem('wo-view-mode') === 'list') setMode('list'); } catch { /* private window */ }
+  }, []);
+  const chooseMode = (m: 'board' | 'list') => {
+    setMode(m);
+    try { localStorage.setItem('wo-view-mode', m); } catch { /* private window */ }
+  };
   const [aiOpen, setAiOpen] = useState(false);
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
@@ -77,17 +90,7 @@ export default function WorkOrdersView({
       if (isClosed) return false;
       if (woStatusFilter !== 'all' && w.wo_status !== woStatusFilter) return false;
     }
-    const q = search.toLowerCase();
-    const allNames = (w.contractor_names && w.contractor_names.length > 0)
-      ? w.contractor_names
-      : [w.contractor_name];
-    return (
-      w.wo_number.includes(search) ||
-      allNames.some((n) => n.toLowerCase().includes(q)) ||
-      (w.title ?? '').toLowerCase().includes(q) ||
-      (w.service_type ?? '').toLowerCase().includes(q) ||
-      (w.site_city ?? '').toLowerCase().includes(q)
-    );
+    return matchesSearch(w, search);
   });
 
   // Tab counts follow the board: active tabs count non-closed jobs only
@@ -130,7 +133,18 @@ export default function WorkOrdersView({
               <span style={{ color: '#047857', fontWeight: 600 }}>{fmtMoney(stats.paid)} collected</span>
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div role="group" aria-label="How to show work orders" style={{ display: 'flex', borderRadius: 999, border: '1px solid rgba(13,115,119,0.25)', overflow: 'hidden' }}>
+              {([['board', 'Board', <Columns3 key="b" size={14} />], ['list', 'List', <List key="l" size={14} />]] as const).map(([m, label, icon]) => (
+                <button
+                  key={m} onClick={() => chooseMode(m)} aria-pressed={mode === m}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: 'none', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 700, background: mode === m ? 'var(--teal)' : 'transparent', color: mode === m ? 'white' : 'var(--teal)',
+                  }}
+                >{icon} {label}</button>
+              ))}
+            </div>
             <button className="btn btn-ghost" onClick={() => setAiOpen(true)}><Sparkles size={14} /> Generate with AI</button>
             <button className="btn btn-primary" onClick={onAdd}><Plus size={14} /> New Work Order</button>
           </div>
@@ -144,6 +158,32 @@ export default function WorkOrdersView({
         />
       )}
 
+      {mode === 'board' && (
+        <>
+          <div className="glass card" style={{ marginBottom: 16, padding: '12px 16px', position: 'relative' }}>
+            <Search size={14} style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
+            <input
+              className="input" value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by WO number, tech, title, service type, city…" style={{ paddingLeft: 36 }}
+              aria-label="Search work orders"
+            />
+          </div>
+          <WorkBoard
+            workOrders={sorted.filter((w) => w.archived_at === null && matchesSearch(w, search))}
+            contractors={contractors}
+            owedToTechs={stats.remaining}
+            onEdit={onEdit}
+            onOpenCrew={onOpenCrew}
+            search={search}
+          />
+          <div style={{ fontSize: 12, color: '#888', marginTop: 12 }}>
+            Click a work order to open it. Sending, paying, closing and archiving are on each job and in the List view.
+            Closed jobs ({archivedCount}) are in the List view under Closed.
+          </div>
+        </>
+      )}
+
+      {mode === 'list' && (<>
       {/* ── FieldNation-style status board tabs ── */}
       <div className="glass card" style={{ marginBottom: 20, padding: '0 16px' }}>
         <div style={{ display: 'flex', gap: 2, overflowX: 'auto', borderBottom: '1px solid #eee' }}>
@@ -206,6 +246,7 @@ export default function WorkOrdersView({
           {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} onCloseJob={onCloseJob} siteVisits={siteVisits} onReassign={() => setReassigning(w)} />)}
         </div>
       )}
+      </>)}
 
       {emailPayload && <EmailModal payload={emailPayload} onClose={() => setEmailPayload(null)} />}
       {reassigning && (
@@ -218,6 +259,21 @@ export default function WorkOrdersView({
         />
       )}
     </div>
+  );
+}
+
+/** The search box's rule, shared by the board and the list. */
+function matchesSearch(w: EnrichedWorkOrder, search: string): boolean {
+  const q = search.toLowerCase();
+  const allNames = (w.contractor_names && w.contractor_names.length > 0)
+    ? w.contractor_names
+    : [w.contractor_name];
+  return (
+    w.wo_number.includes(search) ||
+    allNames.some((n) => (n ?? '').toLowerCase().includes(q)) ||
+    (w.title ?? '').toLowerCase().includes(q) ||
+    (w.service_type ?? '').toLowerCase().includes(q) ||
+    (w.site_city ?? '').toLowerCase().includes(q)
   );
 }
 

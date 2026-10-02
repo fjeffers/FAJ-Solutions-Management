@@ -292,3 +292,7 @@ html.dark .icon-btn:hover { background: rgba(20,184,184,0.1); color: var(--teal)
   .glass, .card { box-shadow: none; border: 1px solid #eee; }
   .print-table thead tr { background: var(--teal) !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Work Orders board cards (components/WorkBoard.tsx) set a white card inline. */
+html.dark .board-card { background: #1f2937 !important; border-color: rgba(255,255,255,0.08) !important; }
+.board-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08) !important; }

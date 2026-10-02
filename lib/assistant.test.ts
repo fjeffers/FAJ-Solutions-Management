@@ -70,6 +70,9 @@ describe('one work list', () => {
     expect(crewStatusLabel('in_progress')).toBe('In progress');
     expect(crewStatusLabel(null)).toBe('Scheduled');
     expect(crewStatusLabel('done')).toBe('Done');
+    expect(crewStatusLabel('planned')).toBe('Planned');
+    expect(crewStatusLabel('deliverables_in')).toBe('Deliverables in');
+    expect(crewStatusLabel('audited')).toBe('Audited');
   });
 });
 
@@ -90,7 +93,7 @@ describe('grouping by day', () => {
         job({ id: 'none', scheduled_date: null }),
         job({ id: 'old', scheduled_date: '2026-09-01' }),
       ],
-      [site({ id: 'done', week_start: '2026-10-05', status: 'done' }), site({ id: 'soon', week_start: '2026-10-05' })],
+      [site({ id: 'done', week_start: '2026-10-05', status: 'done' }), site({ id: 'audited', week_start: '2026-10-05', status: 'audited' }), site({ id: 'soon', week_start: '2026-10-05' })],
     );
     const groups = groupWork(items, today);
     expect(groups.map((g) => g.bucket)).toEqual(['today', 'week', 'unscheduled', 'past']);

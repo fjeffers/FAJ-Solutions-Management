@@ -317,13 +317,19 @@ export function mergeWork(jobs: AssistantJob[], sites: AssistantCrewSite[]): Wor
 
 export function crewStatusLabel(status: string | null): string {
   switch (status) {
-    case 'done': return 'Done';
-    case 'in_progress': return 'In progress';
+    case 'planned': return 'Planned';
     case 'scheduled': return 'Scheduled';
+    case 'in_progress': return 'In progress';
+    case 'done': return 'Done';
+    case 'deliverables_in': return 'Deliverables in';
+    case 'audited': return 'Audited';
     case null: case '': return 'Scheduled';
     default: return status.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
   }
 }
+
+/** Finished work drops off the assistant's open list: closed jobs and crew sites past cabling. */
+const FINISHED = new Set(['Closed', 'Done', 'Deliverables in', 'Audited']);
 
 export type WorkBucket = 'past' | 'today' | 'week' | 'later' | 'unscheduled';
 
@@ -350,7 +356,7 @@ export const BUCKET_LABEL: Record<WorkBucket, string> = {
 /** Open work grouped for the Work tab; closed and finished work drops off. */
 export function groupWork(items: WorkItem[], today: string): { bucket: WorkBucket; items: WorkItem[] }[] {
   const order: WorkBucket[] = ['today', 'week', 'later', 'unscheduled', 'past'];
-  const open = items.filter((i) => !(i.status === 'Closed' || i.status === 'Done'));
+  const open = items.filter((i) => !FINISHED.has(i.status));
   return order
     .map((bucket) => ({ bucket, items: open.filter((i) => workBucket(i.date, today) === bucket) }))
     .filter((g) => g.items.length > 0);

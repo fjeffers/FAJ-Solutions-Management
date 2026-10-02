@@ -1676,6 +1676,7 @@ Go ahead?`)) return;
             onArchive={handleArchive}
             onCloseJob={closeWorkOrder}
             onUnarchive={handleUnarchive}
+            onOpenCrew={() => navigate('crew')}
           />
         )}
         {view === 'payments' && (

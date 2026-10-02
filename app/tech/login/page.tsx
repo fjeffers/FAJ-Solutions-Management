@@ -36,7 +36,7 @@ export default function TechLoginPage() {
     // Bind this login to its contractor record. Safe on every sign-in — once
     // linked it short-circuits.
     const claim = await claimTechAccount();
-    if (claim.ok) { router.push('/tech'); router.refresh(); return; }
+    if (claim.ok) { router.push('/tech?classic=1'); router.refresh(); return; }
 
     // Signed in, but this account is not a tech. Rather than dropping them on
     // an empty screen, say which case it is.

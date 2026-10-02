@@ -148,7 +148,7 @@ export default function TeamView({ onOpenContractors }: { onOpenContractors?: ()
     await load();
   };
 
-  const techSignIn = typeof window !== 'undefined' ? `${window.location.origin}/tech/login` : '/tech/login';
+  const techSignIn = typeof window !== 'undefined' ? `${window.location.origin}/workflow` : '/workflow';
   const roleLabel = (key: string) => ROLES.find((r) => r.key === key)?.label ?? key;
   const today = todayEastern();
   const open = tasks.filter((t) => t.status === 'open');
@@ -280,7 +280,7 @@ export default function TeamView({ onOpenContractors }: { onOpenContractors?: ()
             </div>
           ))}
           <div style={{ marginTop: 10 }}>
-            <b>Techs</b> sign in at <code style={{ background: 'white', padding: '2px 6px', borderRadius: 4 }}>{techSignIn}</code> with
+            <b>Techs</b> sign in to WorkFlow at <code style={{ background: 'white', padding: '2px 6px', borderRadius: 4 }}>{techSignIn}</code> with
             the email on their contractor record. Each tech sees only their own jobs and pay.
           </div>
         </div>

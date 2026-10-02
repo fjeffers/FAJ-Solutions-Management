@@ -958,7 +958,7 @@ function SetupTab({ project, teams, contractors, onSavedProject, onChanged, supa
             <button className="btn btn-ghost" onClick={addTeam}><Users size={14} /> Add</button>
           </div>
           <div style={{ fontSize: 11.5, color: '#999', marginTop: 8 }}>
-            Lead not in the list? Add them under Contractors with their email, then they sign up at app.fajsolutions.com/tech/login with that same email.
+            Lead not in the list? Add them under Contractors with their email, then they set up their login in WorkFlow at app.fajsolutions.com/workflow (First time? Create your login) with that same email.
           </div>
         </div>
       )}

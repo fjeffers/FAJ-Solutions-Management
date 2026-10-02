@@ -223,7 +223,7 @@ export default function HomePage() {
     // was already open. Without it, a tech opening the app root got the full
     // owner UI and everything they created was filed under their own account —
     // invisible to Fred AND to the tech portal (migration-082).
-    if (await belongsInTechPortal()) { router.replace('/tech'); return false; }
+    if (await belongsInTechPortal()) { window.location.replace('/workflow'); return false; }
     // Same for staff (migrations 092-095): an assistant or accountant has their
     // own section. The owner app would hand them an empty shell — RLS gives a
     // staff session zero rows — and anything they created here would be filed
@@ -1435,7 +1435,12 @@ Go ahead?`)) return;
             <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
             <NI k="sitelog"    icon={<Timer size={15} />}     label="Site Log" />
             <NI k="crew"       icon={<Users size={15} />}     label="Crew Projects" />
-            <NI k="workorders" icon={<Briefcase size={15} />} label="Work Orders" />
+            {/* Work orders live in WorkFlow now (Fred, 2026-10-02). The office
+                screen stays for closing, paying and archiving jobs. */}
+            <a className="nav-btn" href="/workflow" style={{ textDecoration: 'none' }}>
+              <Briefcase size={15} /> Work Orders
+            </a>
+            <NI k="workorders" icon={<ClipboardList size={15} />} label="Office work orders" />
             <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
             <NI k="team"       icon={<UserCog size={15} />}   label="Team" />
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>

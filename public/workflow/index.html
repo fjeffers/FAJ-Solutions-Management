@@ -131,6 +131,12 @@
       <div class="dot"></div>
     </div>
   </div>
+  <script>
+    // No-signal mode: keep WorkFlow on the phone so it opens without signal.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('wf-sw.js', { scope: '/workflow' }).catch(function () {});
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -44,8 +44,10 @@ export default function LoginPage() {
     const staff = await claimAssistantAccount();
     const section = staff.ok ? sectionForRole(staff.role) : null;
     if (section) { router.push(section); router.refresh(); return; }
+    // Techs work in WorkFlow (a separate app at /workflow, so a full page load).
     const claim = await claimTechAccount();
-    router.push(claim.ok ? '/tech' : '/');
+    if (claim.ok) { window.location.assign('/workflow'); return; }
+    router.push('/');
     router.refresh();
   };
 

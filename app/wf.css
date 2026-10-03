@@ -181,3 +181,17 @@ textarea.wf-input { resize: vertical; }
 @media (max-width: 520px) {
   .wf-bucket-tab { flex-direction: column !important; gap: 3px !important; font-size: 12.5px !important; padding: 7px 2px !important; }
 }
+
+/* The job log (components/JobLogReport.tsx): printing shows only the report —
+   the app behind it, the controls and the dim backdrop all drop away, and the
+   navy header keeps its colour. */
+@media print {
+  body.job-log-open > *:not(#job-log-root) { display: none !important; }
+  body.job-log-open { background: #fff !important; }
+  #job-log-root { position: static !important; inset: auto !important; overflow: visible !important; background: #fff !important; padding: 0 !important; }
+  #job-log-root .no-print { display: none !important; }
+  #job-log-root .jl-page { box-shadow: none !important; border-radius: 0 !important; max-width: none !important; margin: 0 !important; }
+  #job-log-root .jl-band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #job-log-root .jl-avoid { break-inside: avoid; }
+  @page { margin: 12mm; }
+}

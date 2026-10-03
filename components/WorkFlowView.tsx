@@ -10,7 +10,7 @@
 // functions the tech portal uses (migration-098), so both sides always agree.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Archive, ArchiveRestore, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, MessageSquare, MoreHorizontal, Navigation,
+  Archive, ArchiveRestore, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
   Plus, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -23,6 +23,7 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import type { Contractor, EnrichedWorkOrder } from '@/lib/types';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import WOTimeLogs from '@/components/WOTimeLogs';
+import JobLogReport from '@/components/JobLogReport';
 import { mapLink } from '@/lib/geo';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
@@ -186,6 +187,7 @@ function OwnerJob({
   const [chatOpen, setChatOpen] = useState(false);
   const [picking, setPicking] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
 
   let job = row.job;
   for (const [id, done] of Object.entries(ticked)) job = withTask(job, id, done);
@@ -221,6 +223,7 @@ function OwnerJob({
         <MessageSquare size={15} /> Messages
       </button>
       <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onSend(w)}><Send size={15} /> Send to tech</button>
+      <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setLogOpen(true)}><FileText size={15} /> Job log</button>
       {w.remaining > 0 && (
         <button className="wf-btn wf-btn-success wf-btn-sm" onClick={() => onPay(w)}><DollarSign size={15} /> Pay tech</button>
       )}
@@ -272,6 +275,7 @@ function OwnerJob({
           </Section>
         </>}
       />
+      {logOpen && <JobLogReport w={w} onClose={() => setLogOpen(false)} />}
       {picking && (
         <TechPicker
           w={w} job={job} contractors={contractors}

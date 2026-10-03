@@ -1,0 +1,102 @@
+// The job log (Fred, 2026-10-02: "can try job log") — one report per job:
+// each visit with times and GPS, the checklist, the answers, the tech's notes
+// and the stamped photos, ready to print or save as a PDF for a client. No
+// money anywhere on it.
+//
+// Visits come from job_punches (every clock-in / clock-out, migration-102).
+// Jobs worked before that only have contractor_time_logs' latest in/out per
+// tech, which is used when a tech has no punches. Pure and unit-tested.
+import type { TimeLog } from './types';
+
+export type Punch = {
+  contractor_name: string; kind: 'in' | 'out'; at: string;
+  lat: number | null; lng: number | null; accuracy: number | null;
+};
+
+export type GpsPoint = { lat: number; lng: number; accuracy: number | null } | null;
+
+export type Visit = {
+  tech: string;
+  /** YYYY-MM-DD of the clock-in, in the given time zone. */
+  day: string;
+  inAt: string;
+  outAt: string | null;
+  inGps: GpsPoint;
+  outGps: GpsPoint;
+  /** On the clock still (no clock-out yet). */
+  open: boolean;
+  ms: number;
+};
+
+export function dayOf(iso: string, timeZone?: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+}
+
+const gps = (lat: number | null | undefined, lng: number | null | undefined, acc?: number | null): GpsPoint =>
+  lat != null && lng != null ? { lat, lng, accuracy: acc ?? null } : null;
+
+/** Clock-ins paired with their clock-outs, per tech, oldest first. */
+export function buildVisits(punches: Punch[], logs: TimeLog[], now: Date = new Date(), timeZone?: string): Visit[] {
+  const visits: Visit[] = [];
+  const byTech = new Map<string, Punch[]>();
+  for (const p of punches) {
+    const list = byTech.get(p.contractor_name) ?? [];
+    list.push(p);
+    byTech.set(p.contractor_name, list);
+  }
+  for (const [tech, list] of byTech) {
+    list.sort((a, b) => a.at.localeCompare(b.at));
+    let open: Punch | null = null;
+    for (const p of list) {
+      if (p.kind === 'in') {
+        if (open) visits.push(make(tech, open, null, now, timeZone, false)); // an in with no out before the next in
+        open = p;
+      } else if (open) {
+        visits.push(make(tech, open, p, now, timeZone, false));
+        open = null;
+      }
+    }
+    if (open) visits.push(make(tech, open, null, now, timeZone, true));
+  }
+  // Older jobs: no punches, only the latest in/out a tech recorded.
+  for (const l of logs) {
+    if (byTech.has(l.contractor_name) || !l.checked_in_at) continue;
+    const out = l.checked_out_at;
+    visits.push({
+      tech: l.contractor_name, day: dayOf(l.checked_in_at, timeZone), inAt: l.checked_in_at, outAt: out,
+      inGps: gps(l.checked_in_lat, l.checked_in_lng, l.checked_in_accuracy) ?? gps(l.arrived_lat, l.arrived_lng),
+      outGps: gps(l.checked_out_lat, l.checked_out_lng, l.checked_out_accuracy),
+      open: !out,
+      ms: Math.max(0, Date.parse(out ?? now.toISOString()) - Date.parse(l.checked_in_at)),
+    });
+  }
+  return visits.sort((a, b) => a.inAt.localeCompare(b.inAt));
+}
+
+function make(tech: string, i: Punch, o: Punch | null, now: Date, timeZone: string | undefined, stillOpen: boolean): Visit {
+  const end = o ? Date.parse(o.at) : stillOpen ? now.getTime() : Date.parse(i.at);
+  return {
+    tech, day: dayOf(i.at, timeZone), inAt: i.at, outAt: o?.at ?? null,
+    inGps: gps(i.lat, i.lng, i.accuracy), outGps: o ? gps(o.lat, o.lng, o.accuracy) : null,
+    open: stillOpen, ms: Math.max(0, end - Date.parse(i.at)),
+  };
+}
+
+/** Only what falls between two days (inclusive); either end may be left open. */
+export function inRange(day: string, from: string, to: string): boolean {
+  return (!from || day >= from) && (!to || day <= to);
+}
+
+export function logTotals(visits: Visit[]) {
+  return {
+    ms: visits.reduce((s, v) => s + v.ms, 0),
+    days: new Set(visits.map((v) => v.day)).size,
+    techs: [...new Set(visits.map((v) => v.tech))],
+  };
+}
+
+/** "3h 25m". */
+export function hoursText(ms: number): string {
+  const m = Math.round(ms / 60_000);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}

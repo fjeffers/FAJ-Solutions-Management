@@ -11,16 +11,17 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Archive, ArchiveRestore, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
-  Plus, Receipt, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
+  Pencil, Plus, Receipt, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
   wfJobFromOwner, matchesWf, sortWf, ownerCounts, bucketOf, bucketCounts, withTask, fullAddress, wfReasonText,
-  type WfBucket, type WfJob, type WfTask,
+  parseClockTime, fmtClock12, type WfBucket, type WfJob, type WfTask,
 } from '@/lib/wf';
-import { fmtMoney, hasPaySplit, woProfitOrNull } from '@/lib/utils';
+import { fmtMoney, hasPaySplit, woProfitOrNull, withClientPrice } from '@/lib/utils';
+import { logAudit } from '@/lib/audit';
 import { toastError, toastSuccess } from '@/lib/toast';
-import type { Contractor, EnrichedWorkOrder } from '@/lib/types';
+import { WO_STATUSES, type Contractor, type EnrichedWorkOrder, type WorkOrder } from '@/lib/types';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import JobLogReport from '@/components/JobLogReport';
@@ -295,6 +296,7 @@ function OwnerJob({
         actions={actions}
         onToggleTask={archived ? undefined : toggleTask}
         side={<>
+          {!archived && <QuickEditCard w={w} onSaved={refresh} />}
           <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />
           <MoneyCard w={w} />
         </>}
@@ -322,6 +324,142 @@ function OwnerJob({
         />
       )}
     </>
+  );
+}
+
+// ── Edit in place (idea from SimplySub) ─────────────────────────────────────
+// Tap a line, change it, Enter. The everyday changes — the date, the time,
+// the stage, the price, who to call on site, how to get in — without opening
+// the whole Edit job form. Each change is one small update, logged.
+
+type QuickField = {
+  key: string; label: string; kind: 'date' | 'time' | 'text' | 'tel' | 'email' | 'money' | 'textarea' | 'select';
+  value: string; display: string; options?: string[]; placeholder?: string;
+};
+
+const toTimeInput = (raw: string | null | undefined): string => {
+  const t = parseClockTime(raw ?? '');
+  return t ? `${String(t[0]).padStart(2, '0')}:${String(t[1]).padStart(2, '0')}` : '';
+};
+const showTime = (raw: string | null | undefined): string => {
+  const t = parseClockTime(raw ?? '');
+  return t ? fmtClock12(t) : (raw ?? '');
+};
+const showDate = (d: string | null | undefined): string =>
+  d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+export function QuickEditCard({ w, onSaved }: { w: EnrichedWorkOrder; onSaved: () => Promise<void> | void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const date = (w.scheduled_date || w.start_date || '').slice(0, 10);
+  const price = Number(w.total_amount) || 0;
+
+  const fields: QuickField[] = [
+    { key: 'date', label: 'Date', kind: 'date', value: date, display: showDate(date) },
+    { key: 'start_time', label: 'Start time', kind: 'time', value: toTimeInput(w.start_time), display: showTime(w.start_time) },
+    { key: 'end_time', label: 'End time', kind: 'time', value: toTimeInput(w.end_time), display: showTime(w.end_time) },
+    { key: 'wo_status', label: 'Office stage', kind: 'select', value: w.wo_status ?? 'Open', display: w.wo_status ?? 'Open', options: WO_STATUSES },
+    { key: 'price', label: 'Client pays', kind: 'money', value: price ? String(price) : '', display: price ? fmtMoney(price) : '', placeholder: '0.00' },
+    { key: 'poc_name', label: 'Site contact', kind: 'text', value: w.poc_name ?? '', display: w.poc_name ?? '', placeholder: 'Name' },
+    { key: 'poc_phone', label: 'Contact phone', kind: 'tel', value: w.poc_phone ?? '', display: w.poc_phone ?? '' },
+    { key: 'poc_email', label: 'Contact email', kind: 'email', value: w.poc_email ?? '', display: w.poc_email ?? '' },
+    { key: 'access_instructions', label: 'Access', kind: 'textarea', value: w.access_instructions ?? '', display: w.access_instructions ?? '', placeholder: 'Gate code, who lets you in, where to check in' },
+    { key: 'parking_instructions', label: 'Parking', kind: 'textarea', value: w.parking_instructions ?? '', display: w.parking_instructions ?? '' },
+  ];
+
+  const start = (f: QuickField) => { setEditing(f.key); setDraft(f.value); };
+  const cancel = () => { setEditing(null); setDraft(''); };
+
+  const save = async (f: QuickField) => {
+    const raw = draft.trim();
+    if (raw === f.value.trim()) { cancel(); return; }
+    let patch: Partial<WorkOrder>;
+    if (f.key === 'date') {
+      // The calendar and the tech's schedule read scheduled_date; keep both in step.
+      patch = { start_date: raw || null, scheduled_date: raw || null };
+    } else if (f.key === 'price') {
+      const n = Number(raw.replace(/[$,\s]/g, ''));
+      const p = withClientPrice(w, raw === '' ? 0 : n);
+      if (!p) {
+        toastError(Number.isFinite(n) && n >= 0
+          ? "This job's price is built from its pay lines in a way a quick change can't adjust without touching tech pay. Change it in Edit job."
+          : 'Type the price as a number, like 245.50.');
+        return;
+      }
+      patch = p as Partial<WorkOrder>;
+    } else if (f.key === 'wo_status') {
+      patch = { wo_status: raw as WorkOrder['wo_status'] };
+    } else {
+      patch = { [f.key]: raw || null } as Partial<WorkOrder>;
+    }
+    setBusy(true);
+    const { error } = await createClient().from('work_orders').update(patch).eq('id', w.id);
+    setBusy(false);
+    if (error) { toastError(`Couldn't save ${f.label.toLowerCase()}: ${error.message}`); return; }
+    logAudit({
+      action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}`,
+      changes: { [f.key]: { from: f.value || null, to: raw || null }, via: 'edit in place' },
+    });
+    toastSuccess(`${f.label} saved.`);
+    cancel();
+    await onSaved();
+  };
+
+  return (
+    <Section title="Details" subtitle="Tap a line to change it" right={<Pencil size={16} color="var(--wf-subtle)" />}>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {fields.map((f) => {
+          const open = editing === f.key;
+          return (
+            <div key={f.key} style={{ borderBottom: '1px solid var(--wf-line)', padding: '7px 0' }}>
+              {!open ? (
+                <button
+                  onClick={() => start(f)}
+                  disabled={busy}
+                  style={{ display: 'flex', width: '100%', alignItems: 'flex-start', gap: 8, background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit' }}
+                  title={`Change ${f.label.toLowerCase()}`}
+                >
+                  <span className="wf-subtle" style={{ width: 104, flexShrink: 0, fontSize: 12.5, paddingTop: 1 }}>{f.label}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontWeight: f.display ? 600 : 400, color: f.display ? undefined : 'var(--wf-subtle)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 13.5 }}>
+                    {f.display || 'Not set'}
+                  </span>
+                  <Pencil size={13} color="var(--wf-subtle)" style={{ flexShrink: 0, marginTop: 3 }} />
+                </button>
+              ) : (
+                <div>
+                  <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 4 }}>{f.label}</div>
+                  {f.kind === 'select' ? (
+                    <select className="wf-input" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}>
+                      {f.options!.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : f.kind === 'textarea' ? (
+                    <textarea className="wf-input" autoFocus rows={3} value={draft} placeholder={f.placeholder}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') cancel(); }} />
+                  ) : (
+                    <input
+                      className="wf-input" autoFocus value={draft} placeholder={f.placeholder}
+                      type={f.kind === 'money' ? 'text' : f.kind}
+                      inputMode={f.kind === 'money' ? 'decimal' : undefined}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') void save(f); if (e.key === 'Escape') cancel(); }}
+                    />
+                  )}
+                  {f.key === 'price' && (w.pay_addons?.length ?? 0) > 0 && (
+                    <div className="wf-subtle" style={{ fontSize: 12, marginTop: 4 }}>The difference goes on the Labour line. Extras and tech pay stay as they are.</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button className="wf-btn wf-btn-navy wf-btn-sm" disabled={busy} onClick={() => void save(f)}>{busy ? 'Saving…' : 'Save'}</button>
+                    <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={busy} onClick={cancel}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Section>
   );
 }
 

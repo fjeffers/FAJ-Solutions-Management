@@ -27,6 +27,7 @@ import {
   fullAddress, reportMissing, crewBucket, type WfBucket, type WfJob, type WfQuestion, type WfTask,
 } from '@/lib/wf';
 import { fmtMoney, fmtDate } from '@/lib/utils';
+import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { getPosition, stampLines, mapLink } from '@/lib/geo';
 import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
@@ -47,15 +48,15 @@ import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } f
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  ArrowLeft, Briefcase, Camera, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  ArrowLeft, Briefcase, CalendarDays, Camera, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
   RefreshCw, Save, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X,
 } from 'lucide-react';
 
-type Tab = 'jobs' | 'offers' | 'crew' | 'pay' | 'chat' | 'profile' | 'paperwork';
-const TABS: Tab[] = ['jobs', 'offers', 'crew', 'pay', 'chat', 'profile', 'paperwork'];
+type Tab = 'jobs' | 'schedule' | 'offers' | 'crew' | 'pay' | 'chat' | 'profile' | 'paperwork';
+const TABS: Tab[] = ['jobs', 'schedule', 'offers', 'crew', 'pay', 'chat', 'profile', 'paperwork'];
 const COPIES = ['profile', 'jobs', 'payments', 'summary'];
 const TAB_TITLE: Record<Tab, string> = {
-  jobs: 'My jobs', offers: 'Offers', crew: 'Crew project', pay: 'Pay history',
+  jobs: 'My jobs', schedule: 'My schedule', offers: 'Offers', crew: 'Crew project', pay: 'Pay history',
   chat: 'Messages', profile: 'Profile', paperwork: 'W-9 & agreement',
 };
 
@@ -332,6 +333,7 @@ export default function TechPortalPage() {
           </div>
         </div>
         {railItem('jobs', <Briefcase size={18} />)}
+        {railItem('schedule', <CalendarDays size={18} />)}
         <button className="wf-rail-item" aria-current={tab === 'jobs' && !openJob && bucket === 'available' ? 'page' : undefined}
           onClick={() => { go('jobs'); setBucket('available'); }}>
           <Inbox size={18} /> Available
@@ -387,6 +389,15 @@ export default function TechPortalPage() {
               paperworkDue={paperworkDue} profile={profile} bucket={bucket} setBucket={setBucket} act={act}
               crew={crew} onOpenCrew={(id) => { setOpenCrewId(id); window.scrollTo({ top: 0 }); }} onCrewChanged={() => void loadCrew()}
               onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} go={go}
+            />
+          ) : tab === 'schedule' ? (
+            <TechSchedule
+              jobs={jobs}
+              crewWeeks={crew.sites.filter((s) => s.week_start).map((s) => ({
+                id: s.id, name: s.name, where: [s.city, s.state].filter(Boolean).join(', '), project: s.project_name, weekStart: s.week_start!.slice(0, 10),
+              }))}
+              onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }}
+              onOpenCrew={(id) => { setOpenCrewId(id); window.scrollTo({ top: 0 }); }}
             />
           ) : tab === 'pay' ? (
             <PayTab payments={payments} summary={summary} />

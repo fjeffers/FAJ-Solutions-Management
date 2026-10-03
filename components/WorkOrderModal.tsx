@@ -25,7 +25,7 @@ import {
   WORK_ORDER_PRIORITIES,
   WORK_ORDER_SOURCES,
 } from '@/lib/types';
-import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, PAY_ADDON_KINDS, payAddonAmount, billableAddons } from '@/lib/utils';
+import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, PAY_ADDON_KINDS, payAddonAmount, billableAddons, seedPayLines } from '@/lib/utils';
 import { printSignOffSheet } from '@/lib/signoff';
 import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { createClient } from '@/lib/supabase/client';
@@ -281,38 +281,12 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   /**
    * The pay is labour plus a list, and labour is a line like anything else.
    *
-   * Work orders raised before that had their labour in hourly_rate/hours_worked
-   * and their extras in expense_budget / travel_amount / bonus_amount. Those
-   * fields are gone from the form, so on first open they are turned into lines —
-   * otherwise a job would quietly lose the money that was in them.
+   * Older jobs start from seedPayLines (lib/utils): their price becomes a
+   * Labour line and their billed travel comes over as it was, so opening a job
+   * and pressing Save changes no money. (Seeding them here as paid-to-tech
+   * lines, as this used to, would have changed the price on save.)
    */
-  const [payAddons, setPayAddons] = useState<PayAddon[]>(() => {
-    const existing = item?.pay_addons ?? [];
-    if (existing.length > 0 || !item) return existing;
-
-    const seeded: PayAddon[] = [];
-    const add = (kind: PayAddonKind, label: string, amount: number, qty?: number, rate?: number) => {
-      if (!amount) return;
-      seeded.push({
-        id: `pa-seed-${kind}`, kind, label, amount,
-        qty: qty ?? null, rate: rate ?? null,
-        deduct: false, bill_client: true, pay_tech: true, contractor_name: null,
-      });
-    };
-
-    const hrs = Number(item.hours_worked ?? 0);
-    const rate = Number(item.hourly_rate ?? 0);
-    if (hrs > 0 && rate > 0) add('labour', 'Labour', Math.round(hrs * rate * 100) / 100, hrs, rate);
-    else if (Number(item.total_amount) > 0 && item.pay_type !== 'Fixed') {
-      add('labour', 'Labour', Number(item.total_amount));
-    }
-    add('other', 'Expense budget', Number(item.expense_budget ?? 0));
-    add('mileage', 'Travel', Number(item.travel_amount ?? 0));
-    add('bonus', 'Bonus', Number(item.bonus_amount ?? 0));
-    // Travel recorded against the client before the rebuild.
-    add('mileage', 'Travel', Number(item.billable_travel ?? 0));
-    return seeded;
-  });
+  const [payAddons, setPayAddons] = useState<PayAddon[]>(() => (item ? seedPayLines(item) : []));
   const addPayAddon = (kind: PayAddonKind) => {
     const meta = PAY_ADDON_KINDS.find((k) => k.kind === kind)!;
     setPayAddons((rows) => [...rows, {

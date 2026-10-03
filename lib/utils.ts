@@ -23,8 +23,9 @@ export function billableExtras(
   // Add-ons are the way these are recorded now. The three columns remain for
   // work orders raised before the rebuild, and are only consulted when a job
   // has no add-ons at all — otherwise the same travel would count twice.
+  // A Labour line is the job's price itself, not something on top of it.
   const addons = wo.pay_addons ?? [];
-  if (addons.length > 0) return billableAddons(addons);
+  if (addons.length > 0) return billableAddons(addons.filter((a) => a.kind !== 'labour'));
   return Math.round((
     Number(wo.billable_travel ?? 0) + Number(wo.billable_materials ?? 0) + Number(wo.billable_other ?? 0)
   ) * 100) / 100;
@@ -391,6 +392,88 @@ export function billableAddons(addons: PayAddon[] | null | undefined): number {
       .filter((a) => a.bill_client && !a.deduct)
       .reduce((s, a) => s + payAddonAmount(a), 0) * 100,
   ) / 100;
+}
+
+/**
+ * The lines the Edit job form starts from, worked out so that opening a job
+ * and pressing Save changes no money at all.
+ *
+ * The form prices a job as the sum of its billed lines. Jobs raised before the
+ * lines existed carry their price in total_amount and their client travel in
+ * the billable_* columns, so starting them from an empty list (or from only
+ * the travel) would have saved the travel as the whole price. Instead:
+ *   - the old billed travel / materials / other come over exactly as the
+ *     expense approval carries them (billed to the client, not paid to a tech);
+ *   - whatever of the price is left becomes one Labour line, billed to the
+ *     client and not paid to a tech — tech pay stays in contractor_pay.
+ * Billed lines then add up to total_amount, and nothing is added to what any
+ * tech is owed. If the old figures don't add up (price below the extras), the
+ * job is left as it was rather than guessed at.
+ */
+export function seedPayLines(
+  wo: Pick<WorkOrder, 'total_amount' | 'billable_travel' | 'billable_materials' | 'billable_other' | 'hours_worked' | 'hourly_rate'>
+    & { pay_addons?: PayAddon[] | null },
+): PayAddon[] {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const existing = wo.pay_addons ?? [];
+  const lines: PayAddon[] = [...existing];
+  if (existing.length === 0) {
+    const carry: [number, PayAddonKind, string, string][] = [
+      [Number(wo.billable_travel ?? 0), 'mileage', 'Travel (billed to client)', 'legacy_travel'],
+      [Number(wo.billable_materials ?? 0), 'materials', 'Materials (billed to client)', 'legacy_materials'],
+      [Number(wo.billable_other ?? 0), 'other', 'Other (billed to client)', 'legacy_other'],
+    ];
+    for (const [amount, kind, label, id] of carry) {
+      if (amount > 0) lines.push({ id, kind, label, amount: r2(amount), qty: null, rate: null, deduct: false, bill_client: true, pay_tech: false, contractor_name: null });
+    }
+  }
+  if (lines.some((a) => a.kind === 'labour')) return lines;
+  const labour = r2((Number(wo.total_amount) || 0) - billableAddons(lines));
+  if (labour < 0) return existing;
+  if (labour === 0) return lines;
+  const hrs = Number(wo.hours_worked ?? 0);
+  const rate = Number(wo.hourly_rate ?? 0);
+  const hourly = hrs > 0 && rate > 0 && r2(hrs * rate) === labour;
+  return [{
+    id: 'labour_seed', kind: 'labour', label: 'Labour', amount: labour,
+    qty: hourly ? hrs : null, rate: hourly ? rate : null,
+    deduct: false, bill_client: true, pay_tech: false, contractor_name: null,
+  }, ...lines];
+}
+
+/**
+ * A new client price typed straight onto the job (edit in place). The price
+ * of a job with lines is the sum of its billed lines, so the difference goes
+ * on the Labour line; extras stay as they are. Returns null — use Edit job —
+ * when that can't be done without touching tech pay: the Labour line is also
+ * paid to a tech, there is more than one, or the extras alone exceed the price.
+ */
+export function withClientPrice(
+  wo: Pick<WorkOrder, 'total_amount'> & { pay_addons?: PayAddon[] | null },
+  price: number,
+): { total_amount: number; pay_addons?: PayAddon[] } | null {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  if (!Number.isFinite(price) || price < 0) return null;
+  const total = r2(price);
+  const lines = wo.pay_addons ?? [];
+  if (lines.length === 0) return { total_amount: total };
+  const labourAt = lines.map((a, i) => (a.kind === 'labour' ? i : -1)).filter((i) => i >= 0);
+  if (labourAt.length > 1) return null;
+  const labour = r2(total - billableAddons(lines.filter((a) => a.kind !== 'labour')));
+  if (labour < 0) return null;
+  if (labourAt.length === 0) {
+    if (labour === 0) return { total_amount: total, pay_addons: lines };
+    return {
+      total_amount: total,
+      pay_addons: [{ id: 'labour_seed', kind: 'labour', label: 'Labour', amount: labour, qty: null, rate: null, deduct: false, bill_client: true, pay_tech: false, contractor_name: null }, ...lines],
+    };
+  }
+  const old = lines[labourAt[0]];
+  if (old.pay_tech !== false || old.deduct || !old.bill_client) return null;
+  return {
+    total_amount: total,
+    pay_addons: lines.map((a, i) => (i === labourAt[0] ? { ...a, amount: labour, qty: null, rate: null } : a)),
+  };
 }
 
 /** The add-on lines belonging to one tech. Unattributed go to the lead. */

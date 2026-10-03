@@ -518,6 +518,19 @@ export default function HomePage() {
       materials_used: w.materials_used ?? [],
       // Mileage (migration-032)
       mileage_logs: w.mileage_logs ?? [],
+      // The form sent these all along but they were never written, so the
+      // pay add-ons panel and the Tech checklist forgot everything on save.
+      // Only written when the caller sends them, so a partial save can't wipe them.
+      ...(w.pay_addons !== undefined ? { pay_addons: w.pay_addons ?? [] } : {}),
+      ...(w.wo_tasks !== undefined ? { wo_tasks: w.wo_tasks ?? [] } : {}),
+      ...(w.billable_miles !== undefined ? { billable_miles: w.billable_miles ?? null } : {}),
+      // The calendar and the tech's schedule go by scheduled_date. A new job
+      // starts on its start date; moving the start date moves it.
+      ...(!prevWO
+        ? { scheduled_date: w.scheduled_date || w.start_date || null }
+        : (prevWO.start_date ?? null) !== (w.start_date || null)
+          ? { scheduled_date: w.start_date || null }
+          : {}),
     };
     if (w.id) {
       const { error } = await supabase.from('work_orders').update(payload).eq('id', w.id);

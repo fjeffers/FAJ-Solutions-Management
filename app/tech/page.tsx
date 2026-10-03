@@ -46,7 +46,7 @@ import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } f
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  ArrowLeft, Briefcase, Camera, CheckCircle2, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  ArrowLeft, Briefcase, Camera, CheckCircle2, NotebookPen, PlayCircle, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
   RefreshCw, Save, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X,
 } from 'lucide-react';
 
@@ -759,7 +759,9 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
   // close, answer questions"). Edits live here until Save or Work done.
   const [notes, setNotes] = useState(job.closeoutNotes);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [photoCount, setPhotoCount] = useState(0);
+  const ph = useJobPhotos(job, uid);
+  const photoCount = ph.sent.length + ph.waiting.length;
+  const [noteOpen, setNoteOpen] = useState(false);
   const working = canWork(job);
   const canReport = working || job.status === 'workDone';
   const dirty = notes.trim() !== job.closeoutNotes.trim()
@@ -785,11 +787,25 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
   };
 
   /** Save notes and answers — sent now, or kept on the phone with no signal. */
-  const saveReport = async (extra: Record<string, string> = {}, quiet = false) => {
+  const saveReport = async (extra: Record<string, string> = {}, quiet = false, notesNow: string = notes) => {
     const all = { ...answers, ...extra };
-    await act(makeAction('report', { number: job.number, notes, answers: all }, `Job report for WO ${job.number}`),
+    await act(makeAction('report', { number: job.number, notes: notesNow, answers: all }, `Job report for WO ${job.number}`),
       quiet ? undefined : 'Saved. The office can see it.');
     setAnswers({});
+  };
+
+  /** Quick note: added to the end of the notes with the time, and saved. */
+  const addNote = async (text: string) => {
+    const stamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const next = `${notes.trim() ? `${notes.trim()}\n` : ''}${stamp} — ${text.trim()}`;
+    setNotes(next);
+    await saveReport({}, true, next);
+    toastSuccess('Note added to the job.');
+  };
+
+  const openMessages = () => {
+    setChatOpen(true);
+    setTimeout(() => document.getElementById('wf-job-messages')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   };
 
   const showClock = !isFinished(job) && job.status !== 'declined' && job.status !== 'offered';
@@ -823,7 +839,19 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
         onBack={onBack}
         onRefresh={onRefresh}
         refreshing={refreshing}
-        actions={<>
+        actions={canReport ? (
+          <QuickActions
+            job={job}
+            showClock={showClock}
+            clockEnabled={working || isClockedIn(job)}
+            locating={locating}
+            photoBusy={!!ph.busy}
+            onClock={() => void toggleClock()}
+            onPhoto={(f) => void ph.add(f, 'camera')}
+            onNote={() => setNoteOpen(true)}
+            onMessages={openMessages}
+          />
+        ) : <>
           <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setChatOpen((v) => !v)} aria-pressed={chatOpen}>
             <MessageSquare size={15} /> Messages
           </button>
@@ -831,7 +859,7 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
             <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={15} /> Directions</a>
           )}
         </>}
-        clock={showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} /> : undefined}
+        clock={showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
         onToggleTask={working ? toggleTask : undefined}
         below={<>
           {job.status !== 'offered' && job.status !== 'declined' && (
@@ -841,11 +869,12 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
               dirty={dirty} onSave={(extra) => saveReport(extra)}
             />
           )}
-          <JobPhotos job={job} uid={uid} canAdd={canReport} onCount={setPhotoCount} />
-          {chatOpen && <JobMessages number={job.number} />}
+          <JobPhotos canAdd={canReport} ph={ph} />
+          {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} /></div>}
         </>}
         bottom={bottom}
       />
+      {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {doneOpen && (
         <WorkDoneDialog
           job={job}
@@ -876,6 +905,72 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
         />
       )}
     </>
+  );
+}
+
+/**
+ * The big buttons a tech needs on site, in one row (Fred, 2026-10-02: "build
+ * the tech quick actions next" — the idea from SimplySub). Clock in/out,
+ * Photo (straight to the camera; stamped and sent like any job photo), Note
+ * (a timed line added to the job report), Messages and Directions. Save and
+ * Work done stay pinned at the bottom.
+ */
+function QuickActions({ job, showClock, clockEnabled, locating, photoBusy, onClock, onPhoto, onNote, onMessages }: {
+  job: WfJob; showClock: boolean; clockEnabled: boolean; locating: boolean; photoBusy: boolean;
+  onClock: () => void; onPhoto: (f: File | undefined) => void; onNote: () => void; onMessages: () => void;
+}) {
+  const on = isClockedIn(job);
+  const tile: React.CSSProperties = {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minHeight: 76, padding: '10px 6px', borderRadius: 14, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
+    font: 'inherit', fontWeight: 600, fontSize: 13.5, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
+  };
+  const address = fullAddress(job);
+  return (
+    <div role="toolbar" aria-label="Quick actions" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: 8, width: '100%' }}>
+      {showClock && (
+        <button
+          style={{ ...tile, background: on ? 'var(--wf-danger)' : 'var(--wf-gold)', color: on ? '#fff' : 'var(--wf-gold-ink)', border: 'none', opacity: clockEnabled ? 1 : 0.5 }}
+          disabled={!clockEnabled || locating} onClick={onClock}
+        >
+          {on ? <StopCircleIcon /> : <PlayCircleIcon />}
+          {locating ? 'One moment…' : on ? 'Clock out' : 'Clock in'}
+        </button>
+      )}
+      <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
+        <Camera size={24} color="var(--wf-navy)" />
+        {photoBusy ? 'Sending…' : 'Photo'}
+        <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onPhoto(f); }} />
+      </label>
+      <button style={tile} onClick={onNote}><NotebookPen size={24} color="var(--wf-navy)" /> Note</button>
+      <button style={tile} onClick={onMessages}><MessageSquare size={24} color="var(--wf-navy)" /> Messages</button>
+      {address && (
+        <a style={tile} href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={24} color="var(--wf-navy)" /> Directions</a>
+      )}
+    </div>
+  );
+}
+
+const PlayCircleIcon = () => <PlayCircle size={24} />;
+const StopCircleIcon = () => <StopCircle size={24} />;
+
+/** A quick note for the office, added to the job report with the time. */
+function NoteDialog({ onClose, onSave }: { onClose: () => void; onSave: (text: string) => void | Promise<void> }) {
+  const [text, setText] = useState('');
+  return (
+    <Dialog
+      title="Add a note"
+      onClose={onClose}
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="wf-btn wf-btn-navy" disabled={!text.trim()} onClick={() => void onSave(text)}><Save size={16} /> Add note</button>
+      </>}
+    >
+      <textarea className="wf-input" rows={4} autoFocus value={text} onChange={(e) => setText(e.target.value)}
+        placeholder="What's happening — e.g. Arrived, manager let us in. Rack is in the back office." />
+      <div className="wf-subtle" style={{ fontSize: 12, marginTop: 6 }}>Added to the job report with the time. Works with no signal.</div>
+    </Dialog>
   );
 }
 
@@ -1173,11 +1268,11 @@ async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<{ url: str
  * printed along the bottom of the picture itself. With no signal the stamped
  * photo waits on the phone and goes to the office later.
  */
-function JobPhotos({ job, uid, canAdd, onCount }: { job: WfJob; uid: string; canAdd: boolean; onCount?: (n: number) => void }) {
+/** A job's photos: sent, waiting with no signal, and adding a new one. */
+function useJobPhotos(job: WfJob, uid: string) {
   const [sent, setSent] = useState<SentPhoto[]>([]);
   const [waiting, setWaiting] = useState<{ p: QueuedPhoto; url: string }[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
-  useEffect(() => { onCount?.(sent.length + waiting.length); }, [sent.length, waiting.length, onCount]);
 
   const loadSent = useCallback(async () => {
     const { data, error } = await createClient().rpc('wf_tech_job_photos', { p_wo_number: job.number });
@@ -1247,6 +1342,11 @@ function JobPhotos({ job, uid, canAdd, onCount }: { job: WfJob; uid: string; can
     }
   };
 
+  return { sent, waiting, busy, add, flush };
+}
+
+function JobPhotos({ canAdd, ph }: { canAdd: boolean; ph: ReturnType<typeof useJobPhotos> }) {
+  const { sent, waiting, busy, add, flush } = ph;
   const pick = (source: 'camera' | 'library', icon: React.ReactNode, label: string, primary: boolean) => (
     <label className={`wf-btn ${primary ? 'wf-btn-gold' : 'wf-btn-outline'}`} style={{ flex: '1 1 150px', opacity: busy ? 0.6 : 1, pointerEvents: busy ? 'none' : 'auto' }}>
       {icon} {label}

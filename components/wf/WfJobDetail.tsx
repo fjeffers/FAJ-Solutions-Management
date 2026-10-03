@@ -64,8 +64,10 @@ function fmtTime(raw: string): string {
 }
 
 /** Clock in / out with a live running time. */
-export function TimeClockCard({ job, enabled, busy, onToggle }: {
+export function TimeClockCard({ job, enabled, busy, onToggle, showButton = true }: {
   job: WfJob; enabled: boolean; busy?: boolean; onToggle: () => void;
+  /** False when the quick-action row carries the clock button. */
+  showButton?: boolean;
 }) {
   const on = isClockedIn(job);
   const [now, setNow] = useState(() => new Date());
@@ -90,14 +92,16 @@ export function TimeClockCard({ job, enabled, busy, onToggle }: {
           {on ? `On the clock since ${since}` : job.checkedInAt ? 'Time logged on this job' : 'Not started yet'}
         </div>
       </div>
-      <button
-        className={`wf-btn ${on ? 'wf-btn-danger' : 'wf-btn-gold'}`}
-        style={{ flex: '1 1 140px', maxWidth: 220 }}
-        disabled={!enabled || busy}
-        onClick={onToggle}
-      >
-        {on ? <StopCircle size={18} /> : <PlayCircle size={18} />} {on ? 'Clock out' : 'Clock in'}
-      </button>
+      {showButton && (
+        <button
+          className={`wf-btn ${on ? 'wf-btn-danger' : 'wf-btn-gold'}`}
+          style={{ flex: '1 1 140px', maxWidth: 220 }}
+          disabled={!enabled || busy}
+          onClick={onToggle}
+        >
+          {on ? <StopCircle size={18} /> : <PlayCircle size={18} />} {on ? 'Clock out' : 'Clock in'}
+        </button>
+      )}
     </div>
   );
 }

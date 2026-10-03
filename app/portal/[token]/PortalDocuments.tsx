@@ -15,6 +15,8 @@ type Props = {
   contractSignedAt: string | null;
   contractSignedName: string | null;
   contractorName: string;
+  /** Called after a W-9 or the agreement is filed (the tech portal's gate). */
+  onFiled?: () => void;
 };
 
 const card: React.CSSProperties = {
@@ -61,7 +63,7 @@ function fmt(d: string | null) {
 }
 
 export default function PortalDocuments({
-  token, w9Received, w9SubmittedAt, contractUrl, contractSignedAt, contractSignedName, contractorName,
+  token, w9Received, w9SubmittedAt, contractUrl, contractSignedAt, contractSignedName, contractorName, onFiled,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -92,6 +94,7 @@ export default function PortalDocuments({
       if (!res.ok) throw new Error(json.error ?? 'Could not submit your details');
       setW9Done(true);
       setFormOpen(false);
+      onFiled?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not submit your details');
     } finally {
@@ -110,6 +113,7 @@ export default function PortalDocuments({
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Upload failed');
       setW9Done(true);
+      onFiled?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Upload failed');
     } finally {
@@ -129,6 +133,7 @@ export default function PortalDocuments({
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Could not record signature');
       setSignedAt(new Date().toISOString());
+      onFiled?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not record signature');
     } finally {

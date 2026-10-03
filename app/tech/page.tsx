@@ -268,6 +268,22 @@ export default function TechPortalPage() {
     );
   }
 
+  // Paperwork first (Fred, 2026-10-02: "reinforce the W-9 at log in for tech
+  // and the contract"). Until a tech has signed the contractor agreement AND
+  // filed a W-9, the portal shows only that — no jobs, offers or pay. Filing
+  // either form reloads the profile, and the portal opens once both are in.
+  if (profile && (!profile.w9_received || !profile.contract_signed_at)) {
+    return (
+      <PaperworkGate
+        profile={profile}
+        portalToken={portalToken}
+        onFiled={() => { if (uid) void loadLive(uid, true); }}
+        onRetry={() => { if (uid) void loadLive(uid, false); }}
+        onSignOut={signOut}
+      />
+    );
+  }
+
   const railItem = (t: Tab, icon: React.ReactNode, badge?: number) => (
     <button className="wf-rail-item" aria-current={tab === t ? 'page' : undefined} onClick={() => go(t)}>
       {icon} {TAB_TITLE[t]}
@@ -368,6 +384,77 @@ export default function TechPortalPage() {
             )
           ) : null}
         </main>
+      </div>
+    </div>
+  );
+}
+
+// ── Paperwork before anything else ──────────────────────────────────────────
+
+function PaperworkGate({ profile, portalToken, onFiled, onRetry, onSignOut }: {
+  profile: TechProfile; portalToken: string | null;
+  onFiled: () => void; onRetry: () => void; onSignOut: () => void;
+}) {
+  const w9 = !!profile.w9_received;
+  const agreement = !!profile.contract_signed_at;
+  const step = (done: boolean, n: number, title: string, note: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0' }}>
+      <span style={{
+        width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontWeight: 700, background: done ? 'var(--wf-success)' : 'var(--wf-navy)', color: '#fff',
+      }}>{done ? <CheckCircle2 size={17} /> : n}</span>
+      <span style={{ flex: 1 }}>
+        <span style={{ display: 'block', fontWeight: 600 }}>{title}</span>
+        <span className="wf-subtle" style={{ fontSize: 12.5 }}>{done ? 'Done' : note}</span>
+      </span>
+    </div>
+  );
+  return (
+    <div className="wf wf-page">
+      <Toaster />
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 16px 48px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="wf-hero">
+          <div className="wf-hero-date">FAJ Solutions · Tech Portal</div>
+          <h1 className="wf-hero-greet">Welcome, {profile.name.split(/\s+/)[0]}</h1>
+          <div style={{ color: 'rgba(255,255,255,0.85)', marginTop: 8, maxWidth: 520 }}>
+            Before you can see your jobs, Fred needs two things from you. It takes a few minutes, and you only do it once.
+          </div>
+        </div>
+
+        <div className="wf-card" style={{ padding: '6px 16px' }}>
+          {step(agreement, 1, 'Sign the contractor agreement', 'Read it and type your name to sign.')}
+          <div style={{ borderTop: '1px solid var(--wf-line)' }} />
+          {step(w9, 2, 'File your W-9', 'Needed before you can be paid, and for your 1099 at tax time.')}
+        </div>
+
+        <div className="wf-card" style={{ padding: 16 }}>
+          {portalToken ? (
+            // The SAME component and API route the emailed portal link uses.
+            // Tax IDs travel one audited path, not two.
+            <PortalDocuments
+              token={portalToken}
+              w9Received={w9}
+              w9SubmittedAt={profile.w9_submitted_at}
+              contractUrl={null}
+              contractSignedAt={profile.contract_signed_at}
+              contractSignedName={null}
+              contractorName={profile.name}
+              onFiled={onFiled}
+            />
+          ) : (
+            <div style={{ textAlign: 'center', padding: '12px 0' }}>
+              <div style={{ fontWeight: 600 }}>The forms need signal to open.</div>
+              <button className="wf-btn wf-btn-navy" style={{ marginTop: 10 }} onClick={onRetry}><RefreshCw size={16} /> Try again</button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ textAlign: 'center' }}>
+          <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 8 }}>
+            Your tax number goes straight to the office&apos;s secure files. It is never kept on this phone.
+          </div>
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onSignOut}><LogOut size={16} /> Sign out</button>
+        </div>
       </div>
     </div>
   );

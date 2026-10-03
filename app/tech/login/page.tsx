@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { claimTechAccount } from '@/lib/tech-portal';
 import { suggestUsername, usernameProblem, USERNAME_RULE } from '@/lib/usernames';
-import { HardHat, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 
 // The tech portal's sign-in (Fred, 2026-10-02: "change log in style so name
@@ -128,10 +128,8 @@ export default function TechLoginPage() {
     <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div className="wf-card" style={{ maxWidth: 440, width: '100%', overflow: 'hidden' }}>
         <div className="wf-hero" style={{ borderRadius: 0, textAlign: 'center', padding: '26px 24px' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <HardHat size={18} color="var(--wf-gold)" />
-            <span className="wf-display" style={{ fontSize: 12, letterSpacing: 1.6, color: 'var(--wf-gold)', fontWeight: 700 }}>FAJ SOLUTIONS</span>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ width: 220, maxWidth: '80%', height: 'auto', marginBottom: 6 }} />
           <div className="wf-hero-greet" style={{ fontSize: 30 }}>Tech Portal</div>
           <div style={{ color: 'rgba(255,255,255,0.82)', marginTop: 6, fontSize: 13 }}>
             {mode === 'signin' ? 'Your jobs, your hours, your pay.' : 'Make your login. Use the email Fred has on file for you.'}

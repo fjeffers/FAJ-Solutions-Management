@@ -6,6 +6,8 @@ export const metadata: Metadata = {
   title: 'FAJ Business Manager',
   description: 'Contractor payment tracker for FAJ Solutions',
   manifest: '/manifest.json',
+  // Fred's logo (2026-10-02: "the web app should have my logo").
+  icons: { icon: '/icons/favicon-64.png', apple: '/icons/apple-touch-icon.png' },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -29,7 +31,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Cinzel:wght@500;600;700&family=Lato:wght@300;400;700&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Playfair+Display:wght@600;700&display=swap"
           rel="stylesheet"
         />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body>
         {children}

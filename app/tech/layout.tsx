@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   // two identical tiles, one of which a tech cannot sign into.
   icons: {
     icon: '/icons/tech-icon-192.png',
-    apple: '/icons/tech-icon-192.png',
+    apple: '/icons/tech-apple-touch-icon.png',
   },
   appleWebApp: {
     capable: true,

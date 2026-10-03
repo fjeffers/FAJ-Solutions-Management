@@ -74,12 +74,14 @@ export default function StaffLogin({ title, tagline, icon, home }: {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div className="glass card" style={{ maxWidth: 420, width: '100%', padding: 40 }}>
+      <div className="glass card" style={{ maxWidth: 420, width: '100%', padding: 40, overflow: 'hidden' }}>
+        {/* Fred's logo (2026-10-02). The logo is light-on-dark, so it sits on a navy band. */}
+        <div style={{ margin: '-40px -40px 26px', padding: '24px 20px', textAlign: 'center', background: 'linear-gradient(180deg, #13284A 0%, #0E1B2E 100%)' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ width: 240, maxWidth: '85%', height: 'auto' }} />
+        </div>
         <div style={{ textAlign: 'center', marginBottom: 30 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            {icon}
-            <span className="display" style={{ fontSize: 14, color: 'var(--gold)', fontWeight: 700 }}>FAJ SOLUTIONS</span>
-          </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>{icon}</div>
           <div className="serif" style={{ fontSize: 34, fontWeight: 600, lineHeight: 1 }}>{title}</div>
           <div style={{ color: '#666', marginTop: 8, fontSize: 13 }}>
             {mode === 'signin' ? tagline : 'Set up your login with the email Fred added for you.'}

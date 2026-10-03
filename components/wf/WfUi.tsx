@@ -5,8 +5,8 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, ChevronRight, Clock, Inbox, UserX, Users, X } from 'lucide-react';
 import {
-  WF_STATUS_COLOR, wfStatusLabel, whenText, place, tasksDone, isClockedIn, jobImage,
-  type WfJob, type WfStatus,
+  WF_STATUS_COLOR, WF_BUCKETS, wfStatusLabel, whenText, place, tasksDone, isClockedIn, jobImage,
+  type WfBucket, type WfJob, type WfStatus,
 } from '@/lib/wf';
 import { fmtMoney } from '@/lib/utils';
 import { backdropClose } from '@/lib/backdrop';
@@ -211,6 +211,50 @@ export function Dialog({ title, onClose, children, footer, wide = false }: {
         </div>
         {children}
         {footer && <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, flexWrap: 'wrap' }}>{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Available · Current · Pending · Closed — the four lists a job list is
+ * split into (Fred, 2026-10-02). No "All jobs": one list at a time.
+ */
+export function BucketTabs({ value, counts, onChange, ownerView = false }: {
+  value: WfBucket;
+  counts: Record<WfBucket, number>;
+  onChange: (b: WfBucket) => void;
+  ownerView?: boolean;
+}) {
+  return (
+    <div>
+      <div role="tablist" aria-label="Which jobs to show" style={{
+        display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 4, padding: 4,
+        background: '#ECE8DF', borderRadius: 14,
+      }}>
+        {WF_BUCKETS.map((b) => {
+          const on = value === b.key;
+          return (
+            <button
+              key={b.key} role="tab" aria-selected={on} onClick={() => onChange(b.key)} className="wf-bucket-tab"
+              style={{
+                border: 'none', borderRadius: 10, padding: '9px 6px', cursor: 'pointer', font: 'inherit',
+                fontWeight: 600, fontSize: 13.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                background: on ? 'var(--wf-navy)' : 'transparent', color: on ? '#fff' : 'var(--wf-text)',
+                boxShadow: on ? '0 2px 6px rgba(14,27,46,0.2)' : 'none',
+              }}
+            >
+              {b.label}
+              <span style={{
+                fontSize: 11.5, fontWeight: 700, borderRadius: 999, padding: '1px 7px',
+                background: on ? 'rgba(255,255,255,0.18)' : 'rgba(14,27,46,0.08)',
+              }}>{counts[b.key]}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 6 }}>
+        {WF_BUCKETS.find((b) => b.key === value)?.hint[ownerView ? 'office' : 'tech']}
       </div>
     </div>
   );

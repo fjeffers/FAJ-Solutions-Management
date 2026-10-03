@@ -307,3 +307,26 @@ describe('taps still waiting on the phone', () => {
     expect(j.status).toBe('inProgress');
   });
 });
+
+describe('the four lists', () => {
+  it('sorts every stage into available, current, pending or closed', async () => {
+    const { bucketOf, bucketCounts } = await import('./wf');
+    expect(bucketOf('offered')).toBe('available');
+    expect(bucketOf('open', true)).toBe('available');
+    expect(bucketOf('scheduled')).toBe('current');
+    expect(bucketOf('inProgress')).toBe('current');
+    expect(bucketOf('workDone')).toBe('pending');
+    expect(bucketOf('closed')).toBe('closed');
+    // A tech's own "no" leaves their lists; for the office it needs a tech again.
+    expect(bucketOf('declined')).toBeNull();
+    expect(bucketOf('declined', true)).toBe('available');
+    const jobs = [
+      wfJobFromTech({ id: '1', wo_number: '1', wo_status: 'Assigned' }),
+      wfJobFromTech({ id: '2', wo_number: '2', wo_status: 'Assigned', my_response: 'accepted' }),
+      wfJobFromTech({ id: '3', wo_number: '3', wo_status: 'Work Done' }),
+      wfJobFromTech({ id: '4', wo_number: '4', wo_status: 'Paid' }),
+      wfJobFromTech({ id: '5', wo_number: '5', wo_status: 'Assigned', my_response: 'declined' }),
+    ];
+    expect(bucketCounts(jobs)).toEqual({ available: 1, current: 1, pending: 1, closed: 1 });
+  });
+});

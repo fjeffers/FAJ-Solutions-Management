@@ -411,3 +411,45 @@ export function wfReasonText(reason: string, name?: string): string {
     default: return "That didn't go through. Try again.";
   }
 }
+
+// ── The four lists (Fred, 2026-10-02: "don't want to see all the jobs — I want
+//    to see available, current, pending and closed") ─────────────────────────
+
+export type WfBucket = 'available' | 'current' | 'pending' | 'closed';
+
+export const WF_BUCKETS: { key: WfBucket; label: string; hint: { tech: string; office: string } }[] = [
+  { key: 'available', label: 'Available', hint: { tech: 'Sent to you — waiting for your answer', office: 'Needs a tech, or waiting on a tech to answer' } },
+  { key: 'current',   label: 'Current',   hint: { tech: 'Accepted — scheduled or in progress', office: 'Scheduled or in progress' } },
+  { key: 'pending',   label: 'Pending',   hint: { tech: 'Work done — waiting on the office', office: 'Work done — close and bill' } },
+  { key: 'closed',    label: 'Closed',    hint: { tech: 'Finished and closed', office: 'Approved, paid or archived' } },
+];
+
+/**
+ * Which list a job sits in. A tech's declined offer leaves their lists; for
+ * the office a job every tech declined needs a tech again, so it is available.
+ */
+export function bucketOf(s: WfStatus, ownerView = false): WfBucket | null {
+  switch (s) {
+    case 'open':
+    case 'offered':
+      return 'available';
+    case 'declined':
+      return ownerView ? 'available' : null;
+    case 'scheduled':
+    case 'inProgress':
+      return 'current';
+    case 'workDone':
+      return 'pending';
+    case 'closed':
+      return 'closed';
+  }
+}
+
+export function bucketCounts(jobs: WfJob[], ownerView = false): Record<WfBucket, number> {
+  const c: Record<WfBucket, number> = { available: 0, current: 0, pending: 0, closed: 0 };
+  for (const j of jobs) {
+    const b = bucketOf(j.status, ownerView);
+    if (b) c[b]++;
+  }
+  return c;
+}

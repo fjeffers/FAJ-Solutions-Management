@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   // an iPhone home screen showed the owner app's icon for the tech portal —
   // two identical tiles, one of which a tech cannot sign into.
   icons: {
-    icon: '/icons/tech-icon-192.png',
+    icon: '/icons/faj-favicon-v2.png',
     apple: '/icons/tech-apple-touch-icon.png',
   },
   appleWebApp: {

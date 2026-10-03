@@ -23,8 +23,8 @@ import {
   type PendingAction,
 } from '@/lib/wf-outbox';
 import {
-  techCounts, matchesWf, sortWf, statusesPresent, wfStatusLabel, canWork, isClockedIn, isFinished, formatDuration,
-  fullAddress, type WfJob, type WfStatus, type WfTask,
+  techCounts, matchesWf, sortWf, bucketOf, bucketCounts, canWork, isClockedIn, isFinished, formatDuration,
+  fullAddress, type WfBucket, type WfJob, type WfTask,
 } from '@/lib/wf';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
@@ -38,7 +38,7 @@ import TechInstall from '@/components/TechInstall';
 import TechCrew from '@/components/TechCrew';
 import { fetchCrewBoard } from '@/lib/crew-portal';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
-import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
+import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
@@ -66,7 +66,16 @@ export default function TechPortalPage() {
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window === 'undefined') return 'jobs';
     const t = new URLSearchParams(window.location.search).get('tab');
-    return t === 'open' ? 'offers' : TABS.includes(t as Tab) ? (t as Tab) : 'jobs';
+    // Offers are the Available list on My jobs now; old links still land there.
+    if (t === 'open' || t === 'offers') return 'jobs';
+    return TABS.includes(t as Tab) ? (t as Tab) : 'jobs';
+  });
+  // Available · Current · Pending · Closed (Fred, 2026-10-02: "don't want to see
+  // all the jobs"). Opens on Current — the work that is theirs to do.
+  const [bucket, setBucket] = useState<WfBucket>(() => {
+    if (typeof window === 'undefined') return 'current';
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return t === 'open' || t === 'offers' ? 'available' : 'current';
   });
   const [openId, setOpenId] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(false);
@@ -308,7 +317,11 @@ export default function TechPortalPage() {
           </div>
         </div>
         {railItem('jobs', <Briefcase size={18} />)}
-        {railItem('offers', <Inbox size={18} />, offers.length)}
+        <button className="wf-rail-item" aria-current={tab === 'jobs' && !openJob && bucket === 'available' ? 'page' : undefined}
+          onClick={() => { go('jobs'); setBucket('available'); }}>
+          <Inbox size={18} /> Available
+          {offers.length > 0 && <span className="wf-rail-badge">{offers.length}</span>}
+        </button>
         {onCrew && railItem('crew', <Users size={18} />)}
         {railItem('pay', <Wallet size={18} />)}
         {railItem('chat', <MessageSquare size={18} />, unread)}
@@ -350,11 +363,9 @@ export default function TechPortalPage() {
           ) : tab === 'jobs' ? (
             <JobsHome
               name={profile?.name ?? ''} jobs={jobs} counts={counts} offers={offers.length} onCrew={onCrew}
-              paperworkDue={paperworkDue} profile={profile}
+              paperworkDue={paperworkDue} profile={profile} bucket={bucket} setBucket={setBucket} act={act}
               onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} go={go}
             />
-          ) : tab === 'offers' ? (
-            <OffersList jobs={offers} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} act={act} />
           ) : tab === 'crew' ? (
             <TechCrew />
           ) : tab === 'pay' ? (
@@ -489,16 +500,22 @@ function SyncStatus({ box, savedAt }: { box: Outbox | null; savedAt: string | nu
 
 // ── My jobs ─────────────────────────────────────────────────────────────────
 
-function JobsHome({ name, jobs, counts, offers, onCrew, paperworkDue, profile, onOpen, go }: {
+function JobsHome({ name, jobs, counts, offers, onCrew, paperworkDue, profile, bucket, setBucket, act, onOpen, go }: {
   name: string; jobs: WfJob[]; counts: ReturnType<typeof techCounts>; offers: number; onCrew: boolean;
-  paperworkDue: number; profile: TechProfile | null; onOpen: (id: string) => void; go: (t: Tab) => void;
+  paperworkDue: number; profile: TechProfile | null;
+  bucket: WfBucket; setBucket: (b: WfBucket) => void; act: (a: PendingAction, sent?: string) => Promise<void>;
+  onOpen: (id: string) => void; go: (t: Tab) => void;
 }) {
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<WfStatus | 'all'>('all');
-  const mine = jobs.filter((j) => j.status !== 'declined' && j.status !== 'offered');
-  const searched = mine.filter((j) => matchesWf(j, search));
-  const shown = sortWf(searched.filter((j) => filter === 'all' || j.status === filter));
+  const searched = jobs.filter((j) => bucketOf(j.status) !== null && matchesWf(j, search));
+  const shown = sortWf(searched.filter((j) => bucketOf(j.status) === bucket));
   const first = name.trim().split(/\s+/)[0] ?? '';
+  const EMPTY: Record<WfBucket, string> = {
+    available: 'Nothing waiting on you. New jobs Fred sends you show up here to accept.',
+    current: 'No current jobs. Accept one under Available.',
+    pending: 'Nothing waiting on the office.',
+    closed: 'No closed jobs in the last 45 days.',
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -512,7 +529,9 @@ function JobsHome({ name, jobs, counts, offers, onCrew, paperworkDue, profile, o
       />
       <TechInstall />
       {offers > 0 && (
-        <Banner title="Offers" subtitle={`${offers} ${offers === 1 ? 'job is' : 'jobs are'} waiting for your answer`} onClick={() => go('offers')} />
+        bucket !== 'available' && (
+          <Banner title="Available" subtitle={`${offers} ${offers === 1 ? 'job is' : 'jobs are'} waiting for your answer`} onClick={() => setBucket('available')} />
+        )
       )}
       {paperworkDue > 0 && profile && (
         <button className="wf-card wf-card-click" onClick={() => go('paperwork')}
@@ -539,48 +558,29 @@ function JobsHome({ name, jobs, counts, offers, onCrew, paperworkDue, profile, o
 
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <h2 className="wf-title" style={{ flex: 1 }}>My jobs</h2>
-        <span className="wf-display" style={{ fontWeight: 600 }}>{shown.length}</span>
       </div>
+      <BucketTabs value={bucket} counts={bucketCounts(searched)} onChange={setBucket} />
       <input className="wf-input" value={search} onChange={(e) => setSearch(e.target.value)}
         placeholder="Search WO number, client, city…" aria-label="Search your jobs" />
-      <Filters<WfStatus>
-        value={filter} onChange={setFilter}
-        options={statusesPresent(mine).map((st) => ({ key: st, label: wfStatusLabel(st, false), count: searched.filter((j) => j.status === st).length }))}
-      />
       {shown.length === 0 ? (
-        <Empty
-          title={mine.length === 0 ? 'No jobs yet' : 'No jobs here'}
-          message={mine.length === 0 ? 'When Fred gives you a job it shows up under Offers, then here once you accept.' : 'Nothing matches this filter or search.'}
-        />
+        <Empty title={search ? 'Nothing matches your search' : 'Nothing here'} message={search ? 'Try another word, or clear the search.' : EMPTY[bucket]} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 400px), 1fr))', gap: 12 }}>
-          {shown.map((j, i) => <JobCard key={j.id} job={j} index={i} onOpen={() => onOpen(j.id)} />)}
+          {shown.map((j, i) => bucket === 'available' ? (
+            <div key={j.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <JobCard job={j} index={i} onOpen={() => onOpen(j.id)} />
+              <OfferButtons job={j} act={act} />
+            </div>
+          ) : (
+            <JobCard key={j.id} job={j} index={i} onOpen={() => onOpen(j.id)} />
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-// ── Offers ──────────────────────────────────────────────────────────────────
-
-function OffersList({ jobs, onOpen, act }: {
-  jobs: WfJob[]; onOpen: (id: string) => void; act: (a: PendingAction, sent?: string) => Promise<void>;
-}) {
-  if (jobs.length === 0) {
-    return <Empty icon={<Inbox size={34} />} title="Nothing waiting on you" message="New jobs Fred sends you show up here to accept." />;
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="wf-subtle">Fred sent you {jobs.length === 1 ? 'this job' : 'these jobs'}. Open one to see everything, or answer here.</div>
-      {jobs.map((j, i) => (
-        <div key={j.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <JobCard job={j} index={i} onOpen={() => onOpen(j.id)} />
-          <OfferButtons job={j} act={act} />
-        </div>
-      ))}
-    </div>
-  );
-}
+// ── Accept / Not interested ─────────────────────────────────────────────────
 
 function OfferButtons({ job, act }: { job: WfJob; act: (a: PendingAction, sent?: string) => Promise<void> }) {
   return (

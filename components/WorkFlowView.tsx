@@ -15,8 +15,8 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
-  wfJobFromOwner, matchesWf, sortWf, ownerCounts, statusesPresent, wfStatusLabel, withTask, fullAddress, wfReasonText,
-  type WfJob, type WfStatus, type WfTask,
+  wfJobFromOwner, matchesWf, sortWf, ownerCounts, bucketOf, bucketCounts, withTask, fullAddress, wfReasonText,
+  type WfBucket, type WfJob, type WfTask,
 } from '@/lib/wf';
 import { fmtMoney, hasPaySplit, woProfitOrNull } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
@@ -24,7 +24,7 @@ import type { Contractor, EnrichedWorkOrder } from '@/lib/types';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import { mapLink } from '@/lib/geo';
-import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
+import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
@@ -60,23 +60,21 @@ export default function WorkFlowView({
   onOpenChange: (id: string | null) => void;
 }) {
   const [search, setSearch] = useState(initialSearch);
-  const [filter, setFilter] = useState<WfStatus | 'all'>('all');
+  // Available · Current · Pending · Closed — no "All jobs" (Fred, 2026-10-02).
+  const [bucket, setBucket] = useState<WfBucket>('current');
   const setOpenId = onOpenChange;
 
   const rows: Row[] = useMemo(() => workOrders.map((w) => ({ w, job: wfJobFromOwner(w) })), [workOrders]);
-  const live = rows.filter((r) => !r.job.archived);
   const counts = ownerCounts(rows.map((r) => r.job));
 
-  // "All jobs" is everything still live; Closed also reaches into the archive.
-  const pool = filter === 'closed' ? rows.filter((r) => r.job.status === 'closed') : live;
-  const searched = pool.filter((r) => matchesWf(r.job, search));
-  const shown = sortWf(searched.filter((r) => filter === 'all' || r.job.status === filter).map((r) => r.job))
-    .map((j) => searched.find((r) => r.job.id === j.id)!)
+  // Closed reaches into the archive too; the other three are live jobs only.
+  const searched = rows.filter((r) => matchesWf(r.job, search));
+  const inBucket = searched.filter((r) => bucketOf(r.job.status, true) === bucket);
+  const shown = sortWf(inBucket.map((r) => r.job))
+    .map((j) => inBucket.find((r) => r.job.id === j.id)!)
     // Closed work reads newest first; everything else soonest first.
-    .sort((a, b) => (filter === 'closed' ? (b.w.updated_at ?? '').localeCompare(a.w.updated_at ?? '') : 0));
-  const chips = statusesPresent(live.map((r) => r.job));
-  if (!chips.includes('closed') && rows.some((r) => r.job.status === 'closed')) chips.push('closed');
-  const chipCount = (st: WfStatus) => (st === 'closed' ? rows : live).filter((r) => r.job.status === st && matchesWf(r.job, search)).length;
+    .sort((a, b) => (bucket === 'closed' ? (b.w.updated_at ?? '').localeCompare(a.w.updated_at ?? '') : 0));
+  const tabCounts = bucketCounts(searched.map((r) => r.job), true);
 
   const open = openId ? rows.find((r) => r.w.id === openId) ?? null : null;
 
@@ -106,26 +104,25 @@ export default function WorkFlowView({
           </button>
         </>}
         stats={[
-          { value: String(counts.needTech), label: 'Need a tech', onClick: () => setFilter('open') },
+          { value: String(counts.needTech), label: 'Need a tech', onClick: () => setBucket('available') },
           { value: String(counts.today), label: 'Today' },
-          { value: String(counts.workDone), label: 'Work done', onClick: () => setFilter('workDone') },
+          { value: String(counts.workDone), label: 'Work done', onClick: () => setBucket('pending') },
           { value: fmtMoney(owedToTechs), label: 'Owed to techs' },
         ]}
       />
 
-      {counts.needTech > 0 && filter !== 'open' && (
+      {counts.needTech > 0 && bucket !== 'available' && (
         <Banner
           tone="red"
           title="Needs a tech"
           subtitle={`${counts.needTech} ${counts.needTech === 1 ? 'job has' : 'jobs have'} nobody on it`}
-          onClick={() => setFilter('open')}
+          onClick={() => setBucket('available')}
         />
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <h2 className="wf-title" style={{ flex: 1 }}>
-          {filter === 'all' ? 'All work orders' : wfStatusLabel(filter, true)}
-          <span className="wf-subtle" style={{ fontWeight: 500, marginLeft: 8, fontSize: 15 }}>{shown.length}</span>
+          Work orders
         </h2>
         {modeSwitch}
       </div>
@@ -138,16 +135,12 @@ export default function WorkFlowView({
         />
       </div>
 
-      <Filters<WfStatus>
-        value={filter}
-        onChange={setFilter}
-        options={chips.map((st) => ({ key: st, label: wfStatusLabel(st, true), count: chipCount(st) }))}
-      />
+      <BucketTabs value={bucket} counts={tabCounts} onChange={setBucket} ownerView />
 
       {shown.length === 0 ? (
         <Empty
           title={rows.length === 0 ? 'No jobs yet' : 'No jobs here'}
-          message={rows.length === 0 ? 'Create one with New job.' : 'Nothing matches this filter or search.'}
+          message={rows.length === 0 ? 'Create one with New job.' : search ? 'Nothing matches your search.' : 'Nothing in this list right now.'}
           action={rows.length === 0 ? <button className="wf-btn wf-btn-navy" onClick={onAdd}><Plus size={16} /> New job</button> : undefined}
         />
       ) : (

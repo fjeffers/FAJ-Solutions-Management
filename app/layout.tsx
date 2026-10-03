@@ -7,7 +7,8 @@ export const metadata: Metadata = {
   description: 'Contractor payment tracker for FAJ Solutions',
   manifest: '/manifest.json',
   // Fred's logo (2026-10-02: "the web app should have my logo").
-  icons: { icon: '/icons/favicon-64.png', apple: '/icons/apple-touch-icon.png' },
+  // New file names (…-v2) so browsers drop the old cached teal icons.
+  icons: { icon: '/icons/faj-favicon-v2.png', apple: '/icons/apple-touch-icon.png' },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',

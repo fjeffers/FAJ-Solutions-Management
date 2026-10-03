@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Archive, ArchiveRestore, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
-  Plus, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
+  Plus, Receipt, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -25,6 +25,7 @@ import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import JobLogReport from '@/components/JobLogReport';
 import { mapLink } from '@/lib/geo';
+import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseStatus } from '@/lib/expenses';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
 
@@ -76,6 +77,15 @@ export default function WorkFlowView({
     // Closed work reads newest first; everything else soonest first.
     .sort((a, b) => (bucket === 'closed' ? (b.w.updated_at ?? '').localeCompare(a.w.updated_at ?? '') : 0));
   const tabCounts = bucketCounts(searched.map((r) => r.job), true);
+  const [waitingExp, setWaitingExp] = useState<ExpenseRow[]>([]);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const loadWaiting = async () => {
+    const { data } = await createClient().from('job_expenses')
+      .select('id, wo_id, wo_number, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status, decline_reason')
+      .eq('status', 'submitted').order('created_at');
+    setWaitingExp((data as ExpenseRow[] | null) ?? []);
+  };
+  useEffect(() => { void loadWaiting(); }, [workOrders]);
 
   const open = openId ? rows.find((r) => r.w.id === openId) ?? null : null;
 
@@ -111,6 +121,32 @@ export default function WorkFlowView({
           { value: fmtMoney(owedToTechs), label: 'Owed to techs' },
         ]}
       />
+
+      {waitingExp.length > 0 && (
+        <button className="wf-card wf-card-click wf-rise" onClick={() => setInboxOpen(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 16, borderColor: 'rgba(180,83,9,0.35)' }}>
+          <span style={{ width: 46, height: 46, borderRadius: 12, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--wf-gold)', color: 'var(--wf-gold-ink)' }}>
+            <Receipt size={22} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 600, fontSize: 15 }}>Expenses to approve</span>
+            <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5 }}>
+              {waitingExp.length} receipt{waitingExp.length === 1 ? '' : 's'} from techs · {fmtMoney(waitingExp.reduce((s, e) => s + Number(e.amount), 0))}
+            </span>
+          </span>
+        </button>
+      )}
+      {inboxOpen && (
+        <Dialog title="Expenses to approve" wide onClose={() => setInboxOpen(false)}>
+          <ExpenseList
+            rows={waitingExp}
+            showJob
+            onOpenJob={(woId) => { setInboxOpen(false); setOpenId(woId); window.scrollTo({ top: 0 }); }}
+            onDecided={async () => { await loadWaiting(); void onRefresh(); }}
+          />
+          {waitingExp.length === 0 && <div className="wf-subtle">All caught up.</div>}
+        </Dialog>
+      )}
 
       {counts.needTech > 0 && bucket !== 'available' && (
         <Banner
@@ -269,6 +305,7 @@ function OwnerJob({
             </Section>
           )}
           <OwnerReport w={w} onEdit={() => onEdit(w)} />
+          <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />
           <OwnerPhotos w={w} />
           <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
             <WOTimeLogs woId={w.id} />
@@ -569,5 +606,117 @@ function OwnerReport({ w, onEdit }: { w: EnrichedWorkOrder; onEdit: () => void }
         )}
       </div>
     </Section>
+  );
+}
+
+// ── Expenses from techs (migration-103) ─────────────────────────────────────
+
+type ExpenseRow = {
+  id: string; wo_id: string; wo_number: string; contractor_name: string; category: string; vendor: string | null;
+  amount: number; expense_date: string; note: string | null; receipt_path: string | null;
+  status: ExpenseStatus; decline_reason: string | null;
+};
+
+/** The receipts techs put on this job, with Approve / Decline. */
+function OwnerExpenses({ woId, onDecided }: { woId: string; onDecided: () => void }) {
+  const [rows, setRows] = useState<ExpenseRow[] | null>(null);
+  const load = async () => {
+    const { data } = await createClient().from('job_expenses')
+      .select('id, wo_id, wo_number, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status, decline_reason')
+      .eq('wo_id', woId).order('created_at', { ascending: false });
+    setRows((data as ExpenseRow[] | null) ?? []);
+  };
+  useEffect(() => { void load(); }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!rows || rows.length === 0) return null;
+  const waiting = rows.filter((r) => r.status === 'submitted').length;
+  const approved = rows.filter((r) => r.status === 'approved').reduce((s, r) => s + Number(r.amount), 0);
+  return (
+    <Section title="Expenses" subtitle={`${waiting ? `${waiting} waiting · ` : ''}${fmtMoney(approved)} approved — paid back to the tech, not billed to the client`}>
+      <ExpenseList rows={rows} onDecided={async () => { await load(); onDecided(); }} />
+    </Section>
+  );
+}
+
+/**
+ * Expense rows with the receipt photo and the decision buttons. Approving
+ * adds a line to the job's pay (paid to that tech, not billed to the client —
+ * switch "bill client" on in Edit job if the client is paying for it).
+ */
+function ExpenseList({ rows, showJob = false, onOpenJob, onDecided }: {
+  rows: ExpenseRow[]; showJob?: boolean; onOpenJob?: (woId: string) => void; onDecided: () => void | Promise<void>;
+}) {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => {
+    const paths = rows.map((r) => r.receipt_path).filter((p): p is string => !!p && !urls[p]);
+    if (paths.length === 0) return;
+    createClient().storage.from('job-receipts').createSignedUrls(paths, 60 * 30).then(({ data }) => {
+      const next: Record<string, string> = {};
+      for (const d of data ?? []) if (d.path && d.signedUrl) next[d.path] = d.signedUrl;
+      setUrls((u) => ({ ...u, ...next }));
+    });
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const decide = async (r: ExpenseRow, approve: boolean) => {
+    let reason: string | null = null;
+    if (!approve) {
+      reason = window.prompt(`Decline ${fmtMoney(r.amount)} from ${r.contractor_name}? Tell them why (optional):`, '');
+      if (reason === null) return;
+    }
+    setBusy(r.id);
+    const { data, error } = await createClient().rpc('wf_owner_decide_expense', { p_id: r.id, p_approve: approve, p_reason: reason });
+    setBusy(null);
+    const res = (data ?? {}) as { ok?: boolean; reason?: string };
+    if (error || !res.ok) { toastError(error ? "Couldn't save that. Check your connection." : expenseReasonText(res.reason ?? '')); return; }
+    toastSuccess(approve ? `Approved — ${fmtMoney(r.amount)} added to what ${r.contractor_name} is owed on WO ${r.wo_number}.` : 'Declined. The tech can see why.');
+    await onDecided();
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {rows.map((r) => {
+        const st = EXPENSE_STATUS[r.status];
+        const url = r.receipt_path ? urls[r.receipt_path] : null;
+        return (
+          <div key={r.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', paddingBottom: 12, borderBottom: '1px solid var(--wf-line)' }}>
+            {url ? (
+              <a href={url} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="Receipt" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--wf-line)' }} />
+              </a>
+            ) : (
+              <span style={{ width: 64, height: 64, flexShrink: 0, borderRadius: 10, background: '#F1EEE6', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--wf-subtle)', fontSize: 11, textAlign: 'center' }}>
+                {r.receipt_path ? '…' : 'No photo'}
+              </span>
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <span className="wf-display" style={{ fontWeight: 700, fontSize: 16 }}>{fmtMoney(r.amount)}</span>
+                <span style={{ fontWeight: 600 }}>{expenseCategoryLabel(r.category)}{r.vendor ? ` · ${r.vendor}` : ''}</span>
+                <span className="wf-chip" style={{ color: st.color, background: st.bg }}>{r.status === 'submitted' ? 'Waiting' : st.label}</span>
+              </div>
+              <div className="wf-subtle" style={{ fontSize: 12.5 }}>
+                {r.contractor_name} · {new Date(`${r.expense_date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                {showJob && <> · {onOpenJob ? <button onClick={() => onOpenJob(r.wo_id)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--wf-navy)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}>WO {r.wo_number}</button> : `WO ${r.wo_number}`}</>}
+              </div>
+              {r.note && <div style={{ fontSize: 13, marginTop: 2 }}>{r.note}</div>}
+              {r.status === 'declined' && r.decline_reason && <div style={{ fontSize: 12.5, color: 'var(--wf-danger)' }}>Declined: {r.decline_reason}</div>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                {r.status !== 'approved' && (
+                  <button className="wf-btn wf-btn-success wf-btn-sm" disabled={busy === r.id} onClick={() => void decide(r, true)}>
+                    <CheckCircle2 size={15} /> {r.status === 'declined' ? 'Approve instead' : 'Approve'}
+                  </button>
+                )}
+                {r.status !== 'declined' && (
+                  <button className="wf-btn wf-btn-warn wf-btn-sm" disabled={busy === r.id} onClick={() => void decide(r, false)}>
+                    {r.status === 'approved' ? 'Undo — decline' : 'Decline'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

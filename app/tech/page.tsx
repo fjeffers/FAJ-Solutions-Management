@@ -29,7 +29,8 @@ import {
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { getPosition, stampLines, mapLink } from '@/lib/geo';
-import { stampPhoto } from '@/lib/photo-stamp';
+import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
+import { EXPENSE_CATEGORIES, EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
 import { queuePhoto, queuedPhotos, dropQueuedPhoto, type QueuedPhoto } from '@/lib/photo-queue';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
@@ -46,7 +47,7 @@ import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } f
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  ArrowLeft, Briefcase, Camera, CheckCircle2, NotebookPen, PlayCircle, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  ArrowLeft, Briefcase, Camera, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
   RefreshCw, Save, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X,
 } from 'lucide-react';
 
@@ -762,6 +763,13 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
   const ph = useJobPhotos(job, uid);
   const photoCount = ph.sent.length + ph.waiting.length;
   const [noteOpen, setNoteOpen] = useState(false);
+  const [expenseOpen, setExpenseOpen] = useState(false);
+  const [expenses, setExpenses] = useState<TechExpense[]>([]);
+  const loadExpenses = useCallback(async () => {
+    const { data, error } = await createClient().rpc('wf_tech_job_expenses', { p_wo_number: job.number });
+    if (!error && Array.isArray(data)) setExpenses(data as TechExpense[]);
+  }, [job.number]);
+  useEffect(() => { void loadExpenses(); }, [loadExpenses]);
   const working = canWork(job);
   const canReport = working || job.status === 'workDone';
   const dirty = notes.trim() !== job.closeoutNotes.trim()
@@ -849,6 +857,7 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
             onClock={() => void toggleClock()}
             onPhoto={(f) => void ph.add(f, 'camera')}
             onNote={() => setNoteOpen(true)}
+            onExpense={() => setExpenseOpen(true)}
             onMessages={openMessages}
           />
         ) : <>
@@ -869,11 +878,15 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
               dirty={dirty} onSave={(extra) => saveReport(extra)}
             />
           )}
+          {(canReport || expenses.length > 0) && (
+            <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
+          )}
           <JobPhotos canAdd={canReport} ph={ph} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} /></div>}
         </>}
         bottom={bottom}
       />
+      {expenseOpen && <ExpenseDialog job={job} onClose={() => setExpenseOpen(false)} onSaved={() => { setExpenseOpen(false); void loadExpenses(); }} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {doneOpen && (
         <WorkDoneDialog
@@ -915,9 +928,9 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
  * (a timed line added to the job report), Messages and Directions. Save and
  * Work done stay pinned at the bottom.
  */
-function QuickActions({ job, showClock, clockEnabled, locating, photoBusy, onClock, onPhoto, onNote, onMessages }: {
+function QuickActions({ job, showClock, clockEnabled, locating, photoBusy, onClock, onPhoto, onNote, onExpense, onMessages }: {
   job: WfJob; showClock: boolean; clockEnabled: boolean; locating: boolean; photoBusy: boolean;
-  onClock: () => void; onPhoto: (f: File | undefined) => void; onNote: () => void; onMessages: () => void;
+  onClock: () => void; onPhoto: (f: File | undefined) => void; onNote: () => void; onExpense: () => void; onMessages: () => void;
 }) {
   const on = isClockedIn(job);
   const tile: React.CSSProperties = {
@@ -944,6 +957,7 @@ function QuickActions({ job, showClock, clockEnabled, locating, photoBusy, onClo
           onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onPhoto(f); }} />
       </label>
       <button style={tile} onClick={onNote}><NotebookPen size={24} color="var(--wf-navy)" /> Note</button>
+      <button style={tile} onClick={onExpense}><Receipt size={24} color="var(--wf-navy)" /> Expense</button>
       <button style={tile} onClick={onMessages}><MessageSquare size={24} color="var(--wf-navy)" /> Messages</button>
       {address && (
         <a style={tile} href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={24} color="var(--wf-navy)" /> Directions</a>
@@ -954,6 +968,153 @@ function QuickActions({ job, showClock, clockEnabled, locating, photoBusy, onClo
 
 const PlayCircleIcon = () => <PlayCircle size={24} />;
 const StopCircleIcon = () => <StopCircle size={24} />;
+
+// ── Expenses (migration-103) ────────────────────────────────────────────────
+
+type TechExpense = {
+  id: string; category: ExpenseCategory; vendor: string | null; amount: number; expense_date: string;
+  note: string | null; has_receipt: boolean; status: ExpenseStatus; decline_reason: string | null;
+};
+
+/** The tech's receipts on this job and what Fred decided. */
+function JobExpenses({ expenses, canAdd, onAdd }: { expenses: TechExpense[]; canAdd: boolean; onAdd: () => void }) {
+  const approved = expenses.filter((e) => e.status === 'approved').reduce((s, e) => s + Number(e.amount), 0);
+  return (
+    <Section
+      title="Expenses"
+      subtitle={expenses.length ? `${expenses.length} receipt${expenses.length === 1 ? '' : 's'}${approved ? ` · ${fmtMoney(approved)} approved` : ''}` : 'Parts, fuel, tolls — anything you paid for on this job'}
+      right={canAdd ? <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onAdd}><Receipt size={15} /> Add</button> : undefined}
+    >
+      {expenses.length === 0 ? (
+        <div className="wf-subtle" style={{ fontSize: 13 }}>No expenses yet. Snap the receipt and Fred pays you back once he approves it.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {expenses.map((e) => {
+            const st = EXPENSE_STATUS[e.status];
+            return (
+              <div key={e.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>{expenseCategoryLabel(e.category)}{e.vendor ? ` · ${e.vendor}` : ''}</div>
+                  <div className="wf-subtle" style={{ fontSize: 12.5 }}>
+                    {fmtDate(e.expense_date)}{e.has_receipt ? ' · receipt attached' : ' · no receipt photo'}{e.note ? ` · ${e.note}` : ''}
+                  </div>
+                  {e.status === 'declined' && e.decline_reason && <div style={{ fontSize: 12.5, color: 'var(--wf-danger)' }}>Fred: {e.decline_reason}</div>}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="wf-display" style={{ fontWeight: 700 }}>{fmtMoney(e.amount)}</div>
+                  <span className="wf-chip" style={{ color: st.color, background: st.bg }}>{st.label}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/** Snap the receipt, say what it was for, and send it to Fred. Needs signal. */
+function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => void; onSaved: () => void }) {
+  const [photo, setPhoto] = useState<Blob | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState<ExpenseCategory>('materials');
+  const [vendor, setVendor] = useState('');
+  const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+
+  const takePhoto = async (f: File | undefined) => {
+    if (!f) return;
+    try {
+      const small = await shrinkPhoto(f);
+      setPhoto(small);
+      setPreview(URL.createObjectURL(small));
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : "Couldn't use that photo.");
+    }
+  };
+
+  const send = async () => {
+    const amt = parseExpenseAmount(amount);
+    if (amt == null) { toastError('Enter the amount on the receipt.'); return; }
+    setBusy(true);
+    const fd = new FormData();
+    fd.append('wo_number', job.number);
+    fd.append('amount', String(amt));
+    fd.append('category', category);
+    fd.append('vendor', vendor);
+    fd.append('date', date);
+    fd.append('note', note);
+    if (photo) fd.append('file', new File([photo], 'receipt.jpg', { type: 'image/jpeg' }));
+    try {
+      const res = await fetch('/api/tech/expense', { method: 'POST', body: fd });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      setBusy(false);
+      if (!res.ok || !json.ok) { toastError(json.error ?? "Couldn't send that expense."); return; }
+      toastSuccess(`Expense sent to Fred: ${fmtMoney(amt)}.`);
+      onSaved();
+    } catch {
+      setBusy(false);
+      toastError('Expenses need signal to send. Keep the receipt and try again when you have signal.');
+    }
+  };
+
+  const label = (t: string) => <span className="wf-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--wf-text)', fontSize: 13 }}>{t}</span>;
+  return (
+    <Dialog
+      title="Add an expense"
+      onClose={onClose}
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="wf-btn wf-btn-navy" disabled={busy || !amount.trim()} onClick={() => void send()}><Receipt size={16} /> {busy ? 'Sending…' : 'Send to Fred'}</button>
+      </>}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          {label('Receipt photo')}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {preview && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={preview} alt="Receipt" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--wf-line)' }} />
+            )}
+            <label className="wf-btn wf-btn-outline wf-btn-sm">
+              <Camera size={15} /> {preview ? 'Retake' : 'Take photo'}
+              <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void takePhoto(f); }} />
+            </label>
+            <label className="wf-btn wf-btn-ghost wf-btn-sm">
+              From phone
+              <input type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void takePhoto(f); }} />
+            </label>
+          </div>
+        </div>
+        <label style={{ display: 'block' }}>{label('Amount')}
+          <input className="wf-input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </label>
+        <div>
+          {label('What was it for?')}
+          <div className="wf-filters">
+            {EXPENSE_CATEGORIES.map((c) => (
+              <button key={c.key} className="wf-filter" aria-pressed={category === c.key} onClick={() => setCategory(c.key)}>{c.label}</button>
+            ))}
+          </div>
+        </div>
+        <label style={{ display: 'block' }}>{label('Store')}
+          <input className="wf-input" placeholder="e.g. Home Depot" value={vendor} onChange={(e) => setVendor(e.target.value)} />
+        </label>
+        <label style={{ display: 'block' }}>{label('Date on the receipt')}
+          <input className="wf-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <label style={{ display: 'block' }}>{label('Note (optional)')}
+          <input className="wf-input" placeholder="e.g. 20 Cat6 jacks for the drive-thru run" value={note} onChange={(e) => setNote(e.target.value)} />
+        </label>
+      </div>
+    </Dialog>
+  );
+}
 
 /** A quick note for the office, added to the job report with the time. */
 function NoteDialog({ onClose, onSave }: { onClose: () => void; onSave: (text: string) => void | Promise<void> }) {

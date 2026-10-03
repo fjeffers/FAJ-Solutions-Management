@@ -57,3 +57,26 @@ export async function stampPhoto(file: Blob, lines: string[]): Promise<Blob> {
     src.close();
   }
 }
+
+/**
+ * A receipt photo, made small enough to send on one bar — no stamp, so the
+ * receipt itself stays readable (migration-103).
+ */
+export async function shrinkPhoto(file: Blob, maxSide = 1600): Promise<Blob> {
+  const src = await loadImage(file);
+  try {
+    const scale = Math.min(1, maxSide / Math.max(src.w, src.h));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(src.w * scale);
+    canvas.height = Math.round(src.h * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('This phone could not prepare the photo.');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(src.img, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('This phone could not save the photo.'))), 'image/jpeg', 0.85));
+  } finally {
+    src.close();
+  }
+}

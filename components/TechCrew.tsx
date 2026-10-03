@@ -79,7 +79,7 @@ export default function TechCrew() {
 
 // ── My sites ────────────────────────────────────────────────────────────────
 
-function SiteCard({ site, entries, receipts, onChanged }: {
+export function SiteCard({ site, entries, receipts, onChanged }: {
   site: TechCrewSite; entries: TechCrewEntry[]; receipts: TechCrewReceipt[]; onChanged: () => void;
 }) {
   const [open, setOpen] = useState<'none' | 'hours' | 'receipt'>('none');
@@ -534,7 +534,7 @@ function PickBoard({ board, onChanged }: { board: TechCrewBoard; onChanged: () =
 
 // ── Messages ────────────────────────────────────────────────────────────────
 
-function Channel({ board }: { board: TechCrewBoard }) {
+export function Channel({ board }: { board: TechCrewBoard }) {
   const [msgs, setMsgs] = useState<TechCrewMessage[]>([]);
   const [to, setTo] = useState<string>('');           // '' everyone, 'office', or a lead id
   const [draft, setDraft] = useState('');
@@ -678,6 +678,18 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function fmtShort(s: string) {
   const [y, m, d] = s.slice(0, 10).split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/**
+ * The weeks a lead can still take a site in: not skipped, not already filled
+ * on their own schedule, not in the past (the same rule as Pick sites).
+ */
+export function openWeeksFor(board: TechCrewBoard): { monday: string; label: string }[] {
+  const myTeam = board.my_team_ids[0];
+  const mine = new Set(board.sites.filter((s) => s.team_id === myTeam && s.week_start).map((s) => s.week_start!.slice(0, 10)));
+  return projectWeeks({ start_date: board.start_date, weeks: board.weeks, skip_weeks: board.skip_weeks ?? [] })
+    .filter((w) => !w.skipped && !mine.has(w.monday) && w.monday >= mondayToday())
+    .map((w) => ({ monday: w.monday, label: w.label }));
 }
 
 function mondayToday(): string {

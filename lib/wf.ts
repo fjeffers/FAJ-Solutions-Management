@@ -505,3 +505,16 @@ export function bucketCounts(jobs: WfJob[], ownerView = false): Record<WfBucket,
   }
   return c;
 }
+
+/**
+ * Crew-project sites in the tech's four lists (Fred, 2026-10-02: "remove crew
+ * project and add it to jobs as available"). An open site a lead can take is
+ * Available; their own sites are Current until the work is done, Pending
+ * while the office checks the paperwork, and Closed once audited.
+ */
+export function crewBucket(status: string, mine: boolean): WfBucket {
+  if (!mine) return 'available';
+  if (status === 'done' || status === 'deliverables_in') return 'pending';
+  if (status === 'audited') return 'closed';
+  return 'current';
+}

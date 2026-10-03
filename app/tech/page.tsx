@@ -24,7 +24,7 @@ import {
 } from '@/lib/wf-outbox';
 import {
   techCounts, matchesWf, sortWf, bucketOf, bucketCounts, canWork, isClockedIn, isFinished, formatDuration,
-  fullAddress, reportMissing, type WfBucket, type WfJob, type WfQuestion, type WfTask,
+  fullAddress, reportMissing, crewBucket, type WfBucket, type WfJob, type WfQuestion, type WfTask,
 } from '@/lib/wf';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
@@ -35,14 +35,18 @@ import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
 import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
-import TechCrew from '@/components/TechCrew';
-import { fetchCrewBoard } from '@/lib/crew-portal';
+import { SiteCard, Channel, openWeeksFor } from '@/components/TechCrew';
+import {
+  fetchCrewBoard, fetchCrewSites, fetchCrewTime, fetchCrewReceipts, claimCrewSite,
+  type TechCrewBoard, type TechCrewEntry, type TechCrewReceipt, type TechCrewSite,
+} from '@/lib/crew-portal';
+import { SITE_STATUS_META, crewReason } from '@/lib/crew';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  Briefcase, Camera, CheckCircle2, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  ArrowLeft, Briefcase, Camera, CheckCircle2, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
   RefreshCw, Save, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X,
 } from 'lucide-react';
 
@@ -67,7 +71,7 @@ export default function TechPortalPage() {
     if (typeof window === 'undefined') return 'jobs';
     const t = new URLSearchParams(window.location.search).get('tab');
     // Offers are the Available list on My jobs now; old links still land there.
-    if (t === 'open' || t === 'offers') return 'jobs';
+    if (t === 'open' || t === 'offers' || t === 'crew') return 'jobs';
     return TABS.includes(t as Tab) ? (t as Tab) : 'jobs';
   });
   // Available · Current · Pending · Closed (Fred, 2026-10-02: "don't want to see
@@ -87,6 +91,17 @@ export default function TechPortalPage() {
   const [unread, setUnread] = useState(0);
   const [portalToken, setPortalToken] = useState<string | null>(null);
   const [onCrew, setOnCrew] = useState(false);
+  // Crew-project sites live in My jobs now (Fred, 2026-10-02: "remove crew
+  // project and add it to jobs as available").
+  const [crew, setCrew] = useState<CrewData>({ boards: [], sites: [], entries: [], receipts: [] });
+  const [openCrewId, setOpenCrewId] = useState<string | null>(null);
+  const loadCrew = useCallback(async () => {
+    try {
+      const [boards, sites, entries, receipts] = await Promise.all([fetchCrewBoard(), fetchCrewSites(), fetchCrewTime(), fetchCrewReceipts()]);
+      setCrew({ boards, sites, entries, receipts });
+      setOnCrew(boards.length > 0);
+    } catch { /* a crew lookup failing must not lock a tech out of their normal jobs */ }
+  }, []);
   /** When the lists on screen are the phone's saved copy, when it was saved. */
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -128,8 +143,7 @@ export default function TechPortalPage() {
       setSavedAt(null);
       boxRef.current?.noteSignal(true);
       setPhase('ready');
-      // A crew lookup failing must not lock a tech out of their normal jobs.
-      fetchCrewBoard().then((b) => setOnCrew(b.length > 0)).catch(() => {});
+      void loadCrew();
     } catch (e) {
       if (isNoSignal(e)) {
         boxRef.current?.noteSignal(false);
@@ -142,7 +156,7 @@ export default function TechPortalPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [kv, router, supabase]);
+  }, [kv, router, supabase, loadCrew]);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,7 +230,7 @@ export default function TechPortalPage() {
     router.replace('/tech/login');
   };
 
-  const go = (t: Tab) => { setTab(t); setOpenId(null); setRailOpen(false); window.scrollTo({ top: 0 }); };
+  const go = (t: Tab) => { setTab(t); setOpenId(null); setOpenCrewId(null); setRailOpen(false); window.scrollTo({ top: 0 }); };
 
   const counts = techCounts(jobs);
   const offers = jobs.filter((j) => j.status === 'offered');
@@ -322,7 +336,6 @@ export default function TechPortalPage() {
           <Inbox size={18} /> Available
           {offers.length > 0 && <span className="wf-rail-badge">{offers.length}</span>}
         </button>
-        {onCrew && railItem('crew', <Users size={18} />)}
         {railItem('pay', <Wallet size={18} />)}
         {railItem('chat', <MessageSquare size={18} />, unread)}
         {railItem('profile', <User size={18} />)}
@@ -337,7 +350,7 @@ export default function TechPortalPage() {
             <Menu size={20} />
           </button>
           <div className="wf-title" style={{ flex: 1, fontSize: 17, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {openJob ? `WO ${openJob.number}` : TAB_TITLE[tab]}
+            {openCrewId ? 'Crew site' : openJob ? `WO ${openJob.number}` : TAB_TITLE[tab]}
           </div>
           <SyncStatus box={box} savedAt={savedAt} />
           <button className="wf-btn wf-btn-ghost wf-btn-sm" aria-label="Refresh" disabled={refreshing}
@@ -357,17 +370,23 @@ export default function TechPortalPage() {
             </div>
           )}
 
-          {openJob ? (
+          {openCrewId && crew.sites.find((s) => s.id === openCrewId) ? (
+            <CrewSiteScreen
+              site={crew.sites.find((s) => s.id === openCrewId)!}
+              crew={crew}
+              onBack={() => setOpenCrewId(null)}
+              onChanged={() => void loadCrew()}
+            />
+          ) : openJob ? (
             <TechJobScreen key={openJob.id} job={openJob} uid={uid ?? ''} onBack={() => setOpenId(null)} act={act}
               onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
           ) : tab === 'jobs' ? (
             <JobsHome
               name={profile?.name ?? ''} jobs={jobs} counts={counts} offers={offers.length} onCrew={onCrew}
               paperworkDue={paperworkDue} profile={profile} bucket={bucket} setBucket={setBucket} act={act}
+              crew={crew} onOpenCrew={(id) => { setOpenCrewId(id); window.scrollTo({ top: 0 }); }} onCrewChanged={() => void loadCrew()}
               onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} go={go}
             />
-          ) : tab === 'crew' ? (
-            <TechCrew />
           ) : tab === 'pay' ? (
             <PayTab payments={payments} summary={summary} />
           ) : tab === 'chat' ? (
@@ -474,6 +493,130 @@ function PaperworkGate({ profile, portalToken, onFiled, onRetry, onSignOut }: {
   );
 }
 
+// ── Crew-project sites as jobs ─────────────────────────────────────────────
+
+type CrewData = { boards: TechCrewBoard[]; sites: TechCrewSite[]; entries: TechCrewEntry[]; receipts: TechCrewReceipt[] };
+
+type CrewItem = {
+  kind: 'mine' | 'open';
+  id: string;
+  name: string;
+  where: string;
+  project: string;
+  status: string;
+  week: string | null;
+  bucket: WfBucket;
+  board: TechCrewBoard | null;
+};
+
+/** The lead's own sites, and the open sites on their projects they could take. */
+function crewList(crew: CrewData): CrewItem[] {
+  const mine: CrewItem[] = crew.sites.map((s) => ({
+    kind: 'mine', id: s.id, name: s.name, where: [s.city, s.state].filter(Boolean).join(', '),
+    project: s.project_name, status: s.status, week: s.week_start, bucket: crewBucket(s.status, true),
+    board: crew.boards.find((b) => b.sites.some((x) => x.id === s.id)) ?? null,
+  }));
+  const open: CrewItem[] = crew.boards.flatMap((b) => b.sites.filter((s) => !s.team_id).map((s) => ({
+    kind: 'open' as const, id: s.id, name: s.name, where: [s.city, s.state].filter(Boolean).join(', '),
+    project: b.name, status: s.status, week: null, bucket: 'available' as const, board: b,
+  })));
+  return [...mine, ...open].sort((a, b) => (a.week ?? '9999').localeCompare(b.week ?? '9999') || a.name.localeCompare(b.name));
+}
+
+const matchesCrew = (c: CrewItem, q: string) => !q.trim() || [c.name, c.where, c.project].some((v) => v.toLowerCase().includes(q.trim().toLowerCase()));
+
+/** A crew site in the job lists: open ones can be taken right on the card. */
+function CrewJobCard({ item, index, onOpen, onChanged }: { item: CrewItem; index: number; onOpen: () => void; onChanged: () => void }) {
+  const weeks = item.kind === 'open' && item.board ? openWeeksFor(item.board) : [];
+  const [week, setWeek] = useState(weeks[0]?.monday ?? '');
+  const [busy, setBusy] = useState(false);
+  const meta = SITE_STATUS_META[item.status as keyof typeof SITE_STATUS_META];
+
+  const take = async () => {
+    if (!week) { toastError('Every week on your schedule is filled.'); return; }
+    setBusy(true);
+    const r = await claimCrewSite(item.id, week);
+    setBusy(false);
+    if (!r.ok) { toastError(crewReason(r.reason)); onChanged(); return; }
+    toastSuccess('Site added to your schedule. It is under Current.');
+    onChanged();
+  };
+
+  const body = (
+    <div style={{ display: 'flex', gap: 12, padding: 12, borderLeft: `4px solid ${item.kind === 'open' ? 'var(--wf-gold)' : 'var(--wf-navy)'}` }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/wf/job_cabling.jpg" alt="" width={76} height={76} loading="lazy" style={{ width: 76, height: 76, borderRadius: 12, objectFit: 'cover', flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span className="wf-label" style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Users size={12} style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 4 }} />Crew project · {item.project}
+          </span>
+          <span className="wf-chip" style={{ color: item.kind === 'open' ? 'var(--wf-gold-dark)' : meta?.color, background: item.kind === 'open' ? 'rgba(201,162,75,0.15)' : meta?.bg }}>
+            {item.kind === 'open' ? 'Open site' : meta?.label ?? item.status}
+          </span>
+        </div>
+        <div style={{ fontWeight: 600, fontSize: 15, marginTop: 3 }}>{item.name}</div>
+        {item.where && <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 2 }}>{item.where}</div>}
+        {item.week && <div style={{ fontSize: 12.5, marginTop: 4, fontWeight: 500 }}>Week of {fmtDate(item.week)}</div>}
+      </div>
+    </div>
+  );
+
+  if (item.kind === 'mine') {
+    return (
+      <button className="wf-card wf-card-click wf-rise" onClick={onOpen} style={{ display: 'block', overflow: 'hidden', animationDelay: `${Math.min(index, 12) * 45}ms` }}>
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className="wf-card wf-rise" style={{ overflow: 'hidden', animationDelay: `${Math.min(index, 12) * 45}ms` }}>
+      {body}
+      <div style={{ display: 'flex', gap: 8, padding: '0 12px 12px', flexWrap: 'wrap' }}>
+        {weeks.length > 0 ? (
+          <>
+            <select className="wf-input" style={{ flex: '1 1 160px', minHeight: 40 }} value={week} onChange={(e) => setWeek(e.target.value)} aria-label="Week to do this site">
+              {weeks.map((w) => <option key={w.monday} value={w.monday}>Week of {w.label}</option>)}
+            </select>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" style={{ flex: '1 1 120px' }} disabled={busy} onClick={take}>
+              <ThumbsUp size={15} /> {busy ? 'Adding…' : 'Take it'}
+            </button>
+          </>
+        ) : (
+          <div className="wf-subtle" style={{ fontSize: 12.5 }}>Every week on your schedule is filled.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One crew site: the day's time clock, receipts, hours — and the crew's messages. */
+function CrewSiteScreen({ site, crew, onBack, onChanged }: { site: TechCrewSite; crew: CrewData; onBack: () => void; onChanged: () => void }) {
+  const board = crew.boards.find((b) => b.sites.some((x) => x.id === site.id)) ?? null;
+  const [chat, setChat] = useState(false);
+  return (
+    <div className="wf-rise" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onBack}><ArrowLeft size={17} /> Back</button>
+        <div style={{ flex: 1 }} />
+        {board && (
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setChat((v) => !v)} aria-pressed={chat}>
+            <MessageSquare size={15} /> Crew messages
+          </button>
+        )}
+      </div>
+      <div className="wf-subtle" style={{ fontSize: 12.5 }}>Crew project · {site.project_name}</div>
+      <SiteCard
+        site={site}
+        entries={crew.entries.filter((e) => e.site_id === site.id)}
+        receipts={crew.receipts.filter((r) => r.site_id === site.id)}
+        onChanged={onChanged}
+      />
+      {chat && board && <Section title="Crew messages"><Channel board={board} /></Section>}
+    </div>
+  );
+}
+
 // ── The bar's signal / waiting indicator ────────────────────────────────────
 
 function SyncStatus({ box, savedAt }: { box: Outbox | null; savedAt: string | null }) {
@@ -500,15 +643,20 @@ function SyncStatus({ box, savedAt }: { box: Outbox | null; savedAt: string | nu
 
 // ── My jobs ─────────────────────────────────────────────────────────────────
 
-function JobsHome({ name, jobs, counts, offers, onCrew, paperworkDue, profile, bucket, setBucket, act, onOpen, go }: {
+function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, bucket, setBucket, act, crew, onOpenCrew, onCrewChanged, onOpen, go }: {
   name: string; jobs: WfJob[]; counts: ReturnType<typeof techCounts>; offers: number; onCrew: boolean;
   paperworkDue: number; profile: TechProfile | null;
   bucket: WfBucket; setBucket: (b: WfBucket) => void; act: (a: PendingAction, sent?: string) => Promise<void>;
+  crew: CrewData; onOpenCrew: (id: string) => void; onCrewChanged: () => void;
   onOpen: (id: string) => void; go: (t: Tab) => void;
 }) {
   const [search, setSearch] = useState('');
   const searched = jobs.filter((j) => bucketOf(j.status) !== null && matchesWf(j, search));
   const shown = sortWf(searched.filter((j) => bucketOf(j.status) === bucket));
+  const crewItems = crewList(crew).filter((c) => matchesCrew(c, search));
+  const crewShown = crewItems.filter((c) => c.bucket === bucket);
+  const tabCounts = bucketCounts(searched);
+  for (const c of crewItems) tabCounts[c.bucket]++;
   const first = name.trim().split(/\s+/)[0] ?? '';
   const EMPTY: Record<WfBucket, string> = {
     available: 'Nothing waiting on you. New jobs Fred sends you show up here to accept.',
@@ -546,25 +694,23 @@ function JobsHome({ name, jobs, counts, offers, onCrew, paperworkDue, profile, b
           </span>
         </button>
       )}
-      {onCrew && (
-        <button className="wf-card wf-card-click" onClick={() => go('crew')} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14 }}>
-          <Users size={22} color="var(--wf-navy)" />
-          <span style={{ flex: 1 }}>
-            <span style={{ display: 'block', fontWeight: 600 }}>Crew project</span>
-            <span className="wf-subtle" style={{ fontSize: 12.5 }}>Log today&apos;s hours, add receipts, pick sites, message the crew.</span>
-          </span>
-        </button>
-      )}
 
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <h2 className="wf-title" style={{ flex: 1 }}>My jobs</h2>
       </div>
-      <BucketTabs value={bucket} counts={bucketCounts(searched)} onChange={setBucket} />
+      <BucketTabs value={bucket} counts={tabCounts} onChange={setBucket} />
       <input className="wf-input" value={search} onChange={(e) => setSearch(e.target.value)}
         placeholder="Search WO number, client, city…" aria-label="Search your jobs" />
-      {shown.length === 0 ? (
+      {crewShown.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 400px), 1fr))', gap: 12 }}>
+          {crewShown.map((c, i) => (
+            <CrewJobCard key={`${c.kind}-${c.id}`} item={c} index={i} onOpen={() => onOpenCrew(c.id)} onChanged={onCrewChanged} />
+          ))}
+        </div>
+      )}
+      {shown.length === 0 && crewShown.length === 0 ? (
         <Empty title={search ? 'Nothing matches your search' : 'Nothing here'} message={search ? 'Try another word, or clear the search.' : EMPTY[bucket]} />
-      ) : (
+      ) : shown.length === 0 ? null : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 400px), 1fr))', gap: 12 }}>
           {shown.map((j, i) => bucket === 'available' ? (
             <div key={j.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

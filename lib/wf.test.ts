@@ -358,3 +358,15 @@ describe('the job report', () => {
     expect(j.questions[1].answer).toBe('Yes');
   });
 });
+
+describe('crew sites in the four lists', () => {
+  it("open sites are available; a lead's own sites move through the lists", async () => {
+    const { crewBucket } = await import('./wf');
+    expect(crewBucket('planned', false)).toBe('available');
+    expect(crewBucket('scheduled', true)).toBe('current');
+    expect(crewBucket('in_progress', true)).toBe('current');
+    expect(crewBucket('done', true)).toBe('pending');
+    expect(crewBucket('deliverables_in', true)).toBe('pending');
+    expect(crewBucket('audited', true)).toBe('closed');
+  });
+});

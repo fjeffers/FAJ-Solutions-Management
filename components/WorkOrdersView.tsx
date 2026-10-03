@@ -10,6 +10,8 @@ import { backdropClose } from '@/lib/backdrop';
 import WorkBoard from '@/components/WorkBoard';
 import WorkFlowView from '@/components/WorkFlowView';
 import { Workflow } from 'lucide-react';
+import { Dialog } from '@/components/wf/WfUi';
+import { toastInfo, toastSuccess } from '@/lib/toast';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -201,10 +203,12 @@ export default function WorkOrdersView({
       )}
 
       {aiOpen && (
+        <div className="wf">
         <AIGenerateModal
           onClose={() => setAiOpen(false)}
           onGenerated={(fields) => { setAiOpen(false); onAddFromAI(fields); }}
         />
+        </div>
       )}
 
       {!showWf && mode === 'board' && (
@@ -684,6 +688,9 @@ function AIGenerateModal({
   onClose: () => void;
   onGenerated: (fields: Partial<WorkOrder>) => void;
 }) {
+  // Fred, 2026-10-02: "fix the AI generate — it needs to look and fill in
+  // everything necessary". WorkFlow's look; the AI reads the whole paste and
+  // fills every field it can, plus the tech's checklist (lib/wo-ai.ts).
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -700,9 +707,18 @@ function AIGenerateModal({
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Generation failed'); return; }
-      // Server already whitelists/sanitizes keys — pass everything through so
-      // address, price, schedule, and contact fields prefill the form.
-      onGenerated(data.result as Partial<WorkOrder>);
+      const fields = (data.result ?? {}) as Partial<WorkOrder>;
+      if (Object.keys(fields).length === 0) {
+        setError("Couldn't find any job details in that text. Paste the whole email or work order and try again.");
+        return;
+      }
+      onGenerated(fields);
+      const tasks = fields.wo_tasks?.length ?? 0;
+      if (data.source === 'ai') {
+        toastSuccess(`Filled ${data.filled ?? 'the'} fields${tasks ? ` and a ${tasks}-step tech checklist` : ''}. Check them, then Save.`);
+      } else {
+        toastInfo("The AI didn't answer, so only the basics were filled (address, price, dates, contact). Check them, then Save.");
+      }
     } catch {
       setError('Could not reach the AI service — try again.');
     } finally {
@@ -711,34 +727,36 @@ function AIGenerateModal({
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }} {...backdropClose(onClose)}>
-      <div className="glass card" style={{ width: 480, maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15 }}>
-            <Sparkles size={16} color="var(--gold)" /> Generate Work Order with AI
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}><X size={18} /></button>
-        </div>
-        <p style={{ fontSize: 12, color: '#888', margin: '0 0 12px' }}>
-          Paste or describe the job — address, price, date, and contact info are picked up automatically for you to review.
-        </p>
-        <textarea
-          className="input"
-          rows={4}
-          autoFocus
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="e.g. Install a new security camera in the training room at the Wendy's on Main St, needs cat6 cabling run from the wiring closet..."
-        />
-        {error && <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>{error}</div>}
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={generate} disabled={loading || !prompt.trim()}>
-            {loading ? 'Generating…' : 'Generate'}
-          </button>
-        </div>
+    <Dialog
+      title="Generate with AI"
+      onClose={onClose}
+      wide
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="wf-btn wf-btn-gold" onClick={generate} disabled={loading || !prompt.trim()}>
+          <Sparkles size={16} /> {loading ? 'Reading the job…' : 'Fill in the job'}
+        </button>
+      </>}
+    >
+      <p className="wf-subtle" style={{ marginTop: 0 }}>
+        Paste the whole email or work order — Field Nation, NetView, a client&apos;s message, or your own notes.
+        The AI fills in every field it can find (site, schedule, contact, access and parking, scope, tools, parts,
+        deliverables, the client&apos;s WO number and price) and writes the tech&apos;s checklist. Nothing is saved until you check it and press Save.
+      </p>
+      <textarea
+        className="wf-input"
+        rows={12}
+        autoFocus
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder={"Paste the work order here…\n\ne.g. Field Nation WO 1234567 — Wendy's #5798, 123 Main St, Roselle NJ. Replace the POS switch, run 2 new cat6 drops to the drive-thru, label and test. Arrive Tue 8am, ask for the manager (Maria 908-555-0101). Photos before/after required."}
+        style={{ minHeight: 220 }}
+      />
+      {error && <div role="alert" style={{ fontSize: 13, color: 'var(--wf-danger)', marginTop: 8 }}>{error}</div>}
+      <div className="wf-subtle" style={{ fontSize: 12, marginTop: 8 }}>
+        Techs and their pay are never filled in by the AI — you pick those.
       </div>
-    </div>
+    </Dialog>
   );
 }
 

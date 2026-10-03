@@ -7,7 +7,7 @@ import {
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
   CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package, Layers,
 } from 'lucide-react';
-import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind } from '@/lib/types';
+import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
 import { kitToMaterialsUsed, materialsUsedToKitItems, kitCost } from '@/lib/material-kits';
 import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE, mileageForTech } from '@/lib/mileage';
@@ -238,6 +238,19 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     ...(!item ? prefill : {}),
   });
   const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? []);
+
+  // ── Tech checklist (wo_tasks) ───────────────────────────────────────────────
+  // What techs tick off in their portal and WorkFlow. Filled by "Generate with
+  // AI" or typed here (Fred, 2026-10-02). Existing ticks are kept as they are.
+  const [tasks, setTasks] = useState<WoTask[]>(() => item?.wo_tasks ?? (!item ? prefill?.wo_tasks : null) ?? []);
+  const [newTask, setNewTask] = useState('');
+  const [newTaskCat, setNewTaskCat] = useState<WoTask['category']>('On Site');
+  const addTask = () => {
+    const label = newTask.trim();
+    if (!label) return;
+    setTasks((ts) => [...ts, { id: crypto.randomUUID(), category: newTaskCat, label, completed: false, completed_at: null }]);
+    setNewTask('');
+  };
 
   // ── Multi-contacts ─────────────────────────────────────────────────────────
   const [contacts, setContacts] = useState<SiteContact[]>(() => item?.contacts ?? []);
@@ -684,6 +697,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       attachment_url:  form.attachment_url  || null,
       doc_urls:        docUrls,
       contacts:        contacts.filter((c) => c.name.trim() || c.phone.trim() || c.email.trim()),
+      wo_tasks:        tasks.filter((t) => t.label.trim()),
     };
     onSave({ ...item, ...payload });
   };
@@ -1405,6 +1419,38 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>Closeout / Deliverable Instructions</div>
                   <textarea className="input" rows={3} value={form.deliverable_instructions ?? ''} onChange={(e) => set('deliverable_instructions', e.target.value)} placeholder="Photos, serials, test results, notes, signoff requirements..." />
+                </div>
+              </div>
+            </div>
+
+            {/* Tech checklist — ticked off by the tech in their portal */}
+            <div style={{ border: '1.5px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ClipboardList size={13} style={{ color: 'var(--teal, #0E1B2E)' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4, flex: 1 }}>Tech checklist</span>
+                <span style={{ fontSize: 11, color: '#6b7280' }}>{tasks.length ? `${tasks.filter((t) => t.completed).length} of ${tasks.length} done` : 'Techs tick these off in their portal'}</span>
+              </div>
+              <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {tasks.map((t, i) => (
+                  <div key={t.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <select className="select input" style={{ width: 120, flexShrink: 0, fontSize: 12, padding: '6px 8px' }} value={t.category}
+                      onChange={(e) => setTasks((ts) => ts.map((x, j) => (j === i ? { ...x, category: e.target.value as WoTask['category'] } : x)))}>
+                      {(['Pre Visit', 'On Site', 'Post Site'] as const).map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input className="input" style={{ flex: 1, textDecoration: t.completed ? 'line-through' : 'none' }} value={t.label}
+                      onChange={(e) => setTasks((ts) => ts.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
+                    <button type="button" className="icon-btn" title="Remove" onClick={() => setTasks((ts) => ts.filter((_, j) => j !== i))}><X size={14} /></button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <select className="select input" style={{ width: 120, flexShrink: 0, fontSize: 12, padding: '6px 8px' }} value={newTaskCat}
+                    onChange={(e) => setNewTaskCat(e.target.value as WoTask['category'])}>
+                    {(['Pre Visit', 'On Site', 'Post Site'] as const).map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <input className="input" style={{ flex: 1 }} value={newTask} placeholder="Add a step, e.g. Take before and after photos"
+                    onChange={(e) => setNewTask(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTask(); } }} />
+                  <button type="button" className="btn btn-ghost" style={{ padding: '8px 12px' }} onClick={addTask}><Plus size={14} /> Add</button>
                 </div>
               </div>
             </div>

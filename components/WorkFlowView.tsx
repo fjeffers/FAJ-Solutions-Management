@@ -8,7 +8,7 @@
 // Money comes from the enriched work order (lib/utils rules), never worked out
 // here. Ticking a checklist item and changing techs go through the same server
 // functions the tech portal uses (migration-098), so both sides always agree.
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Archive, ArchiveRestore, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, MessageSquare, MoreHorizontal, Navigation,
   Plus, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
@@ -22,6 +22,8 @@ import { fmtMoney, hasPaySplit, woProfitOrNull } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { Contractor, EnrichedWorkOrder } from '@/lib/types';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
+import WOTimeLogs from '@/components/WOTimeLogs';
+import { mapLink } from '@/lib/geo';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
 
@@ -264,11 +266,17 @@ function OwnerJob({
           <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />
           <MoneyCard w={w} />
         </>}
-        below={chatOpen ? (
-          <Section title="Messages" subtitle="The same thread the tech sees in their portal">
-            <WorkOrderChatPanel woNumber={w.wo_number} />
+        below={<>
+          {chatOpen && (
+            <Section title="Messages" subtitle="The same thread the tech sees in their portal">
+              <WorkOrderChatPanel woNumber={w.wo_number} />
+            </Section>
+          )}
+          <OwnerPhotos w={w} />
+          <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
+            <WOTimeLogs woId={w.id} />
           </Section>
-        ) : undefined}
+        </>}
       />
       {picking && (
         <TechPicker
@@ -470,5 +478,54 @@ function MoreMenu({ items }: { items: (MoreItem | null)[] }) {
         </>
       )}
     </div>
+  );
+}
+
+type PhotoRow = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; contractor_name: string | null };
+
+/**
+ * The job's photos (Fred, 2026-10-02): what the techs took in their portal,
+ * stamped with the date, time and GPS, plus any other pictures already on the
+ * job. Each tech photo links to the spot on the map where it was taken.
+ */
+function OwnerPhotos({ w }: { w: EnrichedWorkOrder }) {
+  const [rows, setRows] = useState<PhotoRow[] | null>(null);
+  useEffect(() => {
+    createClient().from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id)
+      .order('taken_at', { ascending: false })
+      .then(({ data }) => setRows((data as PhotoRow[] | null) ?? []));
+  }, [w.id, w.doc_urls]);
+
+  const tech = new Set((rows ?? []).map((r) => r.url));
+  const others = (w.doc_urls ?? []).filter((u) => !tech.has(u) && /\.(jpe?g|png|gif|webp|heic)(\?|$)/i.test(u));
+  if (rows === null) return null;
+  if (rows.length === 0 && others.length === 0) return null;
+
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const tile = { width: '100%', aspectRatio: '1', objectFit: 'cover' as const, borderRadius: 10, display: 'block' };
+  return (
+    <Section title="Photos" subtitle={`${rows.length + others.length} on this job`}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
+        {rows.map((p) => (
+          <div key={p.id}>
+            <a href={p.url} target="_blank" rel="noopener noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.url} alt={`Photo by ${p.contractor_name ?? 'tech'}, ${when(p.taken_at)}`} loading="lazy" style={tile} />
+            </a>
+            <div style={{ fontSize: 11.5, color: 'var(--wf-subtle)', marginTop: 3, lineHeight: 1.35 }}>
+              {p.contractor_name && <div style={{ fontWeight: 600, color: 'var(--wf-text)' }}>{p.contractor_name}</div>}
+              {when(p.taken_at)}
+              {p.lat != null && p.lng != null && <> · <a href={mapLink(p.lat, p.lng)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--wf-navy)' }}>map</a></>}
+            </div>
+          </div>
+        ))}
+        {others.map((u) => (
+          <a key={u} href={u} target="_blank" rel="noopener noreferrer">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={u} alt="Job photo" loading="lazy" style={tile} />
+          </a>
+        ))}
+      </div>
+    </Section>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import type { TimeLog } from '@/lib/types';
+import { mapLink } from '@/lib/geo';
 
 interface Props {
   woId: string | undefined;
@@ -35,7 +36,17 @@ function fmtCoord(lat: number | null | undefined, lng: number | null | undefined
   return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
 }
 
-function Row({ label, value, sub }: { label: string; value: string; sub?: string }) {
+/** A tappable map pin for a GPS fix (migration-100), or nothing. */
+function gpsLink(lat: number | null | undefined, lng: number | null | undefined, acc?: number | null): React.ReactNode {
+  if (lat == null || lng == null) return undefined;
+  return (
+    <a href={mapLink(lat, lng)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--teal)', textDecoration: 'underline' }}>
+      📍 {lat.toFixed(5)}, {lng.toFixed(5)}{acc != null ? ` (±${Math.round(acc)} m)` : ''}
+    </a>
+  );
+}
+
+function Row({ label, value, sub }: { label: string; value: string; sub?: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #f3f4f6' }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4 }}>
@@ -115,10 +126,12 @@ function ContractorCard({ log }: { log: TimeLog }) {
             <Row
               label="▶️ Work Started"
               value={fmtTime(log.checked_in_at)}
+              sub={gpsLink(log.checked_in_lat, log.checked_in_lng, log.checked_in_accuracy)}
             />
             <Row
               label="⏹ Work Ended"
               value={fmtTime(log.checked_out_at)}
+              sub={gpsLink(log.checked_out_lat, log.checked_out_lng, log.checked_out_accuracy)}
             />
             <Row
               label="⏱ On-Site Time"

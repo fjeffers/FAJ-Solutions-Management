@@ -30,8 +30,13 @@ async function call(fn: string, args: Record<string, unknown>): Promise<void> {
 
 /** What each kind of tap sends. Registered on the signed-in tech's outbox. */
 export function registerTechHandlers(box: Outbox): void {
+  // Clock taps carry where the tech was (migration-100). A tap queued before
+  // GPS existed simply has no position, which the server stores as none.
   box.register('clock', async (a, at) => {
-    await call('wf_tech_clock_at', { p_wo_number: a.number, p_action: a.action, p_at: at.toISOString() });
+    await call('wf_tech_clock_gps', {
+      p_wo_number: a.number, p_action: a.action, p_at: at.toISOString(),
+      p_lat: a.lat ?? null, p_lng: a.lng ?? null, p_accuracy: a.acc ?? null,
+    });
   });
   box.register('task', async (a) => {
     await call('wf_set_task', { p_wo_number: a.number, p_task_id: a.task, p_done: a.done });
@@ -45,7 +50,12 @@ export function registerTechHandlers(box: Outbox): void {
   box.register('workdone', async (a, at) => {
     const notes = String(a.notes ?? '').trim();
     if (notes) await call('tech_save_closeout', { p_wo_number: a.number, p_summary: notes });
-    if (a.clockOut) await call('wf_tech_clock_at', { p_wo_number: a.number, p_action: 'out', p_at: at.toISOString() });
+    if (a.clockOut) {
+      await call('wf_tech_clock_gps', {
+        p_wo_number: a.number, p_action: 'out', p_at: at.toISOString(),
+        p_lat: a.lat ?? null, p_lng: a.lng ?? null, p_accuracy: a.acc ?? null,
+      });
+    }
     await call('tech_set_job_status', { p_wo_number: a.number, p_status: 'Work Done' });
   });
   box.probe = async () => {

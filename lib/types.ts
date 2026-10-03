@@ -1067,6 +1067,13 @@ export type TimeLog = {
   arrived_lng:      number | null;
   checked_in_at:    string | null;
   checked_out_at:   string | null;
+  /** (migration-100) where the tech was when they clocked in / out. */
+  checked_in_lat?:      number | null;
+  checked_in_lng?:      number | null;
+  checked_in_accuracy?: number | null;
+  checked_out_lat?:      number | null;
+  checked_out_lng?:      number | null;
+  checked_out_accuracy?: number | null;
   created_at: string;
   updated_at: string;
 };

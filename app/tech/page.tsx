@@ -28,6 +28,9 @@ import {
 } from '@/lib/wf';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
+import { getPosition, stampLines, mapLink } from '@/lib/geo';
+import { stampPhoto } from '@/lib/photo-stamp';
+import { queuePhoto, queuedPhotos, dropQueuedPhoto, type QueuedPhoto } from '@/lib/photo-queue';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
 import TechChat from '@/components/TechChat';
@@ -39,7 +42,7 @@ import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, greeting } from
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  Briefcase, CheckCircle2, CloudOff, FileText, FileWarning, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  Briefcase, Camera, CheckCircle2, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
   RefreshCw, Save, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X,
 } from 'lucide-react';
 
@@ -342,7 +345,7 @@ export default function TechPortalPage() {
           )}
 
           {openJob ? (
-            <TechJobScreen job={openJob} onBack={() => setOpenId(null)} act={act}
+            <TechJobScreen job={openJob} uid={uid ?? ''} onBack={() => setOpenId(null)} act={act}
               onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
           ) : tab === 'jobs' ? (
             <JobsHome
@@ -599,19 +602,28 @@ function OfferButtons({ job, act }: { job: WfJob; act: (a: PendingAction, sent?:
 
 // ── One job ─────────────────────────────────────────────────────────────────
 
-function TechJobScreen({ job, onBack, act, onRefresh, refreshing }: {
-  job: WfJob; onBack: () => void; act: (a: PendingAction, sent?: string) => Promise<void>;
+function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
+  job: WfJob; uid: string; onBack: () => void; act: (a: PendingAction, sent?: string) => Promise<void>;
   onRefresh: () => void; refreshing: boolean;
 }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [doneOpen, setDoneOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
   const working = canWork(job);
 
-  const toggleClock = () => {
+  // GPS on the clock (Fred, 2026-10-02). The time is the moment of the tap;
+  // the position is looked up for a few seconds at most, works with no signal,
+  // and the clock still works if the phone won't give one.
+  const toggleClock = async () => {
     const on = isClockedIn(job);
+    const at = new Date();
+    setLocating(true);
+    const pos = await getPosition(6000);
+    setLocating(false);
     void act(
-      makeAction('clock', { number: job.number, action: on ? 'out' : 'in' }, `Clock ${on ? 'out of' : 'in on'} WO ${job.number}`),
-      on ? 'Clocked out.' : 'Clocked in. The job is in progress.',
+      makeAction('clock', { number: job.number, action: on ? 'out' : 'in', lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null },
+        `Clock ${on ? 'out of' : 'in on'} WO ${job.number}`, at),
+      `${on ? 'Clocked out.' : 'Clocked in. The job is in progress.'}${pos ? ' Location saved.' : ' (No GPS — turn on Location to save where you are.)'}`,
     );
   };
   const toggleTask = (t: WfTask, done: boolean) => {
@@ -651,19 +663,26 @@ function TechJobScreen({ job, onBack, act, onRefresh, refreshing }: {
             <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={15} /> Directions</a>
           )}
         </>}
-        clock={showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} onToggle={toggleClock} /> : undefined}
+        clock={showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} /> : undefined}
         onToggleTask={working ? toggleTask : undefined}
-        below={chatOpen ? <JobMessages number={job.number} /> : undefined}
+        below={<>
+          <JobPhotos job={job} uid={uid} canAdd={working || job.status === 'workDone'} />
+          {chatOpen && <JobMessages number={job.number} />}
+        </>}
         bottom={bottom}
       />
       {doneOpen && (
         <WorkDoneDialog
           job={job}
           onClose={() => setDoneOpen(false)}
-          onConfirm={(notes) => {
+          onConfirm={async (notes) => {
             setDoneOpen(false);
+            const at = new Date();
+            const clockOut = isClockedIn(job);
+            const pos = clockOut ? await getPosition(6000) : null;
             void act(
-              makeAction('workdone', { number: job.number, notes, clockOut: isClockedIn(job) }, `Work done on WO ${job.number}`),
+              makeAction('workdone', { number: job.number, notes, clockOut, lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null },
+                `Work done on WO ${job.number}`, at),
               'Work done. The office has it.',
             );
           }}
@@ -673,7 +692,7 @@ function TechJobScreen({ job, onBack, act, onRefresh, refreshing }: {
   );
 }
 
-function WorkDoneDialog({ job, onClose, onConfirm }: { job: WfJob; onClose: () => void; onConfirm: (notes: string) => void }) {
+function WorkDoneDialog({ job, onClose, onConfirm }: { job: WfJob; onClose: () => void; onConfirm: (notes: string) => void | Promise<void> }) {
   const [notes, setNotes] = useState(job.closeoutNotes);
   return (
     <Dialog
@@ -691,6 +710,170 @@ function WorkDoneDialog({ job, onClose, onConfirm }: { job: WfJob; onClose: () =
       <textarea id="wf-done-notes" className="wf-input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
         placeholder="Work completed, anything left, anything the client said" />
     </Dialog>
+  );
+}
+
+// ── Photos: date, time and GPS printed on every picture ───────────────────
+
+type SentPhoto = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; by: string | null };
+
+/** Send one stamped photo. 'offline' when there is no signal (keep it). */
+async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<'sent' | 'offline' | { error: string }> {
+  const fd = new FormData();
+  fd.append('wo_number', p.woNumber);
+  fd.append('file', new File([p.blob], 'photo.jpg', { type: 'image/jpeg' }));
+  fd.append('taken_at', p.takenAt);
+  if (p.lat != null && p.lng != null) {
+    fd.append('lat', String(p.lat));
+    fd.append('lng', String(p.lng));
+    if (p.accuracy != null) fd.append('accuracy', String(p.accuracy));
+  }
+  fd.append('source', p.source);
+  try {
+    const res = await fetch('/api/tech/photo', { method: 'POST', body: fd });
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (res.ok && json.ok) return 'sent';
+    return { error: json.error ?? "Couldn't send the photo." };
+  } catch {
+    return 'offline';
+  }
+}
+
+/**
+ * Photos on a job (Fred, 2026-10-02: "time and date and GPS location on the
+ * pictures"). Each photo has the job, the date and time, and the GPS position
+ * printed along the bottom of the picture itself. With no signal the stamped
+ * photo waits on the phone and goes to the office later.
+ */
+function JobPhotos({ job, uid, canAdd }: { job: WfJob; uid: string; canAdd: boolean }) {
+  const [sent, setSent] = useState<SentPhoto[]>([]);
+  const [waiting, setWaiting] = useState<{ p: QueuedPhoto; url: string }[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const loadSent = useCallback(async () => {
+    const { data, error } = await createClient().rpc('wf_tech_job_photos', { p_wo_number: job.number });
+    if (!error && Array.isArray(data)) setSent(data as SentPhoto[]);
+  }, [job.number]);
+
+  const loadWaiting = useCallback(async () => {
+    if (!uid) return;
+    const list = await queuedPhotos(uid, job.number);
+    setWaiting((old) => {
+      old.forEach((w) => URL.revokeObjectURL(w.url));
+      return list.map((p) => ({ p, url: URL.createObjectURL(p.blob) }));
+    });
+  }, [uid, job.number]);
+
+  // Send whatever is waiting, oldest first; stop at the first sign of no signal.
+  const flush = useCallback(async () => {
+    if (!uid) return;
+    let any = false;
+    for (const p of await queuedPhotos(uid, job.number)) {
+      const r = await sendPhoto(p);
+      if (r === 'offline') break;
+      await dropQueuedPhoto(p.id);
+      any = true;
+      if (r !== 'sent') toastError(`A waiting photo was not accepted: ${r.error}`);
+    }
+    if (any) { await loadSent(); await loadWaiting(); }
+  }, [uid, job.number, loadSent, loadWaiting]);
+
+  useEffect(() => {
+    void loadSent();
+    void loadWaiting().then(() => flush());
+    const back = () => { void flush(); };
+    window.addEventListener('online', back);
+    return () => window.removeEventListener('online', back);
+  }, [loadSent, loadWaiting, flush]);
+
+  const add = async (file: File | undefined, source: 'camera' | 'library') => {
+    if (!file) return;
+    const at = new Date();
+    setBusy('Getting your location…');
+    const pos = await getPosition(8000);
+    setBusy('Stamping the photo…');
+    let blob: Blob;
+    try {
+      blob = await stampPhoto(file, stampLines({
+        woNumber: job.number, title: job.client || job.title, at, pos, fromLibrary: source === 'library',
+      }));
+    } catch (e) {
+      setBusy(null);
+      toastError(e instanceof Error ? e.message : "Couldn't prepare that photo.");
+      return;
+    }
+    const meta = { woNumber: job.number, blob, takenAt: at.toISOString(), lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source };
+    setBusy('Sending to the office…');
+    const r = await sendPhoto(meta);
+    setBusy(null);
+    if (r === 'sent') {
+      toastSuccess(pos ? 'Photo sent, with the date, time and GPS on it.' : 'Photo sent. No GPS — turn on Location for the next one.');
+      await loadSent();
+    } else if (r === 'offline') {
+      await queuePhoto({ ...meta, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, uid });
+      await loadWaiting();
+      toastInfo('No signal — photo saved on this phone. It goes to the office as soon as you have signal.');
+    } else {
+      toastError(r.error);
+    }
+  };
+
+  const pick = (source: 'camera' | 'library', icon: React.ReactNode, label: string, primary: boolean) => (
+    <label className={`wf-btn ${primary ? 'wf-btn-gold' : 'wf-btn-outline'}`} style={{ flex: '1 1 150px', opacity: busy ? 0.6 : 1, pointerEvents: busy ? 'none' : 'auto' }}>
+      {icon} {label}
+      <input
+        type="file" accept="image/*" {...(source === 'camera' ? { capture: 'environment' as const } : {})}
+        style={{ display: 'none' }}
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void add(f, source); }}
+      />
+    </label>
+  );
+
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+  return (
+    <Section title="Photos" subtitle="Date, time and GPS are printed on every photo">
+      {canAdd && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: sent.length || waiting.length || busy ? 12 : 0 }}>
+          {pick('camera', <Camera size={17} />, 'Take photo', true)}
+          {pick('library', <ImagePlus size={17} />, 'Add from phone', false)}
+        </div>
+      )}
+      {busy && <div className="wf-subtle" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><RefreshCw size={15} className="spin" /> {busy}</div>}
+      {waiting.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <CloudOff size={15} color="var(--wf-warning)" />
+            <span style={{ flex: 1, fontWeight: 600, color: 'var(--wf-warning)' }}>{waiting.length} waiting to send</span>
+            <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void flush()}>Send now</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
+            {waiting.map(({ p, url }) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={p.id} src={url} alt={`Waiting photo, ${when(p.takenAt)}`} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 10, opacity: 0.75 }} />
+            ))}
+          </div>
+        </div>
+      )}
+      {sent.length > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
+          {sent.map((p) => (
+            <div key={p.id}>
+              <a href={p.url} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.url} alt={`Job photo, ${when(p.taken_at)}`} loading="lazy" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 10 }} />
+              </a>
+              <div style={{ fontSize: 11, color: 'var(--wf-subtle)', marginTop: 2 }}>
+                {when(p.taken_at)}
+                {p.lat != null && p.lng != null && <> · <a href={mapLink(p.lat, p.lng)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--wf-navy)' }}>map</a></>}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : !waiting.length && !busy && (
+        <div className="wf-subtle" style={{ fontSize: 13 }}>{canAdd ? 'No photos yet. Take before and after shots of your work.' : 'No photos on this job.'}</div>
+      )}
+    </Section>
   );
 }
 

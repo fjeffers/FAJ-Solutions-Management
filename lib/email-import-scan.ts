@@ -1,10 +1,14 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { refreshAccessToken, listMessages, getMessage } from '@/lib/gmail';
+import { refreshAccessToken, listMessages, getMessage, getMessageForSupport } from '@/lib/gmail';
+import { fileSupportTicket, htmlToText } from '@/lib/support-intake';
 import { isNetviewDispatchEmail, parseNetviewDispatchEmail } from '@/lib/email-parsers/netview-smartsheet';
 import { isFieldNationRoutedEmail, parseFieldNationRoutedEmail } from '@/lib/email-parsers/fieldnation';
 
 const NETVIEW_QUERY = 'from:automation@app.smartsheet.com subject:"NETVIEW DISPATCH" newer_than:2d';
 const FIELDNATION_QUERY = 'from:support@fieldnation.com subject:"Routed WO" newer_than:2d';
+// Mail to support@ becomes a support ticket (migration-104). Dispatch feeds are
+// handled above, and FAJ's own mail (the app's notices, Fred's replies) is not a ticket.
+const SUPPORT_QUERY = 'to:support@fajsolutions.com newer_than:2d -from:fajsolutions.com -from:fieldnation.com -from:smartsheet.com';
 
 /**
  * Scans one user's connected Gmail for both supported sources and queues new items for
@@ -60,6 +64,31 @@ export async function scanGmailConnection(conn: {
       raw_snippet: subject,
     });
     if (!error) imported++;
+  }
+
+  // Support tickets — sorted by the bot, waiting for Fred's approval. Messages
+  // already filed are skipped before the bot runs, so none is paid for twice.
+  const support = await listMessages(accessToken, SUPPORT_QUERY);
+  if (support.length > 0) {
+    const { data: seen } = await admin.from('support_tickets').select('gmail_message_id')
+      .eq('user_id', conn.user_id).in('gmail_message_id', support.map((m) => m.id));
+    const filed = new Set((seen ?? []).map((r) => r.gmail_message_id as string));
+    for (const summary of support) {
+      if (filed.has(summary.id)) continue;
+      try {
+        const m = await getMessageForSupport(accessToken, summary.id);
+        const body = (m.text || htmlToText(m.html)).trim();
+        if (!body && !m.subject) continue;
+        const ticket = await fileSupportTicket(admin, conn.user_id, {
+          from: m.from, to: m.to, subject: m.subject, date: m.date, body: body || '(empty)',
+          gmailMessageId: summary.id, gmailThreadId: m.threadId || summary.threadId,
+          receivedAt: m.date && !isNaN(Date.parse(m.date)) ? new Date(m.date).toISOString() : undefined,
+        }, 'email');
+        if (ticket) imported++;
+      } catch (err) {
+        console.error(`Support ticket from Gmail message ${summary.id} failed:`, err);
+      }
+    }
   }
 
   await admin.from('gmail_connections').update({ last_polled_at: new Date().toISOString() }).eq('id', conn.id);

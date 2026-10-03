@@ -30,6 +30,7 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
     state:               item?.state               ?? '',
     zip:                 item?.zip                 ?? '',
     w9_received:         item?.w9_received         ?? false,
+    on_hold:             item?.on_hold             ?? false,
     bank_name:           item?.bank_name           ?? '',
     account_holder_name: item?.account_holder_name ?? '',
     routing_number:      item?.routing_number      ?? '',
@@ -88,6 +89,22 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
           {/* ── Contact ── */}
           {tab === 'contact' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Fred, 2026-10-03: "the new techs — put a hold on them for now". */}
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                background: form.on_hold ? 'rgba(180,83,9,0.08)' : 'rgba(14,27,46,0.03)',
+                border: `1px solid ${form.on_hold ? 'rgba(180,83,9,0.3)' : 'rgba(14,27,46,0.08)'}`,
+              }}>
+                <input type="checkbox" checked={!!form.on_hold} onChange={(e) => set('on_hold', e.target.checked)} style={{ width: 18, height: 18 }} />
+                <span>
+                  <span style={{ display: 'block', fontWeight: 700, fontSize: 14, color: form.on_hold ? '#b45309' : undefined }}>
+                    {form.on_hold ? 'On hold' : 'Can be sent work'}
+                  </span>
+                  <span style={{ display: 'block', fontSize: 11, color: '#888' }}>
+                    On hold: can&apos;t be picked for a ticket or a job and gets no job emails until you release them.
+                  </span>
+                </span>
+              </label>
               <MF label="Full Name *" icon={<User size={14} />}>
                 <input className="input" value={form.name ?? ''} onChange={(e) => set('name', e.target.value)} placeholder="e.g. John Smith" required autoFocus />
               </MF>

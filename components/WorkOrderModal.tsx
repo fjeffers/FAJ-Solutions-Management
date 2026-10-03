@@ -270,6 +270,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const [contractorNames, setContractorNames] = useState<string[]>(() => {
     if (item?.contractor_names && item.contractor_names.length > 0) return item.contractor_names;
     if (item?.contractor_name) return [item.contractor_name];
+    // A new job from an approved support ticket arrives with its tech picked.
+    if (!item && prefill?.contractor_names?.length) return prefill.contractor_names;
     return [];
   });
   const [contractorToAdd, setContractorToAdd] = useState<string>('');
@@ -922,7 +924,11 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                     </option>
                     {contractors
                       .filter((c) => !contractorNames.includes(c.name))
-                      .map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      .map((c) => (
+                        <option key={c.id} value={c.name} disabled={!!c.on_hold}>
+                          {c.name}{c.on_hold ? ' — on hold' : ''}
+                        </option>
+                      ))}
                   </select>
                   <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                 </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders, contractorOwedOnWO, woPayoutTotal, fmtMoney } from '@/lib/utils';
@@ -8,7 +8,7 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
-import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow } from 'lucide-react';
+import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -32,6 +32,7 @@ import MaintenanceView from '@/components/MaintenanceView';
 import CustomersView from '@/components/CustomersView';
 import PortalAdminView from '@/components/PortalAdminView';
 import ImportQueueView from '@/components/ImportQueueView';
+import SupportView from '@/components/SupportView';
 import StatementView from '@/components/StatementView';
 import TenNinetyNineView from '@/components/TenNinetyNineView';
 import W9View from '@/components/W9View';
@@ -50,7 +51,7 @@ import PaymentModal from '@/components/PaymentModal';
 import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export1099CSV } from '@/lib/export';
 import { logAudit } from '@/lib/audit';
 import { notifyContractor, sendPortalLink, sendOnboarding } from '@/lib/notify';
-import { toastError, toastSuccess } from '@/lib/toast';
+import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { stockAdjustments } from '@/lib/materials-used';
 import type { StockInPlan } from '@/lib/stock-in';
 import { quoteFromSurvey } from '@/lib/surveys';
@@ -62,7 +63,7 @@ const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'crew', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
-  'team',
+  'team', 'support',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -96,7 +97,7 @@ function viewFromUrl(): View {
 const SECTION_OF_VIEW: Record<View, string> = {
   // Always on screen — the round Fred actually does.
   dashboard: 'daily', sitelog: 'daily', crew: 'daily', workorders: 'daily',
-  payables: 'daily', 'import-queue': 'daily', team: 'daily',
+  payables: 'daily', 'import-queue': 'daily', team: 'daily', support: 'daily',
 
   payments: 'money', financials: 'money', ledger: 'money',
   customers: 'money', quickbooks: 'money', invoices: 'money',
@@ -177,6 +178,14 @@ export default function HomePage() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const [modal, setModal] = useState<Modal>(null);
+  // Support inbox (migration-104): an approved ticket opens the New job form;
+  // the job that form saves is linked back to the ticket.
+  const ticketForNextJob = useRef<string | null>(null);
+  const [supportCount, setSupportCount] = useState(0);
+  useEffect(() => {
+    void supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'new')
+      .then(({ count }) => setSupportCount(count ?? 0));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once on load; the inbox keeps it current
   const [searchOpen, setSearchOpen] = useState(false);
   // Dropdown-style nav: one section open at a time; the section holding the
   // current view opens automatically, clicking a header toggles it.
@@ -398,6 +407,7 @@ export default function HomePage() {
       tax_id: c.tax_id ?? null, tax_id_type: c.tax_id_type ?? null,
       address: c.address ?? null, city: c.city ?? null, state: c.state ?? null, zip: c.zip ?? null,
       w9_received: c.w9_received ?? false, zelle_phone: c.zelle_phone ?? null,
+      on_hold: c.on_hold ?? false,
       // Direct Deposit (migration-009)
       bank_name:           c.bank_name           || null,
       account_holder_name: c.account_holder_name || null,
@@ -429,6 +439,8 @@ export default function HomePage() {
   // ── Work Orders ────────────────────────────────────────────────────────────
 
   const saveWorkOrder = async (w: Partial<WorkOrder>) => {
+    const fromTicket = w.id ? null : ticketForNextJob.current;
+    ticketForNextJob.current = null;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -554,6 +566,10 @@ export default function HomePage() {
         return;
       }
       logAudit({ action: 'create', entityType: 'work_order', entityLabel: `WO#${w.wo_number}` });
+      if (fromTicket && created?.id) {
+        const { error: linkErr } = await supabase.from('support_tickets').update({ wo_id: created.id }).eq('id', fromTicket);
+        if (linkErr) console.warn('[support] could not link ticket to job', linkErr.message);
+      }
       // Notify every assigned tech with their own accept/decline links and pay
       const assignedNames: string[] = (payload.contractor_names && payload.contractor_names.length > 0)
         ? payload.contractor_names
@@ -564,6 +580,8 @@ export default function HomePage() {
       for (const name of assignedNames) {
         const c = contractors.find((x) => x.name === name);
         if (!c?.email) continue;
+        // On hold (migration-104): saved on the job, but no email until released.
+        if (c.on_hold) { toastInfo(`${c.name} is on hold, so no job email was sent.`); continue; }
         notifyContractor({
           type: 'wo_assigned',
           contractor_email: c.email,
@@ -1458,6 +1476,17 @@ Go ahead?`)) return;
             <NI k="workorders" icon={<Workflow size={15} />} label="WorkFlow" />
             <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
             <NI k="team"       icon={<UserCog size={15} />}   label="Team" />
+            <button className={`nav-btn ${view === 'support' ? 'active' : ''}`} onClick={() => navigate('support')}>
+              <LifeBuoy size={15} /> Support
+              {supportCount > 0 && (
+                <span style={{
+                  background: 'var(--gold)', color: '#0E1B2E', borderRadius: 999,
+                  fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4,
+                }}>
+                  {supportCount}
+                </span>
+              )}
+            </button>
             <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
               <Inbox size={15} /> Import
               {pendingImportCount > 0 && (
@@ -1662,6 +1691,16 @@ Go ahead?`)) return;
             onDeletePayment={deleteInvoicePayment}
           />
         )}
+        {view === 'support' && (
+          <SupportView
+            contractors={contractors}
+            onCount={setSupportCount}
+            onMakeJob={(prefill, ticketId) => {
+              ticketForNextJob.current = ticketId;
+              setModal({ type: 'wo', item: null, prefill });
+            }}
+          />
+        )}
         {view === 'import-queue' && (
           <ImportQueueView
             items={importQueue}
@@ -1795,7 +1834,7 @@ Go ahead?`)) return;
           deliverableTemplates={deliverableTemplates}
           payments={payments}
           onSave={(w) => { saveWorkOrder(w); setModal(null); }}
-          onClose={() => setModal(null)}
+          onClose={() => { ticketForNextJob.current = null; setModal(null); }}
           onSaveTemplate={async (name, qaItems) => {
             await saveTemplate(null, {
               name,

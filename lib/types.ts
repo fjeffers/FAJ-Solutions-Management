@@ -33,6 +33,8 @@ export type Contractor = {
   state: string | null;
   zip: string | null;
   w9_received: boolean;
+  /** (migration-104) On hold: can't be picked for a ticket or a job, and gets no assignment email. */
+  on_hold?: boolean;
   zelle_phone: string | null;
   /** (migration-054) how this tech wants to be paid, answered on their W-9. */
   payment_method: 'Zelle' | 'Direct Deposit' | 'Check' | 'Other' | null;

@@ -110,3 +110,30 @@ export async function getMessage(accessToken: string, id: string): Promise<{ sub
   const htmlBody = extractHtmlBody(data.payload);
   return { subject, from, htmlBody };
 }
+
+function extractPart(payload: unknown, mime: string): string {
+  const p = payload as { mimeType?: string; body?: { data?: string }; parts?: unknown[] };
+  if (p.mimeType === mime && p.body?.data) return decodeBase64Url(p.body.data);
+  for (const part of p.parts ?? []) {
+    const found = extractPart(part, mime);
+    if (found) return found;
+  }
+  return '';
+}
+
+/** One message for the support bot: headers plus the plain-text body (HTML only when there is no text part). */
+export async function getMessageForSupport(accessToken: string, id: string): Promise<{
+  subject: string; from: string; to: string; date: string; threadId: string; text: string; html: string;
+}> {
+  const res = await fetch(`${GMAIL_API}/messages/${id}?format=full`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Gmail get message failed: ${await res.text()}`);
+  const data = await res.json();
+  const headers: { name: string; value: string }[] = data.payload?.headers ?? [];
+  const h = (n: string) => headers.find((x) => x.name.toLowerCase() === n)?.value ?? '';
+  return {
+    subject: h('subject'), from: h('from'), to: h('to'), date: h('date'), threadId: data.threadId ?? '',
+    text: extractPart(data.payload, 'text/plain'), html: extractPart(data.payload, 'text/html'),
+  };
+}

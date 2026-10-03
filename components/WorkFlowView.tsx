@@ -590,9 +590,15 @@ function TechPicker({ w, job, contractors, onClose, onSaved, onReassign }: {
       </>}
     >
       <div className="wf-filters">
-        {names.map((n) => (
-          <button key={n} className="wf-filter" aria-pressed={n in picked} onClick={() => toggle(n)}>{n}</button>
-        ))}
+        {names.map((n) => {
+          const held = !!contractors.find((c) => c.name === n)?.on_hold && !(n in picked);
+          return (
+            <button key={n} className="wf-filter" aria-pressed={n in picked} disabled={held} onClick={() => toggle(n)}
+              title={held ? 'On hold. Release them in Team first.' : undefined} style={held ? { opacity: 0.5 } : undefined}>
+              {n}{held ? ' · on hold' : ''}
+            </button>
+          );
+        })}
       </div>
       {Object.keys(picked).length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>

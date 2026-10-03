@@ -1,0 +1,23 @@
+{
+  "flow": "support-triage",
+  "description": "Support ticket bot: does it put each support@ email in the queue Fred would pick, and flag urgent ones?",
+  "metrics": [
+    { "id": "queue_correct", "label": "Right queue", "kind": "binary" },
+    { "id": "urgent_correct", "label": "Right urgent", "kind": "binary" },
+    { "id": "declined", "label": "AI declined", "kind": "binary", "better": "lower" }
+  ],
+  "perf_fields": [
+    { "id": "cost_usd", "label": "Cost", "unit": "$" },
+    { "id": "latency_s", "label": "Time", "unit": "s" },
+    { "id": "in_tokens", "label": "In tokens" },
+    { "id": "out_tokens", "label": "Out tokens" }
+  ],
+  "prices": { "claude-opus-5-5": { "in": 4, "out": 20 } },
+  "harness_paths": [
+    "evals/support-triage/grade.mjs",
+    "evals/support-triage/cases.jsonl",
+    "lib/support-triage.ts",
+    "lib/support-queues.ts"
+  ],
+  "variants": []
+}

@@ -1,0 +1,46 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Desktop — full page",
+      "x": 0,
+      "y": 0,
+      "w": 1200,
+      "h": 3060
+    },
+    {
+      "file": "Mobile.dc.html",
+      "title": "Phone — 390px",
+      "x": 1320,
+      "y": 0,
+      "w": 390,
+      "h": 2900
+    }
+  ],
+  "annotations": [
+    {
+      "id": "stock-photos",
+      "x": 1780,
+      "y": 0,
+      "w": 310,
+      "text": "The four photos are stock, from the folder you already had — placeholders for the real thing.\n\nYou have hundreds of your own site photos filed against visits. Swapping three or four of those in would make this far stronger than any stock library: your racks, your kiosks, your crew."
+    },
+    {
+      "id": "placeholders",
+      "x": 1780,
+      "y": 340,
+      "w": 310,
+      "text": "Still needs you:\n\n· [YOUR PHONE NUMBER] on both artboards\n· Confirm you are happy naming Wendy&#39;s, State Farm, Trulieve and Reitler publicly\n· Fiber card describes splicing and certification — trim it if you sub that out\n\nNo rate shown anywhere; pricing felt like your call."
+    },
+    {
+      "id": "logo-note",
+      "x": 1780,
+      "y": 700,
+      "w": 310,
+      "text": "Your logo has a black background baked into the file, so it only sits cleanly on dark — hence the black footer. If you ever get a transparent PNG or an SVG of it, it could go in the top nav too."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

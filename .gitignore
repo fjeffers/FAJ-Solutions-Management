@@ -6,3 +6,10 @@ node_modules
 next-env.d.ts
 .claude/worktrees/
 faj-payments-source.zip
+
+# Eval run output (support-bot eval): transcripts and generated reports stay local
+**/traces/
+.claude/hillclimb/**/report.html
+.claude/hillclimb/**/state.json
+.claude/hillclimb/**/trajectory/
+.claude/hillclimb/**/progress.txt

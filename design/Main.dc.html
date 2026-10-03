@@ -1,0 +1,274 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Cinzel:wght@500;600;700&family=Lato:wght@300;400;700&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Lato', -apple-system, sans-serif; color: #1A1A1A; }
+    a { color: #0D7377; text-decoration: none; }
+    a:hover { color: #0a5a5d; }
+    h1, h2, h3 { margin: 0; }
+    p { margin: 0; }
+    .eyebrow { font-family: 'Cinzel', serif; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #0D7377; }
+    .glass { background: rgba(255,255,255,0.65); border: 1px solid rgba(201,169,97,0.25); box-shadow: 0 8px 32px rgba(13,115,119,0.08); border-radius: 16px; }
+    .pill { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
+    .teal { background: linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%); color: #fff; box-shadow: 0 4px 14px rgba(13,115,119,0.35); }
+    .h2 { font-family: 'Cormorant Garamond', serif; font-size: 42px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; text-wrap: balance; }
+    .body { font-size: 15px; line-height: 1.7; color: #4a4a48; }
+    .icon-well { width: 44px; height: 44px; border-radius: 12px; background: rgba(13,115,119,0.08); display: flex; align-items: center; justify-content: center; color: #0D7377; }
+    .town { padding: 8px 16px; border-radius: 999px; background: rgba(255,255,255,0.65); border: 1px solid rgba(201,169,97,0.25); font-size: 13px; color: #4a4a48; }
+  </style>
+</helmet>
+
+<div style="width: 1200px; background: linear-gradient(135deg, #FFF8E7 0%, #F5E6C3 100%); font-family: 'Lato', sans-serif; color: #1A1A1A;">
+
+  <!-- NAV -->
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 22px 64px; background: rgba(255,255,255,0.65); border-bottom: 1px solid rgba(201,169,97,0.25);">
+    <div style="display: flex; align-items: baseline; gap: 12px;">
+      <span style="font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 700; letter-spacing: -0.01em;">FAJ Solutions</span>
+      <span class="eyebrow" style="font-size: 9px;">Easton, PA</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 32px;">
+      <a href="#services" style="font-size: 13px; font-weight: 700; letter-spacing: 0.5px; color: #1A1A1A;">Services</a>
+      <a href="#how" style="font-size: 13px; font-weight: 700; letter-spacing: 0.5px; color: #1A1A1A;">How we work</a>
+      <a href="#coverage" style="font-size: 13px; font-weight: 700; letter-spacing: 0.5px; color: #1A1A1A;">Coverage</a>
+      <a href="#contact" class="pill teal" style="padding: 10px 18px;">Request a site visit</a>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; align-items: center; padding: 84px 64px 72px;">
+    <div style="display: flex; flex-direction: column; gap: 26px;">
+      <span class="eyebrow">IT field services</span>
+      <h1 style="font-family: 'Cormorant Garamond', serif; font-size: 62px; font-weight: 600; line-height: 1.04; letter-spacing: -0.02em; text-wrap: balance;">Done right on the <em style="font-style: italic; color: #0D7377;">first</em> trip.</h1>
+      <p class="body" style="font-size: 17px; max-width: 48ch;">Low-voltage rough-in through fiber backbone. Cabling, POS and self-order kiosks, POTS lines, cameras and drive-thru signage — installed, tested and closed out across New Jersey, Pennsylvania and Philadelphia.</p>
+      <div style="display: flex; gap: 14px; padding-top: 6px;">
+        <a href="#contact" class="pill teal" style="padding: 14px 26px;">Request a site visit</a>
+        <a href="#services" class="pill" style="padding: 14px 26px; background: transparent; color: #0D7377; border: 1px solid #0D7377;">What we do</a>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <img src="hero-camera.jpg" alt="Technician fitting a ceiling camera" style="display: block; width: 100%; height: 400px; object-fit: cover; border-radius: 18px; box-shadow: 0 14px 40px rgba(13,115,119,0.16);">
+      <div class="glass" style="padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span class="eyebrow" style="font-size: 9px;">Typical visit</span>
+          <span style="font-family: 'Cormorant Garamond', serif; font-size: 30px; font-weight: 600; line-height: 1;">3.25h</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span class="eyebrow" style="font-size: 9px;">Photos filed</span>
+          <span style="font-family: 'Cormorant Garamond', serif; font-size: 30px; font-weight: 600; line-height: 1;">24</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span class="eyebrow" style="font-size: 9px;">Punch list</span>
+          <span style="font-family: 'Cormorant Garamond', serif; font-size: 30px; font-weight: 600; line-height: 1;">0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLIENT STRIP -->
+  <div style="padding: 26px 64px; background: rgba(255,255,255,0.5); border-top: 1px solid rgba(201,169,97,0.25); border-bottom: 1px solid rgba(201,169,97,0.25); display: flex; align-items: center; gap: 44px;">
+    <span class="eyebrow" style="font-size: 9px; white-space: nowrap;">Trusted on site by</span>
+    <div style="display: flex; align-items: center; gap: 42px;">
+      <span style="font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: #6a6a66;">Wendy&#39;s</span>
+      <span style="font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: #6a6a66;">State Farm</span>
+      <span style="font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: #6a6a66;">Trulieve</span>
+      <span style="font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: #6a6a66;">Reitler</span>
+    </div>
+  </div>
+
+  <!-- SERVICES -->
+  <div id="services" style="padding: 78px 64px;">
+    <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 44px;">
+      <span class="eyebrow">What we do</span>
+      <h2 class="h2" style="font-size: 44px;">From the rough-in to the register.</h2>
+      <p class="body" style="font-size: 16px; max-width: 62ch;">One crew for the whole low-voltage stack, in the hours your locations are closed.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px;">
+      <div class="glass" style="padding: 28px; display: flex; flex-direction: column; gap: 13px;">
+        <div class="icon-well">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"></rect><rect x="17" y="17" width="5" height="5" rx="1"></rect><path d="M4.5 7v5a4 4 0 0 0 4 4h7a4 4 0 0 1 4 4v0.5"></path></svg>
+        </div>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; line-height: 1.15;">Structured cabling</h3>
+        <p class="body" style="font-size: 14.5px;">CAT6 runs, faceplates and patch panels labelled to your matrix, raceway wherever cable is exposed. Rack builds, blanks fitted, and the tidy-up the last contractor skipped.</p>
+      </div>
+
+      <div class="glass" style="padding: 28px; display: flex; flex-direction: column; gap: 13px;">
+        <div class="icon-well">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h6"></path><circle cx="12" cy="12" r="2"></circle><path d="M15.5 8.5 21 5"></path><path d="M15.5 12H21"></path><path d="M15.5 15.5 21 19"></path></svg>
+        </div>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; line-height: 1.15;">Fiber</h3>
+        <p class="body" style="font-size: 14.5px;">Single and multimode runs pulled, terminated and fusion spliced. Backbone between IDFs, fiber to the demarc, tested and certified with results handed over.</p>
+      </div>
+
+      <div class="glass" style="padding: 28px; display: flex; flex-direction: column; gap: 13px;">
+        <div class="icon-well">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="13" rx="2"></rect><path d="M7 9h6"></path><path d="M3 20h18"></path><path d="M12 16v4"></path></svg>
+        </div>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; line-height: 1.15;">POS &amp; self-order kiosks</h3>
+        <p class="body" style="font-size: 14.5px;">Registers, card readers and self-order kiosks mounted, cabled and brought up with the vendor. Kiosk tables finished properly — faceplates, biscuit boxes, no exposed whips.</p>
+      </div>
+
+      <div class="glass" style="padding: 28px; display: flex; flex-direction: column; gap: 13px;">
+        <div class="icon-well">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .3 1.9.6 2.8a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.2-1.1a2 2 0 0 1 2.1-.5c.9.3 1.8.5 2.8.6a2 2 0 0 1 1.8 2Z"></path></svg>
+        </div>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; line-height: 1.15;">POTS lines</h3>
+        <p class="body" style="font-size: 14.5px;">Analog lines run, replaced and traced — alarm panels, elevator phones, fax and lift stations. The circuits everyone forgets until the inspection fails.</p>
+      </div>
+
+      <div class="glass" style="padding: 28px; display: flex; flex-direction: column; gap: 13px;">
+        <div class="icon-well">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h13l5 3-5 3H2z"></path><path d="M6 13v6"></path><path d="M2 19h8"></path></svg>
+        </div>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; line-height: 1.15;">Cameras &amp; signage</h3>
+        <p class="body" style="font-size: 14.5px;">Interior, exterior and drive-thru cameras installed and aligned. Menu boards, Q-boards and order confirmation displays brought online and verified with the vendor.</p>
+      </div>
+
+      <div class="glass" style="padding: 28px; display: flex; flex-direction: column; gap: 13px;">
+        <div class="icon-well">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"></circle><path d="M12 5a7 7 0 0 0-7 7"></path><path d="M12 2a10 10 0 0 0-10 10"></path><path d="M12 5a7 7 0 0 1 7 7"></path></svg>
+        </div>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; line-height: 1.15;">Surveys &amp; Starlink</h3>
+        <p class="body" style="font-size: 14.5px;">Pre-install surveys with photographs and a marked BOM, so the install crew arrives with the right parts. Starlink siting, mounting, alignment and activation.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ON SITE -->
+  <div style="padding: 0 64px 78px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <span class="eyebrow">On site</span>
+        <h2 class="h2" style="font-size: 36px;">Somebody who has done it before.</h2>
+      </div>
+      <p class="body" style="font-size: 15px; max-width: 40ch; text-align: right;">Nights and early mornings, so your doors open on time and your crew never works around ours.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <img src="racks.jpg" alt="Patch panels and switch cabling in a rack" style="display: block; width: 100%; height: 240px; object-fit: cover; border-radius: 14px;">
+        <span style="font-family: 'Cinzel', serif; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #0D7377;">Cabling &amp; racks</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <img src="pos.jpg" alt="Point-of-sale terminal in use at a counter" style="display: block; width: 100%; height: 240px; object-fit: cover; border-radius: 14px;">
+        <span style="font-family: 'Cinzel', serif; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #0D7377;">POS &amp; kiosks</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <img src="tech.jpg" alt="Network engineer working in a server room" style="display: block; width: 100%; height: 240px; object-fit: cover; border-radius: 14px;">
+        <span style="font-family: 'Cinzel', serif; font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #0D7377;">Network &amp; fiber</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOW WE WORK -->
+  <div id="how" style="margin: 0 64px 78px; border-radius: 20px; background: linear-gradient(135deg, #0D7377 0%, #0a5a5d 100%); color: #fff; padding: 62px 56px;">
+    <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 48px;">
+      <span class="eyebrow" style="color: #E4CC8F;">How we work</span>
+      <h2 class="h2" style="color: #fff; max-width: 22ch;">You should never have to ask what happened on site.</h2>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px;">
+      <div style="display: flex; flex-direction: column; gap: 12px; border-top: 2px solid rgba(201,169,97,0.55); padding-top: 20px;">
+        <span style="font-family: 'Cinzel', serif; font-size: 10px; font-weight: 600; letter-spacing: 2px; color: #E4CC8F;">01</span>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; color: #fff;">Scoped before we drive</h3>
+        <p style="font-size: 14.5px; line-height: 1.7; color: rgba(255,255,255,0.82);">Send the ticket, the site ID and the window. You get the scope and the cost back before anyone gets in a truck.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px; border-top: 2px solid rgba(201,169,97,0.55); padding-top: 20px;">
+        <span style="font-family: 'Cinzel', serif; font-size: 10px; font-weight: 600; letter-spacing: 2px; color: #E4CC8F;">02</span>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; color: #fff;">Documented on site</h3>
+        <p style="font-size: 14.5px; line-height: 1.7; color: rgba(255,255,255,0.82);">Time-stamped check-in and check-out, photographs of every install point, deliverables uploaded before the tech leaves the parking lot.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px; border-top: 2px solid rgba(201,169,97,0.55); padding-top: 20px;">
+        <span style="font-family: 'Cinzel', serif; font-size: 10px; font-weight: 600; letter-spacing: 2px; color: #E4CC8F;">03</span>
+        <h3 style="font-family: 'Cormorant Garamond', serif; font-size: 25px; font-weight: 600; color: #fff;">Closed out clean</h3>
+        <p style="font-size: 14.5px; line-height: 1.7; color: rgba(255,255,255,0.82);">One invoice per visit, itemised: hours on site, round-trip mileage, materials. No surprise line items turning up a month later.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- COVERAGE -->
+  <div id="coverage" style="padding: 0 64px 78px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; align-items: start;">
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <span class="eyebrow">Coverage</span>
+      <h2 class="h2">New Jersey, Pennsylvania, Philadelphia.</h2>
+      <p class="body" style="font-size: 16px; max-width: 50ch;">Based in Easton and on the road daily. Multi-site rollouts and one-off service calls both welcome — mileage is billed from base, so you know what the trip costs before we take it.</p>
+      <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A961" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        <span style="font-size: 14px; font-weight: 700; color: #1A1A1A;">Easton, Pennsylvania</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; padding-top: 8px;">
+      <span class="town">Philadelphia</span>
+      <span class="town">Voorhees</span>
+      <span class="town">Cherry Hill</span>
+      <span class="town">Deptford</span>
+      <span class="town">Jersey City</span>
+      <span class="town">Bayonne</span>
+      <span class="town">Somerset</span>
+      <span class="town">Hillside</span>
+      <span class="town">Glassboro</span>
+      <span class="town">Manahawkin</span>
+      <span class="town">Pennsauken</span>
+      <span class="town">Perth Amboy</span>
+      <span class="town">Clementon</span>
+      <span class="town">Swedesboro</span>
+      <span class="town">Boothwyn</span>
+    </div>
+  </div>
+
+  <!-- CONTACT -->
+  <div id="contact" style="padding: 0 64px 84px;">
+    <div class="glass" style="border-radius: 20px; padding: 56px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <span class="eyebrow">Get in touch</span>
+        <h2 class="h2">Send the ticket. Get back photos.</h2>
+        <p class="body" style="font-size: 16px; max-width: 44ch;">Tell us the site, the scope and the window. You get a quote before anyone drives.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <a href="mailto:fajsolutions@gmail.com" style="display: flex; align-items: center; gap: 14px; padding: 18px 22px; border-radius: 14px; background: rgba(13,115,119,0.06); border: 1px solid rgba(13,115,119,0.18);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0D7377" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m2 7 10 6 10-6"></path></svg>
+          <span style="display: flex; flex-direction: column; gap: 2px;">
+            <span class="eyebrow" style="font-size: 9px;">Email</span>
+            <span style="font-size: 15px; font-weight: 700; color: #1A1A1A;">fajsolutions@gmail.com</span>
+          </span>
+        </a>
+        <div style="display: flex; align-items: center; gap: 14px; padding: 18px 22px; border-radius: 14px; background: rgba(201,169,97,0.10); border: 1px solid rgba(201,169,97,0.28);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C9A961" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .3 1.9.6 2.8a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.2-1.1a2 2 0 0 1 2.1-.5c.9.3 1.8.5 2.8.6a2 2 0 0 1 1.8 2Z"></path></svg>
+          <span style="display: flex; flex-direction: column; gap: 2px;">
+            <span class="eyebrow" style="font-size: 9px; color: #C9A961;">Phone</span>
+            <span style="font-size: 15px; font-weight: 700; color: #1A1A1A;">[YOUR PHONE NUMBER]</span>
+          </span>
+        </div>
+        <a href="mailto:fajsolutions@gmail.com" class="pill teal" style="padding: 16px 26px;">Request a site visit</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER — dark, because the logo carries its own black ground -->
+  <div style="background: #050505; padding: 40px 64px 46px; display: flex; align-items: center; justify-content: space-between; gap: 32px;">
+    <img src="logo.png" alt="FAJ Solutions — Technology. Delivered." style="display: block; height: 74px; width: auto;">
+    <div style="display: flex; flex-direction: column; gap: 6px; text-align: right;">
+      <span style="font-size: 13px; color: rgba(255,255,255,0.78);">IT field services · Easton, Pennsylvania</span>
+      <span style="font-size: 13px; color: rgba(255,255,255,0.5);">New Jersey · Pennsylvania · Philadelphia</span>
+      <a href="mailto:fajsolutions@gmail.com" style="font-size: 13px; color: #C9A961; font-weight: 700;">fajsolutions@gmail.com</a>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1200,"height":2620}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

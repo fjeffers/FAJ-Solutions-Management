@@ -25,7 +25,6 @@ import ContractsView from '@/components/ContractsView';
 import AttentionPanel from '@/components/AttentionPanel';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
-import CrewProjectsView from '@/components/CrewProjectsView';
 import TeamView from '@/components/TeamView';
 import SiteLogView from '@/components/SiteLogView';
 import MaintenanceView from '@/components/MaintenanceView';
@@ -61,7 +60,7 @@ import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
-  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'crew', 'import-queue',
+  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
   'team', 'support',
 ] as const;
@@ -96,7 +95,7 @@ function viewFromUrl(): View {
  */
 const SECTION_OF_VIEW: Record<View, string> = {
   // Always on screen — the round Fred actually does.
-  dashboard: 'daily', sitelog: 'daily', crew: 'daily', workorders: 'daily',
+  dashboard: 'daily', sitelog: 'daily', workorders: 'daily',
   payables: 'daily', 'import-queue': 'daily', team: 'daily', support: 'daily',
 
   payments: 'money', financials: 'money', ledger: 'money',
@@ -1471,7 +1470,6 @@ Go ahead?`)) return;
             </div>
             <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
             <NI k="sitelog"    icon={<Timer size={15} />}     label="Site Log" />
-            <NI k="crew"       icon={<Users size={15} />}     label="Crew Projects" />
             {/* Fred, 2026-10-02: "rename to WorkFlow, I like it and keep it". */}
             <NI k="workorders" icon={<Workflow size={15} />} label="WorkFlow" />
             <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
@@ -1677,7 +1675,6 @@ Go ahead?`)) return;
         {view === 'portal-admin' && <PortalAdminView />}
         {view === 'network' && <NetworkView />}
         {view === 'sitelog' && <SiteLogView />}
-        {view === 'crew' && <CrewProjectsView />}
         {view === 'team' && <TeamView onOpenContractors={() => navigate('contractors')} />}
         {view === 'maintenance' && <MaintenanceView />}
         {view === 'invoices' && (

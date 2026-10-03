@@ -5,7 +5,7 @@
 // they still count with no signal.
 import { createClient } from '@/lib/supabase/client';
 import {
-  wfJobFromTech, clockedIn, clockedOut, withTask, answered, markedWorkDone, wfReasonText,
+  wfJobFromTech, clockedIn, clockedOut, withTask, answered, markedWorkDone, withReport, wfReasonText,
   type WfJob,
 } from './wf';
 import { RefusedError, isNoSignal, type Outbox, type PendingAction } from './wf-outbox';
@@ -36,6 +36,14 @@ export function registerTechHandlers(box: Outbox): void {
     await call('wf_tech_clock_gps', {
       p_wo_number: a.number, p_action: a.action, p_at: at.toISOString(),
       p_lat: a.lat ?? null, p_lng: a.lng ?? null, p_accuracy: a.acc ?? null,
+    });
+  });
+  // The job report: notes for the office and answers to its questions.
+  box.register('report', async (a) => {
+    await call('wf_tech_save_report', {
+      p_wo_number: a.number,
+      p_notes: typeof a.notes === 'string' ? a.notes : null,
+      p_answers: a.answers && typeof a.answers === 'object' ? a.answers : null,
     });
   });
   box.register('task', async (a) => {
@@ -80,6 +88,8 @@ export function applyPending(jobs: WfJob[], pending: PendingAction[]): WfJob[] {
         case 'task': return withTask(j, String(p.args.task), !!p.args.done);
         case 'respond': return answered(j, !!p.args.accept);
         case 'workdone': return markedWorkDone(j, String(p.args.notes ?? ''), at);
+        case 'report': return withReport(j, typeof p.args.notes === 'string' ? p.args.notes : null,
+          (p.args.answers && typeof p.args.answers === 'object' ? p.args.answers : {}) as Record<string, string>);
         default: return j;
       }
     });

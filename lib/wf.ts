@@ -47,6 +47,10 @@ export const WF_STATUS_COLOR: Record<WfStatus, string> = {
 
 export type WfTask = { id: string; label: string; category: string; done: boolean };
 
+/** A question the office put on the job (custom_qa), and the tech's answer. */
+export type WfQuestionType = 'text' | 'number' | 'yes_no' | 'textarea' | 'photo' | 'document' | 'signature';
+export type WfQuestion = { id: string; label: string; type: WfQuestionType; answer: string };
+
 export type WfJob = {
   /** Database id (uuid). */
   id: string;
@@ -81,6 +85,11 @@ export type WfJob = {
   tools: string;
   skills: string;
   tasks: WfTask[];
+  /** The office's questions for this job, with any answers (migration-101). */
+  questions: WfQuestion[];
+  photoRequired: boolean;
+  signatureRequired: boolean;
+  deliverableInstructions: string;
   checkedInAt: string | null;
   checkedOutAt: string | null;
   closeoutNotes: string;
@@ -114,6 +123,20 @@ function taskList(r: Row): WfTask[] {
     .filter((t): t is Row => !!t && typeof t === 'object')
     .map((t) => ({ id: s(t, 'id'), label: s(t, 'label'), category: s(t, 'category'), done: t.completed === true }))
     .filter((t) => t.id && t.label);
+}
+
+const QUESTION_TYPES: WfQuestionType[] = ['text', 'number', 'yes_no', 'textarea', 'photo', 'document', 'signature'];
+
+function questionList(r: Row): WfQuestion[] {
+  const raw = r.custom_qa;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((q): q is Row => !!q && typeof q === 'object')
+    .map((q) => {
+      const t = s(q, 'type') as WfQuestionType;
+      return { id: s(q, 'id'), label: s(q, 'label'), type: QUESTION_TYPES.includes(t) ? t : 'text', answer: s(q, 'answer') };
+    })
+    .filter((q) => q.id && q.label);
 }
 
 function dateOnly(v: string): string | null {
@@ -178,6 +201,10 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     tools: s(r, 'tools_required'),
     skills: s(r, 'required_skills'),
     tasks: taskList(r),
+    questions: questionList(r),
+    photoRequired: r.photo_required === true,
+    signatureRequired: r.signature_required === true,
+    deliverableInstructions: s(r, 'deliverable_instructions'),
     checkedInAt: s(r, 'checked_in_at') || null,
     checkedOutAt: s(r, 'checked_out_at') || null,
     closeoutNotes: s(r, 'closeout_notes'),
@@ -388,6 +415,31 @@ export function clockedOut(j: WfJob, at: Date): WfJob {
 
 export function answered(j: WfJob, accept: boolean): WfJob {
   return { ...j, status: accept ? 'scheduled' : 'declined' };
+}
+
+/** Notes and answers saved on the phone show at once, signal or not. */
+export function withReport(j: WfJob, notes: string | null, answers: Record<string, string>): WfJob {
+  return {
+    ...j,
+    closeoutNotes: notes ?? j.closeoutNotes,
+    questions: j.questions.map((q) => (q.id in answers ? { ...q, answer: answers[q.id] ?? '' } : q)),
+  };
+}
+
+/**
+ * What still has to be filled in before a tech can say the work is done —
+ * the same rules as the emailed job link: notes for the office, every
+ * question answered, and a photo when the job needs photos. A signature, when
+ * required, is taken in the Work done window itself.
+ */
+export function reportMissing(j: WfJob, notes: string, answers: Record<string, string>, photoCount: number): string[] {
+  const missing: string[] = [];
+  if (!notes.trim()) missing.push('Write what you did, in the notes for the office');
+  for (const q of j.questions) {
+    if (!(answers[q.id] ?? q.answer).trim()) missing.push(`Answer: ${q.label}`);
+  }
+  if (j.photoRequired && photoCount === 0) missing.push('Add at least one photo of the work');
+  return missing;
 }
 
 export function markedWorkDone(j: WfJob, notes: string, at: Date): WfJob {

@@ -3,7 +3,7 @@ import {
   wfStatusFor, wfJobFromTech, wfJobFromOwner, parseClockTime, whenText, fullAddress, place,
   tasksDone, isClockedIn, canWork, withTask, clockedIn, clockedOut, markedWorkDone, workedMs,
   formatDuration, formatClock, matchesWf, sortWf, ownerCounts, techCounts, statusesPresent, jobImage,
-  wfStatusLabel,
+  wfStatusLabel, reportMissing,
 } from './wf';
 import {
   Outbox, RefusedError, isNoSignal, makeAction, saveCopy, loadCopy, lastUid, clearCopies, type KeyValue,
@@ -328,5 +328,33 @@ describe('the four lists', () => {
       wfJobFromTech({ id: '5', wo_number: '5', wo_status: 'Assigned', my_response: 'declined' }),
     ];
     expect(bucketCounts(jobs)).toEqual({ available: 1, current: 1, pending: 1, closed: 1 });
+  });
+});
+
+describe('the job report', () => {
+  const job = wfJobFromTech({
+    id: 'x', wo_number: '7', wo_status: 'In Progress', my_response: 'accepted', photo_required: true,
+    custom_qa: [
+      { id: 'q1', label: 'Serial number', type: 'text', answer: null },
+      { id: 'q2', label: 'Speed test passed?', type: 'yes_no', answer: 'Yes' },
+      { id: 'q3', label: 'Odd', type: 'nonsense', answer: '' },
+    ],
+  });
+  it('reads the office questions and their answers', () => {
+    expect(job.questions.map((q) => [q.id, q.type, q.answer])).toEqual([['q1', 'text', ''], ['q2', 'yes_no', 'Yes'], ['q3', 'text', '']]);
+    expect(job.photoRequired).toBe(true);
+  });
+  it('lists what is still missing before work done', () => {
+    expect(reportMissing(job, '', {}, 0)).toEqual([
+      'Write what you did, in the notes for the office', 'Answer: Serial number', 'Answer: Odd', 'Add at least one photo of the work',
+    ]);
+    expect(reportMissing(job, 'Swapped the switch', { q1: 'SN-1', q3: 'n/a' }, 2)).toEqual([]);
+  });
+  it('a saved report shows at once', async () => {
+    const { applyPending } = await import('./tech-wf');
+    const [j] = applyPending([job], [makeAction('report', { number: '7', notes: 'Done', answers: { q1: 'SN-9' } }, 'save')]);
+    expect(j.closeoutNotes).toBe('Done');
+    expect(j.questions[0].answer).toBe('SN-9');
+    expect(j.questions[1].answer).toBe('Yes');
   });
 });

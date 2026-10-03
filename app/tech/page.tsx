@@ -24,7 +24,7 @@ import {
 } from '@/lib/wf-outbox';
 import {
   techCounts, matchesWf, sortWf, bucketOf, bucketCounts, canWork, isClockedIn, isFinished, formatDuration,
-  fullAddress, type WfBucket, type WfJob, type WfTask,
+  fullAddress, reportMissing, type WfBucket, type WfJob, type WfQuestion, type WfTask,
 } from '@/lib/wf';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
@@ -358,7 +358,7 @@ export default function TechPortalPage() {
           )}
 
           {openJob ? (
-            <TechJobScreen job={openJob} uid={uid ?? ''} onBack={() => setOpenId(null)} act={act}
+            <TechJobScreen key={openJob.id} job={openJob} uid={uid ?? ''} onBack={() => setOpenId(null)} act={act}
               onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
           ) : tab === 'jobs' ? (
             <JobsHome
@@ -609,7 +609,15 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
   const [chatOpen, setChatOpen] = useState(false);
   const [doneOpen, setDoneOpen] = useState(false);
   const [locating, setLocating] = useState(false);
+  // The job report (Fred, 2026-10-02: "add info to the work orders, save,
+  // close, answer questions"). Edits live here until Save or Work done.
+  const [notes, setNotes] = useState(job.closeoutNotes);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [photoCount, setPhotoCount] = useState(0);
   const working = canWork(job);
+  const canReport = working || job.status === 'workDone';
+  const dirty = notes.trim() !== job.closeoutNotes.trim()
+    || Object.entries(answers).some(([id, v]) => v !== (job.questions.find((q) => q.id === id)?.answer ?? ''));
 
   // GPS on the clock (Fred, 2026-10-02). The time is the moment of the tap;
   // the position is looked up for a few seconds at most, works with no signal,
@@ -623,11 +631,19 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
     void act(
       makeAction('clock', { number: job.number, action: on ? 'out' : 'in', lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null },
         `Clock ${on ? 'out of' : 'in on'} WO ${job.number}`, at),
-      `${on ? 'Clocked out.' : 'Clocked in. The job is in progress.'}${pos ? ' Location saved.' : ' (No GPS — turn on Location to save where you are.)'}`,
+      on ? 'Clocked out.' : 'Clocked in. The job is in progress.',
     );
   };
   const toggleTask = (t: WfTask, done: boolean) => {
     void act(makeAction('task', { number: job.number, task: t.id, done }, `${done ? 'Tick' : 'Untick'} "${t.label}" on WO ${job.number}`));
+  };
+
+  /** Save notes and answers — sent now, or kept on the phone with no signal. */
+  const saveReport = async (extra: Record<string, string> = {}, quiet = false) => {
+    const all = { ...answers, ...extra };
+    await act(makeAction('report', { number: job.number, notes, answers: all }, `Job report for WO ${job.number}`),
+      quiet ? undefined : 'Saved. The office can see it.');
+    setAnswers({});
   };
 
   const showClock = !isFinished(job) && job.status !== 'declined' && job.status !== 'offered';
@@ -635,14 +651,20 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
   if (job.status === 'offered') bottom = <OfferButtons job={job} act={act} />;
   else if (working) {
     bottom = (
-      <button className="wf-btn wf-btn-navy" style={{ width: '100%' }} onClick={() => setDoneOpen(true)}>
-        <CheckCircle2 size={18} /> Work done
-      </button>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="wf-btn wf-btn-outline" style={{ flex: 1 }} disabled={!dirty} onClick={() => void saveReport()}>
+          <Save size={17} /> {dirty ? 'Save' : 'Saved'}
+        </button>
+        <button className="wf-btn wf-btn-navy" style={{ flex: 2 }} onClick={() => setDoneOpen(true)}>
+          <CheckCircle2 size={18} /> Work done
+        </button>
+      </div>
     );
   } else if (job.status === 'workDone') {
     bottom = (
       <div className="wf-card" style={{ padding: 12, textAlign: 'center', color: 'var(--wf-success)', fontWeight: 600 }}>
         Sent to Fred — the office takes it from here.
+        {dirty && <button className="wf-btn wf-btn-outline wf-btn-sm" style={{ marginLeft: 10 }} onClick={() => void saveReport()}><Save size={15} /> Save changes</button>}
       </div>
     );
   }
@@ -666,7 +688,14 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
         clock={showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} /> : undefined}
         onToggleTask={working ? toggleTask : undefined}
         below={<>
-          <JobPhotos job={job} uid={uid} canAdd={working || job.status === 'workDone'} />
+          {job.status !== 'offered' && job.status !== 'declined' && (
+            <JobReport
+              job={job} uid={uid} canEdit={canReport}
+              notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
+              dirty={dirty} onSave={(extra) => saveReport(extra)}
+            />
+          )}
+          <JobPhotos job={job} uid={uid} canAdd={canReport} onCount={setPhotoCount} />
           {chatOpen && <JobMessages number={job.number} />}
         </>}
         bottom={bottom}
@@ -674,12 +703,24 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
       {doneOpen && (
         <WorkDoneDialog
           job={job}
+          missing={reportMissing(job, notes, answers, photoCount)}
           onClose={() => setDoneOpen(false)}
-          onConfirm={async (notes) => {
+          onSaveDraft={async () => { setDoneOpen(false); await saveReport(); }}
+          onConfirm={async (signature) => {
             setDoneOpen(false);
             const at = new Date();
             const clockOut = isClockedIn(job);
-            const pos = clockOut ? await getPosition(6000) : null;
+            const pos = await getPosition(6000);
+            // A customer signature goes to the job like a photo (kept on the phone with no signal).
+            if (signature) {
+              const meta = { woNumber: job.number, blob: signature, takenAt: at.toISOString(), lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source: 'camera' as const };
+              const r = await sendPhoto(meta);
+              if (r === 'offline') await queuePhoto({ ...meta, id: `${Date.now()}-sig`, uid });
+              else if ('error' in r) { toastError(`The signature didn't send: ${r.error}`); return; }
+            }
+            // The report first, then work done — the outbox keeps that order.
+            await act(makeAction('report', { number: job.number, notes, answers }, `Job report for WO ${job.number}`));
+            setAnswers({});
             void act(
               makeAction('workdone', { number: job.number, notes, clockOut, lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null },
                 `Work done on WO ${job.number}`, at),
@@ -692,23 +733,264 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
   );
 }
 
-function WorkDoneDialog({ job, onClose, onConfirm }: { job: WfJob; onClose: () => void; onConfirm: (notes: string) => void | Promise<void> }) {
-  const [notes, setNotes] = useState(job.closeoutNotes);
+/**
+ * The tech's report on the job: answers to the office's questions and notes
+ * for the office. Saved with the Save button (or when the work is marked
+ * done), and kept on the phone with no signal like every other tap.
+ */
+function JobReport({ job, uid, canEdit, notes, setNotes, answers, setAnswers, dirty, onSave }: {
+  job: WfJob; uid: string; canEdit: boolean;
+  notes: string; setNotes: (v: string) => void;
+  answers: Record<string, string>; setAnswers: (f: (a: Record<string, string>) => Record<string, string>) => void;
+  dirty: boolean; onSave: (extra?: Record<string, string>) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const value = (q: WfQuestion) => answers[q.id] ?? q.answer;
+  const set = (id: string, v: string) => setAnswers((a) => ({ ...a, [id]: v }));
+  const answeredCount = job.questions.filter((q) => value(q).trim()).length;
+
+  // A photo, document or signature answer is uploaded straight away and saved.
+  const uploadAnswer = async (q: WfQuestion, blob: Blob) => {
+    setBusy(q.id);
+    const r = await sendPhoto({ woNumber: job.number, blob, takenAt: new Date().toISOString(), lat: null, lng: null, accuracy: null, source: 'camera' });
+    setBusy(null);
+    if (r === 'offline') { toastError('Photos and signatures for a question need signal. Try again when you have it.'); return; }
+    if ('error' in r) { toastError(r.error); return; }
+    set(q.id, r.url);
+    await onSave({ [q.id]: r.url });
+  };
+
+  const photoAnswer = async (q: WfQuestion, file: File | undefined) => {
+    if (!file) return;
+    setBusy(q.id);
+    const at = new Date();
+    const pos = await getPosition(6000);
+    try {
+      const blob = await stampPhoto(file, stampLines({ woNumber: job.number, title: q.label, at, pos }));
+      await uploadAnswer(q, blob);
+    } catch (e) {
+      setBusy(null);
+      toastError(e instanceof Error ? e.message : "Couldn't prepare that photo.");
+    }
+  };
+
+  const isUrl = (v: string) => /^https?:\/\//.test(v);
+
+  return (
+    <Section
+      title="Job report"
+      subtitle={job.questions.length ? `${answeredCount} of ${job.questions.length} questions answered` : 'Notes for the office'}
+      right={canEdit && dirty ? <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)' }}>Not saved</span> : undefined}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {job.deliverableInstructions && (
+          <div style={{ padding: 10, borderRadius: 10, background: 'rgba(201,162,75,0.1)', fontSize: 13 }}>
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>What the office needs back</div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{job.deliverableInstructions}</div>
+          </div>
+        )}
+
+        {job.questions.map((q) => {
+          const v = value(q);
+          return (
+            <div key={q.id}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>{q.label}</div>
+              {q.type === 'yes_no' ? (
+                <div className="wf-filters">
+                  {['Yes', 'No'].map((o) => (
+                    <button key={o} className="wf-filter" aria-pressed={v === o} disabled={!canEdit} onClick={() => set(q.id, o)}>{o}</button>
+                  ))}
+                </div>
+              ) : q.type === 'textarea' ? (
+                <textarea className="wf-input" rows={3} value={v} disabled={!canEdit} onChange={(e) => set(q.id, e.target.value)} />
+              ) : q.type === 'photo' || q.type === 'document' ? (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {isUrl(v) && (
+                    <a href={v} target="_blank" rel="noopener noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={v} alt={q.label} style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 10 }} />
+                    </a>
+                  )}
+                  {canEdit && (
+                    <label className="wf-btn wf-btn-outline wf-btn-sm" style={{ opacity: busy === q.id ? 0.6 : 1 }}>
+                      <Camera size={15} /> {busy === q.id ? 'Sending…' : isUrl(v) ? 'Retake' : q.type === 'document' ? 'Photo of the document' : 'Take photo'}
+                      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void photoAnswer(q, f); }} />
+                    </label>
+                  )}
+                </div>
+              ) : q.type === 'signature' ? (
+                isUrl(v) && !canEdit ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={v} alt="Signature" style={{ maxWidth: 260, borderRadius: 8, border: '1px solid var(--wf-line)' }} />
+                ) : (
+                  <SignaturePad
+                    existing={isUrl(v) ? v : null}
+                    busy={busy === q.id}
+                    disabled={!canEdit}
+                    onSigned={(blob) => void uploadAnswer(q, blob)}
+                  />
+                )
+              ) : (
+                <input className="wf-input" value={v} disabled={!canEdit} inputMode={q.type === 'number' ? 'decimal' : undefined}
+                  onChange={(e) => set(q.id, e.target.value)} />
+              )}
+            </div>
+          );
+        })}
+
+        <div>
+          <label className="wf-label" htmlFor={`notes-${job.id}`} style={{ display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--wf-text)', fontSize: 13.5 }}>
+            Notes for the office
+          </label>
+          <textarea id={`notes-${job.id}`} className="wf-input" rows={4} value={notes} disabled={!canEdit}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="What you did, parts used, anything left to do, anything the client said" />
+        </div>
+
+        {canEdit && (
+          <button className="wf-btn wf-btn-navy" onClick={() => void onSave()} disabled={!dirty || !uid}>
+            <Save size={16} /> {dirty ? 'Save report' : 'Report saved'}
+          </button>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+/** Sign with a finger. Hands back a JPEG on a white background. */
+function SignaturePad({ existing, busy, disabled, onSigned }: {
+  existing: string | null; busy?: boolean; disabled?: boolean; onSigned: (blob: Blob) => void;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const drawing = useRef(false);
+  const [hasInk, setHasInk] = useState(false);
+  const [redo, setRedo] = useState(!existing);
+
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+  }, [redo]);
+
+  const pos = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const c = e.currentTarget;
+    const r = c.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) * c.width) / r.width, y: ((e.clientY - r.top) * c.height) / r.height };
+  };
+
+  if (existing && !redo) {
+    return (
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={existing} alt="Signature" style={{ maxWidth: 240, borderRadius: 8, border: '1px solid var(--wf-line)' }} />
+        {!disabled && <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setRedo(true)}>Sign again</button>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <canvas
+        ref={ref} width={700} height={220}
+        style={{ width: '100%', height: 140, border: '1.5px solid var(--wf-line)', borderRadius: 10, touchAction: 'none', background: '#fff' }}
+        onPointerDown={(e) => {
+          if (disabled) return;
+          const ctx = e.currentTarget.getContext('2d');
+          if (!ctx) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          drawing.current = true;
+          const p = pos(e);
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+        }}
+        onPointerMove={(e) => {
+          if (!drawing.current) return;
+          const ctx = e.currentTarget.getContext('2d');
+          if (!ctx) return;
+          const p = pos(e);
+          ctx.lineTo(p.x, p.y);
+          ctx.strokeStyle = '#1B1C1F';
+          ctx.lineWidth = 3.5;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.stroke();
+          setHasInk(true);
+        }}
+        onPointerUp={() => { drawing.current = false; }}
+        onPointerLeave={() => { drawing.current = false; }}
+      />
+      {!disabled && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => {
+            const c = ref.current;
+            const ctx = c?.getContext('2d');
+            if (c && ctx) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
+            setHasInk(false);
+          }}>Clear</button>
+          <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={!hasInk || busy}
+            onClick={() => ref.current?.toBlob((b) => { if (b) onSigned(b); }, 'image/jpeg', 0.9)}>
+            {busy ? 'Sending…' : 'Use this signature'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Work done: says plainly what is still missing (the same rules as the
+ * emailed job link), and takes the customer's signature when the job needs one.
+ */
+function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
+  job: WfJob; missing: string[]; onClose: () => void;
+  onSaveDraft: () => Promise<void>; onConfirm: (signature: Blob | null) => void | Promise<void>;
+}) {
+  const [sig, setSig] = useState<Blob | null>(null);
+  const needSig = job.signatureRequired;
+  const ready = missing.length === 0 && (!needSig || !!sig);
   return (
     <Dialog
-      title="Mark the work done?"
+      title={missing.length ? 'Almost there' : 'Mark the work done?'}
       onClose={onClose}
-      footer={<>
+      footer={missing.length ? <>
+        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Back to the job</button>
+        <button className="wf-btn wf-btn-outline" onClick={() => void onSaveDraft()}><Save size={16} /> Save what I have</button>
+      </> : <>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-navy" onClick={() => onConfirm(notes)}><CheckCircle2 size={16} /> Work done</button>
+        <button className="wf-btn wf-btn-navy" disabled={!ready} onClick={() => void onConfirm(sig)}><CheckCircle2 size={16} /> Work done</button>
       </>}
     >
-      <p style={{ marginTop: 0 }}>
-        {isClockedIn(job) ? 'You will be clocked out, and the office is told the job is finished.' : 'The office is told the job is finished.'}
-      </p>
-      <label className="wf-label" htmlFor="wf-done-notes" style={{ display: 'block', marginBottom: 4 }}>What was done (optional)</label>
-      <textarea id="wf-done-notes" className="wf-input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
-        placeholder="Work completed, anything left, anything the client said" />
+      {missing.length > 0 ? (
+        <>
+          <p style={{ marginTop: 0 }}>Before the job goes back to the office, fill these in under <b>Job report</b> and <b>Photos</b>:</p>
+          <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {missing.map((m) => <li key={m}>{m}</li>)}
+          </ul>
+        </>
+      ) : (
+        <>
+          <p style={{ marginTop: 0 }}>
+            Your notes and answers are saved, {isClockedIn(job) ? 'you will be clocked out, ' : ''}and the office is told the job is finished.
+          </p>
+          {needSig && (
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Customer signature</div>
+              {sig ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <CheckCircle2 size={18} color="var(--wf-success)" /> Signed
+                  <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setSig(null)}>Sign again</button>
+                </div>
+              ) : (
+                <SignaturePad existing={null} onSigned={setSig} />
+              )}
+            </div>
+          )}
+        </>
+      )}
     </Dialog>
   );
 }
@@ -718,7 +1000,7 @@ function WorkDoneDialog({ job, onClose, onConfirm }: { job: WfJob; onClose: () =
 type SentPhoto = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; by: string | null };
 
 /** Send one stamped photo. 'offline' when there is no signal (keep it). */
-async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<'sent' | 'offline' | { error: string }> {
+async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<{ url: string } | 'offline' | { error: string }> {
   const fd = new FormData();
   fd.append('wo_number', p.woNumber);
   fd.append('file', new File([p.blob], 'photo.jpg', { type: 'image/jpeg' }));
@@ -731,8 +1013,8 @@ async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<'sent' | '
   fd.append('source', p.source);
   try {
     const res = await fetch('/api/tech/photo', { method: 'POST', body: fd });
-    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-    if (res.ok && json.ok) return 'sent';
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; url?: string };
+    if (res.ok && json.ok) return { url: json.url ?? '' };
     return { error: json.error ?? "Couldn't send the photo." };
   } catch {
     return 'offline';
@@ -745,10 +1027,11 @@ async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<'sent' | '
  * printed along the bottom of the picture itself. With no signal the stamped
  * photo waits on the phone and goes to the office later.
  */
-function JobPhotos({ job, uid, canAdd }: { job: WfJob; uid: string; canAdd: boolean }) {
+function JobPhotos({ job, uid, canAdd, onCount }: { job: WfJob; uid: string; canAdd: boolean; onCount?: (n: number) => void }) {
   const [sent, setSent] = useState<SentPhoto[]>([]);
   const [waiting, setWaiting] = useState<{ p: QueuedPhoto; url: string }[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => { onCount?.(sent.length + waiting.length); }, [sent.length, waiting.length, onCount]);
 
   const loadSent = useCallback(async () => {
     const { data, error } = await createClient().rpc('wf_tech_job_photos', { p_wo_number: job.number });
@@ -773,7 +1056,7 @@ function JobPhotos({ job, uid, canAdd }: { job: WfJob; uid: string; canAdd: bool
       if (r === 'offline') break;
       await dropQueuedPhoto(p.id);
       any = true;
-      if (r !== 'sent') toastError(`A waiting photo was not accepted: ${r.error}`);
+      if ('error' in r) toastError(`A waiting photo was not accepted: ${r.error}`);
     }
     if (any) { await loadSent(); await loadWaiting(); }
   }, [uid, job.number, loadSent, loadWaiting]);
@@ -806,15 +1089,15 @@ function JobPhotos({ job, uid, canAdd }: { job: WfJob; uid: string; canAdd: bool
     setBusy('Sending to the office…');
     const r = await sendPhoto(meta);
     setBusy(null);
-    if (r === 'sent') {
-      toastSuccess(pos ? 'Photo sent, with the date, time and GPS on it.' : 'Photo sent. No GPS — turn on Location for the next one.');
+    if (r !== 'offline' && 'url' in r) {
+      toastSuccess('Photo sent.');
       await loadSent();
     } else if (r === 'offline') {
       await queuePhoto({ ...meta, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, uid });
       await loadWaiting();
       toastInfo('No signal — photo saved on this phone. It goes to the office as soon as you have signal.');
     } else {
-      toastError(r.error);
+      toastError('error' in r ? r.error : "Couldn't send the photo.");
     }
   };
 
@@ -832,7 +1115,8 @@ function JobPhotos({ job, uid, canAdd }: { job: WfJob; uid: string; canAdd: bool
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   return (
-    <Section title="Photos" subtitle="Date, time and GPS are printed on every photo">
+    // Fred, 2026-10-02: the stamp is just done — the screen doesn't talk about it.
+    <Section title="Photos">
       {canAdd && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: sent.length || waiting.length || busy ? 12 : 0 }}>
           {pick('camera', <Camera size={17} />, 'Take photo', true)}

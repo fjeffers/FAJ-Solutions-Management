@@ -265,6 +265,7 @@ function OwnerJob({
               <WorkOrderChatPanel woNumber={w.wo_number} />
             </Section>
           )}
+          <OwnerReport w={w} onEdit={() => onEdit(w)} />
           <OwnerPhotos w={w} />
           <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
             <WOTimeLogs woId={w.id} />
@@ -518,6 +519,50 @@ function OwnerPhotos({ w }: { w: EnrichedWorkOrder }) {
             <img src={u} alt="Job photo" loading="lazy" style={tile} />
           </a>
         ))}
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * What the tech reported: their notes for the office and their answers to the
+ * job's questions (Fred, 2026-10-02). Questions are set, and answers can be
+ * corrected, in Edit job.
+ */
+function OwnerReport({ w, onEdit }: { w: EnrichedWorkOrder; onEdit: () => void }) {
+  const qa = w.custom_qa ?? [];
+  const notes = (w.closeout_notes ?? '').trim();
+  if (!notes && qa.length === 0) return null;
+  const answered = qa.filter((q) => (q.answer ?? '').trim()).length;
+  const isUrl = (v: string) => /^https?:\/\//.test(v);
+  return (
+    <Section
+      title="Job report"
+      subtitle={qa.length ? `${answered} of ${qa.length} questions answered` : 'From the tech'}
+      right={<button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onEdit}><Edit2 size={14} /> Edit</button>}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {qa.map((q) => {
+          const a = (q.answer ?? '').trim();
+          return (
+            <div key={q.id}>
+              <div style={{ fontWeight: 600 }}>{q.label}</div>
+              {!a ? <div style={{ color: 'var(--wf-warning)', fontSize: 13 }}>Not answered yet</div>
+                : isUrl(a) ? (
+                  <a href={a} target="_blank" rel="noopener noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={a} alt={q.label} style={{ maxWidth: 220, maxHeight: 140, borderRadius: 8, border: '1px solid var(--wf-line)', marginTop: 4 }} />
+                  </a>
+                ) : <div style={{ whiteSpace: 'pre-wrap' }}>{a}</div>}
+            </div>
+          );
+        })}
+        {notes && (
+          <div>
+            <div style={{ fontWeight: 600 }}>Notes from the tech</div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{notes}</div>
+          </div>
+        )}
       </div>
     </Section>
   );

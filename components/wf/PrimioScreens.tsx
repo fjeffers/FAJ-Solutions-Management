@@ -8,14 +8,14 @@
 //   ScheduleBoard   lib/screens/schedule_screen.dart — month / week calendar,
 //                   the chosen day's jobs underneath
 // The office sees money (the client price) on a card; techs never see these.
-import { useMemo, useState, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, MapPin, Search, CalendarCheck } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck } from 'lucide-react';
 import {
   WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12,
   type WfJob, type WfStatus,
 } from '@/lib/wf';
 import { fmtMoney, todayISO } from '@/lib/utils';
-import { Empty } from './WfUi';
+import { Empty, Filters, StatusChip } from './WfUi';
 
 // ── App bar ─────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,37 @@ export const DISPATCH_COLUMNS: { key: WfStatus; label: string }[] = [
   { key: 'closed', label: 'Closed' },
   { key: 'declined', label: 'Declined' },
 ];
+
+export type DispatchView = 'board' | 'grid' | 'list';
+export type ListSort = 'number' | 'date' | 'client' | 'price' | 'stage';
+
+const STAGE_ORDER: WfStatus[] = DISPATCH_COLUMNS.map((c) => c.key);
+
+/** The order Grid and List read in. Dates: soonest first; jobs with no date last. */
+export function sortBoardRows(rows: BoardRow[], key: ListSort, dir: 'asc' | 'desc'): BoardRow[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  const num = (a: BoardRow, b: BoardRow) => a.job.number.localeCompare(b.job.number, undefined, { numeric: true });
+  const cmp = (a: BoardRow, b: BoardRow): number => {
+    switch (key) {
+      case 'date': {
+        if (!a.job.date && !b.job.date) return num(a, b);
+        if (!a.job.date) return 1;   // no date stays last either way
+        if (!b.job.date) return -1;
+        return sign * a.job.date.localeCompare(b.job.date) || num(a, b);
+      }
+      case 'client': return sign * a.job.client.localeCompare(b.job.client) || num(a, b);
+      case 'price': return sign * ((a.job.clientPrice ?? 0) - (b.job.clientPrice ?? 0)) || num(a, b);
+      case 'stage': return sign * (STAGE_ORDER.indexOf(a.job.status) - STAGE_ORDER.indexOf(b.job.status)) || num(a, b);
+      default: return sign * num(a, b);
+    }
+  };
+  return [...rows].sort(cmp);
+}
+
+/** Grid and List show one stage at a time, or every open job ("All jobs" leaves out Closed). */
+export function rowsForStage(rows: BoardRow[], stage: WfStatus | 'all'): BoardRow[] {
+  return stage === 'all' ? rows.filter((r) => r.job.status !== 'closed') : rows.filter((r) => r.job.status === stage);
+}
 
 function StatTile({ label, value, color }: { label: string; value: number; color: string }) {
   return (
@@ -98,10 +129,24 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
   between?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
+  // Board (Primio's columns), Grid (cards) or List (a table) — Fred, 2026-10-04:
+  // "i need a grid, list view". The choice is remembered on this device.
+  const [view, setView] = useState<DispatchView>('board');
+  useEffect(() => {
+    try { const v = localStorage.getItem('dispatch-view'); if (v === 'grid' || v === 'list') setView(v); } catch { /* private window */ }
+  }, []);
+  const chooseView = (v: DispatchView) => { setView(v); try { localStorage.setItem('dispatch-view', v); } catch { /* private window */ } };
+  const [stage, setStage] = useState<WfStatus | 'all'>('all');
+  const [sort, setSort] = useState<{ key: ListSort; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'asc' });
   const live = rows.filter((r) => r.job.status !== 'closed');
   const count = (s: WfStatus) => live.filter((r) => r.job.status === s).length;
   const urgent = live.filter((r) => r.job.highPriority).length;
   const shown = rows.filter((r) => matchesWf(r.job, query));
+  const stageOptions = DISPATCH_COLUMNS
+    .map((c) => ({ key: c.key, label: c.label, count: shown.filter((r) => r.job.status === c.key).length }))
+    .filter((o) => o.count > 0);
+  const flat = sortBoardRows(rowsForStage(shown, stage), sort.key, sort.dir);
+  const sortBy = (key: ListSort) => setSort((sv) => ({ key, dir: sv.key === key && sv.dir === 'asc' ? 'desc' : 'asc' }));
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -115,12 +160,42 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
         <StatTile label="High priority" value={urgent} color="var(--wf-danger)" />
       </div>
       {between}
-      <div style={{ position: 'relative' }}>
-        <Search size={18} color="var(--wf-subtle)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-        <input className="wf-input" value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by ID, client, location or title" aria-label="Search the dispatch board" style={{ paddingLeft: 40 }} />
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 280px' }}>
+          <Search size={18} color="var(--wf-subtle)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+          <input className="wf-input" value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by ID, client, location or title" aria-label="Search the dispatch board" style={{ paddingLeft: 40 }} />
+        </div>
+        <div className="wf-filters" role="group" aria-label="How to show jobs" style={{ flexWrap: 'nowrap' }}>
+          {([['board', 'Board', <Columns3 key="b" size={15} />], ['grid', 'Grid', <LayoutGrid key="g" size={15} />], ['list', 'List', <ListIcon key="l" size={15} />]] as const).map(([v, label, icon]) => (
+            <button key={v} className="wf-filter" aria-pressed={view === v} onClick={() => chooseView(v)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{label}</button>
+          ))}
+        </div>
       </div>
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>
+      {view !== 'board' && (
+        <Filters value={stage} options={stageOptions} onChange={setStage} total={rowsForStage(shown, 'all').length} />
+      )}
+      {view === 'grid' && (
+        flat.length === 0
+          ? <Empty title="No jobs here" message={query ? 'Nothing matches your search.' : 'Nothing in this stage right now.'} />
+          : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 10, paddingBottom: 16 }}>
+              {flat.map((r) => (
+                <div key={r.job.id}>
+                  <div style={{ marginBottom: 4 }}><StatusChip status={r.job.status} ownerView /></div>
+                  <DispatchCard row={r} onOpen={() => onOpen(r.job)} />
+                </div>
+              ))}
+            </div>
+          )
+      )}
+      {view === 'list' && (
+        flat.length === 0
+          ? <Empty title="No jobs here" message={query ? 'Nothing matches your search.' : 'Nothing in this stage right now.'} />
+          : <DispatchTable rows={flat} sort={sort} onSort={sortBy} onOpen={onOpen} />
+      )}
+      <div style={{ display: view === 'board' ? 'flex' : 'none', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>
         {DISPATCH_COLUMNS.map((col) => {
           let list = shown.filter((r) => r.job.status === col.key);
           // Closed reads newest first; the rest soonest first.
@@ -143,6 +218,68 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** List view: one row per job. Tap a row to open it; tap a heading to sort. */
+function DispatchTable({ rows, sort, onSort, onOpen }: {
+  rows: BoardRow[];
+  sort: { key: ListSort; dir: 'asc' | 'desc' };
+  onSort: (k: ListSort) => void;
+  onOpen: (job: WfJob) => void;
+}) {
+  const head = (label: string, key: ListSort | null, align: 'left' | 'right' = 'left') => (
+    <th style={{ textAlign: align, padding: '10px 12px', fontSize: 12, fontWeight: 600, color: 'var(--wf-subtle)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--wf-line)' }}>
+      {key ? (
+        <button onClick={() => onSort(key)} style={{ border: 'none', background: 'transparent', font: 'inherit', color: sort.key === key ? 'var(--wf-navy)' : 'inherit', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {label}{sort.key === key && (sort.dir === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />)}
+        </button>
+      ) : label}
+    </th>
+  );
+  const cell: React.CSSProperties = { padding: '10px 12px', fontSize: 13.5, borderBottom: '1px solid var(--wf-line)', verticalAlign: 'top' };
+  const day = (d: string | null) => d ? new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—';
+  return (
+    <div className="wf-card" style={{ overflowX: 'auto', marginBottom: 16 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+        <thead>
+          <tr>
+            {head('WO #', 'number')}
+            {head('Job', null)}
+            {head('Client', 'client')}
+            {head('City', null)}
+            {head('Date', 'date')}
+            {head('Tech', null)}
+            {head('Stage', 'stage')}
+            {head('Client pays', 'price', 'right')}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const j = r.job;
+            const t = parseClockTime(j.startTime);
+            return (
+              <tr key={j.id} onClick={() => onOpen(j)} className="wf-row-click" tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter') onOpen(j); }} aria-label={`Open WO ${j.number}`}>
+                <td style={{ ...cell, fontWeight: 700, color: 'var(--wf-gold)', whiteSpace: 'nowrap' }}>
+                  {j.number}{j.highPriority && <span style={{ color: 'var(--wf-danger)', marginLeft: 6 }} title="High priority">!</span>}
+                </td>
+                <td style={{ ...cell, fontWeight: 600, maxWidth: 320 }}>{j.title}</td>
+                <td style={{ ...cell, maxWidth: 180 }}>{j.client || '—'}</td>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}>{[j.city, j.state].filter(Boolean).join(', ') || '—'}</td>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}>{day(j.date)}{t && <div className="wf-subtle" style={{ fontSize: 12 }}>{fmtClock12(t)}</div>}</td>
+                <td style={{ ...cell, maxWidth: 160 }}>
+                  {j.techs.length ? j.techs.join(', ') : <span style={{ color: 'var(--wf-danger)', fontWeight: 600 }}>No tech</span>}
+                  {r.payNotSet && <div style={{ color: 'var(--wf-warning)', fontSize: 12, fontWeight: 600 }}>Pay not set</div>}
+                </td>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}><StatusChip status={j.status} ownerView /></td>
+                <td style={{ ...cell, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{(j.clientPrice ?? 0) > 0 ? fmtMoney(j.clientPrice) : <span className="wf-subtle" style={{ fontWeight: 400 }}>—</span>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

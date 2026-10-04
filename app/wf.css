@@ -244,3 +244,5 @@ textarea.wf-input { resize: vertical; }
   .wf-dispatch-col { width: 86vw; max-height: none; min-height: 0; }
   .wf-appbar-title { font-size: 18px; }
 }
+.wf-row-click { cursor: pointer; }
+.wf-row-click:hover, .wf-row-click:focus { background: rgba(14, 27, 46, 0.04); outline: none; }

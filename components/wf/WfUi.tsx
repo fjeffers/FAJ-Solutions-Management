@@ -86,14 +86,16 @@ export function Banner({ title, subtitle, onClick, tone = 'gold' }: {
 }
 
 /** "All jobs" plus a chip for each stage that has jobs in it. */
-export function Filters<T extends string>({ value, options, onChange, allLabel = 'All jobs', ariaLabel = 'Show jobs by stage' }: {
+export function Filters<T extends string>({ value, options, onChange, allLabel = 'All jobs', ariaLabel = 'Show jobs by stage', total: totalIn }: {
   value: T | 'all';
   options: { key: T; label: string; count: number }[];
   onChange: (v: T | 'all') => void;
   allLabel?: string;
   ariaLabel?: string;
+  /** The "All" count when it isn't the sum of the chips (Dispatch leaves Closed out of All). */
+  total?: number;
 }) {
-  const total = options.reduce((n, o) => n + o.count, 0);
+  const total = totalIn ?? options.reduce((n, o) => n + o.count, 0);
   return (
     <div className="wf-filters" role="group" aria-label={ariaLabel}>
       <button className="wf-filter" aria-pressed={value === 'all'} onClick={() => onChange('all')}>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   deliverablesFor, parseCloseout, closeoutMissing, applyCloseoutOp, closeoutOpFrom, closeoutArgs, totalDelayMs,
   delayFromTimes, doneCount, parseTimeRequests, parseTimeRequest, waitingRequests, acceptTimePatch, keepTimePatch,
-  KIOSK_DELIVERABLES, SURVEY_DELIVERABLES, STANDARD_DELIVERABLES, EMPTY_CLOSEOUT, type CloseoutOp,
+  KIOSK_DELIVERABLES, SURVEY_DELIVERABLES, STANDARD_DELIVERABLES, EMPTY_CLOSEOUT, parseCloseoutLists, listFor, type CloseoutOp,
 } from './closeout';
 
 describe('deliverables by job type', () => {
@@ -138,5 +138,28 @@ describe('asking for another time', () => {
   it('no request, no change', () => {
     expect(acceptTimePatch(wo, 'Nobody')).toBeNull();
     expect(keepTimePatch({ time_requests: null }, 'Davis Sanders')).toBeNull();
+  });
+});
+
+describe('checklists edited in admin', () => {
+  const lists = parseCloseoutLists([
+    { id: '3', name: 'Standard job', keywords: [], items: ['Clean up'], sort: 99 },
+    { id: '1', name: 'Kiosk install', keywords: ['Kiosk'], items: ['Completed kiosk'], sort: 1 },
+    { id: '2', name: 'Camera job', keywords: ['camera', 'cctv'], items: ['Camera views'], sort: 2 },
+    { id: '4', name: 'Empty', keywords: ['x'], items: [], sort: 0 },
+    'junk',
+  ]);
+  it('reads lists in order, dropping empty ones', () => {
+    expect(lists.map((l) => l.name)).toEqual(['Kiosk install', 'Camera job', 'Standard job']);
+    expect(lists[0].keywords).toEqual(['kiosk']);
+  });
+  it('picks by keyword, then the list with no keywords', () => {
+    expect(listFor(lists, "Wendy's KIOSK", '').name).toBe('Kiosk install');
+    expect(listFor(lists, 'Store 12', 'replace 2 CCTV cameras').name).toBe('Camera job');
+    expect(listFor(lists, 'Cat6 drops', '').name).toBe('Standard job');
+  });
+  it("falls back to Primio's lists when there are none", () => {
+    expect(listFor([], 'Site survey', '').items).toBe(SURVEY_DELIVERABLES);
+    expect(listFor([], 'Drops', '').name).toBe('Standard job');
   });
 });

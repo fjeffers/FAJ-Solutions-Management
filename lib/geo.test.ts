@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fmtCoords, mapLink, fmtStampTime, stampLines } from './geo';
+import { fmtCoords, mapLink, fmtStampTime, stampLines, milesBetween } from './geo';
 
 describe('where and when on a job photo', () => {
   const at = new Date('2026-10-03T00:31:07Z'); // 8:31:07 PM in Easton
@@ -34,5 +34,14 @@ describe('where and when on a job photo', () => {
   it('coordinates and map links', () => {
     expect(fmtCoords(40.68841234, -75.22069876)).toBe('40.68841, -75.22070');
     expect(mapLink(40.6884, -75.2207)).toBe('https://www.google.com/maps/search/?api=1&query=40.688400,-75.220700');
+  });
+});
+
+describe('milesBetween', () => {
+  it('Easton to Allentown is about 15 miles; same point is 0', () => {
+    const m = milesBetween(40.6884, -75.2207, 40.6084, -75.4902);
+    expect(m).toBeGreaterThan(14);
+    expect(m).toBeLessThan(16.5);
+    expect(milesBetween(40.6884, -75.2207, 40.6884, -75.2207)).toBe(0);
   });
 });

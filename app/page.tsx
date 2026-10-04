@@ -8,7 +8,7 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
-import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid } from 'lucide-react';
+import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, KanbanSquare } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -96,7 +96,7 @@ function viewFromUrl(): View {
  */
 const SECTION_OF_VIEW: Record<View, string> = {
   // Always on screen — the round Fred actually does.
-  dashboard: 'daily', sitelog: 'daily', workorders: 'daily',
+  dashboard: 'daily', sitelog: 'daily', workorders: 'daily', scheduling: 'daily',
   payables: 'daily', 'import-queue': 'daily', team: 'daily', support: 'daily', office: 'daily',
 
   payments: 'money', financials: 'money', ledger: 'money',
@@ -106,7 +106,7 @@ const SECTION_OF_VIEW: Record<View, string> = {
   statements: 'techs', '1099': 'techs', w9: 'techs',
 
   surveys: 'pipeline', quotes: 'pipeline', contracts: 'pipeline',
-  scheduling: 'pipeline', dispatch: 'pipeline',
+  dispatch: 'pipeline',
 
   materials: 'onsite', maintenance: 'onsite', network: 'onsite',
 
@@ -1401,7 +1401,23 @@ Go ahead?`)) return;
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const navigate = (key: View) => { setView(key); setMobileNavOpen(false); };
+  // Map positions for open jobs, once a session, so techs see how far away a
+  // job is on their Available list (Fred, 2026-10-04). Best effort, in the background.
+  useEffect(() => {
+    if (loading) return;
+    try { if (sessionStorage.getItem('faj-geocode')) return; sessionStorage.setItem('faj-geocode', '1'); } catch { /* private window */ }
+    void fetch('/api/jobs/geocode', { method: 'POST' }).catch(() => {});
+  }, [loading]);
+
+  // The menu's Dispatch is WorkFlow's board (Primio's Dispatch tab); WorkFlow
+  // opens on the last view used. The key re-opens the screen on the right one.
+  const [woStart, setWoStart] = useState<{ mode?: 'board' | 'workflow'; n: number }>({ n: 0 });
+  const navigate = (key: View) => {
+    if (key === 'workorders') setWoStart((s) => ({ mode: 'workflow', n: s.n + 1 }));
+    setView(key); setMobileNavOpen(false);
+  };
+  const openDispatch = () => { setWoStart((s) => ({ mode: 'board', n: s.n + 1 })); setView('workorders'); setMobileNavOpen(false); };
+  const openNewOrder = () => { setModal({ type: 'wo', item: null }); setMobileNavOpen(false); };
 
   const NI = ({ k, icon, label }: { k: View; icon: React.ReactNode; label: string }) => (
     <button className={`nav-btn ${view === k ? 'active' : ''}`} onClick={() => navigate(k)}>
@@ -1463,18 +1479,36 @@ Go ahead?`)) return;
             paddingBottom: 12, marginBottom: 10,
             borderBottom: '1px solid rgba(255,255,255,0.09)',
           }}>
+            {/* Primio's office tabs, with the Dashboard, at the top of the menu
+                (Fred, 2026-10-04: "new order, Dashboard, dispatcher, schedule,
+                Office, and keep it all to the left as menu"). */}
+            <button className="nav-btn" onClick={openNewOrder}
+              style={{ background: 'rgba(201,162,75,0.16)', color: 'var(--gold-light)', fontWeight: 700 }}>
+              <SquarePlus size={15} /> New order
+            </button>
+            <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
+            <button className={`nav-btn ${view === 'workorders' && woStart.mode === 'board' ? 'active' : ''}`} onClick={openDispatch}>
+              <KanbanSquare size={15} /> Dispatch
+            </button>
+            <NI k="scheduling" icon={<Calendar size={15} />}  label="Schedule" />
+            <NI k="office"     icon={<LayoutGrid size={15} />} label="Office" />
+          </div>
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 2,
+            paddingBottom: 12, marginBottom: 10,
+            borderBottom: '1px solid rgba(255,255,255,0.09)',
+          }}>
             <div style={{
               fontSize: 9, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase',
               color: 'rgba(255,255,255,0.35)', padding: '2px 12px 6px',
             }}>
               Every day
             </div>
-            <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
-            {/* Fred, 2026-10-04: Primio's Office screen — every screen on one page, with search. */}
-            <NI k="office"     icon={<LayoutGrid size={15} />} label="Office" />
             <NI k="sitelog"    icon={<Timer size={15} />}     label="Site Log" />
             {/* Fred, 2026-10-02: "rename to WorkFlow, I like it and keep it". */}
-            <NI k="workorders" icon={<Workflow size={15} />} label="WorkFlow" />
+            <button className={`nav-btn ${view === 'workorders' && woStart.mode !== 'board' ? 'active' : ''}`} onClick={() => navigate('workorders')}>
+              <Workflow size={15} /> WorkFlow
+            </button>
             <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
             <NI k="team"       icon={<UserCog size={15} />}   label="Team" />
             <button className={`nav-btn ${view === 'support' ? 'active' : ''}`} onClick={() => navigate('support')}>
@@ -1536,7 +1570,6 @@ Go ahead?`)) return;
             <NI k="surveys"    icon={<ClipboardList size={15} />}  label="Surveys" />
             <NI k="quotes"     icon={<FileSignature size={15} />}  label="Quotes" />
             <NI k="contracts"  icon={<FileCheck2 size={15} />}     label="Contracts" />
-            <NI k="scheduling" icon={<Calendar size={15} />}       label="Scheduling" />
             <NI k="dispatch"   icon={<Map size={15} />}            label="Dispatch Map" />
           </NavSection>
 
@@ -1694,6 +1727,7 @@ Go ahead?`)) return;
         {view === 'office' && (
           <OfficeHub
             onOpen={(v) => navigate(v as View)}
+            onNewOrder={openNewOrder}
             netviewUrl={NETVIEW_FORM_URL}
             badges={{ support: supportCount, 'import-queue': pendingImportCount }}
           />
@@ -1719,6 +1753,8 @@ Go ahead?`)) return;
         )}
         {view === 'workorders' && (
           <WorkOrdersView
+            key={`wo-${woStart.n}`}
+            startMode={woStart.mode}
             initialSearch={woFromUrl}
             siteVisits={linkedVisits}
             workOrders={enrichedWOs}

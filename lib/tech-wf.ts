@@ -8,7 +8,7 @@ import {
   wfJobFromTech, clockedIn, clockedOut, withTask, answered, markedWorkDone, withReport, withCloseout, withTimeRequest,
   wfReasonText, type WfJob,
 } from './wf';
-import { closeoutOpFrom } from './closeout';
+import { closeoutOpFrom, parseCloseoutLists, type CloseoutList } from './closeout';
 import { RefusedError, isNoSignal, type Outbox, type PendingAction } from './wf-outbox';
 import type { TechJob } from './types';
 
@@ -16,6 +16,13 @@ export async function fetchWfTechJobs(): Promise<WfJob[]> {
   const { data, error } = await createClient().rpc('wf_tech_jobs');
   if (error) throw new Error(error.message);
   return Array.isArray(data) ? (data as Record<string, unknown>[]).map(wfJobFromTech) : [];
+}
+
+/** The office's closeout checklists (migration-106). Empty when none or unreachable. */
+export async function fetchCloseoutLists(): Promise<CloseoutList[]> {
+  const { data, error } = await createClient().rpc('wf_tech_closeout_lists');
+  if (error) throw new Error(error.message);
+  return parseCloseoutLists(data);
 }
 
 /** Call a server function; turn "no" into a RefusedError and no signal into a plain error. */

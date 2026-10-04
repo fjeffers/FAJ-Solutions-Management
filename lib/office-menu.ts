@@ -7,9 +7,11 @@
 // here, so a new screen can't be left off the hub.
 
 export type OfficeItem = {
-  /** The owner app view it opens; null for a link to another site. */
+  /** The owner app view it opens; null for a link to another site or an action. */
   view: string | null;
   href?: string;
+  /** 'new-order' opens the New job form. */
+  action?: 'new-order';
   label: string;
   hint: string;
 };
@@ -17,11 +19,19 @@ export type OfficeGroup = { title: string; items: OfficeItem[] };
 
 export const OFFICE_GROUPS: OfficeGroup[] = [
   {
+    // Primio's office tabs, with the Dashboard (Fred, 2026-10-04).
+    title: 'Main',
+    items: [
+      { view: null, action: 'new-order', label: 'New order', hint: 'Create a work order and send it to a tech' },
+      { view: 'dashboard', label: 'Dashboard', hint: 'The day at a glance: money, jobs and what needs you' },
+      { view: 'scheduling', label: 'Schedule', hint: 'Calendar of jobs and techs' },
+    ],
+  },
+  {
     title: 'Every day',
     items: [
-      { view: 'dashboard', label: 'Dashboard', hint: 'The day at a glance: money, jobs and what needs you' },
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
-      { view: 'workorders', label: 'WorkFlow', hint: 'Every job: assign techs, track, close' },
+      { view: 'workorders', label: 'WorkFlow', hint: 'Every job: assign techs, track, close — Dispatch is its board' },
       { view: 'payables', label: 'Pay Techs', hint: 'What each tech is owed, and paying them' },
       { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },
       { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },
@@ -57,7 +67,6 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
       { view: 'surveys', label: 'Surveys', hint: 'Site surveys and what they found' },
       { view: 'quotes', label: 'Quotes', hint: 'Quotes for clients, built from surveys' },
       { view: 'contracts', label: 'Contracts', hint: 'Contracts and signed agreements' },
-      { view: 'scheduling', label: 'Scheduling', hint: 'Calendar of jobs and techs' },
       { view: 'dispatch', label: 'Dispatch Map', hint: 'Techs and jobs on a map' },
     ],
   },

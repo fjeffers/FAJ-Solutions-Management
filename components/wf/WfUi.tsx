@@ -175,7 +175,7 @@ export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet =
  * "Asked for another time" on a job card (migration-105). A tech sees where
  * their own ask stands; the office sees who is waiting on an answer.
  */
-function TimeRequestLine({ job, ownerView }: { job: WfJob; ownerView: boolean }) {
+export function TimeRequestLine({ job, ownerView }: { job: WfJob; ownerView: boolean }) {
   const line = (text: string, tone: 'gold' | 'green' | 'grey') => (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12.5, fontWeight: 600,

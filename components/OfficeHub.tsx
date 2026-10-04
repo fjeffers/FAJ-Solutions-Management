@@ -3,7 +3,7 @@
 // the owner app on one page, grouped like the sidebar, with a search box.
 import { useState, type ReactNode } from 'react';
 import {
-  Award, BarChart3, BookOpen, Building2, Calendar, ClipboardCheck, ClipboardList, CreditCard, ExternalLink, FileCheck2,
+  Award, BarChart3, BookOpen, Building2, Calendar, ClipboardCheck, ClipboardList, CreditCard, ExternalLink, FileCheck2, SquarePlus,
   FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, Network, Package, Receipt, Search, Settings, ShieldCheck,
   Timer, TrendingUp, UserCog, Users, Wallet, Workflow, Wrench,
 } from 'lucide-react';
@@ -11,6 +11,7 @@ import { OFFICE_GROUPS, searchOffice, type OfficeItem } from '@/lib/office-menu'
 import { Empty, Hero } from '@/components/wf/WfUi';
 
 const ICON: Record<string, ReactNode> = {
+  'new-order': <SquarePlus size={20} />,
   dashboard: <BarChart3 size={20} />, sitelog: <Timer size={20} />, workorders: <Workflow size={20} />,
   payables: <Wallet size={20} />, team: <UserCog size={20} />, support: <LifeBuoy size={20} />, 'import-queue': <Inbox size={20} />,
   payments: <CreditCard size={20} />, financials: <TrendingUp size={20} />, ledger: <BookOpen size={20} />,
@@ -22,8 +23,9 @@ const ICON: Record<string, ReactNode> = {
   materials: <Package size={20} />, maintenance: <Wrench size={20} />, network: <Network size={20} />, settings: <Settings size={20} />,
 };
 
-export default function OfficeHub({ onOpen, netviewUrl, badges = {} }: {
+export default function OfficeHub({ onOpen, onNewOrder, netviewUrl, badges = {} }: {
   onOpen: (view: string) => void;
+  onNewOrder: () => void;
   netviewUrl: string;
   /** Counts shown on a tile, by view (support tickets, imports waiting). */
   badges?: Record<string, number>;
@@ -32,7 +34,7 @@ export default function OfficeHub({ onOpen, netviewUrl, badges = {} }: {
   const groups = searchOffice(OFFICE_GROUPS, query);
 
   const tile = (i: OfficeItem) => {
-    const key = i.view ?? i.href ?? i.label;
+    const key = i.view ?? i.action ?? i.href ?? i.label;
     const badge = i.view ? badges[i.view] ?? 0 : 0;
     const body = (
       <>
@@ -45,7 +47,7 @@ export default function OfficeHub({ onOpen, netviewUrl, badges = {} }: {
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 14.5 }}>
             {i.label}
-            {!i.view && <ExternalLink size={13} color="var(--wf-subtle)" aria-label="Opens another site" />}
+            {!i.view && !i.action && <ExternalLink size={13} color="var(--wf-subtle)" aria-label="Opens another site" />}
             {badge > 0 && (
               <span style={{ background: 'var(--wf-gold)', color: 'var(--wf-gold-ink)', borderRadius: 999, fontSize: 11, fontWeight: 800, padding: '1px 7px' }}>{badge}</span>
             )}
@@ -55,6 +57,9 @@ export default function OfficeHub({ onOpen, netviewUrl, badges = {} }: {
       </>
     );
     const style = { display: 'flex', alignItems: 'center', gap: 12, padding: 12, textAlign: 'left' as const, textDecoration: 'none', color: 'inherit' };
+    if (i.action === 'new-order') {
+      return <button key={key} className="wf-card wf-card-click" style={style} onClick={onNewOrder}>{body}</button>;
+    }
     return i.view ? (
       <button key={key} className="wf-card wf-card-click" style={style} onClick={() => onOpen(i.view!)}>{body}</button>
     ) : (

@@ -153,10 +153,27 @@ textarea.wf-input { resize: vertical; }
 .wf-menu-btn { display: none !important; }
 .wf-drawer-backdrop { position: fixed; inset: 0; background: rgba(2, 4, 9, 0.5); z-index: 49; }
 .wf-content { width: 100%; max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+/* Primio's bottom tabs: phones only. A wide screen keeps the left rail. */
+.wf-tabbar { display: none; }
+.wf-tab-badge { position: absolute; top: -5px; right: -9px; background: var(--wf-gold); color: var(--wf-gold-ink); border-radius: 999px; font-size: 10px; font-weight: 800; padding: 0 5px; line-height: 15px; }
 @media (max-width: 900px) {
   .wf-rail { position: fixed; left: 0; top: 0; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.22s ease; height: 100dvh; }
   .wf-rail.open { transform: none; box-shadow: 0 0 44px rgba(0, 0, 0, 0.4); }
   .wf-menu-btn { display: inline-flex !important; }
+  .wf-has-tabbar .wf-menu-btn { display: none !important; }
+  .wf-has-tabbar .wf-content { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .wf-tabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    background: var(--wf-navy); border-top: 1px solid rgba(201, 162, 75, 0.35);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  }
+  .wf-tab {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px;
+    border: none; background: transparent; color: rgba(255, 255, 255, 0.65); font: inherit; font-size: 11px; font-weight: 600;
+    cursor: pointer; border-radius: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .wf-tab[aria-current="page"] { color: #fff; background: rgba(201, 162, 75, 0.18); }
+  .wf-tab[aria-current="page"] svg { color: var(--wf-gold); }
   .wf-hero { border-radius: 20px; padding: 20px; }
   .wf-hero-greet { font-size: 24px; }
 }

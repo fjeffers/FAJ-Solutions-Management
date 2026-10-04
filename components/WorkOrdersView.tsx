@@ -37,9 +37,11 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred',
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startMode,
 }: {
   workOrders: EnrichedWorkOrder[];
+  /** Open on this view instead of the last one used (the menu's Dispatch opens the board). */
+  startMode?: 'workflow' | 'board' | 'list';
   /** Pre-fill the search, so a link can point at one work order. */
   initialSearch?: string;
   /** Visits linked to work orders, so a job can show where it came from. */
@@ -68,8 +70,9 @@ export default function WorkOrdersView({
   // WorkFlow (Fred, 2026-10-02: "rename to WorkFlow, I like it and keep it")
   // is the default; the board and the original list are one tap away. A new
   // storage key, so a device that last chose the list still opens on WorkFlow.
-  const [mode, setMode] = useState<'workflow' | 'board' | 'list'>('workflow');
+  const [mode, setMode] = useState<'workflow' | 'board' | 'list'>(startMode ?? 'workflow');
   useEffect(() => {
+    if (startMode) return;
     try {
       const m = localStorage.getItem('wo-view-mode-v2');
       if (m === 'board' || m === 'list') setMode(m);

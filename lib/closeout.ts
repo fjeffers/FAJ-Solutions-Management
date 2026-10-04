@@ -244,3 +244,36 @@ export function keepTimePatch(wo: WoForTime, name: string, now: Date = new Date(
     updated_at: at,
   };
 }
+
+// ── Checklists Fred edits in admin (migration-106) ─────────────────────────
+
+export type CloseoutList = { id: string; name: string; keywords: string[]; items: string[]; sort: number };
+
+/** closeout_lists rows (or wf_tech_closeout_lists()) → clean lists, in order. */
+export function parseCloseoutLists(raw: unknown): CloseoutList[] {
+  if (!Array.isArray(raw)) return [];
+  const words = (v: unknown) => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
+  return raw
+    .filter(isObj)
+    .map((r) => ({
+      id: str(r.id), name: str(r.name) || 'Checklist',
+      keywords: words(r.keywords).map((k) => k.toLowerCase()), items: words(r.items),
+      sort: Number.isFinite(Number(r.sort)) ? Number(r.sort) : 0,
+    }))
+    .filter((l) => l.items.length > 0)
+    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+}
+
+/**
+ * The checklist for a job: the first list with a keyword in the job's title or
+ * description, else the list with no keywords. With no lists (offline, or none
+ * saved yet) Primio's built-in lists apply.
+ */
+export function listFor(lists: CloseoutList[], title: string, description: string): { name: string; items: string[] } {
+  const text = `${title} ${description}`.toLowerCase();
+  const hit = lists.find((l) => l.keywords.some((k) => text.includes(k)))
+    ?? lists.find((l) => l.keywords.length === 0);
+  if (hit) return { name: hit.name, items: hit.items };
+  const items = deliverablesFor(title, description);
+  return { name: items === KIOSK_DELIVERABLES ? 'Kiosk install' : items === SURVEY_DELIVERABLES ? 'Site survey' : 'Standard job', items };
+}

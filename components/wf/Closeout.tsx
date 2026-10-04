@@ -29,10 +29,12 @@ function SubHead({ title, note }: { title: string; note: string }) {
 
 const rule = { border: 'none', borderTop: '1px solid var(--wf-line)', margin: '14px 0' } as const;
 
-export default function CloseoutCard({ job, items, canEdit, ownerView = false, onOp, onSign }: {
+export default function CloseoutCard({ job, items, listName, canEdit, ownerView = false, onOp, onSign }: {
   job: WfJob;
-  /** deliverablesFor(job.title, job.description) */
+  /** The job's checklist (listFor: the office's lists, by keyword). */
   items: string[];
+  /** Which checklist it is ("Kiosk install", "Standard job"…). */
+  listName?: string;
   canEdit: boolean;
   ownerView?: boolean;
   onOp?: (op: CloseoutOp) => void;
@@ -54,10 +56,10 @@ export default function CloseoutCard({ job, items, canEdit, ownerView = false, o
       right={missing.length === 0 ? <CheckCircle2 size={20} color="var(--wf-success)" aria-label="Closeout complete" /> : undefined}
     >
       {/* Deliverables */}
-      <SubHead title="Deliverables" note={`${done} of ${items.length}`} />
+      <SubHead title={listName ? `Deliverables · ${listName}` : 'Deliverables'} note={`${done} of ${items.length}`} />
       <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 6 }}>
         {ownerView
-          ? 'What the tech ticked off for this job.'
+          ? (edit ? 'The tech ticks these off in the portal — or tick them here yourself.' : 'What the tech ticked off for this job.')
           : 'Take each photo under Photos, then tick it off here. Every item is needed before Work done.'}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '0 -6px' }}>

@@ -1,7 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Lock, CheckCircle2, ClipboardList, CheckSquare } from 'lucide-react';
+import { Lock, CheckCircle2, ClipboardList, CheckSquare, ListChecks } from 'lucide-react';
+import CloseoutListsEditor from './CloseoutListsEditor';
 import QuestionTemplatesView from './QuestionTemplatesView';
 import DeliverableTemplatesView from './DeliverableTemplatesView';
 import type { QuestionTemplate, DeliverableTemplate } from '@/lib/types';
@@ -160,6 +161,20 @@ export default function SettingsView({ templates, onSave, onDelete, onUploadAtta
             embedded
           />
         </div>
+      </div>
+
+      {/* ── Closeout checklists (tech portal, migration-106) ── */}
+      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginTop: 28 }}>
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(14,27,46,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ListChecks size={16} color="var(--teal)" />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Closeout checklists</h2>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>What techs tick off before Work done — kiosk, survey and standard jobs</div>
+          </div>
+        </div>
+        <CloseoutListsEditor />
       </div>
     </div>
   );

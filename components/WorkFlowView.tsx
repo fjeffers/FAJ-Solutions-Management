@@ -15,10 +15,13 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
-  wfJobFromOwner, matchesWf, sortWf, ownerCounts, bucketOf, bucketCounts, withTask, fullAddress, wfReasonText,
+  wfJobFromOwner, matchesWf, sortWf, ownerCounts, bucketOf, bucketCounts, withTask, withCloseout, fullAddress, wfReasonText,
   parseClockTime, fmtClock12, requestWhen, whenText, type WfBucket, type WfJob, type WfTask,
 } from '@/lib/wf';
-import { acceptTimePatch, deliverablesFor, keepTimePatch, waitingRequests } from '@/lib/closeout';
+import {
+  acceptTimePatch, closeoutArgs, keepTimePatch, listFor, parseCloseoutLists, waitingRequests,
+  type CloseoutList, type CloseoutOp,
+} from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
 import { fmtMoney, hasPaySplit, woProfitOrNull, withClientPrice } from '@/lib/utils';
 import { logAudit } from '@/lib/audit';
@@ -93,12 +96,19 @@ export default function WorkFlowView({
   };
   useEffect(() => { void loadWaiting(); }, [workOrders]);
 
+  const [lists, setLists] = useState<CloseoutList[]>([]);
+  useEffect(() => {
+    void createClient().from('closeout_lists').select('id, name, keywords, items, sort').order('sort')
+      .then(({ data }) => setLists(parseCloseoutLists(data)));
+  }, []);
+
   const open = openId ? rows.find((r) => r.w.id === openId) ?? null : null;
 
   if (open) {
     return (
       <OwnerJob
         row={open}
+        lists={lists}
         contractors={contractors}
         onBack={() => setOpenId(null)}
         onRefresh={onRefresh}
@@ -216,10 +226,11 @@ export default function WorkFlowView({
 // ── One job, from the office's side ─────────────────────────────────────────
 
 function OwnerJob({
-  row, contractors, onBack, onRefresh, onEdit, onDelete, onDuplicate, onPay, onSend, onSendPortal,
+  row, lists, contractors, onBack, onRefresh, onEdit, onDelete, onDuplicate, onPay, onSend, onSendPortal,
   onArchive, onUnarchive, onCloseJob, onReassign,
 }: {
   row: Row;
+  lists: CloseoutList[];
   contractors: Contractor[];
   onBack: () => void;
   onRefresh: () => Promise<void> | void;
@@ -243,12 +254,49 @@ function OwnerJob({
   const [portalBusy, setPortalBusy] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
 
+  // Closeout changes Fred makes himself show at once (each is safe to repeat).
+  const [coOps, setCoOps] = useState<CloseoutOp[]>([]);
+
   let job = row.job;
   for (const [id, done] of Object.entries(ticked)) job = withTask(job, id, done);
+  for (const o of coOps) job = withCloseout(job, o);
+  const checklist = listFor(lists, job.title, job.description);
 
   const refresh = async () => {
     setRefreshing(true);
-    try { await onRefresh(); setTicked({}); } finally { setRefreshing(false); }
+    try { await onRefresh(); setTicked({}); setCoOps([]); } finally { setRefreshing(false); }
+  };
+
+  /** The same closeout steps a tech takes (wf_tech_closeout lets the owner in too, migration-106). */
+  const closeoutOp = async (op: CloseoutOp) => {
+    setCoOps((l) => [...l, op]);
+    const { data, error } = await createClient().rpc('wf_tech_closeout', {
+      p_wo_number: w.wo_number, p_op: op.op, p_args: closeoutArgs(op), p_at: new Date().toISOString(),
+    });
+    const r = (data ?? {}) as { ok?: boolean; reason?: string };
+    if (error || !r.ok) {
+      setCoOps((l) => l.filter((x) => x !== op));
+      toastError(error ? "Couldn't save that. Check your connection." : wfReasonText(r.reason ?? ''));
+      return;
+    }
+    void onRefresh();
+  };
+
+  /** Fred takes the customer's signature himself: the picture goes with the job's photos. */
+  const ownerSign = async (name: string, signature: Blob) => {
+    const fd = new FormData();
+    fd.append('wo_number', w.wo_number);
+    fd.append('file', new File([signature], 'signature.jpg', { type: 'image/jpeg' }));
+    try {
+      const res = await fetch('/api/jobs/signature', { method: 'POST', body: fd });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) { toastError(json.error ?? "The signature didn't save."); return; }
+    } catch {
+      toastError("The signature didn't save. Check your connection.");
+      return;
+    }
+    await closeoutOp({ op: 'sign', name, at: new Date().toISOString() });
+    toastSuccess('Signed off.');
   };
 
   const toggleTask = async (t: WfTask, done: boolean) => {
@@ -325,7 +373,8 @@ function OwnerJob({
             </Section>
           )}
           {showCloseout(job) && (
-            <CloseoutCard job={job} items={deliverablesFor(job.title, job.description)} canEdit={false} ownerView />
+            <CloseoutCard job={job} items={checklist.items} listName={checklist.name} canEdit={!archived} ownerView
+              onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
           )}
           <OwnerReport w={w} onEdit={() => onEdit(w)} />
           <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />

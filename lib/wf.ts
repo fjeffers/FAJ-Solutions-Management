@@ -67,6 +67,9 @@ export type WfJob = {
   city: string;
   state: string;
   zip: string;
+  /** The site on the map (looked up from the address), for "12 mi away". */
+  siteLat: number | null;
+  siteLng: number | null;
   /** YYYY-MM-DD, or null when not scheduled. */
   date: string | null;
   startTime: string;
@@ -149,6 +152,12 @@ function questionList(r: Row): WfQuestion[] {
     .filter((q) => q.id && q.label);
 }
 
+function numOrNull(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function dateOnly(v: string): string | null {
   const d = v.slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
@@ -191,6 +200,8 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     city: s(r, 'site_city'),
     state: s(r, 'site_state'),
     zip: s(r, 'site_zip'),
+    siteLat: numOrNull(r.site_lat),
+    siteLng: numOrNull(r.site_lng),
     date: dateOnly(s(r, 'scheduled_date')) ?? dateOnly(s(r, 'start_date')),
     startTime: s(r, 'start_time'),
     endTime: s(r, 'end_time'),

@@ -66,21 +66,36 @@ export function boardGroups(rows: BoardRow[]): { key: WfStatus; label: string; l
 const stageColor = (k: WfStatus) => (k === 'workDone' ? 'var(--wf-success)' : WF_STATUS_COLOR[k]);
 
 /** A stage heading, the same on Board, Grid and List: the name in its colour, the count, a coloured line. */
-function StageHead({ label, color, count, boxed }: { label: string; color: string; count: number; boxed?: boolean }) {
+/** A stage heading; tapping it shows just that stage (tap again for all). */
+function StageHead({ label, color, count, boxed, onClick, active }: {
+  label: string; color: string; count: number; boxed?: boolean; onClick?: () => void; active?: boolean;
+}) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: boxed ? 16 : '10px 4px', borderBottom: `2px solid ${color}` }}>
+    <button onClick={onClick} aria-pressed={active} title={active ? 'Show all stages' : `Show only ${label}`}
+      style={{
+        display: 'flex', alignItems: 'center', width: '100%', padding: boxed ? 16 : '10px 4px', border: 'none',
+        borderBottom: `2px solid ${color}`, background: 'transparent', font: 'inherit', color: 'inherit', textAlign: 'left',
+        cursor: onClick ? 'pointer' : 'default',
+      }}>
       <span className="wf-p-title" style={{ flex: 1, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
       <span style={{ fontWeight: 600, fontSize: 13 }}>{count}</span>
-    </div>
+    </button>
   );
 }
 
-function StatTile({ label, value, color }: { label: string; value: number; color: string }) {
+/** A number tile; tapping it shows just those jobs. */
+function StatTile({ label, value, color, onClick, active }: {
+  label: string; value: number; color: string; onClick?: () => void; active?: boolean;
+}) {
   return (
-    <div className="wf-card" style={{ width: 148, flexShrink: 0, padding: 16 }}>
+    <button className="wf-card wf-card-click" onClick={onClick} aria-pressed={active}
+      style={{
+        width: 148, flexShrink: 0, padding: 16, textAlign: 'left', font: 'inherit', color: 'inherit', cursor: 'pointer',
+        borderColor: active ? 'var(--wf-gold)' : undefined, boxShadow: active ? 'inset 0 0 0 1px var(--wf-gold)' : undefined,
+      }}>
       <div className="wf-p-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
       <div className="wf-p-headline" style={{ color, marginTop: 4 }}>{value}</div>
-    </div>
+    </button>
   );
 }
 
@@ -140,19 +155,36 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
   const count = (s: WfStatus) => live.filter((r) => r.job.status === s).length;
   const urgent = live.filter((r) => r.job.highPriority).length;
   const shown = rows.filter((r) => matchesWf(r.job, query));
-  const groups = boardGroups(shown);
+  // Tapping a number tile or a stage heading shows just those jobs (Fred,
+  // 2026-10-04: "now i cant click on anything like tech needed"). The same
+  // focus applies to Board, Grid and List.
+  const [focus, setFocus] = useState<WfStatus | 'urgent' | null>(null);
+  const toggle = (f: WfStatus | 'urgent') => setFocus((cur) => (cur === f ? null : f));
+  const focused = focus === 'urgent' ? shown.filter((r) => r.job.highPriority && r.job.status !== 'closed') : shown;
+  const groups = boardGroups(focused).filter((g) => {
+    if (!focus) return true;
+    if (focus === 'urgent') return g.list.length > 0; // high-priority jobs, in whichever stages they are
+    return g.key === focus;
+  });
+  const focusLabel = focus === 'urgent' ? 'High priority' : focus ? DISPATCH_COLUMNS.find((c) => c.key === focus)?.label : null;
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <PrimioBar title="Dispatch board" right={right} />
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-        <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" />
-        <StatTile label="Needs a tech" value={count('open')} color={WF_STATUS_COLOR.open} />
-        <StatTile label="Awaiting response" value={count('offered')} color={WF_STATUS_COLOR.offered} />
-        <StatTile label="In progress" value={count('inProgress')} color={WF_STATUS_COLOR.inProgress} />
-        <StatTile label="Work done" value={count('workDone')} color="var(--wf-success)" />
-        <StatTile label="High priority" value={urgent} color="var(--wf-danger)" />
+        <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />
+        <StatTile label="Needs a tech" value={count('open')} color={WF_STATUS_COLOR.open} onClick={() => toggle('open')} active={focus === 'open'} />
+        <StatTile label="Awaiting response" value={count('offered')} color={WF_STATUS_COLOR.offered} onClick={() => toggle('offered')} active={focus === 'offered'} />
+        <StatTile label="In progress" value={count('inProgress')} color={WF_STATUS_COLOR.inProgress} onClick={() => toggle('inProgress')} active={focus === 'inProgress'} />
+        <StatTile label="Work done" value={count('workDone')} color="var(--wf-success)" onClick={() => toggle('workDone')} active={focus === 'workDone'} />
+        <StatTile label="High priority" value={urgent} color="var(--wf-danger)" onClick={() => toggle('urgent')} active={focus === 'urgent'} />
       </div>
+      {focusLabel && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>
+          <span>Showing <b>{focusLabel}</b> only</span>
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setFocus(null)}>Show all</button>
+        </div>
+      )}
       {between}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 280px' }}>
@@ -171,7 +203,7 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>
           {groups.map((g) => (
             <section key={g.key} className="wf-dispatch-col">
-              <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} boxed />
+              <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} boxed onClick={() => toggle(g.key)} active={focus === g.key} />
               <div className="wf-dispatch-list">
                 {g.list.length === 0
                   ? <div className="wf-p-small wf-subtle" style={{ textAlign: 'center', padding: '40px 0' }}>No jobs</div>
@@ -185,7 +217,7 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 16 }}>
           {groups.map((g) => (
             <section key={g.key}>
-              <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} />
+              <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} onClick={() => toggle(g.key)} active={focus === g.key} />
               {g.list.length === 0
                 ? <div className="wf-p-small wf-subtle" style={{ padding: '12px 4px' }}>No jobs</div>
                 : (
@@ -197,15 +229,17 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
           ))}
         </div>
       )}
-      {view === 'list' && <DispatchTable groups={groups} onOpen={onOpen} />}
+      {view === 'list' && <DispatchTable groups={groups} onOpen={onOpen} onStage={toggle} focus={focus} />}
     </div>
   );
 }
 
 /** List view: the Board's stages as table sections, one row per job, in the Board's order. */
-function DispatchTable({ groups, onOpen }: {
+function DispatchTable({ groups, onOpen, onStage, focus }: {
   groups: { key: WfStatus; label: string; list: BoardRow[] }[];
   onOpen: (job: WfJob) => void;
+  onStage: (k: WfStatus) => void;
+  focus: WfStatus | 'urgent' | null;
 }) {
   const head = (label: string, align: 'left' | 'right' = 'left') => (
     <th style={{ textAlign: align, padding: '10px 12px', fontSize: 12, fontWeight: 600, color: 'var(--wf-subtle)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--wf-line)' }}>{label}</th>
@@ -224,7 +258,7 @@ function DispatchTable({ groups, onOpen }: {
           <tbody key={g.key}>
             <tr>
               <td colSpan={7} style={{ padding: '0 8px', background: '#F4F2EC' }}>
-                <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} />
+                <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} onClick={() => onStage(g.key)} active={focus === g.key} />
               </td>
             </tr>
             {g.list.length === 0 && (

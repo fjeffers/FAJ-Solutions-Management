@@ -37,8 +37,64 @@ import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
 
+/**
+ * The top of the job screen — the same in WorkFlow, Board and List (Fred,
+ * 2026-10-04: "these 3 are different setup and it should not be"): the
+ * greeting and day's numbers, New job / Generate with AI, the WorkFlow · Board
+ * · List switch and one search box. `between` sits under the greeting
+ * (WorkFlow's to-do banners).
+ */
+export function WorkFlowTop({
+  ownerFirstName, counts, owedToTechs, onAdd, onAI, onNeedTech, onWorkDone, modeSwitch, search, onSearch, between,
+}: {
+  ownerFirstName: string;
+  counts: ReturnType<typeof ownerCounts>;
+  owedToTechs: number;
+  onAdd: () => void;
+  onAI: () => void;
+  onNeedTech?: () => void;
+  onWorkDone?: () => void;
+  modeSwitch: ReactNode;
+  search: string;
+  onSearch: (s: string) => void;
+  between?: ReactNode;
+}) {
+  return (
+    <>
+      <Hero
+        eyebrow={`WorkFlow · ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`}
+        title={`${greeting()}, ${ownerFirstName}`}
+        actions={<>
+          <button className="wf-btn wf-btn-gold" onClick={onAdd}><Plus size={17} /> New job</button>
+          <button className="wf-btn" onClick={onAI} style={{ background: 'rgba(255,255,255,0.14)', color: '#fff', borderColor: 'rgba(201,162,75,0.45)' }}>
+            <Sparkles size={16} /> Generate with AI
+          </button>
+        </>}
+        stats={[
+          { value: String(counts.needTech), label: 'Need a tech', onClick: onNeedTech },
+          { value: String(counts.today), label: 'Today' },
+          { value: String(counts.workDone), label: 'Work done', onClick: onWorkDone },
+          { value: fmtMoney(owedToTechs), label: 'Owed to techs' },
+        ]}
+      />
+      {between}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <h2 className="wf-title" style={{ flex: 1 }}>Work orders</h2>
+        {modeSwitch}
+      </div>
+      <div style={{ position: 'relative' }}>
+        <Search size={18} color="var(--wf-subtle)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+        <input
+          className="wf-input" value={search} onChange={(e) => onSearch(e.target.value)}
+          placeholder="Search WO number, client, city, tech…" aria-label="Search work orders" style={{ paddingLeft: 40 }}
+        />
+      </div>
+    </>
+  );
+}
+
 export default function WorkFlowView({
-  workOrders, contractors, ownerFirstName, initialSearch = '', owedToTechs, modeSwitch,
+  workOrders, contractors, ownerFirstName, initialSearch = '', owedToTechs, modeSwitch, search: searchIn, onSearch, initialBucket,
   onAdd, onAI, onEdit, onDelete, onDuplicate, onPay, onSend, onSendPortal, onArchive, onUnarchive, onCloseJob,
   onReassign, onRefresh, openId, onOpenChange,
 }: {
@@ -49,6 +105,11 @@ export default function WorkFlowView({
   owedToTechs: number;
   /** WorkFlow | Board | List. */
   modeSwitch: ReactNode;
+  /** The search box, shared with Board and List so it carries across. */
+  search?: string;
+  onSearch?: (s: string) => void;
+  /** The list to open on (a number tapped on the Board or List). */
+  initialBucket?: WfBucket;
   onAdd: () => void;
   onAI: () => void;
   onEdit: (w: EnrichedWorkOrder) => void;
@@ -67,9 +128,11 @@ export default function WorkFlowView({
   openId: string | null;
   onOpenChange: (id: string | null) => void;
 }) {
-  const [search, setSearch] = useState(initialSearch);
+  const [ownSearch, setOwnSearch] = useState(initialSearch);
+  const search = searchIn ?? ownSearch;
+  const setSearch = onSearch ?? setOwnSearch;
   // Available · Current · Pending · Closed — no "All jobs" (Fred, 2026-10-02).
-  const [bucket, setBucket] = useState<WfBucket>('current');
+  const [bucket, setBucket] = useState<WfBucket>(initialBucket ?? 'current');
   const setOpenId = onOpenChange;
 
   const rows: Row[] = useMemo(() => workOrders.map((w) => ({ w, job: wfJobFromOwner(w) })), [workOrders]);
@@ -121,22 +184,11 @@ export default function WorkFlowView({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <Hero
-        eyebrow={`WorkFlow · ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`}
-        title={`${greeting()}, ${ownerFirstName}`}
-        actions={<>
-          <button className="wf-btn wf-btn-gold" onClick={onAdd}><Plus size={17} /> New job</button>
-          <button className="wf-btn" onClick={onAI} style={{ background: 'rgba(255,255,255,0.14)', color: '#fff', borderColor: 'rgba(201,162,75,0.45)' }}>
-            <Sparkles size={16} /> Generate with AI
-          </button>
-        </>}
-        stats={[
-          { value: String(counts.needTech), label: 'Need a tech', onClick: () => setBucket('available') },
-          { value: String(counts.today), label: 'Today' },
-          { value: String(counts.workDone), label: 'Work done', onClick: () => setBucket('pending') },
-          { value: fmtMoney(owedToTechs), label: 'Owed to techs' },
-        ]}
-      />
+      <WorkFlowTop
+        ownerFirstName={ownerFirstName} counts={counts} owedToTechs={owedToTechs} onAdd={onAdd} onAI={onAI}
+        onNeedTech={() => setBucket('available')} onWorkDone={() => setBucket('pending')}
+        modeSwitch={modeSwitch} search={search} onSearch={setSearch}
+        between={<>
 
       {waitingExp.length > 0 && (
         <button className="wf-card wf-card-click wf-rise" onClick={() => setInboxOpen(true)}
@@ -185,20 +237,8 @@ export default function WorkFlowView({
         />
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <h2 className="wf-title" style={{ flex: 1 }}>
-          Work orders
-        </h2>
-        {modeSwitch}
-      </div>
-
-      <div style={{ position: 'relative' }}>
-        <Search size={18} color="var(--wf-subtle)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-        <input
-          className="wf-input" value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search WO number, client, city, tech…" aria-label="Search work orders" style={{ paddingLeft: 40 }}
-        />
-      </div>
+        </>}
+      />
 
       <BucketTabs value={bucket} counts={tabCounts} onChange={setBucket} ownerView />
 

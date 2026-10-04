@@ -8,9 +8,9 @@ import { WO_STATUSES } from '@/lib/types';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
 import { backdropClose } from '@/lib/backdrop';
 import WorkBoard from '@/components/WorkBoard';
-import WorkFlowView from '@/components/WorkFlowView';
-import { Workflow } from 'lucide-react';
-import { Dialog } from '@/components/wf/WfUi';
+import WorkFlowView, { WorkFlowTop } from '@/components/WorkFlowView';
+import { Dialog, Empty } from '@/components/wf/WfUi';
+import { ownerCounts, wfJobFromOwner, type WfBucket } from '@/lib/wf';
 import { toastInfo, toastSuccess } from '@/lib/toast';
 
 type Stats = {
@@ -37,8 +37,10 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startMode,
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startMode, onModeChange,
 }: {
+  /** Tells the menu which view is showing (Dispatch is the Board). */
+  onModeChange?: (m: 'workflow' | 'board' | 'list') => void;
   workOrders: EnrichedWorkOrder[];
   /** Open on this view instead of the last one used (the menu's Dispatch opens the board). */
   startMode?: 'workflow' | 'board' | 'list';
@@ -75,13 +77,17 @@ export default function WorkOrdersView({
     if (startMode) return;
     try {
       const m = localStorage.getItem('wo-view-mode-v2');
-      if (m === 'board' || m === 'list') setMode(m);
+      if (m === 'board' || m === 'list') { setMode(m); onModeChange?.(m); }
     } catch { /* private window */ }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, on opening
   const chooseMode = (m: 'workflow' | 'board' | 'list') => {
     setMode(m);
+    onModeChange?.(m);
     try { localStorage.setItem('wo-view-mode-v2', m); } catch { /* private window */ }
   };
+  // A number tapped on the Board or List opens that list in WorkFlow.
+  const [startBucket, setStartBucket] = useState<WfBucket | undefined>(undefined);
+  const openBucket = (b: WfBucket) => { setStartBucket(b); chooseMode('workflow'); };
   const [aiOpen, setAiOpen] = useState(false);
   // The job open on WorkFlow's job screen — from the WorkFlow list or a Board
   // card. A link to one work order (?wo=…) opens it straight away.
@@ -118,6 +124,15 @@ export default function WorkOrdersView({
     return acc;
   }, {} as Record<WorkOrderStatus, number>);
 
+  const wfCounts = useMemo(() => ownerCounts(workOrders.map((w) => wfJobFromOwner(w))), [workOrders]);
+  const modeSwitch = (
+    <div role="group" aria-label="How to show work orders" className="wf-filters">
+      {([['workflow', 'WorkFlow'], ['board', 'Board'], ['list', 'List']] as const).map(([m, label]) => (
+        <button key={m} className="wf-filter" aria-pressed={mode === m} onClick={() => chooseMode(m)}>{label}</button>
+      ))}
+    </div>
+  );
+
   const openSendModal = (w: EnrichedWorkOrder) => {
     const names = w.contractor_names?.length ? w.contractor_names : [w.contractor_name].filter(Boolean);
     // Each tech gets an individualized email (their pay + their accept/decline
@@ -138,36 +153,15 @@ export default function WorkOrdersView({
 
   return (
     <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
-      {/* ── Header (Board and List; WorkFlow has its own) ── */}
+      {/* ── The same top for Board and List as WorkFlow's (WorkFlowTop) ── */}
       {!showWf && (
-      <div style={{ marginBottom: 28 }}>
-        <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>WORK ORDERS</div>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Work Orders</h1>
-            <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>
-              {stats.jobCount} jobs ·{' '}
-              <span style={{ color: '#b91c1c', fontWeight: 600 }}>{fmtMoney(stats.remaining)} outstanding</span>
-              {' · '}
-              <span style={{ color: '#047857', fontWeight: 600 }}>{fmtMoney(stats.paid)} collected</span>
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div role="group" aria-label="How to show work orders" style={{ display: 'flex', borderRadius: 999, border: '1px solid rgba(14,27,46,0.25)', overflow: 'hidden' }}>
-              {([['workflow', 'WorkFlow', <Workflow key="w" size={14} />], ['board', 'Board', <Columns3 key="b" size={14} />], ['list', 'List', <List key="l" size={14} />]] as const).map(([m, label, icon]) => (
-                <button
-                  key={m} onClick={() => chooseMode(m)} aria-pressed={mode === m}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: 'none', cursor: 'pointer',
-                    fontSize: 12, fontWeight: 700, background: mode === m ? 'var(--teal)' : 'transparent', color: mode === m ? 'white' : 'var(--teal)',
-                  }}
-                >{icon} {label}</button>
-              ))}
-            </div>
-            <button className="btn btn-ghost" onClick={() => setAiOpen(true)}><Sparkles size={14} /> Generate with AI</button>
-            <button className="btn btn-primary" onClick={onAdd}><Plus size={14} /> New Work Order</button>
-          </div>
-        </div>
+      <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 16 }}>
+        <WorkFlowTop
+          ownerFirstName={ownerFirstName} counts={wfCounts} owedToTechs={stats.remaining}
+          onAdd={onAdd} onAI={() => setAiOpen(true)}
+          onNeedTech={() => openBucket('available')} onWorkDone={() => openBucket('pending')}
+          modeSwitch={modeSwitch} search={search} onSearch={setSearch}
+        />
       </div>
       )}
 
@@ -179,13 +173,10 @@ export default function WorkOrdersView({
             ownerFirstName={ownerFirstName}
             initialSearch={initialSearch}
             owedToTechs={stats.remaining}
-            modeSwitch={
-              <div role="group" aria-label="How to show work orders" className="wf-filters">
-                {([['workflow', 'WorkFlow'], ['board', 'Board'], ['list', 'List']] as const).map(([m, label]) => (
-                  <button key={m} className="wf-filter" aria-pressed={mode === m} onClick={() => chooseMode(m)}>{label}</button>
-                ))}
-              </div>
-            }
+            modeSwitch={modeSwitch}
+            search={search}
+            onSearch={setSearch}
+            initialBucket={startBucket}
             onAdd={onAdd}
             onAI={() => setAiOpen(true)}
             onEdit={onEdit}
@@ -216,15 +207,8 @@ export default function WorkOrdersView({
 
       {!showWf && mode === 'board' && (
         <>
-          <div className="glass card" style={{ marginBottom: 16, padding: '12px 16px', position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
-            <input
-              className="input" value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by WO number, tech, title, service type, city…" style={{ paddingLeft: 36 }}
-              aria-label="Search work orders"
-            />
-          </div>
           <WorkBoard
+            showKpis={false}
             workOrders={sorted.filter((w) => w.archived_at === null && matchesSearch(w, search))}
             owedToTechs={stats.remaining}
             onEdit={(w) => { setWfOpen(w.id); window.scrollTo({ top: 0 }); }}
@@ -237,62 +221,27 @@ export default function WorkOrdersView({
       )}
 
       {!showWf && mode === 'list' && (<>
-      {/* ── FieldNation-style status board tabs ── */}
-      <div className="glass card" style={{ marginBottom: 20, padding: '0 16px' }}>
-        <div style={{ display: 'flex', gap: 2, overflowX: 'auto', borderBottom: '1px solid #eee' }}>
+      {/* ── The stages, as WorkFlow chips ── */}
+      <div className="wf" style={{ marginBottom: 16 }}>
+        <div className="wf-filters" role="group" aria-label="Show jobs by stage">
           {[
-            { key: 'all' as const, label: 'All Active', count: activeWOs.length },
+            { key: 'all' as const, label: 'All active', count: activeWOs.length },
             ...WO_STATUSES.map((s) => ({ key: s, label: s, count: statusCounts[s] })),
             { key: 'closed' as const, label: 'Closed', count: archivedCount },
-          ].map((t) => {
-            const active = woStatusFilter === t.key;
-            const isClosedTab = t.key === 'closed';
-            return (
-              <button
-                key={t.key}
-                onClick={() => setWoStatusFilter(t.key)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0,
-                  padding: '13px 14px', border: 'none', background: 'none', cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 12,
-                  color: active ? (isClosedTab ? '#6d28d9' : 'var(--teal)') : '#888',
-                  borderBottom: active
-                    ? `2.5px solid ${isClosedTab ? '#6d28d9' : 'var(--teal)'}`
-                    : '2.5px solid transparent',
-                  marginBottom: -1,
-                }}
-              >
-                {isClosedTab && <Archive size={11} />}
-                {t.label}
-                <span style={{
-                  fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 999,
-                  background: active ? (isClosedTab ? 'rgba(109,40,217,0.12)' : 'rgba(14,27,46,0.12)') : 'rgba(0,0,0,0.06)',
-                  color: active ? (isClosedTab ? '#6d28d9' : 'var(--teal)') : '#999',
-                }}>
-                  {t.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ position: 'relative', padding: '12px 0' }}>
-          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
-          <input
-            className="input"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by contractor, title, service type, city…"
-            style={{ paddingLeft: 36 }}
-          />
+          ].map((t) => (
+            <button key={t.key} className="wf-filter" aria-pressed={woStatusFilter === t.key} onClick={() => setWoStatusFilter(t.key)}>
+              {t.label}<span className="wf-count">{t.count}</span>
+            </button>
+          ))}
         </div>
       </div>
-
       {/* ── Cards ── */}
       {filtered.length === 0 ? (
-        <div className="glass card" style={{ textAlign: 'center', padding: '56px 24px', color: '#aaa' }}>
-          {search || woStatusFilter !== 'all'
-            ? 'No work orders match your filter.'
-            : 'No work orders yet — create your first one!'}
+        <div className="wf">
+          <Empty
+            title={workOrders.length === 0 ? 'No jobs yet' : 'No jobs here'}
+            message={search || woStatusFilter !== 'all' ? 'Nothing matches your search or this stage.' : 'Create one with New job.'}
+          />
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -325,6 +274,7 @@ function matchesSearch(w: EnrichedWorkOrder, search: string): boolean {
     w.wo_number.includes(search) ||
     allNames.some((n) => (n ?? '').toLowerCase().includes(q)) ||
     (w.title ?? '').toLowerCase().includes(q) ||
+    (w.customer_name ?? '').toLowerCase().includes(q) ||
     (w.service_type ?? '').toLowerCase().includes(q) ||
     (w.site_city ?? '').toLowerCase().includes(q)
   );

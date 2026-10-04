@@ -1655,6 +1655,7 @@ Go ahead?`)) return;
           <WorkOrdersView
             key={`wo-${woStart.n}`}
             startMode={woStart.mode}
+            onModeChange={(m) => setWoStart((st) => ({ ...st, mode: m === 'board' ? 'board' : 'workflow' }))}
             initialSearch={woFromUrl}
             siteVisits={linkedVisits}
             workOrders={enrichedWOs}

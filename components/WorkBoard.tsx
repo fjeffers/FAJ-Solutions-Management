@@ -13,11 +13,13 @@ type Card = { id: string; col: ColumnKey; sort: string; wo: EnrichedWorkOrder };
  * screen. Crew-project sites used to share the board; Fred took them off on
  * 2026-10-02 ("crew jobs can go") — they live in Crew Projects.
  */
-export default function WorkBoard({ workOrders, owedToTechs, onEdit }: {
+export default function WorkBoard({ workOrders, owedToTechs, onEdit, showKpis = true }: {
   /** Live (not closed) work orders, already narrowed by the search box. */
   workOrders: EnrichedWorkOrder[];
   owedToTechs: number;
   onEdit: (w: EnrichedWorkOrder) => void;
+  /** False when the screen's own top already shows the day's numbers. */
+  showKpis?: boolean;
 }) {
   const today = todayEastern();
   const counts = boardCounts(workOrders, [], today);
@@ -29,13 +31,13 @@ export default function WorkBoard({ workOrders, owedToTechs, onEdit }: {
   return (
     <div>
       {/* ── The numbers that say what to do next ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 18 }}>
+      {showKpis && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 18 }}>
         <Kpi icon={<Inbox size={18} />} label="Needs a tech" value={String(counts.needsTech)} tone={counts.needsTech > 0 ? 'warn' : 'ok'} />
         <Kpi icon={<CalendarDays size={18} />} label="Scheduled this week" value={String(counts.thisWeek)} />
         <Kpi icon={<CheckCircle2 size={18} />} label="Work done: close & bill" value={String(counts.readyToClose)} tone={counts.readyToClose > 0 ? 'act' : 'ok'} />
         <Kpi icon={<Wallet size={18} />} label="Still owed to techs" value={fmtMoney(owedToTechs)} tone={owedToTechs > 0 || counts.paySetMissing > 0 ? 'warn' : 'ok'}
           note={counts.paySetMissing > 0 ? `+ ${counts.paySetMissing} job${counts.paySetMissing === 1 ? '' : 's'} with no tech pay set` : undefined} />
-      </div>
+      </div>}
 
       {/* ── Columns: side by side on a computer, swipe across on a phone ── */}
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${BOARD_COLUMNS.length}, minmax(232px, 1fr))`, gap: 12, overflowX: 'auto', paddingBottom: 8, scrollSnapType: 'x mandatory' }}>

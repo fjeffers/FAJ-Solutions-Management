@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { OFFICE_GROUPS, searchOffice } from './office-menu';
+import { OFFICE_GROUPS, SIDEBAR_VIEWS, searchOffice } from './office-menu';
 
 /** The view names in app/page.tsx's VIEWS list. */
 function appViews(): string[] {
@@ -12,11 +12,11 @@ function appViews(): string[] {
 }
 
 describe('Office hub', () => {
-  it('lists every screen in the owner app, once', () => {
+  it('every screen is in the left menu or on the Office page — once, never both', () => {
     const listed = OFFICE_GROUPS.flatMap((g) => g.items.map((i) => i.view)).filter((v): v is string => !!v);
-    const views = appViews().filter((v) => v !== 'office');
+    const views = appViews();
     expect(views.length).toBeGreaterThan(20);
-    expect([...listed].sort()).toEqual([...views].sort());
+    expect([...listed, ...SIDEBAR_VIEWS].sort()).toEqual([...views].sort());
   });
 
   it('search matches name, hint and group, every word', () => {

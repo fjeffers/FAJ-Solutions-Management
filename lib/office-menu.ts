@@ -3,8 +3,13 @@
 // Office screen — "everything"). Same groups as the sidebar. Handiest on a
 // phone, where the sidebar hides behind the menu button.
 //
-// lib/office-menu.test.ts checks that every screen in app/page.tsx is listed
-// here, so a new screen can't be left off the hub.
+// Fred, 2026-10-04: "the only thing i should see is dashboard, dispatcher,
+// schedule and office, and everything else should go under office with its own
+// drop down". So the left menu is SIDEBAR_VIEWS (plus Dispatch, WorkFlow's
+// board) and every other screen is here, once.
+//
+// lib/office-menu.test.ts checks that every screen in app/page.tsx is either in
+// the left menu or listed here, so a new screen can't be left off.
 
 export type OfficeItem = {
   /** The owner app view it opens; null for a link to another site or an action. */
@@ -17,21 +22,15 @@ export type OfficeItem = {
 };
 export type OfficeGroup = { title: string; items: OfficeItem[] };
 
+/** The screens in the left menu itself — not repeated on the Office page. */
+export const SIDEBAR_VIEWS = ['dashboard', 'scheduling', 'office'] as const;
+
 export const OFFICE_GROUPS: OfficeGroup[] = [
-  {
-    // Primio's office tabs, with the Dashboard (Fred, 2026-10-04).
-    title: 'Main',
-    items: [
-      { view: null, action: 'new-order', label: 'New order', hint: 'Create a work order and send it to a tech' },
-      { view: 'dashboard', label: 'Dashboard', hint: 'The day at a glance: money, jobs and what needs you' },
-      { view: 'scheduling', label: 'Schedule', hint: 'Calendar of jobs and techs' },
-    ],
-  },
   {
     title: 'Every day',
     items: [
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
-      { view: 'workorders', label: 'WorkFlow', hint: 'Every job: assign techs, track, close — Dispatch is its board' },
+      { view: 'workorders', label: 'WorkFlow', hint: 'Every job as a list: assign techs, track, close' },
       { view: 'payables', label: 'Pay Techs', hint: 'What each tech is owed, and paying them' },
       { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },
       { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },

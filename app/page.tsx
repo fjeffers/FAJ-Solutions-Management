@@ -113,41 +113,6 @@ const SECTION_OF_VIEW: Record<View, string> = {
   settings: 'settings',
 } as Record<View, string>;
 
-// Collapsible sidebar section. Open/closed state is owned by HomePage and
-// persisted to localStorage so the layout survives refreshes.
-function NavSection({ title, open, onToggle, badge, children }: {
-  title: string;
-  open: boolean;
-  onToggle: () => void;
-  badge?: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{ marginBottom: 4 }}>
-      <button
-        onClick={onToggle}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-          background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: 9, fontWeight: 700, letterSpacing: 2, color: 'rgba(255,255,255,0.35)',
-          padding: '8px 12px 6px', textTransform: 'uppercase',
-        }}
-      >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {title}
-          {!open && badge != null && badge > 0 && (
-            <span style={{ background: 'var(--teal)', color: 'white', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px', letterSpacing: 0 }}>
-              {badge}
-            </span>
-          )}
-        </span>
-        <ChevronDown size={12} style={{ transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
-      </button>
-      {open && <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{children}</div>}
-    </div>
-  );
-}
-
 type Modal =
   | { type: 'contractor'; item: Contractor | null }
   | { type: 'wo'; item: WorkOrder | null; prefill?: Partial<WorkOrder> }
@@ -1468,120 +1433,30 @@ Go ahead?`)) return;
           <div className="display" style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold-light)', letterSpacing: 1.6, textTransform: 'uppercase' }}>Business Manager</div>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
-          {/* The daily round, always on screen. Site Log first because that is
-              where a job starts: walk the site, turn it into a work order, pay
-              the tech. Those four plus the dashboard are ~90% of the use, and
-              they used to be spread across two collapsible sections that could
-              not both be open. */}
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: 2,
-            paddingBottom: 12, marginBottom: 10,
-            borderBottom: '1px solid rgba(255,255,255,0.09)',
-          }}>
-            {/* Primio's office tabs, with the Dashboard, at the top of the menu
-                (Fred, 2026-10-04: "new order, Dashboard, dispatcher, schedule,
-                Office, and keep it all to the left as menu"). */}
-            <button className="nav-btn" onClick={openNewOrder}
-              style={{ background: 'rgba(201,162,75,0.16)', color: 'var(--gold-light)', fontWeight: 700 }}>
-              <SquarePlus size={15} /> New order
-            </button>
-            <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
-            <button className={`nav-btn ${view === 'workorders' && woStart.mode === 'board' ? 'active' : ''}`} onClick={openDispatch}>
-              <KanbanSquare size={15} /> Dispatch
-            </button>
-            <NI k="scheduling" icon={<Calendar size={15} />}  label="Schedule" />
-            <NI k="office"     icon={<LayoutGrid size={15} />} label="Office" />
-          </div>
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: 2,
-            paddingBottom: 12, marginBottom: 10,
-            borderBottom: '1px solid rgba(255,255,255,0.09)',
-          }}>
-            <div style={{
-              fontSize: 9, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase',
-              color: 'rgba(255,255,255,0.35)', padding: '2px 12px 6px',
-            }}>
-              Every day
-            </div>
-            <NI k="sitelog"    icon={<Timer size={15} />}     label="Site Log" />
-            {/* Fred, 2026-10-02: "rename to WorkFlow, I like it and keep it". */}
-            <button className={`nav-btn ${view === 'workorders' && woStart.mode !== 'board' ? 'active' : ''}`} onClick={() => navigate('workorders')}>
-              <Workflow size={15} /> WorkFlow
-            </button>
-            <NI k="payables"   icon={<Wallet size={15} />}    label="Pay Techs" />
-            <NI k="team"       icon={<UserCog size={15} />}   label="Team" />
-            <button className={`nav-btn ${view === 'support' ? 'active' : ''}`} onClick={() => navigate('support')}>
-              <LifeBuoy size={15} /> Support
-              {supportCount > 0 && (
-                <span style={{
-                  background: 'var(--gold)', color: '#0E1B2E', borderRadius: 999,
-                  fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4,
-                }}>
-                  {supportCount}
-                </span>
-              )}
-            </button>
-            <button className={`nav-btn ${view === 'import-queue' ? 'active' : ''}`} onClick={() => navigate('import-queue')}>
-              <Inbox size={15} /> Import
-              {pendingImportCount > 0 && (
-                <span style={{
-                  background: 'var(--teal)', color: 'white', borderRadius: 999,
-                  fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4,
-                }}>
-                  {pendingImportCount}
-                </span>
-              )}
-            </button>
-          </div>
-
-          <NavSection title="Money" open={sectionOpen('money')} onToggle={() => toggleSection('money')}>
-            <NI k="payments"   icon={<CreditCard size={15} />} label="Payments Made" />
-            <NI k="financials" icon={<TrendingUp size={15} />} label="Financials" />
-            <NI k="ledger"     icon={<BookOpen size={15} />}   label="Ledger" />
-            <NI k="customers"  icon={<Building2 size={15} />}  label="Customers" />
-            <NI k="quickbooks" icon={<TrendingUp size={15} />} label="QuickBooks" />
-            {/* Client billing happens in QuickBooks and NetView, so these two
-                sit here rather than competing with the daily round. */}
-            <a
-              className="nav-btn"
-              href={NETVIEW_FORM_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Opens NetView's vendor payment form in a new tab. Tip: open a NetView work order and use 'Submit to Netview' there to get the form pre-filled."
-              style={{ textDecoration: 'none' }}
-              onClick={() => setMobileNavOpen(false)}
-            >
-              <FileText size={15} /> NetView Invoice
-            </a>
-            <NI k="invoices"   icon={<Receipt size={15} />}    label="Invoices" />
-          </NavSection>
-
-          <NavSection title="Techs" open={sectionOpen('techs')} onToggle={() => toggleSection('techs')}>
-            <NI k="contractors" icon={<Users size={15} />}        label="Contractors" />
-            <NI k="contractor-analytics" icon={<Award size={15} />} label="Performance" />
-            <NI k="portal-admin" icon={<ShieldCheck size={15} />} label="Portal & Review" />
-            <NI k="statements"  icon={<FileText size={15} />}     label="Statements" />
-            <NI k="1099"        icon={<ClipboardCheck size={15} />} label="1099s" />
-            <NI k="w9"          icon={<BookOpen size={15} />}     label="W-9s" />
-          </NavSection>
-
-          <NavSection title="Winning work" open={sectionOpen('pipeline')} onToggle={() => toggleSection('pipeline')}>
-            <NI k="surveys"    icon={<ClipboardList size={15} />}  label="Surveys" />
-            <NI k="quotes"     icon={<FileSignature size={15} />}  label="Quotes" />
-            <NI k="contracts"  icon={<FileCheck2 size={15} />}     label="Contracts" />
-            <NI k="dispatch"   icon={<Map size={15} />}            label="Dispatch Map" />
-          </NavSection>
-
-          <NavSection title="On site" open={sectionOpen('onsite')} onToggle={() => toggleSection('onsite')}>
-            <NI k="materials"   icon={<Package size={15} />} label="Materials" />
-            <NI k="maintenance" icon={<Wrench size={15} />}  label="Maintenance" />
-            <NI k="network"     icon={<Network size={15} />} label="Network" />
-          </NavSection>
-
-          <NavSection title="Settings" open={sectionOpen('settings')} onToggle={() => toggleSection('settings')}>
-            <NI k="settings"    icon={<Settings size={15} />}     label="Settings" />
-          </NavSection>
+        <nav style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', gap: 2 }}>
+          {/* Fred, 2026-10-04: "the only thing i should see is dashboard,
+              dispatcher, schedule and office, and everything else should go
+              under office with its own drop down page". Every other screen
+              is on the Office page, in sections that open and close. */}
+          <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
+          <button className={`nav-btn ${view === 'workorders' && woStart.mode === 'board' ? 'active' : ''}`} onClick={openDispatch}>
+            <KanbanSquare size={15} /> Dispatch
+          </button>
+          <NI k="scheduling" icon={<Calendar size={15} />}  label="Schedule" />
+          <button
+            className={`nav-btn ${view !== 'dashboard' && view !== 'scheduling' && !(view === 'workorders' && woStart.mode === 'board') ? 'active' : ''}`}
+            onClick={() => navigate('office')}
+          >
+            <LayoutGrid size={15} /> Office
+            {supportCount + pendingImportCount > 0 && (
+              <span
+                title={`${supportCount} support ticket${supportCount === 1 ? '' : 's'} and ${pendingImportCount} import${pendingImportCount === 1 ? '' : 's'} waiting`}
+                style={{ background: 'var(--gold)', color: '#0E1B2E', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4 }}
+              >
+                {supportCount + pendingImportCount}
+              </span>
+            )}
+          </button>
         </nav>
 
         {/* Utility buttons */}

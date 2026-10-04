@@ -263,6 +263,68 @@ export default function WorkFlowView({
   );
 }
 
+/**
+ * What needs Fred on the Dispatch board: tech receipts waiting for a yes or no,
+ * and techs asking for another time on an offer. Tapping one opens it.
+ */
+export function OwnerAlerts({ workOrders, onOpenJob, onRefresh }: {
+  workOrders: EnrichedWorkOrder[];
+  onOpenJob: (woId: string) => void;
+  onRefresh: () => Promise<void> | void;
+}) {
+  const [waitingExp, setWaitingExp] = useState<ExpenseRow[]>([]);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const loadWaiting = async () => {
+    const { data } = await createClient().from('job_expenses')
+      .select('id, wo_id, wo_number, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status, decline_reason')
+      .eq('status', 'submitted').order('created_at');
+    setWaitingExp((data as ExpenseRow[] | null) ?? []);
+  };
+  useEffect(() => { void loadWaiting(); }, [workOrders]);
+  const timeAsks = workOrders.map((w) => ({ w, job: wfJobFromOwner(w) }))
+    .filter((r) => !r.job.archived && r.job.status === 'offered' && waitingRequests(r.job.timeRequests, r.job.techs).length > 0);
+  if (waitingExp.length === 0 && timeAsks.length === 0 && !inboxOpen) return null;
+
+  return (
+    <>
+      {waitingExp.length > 0 && (
+        <button className="wf-card wf-card-click wf-rise" onClick={() => setInboxOpen(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 16, borderColor: 'rgba(180,83,9,0.35)' }}>
+          <span style={{ width: 46, height: 46, borderRadius: 12, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--wf-gold)', color: 'var(--wf-gold-ink)' }}>
+            <Receipt size={22} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 600, fontSize: 15 }}>Expenses to approve</span>
+            <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5 }}>
+              {waitingExp.length} receipt{waitingExp.length === 1 ? '' : 's'} from techs · {fmtMoney(waitingExp.reduce((sum, e) => sum + Number(e.amount), 0))}
+            </span>
+          </span>
+        </button>
+      )}
+      {inboxOpen && (
+        <Dialog title="Expenses to approve" wide onClose={() => setInboxOpen(false)}>
+          <ExpenseList
+            rows={waitingExp}
+            showJob
+            onOpenJob={(woId) => { setInboxOpen(false); onOpenJob(woId); }}
+            onDecided={async () => { await loadWaiting(); void onRefresh(); }}
+          />
+          {waitingExp.length === 0 && <div className="wf-subtle">All caught up.</div>}
+        </Dialog>
+      )}
+      {timeAsks.length > 0 && (
+        <Banner
+          title="Another time asked"
+          subtitle={timeAsks.length === 1
+            ? `WO ${timeAsks[0].job.number}: ${waitingRequests(timeAsks[0].job.timeRequests, timeAsks[0].job.techs)[0][0]} asks for another time`
+            : `${timeAsks.length} jobs have a tech asking for another time — tap for the first`}
+          onClick={() => onOpenJob(timeAsks[0].w.id)}
+        />
+      )}
+    </>
+  );
+}
+
 // ── One job, from the office's side ─────────────────────────────────────────
 
 function OwnerJob({

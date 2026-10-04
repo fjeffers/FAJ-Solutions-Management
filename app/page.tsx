@@ -8,7 +8,7 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
-import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, KanbanSquare, ChevronRight } from 'lucide-react';
+import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, KanbanSquare, ChevronRight, Plus } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -16,7 +16,8 @@ import WorkOrdersView, { type LinkedVisit } from '@/components/WorkOrdersView';
 import PaymentsView from '@/components/PaymentsView';
 import ContractorsView from '@/components/ContractorsView';
 import ContractorAnalyticsView from '@/components/ContractorAnalyticsView';
-import SchedulingView from '@/components/SchedulingView';
+import { ScheduleBoard, type BoardRow } from '@/components/wf/PrimioScreens';
+import { wfJobFromOwner } from '@/lib/wf';
 import DispatchMapView from '@/components/DispatchMapView';
 import MaterialsView from '@/components/MaterialsView';
 import QuotesView, { nextQuoteNumber } from '@/components/QuotesView';
@@ -1348,15 +1349,23 @@ Go ahead?`)) return;
     void fetch('/api/jobs/geocode', { method: 'POST' }).catch(() => {});
   }, [loading]);
 
-  // The menu's Dispatch is WorkFlow's board (Primio's Dispatch tab); WorkFlow
-  // opens on the last view used. The key re-opens the screen on the right one.
-  const [woStart, setWoStart] = useState<{ mode?: 'board' | 'workflow'; n: number }>({ n: 0 });
+  // Dispatch is Primio's Dispatch board (view 'workorders'). Tapping it again
+  // goes back to the board from a job; a job tapped on the Schedule opens on
+  // the job screen, and its Back returns to the Schedule.
+  const [woStart, setWoStart] = useState<{ n: number; openId?: string; returnTo?: View }>({ n: 0 });
   const navigate = (key: View) => {
-    if (key === 'workorders') setWoStart((s) => ({ mode: 'workflow', n: s.n + 1 }));
+    if (key === 'workorders') setWoStart((s) => ({ n: s.n + 1 }));
     setView(key); setMobileNavOpen(false);
   };
-  const openDispatch = () => { setWoStart((s) => ({ mode: 'board', n: s.n + 1 })); setView('workorders'); setMobileNavOpen(false); };
+  const openJobFrom = (id: string, returnTo: View) => {
+    setWoStart((s) => ({ n: s.n + 1, openId: id, returnTo }));
+    setView('workorders'); window.scrollTo({ top: 0 });
+  };
   const openNewOrder = () => { setModal({ type: 'wo', item: null }); setMobileNavOpen(false); };
+  const scheduleRows: BoardRow[] = useMemo(() => enrichedWOs.map((w) => {
+    const job = wfJobFromOwner(w);
+    return { job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed' };
+  }), [enrichedWOs]);
 
   const NI = ({ k, icon, label }: { k: View; icon: React.ReactNode; label: string }) => (
     <button className={`nav-btn ${view === k ? 'active' : ''}`} onClick={() => navigate(k)}>
@@ -1413,12 +1422,10 @@ Go ahead?`)) return;
               under office with its own drop down page". Every other screen
               is on the Office page, in sections that open and close. */}
           <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
-          <button className={`nav-btn ${view === 'workorders' && woStart.mode === 'board' ? 'active' : ''}`} onClick={openDispatch}>
-            <KanbanSquare size={15} /> Dispatch
-          </button>
+          <NI k="workorders" icon={<KanbanSquare size={15} />} label="Dispatch" />
           <NI k="scheduling" icon={<Calendar size={15} />}  label="Schedule" />
           <button
-            className={`nav-btn ${!officeOpen && view !== 'dashboard' && view !== 'scheduling' && !(view === 'workorders' && woStart.mode === 'board') ? 'active' : ''}`}
+            className={`nav-btn ${!officeOpen && view !== 'dashboard' && view !== 'scheduling' && view !== 'workorders' ? 'active' : ''}`}
             onClick={() => setOfficeOpen((o) => !o)}
             aria-expanded={officeOpen}
           >
@@ -1465,7 +1472,7 @@ Go ahead?`)) return;
                               </a>
                             );
                           }
-                          const active = view === i.view && !(i.view === 'workorders' && woStart.mode === 'board');
+                          const active = view === i.view;
                           return (
                             <button key={i.view} className={`nav-btn ${active ? 'active' : ''}`} onClick={() => navigate(i.view as View)} style={sub}>
                               <OfficeIcon k={i.view} size={14} /> {i.label}
@@ -1566,7 +1573,11 @@ Go ahead?`)) return;
           <ContractorAnalyticsView contractors={contractors} workOrders={enrichedWOs} />
         )}
         {view === 'scheduling' && (
-          <SchedulingView workOrders={enrichedWOs} contractors={contractors} onUpdateWO={updateWorkOrderFields} />
+          <ScheduleBoard
+            rows={scheduleRows}
+            onOpen={(j) => openJobFrom(j.id, 'scheduling')}
+            right={<button className="wf-btn wf-btn-gold wf-btn-sm" onClick={openNewOrder}><Plus size={16} /> New order</button>}
+          />
         )}
         {view === 'dispatch' && (
           <DispatchMapView
@@ -1654,8 +1665,8 @@ Go ahead?`)) return;
         {view === 'workorders' && (
           <WorkOrdersView
             key={`wo-${woStart.n}`}
-            startMode={woStart.mode}
-            onModeChange={(m) => setWoStart((st) => ({ ...st, mode: m === 'board' ? 'board' : 'workflow' }))}
+            startOpenId={woStart.openId}
+            onJobClosed={woStart.returnTo ? () => setView(woStart.returnTo!) : undefined}
             initialSearch={woFromUrl}
             siteVisits={linkedVisits}
             workOrders={enrichedWOs}

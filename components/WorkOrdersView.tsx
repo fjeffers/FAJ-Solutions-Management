@@ -8,9 +8,10 @@ import { WO_STATUSES } from '@/lib/types';
 import EmailModal, { type EmailPayload } from '@/components/EmailModal';
 import { backdropClose } from '@/lib/backdrop';
 import WorkBoard from '@/components/WorkBoard';
-import WorkFlowView, { WorkFlowTop } from '@/components/WorkFlowView';
-import { Dialog, Empty } from '@/components/wf/WfUi';
-import { ownerCounts, wfJobFromOwner, type WfBucket } from '@/lib/wf';
+import WorkFlowView, { OwnerAlerts } from '@/components/WorkFlowView';
+import { Dialog } from '@/components/wf/WfUi';
+import { DispatchBoard, type BoardRow } from '@/components/wf/PrimioScreens';
+import { wfJobFromOwner } from '@/lib/wf';
 import { toastInfo, toastSuccess } from '@/lib/toast';
 
 type Stats = {
@@ -37,13 +38,13 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startMode, onModeChange,
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed,
 }: {
-  /** Tells the menu which view is showing (Dispatch is the Board). */
-  onModeChange?: (m: 'workflow' | 'board' | 'list') => void;
+  /** Open this job straight away (a job tapped on the Schedule). */
+  startOpenId?: string;
+  /** The job opened with startOpenId was closed (back to the Schedule). */
+  onJobClosed?: () => void;
   workOrders: EnrichedWorkOrder[];
-  /** Open on this view instead of the last one used (the menu's Dispatch opens the board). */
-  startMode?: 'workflow' | 'board' | 'list';
   /** Pre-fill the search, so a link can point at one work order. */
   initialSearch?: string;
   /** Visits linked to work orders, so a job can show where it came from. */
@@ -69,31 +70,21 @@ export default function WorkOrdersView({
   /** For the WorkFlow greeting. */
   ownerFirstName?: string;
 }) {
-  // WorkFlow (Fred, 2026-10-02: "rename to WorkFlow, I like it and keep it")
-  // is the default; the board and the original list are one tap away. A new
-  // storage key, so a device that last chose the list still opens on WorkFlow.
-  const [mode, setMode] = useState<'workflow' | 'board' | 'list'>(startMode ?? 'workflow');
-  useEffect(() => {
-    if (startMode) return;
-    try {
-      const m = localStorage.getItem('wo-view-mode-v2');
-      if (m === 'board' || m === 'list') { setMode(m); onModeChange?.(m); }
-    } catch { /* private window */ }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, on opening
-  const chooseMode = (m: 'workflow' | 'board' | 'list') => {
-    setMode(m);
-    onModeChange?.(m);
-    try { localStorage.setItem('wo-view-mode-v2', m); } catch { /* private window */ }
-  };
-  // A number tapped on the Board or List opens that list in WorkFlow.
-  const [startBucket, setStartBucket] = useState<WfBucket | undefined>(undefined);
-  const openBucket = (b: WfBucket) => { setStartBucket(b); chooseMode('workflow'); };
+  // The jobs screen is Primio's Dispatch board (Fred, 2026-10-04: "i asked for
+  // every to mirror primio"); a card opens the job screen.
   const [aiOpen, setAiOpen] = useState(false);
   // The job open on WorkFlow's job screen — from the WorkFlow list or a Board
   // card. A link to one work order (?wo=…) opens it straight away.
-  const [wfOpen, setWfOpen] = useState<string | null>(() =>
-    initialSearch ? workOrders.find((w) => w.wo_number === initialSearch)?.id ?? null : null);
-  const showWf = mode === 'workflow' || wfOpen !== null;
+  const [wfOpen, setWfOpenState] = useState<string | null>(() =>
+    startOpenId ?? (initialSearch ? workOrders.find((w) => w.wo_number === initialSearch)?.id ?? null : null));
+  const setWfOpen = (id: string | null) => {
+    setWfOpenState(id);
+    if (id === null && startOpenId && onJobClosed) onJobClosed();
+  };
+  const boardRows: BoardRow[] = useMemo(() => workOrders.map((w) => {
+    const job = wfJobFromOwner(w);
+    return { job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed' };
+  }), [workOrders]);
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
   // looking at that work order rather than at a list to hunt through.
@@ -124,14 +115,6 @@ export default function WorkOrdersView({
     return acc;
   }, {} as Record<WorkOrderStatus, number>);
 
-  const wfCounts = useMemo(() => ownerCounts(workOrders.map((w) => wfJobFromOwner(w))), [workOrders]);
-  const modeSwitch = (
-    <div role="group" aria-label="How to show work orders" className="wf-filters">
-      {([['workflow', 'WorkFlow'], ['board', 'Board'], ['list', 'List']] as const).map(([m, label]) => (
-        <button key={m} className="wf-filter" aria-pressed={mode === m} onClick={() => chooseMode(m)}>{label}</button>
-      ))}
-    </div>
-  );
 
   const openSendModal = (w: EnrichedWorkOrder) => {
     const names = w.contractor_names?.length ? w.contractor_names : [w.contractor_name].filter(Boolean);
@@ -153,19 +136,7 @@ export default function WorkOrdersView({
 
   return (
     <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
-      {/* ── The same top for Board and List as WorkFlow's (WorkFlowTop) ── */}
-      {!showWf && (
-      <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 16 }}>
-        <WorkFlowTop
-          ownerFirstName={ownerFirstName} counts={wfCounts} owedToTechs={stats.remaining}
-          onAdd={onAdd} onAI={() => setAiOpen(true)}
-          onNeedTech={() => openBucket('available')} onWorkDone={() => openBucket('pending')}
-          modeSwitch={modeSwitch} search={search} onSearch={setSearch}
-        />
-      </div>
-      )}
-
-      {showWf && (
+      {wfOpen ? (
         <div className="wf">
           <WorkFlowView
             workOrders={workOrders}
@@ -173,10 +144,7 @@ export default function WorkOrdersView({
             ownerFirstName={ownerFirstName}
             initialSearch={initialSearch}
             owedToTechs={stats.remaining}
-            modeSwitch={modeSwitch}
-            search={search}
-            onSearch={setSearch}
-            initialBucket={startBucket}
+            modeSwitch={null}
             onAdd={onAdd}
             onAI={() => setAiOpen(true)}
             onEdit={onEdit}
@@ -194,6 +162,16 @@ export default function WorkOrdersView({
             onOpenChange={setWfOpen}
           />
         </div>
+      ) : (
+        <DispatchBoard
+          rows={boardRows}
+          onOpen={(j) => { setWfOpen(j.id); window.scrollTo({ top: 0 }); }}
+          right={<>
+            <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAiOpen(true)}><Sparkles size={15} /> Generate with AI</button>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={onAdd}><Plus size={16} /> New order</button>
+          </>}
+          between={<OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}
+        />
       )}
 
       {aiOpen && (
@@ -204,51 +182,6 @@ export default function WorkOrdersView({
         />
         </div>
       )}
-
-      {!showWf && mode === 'board' && (
-        <>
-          <WorkBoard
-            showKpis={false}
-            workOrders={sorted.filter((w) => w.archived_at === null && matchesSearch(w, search))}
-            owedToTechs={stats.remaining}
-            onEdit={(w) => { setWfOpen(w.id); window.scrollTo({ top: 0 }); }}
-          />
-          <div style={{ fontSize: 12, color: '#888', marginTop: 12 }}>
-            Click a work order to open it in WorkFlow, where sending, paying, closing and archiving are.
-            Closed jobs ({archivedCount}) are in the List view under Closed.
-          </div>
-        </>
-      )}
-
-      {!showWf && mode === 'list' && (<>
-      {/* ── The stages, as WorkFlow chips ── */}
-      <div className="wf" style={{ marginBottom: 16 }}>
-        <div className="wf-filters" role="group" aria-label="Show jobs by stage">
-          {[
-            { key: 'all' as const, label: 'All active', count: activeWOs.length },
-            ...WO_STATUSES.map((s) => ({ key: s, label: s, count: statusCounts[s] })),
-            { key: 'closed' as const, label: 'Closed', count: archivedCount },
-          ].map((t) => (
-            <button key={t.key} className="wf-filter" aria-pressed={woStatusFilter === t.key} onClick={() => setWoStatusFilter(t.key)}>
-              {t.label}<span className="wf-count">{t.count}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      {/* ── Cards ── */}
-      {filtered.length === 0 ? (
-        <div className="wf">
-          <Empty
-            title={workOrders.length === 0 ? 'No jobs yet' : 'No jobs here'}
-            message={search || woStatusFilter !== 'all' ? 'Nothing matches your search or this stage.' : 'Create one with New job.'}
-          />
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((w) => <WOCard key={w.id} w={w} onEdit={onEdit} onDelete={onDelete} onSend={openSendModal} onDuplicate={onDuplicate} onPay={onPay} onSendPortal={onSendPortal} contractors={contractors} onArchive={onArchive} onUnarchive={onUnarchive} onCloseJob={onCloseJob} siteVisits={siteVisits} onReassign={() => setReassigning(w)} />)}
-        </div>
-      )}
-      </>)}
 
       {emailPayload && <EmailModal payload={emailPayload} onClose={() => setEmailPayload(null)} />}
       {reassigning && (

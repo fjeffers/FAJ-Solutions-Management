@@ -22,15 +22,14 @@ export type OfficeItem = {
 };
 export type OfficeGroup = { title: string; items: OfficeItem[] };
 
-/** The screens in the left menu itself — not repeated on the Office page. */
-export const SIDEBAR_VIEWS = ['dashboard', 'scheduling', 'office'] as const;
+/** The screens in the left menu itself — not repeated on the Office page. ('workorders' is Dispatch.) */
+export const SIDEBAR_VIEWS = ['dashboard', 'workorders', 'scheduling', 'office'] as const;
 
 export const OFFICE_GROUPS: OfficeGroup[] = [
   {
     title: 'Every day',
     items: [
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
-      { view: 'workorders', label: 'WorkFlow', hint: 'Every job as a list: assign techs, track, close' },
       { view: 'payables', label: 'Pay Techs', hint: 'What each tech is owed, and paying them' },
       { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },
       { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },

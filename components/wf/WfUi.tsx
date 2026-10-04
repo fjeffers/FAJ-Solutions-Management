@@ -203,11 +203,11 @@ export function Section({ title, subtitle, right, children }: {
   title: string; subtitle?: string; right?: ReactNode; children: ReactNode;
 }) {
   return (
-    <section className="wf-card">
+    <section className="wf-card" style={{ overflow: 'hidden' }}>
       <div className="wf-section-head">
-        <div style={{ minWidth: 0 }}>
-          <h3 className="wf-title" style={{ fontSize: 16 }}>{title}</h3>
-          {subtitle && <div className="wf-subtle" style={{ fontSize: 12 }}>{subtitle}</div>}
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <h3 className="wf-section-title">{title}</h3>
+          {subtitle && <span className="wf-p-label">{subtitle}</span>}
         </div>
         {right}
       </div>

@@ -5,14 +5,16 @@
 // carries money (lib/wf.ts), so there is nothing here to hide from them.
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  ArrowLeft, CalendarDays, CheckCircle2, Circle, Construction, FileCheck2, GraduationCap, KeyRound,
+  ArrowLeft, CalendarDays, CheckCircle2, Circle, FileCheck2, Info, KeyRound,
   Mail, MapPin, Navigation, ParkingSquare, Phone, PlayCircle, RefreshCw, StopCircle, Timer, TriangleAlert, Wrench,
 } from 'lucide-react';
 import {
-  WF_WORK_TYPE_LABEL, workTypeFor, whenText, place, fullAddress, tasksDone, isClockedIn, workedMs,
+  WF_WORK_TYPE_LABEL, workTypeFor, whenText, place, fullAddress, tasksDone, isClockedIn, workedMs, wfStatusLabel,
   formatClock, formatDuration, parseClockTime, fmtClock12, type WfJob, type WfTask,
 } from '@/lib/wf';
-import { Section, StatusChip } from './WfUi';
+import { Section } from './WfUi';
+import { PrimioBar } from './PrimioScreens';
+import { fmtMoney } from '@/lib/utils';
 
 export const mapsSearch = (j: WfJob) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress(j))}`;
 export const mapsDirections = (j: WfJob) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fullAddress(j))}`;
@@ -22,39 +24,64 @@ function InfoItem({ icon, title, lines }: { icon: ReactNode; title: string; line
     <div style={{ display: 'flex', gap: 8, minWidth: 0 }}>
       <span style={{ color: 'var(--wf-gold)', flexShrink: 0, marginTop: 1 }}>{icon}</span>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 13.5 }}>{title}</div>
+        <div style={{ fontWeight: 600, fontSize: 13 }}>{title}</div>
         {lines.filter(Boolean).map((l) => <div key={l} className="wf-subtle" style={{ fontSize: 12.5 }}>{l}</div>)}
       </div>
     </div>
   );
 }
 
-/** Stage, number, full title, and a strip of the key facts. No money. */
+/**
+ * Primio's work order header (widgets/detail/wo_header.dart): the stage badge
+ * and #number, "City - title", the company, then four key facts. The office
+ * also sees who is on it and what the client pays; a tech sees no money.
+ */
 export function DetailHeader({ job, ownerView }: { job: WfJob; ownerView: boolean }) {
   const logged = workedMs(job);
   const type = workTypeFor(job.serviceType, job.title);
+  const city = place(job);
+  const times = [job.startTime, job.endTime].filter(Boolean).map(fmtTime).join(' – ');
   return (
     <div className="wf-card" style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <StatusChip status={job.status} ownerView={ownerView} />
-        <h2 className="wf-title">WO {job.number}</h2>
+        <span style={{ background: 'var(--wf-navy)', color: '#fff', borderRadius: 8, padding: '3px 8px', fontSize: 12, fontWeight: 500 }}>
+          {wfStatusLabel(job.status, ownerView)}
+        </span>
+        <h2 className="wf-title" style={{ fontSize: 20 }}>#{job.number}</h2>
         {ownerView && job.officeStatus && <span className="wf-subtle" style={{ fontSize: 12 }}>Office stage: {job.officeStatus}</span>}
       </div>
-      <div style={{ fontWeight: 600, fontSize: 16, marginTop: 8 }}>{job.title}</div>
-      {job.client && <div className="wf-subtle" style={{ fontSize: 13 }}>{job.client}</div>}
+      <div className="wf-p-title" style={{ marginTop: 8 }}>{city ? `${city} - ${job.title}` : job.title}</div>
+      {job.client && <div className="wf-p-small wf-subtle">Company: {job.client}</div>}
       {ownerView && (
         <div style={{ fontSize: 13, marginTop: 4, color: job.techs.length ? 'var(--wf-subtle)' : 'var(--wf-danger)', fontWeight: job.techs.length ? 400 : 700 }}>
           {job.techs.length ? `Tech: ${job.techs.join(', ')}` : 'No tech yet'}
         </div>
       )}
       <hr style={{ border: 'none', borderTop: '1px solid var(--wf-line)', margin: '12px 0' }} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px 16px' }}>
-        <InfoItem icon={<CalendarDays size={16} />} title="When" lines={[whenText(job), job.endTime ? `Until ${fmtTime(job.endTime)}` : '']} />
-        <InfoItem icon={<MapPin size={16} />} title={place(job) || 'Location'} lines={[job.siteName, job.street]} />
-        <InfoItem icon={<Wrench size={16} />} title={job.serviceType || WF_WORK_TYPE_LABEL[type]} lines={[`${job.priorityLabel} priority`]} />
-        <InfoItem icon={<Timer size={16} />} title="Time logged" lines={[logged ? formatDuration(logged) : 'Not started']} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 16px' }}>
+        <InfoItem icon={<Info size={16} />} title={`Status: ${wfStatusLabel(job.status, ownerView)}`}
+          lines={[`Time logged: ${logged ? formatDuration(logged) : '0m'}`, whenText(job)]} />
+        <InfoItem icon={<MapPin size={16} />} title={`Location: ${city || job.siteName || 'not set'}`} lines={[fullAddress(job)]} />
+        <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], `${job.priorityLabel} priority`]} />
+        <InfoItem icon={<CalendarDays size={16} />} title="Schedule"
+          lines={[times || 'No set time', ownerView && (job.clientPrice ?? 0) > 0 ? `Client pays: ${fmtMoney(job.clientPrice)}` : '']} />
       </div>
     </div>
+  );
+}
+
+/** Primio's InfoListCard: "Label: value" lines under a section title. Empty values are left out. */
+export function InfoListCard({ title, rows }: { title: string; rows: [string, string][] }) {
+  const shown = rows.filter(([, v]) => v);
+  if (shown.length === 0) return null;
+  return (
+    <Section title={title}>
+      {shown.map(([k, v]) => (
+        <div key={k} style={{ marginBottom: 4, fontSize: 13.5, overflowWrap: 'anywhere' }}>
+          <b>{k}:</b> {v}
+        </div>
+      ))}
+    </Section>
   );
 }
 
@@ -112,9 +139,7 @@ export function SiteInfoCard({ job }: { job: WfJob }) {
   if (job.access) rows.push([<KeyRound key="a" size={16} />, 'How to get in', job.access]);
   if (job.parking) rows.push([<ParkingSquare key="p" size={16} />, 'Parking', job.parking]);
   if (job.special) rows.push([<TriangleAlert key="s" size={16} color="var(--wf-warning)" />, 'Special instructions', job.special]);
-  if (job.tools) rows.push([<Construction key="t" size={16} />, 'Tools to bring', job.tools]);
   if (job.deliverables) rows.push([<FileCheck2 key="d" size={16} />, 'Deliverables', job.deliverables]);
-  if (job.skills) rows.push([<GraduationCap key="k" size={16} />, 'Skills needed', job.skills]);
   const hasContact = !!(job.pocName || job.pocPhone || job.pocEmail);
   if (!rows.length && !hasContact) return null;
   return (
@@ -244,17 +269,16 @@ export default function WfJobDetail({
 }) {
   return (
     <div className="wf-rise">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        {/* The WO number is in the header card below; saying it twice was clutter. */}
-        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onBack} aria-label="Back to the list">
-          <ArrowLeft size={17} /> Back
-        </button>
-        <div style={{ flex: 1 }} />
-        {onRefresh && (
-          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onRefresh} disabled={refreshing} aria-label="Refresh">
-            <RefreshCw size={17} className={refreshing ? 'spin' : undefined} />
-          </button>
-        )}
+      <div style={{ marginBottom: 12 }}>
+        <PrimioBar
+          title="Work order"
+          left={<button className="wf-back-round" onClick={onBack} aria-label="Back to the list" title="Back"><ArrowLeft size={20} /></button>}
+          right={onRefresh && (
+            <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onRefresh} disabled={refreshing} aria-label="Refresh">
+              <RefreshCw size={17} className={refreshing ? 'spin' : undefined} />
+            </button>
+          )}
+        />
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -263,6 +287,13 @@ export default function WfJobDetail({
         <div className="wf-detail-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
             {clock && <div className="wf-only-narrow">{clock}</div>}
+            <InfoListCard title="Overview" rows={[
+              ['Company', job.client], ['Work order ID', job.number], ['Site', job.siteName], ['Priority', job.priorityLabel],
+            ]} />
+            <InfoListCard title="Work Experience" rows={[
+              ['Type of work', job.serviceType || WF_WORK_TYPE_LABEL[workTypeFor(job.serviceType, job.title)]],
+              ['Skills needed', job.skills], ['Tools to bring', job.tools],
+            ]} />
             <DescriptionCard job={job} />
             <SiteInfoCard job={job} />
             <ChecklistCard job={job} onToggle={onToggleTask} />
@@ -270,9 +301,9 @@ export default function WfJobDetail({
             <LocationCard job={job} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-            {clock && <div className="wf-only-wide">{clock}</div>}
             {side}
             <ScheduleCard job={job} />
+            {clock && <div className="wf-only-wide">{clock}</div>}
           </div>
         </div>
       </div>

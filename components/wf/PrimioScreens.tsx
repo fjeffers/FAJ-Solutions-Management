@@ -94,7 +94,12 @@ function StatTile({ label, value, color, onClick, active }: {
         borderColor: active ? 'var(--wf-gold)' : undefined, boxShadow: active ? 'inset 0 0 0 1px var(--wf-gold)' : undefined,
       }}>
       <div className="wf-p-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-      <div className="wf-p-headline" style={{ color, marginTop: 4 }}>{value}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6, marginTop: 4 }}>
+        <span className="wf-p-headline" style={{ color }}>{value}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: active ? 'var(--wf-gold)' : 'var(--wf-navy)', whiteSpace: 'nowrap' }}>
+          {active ? 'Showing' : 'View'} <ChevronRight size={13} style={{ verticalAlign: '-2px' }} />
+        </span>
+      </div>
     </button>
   );
 }

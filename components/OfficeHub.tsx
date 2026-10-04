@@ -1,27 +1,33 @@
 'use client';
 // The Office hub (Fred, 2026-10-04 — Primio's Office screen): every screen in
 // the owner app on one page, grouped like the sidebar, with a search box.
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Award, BarChart3, BookOpen, Building2, Calendar, ChevronDown, ClipboardCheck, ClipboardList, CreditCard, ExternalLink, FileCheck2, Plus, SquarePlus,
   FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, Network, Package, Receipt, Search, Settings, ShieldCheck,
-  Timer, TrendingUp, UserCog, Users, Wallet, Workflow, Wrench,
+  Timer, TrendingUp, UserCog, Users, Wallet, Workflow, Wrench, type LucideIcon,
 } from 'lucide-react';
 import { OFFICE_GROUPS, searchOffice, type OfficeItem } from '@/lib/office-menu';
 import { Empty, Hero } from '@/components/wf/WfUi';
 
-const ICON: Record<string, ReactNode> = {
-  'new-order': <SquarePlus size={20} />,
-  dashboard: <BarChart3 size={20} />, sitelog: <Timer size={20} />, workorders: <Workflow size={20} />,
-  payables: <Wallet size={20} />, team: <UserCog size={20} />, support: <LifeBuoy size={20} />, 'import-queue': <Inbox size={20} />,
-  payments: <CreditCard size={20} />, financials: <TrendingUp size={20} />, ledger: <BookOpen size={20} />,
-  customers: <Building2 size={20} />, quickbooks: <TrendingUp size={20} />, netview: <FileText size={20} />, invoices: <Receipt size={20} />,
-  contractors: <Users size={20} />, 'contractor-analytics': <Award size={20} />, 'portal-admin': <ShieldCheck size={20} />,
-  statements: <FileText size={20} />, '1099': <ClipboardCheck size={20} />, w9: <BookOpen size={20} />,
-  surveys: <ClipboardList size={20} />, quotes: <FileSignature size={20} />, contracts: <FileCheck2 size={20} />,
-  scheduling: <Calendar size={20} />, dispatch: <MapIcon size={20} />,
-  materials: <Package size={20} />, maintenance: <Wrench size={20} />, network: <Network size={20} />, settings: <Settings size={20} />,
+const ICONS: Record<string, LucideIcon> = {
+  'new-order': SquarePlus,
+  dashboard: BarChart3, sitelog: Timer, workorders: Workflow,
+  payables: Wallet, team: UserCog, support: LifeBuoy, 'import-queue': Inbox,
+  payments: CreditCard, financials: TrendingUp, ledger: BookOpen,
+  customers: Building2, quickbooks: TrendingUp, netview: FileText, invoices: Receipt,
+  contractors: Users, 'contractor-analytics': Award, 'portal-admin': ShieldCheck,
+  statements: FileText, '1099': ClipboardCheck, w9: BookOpen,
+  surveys: ClipboardList, quotes: FileSignature, contracts: FileCheck2,
+  scheduling: Calendar, dispatch: MapIcon,
+  materials: Package, maintenance: Wrench, network: Network, settings: Settings,
 };
+
+/** A screen's icon, by view (or 'netview' / 'new-order'). Also used by the left menu. */
+export function OfficeIcon({ k, size = 20 }: { k: string; size?: number }) {
+  const Icon = ICONS[k] ?? FileText;
+  return <Icon size={size} />;
+}
 
 export default function OfficeHub({ onOpen, onNewOrder, netviewUrl, badges = {} }: {
   onOpen: (view: string) => void;
@@ -53,7 +59,7 @@ export default function OfficeHub({ onOpen, onNewOrder, netviewUrl, badges = {} 
           width: 40, height: 40, borderRadius: 10, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(14,27,46,0.06)', color: 'var(--wf-navy)',
         }}>
-          {ICON[key]}
+          <OfficeIcon k={key} />
         </span>
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 14.5 }}>

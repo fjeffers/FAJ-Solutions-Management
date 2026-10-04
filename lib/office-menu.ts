@@ -85,6 +85,11 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
   },
 ];
 
+/** The Office section a screen is in ("Money"…), or null for the left menu's own. */
+export function officeGroupOf(view: string): string | null {
+  return OFFICE_GROUPS.find((g) => g.items.some((i) => i.view === view))?.title ?? null;
+}
+
 /** Every word typed must appear in the name, the hint or the group. */
 export function searchOffice(groups: OfficeGroup[], query: string): OfficeGroup[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);

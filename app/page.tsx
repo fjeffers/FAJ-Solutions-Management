@@ -8,7 +8,7 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
-import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, KanbanSquare } from 'lucide-react';
+import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, KanbanSquare, ChevronRight } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -57,7 +57,8 @@ import { quoteFromSurvey } from '@/lib/surveys';
 import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
-import OfficeHub from '@/components/OfficeHub';
+import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
+import { OFFICE_GROUPS, officeGroupOf } from '@/lib/office-menu';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
@@ -79,39 +80,6 @@ function viewFromUrl(): View {
   return VIEWS.includes(v as View) ? (v as View) : 'dashboard';
 }
 
-// Which sidebar dropdown each view lives under — used to auto-open the right
-// section when navigating (including via search, dashboard links, or the URL).
-/**
- * Which collapsible section a view lives in — 'daily' meaning none, because
- * those five sit above the sections and are always on screen.
- *
- * The sidebar used to give a feature with 83 rows the same weight as one with
- * none, and buried the Site Log fifth under Field Ops even though it is where
- * every job starts. Only one section can be open at a time, so the ordinary
- * round of Site Log → Work Order → pay the tech meant collapsing and opening
- * a section at each step.
- *
- * So the daily loop is always visible and everything else is grouped by what
- * it is for. Nothing was removed: every screen that existed still exists.
- */
-const SECTION_OF_VIEW: Record<View, string> = {
-  // Always on screen — the round Fred actually does.
-  dashboard: 'daily', sitelog: 'daily', workorders: 'daily', scheduling: 'daily',
-  payables: 'daily', 'import-queue': 'daily', team: 'daily', support: 'daily', office: 'daily',
-
-  payments: 'money', financials: 'money', ledger: 'money',
-  customers: 'money', quickbooks: 'money', invoices: 'money',
-
-  contractors: 'techs', 'contractor-analytics': 'techs', 'portal-admin': 'techs',
-  statements: 'techs', '1099': 'techs', w9: 'techs',
-
-  surveys: 'pipeline', quotes: 'pipeline', contracts: 'pipeline',
-  dispatch: 'pipeline',
-
-  materials: 'onsite', maintenance: 'onsite', network: 'onsite',
-
-  settings: 'settings',
-} as Record<View, string>;
 
 type Modal =
   | { type: 'contractor'; item: Contractor | null }
@@ -129,7 +97,7 @@ export default function HomePage() {
   const [view, setViewState] = useState<View>(viewFromUrl);
   const setView = (v: View) => {
     setViewState(v);
-    setOpenSection(SECTION_OF_VIEW[v]);
+    openOfficeFor(v);
     const url = v === 'dashboard' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
     window.history.pushState(null, '', url);
   };
@@ -137,7 +105,7 @@ export default function HomePage() {
     const onPop = () => {
       const v = viewFromUrl();
       setViewState(v);
-      setOpenSection(SECTION_OF_VIEW[v]);
+      openOfficeFor(v);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -152,13 +120,19 @@ export default function HomePage() {
       .then(({ count }) => setSupportCount(count ?? 0));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once on load; the inbox keeps it current
   const [searchOpen, setSearchOpen] = useState(false);
-  // Dropdown-style nav: one section open at a time; the section holding the
-  // current view opens automatically, clicking a header toggles it.
-  const [openSection, setOpenSection] = useState<string | null>(() => SECTION_OF_VIEW[viewFromUrl()]);
+  // The left menu's Office dropdown (Fred, 2026-10-04: "make it a drop down
+  // menu under office and then drop down after that to the rest"). Office
+  // opens to its sections; one section open at a time. Going to a screen opens
+  // the Office dropdown and the section that holds it.
+  const [officeOpen, setOfficeOpen] = useState<boolean>(() => officeGroupOf(viewFromUrl()) !== null);
+  const [openSection, setOpenSection] = useState<string | null>(() => officeGroupOf(viewFromUrl()));
+  function openOfficeFor(v: View) {
+    const g = officeGroupOf(v);
+    if (g) { setOfficeOpen(true); setOpenSection(g); }
+  }
   // Read once on mount: the board should open on the linked work order, but
   // must not keep re-filtering itself as the user then searches for something else.
   const [woFromUrl] = useState<string>(() => woFromUrlParam());
-  const sectionOpen = (k: string) => openSection === k;
   const toggleSection = (k: string) => setOpenSection((prev) => (prev === k ? null : k));
   const [selectedContractor, setSelectedContractor] = useState<string | null>(null);
   const [taxYear, setTaxYear] = useState<number>(new Date().getFullYear());
@@ -1444,8 +1418,9 @@ Go ahead?`)) return;
           </button>
           <NI k="scheduling" icon={<Calendar size={15} />}  label="Schedule" />
           <button
-            className={`nav-btn ${view !== 'dashboard' && view !== 'scheduling' && !(view === 'workorders' && woStart.mode === 'board') ? 'active' : ''}`}
-            onClick={() => navigate('office')}
+            className={`nav-btn ${!officeOpen && view !== 'dashboard' && view !== 'scheduling' && !(view === 'workorders' && woStart.mode === 'board') ? 'active' : ''}`}
+            onClick={() => setOfficeOpen((o) => !o)}
+            aria-expanded={officeOpen}
           >
             <LayoutGrid size={15} /> Office
             {supportCount + pendingImportCount > 0 && (
@@ -1456,7 +1431,57 @@ Go ahead?`)) return;
                 {supportCount + pendingImportCount}
               </span>
             )}
+            <ChevronDown size={14} style={{ marginLeft: 'auto', transform: officeOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
           </button>
+          {officeOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 10 }}>
+              <button className={`nav-btn ${view === 'office' ? 'active' : ''}`} onClick={() => navigate('office')} style={{ padding: '9px 14px', fontSize: 13 }}>
+                <Search size={14} /> All of Office
+              </button>
+              {OFFICE_GROUPS.map((g) => {
+                const open = openSection === g.title;
+                const waiting = g.items.reduce((n, i) => n + (i.view === 'support' ? supportCount : i.view === 'import-queue' ? pendingImportCount : 0), 0);
+                return (
+                  <div key={g.title}>
+                    <button className="nav-btn" onClick={() => toggleSection(g.title)} aria-expanded={open}
+                      style={{ padding: '9px 14px', fontSize: 13, fontWeight: 700, width: '100%' }}>
+                      <ChevronRight size={13} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                      {g.title}
+                      {!open && waiting > 0 && (
+                        <span style={{ background: 'var(--gold)', color: '#0E1B2E', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4 }}>{waiting}</span>
+                      )}
+                    </button>
+                    {open && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 16 }}>
+                        {g.items.map((i) => {
+                          const count = i.view === 'support' ? supportCount : i.view === 'import-queue' ? pendingImportCount : 0;
+                          const sub = { padding: '8px 12px', fontSize: 13 };
+                          if (!i.view) {
+                            return (
+                              <a key={i.label} className="nav-btn" href={NETVIEW_FORM_URL} target="_blank" rel="noopener noreferrer"
+                                title="Opens NetView's vendor payment form in a new tab. Tip: open a NetView work order and use 'Submit to Netview' there to get the form pre-filled."
+                                style={{ ...sub, textDecoration: 'none' }} onClick={() => setMobileNavOpen(false)}>
+                                <OfficeIcon k="netview" size={14} /> {i.label}
+                              </a>
+                            );
+                          }
+                          const active = view === i.view && !(i.view === 'workorders' && woStart.mode === 'board');
+                          return (
+                            <button key={i.view} className={`nav-btn ${active ? 'active' : ''}`} onClick={() => navigate(i.view as View)} style={sub}>
+                              <OfficeIcon k={i.view} size={14} /> {i.label}
+                              {count > 0 && (
+                                <span style={{ background: 'var(--gold)', color: '#0E1B2E', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4 }}>{count}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </nav>
 
         {/* Utility buttons */}

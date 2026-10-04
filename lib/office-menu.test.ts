@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { OFFICE_GROUPS, SIDEBAR_VIEWS, searchOffice } from './office-menu';
+import { OFFICE_GROUPS, SIDEBAR_VIEWS, officeGroupOf, searchOffice } from './office-menu';
 
 /** The view names in app/page.tsx's VIEWS list. */
 function appViews(): string[] {
@@ -17,6 +17,12 @@ describe('Office hub', () => {
     const views = appViews();
     expect(views.length).toBeGreaterThan(20);
     expect([...listed, ...SIDEBAR_VIEWS].sort()).toEqual([...views].sort());
+  });
+
+  it('knows which Office section a screen is in', () => {
+    expect(officeGroupOf('payments')).toBe('Money');
+    expect(officeGroupOf('sitelog')).toBe('Every day');
+    expect(officeGroupOf('dashboard')).toBeNull();
   });
 
   it('search matches name, hint and group, every word', () => {

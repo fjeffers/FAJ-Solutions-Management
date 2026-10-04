@@ -1,0 +1,93 @@
+// The Office hub — every screen in the owner app on one page, with a search
+// box (Fred, 2026-10-04: "can workflow update to what you see" — Primio's
+// Office screen — "everything"). Same groups as the sidebar. Handiest on a
+// phone, where the sidebar hides behind the menu button.
+//
+// lib/office-menu.test.ts checks that every screen in app/page.tsx is listed
+// here, so a new screen can't be left off the hub.
+
+export type OfficeItem = {
+  /** The owner app view it opens; null for a link to another site. */
+  view: string | null;
+  href?: string;
+  label: string;
+  hint: string;
+};
+export type OfficeGroup = { title: string; items: OfficeItem[] };
+
+export const OFFICE_GROUPS: OfficeGroup[] = [
+  {
+    title: 'Every day',
+    items: [
+      { view: 'dashboard', label: 'Dashboard', hint: 'The day at a glance: money, jobs and what needs you' },
+      { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
+      { view: 'workorders', label: 'WorkFlow', hint: 'Every job: assign techs, track, close' },
+      { view: 'payables', label: 'Pay Techs', hint: 'What each tech is owed, and paying them' },
+      { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },
+      { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },
+      { view: 'import-queue', label: 'Import', hint: 'Work orders from email and spreadsheets waiting to come in' },
+    ],
+  },
+  {
+    title: 'Money',
+    items: [
+      { view: 'payments', label: 'Payments Made', hint: 'History of payments sent to techs' },
+      { view: 'financials', label: 'Financials', hint: 'Revenue, profit and trends' },
+      { view: 'ledger', label: 'Ledger', hint: 'Income and expense ledger' },
+      { view: 'customers', label: 'Customers', hint: 'Clients and what each one brings in' },
+      { view: 'quickbooks', label: 'QuickBooks', hint: 'Connection to QuickBooks' },
+      { view: null, href: 'netview', label: 'NetView Invoice', hint: "NetView's vendor payment form (opens their site)" },
+      { view: 'invoices', label: 'Invoices', hint: 'Client invoices and money received' },
+    ],
+  },
+  {
+    title: 'Techs',
+    items: [
+      { view: 'contractors', label: 'Contractors', hint: 'Your techs: contact details, on hold, paperwork' },
+      { view: 'contractor-analytics', label: 'Performance', hint: 'Jobs done and on-time record per tech' },
+      { view: 'portal-admin', label: 'Portal & Review', hint: 'Tech portal logins and sign-up review' },
+      { view: 'statements', label: 'Statements', hint: 'Pay statements for techs' },
+      { view: '1099', label: '1099s', hint: 'Year-end 1099 reports' },
+      { view: 'w9', label: 'W-9s', hint: 'W-9 forms on file' },
+    ],
+  },
+  {
+    title: 'Winning work',
+    items: [
+      { view: 'surveys', label: 'Surveys', hint: 'Site surveys and what they found' },
+      { view: 'quotes', label: 'Quotes', hint: 'Quotes for clients, built from surveys' },
+      { view: 'contracts', label: 'Contracts', hint: 'Contracts and signed agreements' },
+      { view: 'scheduling', label: 'Scheduling', hint: 'Calendar of jobs and techs' },
+      { view: 'dispatch', label: 'Dispatch Map', hint: 'Techs and jobs on a map' },
+    ],
+  },
+  {
+    title: 'On site',
+    items: [
+      { view: 'materials', label: 'Materials', hint: 'Stock, and materials used on jobs' },
+      { view: 'maintenance', label: 'Maintenance', hint: 'Recurring maintenance visits' },
+      { view: 'network', label: 'Network', hint: 'Network equipment and site records' },
+    ],
+  },
+  {
+    title: 'Settings',
+    items: [
+      { view: 'settings', label: 'Settings', hint: 'Company details and preferences' },
+    ],
+  },
+];
+
+/** Every word typed must appear in the name, the hint or the group. */
+export function searchOffice(groups: OfficeGroup[], query: string): OfficeGroup[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return groups;
+  return groups
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((i) => {
+        const text = `${i.label} ${i.hint} ${g.title}`.toLowerCase();
+        return words.every((w) => text.includes(w));
+      }),
+    }))
+    .filter((g) => g.items.length > 0);
+}

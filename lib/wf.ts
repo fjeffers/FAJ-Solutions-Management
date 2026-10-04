@@ -11,6 +11,10 @@
 // the money rules live.
 import type { EnrichedWorkOrder } from './types';
 import { todayISO } from './utils';
+import {
+  parseCloseout, parseTimeRequest, parseTimeRequests, applyCloseoutOp,
+  type Closeout, type CloseoutOp, type TimeRequest,
+} from './closeout';
 
 export type WfStatus = 'open' | 'offered' | 'scheduled' | 'inProgress' | 'workDone' | 'closed' | 'declined';
 
@@ -95,6 +99,12 @@ export type WfJob = {
   closeoutNotes: string;
   /** Owner only: each tech's own answer to the offer ('accepted' / 'declined'). */
   answers: Record<string, string>;
+  /** Deliverables ticked, delays, customer sign-off (migration-105). */
+  closeout: Closeout;
+  /** Tech only: their own ask for another date and time. */
+  myTimeRequest: TimeRequest | null;
+  /** Owner only: every tech's ask for another time, by name. */
+  timeRequests: Record<string, TimeRequest>;
   archived: boolean;
   /** Owner only. Null on a tech's job — a tech never sees money. */
   clientPrice: number | null;
@@ -209,6 +219,9 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     checkedOutAt: s(r, 'checked_out_at') || null,
     closeoutNotes: s(r, 'closeout_notes'),
     answers: {},
+    closeout: parseCloseout(r.closeout),
+    myTimeRequest: owner ? null : parseTimeRequest(r.my_time_request),
+    timeRequests: owner ? parseTimeRequests(r.time_requests) : {},
     archived: !!s(r, 'archived_at'),
     clientPrice: owner && Number.isFinite(price) ? price : null,
   };
@@ -329,6 +342,14 @@ export function whenText(j: WfJob, today: string = todayISO()): string {
   return t ? `${rel} · ${day}, ${fmtClock12(t)}` : `${rel} · ${day}`;
 }
 
+/** "Thu Oct 9, 6:00 PM" — the date and time a tech asked for. */
+export function requestWhen(r: { date: string; time: string }): string {
+  const d = new Date(`${r.date}T12:00:00Z`);
+  const day = `${DOW[d.getUTCDay()]} ${MON[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  const t = parseClockTime(r.time);
+  return t ? `${day}, ${fmtClock12(t)}` : day;
+}
+
 /** "2h 05m" style for summaries. */
 export function formatDuration(ms: number): string {
   const mins = Math.floor(ms / 60_000);
@@ -417,6 +438,16 @@ export function answered(j: WfJob, accept: boolean): WfJob {
   return { ...j, status: accept ? 'scheduled' : 'declined' };
 }
 
+/** A closeout change shows at once, signal or not. */
+export function withCloseout(j: WfJob, op: CloseoutOp): WfJob {
+  return { ...j, closeout: applyCloseoutOp(j.closeout, op) };
+}
+
+/** An ask for another time (null: taken back) shows at once. */
+export function withTimeRequest(j: WfJob, req: TimeRequest | null): WfJob {
+  return { ...j, myTimeRequest: req };
+}
+
 /** Notes and answers saved on the phone show at once, signal or not. */
 export function withReport(j: WfJob, notes: string | null, answers: Record<string, string>): WfJob {
   return {
@@ -452,6 +483,8 @@ export function wfReasonText(reason: string, name?: string): string {
   switch (reason) {
     case 'closed_or_not_yours': return 'That job is closed or no longer yours.';
     case 'not_your_job': return 'That job is no longer assigned to you.';
+    case 'bad_closeout': return "That closeout entry wasn't complete. Check it and try again.";
+    case 'bad_date': return 'Pick a date from today on.';
     case 'already_taken': return 'Someone else already took that job.';
     case 'no_such_task': return 'That checklist item was changed in the office. Pull down to refresh.';
     case 'not_owner': return 'Only the owner can do that.';

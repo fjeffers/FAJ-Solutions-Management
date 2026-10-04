@@ -5,9 +5,10 @@
 // they still count with no signal.
 import { createClient } from '@/lib/supabase/client';
 import {
-  wfJobFromTech, clockedIn, clockedOut, withTask, answered, markedWorkDone, withReport, wfReasonText,
-  type WfJob,
+  wfJobFromTech, clockedIn, clockedOut, withTask, answered, markedWorkDone, withReport, withCloseout, withTimeRequest,
+  wfReasonText, type WfJob,
 } from './wf';
+import { closeoutOpFrom } from './closeout';
 import { RefusedError, isNoSignal, type Outbox, type PendingAction } from './wf-outbox';
 import type { TechJob } from './types';
 
@@ -48,6 +49,20 @@ export function registerTechHandlers(box: Outbox): void {
   });
   box.register('task', async (a) => {
     await call('wf_set_task', { p_wo_number: a.number, p_task_id: a.task, p_done: a.done });
+  });
+  // Closeout: one change at a time, applied on the server (migration-105), so
+  // two techs on one job never wipe each other's ticks. The tap time signs.
+  box.register('closeout', async (a, at) => {
+    await call('wf_tech_closeout', {
+      p_wo_number: a.number, p_op: a.op,
+      p_args: a.args && typeof a.args === 'object' ? a.args : {}, p_at: at.toISOString(),
+    });
+  });
+  // Ask for another date and time on an offer (no date: take the ask back).
+  box.register('timeRequest', async (a) => {
+    await call('wf_tech_request_time', {
+      p_wo_number: a.number, p_date: a.date || null, p_time: a.time || null, p_note: a.note || null,
+    });
   });
   box.register('respond', async (a) => {
     await call('tech_respond_to_job', { p_wo_number: a.number, p_response: a.accept ? 'accepted' : 'declined' });
@@ -90,6 +105,13 @@ export function applyPending(jobs: WfJob[], pending: PendingAction[]): WfJob[] {
         case 'workdone': return markedWorkDone(j, String(p.args.notes ?? ''), at);
         case 'report': return withReport(j, typeof p.args.notes === 'string' ? p.args.notes : null,
           (p.args.answers && typeof p.args.answers === 'object' ? p.args.answers : {}) as Record<string, string>);
+        case 'closeout': {
+          const op = closeoutOpFrom(String(p.args.op ?? ''), (p.args.args ?? {}) as Record<string, unknown>, p.at);
+          return op ? withCloseout(j, op) : j;
+        }
+        case 'timeRequest': return withTimeRequest(j, p.args.date
+          ? { date: String(p.args.date), time: String(p.args.time ?? ''), note: String(p.args.note ?? ''), at: p.at, state: 'waiting' }
+          : null);
         default: return j;
       }
     });

@@ -8,7 +8,7 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
-import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy } from 'lucide-react';
+import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -57,12 +57,13 @@ import { quoteFromSurvey } from '@/lib/surveys';
 import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
+import OfficeHub from '@/components/OfficeHub';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
-  'team', 'support',
+  'team', 'support', 'office',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -96,7 +97,7 @@ function viewFromUrl(): View {
 const SECTION_OF_VIEW: Record<View, string> = {
   // Always on screen — the round Fred actually does.
   dashboard: 'daily', sitelog: 'daily', workorders: 'daily',
-  payables: 'daily', 'import-queue': 'daily', team: 'daily', support: 'daily',
+  payables: 'daily', 'import-queue': 'daily', team: 'daily', support: 'daily', office: 'daily',
 
   payments: 'money', financials: 'money', ledger: 'money',
   customers: 'money', quickbooks: 'money', invoices: 'money',
@@ -1469,6 +1470,8 @@ Go ahead?`)) return;
               Every day
             </div>
             <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
+            {/* Fred, 2026-10-04: Primio's Office screen — every screen on one page, with search. */}
+            <NI k="office"     icon={<LayoutGrid size={15} />} label="Office" />
             <NI k="sitelog"    icon={<Timer size={15} />}     label="Site Log" />
             {/* Fred, 2026-10-02: "rename to WorkFlow, I like it and keep it". */}
             <NI k="workorders" icon={<Workflow size={15} />} label="WorkFlow" />
@@ -1686,6 +1689,13 @@ Go ahead?`)) return;
             onDelete={deleteInvoice}
             onRecordPayment={recordInvoicePayment}
             onDeletePayment={deleteInvoicePayment}
+          />
+        )}
+        {view === 'office' && (
+          <OfficeHub
+            onOpen={(v) => navigate(v as View)}
+            netviewUrl={NETVIEW_FORM_URL}
+            badges={{ support: supportCount, 'import-queue': pendingImportCount }}
           />
         )}
         {view === 'support' && (

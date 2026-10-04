@@ -250,6 +250,12 @@ export type WorkOrder = {
   // Accept/decline per tech (migration-056): name -> { status, at }
   assignment_responses: Record<string, AssignmentResponse> | null;
 
+  // Job closeout and techs asking for another time (migration-105). Read with
+  // lib/closeout.ts; written by the tech portal's server functions, and by
+  // WorkFlow when Fred answers a time request. Not part of the Edit job save.
+  closeout?: unknown;
+  time_requests?: unknown;
+
   // Soft-archive (migration-013)
   archived_at: string | null;
 

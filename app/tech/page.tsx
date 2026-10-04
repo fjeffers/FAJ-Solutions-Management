@@ -24,8 +24,11 @@ import {
 } from '@/lib/wf-outbox';
 import {
   techCounts, matchesWf, sortWf, bucketOf, bucketCounts, canWork, isClockedIn, isFinished, formatDuration,
-  fullAddress, reportMissing, crewBucket, type WfBucket, type WfJob, type WfQuestion, type WfTask,
+  fullAddress, reportMissing, crewBucket, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL,
+  type WfBucket, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
 } from '@/lib/wf';
+import { closeoutArgs, closeoutMissing, deliverablesFor, type CloseoutOp } from '@/lib/closeout';
+import CloseoutCard from '@/components/wf/Closeout';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
@@ -44,11 +47,12 @@ import {
 } from '@/lib/crew-portal';
 import { SITE_STATUS_META, crewReason } from '@/lib/crew';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
-import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
+import { Banner, BucketTabs, Dialog, Empty, Filters, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
+import SignaturePad from '@/components/wf/SignaturePad';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  ArrowLeft, Briefcase, CalendarDays, Camera, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  ArrowLeft, Briefcase, CalendarClock, CalendarDays, Camera, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
   RefreshCw, Save, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X,
 } from 'lucide-react';
 
@@ -663,8 +667,17 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, bucket, s
   onOpen: (id: string) => void; go: (t: Tab) => void;
 }) {
   const [search, setSearch] = useState('');
+  const [workType, setWorkType] = useState<WfWorkType | 'all'>('all');
   const searched = jobs.filter((j) => bucketOf(j.status) !== null && matchesWf(j, search));
-  const shown = sortWf(searched.filter((j) => bucketOf(j.status) === bucket));
+  const inBucket = searched.filter((j) => bucketOf(j.status) === bucket);
+  // Work type chips (Primio's Available filters, without the pay filter — Fred:
+  // "No pay for techs"). Shown when the list has more than one kind of work.
+  const typeCounts = new Map<WfWorkType, number>();
+  for (const j of inBucket) { const t = workTypeFor(j.serviceType, j.title); typeCounts.set(t, (typeCounts.get(t) ?? 0) + 1); }
+  const typeOptions = (Object.keys(WF_WORK_TYPE_LABEL) as WfWorkType[])
+    .filter((t) => typeCounts.has(t)).map((t) => ({ key: t, label: WF_WORK_TYPE_LABEL[t], count: typeCounts.get(t) ?? 0 }));
+  const type = workType !== 'all' && typeCounts.has(workType) ? workType : 'all';
+  const shown = sortWf(inBucket.filter((j) => type === 'all' || workTypeFor(j.serviceType, j.title) === type));
   const crewItems = crewList(crew).filter((c) => matchesCrew(c, search));
   const crewShown = crewItems.filter((c) => c.bucket === bucket);
   const tabCounts = bucketCounts(searched);
@@ -713,6 +726,9 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, bucket, s
       <BucketTabs value={bucket} counts={tabCounts} onChange={setBucket} />
       <input className="wf-input" value={search} onChange={(e) => setSearch(e.target.value)}
         placeholder="Search WO number, client, city…" aria-label="Search your jobs" />
+      {typeOptions.length > 1 && (
+        <Filters value={type} options={typeOptions} onChange={setWorkType} allLabel="All work" ariaLabel="Show jobs by type of work" />
+      )}
       {crewShown.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 400px), 1fr))', gap: 12 }}>
           {crewShown.map((c, i) => (
@@ -741,8 +757,9 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, bucket, s
 // ── Accept / Not interested ─────────────────────────────────────────────────
 
 function OfferButtons({ job, act }: { job: WfJob; act: (a: PendingAction, sent?: string) => Promise<void> }) {
+  const [askOpen, setAskOpen] = useState(false);
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button className="wf-btn wf-btn-outline" style={{ flex: 1 }}
         onClick={() => {
           if (!confirm(`Not interested in WO ${job.number}? It goes back to the office so Fred can give it to someone else.`)) return;
@@ -750,11 +767,65 @@ function OfferButtons({ job, act }: { job: WfJob; act: (a: PendingAction, sent?:
         }}>
         <ThumbsDown size={16} /> Not interested
       </button>
+      {/* Fred, 2026-10-04: counter-offers from Primio, but never about pay —
+          a tech can only ask for another date and time. */}
+      <button className="wf-btn wf-btn-outline" style={{ flex: 1 }} onClick={() => setAskOpen(true)}>
+        <CalendarClock size={16} /> Another time
+      </button>
       <button className="wf-btn wf-btn-gold" style={{ flex: 2 }}
         onClick={() => void act(makeAction('respond', { number: job.number, accept: true }, `Accept WO ${job.number}`), 'Accepted. It is in My jobs.')}>
         <ThumbsUp size={16} /> Accept
       </button>
+      {askOpen && <TimeRequestDialog job={job} act={act} onClose={() => setAskOpen(false)} />}
     </div>
+  );
+}
+
+/** Ask Fred for another date and time on an offer, with a note. Never pay. */
+function TimeRequestDialog({ job, act, onClose }: {
+  job: WfJob; act: (a: PendingAction, sent?: string) => Promise<void>; onClose: () => void;
+}) {
+  const mine = job.myTimeRequest?.state === 'waiting' ? job.myTimeRequest : null;
+  const today = new Date();
+  const minDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const [date, setDate] = useState(mine?.date ?? '');
+  const [time, setTime] = useState(mine?.time ?? '');
+  const [note, setNote] = useState(mine?.note ?? '');
+  const send = (withdraw: boolean) => {
+    onClose();
+    void act(
+      makeAction('timeRequest', withdraw ? { number: job.number, date: null } : { number: job.number, date, time, note: note.trim() },
+        withdraw ? `Take back the time ask on WO ${job.number}` : `Ask for another time on WO ${job.number}`),
+      withdraw ? 'Ask taken back.' : 'Sent to Fred. His answer shows on the job.',
+    );
+  };
+  return (
+    <Dialog title="Ask for another time" onClose={onClose}
+      footer={<>
+        {mine && <button className="wf-btn wf-btn-ghost" onClick={() => send(true)}>Take back my ask</button>}
+        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="wf-btn wf-btn-navy" disabled={!date || date < minDate} onClick={() => send(false)}>
+          <Send size={16} /> Send to Fred
+        </button>
+      </>}>
+      <p style={{ marginTop: 0 }}>
+        WO {job.number} is set for <b>{job.date ? requestWhen({ date: job.date, time: job.startTime }) : 'no date yet'}</b>.
+        Pick a time that works for you — Fred will use it or keep the original.
+      </p>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 150px' }}>
+          <label className="wf-label" htmlFor={`ask-date-${job.id}`} style={{ display: 'block', marginBottom: 4 }}>Date</label>
+          <input id={`ask-date-${job.id}`} className="wf-input" type="date" min={minDate} value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div style={{ flex: '1 1 120px' }}>
+          <label className="wf-label" htmlFor={`ask-time-${job.id}`} style={{ display: 'block', marginBottom: 4 }}>Start time</label>
+          <input id={`ask-time-${job.id}`} className="wf-input" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+        </div>
+      </div>
+      <label className="wf-label" htmlFor={`ask-note-${job.id}`} style={{ display: 'block', margin: '12px 0 4px' }}>Note for Fred</label>
+      <textarea id={`ask-note-${job.id}`} className="wf-input" rows={3} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)}
+        placeholder="I'm on another job until 3. I can be there by 4." />
+    </Dialog>
   );
 }
 
@@ -783,6 +854,23 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
   useEffect(() => { void loadExpenses(); }, [loadExpenses]);
   const working = canWork(job);
   const canReport = working || job.status === 'workDone';
+  const deliverables = useMemo(() => deliverablesFor(job.title, job.description), [job.title, job.description]);
+
+  /** One closeout change — sent now, or kept on the phone with no signal. */
+  const closeoutOp = (op: CloseoutOp) => {
+    void act(makeAction('closeout', { number: job.number, op: op.op, args: closeoutArgs(op) }, `Closeout on WO ${job.number}`));
+  };
+
+  /** The customer's sign-off: the signature goes with the job's photos, then the name. */
+  const signOff = async (name: string, signature: Blob) => {
+    const at = new Date();
+    const pos = await getPosition(6000);
+    const meta = { woNumber: job.number, blob: signature, takenAt: at.toISOString(), lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source: 'camera' as const };
+    const r = await sendPhoto(meta);
+    if (r === 'offline') await queuePhoto({ ...meta, id: `${Date.now()}-sig`, uid });
+    else if ('error' in r) { toastError(`The signature didn't send: ${r.error}`); return; }
+    await act(makeAction('closeout', { number: job.number, op: 'sign', args: { name } }, `Customer sign-off on WO ${job.number}`, at), 'Signed off.');
+  };
   const dirty = notes.trim() !== job.closeoutNotes.trim()
     || Object.entries(answers).some(([id, v]) => v !== (job.questions.find((q) => q.id === id)?.answer ?? ''));
 
@@ -883,6 +971,9 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
         onToggleTask={working ? toggleTask : undefined}
         below={<>
           {job.status !== 'offered' && job.status !== 'declined' && (
+            <CloseoutCard job={job} items={deliverables} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
+          )}
+          {job.status !== 'offered' && job.status !== 'declined' && (
             <JobReport
               job={job} uid={uid} canEdit={canReport}
               notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
@@ -902,21 +993,15 @@ function TechJobScreen({ job, uid, onBack, act, onRefresh, refreshing }: {
       {doneOpen && (
         <WorkDoneDialog
           job={job}
-          missing={reportMissing(job, notes, answers, photoCount)}
+          missing={[...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, job.signatureRequired)]}
           onClose={() => setDoneOpen(false)}
           onSaveDraft={async () => { setDoneOpen(false); await saveReport(); }}
-          onConfirm={async (signature) => {
+          onConfirm={async () => {
             setDoneOpen(false);
             const at = new Date();
             const clockOut = isClockedIn(job);
             const pos = await getPosition(6000);
-            // A customer signature goes to the job like a photo (kept on the phone with no signal).
-            if (signature) {
-              const meta = { woNumber: job.number, blob: signature, takenAt: at.toISOString(), lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source: 'camera' as const };
-              const r = await sendPhoto(meta);
-              if (r === 'offline') await queuePhoto({ ...meta, id: `${Date.now()}-sig`, uid });
-              else if ('error' in r) { toastError(`The signature didn't send: ${r.error}`); return; }
-            }
+            // The customer's signature is taken under Closeout now, with their name.
             // The report first, then work done — the outbox keeps that order.
             await act(makeAction('report', { number: job.number, notes, answers }, `Job report for WO ${job.number}`));
             setAnswers({});
@@ -1271,100 +1356,15 @@ function JobReport({ job, uid, canEdit, notes, setNotes, answers, setAnswers, di
   );
 }
 
-/** Sign with a finger. Hands back a JPEG on a white background. */
-function SignaturePad({ existing, busy, disabled, onSigned }: {
-  existing: string | null; busy?: boolean; disabled?: boolean; onSigned: (blob: Blob) => void;
-}) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const drawing = useRef(false);
-  const [hasInk, setHasInk] = useState(false);
-  const [redo, setRedo] = useState(!existing);
-
-  useEffect(() => {
-    const c = ref.current;
-    if (!c) return;
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, c.width, c.height);
-  }, [redo]);
-
-  const pos = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const c = e.currentTarget;
-    const r = c.getBoundingClientRect();
-    return { x: ((e.clientX - r.left) * c.width) / r.width, y: ((e.clientY - r.top) * c.height) / r.height };
-  };
-
-  if (existing && !redo) {
-    return (
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={existing} alt="Signature" style={{ maxWidth: 240, borderRadius: 8, border: '1px solid var(--wf-line)' }} />
-        {!disabled && <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setRedo(true)}>Sign again</button>}
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <canvas
-        ref={ref} width={700} height={220}
-        style={{ width: '100%', height: 140, border: '1.5px solid var(--wf-line)', borderRadius: 10, touchAction: 'none', background: '#fff' }}
-        onPointerDown={(e) => {
-          if (disabled) return;
-          const ctx = e.currentTarget.getContext('2d');
-          if (!ctx) return;
-          e.currentTarget.setPointerCapture(e.pointerId);
-          drawing.current = true;
-          const p = pos(e);
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-        }}
-        onPointerMove={(e) => {
-          if (!drawing.current) return;
-          const ctx = e.currentTarget.getContext('2d');
-          if (!ctx) return;
-          const p = pos(e);
-          ctx.lineTo(p.x, p.y);
-          ctx.strokeStyle = '#1B1C1F';
-          ctx.lineWidth = 3.5;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.stroke();
-          setHasInk(true);
-        }}
-        onPointerUp={() => { drawing.current = false; }}
-        onPointerLeave={() => { drawing.current = false; }}
-      />
-      {!disabled && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => {
-            const c = ref.current;
-            const ctx = c?.getContext('2d');
-            if (c && ctx) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
-            setHasInk(false);
-          }}>Clear</button>
-          <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={!hasInk || busy}
-            onClick={() => ref.current?.toBlob((b) => { if (b) onSigned(b); }, 'image/jpeg', 0.9)}>
-            {busy ? 'Sending…' : 'Use this signature'}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * Work done: says plainly what is still missing (the same rules as the
  * emailed job link), and takes the customer's signature when the job needs one.
  */
 function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
   job: WfJob; missing: string[]; onClose: () => void;
-  onSaveDraft: () => Promise<void>; onConfirm: (signature: Blob | null) => void | Promise<void>;
+  onSaveDraft: () => Promise<void>; onConfirm: () => void | Promise<void>;
 }) {
-  const [sig, setSig] = useState<Blob | null>(null);
-  const needSig = job.signatureRequired;
-  const ready = missing.length === 0 && (!needSig || !!sig);
+  const ready = missing.length === 0;
   return (
     <Dialog
       title={missing.length ? 'Almost there' : 'Mark the work done?'}
@@ -1374,12 +1374,12 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
         <button className="wf-btn wf-btn-outline" onClick={() => void onSaveDraft()}><Save size={16} /> Save what I have</button>
       </> : <>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-navy" disabled={!ready} onClick={() => void onConfirm(sig)}><CheckCircle2 size={16} /> Work done</button>
+        <button className="wf-btn wf-btn-navy" disabled={!ready} onClick={() => void onConfirm()}><CheckCircle2 size={16} /> Work done</button>
       </>}
     >
       {missing.length > 0 ? (
         <>
-          <p style={{ marginTop: 0 }}>Before the job goes back to the office, fill these in under <b>Job report</b> and <b>Photos</b>:</p>
+          <p style={{ marginTop: 0 }}>Before the job goes back to the office, finish these under <b>Closeout</b>, <b>Job report</b> and <b>Photos</b>:</p>
           <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
             {missing.map((m) => <li key={m}>{m}</li>)}
           </ul>
@@ -1389,19 +1389,6 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
           <p style={{ marginTop: 0 }}>
             Your notes and answers are saved, {isClockedIn(job) ? 'you will be clocked out, ' : ''}and the office is told the job is finished.
           </p>
-          {needSig && (
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Customer signature</div>
-              {sig ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <CheckCircle2 size={18} color="var(--wf-success)" /> Signed
-                  <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setSig(null)}>Sign again</button>
-                </div>
-              ) : (
-                <SignaturePad existing={null} onSigned={setSig} />
-              )}
-            </div>
-          )}
         </>
       )}
     </Dialog>

@@ -10,14 +10,16 @@
 // functions the tech portal uses (migration-098), so both sides always agree.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Archive, ArchiveRestore, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
+  Archive, ArchiveRestore, CalendarClock, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
   Pencil, Plus, Receipt, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
   wfJobFromOwner, matchesWf, sortWf, ownerCounts, bucketOf, bucketCounts, withTask, fullAddress, wfReasonText,
-  parseClockTime, fmtClock12, type WfBucket, type WfJob, type WfTask,
+  parseClockTime, fmtClock12, requestWhen, whenText, type WfBucket, type WfJob, type WfTask,
 } from '@/lib/wf';
+import { acceptTimePatch, deliverablesFor, keepTimePatch, waitingRequests } from '@/lib/closeout';
+import CloseoutCard from '@/components/wf/Closeout';
 import { fmtMoney, hasPaySplit, woProfitOrNull, withClientPrice } from '@/lib/utils';
 import { logAudit } from '@/lib/audit';
 import { toastError, toastSuccess } from '@/lib/toast';
@@ -69,6 +71,9 @@ export default function WorkFlowView({
 
   const rows: Row[] = useMemo(() => workOrders.map((w) => ({ w, job: wfJobFromOwner(w) })), [workOrders]);
   const counts = ownerCounts(rows.map((r) => r.job));
+  // Techs asking for another date and time on an offer (migration-105).
+  const timeAsks = rows.filter((r) => !r.job.archived && r.job.status === 'offered'
+    && waitingRequests(r.job.timeRequests, r.job.techs).length > 0);
 
   // Closed reaches into the archive too; the other three are live jobs only.
   const searched = rows.filter((r) => matchesWf(r.job, search));
@@ -147,6 +152,18 @@ export default function WorkFlowView({
           />
           {waitingExp.length === 0 && <div className="wf-subtle">All caught up.</div>}
         </Dialog>
+      )}
+
+      {timeAsks.length > 0 && (
+        <Banner
+          title="Another time asked"
+          subtitle={timeAsks.length === 1
+            ? `WO ${timeAsks[0].job.number}: ${waitingRequests(timeAsks[0].job.timeRequests, timeAsks[0].job.techs)[0][0]} asks for another time`
+            : `${timeAsks.length} jobs have a tech asking for another time`}
+          onClick={() => {
+            if (timeAsks.length === 1) { setOpenId(timeAsks[0].w.id); window.scrollTo({ top: 0 }); } else setBucket('available');
+          }}
+        />
       )}
 
       {counts.needTech > 0 && bucket !== 'available' && (
@@ -296,6 +313,7 @@ function OwnerJob({
         actions={actions}
         onToggleTask={archived ? undefined : toggleTask}
         side={<>
+          {!archived && <TimeRequestsCard w={w} job={job} onSaved={refresh} />}
           {!archived && <QuickEditCard w={w} onSaved={refresh} />}
           <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />
           <MoneyCard w={w} />
@@ -305,6 +323,9 @@ function OwnerJob({
             <Section title="Messages" subtitle="The same thread the tech sees in their portal">
               <WorkOrderChatPanel woNumber={w.wo_number} />
             </Section>
+          )}
+          {showCloseout(job) && (
+            <CloseoutCard job={job} items={deliverablesFor(job.title, job.description)} canEdit={false} ownerView />
           )}
           <OwnerReport w={w} onEdit={() => onEdit(w)} />
           <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />
@@ -324,6 +345,65 @@ function OwnerJob({
         />
       )}
     </>
+  );
+}
+
+/** Closeout shows once a tech has the job, or as soon as anything is filled in. */
+function showCloseout(job: WfJob): boolean {
+  const c = job.closeout;
+  if (c.done.length || c.delays.length || c.signoff) return true;
+  return job.status === 'scheduled' || job.status === 'inProgress' || job.status === 'workDone' || job.status === 'closed';
+}
+
+// ── A tech asks for another time (Primio's counter-offer, never pay) ───────
+// Fred, 2026-10-04: "No pay for techs". A tech offered a job can only ask for
+// another date and time. Use it (the job moves and the tech counts as having
+// accepted) or keep the original (the offer still stands).
+
+function TimeRequestsCard({ w, job, onSaved }: { w: EnrichedWorkOrder; job: WfJob; onSaved: () => Promise<void> | void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const waiting = waitingRequests(job.timeRequests, job.techs);
+  if (waiting.length === 0) return null;
+
+  const answer = async (name: string, use: boolean) => {
+    const patch = use ? acceptTimePatch(w, name) : keepTimePatch(w, name);
+    if (!patch) return;
+    if (use && job.techs.length > 1 && !confirm(`This moves WO ${w.wo_number} for everyone on it, not only ${name}. Go ahead?`)) return;
+    setBusy(name);
+    const { error } = await createClient().from('work_orders').update(patch).eq('id', w.id);
+    setBusy(null);
+    if (error) { toastError(`Couldn't save that: ${error.message}`); return; }
+    const req = job.timeRequests[name];
+    logAudit({
+      action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}`,
+      changes: use
+        ? { start_date: { from: w.start_date ?? null, to: req.date }, ...(req.time ? { start_time: { from: w.start_time ?? null, to: req.time } } : {}), via: `time asked by ${name}` }
+        : { time_request: { tech: name, kept: 'original time' } },
+    });
+    toastSuccess(use ? `Moved to ${requestWhen(req)}. ${name.split(' ')[0]} is on it.` : `Kept the original time. ${name.split(' ')[0]} sees your answer.`);
+    await onSaved();
+  };
+
+  return (
+    <Section title="Another time asked" subtitle={`Now: ${whenText(job)}`} right={<CalendarClock size={18} color="var(--wf-warning)" />}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {waiting.map(([name, r]) => (
+          <div key={name}>
+            <div style={{ fontWeight: 600 }}>{name} asks for {requestWhen(r)}</div>
+            {r.note && <div style={{ fontSize: 13.5, marginTop: 2, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>&ldquo;{r.note}&rdquo;</div>}
+            {r.at && <div className="wf-subtle" style={{ fontSize: 12 }}>Asked {new Date(r.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={busy !== null} onClick={() => void answer(name, true)}>
+                <CheckCircle2 size={15} /> Use this time
+              </button>
+              <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={busy !== null} onClick={() => void answer(name, false)}>
+                Keep the original
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Section>
   );
 }
 

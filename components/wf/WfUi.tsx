@@ -3,11 +3,12 @@
 // keep it"). Shared by the WorkFlow screen in management and the tech portal.
 // Styles live in app/wf.css under the .wf scope.
 import type { ReactNode } from 'react';
-import { AlertTriangle, ChevronRight, Clock, Inbox, UserX, Users, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, ChevronRight, Clock, Inbox, UserX, Users, X } from 'lucide-react';
 import {
-  WF_STATUS_COLOR, WF_BUCKETS, wfStatusLabel, whenText, place, tasksDone, isClockedIn, jobImage,
+  WF_STATUS_COLOR, WF_BUCKETS, wfStatusLabel, whenText, place, tasksDone, isClockedIn, jobImage, requestWhen,
   type WfBucket, type WfJob, type WfStatus,
 } from '@/lib/wf';
+import { waitingRequests } from '@/lib/closeout';
 import { fmtMoney } from '@/lib/utils';
 import { backdropClose } from '@/lib/backdrop';
 
@@ -85,16 +86,18 @@ export function Banner({ title, subtitle, onClick, tone = 'gold' }: {
 }
 
 /** "All jobs" plus a chip for each stage that has jobs in it. */
-export function Filters<T extends string>({ value, options, onChange }: {
+export function Filters<T extends string>({ value, options, onChange, allLabel = 'All jobs', ariaLabel = 'Show jobs by stage' }: {
   value: T | 'all';
   options: { key: T; label: string; count: number }[];
   onChange: (v: T | 'all') => void;
+  allLabel?: string;
+  ariaLabel?: string;
 }) {
   const total = options.reduce((n, o) => n + o.count, 0);
   return (
-    <div className="wf-filters" role="group" aria-label="Show jobs by stage">
+    <div className="wf-filters" role="group" aria-label={ariaLabel}>
       <button className="wf-filter" aria-pressed={value === 'all'} onClick={() => onChange('all')}>
-        All jobs<span className="wf-count">{total}</span>
+        {allLabel}<span className="wf-count">{total}</span>
       </button>
       {options.map((o) => (
         <button key={o.key} className="wf-filter" aria-pressed={value === o.key} onClick={() => onChange(o.key)}>
@@ -161,10 +164,38 @@ export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet =
               <span className="wf-dot" /> On the clock
             </div>
           )}
+          <TimeRequestLine job={job} ownerView={ownerView} />
         </div>
       </div>
     </button>
   );
+}
+
+/**
+ * "Asked for another time" on a job card (migration-105). A tech sees where
+ * their own ask stands; the office sees who is waiting on an answer.
+ */
+function TimeRequestLine({ job, ownerView }: { job: WfJob; ownerView: boolean }) {
+  const line = (text: string, tone: 'gold' | 'green' | 'grey') => (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12.5, fontWeight: 600,
+      color: tone === 'green' ? 'var(--wf-success)' : tone === 'gold' ? 'var(--wf-warning)' : 'var(--wf-subtle)',
+    }}>
+      <CalendarClock size={14} style={{ flexShrink: 0 }} />
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
+    </div>
+  );
+  if (ownerView) {
+    const waiting = waitingRequests(job.timeRequests, job.techs);
+    if (waiting.length === 0 || job.status !== 'offered') return null;
+    const [name, r] = waiting[0];
+    return line(waiting.length === 1 ? `${name.split(' ')[0]} asks for ${requestWhen(r)}` : `${waiting.length} techs ask for another time`, 'gold');
+  }
+  const r = job.myTimeRequest;
+  if (!r || job.status !== 'offered') return null;
+  if (r.state === 'waiting') return line(`You asked for ${requestWhen(r)} · waiting on Fred`, 'gold');
+  if (r.state === 'kept') return line('Fred kept the original time', 'grey');
+  return null;
 }
 
 /** A titled card, as on the job screen ("On site", "Checklist", "Techs"…). */

@@ -9,13 +9,13 @@
 //                   the chosen day's jobs underneath
 // The office sees money (the client price) on a card; techs never see these.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Columns3, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Columns3, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck } from 'lucide-react';
 import {
   WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12,
   type WfJob, type WfStatus,
 } from '@/lib/wf';
 import { fmtMoney, todayISO } from '@/lib/utils';
-import { Empty, Filters, StatusChip } from './WfUi';
+import { Empty } from './WfUi';
 
 // ── App bar ─────────────────────────────────────────────────────────────────
 
@@ -45,34 +45,34 @@ export const DISPATCH_COLUMNS: { key: WfStatus; label: string }[] = [
 ];
 
 export type DispatchView = 'board' | 'grid' | 'list';
-export type ListSort = 'number' | 'date' | 'client' | 'price' | 'stage';
 
-const STAGE_ORDER: WfStatus[] = DISPATCH_COLUMNS.map((c) => c.key);
-
-/** The order Grid and List read in. Dates: soonest first; jobs with no date last. */
-export function sortBoardRows(rows: BoardRow[], key: ListSort, dir: 'asc' | 'desc'): BoardRow[] {
-  const sign = dir === 'asc' ? 1 : -1;
+/**
+ * The jobs in each Board column, in the Board's order. Board, Grid and List all
+ * draw exactly this (Fred, 2026-10-04: "they to mirror board just change the
+ * view"): every stage, the same counts, the same order — Closed newest first,
+ * the rest soonest first.
+ */
+export function boardGroups(rows: BoardRow[]): { key: WfStatus; label: string; list: BoardRow[] }[] {
   const num = (a: BoardRow, b: BoardRow) => a.job.number.localeCompare(b.job.number, undefined, { numeric: true });
-  const cmp = (a: BoardRow, b: BoardRow): number => {
-    switch (key) {
-      case 'date': {
-        if (!a.job.date && !b.job.date) return num(a, b);
-        if (!a.job.date) return 1;   // no date stays last either way
-        if (!b.job.date) return -1;
-        return sign * a.job.date.localeCompare(b.job.date) || num(a, b);
-      }
-      case 'client': return sign * a.job.client.localeCompare(b.job.client) || num(a, b);
-      case 'price': return sign * ((a.job.clientPrice ?? 0) - (b.job.clientPrice ?? 0)) || num(a, b);
-      case 'stage': return sign * (STAGE_ORDER.indexOf(a.job.status) - STAGE_ORDER.indexOf(b.job.status)) || num(a, b);
-      default: return sign * num(a, b);
-    }
-  };
-  return [...rows].sort(cmp);
+  return DISPATCH_COLUMNS.map((col) => {
+    const list = rows.filter((r) => r.job.status === col.key);
+    list.sort(col.key === 'closed'
+      ? (a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || num(a, b)
+      : (a, b) => (a.job.date ?? '9999').localeCompare(b.job.date ?? '9999') || num(a, b));
+    return { key: col.key, label: col.label, list };
+  });
 }
 
-/** Grid and List show one stage at a time, or every open job ("All jobs" leaves out Closed). */
-export function rowsForStage(rows: BoardRow[], stage: WfStatus | 'all'): BoardRow[] {
-  return stage === 'all' ? rows.filter((r) => r.job.status !== 'closed') : rows.filter((r) => r.job.status === stage);
+const stageColor = (k: WfStatus) => (k === 'workDone' ? 'var(--wf-success)' : WF_STATUS_COLOR[k]);
+
+/** A stage heading, the same on Board, Grid and List: the name in its colour, the count, a coloured line. */
+function StageHead({ label, color, count, boxed }: { label: string; color: string; count: number; boxed?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', padding: boxed ? 16 : '10px 4px', borderBottom: `2px solid ${color}` }}>
+      <span className="wf-p-title" style={{ flex: 1, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+      <span style={{ fontWeight: 600, fontSize: 13 }}>{count}</span>
+    </div>
+  );
 }
 
 function StatTile({ label, value, color }: { label: string; value: number; color: string }) {
@@ -136,17 +136,11 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
     try { const v = localStorage.getItem('dispatch-view'); if (v === 'grid' || v === 'list') setView(v); } catch { /* private window */ }
   }, []);
   const chooseView = (v: DispatchView) => { setView(v); try { localStorage.setItem('dispatch-view', v); } catch { /* private window */ } };
-  const [stage, setStage] = useState<WfStatus | 'all'>('all');
-  const [sort, setSort] = useState<{ key: ListSort; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'asc' });
   const live = rows.filter((r) => r.job.status !== 'closed');
   const count = (s: WfStatus) => live.filter((r) => r.job.status === s).length;
   const urgent = live.filter((r) => r.job.highPriority).length;
   const shown = rows.filter((r) => matchesWf(r.job, query));
-  const stageOptions = DISPATCH_COLUMNS
-    .map((c) => ({ key: c.key, label: c.label, count: shown.filter((r) => r.job.status === c.key).length }))
-    .filter((o) => o.count > 0);
-  const flat = sortBoardRows(rowsForStage(shown, stage), sort.key, sort.dir);
-  const sortBy = (key: ListSort) => setSort((sv) => ({ key, dir: sv.key === key && sv.dir === 'asc' ? 'desc' : 'asc' }));
+  const groups = boardGroups(shown);
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -173,70 +167,48 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
           ))}
         </div>
       </div>
-      {view !== 'board' && (
-        <Filters value={stage} options={stageOptions} onChange={setStage} total={rowsForStage(shown, 'all').length} />
-      )}
-      {view === 'grid' && (
-        flat.length === 0
-          ? <Empty title="No jobs here" message={query ? 'Nothing matches your search.' : 'Nothing in this stage right now.'} />
-          : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 10, paddingBottom: 16 }}>
-              {flat.map((r) => (
-                <div key={r.job.id}>
-                  <div style={{ marginBottom: 4 }}><StatusChip status={r.job.status} ownerView /></div>
-                  <DispatchCard row={r} onOpen={() => onOpen(r.job)} />
-                </div>
-              ))}
-            </div>
-          )
-      )}
-      {view === 'list' && (
-        flat.length === 0
-          ? <Empty title="No jobs here" message={query ? 'Nothing matches your search.' : 'Nothing in this stage right now.'} />
-          : <DispatchTable rows={flat} sort={sort} onSort={sortBy} onOpen={onOpen} />
-      )}
-      <div style={{ display: view === 'board' ? 'flex' : 'none', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>
-        {DISPATCH_COLUMNS.map((col) => {
-          let list = shown.filter((r) => r.job.status === col.key);
-          // Closed reads newest first; the rest soonest first.
-          list = col.key === 'closed'
-            ? [...list].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
-            : [...list].sort((a, b) => (a.job.date ?? '9999').localeCompare(b.job.date ?? '9999') || a.job.number.localeCompare(b.job.number, undefined, { numeric: true }));
-          const color = col.key === 'workDone' ? 'var(--wf-success)' : WF_STATUS_COLOR[col.key];
-          return (
-            <section key={col.key} className="wf-dispatch-col">
-              <div style={{ display: 'flex', alignItems: 'center', padding: 16, borderBottom: `2px solid ${color}` }}>
-                <span className="wf-p-title" style={{ flex: 1, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
-                <span style={{ fontWeight: 600, fontSize: 13 }}>{list.length}</span>
-              </div>
+      {view === 'board' && (
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>
+          {groups.map((g) => (
+            <section key={g.key} className="wf-dispatch-col">
+              <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} boxed />
               <div className="wf-dispatch-list">
-                {list.length === 0
+                {g.list.length === 0
                   ? <div className="wf-p-small wf-subtle" style={{ textAlign: 'center', padding: '40px 0' }}>No jobs</div>
-                  : list.map((r) => <DispatchCard key={r.job.id} row={r} onOpen={() => onOpen(r.job)} />)}
+                  : g.list.map((r) => <DispatchCard key={r.job.id} row={r} onOpen={() => onOpen(r.job)} />)}
               </div>
             </section>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
+      {view === 'grid' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 16 }}>
+          {groups.map((g) => (
+            <section key={g.key}>
+              <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} />
+              {g.list.length === 0
+                ? <div className="wf-p-small wf-subtle" style={{ padding: '12px 4px' }}>No jobs</div>
+                : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 10, marginTop: 10 }}>
+                    {g.list.map((r) => <DispatchCard key={r.job.id} row={r} onOpen={() => onOpen(r.job)} />)}
+                  </div>
+                )}
+            </section>
+          ))}
+        </div>
+      )}
+      {view === 'list' && <DispatchTable groups={groups} onOpen={onOpen} />}
     </div>
   );
 }
 
-/** List view: one row per job. Tap a row to open it; tap a heading to sort. */
-function DispatchTable({ rows, sort, onSort, onOpen }: {
-  rows: BoardRow[];
-  sort: { key: ListSort; dir: 'asc' | 'desc' };
-  onSort: (k: ListSort) => void;
+/** List view: the Board's stages as table sections, one row per job, in the Board's order. */
+function DispatchTable({ groups, onOpen }: {
+  groups: { key: WfStatus; label: string; list: BoardRow[] }[];
   onOpen: (job: WfJob) => void;
 }) {
-  const head = (label: string, key: ListSort | null, align: 'left' | 'right' = 'left') => (
-    <th style={{ textAlign: align, padding: '10px 12px', fontSize: 12, fontWeight: 600, color: 'var(--wf-subtle)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--wf-line)' }}>
-      {key ? (
-        <button onClick={() => onSort(key)} style={{ border: 'none', background: 'transparent', font: 'inherit', color: sort.key === key ? 'var(--wf-navy)' : 'inherit', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          {label}{sort.key === key && (sort.dir === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />)}
-        </button>
-      ) : label}
-    </th>
+  const head = (label: string, align: 'left' | 'right' = 'left') => (
+    <th style={{ textAlign: align, padding: '10px 12px', fontSize: 12, fontWeight: 600, color: 'var(--wf-subtle)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--wf-line)' }}>{label}</th>
   );
   const cell: React.CSSProperties = { padding: '10px 12px', fontSize: 13.5, borderBottom: '1px solid var(--wf-line)', verticalAlign: 'top' };
   const day = (d: string | null) => d ? new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—';
@@ -245,40 +217,46 @@ function DispatchTable({ rows, sort, onSort, onOpen }: {
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
         <thead>
           <tr>
-            {head('WO #', 'number')}
-            {head('Job', null)}
-            {head('Client', 'client')}
-            {head('City', null)}
-            {head('Date', 'date')}
-            {head('Tech', null)}
-            {head('Stage', 'stage')}
-            {head('Client pays', 'price', 'right')}
+            {head('WO #')}{head('Job')}{head('Client')}{head('City')}{head('Date')}{head('Tech')}{head('Client pays', 'right')}
           </tr>
         </thead>
-        <tbody>
-          {rows.map((r) => {
-            const j = r.job;
-            const t = parseClockTime(j.startTime);
-            return (
-              <tr key={j.id} onClick={() => onOpen(j)} className="wf-row-click" tabIndex={0}
-                onKeyDown={(e) => { if (e.key === 'Enter') onOpen(j); }} aria-label={`Open WO ${j.number}`}>
-                <td style={{ ...cell, fontWeight: 700, color: 'var(--wf-gold)', whiteSpace: 'nowrap' }}>
-                  {j.number}{j.highPriority && <span style={{ color: 'var(--wf-danger)', marginLeft: 6 }} title="High priority">!</span>}
-                </td>
-                <td style={{ ...cell, fontWeight: 600, maxWidth: 320 }}>{j.title}</td>
-                <td style={{ ...cell, maxWidth: 180 }}>{j.client || '—'}</td>
-                <td style={{ ...cell, whiteSpace: 'nowrap' }}>{[j.city, j.state].filter(Boolean).join(', ') || '—'}</td>
-                <td style={{ ...cell, whiteSpace: 'nowrap' }}>{day(j.date)}{t && <div className="wf-subtle" style={{ fontSize: 12 }}>{fmtClock12(t)}</div>}</td>
-                <td style={{ ...cell, maxWidth: 160 }}>
-                  {j.techs.length ? j.techs.join(', ') : <span style={{ color: 'var(--wf-danger)', fontWeight: 600 }}>No tech</span>}
-                  {r.payNotSet && <div style={{ color: 'var(--wf-warning)', fontSize: 12, fontWeight: 600 }}>Pay not set</div>}
-                </td>
-                <td style={{ ...cell, whiteSpace: 'nowrap' }}><StatusChip status={j.status} ownerView /></td>
-                <td style={{ ...cell, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{(j.clientPrice ?? 0) > 0 ? fmtMoney(j.clientPrice) : <span className="wf-subtle" style={{ fontWeight: 400 }}>—</span>}</td>
-              </tr>
-            );
-          })}
-        </tbody>
+        {groups.map((g) => (
+          <tbody key={g.key}>
+            <tr>
+              <td colSpan={7} style={{ padding: '0 8px', background: '#F4F2EC' }}>
+                <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} />
+              </td>
+            </tr>
+            {g.list.length === 0 && (
+              <tr><td colSpan={7} className="wf-p-small wf-subtle" style={{ ...cell, textAlign: 'center' }}>No jobs</td></tr>
+            )}
+            {g.list.map((r) => {
+              const j = r.job;
+              const t = parseClockTime(j.startTime);
+              return (
+                <tr key={j.id} onClick={() => onOpen(j)} className="wf-row-click" tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter') onOpen(j); }} aria-label={`Open WO ${j.number}`}>
+                  <td style={{ ...cell, fontWeight: 700, color: 'var(--wf-gold)', whiteSpace: 'nowrap' }}>
+                    {j.number}
+                    <div style={{ fontSize: 12, fontWeight: 700, color: j.highPriority ? 'var(--wf-danger)' : 'var(--wf-subtle)' }}>{j.priorityLabel}</div>
+                  </td>
+                  <td style={{ ...cell, fontWeight: 600, maxWidth: 320 }}>
+                    {j.title}
+                    <div className="wf-subtle" style={{ fontSize: 12, fontWeight: 500 }}>{j.serviceType || WF_WORK_TYPE_LABEL[workTypeFor(j.serviceType, j.title)]}</div>
+                  </td>
+                  <td style={{ ...cell, maxWidth: 180 }}>{j.client || '—'}</td>
+                  <td style={{ ...cell, whiteSpace: 'nowrap' }}>{[j.city, j.state].filter(Boolean).join(', ') || '—'}</td>
+                  <td style={{ ...cell, whiteSpace: 'nowrap' }}>{day(j.date)}{t && <div className="wf-subtle" style={{ fontSize: 12 }}>{fmtClock12(t)}</div>}</td>
+                  <td style={{ ...cell, maxWidth: 160 }}>
+                    {j.techs.length ? j.techs.join(', ') : <span style={{ color: 'var(--wf-danger)', fontWeight: 600 }}>No tech</span>}
+                    {r.payNotSet && <div style={{ color: 'var(--wf-warning)', fontSize: 12, fontWeight: 600 }}>Tech pay not set</div>}
+                  </td>
+                  <td style={{ ...cell, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{(j.clientPrice ?? 0) > 0 ? fmtMoney(j.clientPrice) : <span className="wf-subtle" style={{ fontWeight: 500 }}>No price</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        ))}
       </table>
     </div>
   );

@@ -18,24 +18,26 @@ describe('Primio schedule calendar', () => {
   });
 });
 
-import { sortBoardRows, rowsForStage, type BoardRow } from '../components/wf/PrimioScreens';
+import { boardGroups, type BoardRow } from '../components/wf/PrimioScreens';
 
-const row = (number: string, date: string | null, status: string, price: number, client = 'X'): BoardRow =>
-  ({ job: { number, date, status, clientPrice: price, client } } as unknown as BoardRow);
+const row = (number: string, date: string | null, status: string, updatedAt = ''): BoardRow =>
+  ({ job: { number, date, status }, updatedAt } as unknown as BoardRow);
 
-describe('Dispatch Grid and List', () => {
-  const rows = [row('10', '2026-10-09', 'scheduled', 300, 'B'), row('2', null, 'open', 0, 'A'), row('7', '2026-10-05', 'closed', 900, 'C'), row('3', '2026-10-05', 'workDone', 150, 'A')];
-  it('dates soonest first, no date last in both directions', () => {
-    expect(sortBoardRows(rows, 'date', 'asc').map((r) => r.job.number)).toEqual(['3', '7', '10', '2']);
-    expect(sortBoardRows(rows, 'date', 'desc').map((r) => r.job.number)).toEqual(['10', '3', '7', '2']);
+describe('Dispatch Board, Grid and List draw the same groups', () => {
+  const rows = [
+    row('10', '2026-10-09', 'scheduled'), row('2', null, 'open'), row('7', '2026-10-05', 'closed', '2026-10-01'),
+    row('8', '2026-09-01', 'closed', '2026-10-03'), row('3', '2026-10-05', 'scheduled'), row('4', '2026-10-05', 'scheduled'),
+  ];
+  const g = boardGroups(rows);
+  it('every Board stage, in the Board order, even when empty', () => {
+    expect(g.map((x) => x.key)).toEqual(['open', 'offered', 'scheduled', 'inProgress', 'workDone', 'closed', 'declined']);
+    expect(g.find((x) => x.key === 'offered')!.list).toEqual([]);
   });
-  it('sorts by WO number as numbers, price and client', () => {
-    expect(sortBoardRows(rows, 'number', 'asc').map((r) => r.job.number)).toEqual(['2', '3', '7', '10']);
-    expect(sortBoardRows(rows, 'price', 'desc')[0].job.number).toBe('7');
-    expect(sortBoardRows(rows, 'client', 'asc').map((r) => r.job.client)).toEqual(['A', 'A', 'B', 'C']);
+  it('soonest first (ties by WO number); Closed newest first', () => {
+    expect(g.find((x) => x.key === 'scheduled')!.list.map((r) => r.job.number)).toEqual(['3', '4', '10']);
+    expect(g.find((x) => x.key === 'closed')!.list.map((r) => r.job.number)).toEqual(['8', '7']);
   });
-  it('"All jobs" leaves out closed; a stage shows only that stage', () => {
-    expect(rowsForStage(rows, 'all').map((r) => r.job.number).sort()).toEqual(['10', '2', '3']);
-    expect(rowsForStage(rows, 'closed').map((r) => r.job.number)).toEqual(['7']);
+  it('no job is lost or doubled', () => {
+    expect(g.reduce((n, x) => n + x.list.length, 0)).toBe(rows.length);
   });
 });

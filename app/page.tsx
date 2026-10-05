@@ -60,7 +60,6 @@ import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
 import { OFFICE_GROUPS, officeGroupOf } from '@/lib/office-menu';
-import DisconnectedPreview from '@/components/DisconnectedPreview';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
@@ -89,7 +88,7 @@ type Modal =
   | { type: 'payment'; item: Payment | null; prefill?: Partial<Payment> }
   | null;
 
-function ConnectedHomePage() {
+export default function HomePage() {
   const router = useRouter();
   const supabase = createClient();
   const { dark, toggle: toggleDark } = useDarkMode();
@@ -1827,12 +1826,4 @@ Go ahead?`)) return;
       )}
     </div>
   );
-}
-
-const SUPABASE_READY = Boolean(
-  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-);
-
-export default function HomePage() {
-  return SUPABASE_READY ? <ConnectedHomePage /> : <DisconnectedPreview />;
 }

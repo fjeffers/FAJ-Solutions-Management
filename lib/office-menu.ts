@@ -23,8 +23,12 @@ export type OfficeItem = {
 /** id never changes, so Fred can rename a section (Settings -> Menu & screens). */
 export type OfficeGroup = { id: string; title: string; items: OfficeItem[] };
 
-/** The screens in the left menu itself — not repeated on the Office page. ('workorders' is Dispatch.) */
-export const SIDEBAR_VIEWS = ['dashboard', 'workorders', 'scheduling', 'office'] as const;
+/**
+ * The screens in the left menu itself — not repeated on the Office page.
+ * ('workorders' is Dispatch.) Fred, 2026-10-05: "add message under
+ * scheduled", "add setting under office".
+ */
+export const SIDEBAR_VIEWS = ['dashboard', 'workorders', 'scheduling', 'messages', 'office', 'settings'] as const;
 
 export const OFFICE_GROUPS: OfficeGroup[] = [
   {
@@ -80,13 +84,6 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
       { view: 'materials', label: 'Materials', hint: 'Stock, and materials used on jobs' },
       { view: 'maintenance', label: 'Maintenance', hint: 'Recurring maintenance visits' },
       { view: 'network', label: 'Network', hint: 'Network equipment and site records' },
-    ],
-  },
-  {
-    id: 'settings',
-    title: 'Settings',
-    items: [
-      { view: 'settings', label: 'Settings', hint: 'Company details and preferences' },
     ],
   },
 ];

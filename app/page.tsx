@@ -8,7 +8,7 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
-import { BarChart3, CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Calendar, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, KanbanSquare, ChevronRight, Plus } from 'lucide-react';
+import { CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, ChevronRight, Plus } from 'lucide-react';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -59,6 +59,7 @@ import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
+import MessagesView from '@/components/MessagesView';
 import { sectionOfView, type ResolvedLayout } from '@/lib/app-layout';
 import { useAppLayout } from '@/components/useAppLayout';
 
@@ -66,7 +67,7 @@ const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
-  'team', 'support', 'office',
+  'team', 'support', 'office', 'messages',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -121,6 +122,13 @@ export default function HomePage() {
     void supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'new')
       .then(({ count }) => setSupportCount(count ?? 0));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once on load; the inbox keeps it current
+  // Tech messages not read yet — the number beside Messages in the left menu.
+  const [messageCount, setMessageCount] = useState(0);
+  useEffect(() => {
+    void supabase.from('work_order_messages').select('id', { count: 'exact', head: true })
+      .eq('sender_role', 'contractor').is('read_at', null)
+      .then(({ count }) => setMessageCount(count ?? 0));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once on load; the Messages screen keeps it current
   const [searchOpen, setSearchOpen] = useState(false);
   // Fred's own menu: names, order, sections, hidden screens (Settings ->
   // Menu & screens, migration 107). The standard one is lib/office-menu.ts.
@@ -1375,11 +1383,11 @@ Go ahead?`)) return;
     return { job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed' };
   }), [enrichedWOs]);
 
-  const NI = ({ k, icon, label }: { k: View; icon: React.ReactNode; label: string }) => (
-    <button className={`nav-btn ${view === k ? 'active' : ''}`} onClick={() => navigate(k)}>
-      {icon} {label}
-    </button>
-  );
+  /** The number shown beside a screen in the menu: things waiting there. */
+  const badgeFor = (v: string | null): number =>
+    v === 'support' ? supportCount : v === 'import-queue' ? pendingImportCount : v === 'messages' ? messageCount : 0;
+  const officeWaiting = menu.sections.reduce((n, g) => n + g.items.reduce((k, i) => k + badgeFor(i.view), 0), 0);
+
 
   // ── Loading ────────────────────────────────────────────────────────────────
 
@@ -1432,7 +1440,7 @@ Go ahead?`)) return;
           {/* Fred can rename, reorder, hide and move these in Settings ->
               Menu & screens; Office always stays (lib/app-layout.ts). */}
           {menu.main.map((m) => {
-            const count = m.view === 'support' ? supportCount : m.view === 'import-queue' ? pendingImportCount : 0;
+            const count = badgeFor(m.view);
             if (m.key !== 'office') {
               if (!m.view) {
                 return (
@@ -1459,12 +1467,12 @@ Go ahead?`)) return;
             aria-expanded={officeOpen}
           >
             <LayoutGrid size={15} /> {officeLabel}
-            {supportCount + pendingImportCount > 0 && (
+            {officeWaiting > 0 && (
               <span
-                title={`${supportCount} support ticket${supportCount === 1 ? '' : 's'} and ${pendingImportCount} import${pendingImportCount === 1 ? '' : 's'} waiting`}
+                title={`${officeWaiting} waiting in ${officeLabel} (support tickets, imports)`}
                 style={{ background: 'var(--gold)', color: '#0E1B2E', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4 }}
               >
-                {supportCount + pendingImportCount}
+                {officeWaiting}
               </span>
             )}
             <ChevronDown size={14} style={{ marginLeft: 'auto', transform: officeOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
@@ -1476,7 +1484,7 @@ Go ahead?`)) return;
               </button>
               {menu.sections.map((g) => {
                 const open = openSection === g.id;
-                const waiting = g.items.reduce((n, i) => n + (i.view === 'support' ? supportCount : i.view === 'import-queue' ? pendingImportCount : 0), 0);
+                const waiting = g.items.reduce((n, i) => n + badgeFor(i.view), 0);
                 return (
                   <div key={g.id}>
                     <button className="nav-btn" onClick={() => toggleSection(g.id)} aria-expanded={open}
@@ -1490,7 +1498,7 @@ Go ahead?`)) return;
                     {open && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 16 }}>
                         {g.items.map((i) => {
-                          const count = i.view === 'support' ? supportCount : i.view === 'import-queue' ? pendingImportCount : 0;
+                          const count = badgeFor(i.view);
                           const sub = { padding: '8px 12px', fontSize: 13 };
                           if (!i.view) {
                             return (
@@ -1674,7 +1682,15 @@ Go ahead?`)) return;
             onOpen={(v) => navigate(v as View)}
             onNewOrder={openNewOrder}
             netviewUrl={NETVIEW_FORM_URL}
-            badges={{ support: supportCount, 'import-queue': pendingImportCount }}
+            badges={{ support: supportCount, 'import-queue': pendingImportCount, messages: messageCount }}
+          />
+        )}
+        {view === 'messages' && (
+          <MessagesView
+            workOrders={workOrders}
+            contractors={contractors}
+            onOpenJob={(id) => openJobFrom(id, 'messages')}
+            onCount={setMessageCount}
           />
         )}
         {view === 'support' && (

@@ -9,10 +9,10 @@ const std = () => normalizeLayout(STANDARD_LAYOUT);
 const keysOf = (l: ReturnType<typeof std>) => [...l.main, ...l.sections.flatMap((s) => s.items)];
 
 describe('menu layout (Settings -> Menu & screens)', () => {
-  it('the standard menu: Dashboard, Dispatch, Schedule, Office — everything else in Office', () => {
+  it('the standard menu: Dashboard, Dispatch, Schedule, Messages, Office, Settings — everything else in Office', () => {
     const r = visibleLayout(resolveLayout(std()));
-    expect(r.main.map((s) => s.label)).toEqual(['Dashboard', 'Dispatch', 'Schedule', 'Office']);
-    expect(r.sections.map((s) => s.title)).toEqual(['Every day', 'Money', 'Techs', 'Winning work', 'On site', 'Settings']);
+    expect(r.main.map((s) => s.label)).toEqual(['Dashboard', 'Dispatch', 'Schedule', 'Messages', 'Office', 'Settings']);
+    expect(r.sections.map((s) => s.title)).toEqual(['Every day', 'Money', 'Techs', 'Winning work', 'On site']);
     expect(isStandard(STANDARD_LAYOUT)).toBe(true);
   });
 
@@ -26,11 +26,17 @@ describe('menu layout (Settings -> Menu & screens)', () => {
   it('bad or old saved values fall back safely', () => {
     expect(normalizeLayout(null)).toEqual(std());
     const l = normalizeLayout({ main: ['dashboard'], sections: [{ id: 'money', title: '  Cash  ', items: ['ledger'] }], labels: { ledger: '  Books ', bogus: 'x', payments: '' }, hidden: ['office', 'settings', 'w9', 'nope'] });
-    expect(l.main).toEqual(['dashboard', 'office', 'workorders', 'scheduling']); // Office can't leave; the rest come back
+    expect(l.main).toEqual(['dashboard', 'workorders', 'scheduling', 'messages', 'office', 'settings']); // the rest come back in their usual places
     expect(l.sections[0]).toMatchObject({ id: 'money', title: 'Cash' });
     expect(l.sections[0].items[0]).toBe('ledger');
     expect(l.labels).toEqual({ ledger: 'Books' });
     expect(l.hidden).toEqual(['w9']); // Office and Settings can never be hidden
+  });
+
+  it('a left-menu screen added later lands just under the one it follows', () => {
+    // A menu saved before Messages existed, with Schedule moved to the bottom.
+    const l = normalizeLayout({ main: ['dashboard', 'workorders', 'office', 'scheduling'], sections: STANDARD_LAYOUT.sections });
+    expect(l.main).toEqual(['dashboard', 'workorders', 'office', 'settings', 'scheduling', 'messages']); // Settings under Office, Messages under Schedule
   });
 
   it('a screen added to the app later shows up in its standard section', () => {
@@ -68,7 +74,7 @@ describe('menu layout (Settings -> Menu & screens)', () => {
 
   it('move a screen to the left menu, to another section, and back', () => {
     let l = moveScreen(std(), 'sitelog', 'main');
-    expect(l.main).toEqual(['dashboard', 'workorders', 'scheduling', 'office', 'sitelog']);
+    expect(l.main).toEqual(['dashboard', 'workorders', 'scheduling', 'messages', 'office', 'settings', 'sitelog']);
     expect(sectionOfView(resolveLayout(l), 'sitelog')).toBeNull();
     l = moveScreen(l, 'sitelog', 'money');
     expect(placeOf(l, 'sitelog')).toBe('money');
@@ -79,7 +85,7 @@ describe('menu layout (Settings -> Menu & screens)', () => {
 
   it('up and down, for screens and sections, stop at the ends', () => {
     let l = shiftScreen(std(), 'office', -1);
-    expect(l.main).toEqual(['dashboard', 'workorders', 'office', 'scheduling']);
+    expect(l.main).toEqual(['dashboard', 'workorders', 'scheduling', 'office', 'messages', 'settings']);
     expect(shiftScreen(std(), 'dashboard', -1).main).toEqual(std().main);
     l = shiftScreen(std(), 'payables', -1);
     expect(l.sections[0].items.slice(0, 2)).toEqual(['payables', 'sitelog']);

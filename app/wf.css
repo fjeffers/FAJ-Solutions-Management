@@ -246,3 +246,17 @@ textarea.wf-input { resize: vertical; }
 }
 .wf-row-click { cursor: pointer; }
 .wf-row-click:hover, .wf-row-click:focus { background: rgba(14, 27, 46, 0.04); outline: none; }
+
+/* Messages (owner): conversations on the left, the open one on the right. On a
+   phone, one at a time — the list, or the conversation with a back button. */
+.wf-msg-grid { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.wf-msg-list > button:first-child { border-top: none !important; }
+.wf-msg-back { display: none; align-self: flex-start; }
+.wf-msg-placeholder { padding: 24px 0; }
+@media (max-width: 860px) {
+  .wf-msg-grid { grid-template-columns: minmax(0, 1fr); }
+  .wf-msg-grid .wf-msg-thread { display: none; }
+  .wf-msg-grid.wf-msg-open .wf-msg-thread { display: block; }
+  .wf-msg-grid.wf-msg-open .wf-msg-list { display: none; }
+  .wf-msg-back { display: inline-flex; }
+}

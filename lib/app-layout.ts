@@ -49,7 +49,9 @@ const MAIN_SCREENS: Record<string, { label: string; hint: string }> = {
   dashboard: { label: 'Dashboard', hint: 'Money, jobs and what needs you today' },
   workorders: { label: 'Dispatch', hint: 'The job board: every job by stage' },
   scheduling: { label: 'Schedule', hint: 'Jobs on the calendar' },
+  messages: { label: 'Messages', hint: 'Every conversation with your techs' },
   office: { label: 'Office', hint: 'Every other screen, in sections' },
+  settings: { label: 'Settings', hint: 'Your password, the menu, checklists and templates' },
 };
 
 type Base = { view: string | null; label: string; hint: string; section: string | null };
@@ -105,13 +107,19 @@ export function normalizeLayout(raw: unknown): Layout {
   }
 
   // Anything not placed (a screen new to the app, or a damaged value) goes
-  // back to its standard section — or the last section, or the left menu.
+  // back to its standard place: a left-menu screen just under the one it
+  // normally follows, an Office screen in its section (or the last section).
   for (const key of Object.keys(SCREENS)) {
     if (placed.has(key)) continue;
     placed.add(key);
     const home = sections.find((s) => s.id === SCREENS[key].section) ?? sections[sections.length - 1];
-    if (SCREENS[key].section === null || !home) main.push(key);
-    else home.items.push(key);
+    if (SCREENS[key].section === null || !home) {
+      const std = STANDARD_LAYOUT.main;
+      const before = std.slice(0, Math.max(0, std.indexOf(key))).reverse().find((k) => main.includes(k));
+      main.splice(before ? main.indexOf(before) + 1 : main.length, 0, key);
+    } else {
+      home.items.push(key);
+    }
   }
 
   const labels: Record<string, string> = {};

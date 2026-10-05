@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import {
   Award, Banknote, BarChart3, BookOpen, Building2, Calendar, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, Construction, CreditCard, ExternalLink, FileCheck2, Folder, HardHat, KanbanSquare, LayoutGrid, Plus, SquarePlus, Sun, Trophy,
-  FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, Network, Package, Receipt, Search, Settings, ShieldCheck,
+  FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, MessageSquare, Network, Package, Receipt, Search, Settings, ShieldCheck,
   Timer, TrendingUp, UserCog, Users, Wallet, Wrench, type LucideIcon,
 } from 'lucide-react';
 import { searchSections, type ResolvedSection, type Screen } from '@/lib/app-layout';
@@ -13,7 +13,7 @@ import { PrimioBar } from '@/components/wf/PrimioScreens';
 
 const ICONS: Record<string, LucideIcon> = {
   'new-order': SquarePlus,
-  dashboard: BarChart3, sitelog: Timer, workorders: KanbanSquare, office: LayoutGrid,
+  dashboard: BarChart3, sitelog: Timer, workorders: KanbanSquare, office: LayoutGrid, messages: MessageSquare,
   payables: Wallet, team: UserCog, support: LifeBuoy, 'import-queue': Inbox,
   payments: CreditCard, financials: TrendingUp, ledger: BookOpen,
   customers: Building2, quickbooks: TrendingUp, netview: FileText, invoices: Receipt,

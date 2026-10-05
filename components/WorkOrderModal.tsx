@@ -577,7 +577,11 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     setCustomQA((qs) => qs.filter((q) => q.id !== id));
 
   const computed = calcTotal(form, payAddons);
-  const canSave = !!(form.wo_number?.trim() && (contractorNames.length > 0 || contractorToAdd.trim()));
+  // A job only needs its number to save. No tech yet is normal — it sits in
+  // Dispatch's "Needs a tech" column (Fred, 2026-10-05: "cant edit work
+  // orders" — Save stayed greyed out on every job without a tech, about 30
+  // of them, with nothing saying why).
+  const canSave = !!form.wo_number?.trim();
 
   const addContractor = () => {
     const name = contractorToAdd.trim();
@@ -2375,7 +2379,12 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         )}
 
         {/* ── FOOTER ── */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 20, marginTop: 8, borderTop: '1px solid #eee' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingTop: 20, marginTop: 8, borderTop: '1px solid #eee' }}>
+          {!canSave && (
+            <span role="status" style={{ marginRight: 'auto', fontSize: 13, color: '#b45309', fontWeight: 600 }}>
+              Add a work order number to save.
+            </span>
+          )}
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button
             className="btn btn-primary"

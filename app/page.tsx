@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders, contractorOwedOnWO, woPayoutTotal, fmtMoney } from '@/lib/utils';
@@ -59,7 +59,8 @@ import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
-import { OFFICE_GROUPS, officeGroupOf } from '@/lib/office-menu';
+import { sectionOfView, type ResolvedLayout } from '@/lib/app-layout';
+import { useAppLayout } from '@/components/useAppLayout';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
@@ -121,14 +122,21 @@ export default function HomePage() {
       .then(({ count }) => setSupportCount(count ?? 0));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once on load; the inbox keeps it current
   const [searchOpen, setSearchOpen] = useState(false);
+  // Fred's own menu: names, order, sections, hidden screens (Settings ->
+  // Menu & screens, migration 107). The standard one is lib/office-menu.ts.
+  const appLayout = useAppLayout();
+  const layoutRef = useRef<ResolvedLayout>(appLayout.resolved);
+  layoutRef.current = appLayout.resolved;
+  const menu = appLayout.visible;
+  const officeLabel = menu.main.find((s) => s.key === 'office')?.label ?? 'Office';
   // The left menu's Office dropdown (Fred, 2026-10-04: "make it a drop down
   // menu under office and then drop down after that to the rest"). Office
   // opens to its sections; one section open at a time. Going to a screen opens
   // the Office dropdown and the section that holds it.
-  const [officeOpen, setOfficeOpen] = useState<boolean>(() => officeGroupOf(viewFromUrl()) !== null);
-  const [openSection, setOpenSection] = useState<string | null>(() => officeGroupOf(viewFromUrl()));
+  const [officeOpen, setOfficeOpen] = useState<boolean>(() => sectionOfView(appLayout.resolved, viewFromUrl()) !== null);
+  const [openSection, setOpenSection] = useState<string | null>(() => sectionOfView(appLayout.resolved, viewFromUrl()));
   function openOfficeFor(v: View) {
-    const g = officeGroupOf(v);
+    const g = sectionOfView(layoutRef.current, v);
     if (g) { setOfficeOpen(true); setOpenSection(g); }
   }
   // Read once on mount: the board should open on the linked work order, but
@@ -1421,15 +1429,36 @@ Go ahead?`)) return;
               dispatcher, schedule and office, and everything else should go
               under office with its own drop down page". Every other screen
               is on the Office page, in sections that open and close. */}
-          <NI k="dashboard"  icon={<BarChart3 size={15} />} label="Dashboard" />
-          <NI k="workorders" icon={<KanbanSquare size={15} />} label="Dispatch" />
-          <NI k="scheduling" icon={<Calendar size={15} />}  label="Schedule" />
+          {/* Fred can rename, reorder, hide and move these in Settings ->
+              Menu & screens; Office always stays (lib/app-layout.ts). */}
+          {menu.main.map((m) => {
+            const count = m.view === 'support' ? supportCount : m.view === 'import-queue' ? pendingImportCount : 0;
+            if (m.key !== 'office') {
+              if (!m.view) {
+                return (
+                  <a key={m.key} className="nav-btn" href={NETVIEW_FORM_URL} target="_blank" rel="noopener noreferrer"
+                    style={{ textDecoration: 'none' }} onClick={() => setMobileNavOpen(false)}>
+                    <OfficeIcon k={m.key} size={15} /> {m.label}
+                  </a>
+                );
+              }
+              return (
+                <button key={m.key} className={`nav-btn ${view === m.view ? 'active' : ''}`} onClick={() => navigate(m.view as View)}>
+                  <OfficeIcon k={m.key} size={15} /> {m.label}
+                  {count > 0 && (
+                    <span style={{ background: 'var(--gold)', color: '#0E1B2E', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4 }}>{count}</span>
+                  )}
+                </button>
+              );
+            }
+            return (
+          <Fragment key="office">
           <button
-            className={`nav-btn ${!officeOpen && view !== 'dashboard' && view !== 'scheduling' && view !== 'workorders' ? 'active' : ''}`}
+            className={`nav-btn ${!officeOpen && !menu.main.some((x) => x.view === view) ? 'active' : ''}`}
             onClick={() => setOfficeOpen((o) => !o)}
             aria-expanded={officeOpen}
           >
-            <LayoutGrid size={15} /> Office
+            <LayoutGrid size={15} /> {officeLabel}
             {supportCount + pendingImportCount > 0 && (
               <span
                 title={`${supportCount} support ticket${supportCount === 1 ? '' : 's'} and ${pendingImportCount} import${pendingImportCount === 1 ? '' : 's'} waiting`}
@@ -1443,14 +1472,14 @@ Go ahead?`)) return;
           {officeOpen && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 10 }}>
               <button className={`nav-btn ${view === 'office' ? 'active' : ''}`} onClick={() => navigate('office')} style={{ padding: '9px 14px', fontSize: 13 }}>
-                <Search size={14} /> All of Office
+                <Search size={14} /> All of {officeLabel}
               </button>
-              {OFFICE_GROUPS.map((g) => {
-                const open = openSection === g.title;
+              {menu.sections.map((g) => {
+                const open = openSection === g.id;
                 const waiting = g.items.reduce((n, i) => n + (i.view === 'support' ? supportCount : i.view === 'import-queue' ? pendingImportCount : 0), 0);
                 return (
-                  <div key={g.title}>
-                    <button className="nav-btn" onClick={() => toggleSection(g.title)} aria-expanded={open}
+                  <div key={g.id}>
+                    <button className="nav-btn" onClick={() => toggleSection(g.id)} aria-expanded={open}
                       style={{ padding: '9px 14px', fontSize: 13, fontWeight: 700, width: '100%' }}>
                       <ChevronRight size={13} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                       {g.title}
@@ -1465,7 +1494,7 @@ Go ahead?`)) return;
                           const sub = { padding: '8px 12px', fontSize: 13 };
                           if (!i.view) {
                             return (
-                              <a key={i.label} className="nav-btn" href={NETVIEW_FORM_URL} target="_blank" rel="noopener noreferrer"
+                              <a key={i.key} className="nav-btn" href={NETVIEW_FORM_URL} target="_blank" rel="noopener noreferrer"
                                 title="Opens NetView's vendor payment form in a new tab. Tip: open a NetView work order and use 'Submit to Netview' there to get the form pre-filled."
                                 style={{ ...sub, textDecoration: 'none' }} onClick={() => setMobileNavOpen(false)}>
                                 <OfficeIcon k="netview" size={14} /> {i.label}
@@ -1489,6 +1518,9 @@ Go ahead?`)) return;
               })}
             </div>
           )}
+          </Fragment>
+            );
+          })}
         </nav>
 
         {/* Utility buttons */}
@@ -1637,6 +1669,8 @@ Go ahead?`)) return;
         )}
         {view === 'office' && (
           <OfficeHub
+            sections={menu.sections}
+            title={officeLabel}
             onOpen={(v) => navigate(v as View)}
             onNewOrder={openNewOrder}
             netviewUrl={NETVIEW_FORM_URL}
@@ -1774,6 +1808,11 @@ Go ahead?`)) return;
             deliverableTemplates={deliverableTemplates}
             onSaveDeliverable={saveDeliverableTemplate}
             onDeleteDeliverable={deleteDeliverableTemplate}
+            layout={appLayout.layout}
+            onLayoutChange={appLayout.update}
+            layoutSaveState={appLayout.saveState}
+            layoutSaveError={appLayout.saveError}
+            onLayoutRetry={appLayout.retry}
           />
         )}
       </main>

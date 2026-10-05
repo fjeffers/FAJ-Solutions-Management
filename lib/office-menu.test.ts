@@ -22,6 +22,7 @@ describe('Office hub', () => {
   it('knows which Office section a screen is in', () => {
     expect(officeGroupOf('payments')).toBe('Money');
     expect(officeGroupOf('sitelog')).toBe('Every day');
+    expect(new Set(OFFICE_GROUPS.map((g) => g.id)).size).toBe(OFFICE_GROUPS.length);
     expect(officeGroupOf('dashboard')).toBeNull();
   });
 

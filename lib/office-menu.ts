@@ -20,13 +20,15 @@ export type OfficeItem = {
   label: string;
   hint: string;
 };
-export type OfficeGroup = { title: string; items: OfficeItem[] };
+/** id never changes, so Fred can rename a section (Settings -> Menu & screens). */
+export type OfficeGroup = { id: string; title: string; items: OfficeItem[] };
 
 /** The screens in the left menu itself — not repeated on the Office page. ('workorders' is Dispatch.) */
 export const SIDEBAR_VIEWS = ['dashboard', 'workorders', 'scheduling', 'office'] as const;
 
 export const OFFICE_GROUPS: OfficeGroup[] = [
   {
+    id: 'everyday',
     title: 'Every day',
     items: [
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
@@ -37,6 +39,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     ],
   },
   {
+    id: 'money',
     title: 'Money',
     items: [
       { view: 'payments', label: 'Payments Made', hint: 'History of payments sent to techs' },
@@ -49,6 +52,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     ],
   },
   {
+    id: 'techs',
     title: 'Techs',
     items: [
       { view: 'contractors', label: 'Contractors', hint: 'Your techs: contact details, on hold, paperwork' },
@@ -60,6 +64,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     ],
   },
   {
+    id: 'winning',
     title: 'Winning work',
     items: [
       { view: 'surveys', label: 'Surveys', hint: 'Site surveys and what they found' },
@@ -69,6 +74,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     ],
   },
   {
+    id: 'onsite',
     title: 'On site',
     items: [
       { view: 'materials', label: 'Materials', hint: 'Stock, and materials used on jobs' },
@@ -77,6 +83,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     ],
   },
   {
+    id: 'settings',
     title: 'Settings',
     items: [
       { view: 'settings', label: 'Settings', hint: 'Company details and preferences' },

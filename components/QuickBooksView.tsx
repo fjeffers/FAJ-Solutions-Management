@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Printer, Link as LinkIcon, CheckCircle2 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Payment, WorkOrder, Contractor, QuickBooksConnection, QuickBooksAccount } from '@/lib/types';
+import QuickBooksCompletedJobsExport from '@/components/QuickBooksCompletedJobsExport';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -83,6 +84,7 @@ function QuickBooksConnectionPanel({ connection, onReloaded }: { connection: Qui
 
 export default function QuickBooksView({ payments, workOrders, contractors, connection, onReloaded }: { payments: Payment[]; workOrders: WorkOrder[]; contractors: Contractor[]; connection: QuickBooksConnection | null; onReloaded: () => void }) {
   const now = new Date();
+  const currentYear = now.getFullYear();
   const [range, setRange] = useState<'year' | 'quarter' | 'month'>('year');
   const [year, setYear] = useState(now.getFullYear());
   const [quarter, setQuarter] = useState(Math.floor(now.getMonth() / 3) + 1);
@@ -90,9 +92,9 @@ export default function QuickBooksView({ payments, workOrders, contractors, conn
 
   const allYears = useMemo(() => {
     const ys = new Set(payments.map((p) => new Date(p.payment_date).getFullYear()));
-    if (!ys.has(now.getFullYear())) ys.add(now.getFullYear());
+    if (!ys.has(currentYear)) ys.add(currentYear);
     return Array.from(ys).sort((a, b) => b - a);
-  }, [payments]);
+  }, [payments, currentYear]);
 
   const filtered = useMemo(() => {
     return payments.filter((p) => {
@@ -145,6 +147,8 @@ export default function QuickBooksView({ payments, workOrders, contractors, conn
       </div>
 
       <QuickBooksConnectionPanel connection={connection} onReloaded={onReloaded} />
+
+      <QuickBooksCompletedJobsExport workOrders={workOrders} />
 
       <div className="glass card no-print" style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>

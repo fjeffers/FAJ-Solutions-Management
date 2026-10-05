@@ -44,6 +44,7 @@ import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
+import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
   ArrowLeft, Briefcase, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
@@ -1611,6 +1612,9 @@ function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 640 }}>
       <UsernameCard />
+      <Section title="Change password" subtitle="Your current password, then the new one twice">
+        <ChangePasswordForm />
+      </Section>
       <Section title="Your details">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div><div className="wf-label">Name</div><div style={{ fontWeight: 600 }}>{profile.name}</div></div>

@@ -203,7 +203,7 @@ export default function TechLoginPage() {
                   First time? Create your login
                 </button>
                 <div style={{ marginTop: 8 }}>
-                  <Link href="/reset-password" style={{ color: 'var(--wf-navy)', fontSize: 12 }}>Forgot password?</Link>
+                  <Link href="/reset-password?next=/tech" style={{ color: 'var(--wf-navy)', fontSize: 12 }}>Forgot password?</Link>
                 </div>
               </>
             ) : (

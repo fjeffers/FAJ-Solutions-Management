@@ -1,7 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { Lock, CheckCircle2, ClipboardList, CheckSquare, ListChecks } from 'lucide-react';
+import ChangePasswordForm from './ChangePasswordForm';
+import { Lock, ClipboardList, CheckSquare, ListChecks } from 'lucide-react';
 import CloseoutListsEditor from './CloseoutListsEditor';
 import QuestionTemplatesView from './QuestionTemplatesView';
 import DeliverableTemplatesView from './DeliverableTemplatesView';
@@ -21,28 +20,6 @@ interface Props {
 }
 
 export default function SettingsView({ templates, onSave, onDelete, onUploadAttachment, deliverableTemplates, onSaveDeliverable, onDeleteDeliverable }: Props) {
-  const supabase = createClient();
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-
-  const handleUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(false);
-    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
-    if (password !== confirm) { setError('Passwords do not match'); return; }
-    setLoading(true);
-    const { error: err } = await supabase.auth.updateUser({ password });
-    setLoading(false);
-    if (err) { setError(err.message); return; }
-    setSuccess(true);
-    setPassword('');
-    setConfirm('');
-  };
-
   return (
     <div className="view-inner" style={{ maxWidth: 960, margin: '0 auto' }}>
       {/* Header */}
@@ -60,64 +37,15 @@ export default function SettingsView({ templates, onSave, onDelete, onUploadAtta
           </div>
           <div>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Change Password</h2>
-            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>Update your admin account password</div>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>Type your current password, then the new one twice</div>
           </div>
         </div>
 
         <div style={{ height: 1, background: '#f0f0f0', margin: '18px 0' }} />
 
-        <form onSubmit={handleUpdate} style={{ maxWidth: 380 }}>
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
-              New Password
-            </label>
-            <input
-              type="password"
-              className="input"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setSuccess(false); }}
-              required
-              minLength={8}
-              placeholder="Min 8 characters"
-              autoComplete="new-password"
-            />
-          </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
-              Confirm Password
-            </label>
-            <input
-              type="password"
-              className="input"
-              value={confirm}
-              onChange={(e) => { setConfirm(e.target.value); setSuccess(false); }}
-              required
-              minLength={8}
-              autoComplete="new-password"
-            />
-          </div>
-
-          {error && (
-            <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.08)', color: '#b91c1c', borderRadius: 8, fontSize: 13, marginBottom: 14, border: '1px solid rgba(239,68,68,0.15)' }}>
-              {error}
-            </div>
-          )}
-          {success && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'rgba(4,120,87,0.08)', color: '#047857', borderRadius: 8, fontSize: 13, marginBottom: 14, fontWeight: 600, border: '1px solid rgba(4,120,87,0.15)' }}>
-              <CheckCircle2 size={15} /> Password updated successfully!
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !password || !confirm}
-            className="btn btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px' }}
-          >
-            <Lock size={14} />
-            {loading ? 'Updating...' : 'Update Password'}
-          </button>
-        </form>
+        {/* The server checks the current password and saves the new one (Fred,
+            2026-10-05: "whenever I try changing the PW it doesn't take"). */}
+        <div className="wf"><ChangePasswordForm /></div>
       </div>
 
       {/* ── Question Templates ── */}

@@ -1,8 +1,9 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Sparkles, Lock } from 'lucide-react';
+import Link from 'next/link';
 
 export default function UpdatePasswordPage() {
   const router = useRouter();
@@ -12,6 +13,26 @@ export default function UpdatePasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // The email link has to sign you in first. Supabase only manages that in the
+  // same browser where the reset was asked for; anywhere else it fails quietly
+  // and the new password could never save. Now the page checks and says so.
+  const [linkOk, setLinkOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    let off = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) { if (!off) setLinkOk(true); return; }
+      const code = new URLSearchParams(window.location.search).get('code');
+      if (code) {
+        const { error: ex } = await supabase.auth.exchangeCodeForSession(code);
+        if (!off) setLinkOk(!ex);
+        return;
+      }
+      if (!off) setLinkOk(false);
+    })();
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +43,9 @@ export default function UpdatePasswordPage() {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) { setError(error.message); setLoading(false); return; }
     setDone(true);
-    setTimeout(() => router.push('/'), 2000);
+    let next = '/';
+    try { next = localStorage.getItem('pw-reset-next') === '/tech' ? '/tech' : '/'; localStorage.removeItem('pw-reset-next'); } catch { /* private window */ }
+    setTimeout(() => router.push(next), 2000);
   };
 
   return (
@@ -34,7 +57,20 @@ export default function UpdatePasswordPage() {
           <div style={{ color: '#666', marginTop: 8, fontSize: 13 }}>Choose a strong new password</div>
         </div>
 
-        {!done ? (
+        {linkOk === false && !done ? (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: '#b91c1c', fontWeight: 700, marginBottom: 8 }}>This reset link didn&apos;t work here</div>
+            <div style={{ fontSize: 13.5, color: '#555', marginBottom: 18 }}>
+              The link has to be opened on the same phone or computer where you asked for it, and it only works once.
+              Ask for a new link and open it on this device, or sign in and change your password in Settings / Profile.
+            </div>
+            <Link href="/reset-password" className="btn btn-primary" style={{ display: 'inline-flex', justifyContent: 'center', padding: '12px 20px', textDecoration: 'none' }}>
+              Send a new link
+            </Link>
+          </div>
+        ) : linkOk === null && !done ? (
+          <div style={{ textAlign: 'center', color: '#666', fontSize: 13.5 }}>Checking your link…</div>
+        ) : !done ? (
           <form onSubmit={handleUpdate}>
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 6 }}>NEW PASSWORD</label>

@@ -15,6 +15,11 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    // A tech comes here from the tech sign-in (?next=/tech) and goes back there after.
+    try {
+      const next = new URLSearchParams(window.location.search).get('next');
+      localStorage.setItem('pw-reset-next', next === '/tech' ? '/tech' : '/');
+    } catch { /* private window */ }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/update-password`,
     });
@@ -30,7 +35,7 @@ export default function ResetPasswordPage() {
           <Sparkles size={22} color="var(--gold)" style={{ marginBottom: 12 }} />
           <div className="serif" style={{ fontSize: 28, fontWeight: 600, lineHeight: 1 }}>Reset Password</div>
           <div style={{ color: '#666', marginTop: 8, fontSize: 13 }}>
-            Enter your email to receive a password reset link
+            Enter your email to receive a password reset link. Open the link on this same phone or computer.
           </div>
         </div>
 

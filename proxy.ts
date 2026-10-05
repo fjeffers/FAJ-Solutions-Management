@@ -2,11 +2,27 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  // Let the owner inspect the app before connecting Supabase. In this mode the
+  // home page is a clearly labeled, read-only sample-data preview; other app
+  // routes are kept out of code paths that require a live Supabase client.
+  if (!supabaseUrl || !supabaseAnonKey) {
+    if (request.nextUrl.pathname === '/') return NextResponse.next({ request });
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'This preview is read-only until Supabase is connected.' }, { status: 503 });
+    }
+    const previewUrl = request.nextUrl.clone();
+    previewUrl.pathname = '/';
+    previewUrl.search = '';
+    return NextResponse.redirect(previewUrl);
+  }
+
+  let response = NextResponse.next({ request });
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() { return request.cookies.getAll(); },

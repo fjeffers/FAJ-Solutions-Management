@@ -1,13 +1,22 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { cookieOptionsFor, hasAdminSessionCookie, sideForApiRequest, sideForPath } from '@/lib/supabase/side';
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
+
+  // The office and the tech portal have separate sign-ins (lib/supabase/side.ts).
+  // A page goes by its address; an /api call by the page that made it.
+  const side = request.nextUrl.pathname.startsWith('/api')
+    ? sideForApiRequest(request.headers.get('referer'), hasAdminSessionCookie(request.cookies.getAll().map((c) => c.name)))
+    : sideForPath(request.nextUrl.pathname);
+  const cookieOptions = cookieOptionsFor(side);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      ...(cookieOptions ? { cookieOptions } : {}),
       cookies: {
         getAll() { return request.cookies.getAll(); },
         setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {

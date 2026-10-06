@@ -243,15 +243,14 @@ export default function TechPortalPage() {
     return (
       <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div className="wf-card" style={{ maxWidth: 420, padding: 28, textAlign: 'center' }}>
+          {/* Fred, 2026-10-06: the tech side says nothing about any other login. */}
           {deniedAs === 'owner' ? (
             <>
-              <div className="wf-h1" style={{ fontSize: 22 }}>This is the management login</div>
+              <div className="wf-h1" style={{ fontSize: 22 }}>Not a tech account</div>
               <p className="wf-subtle" style={{ margin: '8px 0 18px' }}>
-                The tech portal only opens with a tech login. Sign out, then sign in here with a tech username —
-                or go back to management, where you see everything.
+                This login isn&apos;t a tech account. Sign out, then sign in with your tech username or email.
               </p>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <a className="wf-btn wf-btn-outline" href="/admin">Back to the office</a>
                 <button className="wf-btn wf-btn-navy" onClick={signOut}>Sign out</button>
               </div>
             </>

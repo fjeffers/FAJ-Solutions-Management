@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   if (amount == null) return NextResponse.json({ ok: false, error: expenseReasonText('bad_amount') }, { status: 400 });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ ok: false, error: expenseReasonText('bad_date') }, { status: 400 });
 
-  const supabase = await createClient();
+  const supabase = await createClient('field');
   const { data: target } = await supabase.rpc('wf_tech_photo_target', { p_wo_number: woNumber });
   const woId = (target as { wo_id?: string } | null)?.wo_id;
   if (!woId) return NextResponse.json({ ok: false, error: expenseReasonText('closed_or_not_yours') }, { status: 403 });

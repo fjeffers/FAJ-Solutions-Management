@@ -47,10 +47,11 @@ export default function TechLoginPage() {
     const { data: who } = await supabase.rpc('wf_role');
     const role = (who as { role?: string } | null)?.role;
 
-    if (role === 'owner') {
-      setError("That's the administrator login — it opens the office at app.fajsolutions.com/admin. The tech portal only opens with a tech login.");
-    } else if (role === 'staff') {
-      setError("That login is for the office (assistant or accountant), not the tech portal.");
+    // Fred, 2026-10-06: "the tech should not see the admin login or anything
+    // about admin". A login that isn't a tech's gets one plain answer — no
+    // mention of any other login or where it goes.
+    if (role === 'owner' || role === 'staff') {
+      setError("That login isn't a tech account. Sign in with your tech username or email.");
     } else if (claim.reason === 'no_matching_contractor') {
       setError("Signed in, but this login's email isn't on any tech record. Ask Fred to put this email on your tech record, then sign in again.");
     } else if (claim.reason === 'email_not_confirmed') {

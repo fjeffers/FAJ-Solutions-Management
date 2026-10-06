@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const takenAt = String(form.get('taken_at') ?? '');
   const source = form.get('source') === 'library' ? 'library' : 'camera';
 
-  const supabase = await createClient();
+  const supabase = await createClient('field');
   const { data: target, error: tErr } = await supabase.rpc('wf_tech_photo_target', { p_wo_number: woNumber });
   const woId = (target as { wo_id?: string } | null)?.wo_id;
   if (tErr || !woId) return NextResponse.json({ ok: false, error: 'That job is closed or no longer yours.' }, { status: 403 });

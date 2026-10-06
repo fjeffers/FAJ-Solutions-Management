@@ -18,7 +18,7 @@ const PROMPT = `Look at this image or document of a product, its barcode, or a s
 Read only what is actually printed. If you cannot read a field, return null for it rather than guessing.`;
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

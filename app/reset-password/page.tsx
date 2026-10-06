@@ -5,7 +5,11 @@ import { Sparkles, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ResetPasswordPage() {
-  const supabase = createClient();
+  // The reset finishes on the side it started from (lib/supabase/side.ts): a
+  // tech arrives with ?next=/tech, everyone else is the office.
+  const supabase = createClient(
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('next') === '/tech' ? 'field' : 'admin',
+  );
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);

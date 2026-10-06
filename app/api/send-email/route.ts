@@ -33,7 +33,7 @@ const REPLY_TO = process.env.REPLY_TO_EMAIL ?? 'support@fajsolutions.com';
 export async function POST(req: NextRequest) {
   // Signed-in users only — this endpoint sends from the FAJ domain to any
   // address, so leaving it open would make it a public email relay.
-  const authClient = await createServerClient();
+  const authClient = await createServerClient('admin');
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

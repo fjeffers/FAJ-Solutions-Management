@@ -15,7 +15,7 @@ import type { WorkOrder } from '@/lib/types';
 // every field on the form plus the tech's checklist.
 export async function POST(req: Request) {
   try {
-    const supabase = await createClient();
+    const supabase = await createClient('admin');
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 // Body: { expense_account_id, expense_account_name, payment_account_id, payment_account_name }
 export async function POST(req: Request) {
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

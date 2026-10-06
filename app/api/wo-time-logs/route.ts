@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'wo_id is required' }, { status: 400 });
   }
 
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {

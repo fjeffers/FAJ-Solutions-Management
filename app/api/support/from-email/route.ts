@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 const MAX_BYTES = 2 * 1024 * 1024;
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

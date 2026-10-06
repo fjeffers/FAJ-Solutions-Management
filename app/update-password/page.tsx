@@ -7,7 +7,12 @@ import Link from 'next/link';
 
 export default function UpdatePasswordPage() {
   const router = useRouter();
-  const supabase = createClient();
+  // Same side the reset was asked for on (app/reset-password stores it): the
+  // emailed link only signs in with the sign-in that asked for it.
+  const supabase = createClient((() => {
+    try { return typeof window !== 'undefined' && localStorage.getItem('pw-reset-next') === '/tech' ? 'field' : 'admin'; }
+    catch { return 'admin'; }
+  })());
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);

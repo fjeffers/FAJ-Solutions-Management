@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   if (taken) return NextResponse.json({ ok: false, error: `The username "${username}" is taken. Try another, like ${username}2.` }, { status: 409 });
 
   const origin = new URL(req.url).origin;
-  const supabase = await createClient();
+  const supabase = await createClient('field');
   const { data, error } = await supabase.auth.signUp({
     email, password,
     options: { emailRedirectTo: `${origin}/tech`, data: { full_name: name, username } },

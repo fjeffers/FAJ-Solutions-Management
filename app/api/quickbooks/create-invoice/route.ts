@@ -18,7 +18,7 @@ import type { SiteVisit } from '@/lib/types';
 // the total before a real document exists in his ledger.
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

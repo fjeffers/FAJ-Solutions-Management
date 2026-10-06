@@ -61,9 +61,17 @@ export default function LoginPage() {
     // Assistants and techs land in their own sections. The owner app would
     // show them an empty shell — RLS is keyed to Fred's user id, so they'd get
     // zero rows. Both claims refuse a business owner, so Fred always lands here.
+    // Assistants and accountants have their own sign-in (their section keeps
+    // its own, separate from the office's — lib/supabase/side.ts), so a staff
+    // login used here is pointed there and signed out of the office.
     const staff = await claimAssistantAccount();
     const section = staff.ok ? sectionForRole(staff.role) : null;
-    if (section) { router.push(section); router.refresh(); return; }
+    if (section) {
+      await supabase.auth.signOut();
+      setError(`That login has its own sign-in page: app.fajsolutions.com${section}/login`);
+      setLoading(false);
+      return;
+    }
     // This page is the administrator sign-in (Fred, 2026-10-06: "/admin for
     // the administrator login, /tech for the tech portal"). A tech login is
     // told where it belongs and signed out — never carried across.
@@ -112,7 +120,7 @@ export default function LoginPage() {
             This phone or browser is signed in as <strong>{signedInAs}</strong>, which is not the administrator login.
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
               <button type="button" className="btn btn-primary" onClick={switchLogin} style={{ fontSize: 13 }}>Sign out and sign in as administrator</button>
-              <Link href="/tech" className="btn btn-ghost" style={{ fontSize: 13 }}>Go to the tech portal</Link>
+              <a href="/tech" className="btn btn-ghost" style={{ fontSize: 13 }}>Go to the tech portal</a>
             </div>
           </div>
         )}

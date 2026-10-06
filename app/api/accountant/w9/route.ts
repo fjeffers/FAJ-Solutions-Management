@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get('contractor') ?? '';
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: 'Bad request' }, { status: 400 });
 
-  const supabase = await createClient();
+  const supabase = await createClient('field');
   const { data: me } = await supabase.rpc('acct_me');
   const ctx = me as { owner_id?: string; name?: string } | null;
   if (!ctx?.owner_id) return NextResponse.json({ error: 'Not an accountant login' }, { status: 403 });

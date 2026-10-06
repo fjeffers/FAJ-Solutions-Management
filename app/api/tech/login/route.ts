@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     email = found.user.email;
   }
 
-  const supabase = await createClient();
+  const supabase = await createClient('field');
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     const m = error.message.toLowerCase();

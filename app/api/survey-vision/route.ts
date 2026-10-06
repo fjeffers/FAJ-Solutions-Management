@@ -22,7 +22,7 @@ const MODEL = 'claude-sonnet-5';
 
 export async function POST(req: Request) {
   try {
-    const supabase = await createClient();
+    const supabase = await createClient('admin');
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

@@ -6,7 +6,7 @@ type AdminResult =
   | { ok: false; status: 401 | 403; error: string };
 
 export async function requireAdminUser(): Promise<AdminResult> {
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
   const { data: { user }, error } = await supabase.auth.getUser();
 
   if (error || !user?.email) {

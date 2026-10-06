@@ -29,7 +29,7 @@ const PROMPT = `Read this store receipt and extract the purchased line items. Re
 Rules: exclude subtotal/tax/total/payment/change lines. If a line shows quantity and extended price, divide to get unit_cost. Never invent items that are not on the receipt.`;
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   if (file.size === 0 || file.size > MAX_BYTES) return NextResponse.json({ ok: false, error: 'That signature is too large.' }, { status: 413 });
   if (file.type && file.type !== 'image/jpeg') return NextResponse.json({ ok: false, error: 'Only a signature picture can be added here.' }, { status: 415 });
 
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   const { data: wo } = await supabase.from('work_orders').select('id, wo_number')

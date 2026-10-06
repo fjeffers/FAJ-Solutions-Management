@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 // once a day (Vercel Hobby plan limit), so this is how near-real-time checking actually
 // happens: the user clicks it whenever they want the latest.
 export async function POST() {
-  const supabase = await createClient();
+  const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

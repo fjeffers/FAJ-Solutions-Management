@@ -511,7 +511,7 @@ function Foot({ disabled, onClose, onSave, label }: {
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 10, borderTop: '1px solid #eee' }}>
+    <div className="save-bar">
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" disabled={disabled || busy} style={{ opacity: disabled || busy ? 0.55 : 1 }}
         onClick={async () => { setBusy(true); await onSave(); setBusy(false); }}>

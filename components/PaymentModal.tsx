@@ -413,7 +413,7 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
               {blockedReason}
             </div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <div className="save-bar">
             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button className="btn btn-primary"
               // The Zelle send-first gate only applies when recording a NEW payment —

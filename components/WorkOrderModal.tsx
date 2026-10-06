@@ -2379,7 +2379,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         )}
 
         {/* ── FOOTER ── */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 10, paddingTop: 20, marginTop: 8, borderTop: '1px solid #eee' }}>
+        <div className="save-bar">
           {!canSave && (
             <span role="status" style={{ marginRight: 'auto', fontSize: 13, color: '#b45309', fontWeight: 600 }}>
               Add a work order number to save.

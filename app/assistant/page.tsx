@@ -388,7 +388,7 @@ function WorkDetail({ item, onClose, onSaved }: { item: WorkItem; onClose: () =>
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, flexWrap: 'wrap' }}>
+            <div className="save-bar">
               <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
               <button className="btn btn-primary" disabled={saving} onClick={save}><Save size={14} /> {saving ? 'Saving…' : 'Save'}</button>
             </div>

@@ -237,7 +237,7 @@ function ContractModal({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+        <div className="save-bar">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={() => onSave(form)}>Save Contract</button>
         </div>

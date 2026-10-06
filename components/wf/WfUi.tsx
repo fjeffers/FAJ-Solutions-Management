@@ -243,7 +243,7 @@ export function Dialog({ title, onClose, children, footer, wide = false }: {
           <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         {children}
-        {footer && <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, flexWrap: 'wrap' }}>{footer}</div>}
+        {footer && <div className="save-bar">{footer}</div>}
       </div>
     </div>
   );

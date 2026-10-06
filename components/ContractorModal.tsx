@@ -265,7 +265,7 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 10, marginTop: 28 }}>
+          <div className="save-bar">
             <button type="button" className="btn btn-ghost" onClick={onClose} style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>
             <button type="submit" className="btn btn-primary" style={{ flex: 2, justifyContent: 'center' }}>{item ? 'Save Changes' : 'Add Contractor'}</button>
           </div>

@@ -471,17 +471,17 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
 
 function Modal({ title, onClose, onSave, children }: { title: string; onClose: () => void; onSave: () => void; children: React.ReactNode }) {
   return (
-    <div className="modal-backdrop" {...backdropClose(onClose)}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+    <div className="modal-overlay" {...backdropClose(onClose)}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
           <div className="serif" style={{ fontSize: 19, fontWeight: 600 }}>{title}</div>
           <div style={{ flex: 1 }} />
           <button className="btn btn-ghost" onClick={onClose} style={{ padding: 4 }}><X size={16} /></button>
         </div>
         <div style={{ display: 'grid', gap: 10 }}>{children}</div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+        <div className="save-bar">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={onSave}>Save</button>
+          <button className="btn btn-primary" onClick={onSave}>Save</button>
         </div>
       </div>
     </div>

@@ -302,3 +302,26 @@ html.dark .icon-btn:hover { background: rgba(157,184,224,0.1); color: var(--teal
 /* Work Orders board cards (components/WorkBoard.tsx) set a white card inline. */
 html.dark .board-card { background: #1f2937 !important; border-color: rgba(255,255,255,0.08) !important; }
 .board-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08) !important; }
+
+/* Floating Save (Fred, 2026-10-05: "a floating save button" — "it need for
+   everything i make changes"). A form's Cancel / Save row stays pinned to the
+   bottom of its window while the form scrolls, so Save is always in reach.
+   Put class="save-bar" on the row. Its background matches the window it sits
+   in so the form scrolls cleanly underneath it. */
+.save-bar {
+  position: sticky; bottom: calc(-1 * var(--win-pad-b, 0px)); z-index: 20;
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px;
+  /* Reach down over the window's own bottom padding, so nothing shows below it. */
+  margin: 18px 0 calc(-1 * var(--win-pad-b, 0px));
+  padding: 12px 0 calc(var(--win-pad-b, 12px) + env(safe-area-inset-bottom));
+  background: var(--save-bar-bg, #fff);
+  border-top: 1px solid var(--line, #e5e7eb);
+  box-shadow: 0 -10px 14px -10px rgba(14,27,46,0.18);
+}
+/* Each window's bottom padding, so the bar can sit flush with the bottom. */
+.modal-content { --win-pad-b: 32px; }
+.card { --win-pad-b: 20px; }
+.wf-dialog { --save-bar-bg: var(--wf-surface); --win-pad-b: 20px; }
+@media (max-width: 768px) { .modal-content { --win-pad-b: 24px; } }
+html.dark .glass { --save-bar-bg: #111A2B; }
+html.dark .card, html.dark .modal-solid, html.dark .modal-content { --save-bar-bg: #1f2937; }

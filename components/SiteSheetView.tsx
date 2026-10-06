@@ -772,7 +772,7 @@ function FormulaEditor({
             </div>
           </details>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, paddingTop: 10, borderTop: '1px solid #eee' }}>
+          <div className="save-bar" style={{ justifyContent: 'space-between' }}>
             {onDelete
               ? <button className="btn btn-ghost" style={{ color: '#b91c1c' }} onClick={onDelete}><Trash2 size={14} /> Delete</button>
               : <span />}

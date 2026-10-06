@@ -730,7 +730,7 @@ function KitModal({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+        <div className="save-bar">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={() => {
             if (!form.name?.trim()) { toastError('Give the kit a name first — it is the top field'); return; }
@@ -781,7 +781,7 @@ function MaterialModal({
           <Field label="Location"><input className="input" value={form.location ?? ''} onChange={(e) => set('location', e.target.value)} placeholder="Warehouse shelf, truck, etc." /></Field>
           <Field label="Notes"><textarea className="input" rows={2} value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} /></Field>
         </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+        <div className="save-bar">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           {/* Deliberately NOT disabled. A greyed-out button that does nothing when
               clicked reads as "the app is broken" — say what is missing instead. */}

@@ -13,8 +13,8 @@ import {
   Pencil, Plus, Redo2, Save, Square, Trash2, Type, Undo2, X, Maximize, Cable, BrickWall, LayoutPanelTop, Loader2, Box,
 } from 'lucide-react';
 import {
-  COLORS, SYMBOLS, feet, hitTest, midpoint, moveShape, newId, normalizeSketch, pathLength, roomFromCorners, snapPt,
-  sqft, summarize, symbolInfo, type Pt, type Shape, type Sketch, type SymbolKind,
+  CABLE_TYPES, COLORS, SYMBOLS, SYMBOL_GROUPS, cableInfo, feet, hitTest, midpoint, moveShape, newId, normalizeSketch, pathLength, roomFromCorners, snapPt,
+  sqft, summarize, symbolInfo, type CableType, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
 
 // The 3D model (Fred, 2026-10-06: "also 3d model") — three.js, loaded only when opened.
@@ -69,6 +69,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const [dirty, setDirty] = useState(false);
   const [tool, setTool] = useState<Tool>('room');
   const [sym, setSym] = useState<SymbolKind>('camera');
+  const [cableType, setCableType] = useState<CableType>('cat6');
   const [color, setColor] = useState(COLORS[0]);
   const [width, setWidth] = useState(WIDTHS[1].w);
   const [fill, setFill] = useState(false);
@@ -274,7 +275,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
 
   const finishCable = () => {
     if (draft?.kind === 'cable' && draft.pts.length >= 2) {
-      const s: Shape = { id: newId(), kind: 'cable', pts: draft.pts, color: color === COLORS[0] ? '#1565C0' : color, label: '' };
+      const s: Shape = { id: newId(), kind: 'cable', pts: draft.pts, color: cableInfo(cableType).color, label: '', cable: cableType };
       addShape(s); setSelectedId(s.id);
     }
     setDraft(null);
@@ -374,7 +375,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
           <g key={s.id}>
             <polyline points={s.pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke={s.color} strokeWidth={0.18} strokeDasharray="0.6 0.3" strokeLinejoin="round" />
             {s.pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={0.18} fill={s.color} />)}
-            {tag(midpoint(s.pts), `${s.label ? `${s.label} · ` : ''}${Math.round(total)} ft`, `${s.id}-l`, LABEL * 0.8, s.color)}
+            {tag(midpoint(s.pts), `${s.label ? `${s.label} · ` : ''}${cableInfo(s.cable).label} ${Math.round(total)} ft`, `${s.id}-l`, LABEL * 0.8, s.color)}
             {sel && <polyline points={s.pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#C9A24B" strokeWidth={0.8} strokeOpacity={0.35} data-noexport />}
           </g>
         );
@@ -459,8 +460,8 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       const all = draft.hover ? [...draft.pts, draft.hover] : draft.pts;
       return (
         <g>
-          <polyline points={all.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#1565C0" strokeWidth={0.18} strokeDasharray="0.6 0.3" />
-          {tag(all[all.length - 1], `${Math.round(pathLength(all))} ft`, 'draft-len', LABEL * 0.8, '#1565C0')}
+          <polyline points={all.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke={cableInfo(cableType).color} strokeWidth={0.18} strokeDasharray="0.6 0.3" />
+          {tag(all[all.length - 1], `${Math.round(pathLength(all))} ft ${cableInfo(cableType).label}`, 'draft-len', LABEL * 0.8, cableInfo(cableType).color)}
         </g>
       );
     }
@@ -514,12 +515,28 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       {/* One row that swipes sideways on a phone, so the plan keeps its room. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fff', borderBottom: '1px solid #e2e6ec', flexWrap: 'nowrap', overflowX: 'auto', whiteSpace: 'nowrap', fontSize: 12, flexShrink: 0 }}>
         {tool === 'symbol' ? (
-          SYMBOLS.map((s) => (
-            <button key={s.kind} type="button" onClick={() => setSym(s.kind)} aria-pressed={sym === s.kind}
-              style={{ ...smallBtn, borderColor: sym === s.kind ? s.color : '#d8dde5', background: sym === s.kind ? `${s.color}18` : '#fff', color: s.color }}>
-              {s.code && <b>{s.code}</b>} {s.label}
-            </button>
+          SYMBOL_GROUPS.map((g) => (
+            <span key={g.group} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: '#90a4ae', marginLeft: 4 }}>{g.label}</span>
+              {SYMBOLS.filter((s) => s.group === g.group).map((s) => (
+                <button key={s.kind} type="button" onClick={() => setSym(s.kind)} aria-pressed={sym === s.kind}
+                  style={{ ...smallBtn, borderColor: sym === s.kind ? s.color : '#d8dde5', background: sym === s.kind ? `${s.color}18` : '#fff', color: s.color }}>
+                  {s.code && <b>{s.code}</b>} {s.label}
+                </button>
+              ))}
+            </span>
           ))
+        ) : tool === 'cable' ? (
+          <>
+            {CABLE_TYPES.map((c) => (
+              <button key={c.type} type="button" onClick={() => setCableType(c.type)} aria-pressed={cableType === c.type}
+                style={{ ...smallBtn, borderColor: cableType === c.type ? c.color : '#d8dde5', background: cableType === c.type ? `${c.color}18` : '#fff', color: c.color }}>
+                <span style={{ width: 14, height: 3, background: c.color, display: 'inline-block', borderRadius: 2 }} /> {c.label}
+              </button>
+            ))}
+            <span style={{ color: '#455A64', marginLeft: 4 }}>Tap each point of the run, then</span>
+            <button type="button" onClick={finishCable} disabled={draft?.kind !== 'cable' || draft.pts.length < 2} style={{ ...smallBtn, background: cableInfo(cableType).color, color: '#fff', border: 'none', opacity: draft?.kind === 'cable' && draft.pts.length >= 2 ? 1 : 0.5 }}>Finish run</button>
+          </>
         ) : (
           <>
             {COLORS.map((c) => (
@@ -533,12 +550,6 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             ))}
             {(tool === 'box' || tool === 'ellipse') && (
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><input type="checkbox" checked={fill} onChange={(e) => setFill(e.target.checked)} /> Fill</label>
-            )}
-            {tool === 'cable' && (
-              <>
-                <span style={{ color: '#455A64' }}>Tap each point of the run, then</span>
-                <button type="button" onClick={finishCable} disabled={draft?.kind !== 'cable' || draft.pts.length < 2} style={{ ...smallBtn, background: '#1565C0', color: '#fff', border: 'none', opacity: draft?.kind === 'cable' && draft.pts.length >= 2 ? 1 : 0.5 }}>Finish run</button>
-              </>
             )}
             {tool === 'room' && <span style={{ color: '#455A64' }}>Drag from one corner to the other. Each square is 1 ft.</span>}
             {tool === 'photo' && <span style={{ color: '#455A64' }}>{busyUpload ? 'Uploading…' : 'Tap the spot, then take or choose the photo.'}</span>}
@@ -602,7 +613,11 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
                 const info = symbolInfo(x.kind);
                 return <div key={x.kind} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: info.color, fontWeight: 700 }}>{info.code ? `${info.code} · ` : ''}{x.label}</span><b>{x.count}</b></div>;
               })}
-              {summary.cableFeet > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: '#1565C0', fontWeight: 700 }}>Cable ({summary.cableRuns} run{summary.cableRuns === 1 ? '' : 's'})</span><b>{summary.cableFeet.toLocaleString('en-US')} ft</b></div>}
+              {summary.cables.map((c) => (
+                <div key={c.type} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                  <span style={{ color: cableInfo(c.type).color, fontWeight: 700 }}>{c.label} ({c.runs} run{c.runs === 1 ? '' : 's'})</span><b>{c.feet.toLocaleString('en-US')} ft</b>
+                </div>
+              ))}
               {summary.rooms.map((r, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span>{r.name}</span><span>{sqft(r.area)}</span></div>)}
               {summary.rooms.length > 1 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: '1px solid #eee', fontWeight: 700 }}><span>All rooms</span><span>{sqft(summary.totalArea)}</span></div>}
               {summary.photos > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span>Photos</span><b>{summary.photos}</b></div>}
@@ -666,8 +681,15 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
       {shape.kind === 'wall' && <div style={{ color: '#455A64' }}>{feet(Math.hypot(shape.b.x - shape.a.x, shape.b.y - shape.a.y))} long</div>}
       {shape.kind === 'cable' && (
         <>
-          {field('Label', shape.label, (v) => onChange({ label: v } as Partial<Shape>), 'e.g. Cat6 to camera 3')}
-          <div style={{ color: '#455A64' }}>{Math.round(pathLength(shape.pts))} ft</div>
+          <label style={{ display: 'block' }}>
+            <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#78909C', marginBottom: 3 }}>Cable type</span>
+            <select value={shape.cable} onChange={(e) => onChange({ cable: e.target.value as CableType, color: cableInfo(e.target.value as CableType).color } as Partial<Shape>)}
+              style={{ width: '100%', height: 34, fontSize: 16, padding: '0 6px', border: '1px solid #d8dde5', borderRadius: 6 }}>
+              {CABLE_TYPES.map((c) => <option key={c.type} value={c.type}>{c.label}</option>)}
+            </select>
+          </label>
+          {field('Label', shape.label, (v) => onChange({ label: v } as Partial<Shape>), 'e.g. To camera 3')}
+          <div style={{ color: '#455A64' }}>{Math.round(pathLength(shape.pts))} ft of {cableInfo(shape.cable).label}</div>
         </>
       )}
       {shape.kind === 'symbol' && field('Label', shape.label, (v) => onChange({ label: v } as Partial<Shape>), 'e.g. CAM-03')}
@@ -730,7 +752,7 @@ async function exportPng(svg: SVGSVGElement | null, sketch: Sketch, summary: Ret
     const lines: { text: string; color: string; bold?: boolean }[] = [
       { text: title, color: '#0E1B2E', bold: true },
       ...summary.symbols.map((x) => ({ text: `${x.count}  ${x.label}`, color: symbolInfo(x.kind).color })),
-      ...(summary.cableFeet ? [{ text: `${summary.cableFeet.toLocaleString('en-US')} ft of cable (${summary.cableRuns} run${summary.cableRuns === 1 ? '' : 's'})`, color: '#1565C0' }] : []),
+      ...summary.cables.map((c) => ({ text: `${c.feet.toLocaleString('en-US')} ft ${c.label} (${c.runs} run${c.runs === 1 ? '' : 's'})`, color: cableInfo(c.type).color })),
       ...summary.rooms.map((r) => ({ text: `${r.name}: ${sqft(r.area)}`, color: '#455A64' })),
       { text: 'Each grid square = 1 ft · FAJ Solutions', color: '#90a4ae' },
     ];

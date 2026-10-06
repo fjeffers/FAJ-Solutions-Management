@@ -7,7 +7,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
-import { PencilRuler, Plus, Trash2 } from 'lucide-react';
+import { Download, FileText, PencilRuler, Plus, Trash2 } from 'lucide-react';
+import SketchReport, { downloadFromUrl, fileSafe } from './SketchReport';
 import { createClient } from '@/lib/supabase/client';
 import { newId, newSketch, normalizeSketch, summarize, summaryLine, type Sketch } from '@/lib/sketch';
 import { shrinkPhoto } from '@/lib/photo-stamp';
@@ -35,6 +36,8 @@ export default function SketchesPanel({ woId, surveyId, defaultTitle, compact = 
   const [rows, setRows] = useState<Row[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<{ id: string | null; title: string; sketch: Sketch } | null>(null);
+  // The printable report (Fred, 2026-10-06: "downloadable forms").
+  const [report, setReport] = useState<Row | null>(null);
 
   const load = useCallback(async () => {
     let q = supabase.from('sketches').select('id, title, data, image_path, updated_at, wo_id, survey_id').order('updated_at', { ascending: false });
@@ -142,6 +145,10 @@ export default function SketchesPanel({ woId, surveyId, defaultTitle, compact = 
                       style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'none', padding: 0, font: 'inherit', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {r.title}
                     </button>
+                    <button type="button" onClick={() => setReport(r)} aria-label={`Report for ${r.title}`} title="Report — print or save as PDF" style={{ border: 'none', background: 'none', color: '#0E1B2E', cursor: 'pointer', padding: 2 }}><FileText size={15} /></button>
+                    {r.image_path && thumbs[r.image_path] && (
+                      <button type="button" onClick={() => void downloadFromUrl(thumbs[r.image_path!], `${fileSafe(r.title)}.png`)} aria-label={`Download the picture of ${r.title}`} title="Download the picture" style={{ border: 'none', background: 'none', color: '#0E1B2E', cursor: 'pointer', padding: 2 }}><Download size={15} /></button>
+                    )}
                     <button type="button" onClick={() => void remove(r)} aria-label={`Delete ${r.title}`} title="Delete" style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', padding: 2 }}><Trash2 size={15} /></button>
                   </div>
                   {link && <div className="wf-p-small" style={{ color: 'var(--wf-gold-ink, #7a5c16)', fontWeight: 600 }}>{link}</div>}
@@ -152,6 +159,10 @@ export default function SketchesPanel({ woId, surveyId, defaultTitle, compact = 
             );
           })}
         </div>
+      )}
+      {report && (
+        <SketchReport title={report.title} sketch={normalizeSketch(report.data)} imageUrl={report.image_path ? thumbs[report.image_path] ?? null : null}
+          photoUrl={fileUrl} linkLabel={labelFor?.(report) ?? null} updatedAt={report.updated_at} onClose={() => setReport(null)} />
       )}
       {/* Drawn over the whole page, so a pop-up or animated card around this
           list can never trap the full-screen sketch pad inside it. */}

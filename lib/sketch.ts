@@ -10,20 +10,64 @@
 
 export type Pt = { x: number; y: number };
 
-export type SymbolKind = 'camera' | 'ap' | 'drop' | 'rack' | 'tv' | 'speaker' | 'reader' | 'outlet' | 'door' | 'window';
+export type SymbolKind =
+  // network gear
+  | 'rack' | 'switch' | 'router' | 'firewall' | 'modem' | 'patch' | 'server' | 'nvr' | 'ups' | 'starlink'
+  // devices
+  | 'camera' | 'ap' | 'drop' | 'outlet' | 'tablet' | 'tv' | 'pos' | 'pc' | 'printer' | 'phone' | 'speaker' | 'reader'
+  // building
+  | 'door' | 'window';
 
-export const SYMBOLS: { kind: SymbolKind; label: string; plural: string; code: string; color: string }[] = [
-  { kind: 'camera', label: 'Camera', plural: 'Cameras', code: 'C', color: '#C62828' },
-  { kind: 'ap', label: 'Wi-Fi AP', plural: 'Wi-Fi APs', code: 'W', color: '#1565C0' },
-  { kind: 'drop', label: 'Data drop', plural: 'Data drops', code: 'D', color: '#2E7D32' },
-  { kind: 'rack', label: 'Rack / IDF', plural: 'Racks / IDFs', code: 'R', color: '#0E1B2E' },
-  { kind: 'tv', label: 'TV / display', plural: 'TVs / displays', code: 'TV', color: '#6A1B9A' },
-  { kind: 'speaker', label: 'Speaker', plural: 'Speakers', code: 'S', color: '#EF6C00' },
-  { kind: 'reader', label: 'Card reader', plural: 'Card readers', code: 'A', color: '#00838F' },
-  { kind: 'outlet', label: 'Power outlet', plural: 'Power outlets', code: 'P', color: '#5D4037' },
-  { kind: 'door', label: 'Door', plural: 'Doors', code: '', color: '#455A64' },
-  { kind: 'window', label: 'Window', plural: 'Windows', code: '', color: '#78909C' },
+export type SymbolGroup = 'network' | 'devices' | 'building';
+
+// Fred, 2026-10-06: "data cables, network equipment, tablet, power outlet,
+// data outlet, any network equipment". The key ('drop' etc.) is what's saved;
+// labels can change freely.
+export const SYMBOLS: { kind: SymbolKind; label: string; plural: string; code: string; color: string; group: SymbolGroup }[] = [
+  { kind: 'rack', label: 'Rack / IDF', plural: 'Racks / IDFs', code: 'R', color: '#0E1B2E', group: 'network' },
+  { kind: 'switch', label: 'Network switch', plural: 'Network switches', code: 'SW', color: '#1565C0', group: 'network' },
+  { kind: 'router', label: 'Router', plural: 'Routers', code: 'RT', color: '#283593', group: 'network' },
+  { kind: 'firewall', label: 'Firewall', plural: 'Firewalls', code: 'FW', color: '#B71C1C', group: 'network' },
+  { kind: 'modem', label: 'Modem / ONT', plural: 'Modems / ONTs', code: 'M', color: '#4E342E', group: 'network' },
+  { kind: 'patch', label: 'Patch panel', plural: 'Patch panels', code: 'PP', color: '#37474F', group: 'network' },
+  { kind: 'server', label: 'Server', plural: 'Servers', code: 'SV', color: '#263238', group: 'network' },
+  { kind: 'nvr', label: 'NVR / DVR', plural: 'NVRs / DVRs', code: 'NV', color: '#880E4F', group: 'network' },
+  { kind: 'ups', label: 'UPS / battery', plural: 'UPS units', code: 'U', color: '#F57F17', group: 'network' },
+  { kind: 'starlink', label: 'Starlink dish', plural: 'Starlink dishes', code: 'SL', color: '#424242', group: 'network' },
+  { kind: 'camera', label: 'Camera', plural: 'Cameras', code: 'C', color: '#C62828', group: 'devices' },
+  { kind: 'ap', label: 'Wi-Fi AP', plural: 'Wi-Fi APs', code: 'W', color: '#1565C0', group: 'devices' },
+  { kind: 'drop', label: 'Data outlet', plural: 'Data outlets', code: 'D', color: '#2E7D32', group: 'devices' },
+  { kind: 'outlet', label: 'Power outlet', plural: 'Power outlets', code: 'P', color: '#5D4037', group: 'devices' },
+  { kind: 'tablet', label: 'Tablet / kiosk', plural: 'Tablets / kiosks', code: 'T', color: '#00695C', group: 'devices' },
+  { kind: 'tv', label: 'TV / display', plural: 'TVs / displays', code: 'TV', color: '#6A1B9A', group: 'devices' },
+  { kind: 'pos', label: 'POS terminal', plural: 'POS terminals', code: 'POS', color: '#AD1457', group: 'devices' },
+  { kind: 'pc', label: 'Computer', plural: 'Computers', code: 'PC', color: '#455A64', group: 'devices' },
+  { kind: 'printer', label: 'Printer', plural: 'Printers', code: 'PR', color: '#6D4C41', group: 'devices' },
+  { kind: 'phone', label: 'Phone', plural: 'Phones', code: 'PH', color: '#00838F', group: 'devices' },
+  { kind: 'speaker', label: 'Speaker', plural: 'Speakers', code: 'S', color: '#EF6C00', group: 'devices' },
+  { kind: 'reader', label: 'Card reader', plural: 'Card readers', code: 'A', color: '#00838F', group: 'devices' },
+  { kind: 'door', label: 'Door', plural: 'Doors', code: '', color: '#455A64', group: 'building' },
+  { kind: 'window', label: 'Window', plural: 'Windows', code: '', color: '#78909C', group: 'building' },
 ];
+export const SYMBOL_GROUPS: { group: SymbolGroup; label: string }[] = [
+  { group: 'network', label: 'Network gear' },
+  { group: 'devices', label: 'Devices' },
+  { group: 'building', label: 'Building' },
+];
+
+/** Data cable types, each with its own colour on the plan and its own footage. */
+export type CableType = 'cat6' | 'cat6a' | 'cat5e' | 'fiber' | 'coax' | 'power' | 'other';
+export const CABLE_TYPES: { type: CableType; label: string; color: string }[] = [
+  { type: 'cat6', label: 'Cat6', color: '#1565C0' },
+  { type: 'cat6a', label: 'Cat6A', color: '#2E7D32' },
+  { type: 'cat5e', label: 'Cat5e', color: '#5E35B1' },
+  { type: 'fiber', label: 'Fiber', color: '#EF6C00' },
+  { type: 'coax', label: 'Coax', color: '#212121' },
+  { type: 'power', label: 'Power', color: '#C62828' },
+  { type: 'other', label: 'Other cable', color: '#78909C' },
+];
+const CABLE_KEYS = new Set<string>(CABLE_TYPES.map((c) => c.type));
+export const cableInfo = (t: CableType) => CABLE_TYPES.find((c) => c.type === t) ?? CABLE_TYPES[CABLE_TYPES.length - 1];
 const SYMBOL_KINDS = new Set<string>(SYMBOLS.map((s) => s.kind));
 export const symbolInfo = (k: SymbolKind) => SYMBOLS.find((s) => s.kind === k)!;
 
@@ -32,7 +76,7 @@ export const COLORS = ['#0E1B2E', '#C62828', '#1565C0', '#2E7D32', '#EF6C00', '#
 export type Shape =
   | { id: string; kind: 'room'; x: number; y: number; w: number; h: number; name: string; color: string }
   | { id: string; kind: 'wall'; a: Pt; b: Pt; color: string }
-  | { id: string; kind: 'cable'; pts: Pt[]; color: string; label: string }
+  | { id: string; kind: 'cable'; pts: Pt[]; color: string; label: string; cable: CableType }
   | { id: string; kind: 'pen'; pts: Pt[]; color: string; width: number; marker: boolean }
   | { id: string; kind: 'line'; a: Pt; b: Pt; color: string; width: number; arrow: boolean }
   | { id: string; kind: 'box'; x: number; y: number; w: number; h: number; color: string; width: number; fill: boolean }
@@ -95,7 +139,8 @@ export function normalizeSketch(raw: unknown): Sketch {
       }
       case 'cable': {
         const p = pts(o.pts);
-        if (p.length >= 2) shapes.push({ id, kind: 'cable', pts: p, color: color(o.color), label: str(o.label, 60) });
+        // Runs saved before cable types existed count as Cat6.
+        if (p.length >= 2) shapes.push({ id, kind: 'cable', pts: p, color: color(o.color), label: str(o.label, 60), cable: CABLE_KEYS.has(String(o.cable)) ? (o.cable as CableType) : 'cat6' });
         break;
       }
       case 'pen': {
@@ -165,6 +210,8 @@ export type SketchSummary = {
   symbols: { kind: SymbolKind; label: string; count: number }[];
   cableFeet: number;
   cableRuns: number;
+  /** Footage per cable type, in the CABLE_TYPES order. */
+  cables: { type: CableType; label: string; feet: number; runs: number }[];
   rooms: { name: string; area: number }[];
   totalArea: number;
   photos: number;
@@ -173,11 +220,17 @@ export type SketchSummary = {
 /** What's on the plan, counted — the start of a materials list. */
 export function summarize(s: Sketch): SketchSummary {
   const counts = new Map<SymbolKind, number>();
+  const byType = new Map<CableType, { feet: number; runs: number }>();
   let cableFeet = 0, cableRuns = 0, photos = 0;
   const rooms: { name: string; area: number }[] = [];
   for (const sh of s.shapes) {
     if (sh.kind === 'symbol') counts.set(sh.sym, (counts.get(sh.sym) ?? 0) + 1);
-    else if (sh.kind === 'cable') { cableFeet += pathLength(sh.pts); cableRuns += 1; }
+    else if (sh.kind === 'cable') {
+      const len = pathLength(sh.pts);
+      cableFeet += len; cableRuns += 1;
+      const t = byType.get(sh.cable) ?? { feet: 0, runs: 0 };
+      byType.set(sh.cable, { feet: t.feet + len, runs: t.runs + 1 });
+    }
     else if (sh.kind === 'room') rooms.push({ name: sh.name || `Room ${rooms.length + 1}`, area: sh.w * sh.h });
     else if (sh.kind === 'photo') photos += 1;
   }
@@ -185,6 +238,7 @@ export function summarize(s: Sketch): SketchSummary {
     symbols: SYMBOLS.filter((x) => counts.has(x.kind)).map((x) => ({ kind: x.kind, label: counts.get(x.kind) === 1 ? x.label : x.plural, count: counts.get(x.kind)! })),
     cableFeet: Math.round(cableFeet),
     cableRuns,
+    cables: CABLE_TYPES.filter((c) => byType.has(c.type)).map((c) => ({ type: c.type, label: c.label, feet: Math.round(byType.get(c.type)!.feet), runs: byType.get(c.type)!.runs })),
     rooms,
     totalArea: rooms.reduce((a, r) => a + r.area, 0),
     photos,
@@ -194,7 +248,8 @@ export function summarize(s: Sketch): SketchSummary {
 /** One line for a list: "6 Cameras · 4 Wi-Fi APs · 340 ft cable · 2 rooms". */
 export function summaryLine(s: SketchSummary): string {
   const parts = s.symbols.map((x) => `${x.count} ${x.label}`);
-  if (s.cableFeet) parts.push(`${s.cableFeet.toLocaleString('en-US')} ft cable`);
+  if (s.cables.length === 1) parts.push(`${s.cables[0].feet.toLocaleString('en-US')} ft ${s.cables[0].label}`);
+  else if (s.cables.length > 1) parts.push(s.cables.map((c) => `${c.label} ${c.feet.toLocaleString('en-US')} ft`).join(', '));
   if (s.rooms.length) parts.push(`${s.rooms.length} room${s.rooms.length === 1 ? '' : 's'} (${sqft(s.totalArea)})`);
   if (s.photos) parts.push(`${s.photos} photo${s.photos === 1 ? '' : 's'}`);
   return parts.join(' · ') || 'Empty';

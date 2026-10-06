@@ -5,7 +5,7 @@ import {
 } from './sketch';
 
 const room: Shape = { id: 'r', kind: 'room', x: 0, y: 0, w: 24, h: 18, name: 'Lobby', color: '#0E1B2E' };
-const cable: Shape = { id: 'c', kind: 'cable', pts: [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 40 }], color: '#1565C0', label: '' };
+const cable: Shape = { id: 'c', kind: 'cable', pts: [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 40 }], color: '#1565C0', label: '', cable: 'cat6' };
 
 describe('site sketches', () => {
   it('measures in feet: lengths, inches, areas', () => {
@@ -21,7 +21,7 @@ describe('site sketches', () => {
   it('counts what is on the plan — the start of a materials list', () => {
     const s = { ...newSketch(), shapes: [
       room, cable,
-      { id: 'c2', kind: 'cable', pts: [{ x: 0, y: 0 }, { x: 0, y: 10.4 }], color: '#1565C0', label: '' },
+      { id: 'c2', kind: 'cable', pts: [{ x: 0, y: 0 }, { x: 0, y: 10.4 }], color: '#1565C0', label: '', cable: 'cat6' },
       { id: 'a', kind: 'symbol', sym: 'camera', at: { x: 1, y: 1 }, label: '', rot: 0 },
       { id: 'b', kind: 'symbol', sym: 'camera', at: { x: 2, y: 1 }, label: '', rot: 0 },
       { id: 'd', kind: 'symbol', sym: 'ap', at: { x: 3, y: 1 }, label: '', rot: 0 },
@@ -32,7 +32,7 @@ describe('site sketches', () => {
     expect(sum.cableFeet).toBe(80);
     expect(sum.cableRuns).toBe(2);
     expect(sum.totalArea).toBe(432);
-    expect(summaryLine(sum)).toBe('2 Cameras · 1 Wi-Fi AP · 80 ft cable · 1 room (432 sq ft) · 1 photo');
+    expect(summaryLine(sum)).toBe('2 Cameras · 1 Wi-Fi AP · 80 ft Cat6 · 1 room (432 sq ft) · 1 photo');
     expect(summaryLine(summarize(newSketch()))).toBe('Empty');
   });
 
@@ -84,5 +84,30 @@ describe('free drawing (sketch.io-style)', () => {
     expect(hitTest(s.shapes, { x: 45, y: 3 })).toBeNull();            // inside an empty circle
     expect(hitTest(s.shapes, { x: 40.1, y: 3 })?.id).toBe('e');       // on its edge
     expect(moveShape(s.shapes[1], 1, 1)).toMatchObject({ x: 21, y: 21 });
+  });
+});
+
+describe('network gear and cable types', () => {
+  it('footage is kept per cable type; old runs count as Cat6', () => {
+    const s = normalizeSketch({ shapes: [
+      { kind: 'cable', pts: [{ x: 0, y: 0 }, { x: 100, y: 0 }], cable: 'cat6' },
+      { kind: 'cable', pts: [{ x: 0, y: 0 }, { x: 40, y: 0 }], cable: 'fiber' },
+      { kind: 'cable', pts: [{ x: 0, y: 0 }, { x: 20, y: 0 }] },                   // saved before cable types
+      { kind: 'cable', pts: [{ x: 0, y: 0 }, { x: 5, y: 0 }], cable: 'garden hose' }, // unknown -> Cat6
+    ] });
+    const sum = summarize(s);
+    expect(sum.cables).toEqual([
+      { type: 'cat6', label: 'Cat6', feet: 125, runs: 3 },
+      { type: 'fiber', label: 'Fiber', feet: 40, runs: 1 },
+    ]);
+    expect(sum.cableFeet).toBe(165);
+    expect(summaryLine(sum)).toBe('Cat6 125 ft, Fiber 40 ft');
+  });
+
+  it('switches, firewalls, tablets and outlets are counted like any symbol', () => {
+    const s = normalizeSketch({ shapes: ['switch', 'switch', 'firewall', 'tablet', 'drop', 'outlet', 'starlink'].map((sym, i) => ({ kind: 'symbol', sym, at: { x: i, y: 0 } })) });
+    expect(summarize(s).symbols.map((x) => `${x.count} ${x.label}`)).toEqual([
+      '2 Network switches', '1 Firewall', '1 Starlink dish', '1 Data outlet', '1 Power outlet', '1 Tablet / kiosk',
+    ]);
   });
 });

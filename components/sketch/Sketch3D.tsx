@@ -17,6 +17,9 @@ const CEILING = 9; // ft
 /** How high each symbol sits, in feet. */
 const MOUNT: Record<SymbolKind, number> = {
   camera: 8.5, ap: 8.85, speaker: 8.85, drop: 1.5, outlet: 1.25, tv: 5, reader: 4, rack: 0, door: 0, window: 3,
+  // Network gear on its own (not drawn inside a rack) is shown wall-mounted.
+  switch: 5, router: 4.5, firewall: 4.5, modem: 4, patch: 5.5, server: 0, nvr: 4, ups: 0, starlink: 11,
+  tablet: 4, pos: 3.5, pc: 2.5, printer: 3, phone: 3,
 };
 
 function labelSprite(text: string, color = '#0E1B2E'): THREE.Sprite {
@@ -80,6 +83,36 @@ function symbolObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D {
       break;
     case 'tv':
       body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.9, 0.15), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3 }));
+      body.position.y = y;
+      break;
+    case 'switch': case 'patch': case 'router': case 'firewall': case 'nvr':
+      // Rack-unit-style box with a front face in the item's colour.
+      body = new THREE.Mesh(new THREE.BoxGeometry(1.6, s.sym === 'switch' || s.sym === 'patch' ? 0.3 : 0.45, 1.1), mat);
+      body.position.y = y;
+      break;
+    case 'server': case 'ups':
+      body = new THREE.Mesh(new THREE.BoxGeometry(1.8, s.sym === 'server' ? 5.5 : 2.2, 2.2), mat);
+      body.position.y = s.sym === 'server' ? 2.75 : 1.1;
+      break;
+    case 'modem':
+      body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.9, 0.3), mat);
+      body.position.y = y;
+      break;
+    case 'starlink': {
+      body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.12, 1.3), new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.4 }));
+      body.position.y = y;
+      body.rotation.x = -0.35;
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, y - CEILING + 0.3, 8), mat);
+      mast.position.y = (y + CEILING) / 2 - 0.4;
+      group.add(mast);
+      break;
+    }
+    case 'tablet':
+      body = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.2, 0.08), new THREE.MeshStandardMaterial({ color: 0x1b1b1b, roughness: 0.3 }));
+      body.position.y = y;
+      break;
+    case 'pos': case 'printer': case 'phone': case 'pc':
+      body = new THREE.Mesh(new THREE.BoxGeometry(s.sym === 'pc' ? 0.7 : 1, s.sym === 'pc' ? 1.4 : 0.5, s.sym === 'pc' ? 1.4 : 0.8), mat);
       body.position.y = y;
       break;
     case 'door':

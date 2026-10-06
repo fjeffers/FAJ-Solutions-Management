@@ -19,13 +19,14 @@ vi.mock('@/components/WOTimeLogs', () => ({ default: () => null }));
 vi.mock('@/components/WorkOrderChatPanel', () => ({ default: () => null }));
 
 import WorkOrderModal from './WorkOrderModal';
+import { setFieldsNow, EMPTY_FIELDS } from '@/lib/custom-fields';
 
 const NO_TECH = {
   id: 'wo1', wo_number: '19101322', title: 'CHERRY HILL', contractor_name: '', contractor_names: null,
   wo_status: 'Open', total_amount: 250, source_platform: 'Internal', archived_at: null,
 } as unknown as WorkOrder;
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); setFieldsNow(EMPTY_FIELDS); });
 
 describe('Edit job', () => {
   it('saves a job that has no tech yet', async () => {
@@ -42,5 +43,14 @@ describe('Edit job', () => {
     render(<WorkOrderModal item={{ ...NO_TECH, wo_number: '' }} contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
     expect((screen.getByRole('button', { name: 'Save Changes' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Add a work order number to save.')).toBeTruthy();
+  });
+
+  it("saves Fred's own fields with the job (Settings -> Custom fields)", async () => {
+    setFieldsNow({ ...EMPTY_FIELDS, jobs: [{ id: 'gate', label: 'Gate code', kind: 'text', options: [], hidden: false }] });
+    const onSave = vi.fn();
+    render(<WorkOrderModal item={{ ...NO_TECH, custom: { old: 'kept' } }} contractors={[]} questionTemplates={[]} onSave={onSave} onClose={() => {}} />);
+    await userEvent.type(screen.getByLabelText('Gate code'), '4321#');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(onSave.mock.calls[0][0].custom).toEqual({ old: 'kept', gate: '4321#' });
   });
 });

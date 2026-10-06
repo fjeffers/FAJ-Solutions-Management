@@ -4,6 +4,7 @@ import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, ChevronRight, Send, 
 import { fmtMoney } from '@/lib/utils';
 import type { Contractor, EnrichedWorkOrder, Payment } from '@/lib/types';
 import ContractorDetailView from './ContractorDetailView';
+import { CustomFieldList } from '@/components/CustomFieldInputs';
 
 export default function ContractorsView({
   contractors, workOrders, payments, onAdd, onEdit, onDelete, onViewStatement, onAddJob, onAddPayment, onEditPayment,
@@ -148,6 +149,8 @@ export default function ContractorsView({
                   <ChevronRight size={16} color="#ccc" />
                 </div>
               </div>
+              {/* Fred's own fields (Settings -> Custom fields), when answered. */}
+              <div style={{ marginTop: 8 }}><CustomFieldList target="techs" values={c.custom} compact /></div>
             </div>
           );
         })}

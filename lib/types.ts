@@ -18,6 +18,8 @@ export const ENTITY_TYPES: EntityType[] = [
 ];
 
 export type Contractor = {
+  /** Fred's own fields (Settings -> Custom fields, migration 110), by field id. */
+  custom?: Record<string, unknown> | null;
   id: string;
   user_id: string;
   name: string;
@@ -104,6 +106,8 @@ export const SERVICE_TYPES: string[] = [
 ];
 
 export type WorkOrder = {
+  /** Fred's own fields (Settings -> Custom fields, migration 110), by field id. */
+  custom?: Record<string, unknown> | null;
   id: string;
   user_id: string;
   wo_number: string;
@@ -1339,6 +1343,8 @@ export type SiteVisit = {
 export type CustomerStatus = 'lead' | 'prospect' | 'active' | 'dormant' | 'lost';
 
 export type Customer = {
+  /** Fred's own fields (Settings -> Custom fields, migration 110), by field id. */
+  custom?: Record<string, unknown> | null;
   id: string;
   user_id: string;
   name: string;

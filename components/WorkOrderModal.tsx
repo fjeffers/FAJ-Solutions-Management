@@ -25,6 +25,8 @@ import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbu
 import { printSignOffSheet } from '@/lib/signoff';
 import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { choicesFor } from '@/lib/app-lists';
+import { asValues } from '@/lib/custom-fields';
+import CustomFieldInputs from '@/components/CustomFieldInputs';
 import { createClient } from '@/lib/supabase/client';
 
 type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents' | 'chat' | 'closeout';
@@ -178,6 +180,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
     title:           item?.title           ?? '',
+    // Fred's own fields (Settings -> Custom fields); saved by saveWorkOrder.
+    custom:          asValues(item?.custom ?? prefill?.custom),
     contractor_name: item?.contractor_name ?? '',
     // Normalize legacy lowercase 'netview' (written by the email importer pre-fix)
     // so the Source dropdown matches its 'NetView' option.
@@ -993,6 +997,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 View Documents
               </div>
             </button>
+            <CustomFieldInputs target="jobs" values={asValues(form.custom)} onChange={(v) => setForm((f) => ({ ...f, custom: v }))} />
           </div>
         )}
 

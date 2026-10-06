@@ -24,6 +24,8 @@ import {
   AlertTriangle, ChevronLeft, Share2, Download,
 } from 'lucide-react';
 import { backdropClose } from '@/lib/backdrop';
+import { asValues } from '@/lib/custom-fields';
+import CustomFieldInputs, { CustomFieldList } from '@/components/CustomFieldInputs';
 
 const STATUSES: CustomerStatus[] = ['lead', 'prospect', 'active', 'dormant', 'lost'];
 
@@ -456,6 +458,8 @@ function CustomerCard({ book, onOpen, onDelete }: { book: CustomerBook; onOpen: 
         {book.outstanding > 0 && <Stat label="Outstanding" value={fmtMoney(book.outstanding)} color="#b45309" />}
         {book.neverSent > 0 && <Stat label="Never sent" value={fmtMoney(book.neverSent)} color="#b91c1c" />}
       </div>
+      {/* Fred's own fields (Settings -> Custom fields), when answered. */}
+      <div style={{ marginTop: 8 }}><CustomFieldList target="customers" values={c.custom} compact /></div>
     </div>
   );
 }
@@ -532,6 +536,7 @@ function CustomerModal({ editing, setEditing, onSave }: {
         </Field>
       </div>
       <Field label="Notes"><textarea className="input" rows={3} value={editing.notes ?? ''} onChange={(e) => set('notes', e.target.value)} /></Field>
+      <CustomFieldInputs target="customers" values={asValues(editing.custom)} onChange={(v) => set('custom', v)} />
     </Modal>
   );
 }

@@ -63,6 +63,7 @@ import MessagesView from '@/components/MessagesView';
 import { sectionOfView, type ResolvedLayout } from '@/lib/app-layout';
 import { useAppLayout } from '@/components/useAppLayout';
 import { useAppLists } from '@/components/useAppLists';
+import { useCustomFields } from '@/components/useCustomFields';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
@@ -137,6 +138,9 @@ export default function HomePage() {
   // Fred's own lists: stage names, priorities, service types… (Settings ->
   // Lists & stages, migration 109). Read everywhere through lib/app-lists.
   const appLists = useAppLists();
+  // Fred's own fields on jobs, techs and customers (Settings -> Custom fields,
+  // migration 110). Read by the forms through lib/custom-fields.
+  const customFields = useCustomFields();
   const layoutRef = useRef<ResolvedLayout>(appLayout.resolved);
   layoutRef.current = appLayout.resolved;
   const menu = appLayout.visible;
@@ -374,6 +378,9 @@ export default function HomePage() {
       routing_number:      c.routing_number      || null,
       account_number:      c.account_number      || null,
       account_type:        c.account_type        || null,
+      // Fred's own fields (Settings -> Custom fields, migration 110); only
+      // when the form sent them, so a partial save can't wipe them.
+      ...(c.custom !== undefined ? { custom: c.custom ?? {} } : {}),
     };
     if (c.id) {
       const { error } = await supabase.from('contractors').update(payload).eq('id', c.id);
@@ -496,6 +503,8 @@ export default function HomePage() {
       ...(w.pay_addons !== undefined ? { pay_addons: w.pay_addons ?? [] } : {}),
       ...(w.wo_tasks !== undefined ? { wo_tasks: w.wo_tasks ?? [] } : {}),
       ...(w.billable_miles !== undefined ? { billable_miles: w.billable_miles ?? null } : {}),
+      // Fred's own fields (Settings -> Custom fields, migration 110).
+      ...(w.custom !== undefined ? { custom: w.custom ?? {} } : {}),
       // The calendar and the tech's schedule go by scheduled_date. A new job
       // starts on its start date; moving the start date moves it.
       ...(!prevWO
@@ -1838,6 +1847,11 @@ Go ahead?`)) return;
             listsSaveState={appLists.saveState}
             listsSaveError={appLists.saveError}
             onListsRetry={appLists.retry}
+            fields={customFields.fields}
+            onFieldsChange={customFields.update}
+            fieldsSaveState={customFields.saveState}
+            fieldsSaveError={customFields.saveError}
+            onFieldsRetry={customFields.retry}
           />
         )}
       </main>

@@ -35,6 +35,8 @@ import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseSt
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
 import { listsNow } from '@/lib/app-lists';
+import { answeredFields } from '@/lib/custom-fields';
+import { CustomFieldList } from '@/components/CustomFieldInputs';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
 
@@ -469,6 +471,7 @@ function OwnerJob({
           {!archived && <QuickEditCard w={w} onSaved={refresh} />}
           <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />
           <MoneyCard w={w} />
+          <YourFieldsCard w={w} />
         </>}
         below={<>
           {chatOpen && (
@@ -748,6 +751,16 @@ function TechsCard({ w, job, onChange, onReassign }: {
 }
 
 /** Only the office sees this: what the client pays, what the techs get, what FAJ keeps. */
+/** Fred's own fields on this job (Settings -> Custom fields), when answered. Office only. */
+function YourFieldsCard({ w }: { w: EnrichedWorkOrder }) {
+  if (answeredFields('jobs', w.custom).length === 0) return null;
+  return (
+    <Section title="Your fields" subtitle="Your own details on this job — techs don't see these">
+      <CustomFieldList target="jobs" values={w.custom} />
+    </Section>
+  );
+}
+
 function MoneyCard({ w }: { w: EnrichedWorkOrder }) {
   const paySet = hasPaySplit(w);
   const profit = woProfitOrNull(w);

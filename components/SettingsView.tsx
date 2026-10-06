@@ -1,9 +1,11 @@
 'use client';
 import ChangePasswordForm from './ChangePasswordForm';
-import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered } from 'lucide-react';
+import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered, TextCursorInput } from 'lucide-react';
 import CloseoutListsEditor from './CloseoutListsEditor';
 import LayoutEditor from './LayoutEditor';
 import ListsEditor from './ListsEditor';
+import CustomFieldsEditor from './CustomFieldsEditor';
+import type { FieldSets } from '@/lib/custom-fields';
 import type { AppLists } from '@/lib/app-lists';
 import type { Layout } from '@/lib/app-layout';
 import type { LayoutSaveState } from './useAppLayout';
@@ -34,12 +36,19 @@ interface Props {
   listsSaveState: LayoutSaveState;
   listsSaveError: string | null;
   onListsRetry: () => void;
+  /** Fred's own fields (Custom fields). */
+  fields: FieldSets;
+  onFieldsChange: (next: FieldSets) => void;
+  fieldsSaveState: LayoutSaveState;
+  fieldsSaveError: string | null;
+  onFieldsRetry: () => void;
 }
 
 export default function SettingsView({
   templates, onSave, onDelete, onUploadAttachment, deliverableTemplates, onSaveDeliverable, onDeleteDeliverable,
   layout, onLayoutChange, layoutSaveState, layoutSaveError, onLayoutRetry,
   lists, onListsChange, listsSaveState, listsSaveError, onListsRetry,
+  fields, onFieldsChange, fieldsSaveState, fieldsSaveError, onFieldsRetry,
 }: Props) {
   return (
     <div className="view-inner" style={{ maxWidth: 960, margin: '0 auto' }}>
@@ -80,6 +89,22 @@ export default function SettingsView({
         </div>
         <div className="wf">
           <ListsEditor lists={lists} onChange={onListsChange} saveState={listsSaveState} saveError={listsSaveError} onRetry={onListsRetry} />
+        </div>
+      </div>
+
+      {/* ── Custom fields (migration-110) ── */}
+      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 28 }}>
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(14,27,46,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <TextCursorInput size={16} color="var(--teal)" />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Custom fields</h2>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>Your own boxes on jobs, techs and customers — office only</div>
+          </div>
+        </div>
+        <div className="wf">
+          <CustomFieldsEditor fields={fields} onChange={onFieldsChange} saveState={fieldsSaveState} saveError={fieldsSaveError} onRetry={onFieldsRetry} />
         </div>
       </div>
 

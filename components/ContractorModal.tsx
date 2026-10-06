@@ -7,6 +7,8 @@ import {
 import type { Contractor, EntityType } from '@/lib/types';
 import { ENTITY_TYPES } from '@/lib/types';
 import { backdropClose } from '@/lib/backdrop';
+import { asValues } from '@/lib/custom-fields';
+import CustomFieldInputs from '@/components/CustomFieldInputs';
 
 type Tab = 'contact' | 'w9' | 'banking';
 
@@ -16,6 +18,8 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('contact');
   const [showAcct, setShowAcct] = useState(false);
   const [form, setForm] = useState<Partial<Contractor>>({
+    // Fred's own fields (Settings -> Custom fields); saved by saveContractor.
+    custom:              asValues(item?.custom),
     name:                item?.name                ?? '',
     phone:               item?.phone               ?? '',
     email:               item?.email               ?? '',
@@ -264,6 +268,8 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
               )}
             </div>
           )}
+
+          <CustomFieldInputs target="techs" values={asValues(form.custom)} onChange={(v) => setForm((f) => ({ ...f, custom: v }))} />
 
           <div className="save-bar">
             <button type="button" className="btn btn-ghost" onClick={onClose} style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>

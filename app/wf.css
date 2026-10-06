@@ -168,6 +168,8 @@ textarea.wf-input { resize: vertical; }
   .wf-menu-btn { display: inline-flex !important; }
   .wf-has-tabbar .wf-menu-btn { display: none !important; }
   .wf-has-tabbar .wf-content { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  /* Floating Save rows (.save-bar) sit just above the bottom tabs, not behind them. */
+  .wf-has-tabbar .save-bar { bottom: calc(62px + env(safe-area-inset-bottom)); padding-bottom: 12px; }
   .wf-tabbar {
     display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
     background: var(--wf-navy); border-top: 1px solid rgba(201, 162, 75, 0.35);

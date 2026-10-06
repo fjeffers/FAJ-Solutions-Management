@@ -63,9 +63,11 @@ export default function ChangePasswordForm() {
           <CheckCircle2 size={16} /> Password changed. Use the new one next time you sign in.
         </div>
       )}
-      <button type="submit" className="wf-btn wf-btn-navy" disabled={busy} style={{ alignSelf: 'flex-start' }}>
-        <Lock size={15} /> {busy ? 'Saving…' : 'Change password'}
-      </button>
+      <div className="save-bar" style={{ justifyContent: 'flex-start' }}>
+        <button type="submit" className="wf-btn wf-btn-navy" disabled={busy}>
+          <Lock size={15} /> {busy ? 'Saving…' : 'Change password'}
+        </button>
+      </div>
     </form>
   );
 }

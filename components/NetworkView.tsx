@@ -773,7 +773,7 @@ function DropForm({ item, switches, panels, scheme, onSave, onCancel }: {
 
 function FormFooter({ onCancel, onSave, disabled }: { onCancel: () => void; onSave: () => void; disabled?: boolean }) {
   return (
-    <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+    <div className="save-bar">
       <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
       <button className="btn btn-primary" onClick={onSave} disabled={disabled}>Save</button>
     </div>

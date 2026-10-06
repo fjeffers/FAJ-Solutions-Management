@@ -684,6 +684,16 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             <button type="button" onClick={() => zoomAt(1.25)} aria-label="Zoom out" style={smallBtn}><Minus size={16} /></button>
             <button type="button" onClick={fit} aria-label="Fit the plan" title="Fit the plan" style={smallBtn}><Maximize size={15} /></button>
           </div>
+          {/* Floating Save (Fred, 2026-10-06: "the save bar should be floating" — "every time I
+              edit something it should be there"): shows at the bottom whenever there's anything unsaved. */}
+          {dirty && (
+            <button type="button" onClick={() => void save()} disabled={saving} className="sketch-float-save"
+              style={{ position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 5, height: 44, padding: '0 20px', borderRadius: 999, border: 'none',
+                background: '#C9A24B', color: '#0E1B2E', fontWeight: 800, fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 8, cursor: saving ? 'default' : 'pointer',
+                boxShadow: '0 6px 18px rgba(14,27,46,0.28)', whiteSpace: 'nowrap' }}>
+              {saving ? <Loader2 size={17} className="spin" /> : <Save size={17} />} {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          )}
           {/* On a phone the details are tucked away: one tap opens them for the selected item. */}
           {selected && !showPanel && (
             <button type="button" onClick={() => setShowPanel(true)}

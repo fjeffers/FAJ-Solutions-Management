@@ -1624,7 +1624,7 @@ function EmergencyCard({ profile, onSaved }: { profile: TechProfile; onSaved: (p
           {box('Phone', phone, setPhone, '(555) 000-0000', 'tel')}
           {box('Relationship', relation, setRelation, 'Wife, brother…')}
         </div>
-        <button className="wf-btn wf-btn-navy" onClick={save} disabled={saving || !dirty}><Save size={16} /> {saving ? 'Saving…' : 'Save emergency contact'}</button>
+        <div className="save-bar"><button className="wf-btn wf-btn-navy" onClick={save} disabled={saving || !dirty}><Save size={16} /> {saving ? 'Saving…' : 'Save emergency contact'}</button></div>
         {profile.hire_date && <div className="wf-subtle" style={{ fontSize: 12 }}>With FAJ Solutions since {fmtDate(profile.hire_date)}.</div>}
       </div>
     </Section>
@@ -1679,7 +1679,7 @@ function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
             {field('State', state, setState)}
             {field('ZIP', zip, setZip, 'numeric')}
           </div>
-          <button className="wf-btn wf-btn-navy" onClick={save} disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save details'}</button>
+          <div className="save-bar"><button className="wf-btn wf-btn-navy" onClick={save} disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save details'}</button></div>
         </div>
       </Section>
       <EmergencyCard profile={profile} onSaved={onSaved} />
@@ -1775,9 +1775,11 @@ function UsernameCard() {
           autoCapitalize="none" spellCheck={false} placeholder="e.g. jere.jones" />
       </label>
       <div className="wf-subtle" style={{ fontSize: 12, margin: '4px 0 10px' }}>{USERNAME_RULE}. You can still sign in with your email too.</div>
-      <button className="wf-btn wf-btn-navy" onClick={save} disabled={saving || current === undefined || value.trim().toLowerCase() === (current ?? '')}>
-        <Save size={16} /> {saving ? 'Saving…' : current ? 'Change username' : 'Save username'}
-      </button>
+      <div className="save-bar">
+        <button className="wf-btn wf-btn-navy" onClick={save} disabled={saving || current === undefined || value.trim().toLowerCase() === (current ?? '')}>
+          <Save size={16} /> {saving ? 'Saving…' : current ? 'Change username' : 'Save username'}
+        </button>
+      </div>
     </Section>
   );
 }

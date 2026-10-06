@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
+import FloatingSave from '@/components/FloatingSave';
 import { toastError, toastSuccess } from '@/lib/toast';
 import {
   ITEM_META, ITEM_VARIANTS, PLAN_W, PLAN_H, newPlanId, RACK_BUILDER_URL,
@@ -280,6 +281,8 @@ export default function FloorPlanView({ site, drops, projectName, onSaved }: {
   // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div>
+      {/* The toolbar's Save scrolls away on a long plan; this one stays on screen. */}
+      <FloatingSave show={dirty} saving={saving} onSave={() => void save()} label="Save plan" />
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         <button className={`filter-chip ${view === '2d' ? 'active' : ''}`} onClick={() => setView('2d')}><MapIcon size={12} style={{ marginRight: 4, verticalAlign: -2 }} />2D Plan</button>

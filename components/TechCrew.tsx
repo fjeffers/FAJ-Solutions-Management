@@ -320,9 +320,11 @@ function HoursForm({ site, entries, onDone }: { site: TechCrewSite; entries: Tec
       <Field label="What got done (optional)">
         <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Pulled 9 runs, mounted rack" />
       </Field>
-      <button className="btn btn-primary" onClick={save} disabled={saving} style={{ justifyContent: 'center' }}>
-        {saving ? <Loader2 size={14} className="spin" /> : <Clock size={14} />} {saving ? 'Saving…' : 'Save hours'}
-      </button>
+      <div className="save-bar">
+        <button className="btn btn-primary" onClick={save} disabled={saving} style={{ justifyContent: 'center', flex: 1 }}>
+          {saving ? <Loader2 size={14} className="spin" /> : <Clock size={14} />} {saving ? 'Saving…' : 'Save hours'}
+        </button>
+      </div>
     </div>
   );
 }

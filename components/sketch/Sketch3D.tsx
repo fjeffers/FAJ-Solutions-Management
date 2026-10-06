@@ -4,15 +4,31 @@
 // symbol sits where it really goes — cameras, APs and speakers up high, drops
 // and outlets near the floor, the TV on the wall, the rack standing on the
 // floor — and cable runs follow the ceiling. One finger (or the mouse) turns
-// it, two fingers or the wheel zoom, right-drag pans. Read-only: drawing
-// happens in 2D. Loaded only when opened (three.js needs the browser).
+// it, two fingers or the wheel zoom, right-drag pans. Loaded only when opened
+// (three.js needs the browser).
+//
+// Fred, 2026-10-06: "can I draw a door on a wall in the 3D … delete a portion
+// of the wall or room". Doors, windows and openings cut real gaps in the walls
+// (lib/sketch.ts wallPieces), and the bar under the title lets you tap a wall
+// to add a door or window, cut an opening, or remove a stretch of wall.
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { X, Scissors, Box as BoxIcon, RotateCcw, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Plus, Minus } from 'lucide-react';
-import { feet, symbolInfo, type Shape, type Sketch, type SymbolKind } from '@/lib/sketch';
+import { X, Scissors, Box as BoxIcon, RotateCcw, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Plus, Minus, DoorOpen, AppWindow, Eraser, Rotate3d, SquareDashed, Undo2 } from 'lucide-react';
+import { dist, feet, gapAt, newId, openingsOf, snapToWall, symbolInfo, wallPieces, wallRuns, type Pt, type Shape, type Sketch, type SymbolKind } from '@/lib/sketch';
 
 const CEILING = 9; // ft
+const DOOR_TOP = 7; // ft — the wall continues above a doorway
+const SILL = 3, WINDOW_TOP = 7; // ft — wall below and above a window
+
+type Mode = 'look' | 'door' | 'window' | 'gap' | 'remove';
+const MODE_HINT: Record<Mode, string> = {
+  look: 'Drag to turn · pinch or scroll to zoom · right-drag or two fingers to slide. Walls are 9 ft; cameras, APs and speakers sit at the ceiling.',
+  door: 'Tap a wall to put a door there.',
+  window: 'Tap a wall to put a window there.',
+  gap: 'Tap a wall to cut a 3 ft opening there. Make it wider in 2D (drag its ends).',
+  remove: 'Tap a door, window, opening or item to remove it. Tap a stretch of wall to take that stretch out.',
+};
 
 /** How high each symbol sits, in feet. */
 const MOUNT: Record<SymbolKind, number> = {
@@ -43,13 +59,13 @@ function labelSprite(text: string, color = '#0E1B2E'): THREE.Sprite {
   return sprite;
 }
 
-/** A wall from a to b (plan feet), standing on the floor. Plan y → 3D z. */
-function wallMesh(a: { x: number; y: number }, b: { x: number; y: number }, height: number, color: string, opacity: number): THREE.Mesh {
+/** A wall from a to b (plan feet), from `bottom` up `height` feet. Plan y → 3D z. */
+function wallMesh(a: { x: number; y: number }, b: { x: number; y: number }, height: number, color: string, opacity: number, bottom = 0): THREE.Mesh {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   const geo = new THREE.BoxGeometry(Math.max(len, 0.01), height, 0.35);
   const mat = new THREE.MeshStandardMaterial({ color, transparent: opacity < 1, opacity, roughness: 0.85 });
   const m = new THREE.Mesh(geo, mat);
-  m.position.set((a.x + b.x) / 2, height / 2, (a.y + b.y) / 2);
+  m.position.set((a.x + b.x) / 2, bottom + height / 2, (a.y + b.y) / 2);
   m.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
   return m;
 }
@@ -143,9 +159,21 @@ function symbolObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D {
   return group;
 }
 
-export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; title: string; onClose: () => void }) {
+export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUndo, canUndo }: {
+  sketch: Sketch; title: string; onClose: () => void;
+  /** Editing from 3D (the drawing's own add / remove / undo). Without them the model is look-only. */
+  onAdd?: (s: Shape) => void; onRemove?: (id: string) => void; onUndo?: () => void; canUndo?: boolean;
+}) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [cutaway, setCutaway] = useState(false);
+  const [mode, setMode] = useState<Mode>('look');
+  const modeRef = useRef<Mode>('look');
+  modeRef.current = mode;
+  const actions = useRef({ onAdd, onRemove });
+  actions.current = { onAdd, onRemove };
+  // Each change rebuilds the model; keep looking from the same spot.
+  const camSaved = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const editable = !!onAdd && !!onRemove;
   const resetRef = useRef<() => void>(() => {});
   // The arrow pad and zoom buttons (Fred, 2026-10-06: "navigation bars up and down, left and right").
   const panRef = useRef<(right: number, forward: number) => void>(() => {});
@@ -172,7 +200,11 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
       controls.target.set(W / 2, 0, D / 2);
       controls.update();
     };
-    home();
+    if (camSaved.current) {
+      camera.position.copy(camSaved.current.pos);
+      controls.target.copy(camSaved.current.target);
+      controls.update();
+    } else home();
     resetRef.current = home;
     const step = Math.max(W, D) * 0.12;
     panRef.current = (right, forward) => {
@@ -206,11 +238,26 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
     scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(gridPts), new THREE.LineBasicMaterial({ color: 0xd5dbe3 })));
 
     const wallH = cutaway ? 3 : CEILING;
+    // Walls (drawn ones and room sides), cut around doors, windows and openings.
+    const openings = openingsOf(sketch.shapes);
+    for (const run of wallRuns(sketch.shapes)) {
+      const color = run.room ? '#e9e4da' : '#d9d2c4';
+      const opacity = run.room && !cutaway ? 0.92 : 1;
+      for (const p of wallPieces(run, openings)) {
+        const parts: [number, number][] = p.kind === 'solid' ? [[0, wallH]]
+          : p.kind === 'door' ? [[DOOR_TOP, wallH]]
+          : [[0, Math.min(SILL, wallH)], [WINDOW_TOP, wallH]];
+        for (const [lo, hi] of parts) {
+          if (hi - lo < 0.05) continue;
+          const m = wallMesh(p.a, p.b, hi - lo, color, opacity, lo);
+          m.userData = { wall: true, run, piece: p };
+          scene.add(m);
+        }
+      }
+    }
     for (const s of sketch.shapes) {
       if (s.kind === 'room') {
         const c = s.color;
-        const corners = [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }];
-        corners.forEach((a, i) => scene.add(wallMesh(a, corners[(i + 1) % 4], wallH, '#e9e4da', cutaway ? 1 : 0.92)));
         const tint = new THREE.Mesh(new THREE.PlaneGeometry(s.w, s.h), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.08 }));
         tint.rotation.x = -Math.PI / 2;
         tint.position.set(s.x + s.w / 2, 0.03, s.y + s.h / 2);
@@ -218,10 +265,15 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
         const tag = labelSprite(`${s.name || 'Room'} · ${feet(s.w)} × ${feet(s.h)}`);
         tag.position.set(s.x + s.w / 2, 0.8, s.y + s.h / 2);
         scene.add(tag);
-      } else if (s.kind === 'wall') {
-        scene.add(wallMesh(s.a, s.b, wallH, '#d9d2c4', 1));
+      } else if (s.kind === 'gap') {
+        // A gold strip on the floor marks where wall was taken out (tap it in Remove to put the wall back).
+        const strip = wallMesh(s.a, s.b, 0.04, '#C9A24B', 0.8, 0.01);
+        strip.userData = { shapeId: s.id };
+        scene.add(strip);
       } else if (s.kind === 'symbol') {
-        scene.add(symbolObject(s));
+        const o = symbolObject(s);
+        o.userData = { shapeId: s.id };
+        scene.add(o);
       } else if (s.kind === 'cable' && s.pts.length >= 2) {
         const path = new THREE.CurvePath<THREE.Vector3>();
         for (let i = 1; i < s.pts.length; i++) {
@@ -229,6 +281,7 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
         }
         const tube = new THREE.Mesh(new THREE.TubeGeometry(path, Math.max(8, s.pts.length * 8), 0.09, 8, false),
           new THREE.MeshStandardMaterial({ color: s.color, roughness: 0.6 }));
+        tube.userData = { shapeId: s.id };
         scene.add(tube);
       } else if (s.kind === 'photo') {
         const tag = labelSprite('📷 Photo');
@@ -266,11 +319,65 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
     const ro = new ResizeObserver(resize);
     ro.observe(mount);
 
+    // Tapping (not dragging) in an edit mode: find what's under the finger.
+    const raycaster = new THREE.Raycaster();
+    let downAt: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => { downAt = { x: e.clientX, y: e.clientY }; };
+    const onUp = (e: PointerEvent) => {
+      const m = modeRef.current;
+      if (m === 'look' || !downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 6) return;
+      const { onAdd: add, onRemove: remove } = actions.current;
+      if (!add || !remove) return;
+      const r = renderer.domElement.getBoundingClientRect();
+      raycaster.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+      const hits = raycaster.intersectObjects(scene.children, true);
+      const tagged = (o: THREE.Object3D | null): Record<string, unknown> | null => {
+        for (let x = o; x; x = x.parent) if (x.userData && (x.userData.wall || x.userData.shapeId)) return x.userData;
+        return null;
+      };
+      for (const h of hits) {
+        const data = tagged(h.object);
+        if (!data) continue;
+        const p: Pt = { x: h.point.x, y: h.point.z };
+        if (m === 'remove') {
+          if (typeof data.shapeId === 'string') { remove(data.shapeId); return; }
+          const piece = data.piece as { a: Pt; b: Pt; kind: string };
+          const run = data.run as { shapeId: string; room: boolean; a: Pt; b: Pt };
+          if (piece.kind !== 'solid') {
+            // The wall above a door or around a window: remove that door or window.
+            const mid = { x: (piece.a.x + piece.b.x) / 2, y: (piece.a.y + piece.b.y) / 2 };
+            const o = openings.filter((x) => x.kind !== 'gap').sort((x, y) => dist(mid, { x: (x.a.x + x.b.x) / 2, y: (x.a.y + x.b.y) / 2 }) - dist(mid, { x: (y.a.x + y.b.x) / 2, y: (y.a.y + y.b.y) / 2 }))[0];
+            if (o) remove(o.shapeId);
+            return;
+          }
+          // A drawn wall with nothing in it goes altogether; otherwise take out just this stretch.
+          const whole = !run.room && dist(piece.a, run.a) < 0.01 && dist(piece.b, run.b) < 0.01;
+          if (whole) remove(run.shapeId);
+          else add({ id: newId(), kind: 'gap', a: piece.a, b: piece.b });
+          return;
+        }
+        if (!data.wall) return; // add modes work on walls only
+        if (m === 'gap') {
+          const g = gapAt(sketch.shapes, p);
+          if (g) add({ id: newId(), kind: 'gap', ...g });
+        } else {
+          const w = snapToWall(sketch.shapes, p);
+          if (w) add({ id: newId(), kind: 'symbol', sym: m, at: w.at, rot: w.rot, label: '' });
+        }
+        return;
+      }
+    };
+    renderer.domElement.addEventListener('pointerdown', onDown);
+    renderer.domElement.addEventListener('pointerup', onUp);
+
     let raf = 0;
     const tick = () => { controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(tick); };
     tick();
 
     return () => {
+      camSaved.current = { pos: camera.position.clone(), target: controls.target.clone() };
+      renderer.domElement.removeEventListener('pointerdown', onDown);
+      renderer.domElement.removeEventListener('pointerup', onUp);
       cancelAnimationFrame(raf);
       ro.disconnect();
       controls.dispose();
@@ -295,8 +402,26 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
         <button type="button" onClick={() => setCutaway((v) => !v)} aria-pressed={cutaway} style={{ ...btn, background: cutaway ? '#C9A24B' : 'transparent', color: cutaway ? '#0E1B2E' : '#fff' }}><Scissors size={15} /> Cut away</button>
         <button type="button" onClick={() => resetRef.current()} aria-label="Back to the starting view" style={btn}><RotateCcw size={15} /></button>
       </div>
+      {editable && (
+        <div style={{ display: 'flex', gap: 6, padding: '6px 10px', background: '#13284A', overflowX: 'auto', flexShrink: 0 }} aria-label="Edit in 3D">
+          {([
+            ['look', 'Look around', <Rotate3d key="i" size={15} />],
+            ['door', 'Add door', <DoorOpen key="i" size={15} />],
+            ['window', 'Add window', <AppWindow key="i" size={15} />],
+            ['gap', 'Cut opening', <SquareDashed key="i" size={15} />],
+            ['remove', 'Remove', <Eraser key="i" size={15} />],
+          ] as [Mode, string, React.ReactNode][]).map(([m, label, icon]) => (
+            <button key={m} type="button" onClick={() => setMode(m)} aria-pressed={mode === m}
+              style={{ ...btn, flexShrink: 0, background: mode === m ? '#C9A24B' : 'transparent', color: mode === m ? '#0E1B2E' : '#fff' }}>
+              {icon} {label}
+            </button>
+          ))}
+          <button type="button" onClick={onUndo} disabled={!canUndo} aria-label="Undo"
+            style={{ ...btn, flexShrink: 0, opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'default' }}><Undo2 size={15} /> Undo</button>
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
+        <div ref={mountRef} style={{ position: 'absolute', inset: 0, cursor: mode === 'look' ? 'grab' : 'crosshair' }} />
         <div style={{ position: 'absolute', left: 10, bottom: 10, display: 'grid', gridTemplateColumns: 'repeat(3, 38px)', gridTemplateRows: 'repeat(3, 38px)', gap: 4 }} aria-label="Move around">
           <span />
           <button type="button" onClick={() => panRef.current(0, 1)} aria-label="Move forward" style={pad}><ChevronUp size={20} /></button>
@@ -313,8 +438,8 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
           <button type="button" onClick={() => zoomRef.current(1.25)} aria-label="Zoom out" style={pad}><Minus size={18} /></button>
         </div>
       </div>
-      <div style={{ padding: '6px 12px', fontSize: 12, color: '#455A64', background: '#fff', borderTop: '1px solid #e2e6ec' }}>
-        Drag to turn · pinch or scroll to zoom · right-drag or two fingers to slide. Walls are 9 ft; cameras, APs and speakers sit at the ceiling.
+      <div style={{ padding: '6px 12px', fontSize: 12, color: mode === 'look' ? '#455A64' : '#0E1B2E', fontWeight: mode === 'look' ? 400 : 700, background: mode === 'look' ? '#fff' : '#FBF5E6', borderTop: '1px solid #e2e6ec' }}>
+        {MODE_HINT[mode]}
       </div>
     </div>
   );

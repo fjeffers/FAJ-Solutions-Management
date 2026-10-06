@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  dragHandle, feet, handlesOf, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
+  dragHandle, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
   snapPt, sqft, summarize, summaryLine, type Shape,
 } from './sketch';
 
@@ -142,5 +142,58 @@ describe('changing sizes: rooms, walls and cable bends', () => {
     expect(pathLength(moved.pts)).toBe(40);
     expect(dragHandle(cable, 'p9', { x: 1, y: 1 })).toBe(cable);
     expect(dragHandle(cable, 'nope', { x: 1, y: 1 })).toBe(cable);
+  });
+});
+
+describe('doors, windows and openings in walls', () => {
+  const box: Shape = { id: 'r', kind: 'room', x: 0, y: 0, w: 20, h: 10, name: '', color: '#0E1B2E' };
+  const kinds = (pieces: ReturnType<typeof wallPieces>) => pieces.map((p) => `${p.kind} ${Math.round(Math.hypot(p.b.x - p.a.x, p.b.y - p.a.y) * 10) / 10}`);
+
+  it('a room has four wall runs', () => {
+    expect(wallRuns([box]).map((r) => [r.a, r.b])).toEqual([
+      [{ x: 0, y: 0 }, { x: 20, y: 0 }], [{ x: 20, y: 0 }, { x: 20, y: 10 }], [{ x: 20, y: 10 }, { x: 0, y: 10 }], [{ x: 0, y: 10 }, { x: 0, y: 0 }],
+    ]);
+  });
+
+  it('a door tapped near a wall sits in it, turned to match', () => {
+    const door = seatInWall({ id: 'd', kind: 'symbol', sym: 'door', at: { x: 8, y: 0.9 }, label: '', rot: 0 }, [box]);
+    expect(door).toMatchObject({ at: { x: 8, y: 0 }, rot: 0 });
+    const side = seatInWall({ id: 'd2', kind: 'symbol', sym: 'door', at: { x: 19.2, y: 5 }, label: '', rot: 0 }, [box]);
+    expect(side).toMatchObject({ at: { x: 20, y: 5 }, rot: 90 });
+    // Far from any wall, or not a door/window: left as it is.
+    const far: Shape = { id: 'd3', kind: 'symbol', sym: 'door', at: { x: 10, y: 5 }, label: '', rot: 0 };
+    expect(seatInWall(far, [box])).toBe(far);
+    const cam: Shape = { id: 'c', kind: 'symbol', sym: 'camera', at: { x: 8, y: 0.5 }, label: '', rot: 0 };
+    expect(seatInWall(cam, [box])).toBe(cam);
+  });
+
+  it('a wall is cut around a door and a window; an opening leaves nothing', () => {
+    const top = wallRuns([box])[0];
+    const door: Shape = { id: 'd', kind: 'symbol', sym: 'door', at: { x: 5, y: 0 }, label: '', rot: 0 };
+    const win: Shape = { id: 'w', kind: 'symbol', sym: 'window', at: { x: 12, y: 0 }, label: '', rot: 180 };
+    const gap: Shape = { id: 'g', kind: 'gap', a: { x: 16, y: 0 }, b: { x: 19, y: 0 } };
+    expect(kinds(wallPieces(top, openingsOf([door, win, gap])))).toEqual(['solid 3.5', 'door 3', 'solid 3.9', 'window 3.2', 'solid 2.4', 'solid 1']);
+    // A door standing across the wall (wrong way round) doesn't cut it.
+    const across: Shape = { ...door, rot: 90 };
+    expect(kinds(wallPieces(top, openingsOf([across])))).toEqual(['solid 20']);
+  });
+
+  it('an opening dragged roughly along a wall lands exactly on it', () => {
+    expect(gapOnWall([box], { x: 4, y: 0.6 }, { x: 9.5, y: -0.4 })).toEqual({ a: { x: 4, y: 0 }, b: { x: 9.5, y: 0 } });
+    expect(gapOnWall([box], { x: 8, y: 5 }, { x: 12, y: 5 })).toBeNull(); // the middle of the room: no wall there
+    expect(gapOnWall([box], { x: 4, y: 0 }, { x: 4.2, y: 0 })).toBeNull(); // too short
+    const g = gapAt([box], { x: 20.3, y: 4 })!;
+    expect(g.a.x).toBeCloseTo(20); expect(g.a.y).toBeCloseTo(2.5);
+    expect(g.b.x).toBeCloseTo(20); expect(g.b.y).toBeCloseTo(5.5);
+  });
+
+  it('openings are kept when saved, and can be picked, moved and resized', () => {
+    const gap = { id: 'g', kind: 'gap', a: { x: 1, y: 0 }, b: { x: 4, y: 0 } };
+    const s = normalizeSketch({ shapes: [box, gap, { id: 'tiny', kind: 'gap', a: { x: 1, y: 1 }, b: { x: 1.1, y: 1 } }] });
+    expect(s.shapes.map((x) => x.id)).toEqual(['r', 'g']);
+    expect(hitTest(s.shapes, { x: 2, y: 0.1 })?.id).toBe('g');
+    expect(moveShape(s.shapes[1], 1, 0)).toMatchObject({ a: { x: 2, y: 0 }, b: { x: 5, y: 0 } });
+    expect(handlesOf(s.shapes[1]).map((h) => h.id)).toEqual(['a', 'b']);
+    expect(snapToWall([box], { x: 50, y: 50 })).toBeNull();
   });
 });

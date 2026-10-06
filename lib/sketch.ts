@@ -76,6 +76,8 @@ export const COLORS = ['#0E1B2E', '#C62828', '#1565C0', '#2E7D32', '#EF6C00', '#
 export type Shape =
   | { id: string; kind: 'room'; x: number; y: number; w: number; h: number; name: string; color: string }
   | { id: string; kind: 'wall'; a: Pt; b: Pt; color: string }
+  /** A stretch of wall taken out (a doorway, a pass-through) — of a drawn wall or a room's side. */
+  | { id: string; kind: 'gap'; a: Pt; b: Pt }
   | { id: string; kind: 'cable'; pts: Pt[]; color: string; label: string; cable: CableType }
   | { id: string; kind: 'pen'; pts: Pt[]; color: string; width: number; marker: boolean }
   | { id: string; kind: 'line'; a: Pt; b: Pt; color: string; width: number; arrow: boolean }
@@ -135,6 +137,11 @@ export function normalizeSketch(raw: unknown): Sketch {
       case 'wall': {
         const a = pt(o.a), b = pt(o.b);
         if (a && b) shapes.push({ id, kind: 'wall', a, b, color: color(o.color) });
+        break;
+      }
+      case 'gap': {
+        const a = pt(o.a), b = pt(o.b);
+        if (a && b && dist(a, b) >= 0.2) shapes.push({ id, kind: 'gap', a, b });
         break;
       }
       case 'cable': {
@@ -276,7 +283,7 @@ export function hitTest(shapes: Shape[], p: Pt, tol = 0.8): Shape | null {
       case 'text':
         if (p.x >= s.at.x - tol && p.x <= s.at.x + s.text.length * s.size * 0.6 + tol && Math.abs(p.y - s.at.y + s.size * 0.35) <= s.size * 0.7 + tol) return s;
         break;
-      case 'wall': case 'line':
+      case 'wall': case 'line': case 'gap':
         if (segDist(p, s.a, s.b) <= tol) return s;
         break;
       case 'box': {
@@ -318,7 +325,7 @@ const mv = (p: Pt, dx: number, dy: number): Pt => ({ x: p.x + dx, y: p.y + dy })
 export function moveShape(s: Shape, dx: number, dy: number): Shape {
   switch (s.kind) {
     case 'room': case 'box': case 'ellipse': return { ...s, x: s.x + dx, y: s.y + dy };
-    case 'wall': case 'line': return { ...s, a: mv(s.a, dx, dy), b: mv(s.b, dx, dy) };
+    case 'wall': case 'line': case 'gap': return { ...s, a: mv(s.a, dx, dy), b: mv(s.b, dx, dy) };
     case 'cable': case 'pen': return { ...s, pts: s.pts.map((p) => mv(p, dx, dy)) };
     default: return { ...s, at: mv(s.at, dx, dy) };
   }
@@ -344,7 +351,7 @@ export function handlesOf(s: Shape): { id: string; at: Pt }[] {
         { id: 's', at: { x: x + w / 2, y: y + h } }, { id: 'sw', at: { x, y: y + h } }, { id: 'w', at: { x, y: y + h / 2 } },
       ];
     }
-    case 'wall': case 'line': return [{ id: 'a', at: s.a }, { id: 'b', at: s.b }];
+    case 'wall': case 'line': case 'gap': return [{ id: 'a', at: s.a }, { id: 'b', at: s.b }];
     case 'cable': return s.pts.map((p, i) => ({ id: `p${i}`, at: p }));
     default: return [];
   }
@@ -361,7 +368,7 @@ export function dragHandle(s: Shape, id: string, p: Pt): Shape {
       if (id === 'sw' || id === 's' || id === 'se') b = Math.max(p.y, t + MIN_SIDE);
       return { ...s, x: l, y: t, w: r - l, h: b - t };
     }
-    case 'wall': case 'line':
+    case 'wall': case 'line': case 'gap':
       return id === 'a' ? { ...s, a: p } : id === 'b' ? { ...s, b: p } : s;
     case 'cable': {
       const i = Number(id.slice(1));
@@ -382,11 +389,137 @@ export function setSize(s: Shape, w: number, h: number): Shape {
 
 /** Type a wall's or line's length in feet; its start and direction stay put. */
 export function setLength(s: Shape, len: number): Shape {
-  if (s.kind !== 'wall' && s.kind !== 'line') return s;
+  if (s.kind !== 'wall' && s.kind !== 'line' && s.kind !== 'gap') return s;
   const L = clampSide(len);
   const d = dist(s.a, s.b);
   const ux = d > 0 ? (s.b.x - s.a.x) / d : 1, uy = d > 0 ? (s.b.y - s.a.y) / d : 0;
   return { ...s, b: { x: s.a.x + ux * L, y: s.a.y + uy * L } };
+}
+
+// ── Doors, windows and openings in walls (Fred, 2026-10-06: "can I draw a
+// door on a wall in the 3D … delete a portion of the wall or room") ────────
+
+/** How wide a door or window symbol is, in feet (as drawn on the plan). */
+export const DOOR_WIDTH = 3;
+export const WINDOW_WIDTH = 3.2;
+/** How close (feet) a door, window or opening must be to a wall to sit in it. */
+export const WALL_SNAP = 1.5;
+
+export type WallRun = { a: Pt; b: Pt; color: string; shapeId: string; room: boolean };
+
+/** Every wall on the plan: the walls drawn on their own, and the four sides of each room. */
+export function wallRuns(shapes: Shape[]): WallRun[] {
+  const out: WallRun[] = [];
+  for (const s of shapes) {
+    if (s.kind === 'wall') out.push({ a: s.a, b: s.b, color: s.color, shapeId: s.id, room: false });
+    else if (s.kind === 'room') {
+      const c = [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }];
+      c.forEach((a, i) => out.push({ a, b: c[(i + 1) % 4], color: s.color, shapeId: s.id, room: true }));
+    }
+  }
+  return out;
+}
+
+export type OpeningKind = 'door' | 'window' | 'gap';
+export type Opening = { a: Pt; b: Pt; kind: OpeningKind; shapeId: string };
+
+/** Each door, window and opening as the stretch of wall it takes up. */
+export function openingsOf(shapes: Shape[]): Opening[] {
+  const out: Opening[] = [];
+  for (const s of shapes) {
+    if (s.kind === 'gap') out.push({ a: s.a, b: s.b, kind: 'gap', shapeId: s.id });
+    else if (s.kind === 'symbol' && (s.sym === 'door' || s.sym === 'window')) {
+      const half = (s.sym === 'door' ? DOOR_WIDTH : WINDOW_WIDTH) / 2;
+      const r = (s.rot * Math.PI) / 180, ux = Math.cos(r), uy = Math.sin(r);
+      out.push({ a: { x: s.at.x - ux * half, y: s.at.y - uy * half }, b: { x: s.at.x + ux * half, y: s.at.y + uy * half }, kind: s.sym, shapeId: s.id });
+    }
+  }
+  return out;
+}
+
+export type WallPiece = { a: Pt; b: Pt; kind: 'solid' | 'door' | 'window' };
+
+/**
+ * A wall cut up by what sits in it: solid stretches, door and window
+ * stretches, and nothing at all where an opening was cut. Only openings lying
+ * along the wall count (a door standing across it doesn't cut it).
+ */
+export function wallPieces(run: { a: Pt; b: Pt }, openings: Opening[], tol = 0.4): WallPiece[] {
+  const { a, b } = run;
+  const L = dist(a, b);
+  if (L < 1e-6) return [];
+  const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
+  const along = (p: Pt) => (p.x - a.x) * ux + (p.y - a.y) * uy;
+  const off = (p: Pt) => Math.abs((p.x - a.x) * uy - (p.y - a.y) * ux);
+  const cuts: { t0: number; t1: number; kind: OpeningKind }[] = [];
+  for (const o of openings) {
+    if (off(o.a) > tol || off(o.b) > tol) continue;
+    const t0 = Math.max(0, Math.min(along(o.a), along(o.b))), t1 = Math.min(L, Math.max(along(o.a), along(o.b)));
+    if (t1 - t0 >= 0.05) cuts.push({ t0, t1, kind: o.kind });
+  }
+  if (cuts.length === 0) return [{ a, b, kind: 'solid' }];
+  // Where openings overlap, a cut-out beats a door, and a door beats a window.
+  const rank: Record<OpeningKind, number> = { gap: 3, door: 2, window: 1 };
+  const stops = [...new Set([0, L, ...cuts.flatMap((c) => [c.t0, c.t1])])].sort((x, y) => x - y);
+  const at = (t: number): Pt => ({ x: a.x + ux * t, y: a.y + uy * t });
+  const pieces: { t0: number; t1: number; kind: 'solid' | OpeningKind }[] = [];
+  for (let i = 1; i < stops.length; i++) {
+    const t0 = stops[i - 1], t1 = stops[i];
+    if (t1 - t0 < 1e-6) continue;
+    const mid = (t0 + t1) / 2;
+    const top = cuts.filter((c) => c.t0 <= mid && mid <= c.t1).sort((x, y) => rank[y.kind] - rank[x.kind])[0];
+    const kind = top ? top.kind : 'solid';
+    const last = pieces[pieces.length - 1];
+    if (last && last.kind === kind && Math.abs(last.t1 - t0) < 1e-6) last.t1 = t1;
+    else pieces.push({ t0, t1, kind });
+  }
+  return pieces.filter((p) => p.kind !== 'gap').map((p) => ({ a: at(p.t0), b: at(p.t1), kind: p.kind as WallPiece['kind'] }));
+}
+
+/** The nearest wall to p (within maxDist): the point on it and its direction in degrees. */
+export function snapToWall(shapes: Shape[], p: Pt, maxDist = WALL_SNAP): { at: Pt; rot: number; run: WallRun } | null {
+  let best: { at: Pt; rot: number; run: WallRun; d: number } | null = null;
+  for (const run of wallRuns(shapes)) {
+    const L = dist(run.a, run.b);
+    if (L < 1e-6) continue;
+    const ux = (run.b.x - run.a.x) / L, uy = (run.b.y - run.a.y) / L;
+    const t = Math.max(0, Math.min(L, (p.x - run.a.x) * ux + (p.y - run.a.y) * uy));
+    const at = { x: run.a.x + ux * t, y: run.a.y + uy * t };
+    const d = dist(p, at);
+    if (d <= maxDist && (!best || d < best.d)) {
+      const deg = Math.round((Math.atan2(uy, ux) * 180) / Math.PI);
+      best = { at, rot: ((deg % 360) + 360) % 360, run, d };
+    }
+  }
+  return best && { at: best.at, rot: best.rot, run: best.run };
+}
+
+/** A door or window moved near a wall sits in it, turned to match. */
+export function seatInWall(s: Shape, shapes: Shape[]): Shape {
+  if (s.kind !== 'symbol' || (s.sym !== 'door' && s.sym !== 'window')) return s;
+  const w = snapToWall(shapes, s.at);
+  return w ? { ...s, at: w.at, rot: w.rot } : s;
+}
+
+/** An opening dragged roughly along a wall, laid exactly on it (or null when no wall is near). */
+export function gapOnWall(shapes: Shape[], a: Pt, b: Pt, maxDist = WALL_SNAP): { a: Pt; b: Pt } | null {
+  const w = snapToWall(shapes, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, maxDist);
+  if (!w) return null;
+  const { run } = w;
+  const L = dist(run.a, run.b);
+  const ux = (run.b.x - run.a.x) / L, uy = (run.b.y - run.a.y) / L;
+  const t = (p: Pt) => Math.max(0, Math.min(L, (p.x - run.a.x) * ux + (p.y - run.a.y) * uy));
+  const t0 = Math.min(t(a), t(b)), t1 = Math.max(t(a), t(b));
+  if (t1 - t0 < 0.5) return null;
+  return { a: { x: run.a.x + ux * t0, y: run.a.y + uy * t0 }, b: { x: run.a.x + ux * t1, y: run.a.y + uy * t1 } };
+}
+
+/** An opening of a set width, centred on a point of a wall (used when tapping a wall in 3D). */
+export function gapAt(shapes: Shape[], p: Pt, width = DOOR_WIDTH): { a: Pt; b: Pt } | null {
+  const w = snapToWall(shapes, p);
+  if (!w) return null;
+  const r = (w.rot * Math.PI) / 180, half = width / 2;
+  return { a: { x: w.at.x - Math.cos(r) * half, y: w.at.y - Math.sin(r) * half }, b: { x: w.at.x + Math.cos(r) * half, y: w.at.y + Math.sin(r) * half } };
 }
 
 /** Where a shape's label sits — for the length/area tags. */

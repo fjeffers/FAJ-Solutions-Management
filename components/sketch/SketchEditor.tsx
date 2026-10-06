@@ -11,17 +11,17 @@ import dynamic from 'next/dynamic';
 import {
   ArrowUpRight, Camera, Circle, Eraser, Grid3x3, Hand, Highlighter, Image as ImageIcon, Magnet, Minus, MousePointer2,
   Pencil, Plus, Redo2, Save, Square, Trash2, Type, Undo2, X, Maximize, Cable, BrickWall, LayoutPanelTop, Loader2, Box,
-  Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+  Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, DoorOpen,
 } from 'lucide-react';
 import {
-  CABLE_TYPES, COLORS, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, pathLength, roomFromCorners, setLength, setSize, snapPt,
+  CABLE_TYPES, COLORS, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
   sqft, summarize, symbolInfo, type CableType, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
 
 // The 3D model (Fred, 2026-10-06: "also 3d model") — three.js, loaded only when opened.
 const Sketch3D = dynamic(() => import('./Sketch3D'), { ssr: false });
 
-type Tool = 'select' | 'hand' | 'moveall' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
+type Tool = 'select' | 'hand' | 'moveall' | 'opening' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
   | 'room' | 'wall' | 'cable' | 'symbol' | 'photo' | 'eraser';
 
 const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' | 'draw' | 'edit' }[] = [
@@ -31,6 +31,8 @@ const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' |
   { tool: 'moveall', label: 'Move all', icon: <Move size={18} />, group: 'edit' },
   { tool: 'room', label: 'Room', icon: <LayoutPanelTop size={18} />, group: 'plan' },
   { tool: 'wall', label: 'Wall', icon: <BrickWall size={18} />, group: 'plan' },
+  // Fred, 2026-10-06: "delete a portion of the wall or room".
+  { tool: 'opening', label: 'Opening', icon: <DoorOpen size={18} />, group: 'plan' },
   { tool: 'cable', label: 'Cable run', icon: <Cable size={18} />, group: 'plan' },
   { tool: 'symbol', label: 'Symbol', icon: <Plus size={18} />, group: 'plan' },
   { tool: 'photo', label: 'Photo pin', icon: <Camera size={18} />, group: 'plan' },
@@ -102,6 +104,10 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const viewH = view.w * aspect;
   const summary = useMemo(() => summarize(sketch), [sketch]);
   const selected = sketch.shapes.find((s) => s.id === selectedId) ?? null;
+  // Doors, windows and cut-outs, which break up the walls they sit in.
+  const openings = useMemo(() => openingsOf(sketch.shapes), [sketch.shapes]);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => { if (!notice) return; const t = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(t); }, [notice]);
 
   // Keep the drawing area's shape in step with the window.
   useEffect(() => {
@@ -167,7 +173,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       return;
     }
     const raw = toWorld(e.clientX, e.clientY);
-    const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol';
+    const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol' || tool === 'opening';
     const p = snapIf(raw, plan || tool === 'line' || tool === 'arrow' || tool === 'box');
 
     if (tool === 'hand' || e.button === 1) { gesture.current = { kind: 'pan', from: { x: e.clientX, y: e.clientY }, view }; return; }
@@ -196,7 +202,8 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       return;
     }
     if (tool === 'symbol') {
-      const s: Shape = { id: newId(), kind: 'symbol', sym, at: p, label: '', rot: 0 };
+      // A door or window tapped near a wall sits in it, turned to match.
+      const s: Shape = seatInWall({ id: newId(), kind: 'symbol', sym, at: p, label: '', rot: 0 }, sketch.shapes);
       addShape(s);
       setSelectedId(s.id);
       return;
@@ -255,7 +262,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       if (snapOn) { dx = Math.round(dx * 2) / 2; dy = Math.round(dy * 2) / 2; }
       if (dx || dy || g.moved) {
         g.moved = true;
-        setSketch((s) => ({ ...s, shapes: s.shapes.map((x) => (x.id === g.id ? moveShape(g.base, dx, dy) : x)) }));
+        setSketch((s) => ({ ...s, shapes: s.shapes.map((x) => (x.id === g.id ? seatInWall(moveShape(g.base, dx, dy), s.shapes) : x)) }));
       }
       return;
     }
@@ -297,6 +304,10 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         addShape({ id: newId(), kind: t, ...r, color, width, fill });
       } else if (t === 'wall' && Math.hypot(b.x - a.x, b.y - a.y) >= 0.5) {
         addShape({ id: newId(), kind: 'wall', a, b, color });
+      } else if (t === 'opening') {
+        const gap = gapOnWall(sketch.shapes, a, b);
+        if (gap) { const s: Shape = { id: newId(), kind: 'gap', ...gap }; addShape(s); setSelectedId(s.id); }
+        else setNotice("Drag along a wall or a room's side to take that stretch of wall out.");
       } else if ((t === 'line' || t === 'arrow') && Math.hypot(b.x - a.x, b.y - a.y) >= 0.3) {
         addShape({ id: newId(), kind: 'line', a, b, color, width, arrow: t === 'arrow' });
       }
@@ -381,14 +392,31 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     </g>
   );
 
+  /** Wall lines broken where a door, window or opening sits (a window keeps a thin line). */
+  const wallLines = (key: string, runs: { a: Pt; b: Pt }[], stroke: string, width: number, isDraft: boolean) =>
+    runs.flatMap((run, i) => (isDraft ? [{ ...run, kind: 'solid' as const }] : wallPieces(run, openings)).map((p, j) => (
+      <line key={`${key}-${i}-${j}`} x1={p.a.x} y1={p.a.y} x2={p.b.x} y2={p.b.y} stroke={stroke}
+        strokeWidth={p.kind === 'solid' ? width : p.kind === 'window' ? width / 3 : 0} strokeLinecap={p.kind === 'solid' ? 'square' : 'butt'} />
+    )));
+
   const renderShape = (s: Shape, isDraft = false) => {
     const sel = s.id === selectedId && !isDraft;
     switch (s.kind) {
+      case 'gap':
+        // The wall is simply not drawn here; this faint mark (not printed) lets you pick the opening.
+        return (
+          <g key={s.id} data-noexport>
+            <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="#C9A24B" strokeWidth={0.12} strokeDasharray="0.3 0.25" />
+            {sel && <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="#C9A24B" strokeWidth={0.9} strokeOpacity={0.4} />}
+            {(sel || isDraft) && tag(midpoint([s.a, s.b]), `${feet(Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y))} opening`, `${s.id}-l`, LABEL * 0.7, '#8a6d2b')}
+          </g>
+        );
       case 'room': {
         const label = `${feet(s.w)} × ${feet(s.h)}`;
         return (
           <g key={s.id}>
-            <rect x={s.x} y={s.y} width={s.w} height={s.h} fill={s.color} fillOpacity={0.07} stroke={s.color} strokeWidth={sw(0.3)} />
+            <rect x={s.x} y={s.y} width={s.w} height={s.h} fill={s.color} fillOpacity={0.07} />
+            {wallLines(s.id, [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }].map((a, i, c) => ({ a, b: c[(i + 1) % 4] })), s.color, sw(0.3), isDraft)}
             {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 - LABEL * 0.8 }, s.name || 'Room', `${s.id}-n`, LABEL * 1.1)}
             {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 + LABEL * 0.5 }, label, `${s.id}-d`, LABEL * 0.85, '#455A64')}
             {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 + LABEL * 1.6 }, sqft(s.w * s.h), `${s.id}-a`, LABEL * 0.8, '#455A64')}
@@ -402,7 +430,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         const len = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
         return (
           <g key={s.id}>
-            <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke={s.color} strokeWidth={0.45} strokeLinecap="square" />
+            {wallLines(s.id, [{ a: s.a, b: s.b }], s.color, 0.45, isDraft)}
             {tag(midpoint([s.a, s.b]), feet(len), `${s.id}-l`, LABEL * 0.8, s.color)}
             {sel && <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="#C9A24B" strokeWidth={0.9} strokeOpacity={0.4} data-noexport />}
           </g>
@@ -509,6 +537,10 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     if (t === 'room') return renderShape({ id: '_draft', kind: 'room', ...r, name: 'New room', color }, true);
     if (t === 'box' || t === 'ellipse') return renderShape({ id: '_draft', kind: t, ...r, color, width, fill }, true);
     if (t === 'wall') return renderShape({ id: '_draft', kind: 'wall', a, b, color }, true);
+    if (t === 'opening') {
+      const gap = gapOnWall(sketch.shapes, a, b);
+      return gap ? renderShape({ id: '_draft', kind: 'gap', ...gap }, true) : <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#C62828" strokeWidth={0.12} strokeDasharray="0.4 0.3" />;
+    }
     if (t === 'line' || t === 'arrow') return renderShape({ id: '_draft', kind: 'line', a, b, color, width, arrow: t === 'arrow' }, true);
     return null;
   };
@@ -591,6 +623,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><input type="checkbox" checked={fill} onChange={(e) => setFill(e.target.checked)} /> Fill</label>
             )}
             {tool === 'room' && <span style={{ color: '#455A64' }}>Drag from one corner to the other. Each square is 1 ft.</span>}
+            {tool === 'opening' && <span style={{ color: '#455A64' }}>Drag along a wall or a room&apos;s side to take that stretch of wall out. Doors and windows (in Symbol) sit in a wall by themselves.</span>}
             {tool === 'moveall' && <span style={{ color: '#455A64' }}>Drag anywhere to move the whole site. Arrow keys or the pad slide the view.</span>}
             {tool === 'select' && <span style={{ color: '#455A64' }}>Tap an item to select it; drag to move it. Drag the white squares to change its size or move a wall&apos;s end. Arrow keys nudge it (Shift = 5 ft).</span>}
             {tool === 'photo' && <span style={{ color: '#455A64' }}>{busyUpload ? 'Uploading…' : 'Tap the spot, then take or choose the photo.'}</span>}
@@ -658,6 +691,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
               Edit size &amp; name
             </button>
           )}
+          {notice && <div role="status" style={{ position: 'absolute', left: 10, top: 52, right: 60, padding: '8px 12px', borderRadius: 8, background: '#FBF5E6', color: '#5c4813', fontSize: 13, fontWeight: 600, border: '1px solid #e7d3a3' }}>{notice}</div>}
           {error && <div role="alert" style={{ position: 'absolute', left: 10, top: 10, right: 60, padding: '8px 12px', borderRadius: 8, background: '#fde8e8', color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>{error}</div>}
         </div>
 
@@ -715,7 +749,10 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         )}
       </div>
 
-      {show3d && <Sketch3D sketch={sketch} title={title} onClose={() => setShow3d(false)} />}
+      {show3d && (
+        <Sketch3D sketch={sketch} title={title} onClose={() => setShow3d(false)}
+          onAdd={(s) => addShape(s)} onRemove={(id) => removeShape(id)} onUndo={undo} canUndo={past.length > 0} />
+      )}
 
       <input ref={photoInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void onPhotoChosen(e.target.files?.[0], 'photo'); e.target.value = ''; }} />
       <input ref={bgInput} type="file" accept="image/*" hidden onChange={(e) => { void onPhotoChosen(e.target.files?.[0], 'bg'); e.target.value = ''; }} />
@@ -726,7 +763,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
 /** Only the fields a resize changes, so the rest of the item stays as it is. */
 function sizePatch(s: Shape): Partial<Shape> {
   if (s.kind === 'room' || s.kind === 'box' || s.kind === 'ellipse') return { w: s.w, h: s.h } as Partial<Shape>;
-  if (s.kind === 'wall' || s.kind === 'line') return { b: s.b } as Partial<Shape>;
+  if (s.kind === 'wall' || s.kind === 'line' || s.kind === 'gap') return { b: s.b } as Partial<Shape>;
   return {};
 }
 
@@ -761,7 +798,7 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
         style={{ width: '100%', height: 34, fontSize: 16, padding: '0 8px', border: '1px solid #d8dde5', borderRadius: 6 }} />
     </label>
   );
-  const heading = { room: 'Room', wall: 'Wall', cable: 'Cable run', pen: 'Drawing', line: 'Line', box: 'Box', ellipse: 'Circle', text: 'Text', symbol: shape.kind === 'symbol' ? symbolInfo(shape.sym).label : '', photo: 'Photo' }[shape.kind];
+  const heading = { room: 'Room', wall: 'Wall', gap: 'Opening in a wall', cable: 'Cable run', pen: 'Drawing', line: 'Line', box: 'Box', ellipse: 'Circle', text: 'Text', symbol: shape.kind === 'symbol' ? symbolInfo(shape.sym).label : '', photo: 'Photo' }[shape.kind];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#0E1B2E' }}>{heading}</div>
@@ -776,10 +813,14 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
           <div style={{ color: '#78909C', fontSize: 12 }}>Or drag the white squares on its corners and sides.</div>
         </>
       )}
-      {(shape.kind === 'wall' || shape.kind === 'line') && (
+      {(shape.kind === 'wall' || shape.kind === 'line' || shape.kind === 'gap') && (
         <>
-          <FeetBox label="Length (ft)" value={Math.hypot(shape.b.x - shape.a.x, shape.b.y - shape.a.y)} onSet={(v) => onChange(sizePatch(setLength(shape, v)))} />
-          <div style={{ color: '#78909C', fontSize: 12 }}>Or drag either end (the white squares) to stretch or turn it.</div>
+          <FeetBox label={shape.kind === 'gap' ? 'Width (ft)' : 'Length (ft)'} value={Math.hypot(shape.b.x - shape.a.x, shape.b.y - shape.a.y)} onSet={(v) => onChange(sizePatch(setLength(shape, v)))} />
+          <div style={{ color: '#78909C', fontSize: 12 }}>
+            {shape.kind === 'gap'
+              ? 'This stretch of wall is taken out. Drag its ends to make it wider, or Delete to put the wall back.'
+              : 'Or drag either end (the white squares) to stretch or turn it.'}
+          </div>
         </>
       )}
       {shape.kind === 'symbol' && (shape.sym === 'door' || shape.sym === 'window') && (
@@ -787,6 +828,9 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
           style={{ alignSelf: 'flex-start', height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #d8dde5', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
           Turn 90°
         </button>
+      )}
+      {shape.kind === 'symbol' && (shape.sym === 'door' || shape.sym === 'window') && (
+        <div style={{ color: '#78909C', fontSize: 12 }}>Put it on a wall and it sits in the wall, with the gap shown in 3D.</div>
       )}
       {shape.kind === 'cable' && (
         <>

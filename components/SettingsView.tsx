@@ -1,9 +1,10 @@
 'use client';
 import ChangePasswordForm from './ChangePasswordForm';
-import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered, TextCursorInput, Eye } from 'lucide-react';
+import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered, TextCursorInput, Eye, LayoutDashboard } from 'lucide-react';
 import CloseoutListsEditor from './CloseoutListsEditor';
 import LayoutEditor from './LayoutEditor';
 import ScreenPartsEditor from './ScreenPartsEditor';
+import ScreenDesigner from './ScreenDesigner';
 import ListsEditor from './ListsEditor';
 import CustomFieldsEditor from './CustomFieldsEditor';
 import type { FieldSets } from '@/lib/custom-fields';
@@ -90,6 +91,23 @@ export default function SettingsView({
         </div>
         <div className="wf">
           <ScreenPartsEditor layout={layout} onChange={onLayoutChange} saveState={layoutSaveState} saveError={layoutSaveError} onRetry={onLayoutRetry} />
+        </div>
+      </div>
+
+      {/* ── Screen designer (saved with the menu layout; lib/screen-design.ts) ──
+          Fred, 2026-10-06: "go ahead with the screen designer" */}
+      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 28 }}>
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(14,27,46,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <LayoutDashboard size={16} color="var(--teal)" />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Screen designer</h2>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>Arrange the Dashboard and the job page: order, width, columns, your own notes and shortcut buttons</div>
+          </div>
+        </div>
+        <div className="wf">
+          <ScreenDesigner layout={layout} onChange={onLayoutChange} saveState={layoutSaveState} saveError={layoutSaveError} onRetry={onLayoutRetry} />
         </div>
       </div>
 

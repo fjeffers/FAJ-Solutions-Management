@@ -259,6 +259,11 @@ body {
   /* KPI stats grid: 2 cols on phone */
   .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
 
+  /* Dashboard blocks set to half width sit one above the other on a phone */
+  .dash-row-2 { grid-template-columns: 1fr !important; }
+  /* Settings -> Screen designer: the job page's two columns stack */
+  .screen-designer-job { grid-template-columns: 1fr !important; }
+
   /* Filter chips: wrap nicely */
   .filter-chips { flex-wrap: wrap; gap: 8px !important; }
 

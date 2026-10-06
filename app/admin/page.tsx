@@ -60,7 +60,7 @@ import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
 import MessagesView from '@/components/MessagesView';
-import { sectionOfView, type ResolvedLayout } from '@/lib/app-layout';
+import { sectionOfView, type ResolvedLayout, screenLabel } from '@/lib/app-layout';
 import { useAppLayout } from '@/components/useAppLayout';
 import { useAppLists } from '@/components/useAppLists';
 import { useCustomFields } from '@/components/useCustomFields';
@@ -1654,23 +1654,24 @@ Go ahead?`)) return;
 
       {/* ── Main Content ── */}
       <main className="main-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
-        {view === 'dashboard' && shown('dash.attention') && (
-          <div className="view-inner" style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: 0 }}>
-            <AttentionPanel
-              data={{
-                surveys, quotes, contracts, workOrders: enrichedWOs,
-                invoices, invoicePayments, siteVisits: dashboardVisits,
-              }}
-              onGo={(v) => setView(v as typeof view)}
-            />
-          </div>
-        )}
         {view === 'dashboard' && (
           <DashboardView
             stats={stats}
             workOrders={enrichedWOs}
             payments={payments}
             onView={(v) => setView(v as typeof view)}
+            // Placed and sized like any other block (Settings -> Screen designer).
+            attention={shown('dash.attention') ? (
+              <AttentionPanel
+                flush
+                data={{
+                  surveys, quotes, contracts, workOrders: enrichedWOs,
+                  invoices, invoicePayments, siteVisits: dashboardVisits,
+                }}
+                onGo={(v) => setView(v as typeof view)}
+              />
+            ) : undefined}
+            screenName={(k) => screenLabel(appLayout.layout, k)}
           />
         )}
         {view === 'financials' && (

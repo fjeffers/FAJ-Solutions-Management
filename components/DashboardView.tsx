@@ -1,7 +1,8 @@
 'use client';
 import { shown } from '@/lib/screen-parts';
-import { useMemo } from 'react';
-import { TrendingUp, Clock, CheckCircle, AlertCircle, Briefcase, CreditCard } from 'lucide-react';
+import { dashRows, designNow, type DashBlock } from '@/lib/screen-design';
+import { useMemo, type ReactNode } from 'react';
+import { TrendingUp, Clock, CheckCircle, AlertCircle, Briefcase, CreditCard, StickyNote, ArrowRight } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { EnrichedWorkOrder, Payment, WorkOrderStatus } from '@/lib/types';
 
@@ -16,7 +17,21 @@ const WO_STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> =
 
 type Stats = { total: number; paid: number; remaining: number; paidCount: number; partialCount: number; pendingCount: number; jobCount: number };
 
-export default function DashboardView({ stats, workOrders, payments, onView }: { stats: Stats; workOrders: EnrichedWorkOrder[]; payments: Payment[]; onView: (v: string) => void }) {
+export const NOTE_STYLE: Record<string, { bg: string; edge: string }> = {
+  plain: { bg: '#ffffff', edge: '#d8dde5' },
+  gold: { bg: '#FBF5E6', edge: '#C9A24B' },
+  blue: { bg: '#EEF4FC', edge: '#1565C0' },
+  green: { bg: '#ECF7EF', edge: '#2E7D32' },
+  red: { bg: '#FDEEEE', edge: '#C62828' },
+};
+
+export default function DashboardView({ stats, workOrders, payments, onView, attention, screenName }: {
+  stats: Stats; workOrders: EnrichedWorkOrder[]; payments: Payment[]; onView: (v: string) => void;
+  /** "Needs your attention" — built by the owner app, placed here like any other block. */
+  attention?: ReactNode;
+  /** A screen's name in Fred's menu, for shortcut buttons. */
+  screenName?: (view: string) => string;
+}) {
   const recentPayments = [...payments].slice(0, 5);
   // Closed jobs are done with. They used to stay in Outstanding Jobs forever,
   // because nothing here looked at archived_at — so closing a job changed
@@ -34,16 +49,40 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
   const payoutTotal = stats.paid + stats.remaining;
   const pct = payoutTotal > 0 ? Math.round((stats.paid / payoutTotal) * 100) : 0;
 
-  return (
-    <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
-      <div style={{ marginBottom: 28 }}>
-        <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>OVERVIEW</div>
-        <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Dashboard</h1>
-        <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Your business at a glance</p>
-      </div>
-
-      {shown('dash.kpis') && (
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
+  const block = (b: DashBlock): ReactNode => {
+    if (b.kind === 'note') {
+      const c = NOTE_STYLE[b.color] ?? NOTE_STYLE.plain;
+      return (
+        <div className="card" style={{ background: c.bg, borderLeft: `4px solid ${c.edge}` }}>
+          <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, marginBottom: b.text ? 8 : 0 }}>
+            <StickyNote size={15} color={c.edge} /> {b.title || 'Note'}
+          </div>
+          {b.text && <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{b.text}</div>}
+        </div>
+      );
+    }
+    if (b.kind === 'links') {
+      return (
+        <div className="glass card">
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>{b.title || 'Shortcuts'}</div>
+          {b.views.length === 0
+            ? <div style={{ color: '#aaa', fontSize: 13 }}>Pick screens for this block in Settings → Screen designer.</div>
+            : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {b.views.map((v) => (
+                  <button key={v} className="btn btn-ghost" style={{ padding: '8px 12px', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => onView(v)}>
+                    {screenName ? screenName(v) : v} <ArrowRight size={14} />
+                  </button>
+                ))}
+              </div>
+            )}
+        </div>
+      );
+    }
+    switch (b.key) {
+      case 'dash.attention': return attention;
+      case 'dash.kpis': return (
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
         {[
           { label: 'Billed to Clients', value: fmtMoney(stats.total), icon: <Briefcase size={20} color="var(--teal)" />, color: 'var(--teal)' },
           { label: 'Paid to Techs', value: fmtMoney(stats.paid), icon: <CheckCircle size={20} color="#047857" />, color: '#047857' },
@@ -59,10 +98,9 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
           </div>
         ))}
       </div>
-      )}
-
-      {shown('dash.status') && (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 28 }}>
+      );
+      case 'dash.status': return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         {[
           { label: 'Paid Jobs', count: liveCounts.paid, color: '#047857', bg: 'rgba(16,185,129,0.1)' },
           { label: 'Partial', count: liveCounts.partial, color: '#b45309', bg: 'rgba(245,158,11,0.1)' },
@@ -74,11 +112,8 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
           </div>
         ))}
       </div>
-      )}
-
-      {(shown('dash.outstanding') || shown('dash.payments')) && (
-      <div style={{ display: 'grid', gridTemplateColumns: shown('dash.outstanding') && shown('dash.payments') ? '1fr 1fr' : '1fr', gap: 20 }}>
-        {shown('dash.outstanding') && (
+      );
+      case 'dash.outstanding': return (
         <div className="glass card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}><Clock size={15} color="var(--teal)" /> Outstanding Jobs</div>
@@ -104,8 +139,8 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
             ))
           )}
         </div>
-        )}
-        {shown('dash.payments') && (
+      );
+      case 'dash.payments': return (
         <div className="glass card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}><CreditCard size={15} color="var(--teal)" /> Recent Payments</div>
@@ -123,9 +158,30 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
             ))
           )}
         </div>
-        )}
+      );
+      default: return null;
+    }
+  };
+
+
+  return (
+    <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ marginBottom: 28 }}>
+        <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>OVERVIEW</div>
+        <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Dashboard</h1>
+        <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Your business at a glance</p>
       </div>
-      )}
+
+      {/* Arranged in Settings -> Screen designer (lib/screen-design.ts); parts
+          switched off in "What each screen shows" are left out. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        {dashRows(designNow().dash.filter((b) => b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.attention' || attention)))).map((row) => (
+          <div key={row.map((b) => b.key).join('|')} className={row.length === 2 ? 'dash-row dash-row-2' : 'dash-row'}
+            style={{ display: 'grid', gridTemplateColumns: row.length === 2 ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
+            {row.map((b) => <div key={b.key} style={{ minWidth: 0 }}>{block(b)}</div>)}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

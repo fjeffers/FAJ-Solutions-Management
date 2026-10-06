@@ -15,6 +15,7 @@
 
 import { OFFICE_GROUPS, SIDEBAR_VIEWS, type OfficeGroup } from './office-menu';
 import { PART_KEYS } from './screen-parts';
+import { normalizeDesign, STANDARD_DESIGN, type ScreenDesign } from './screen-design';
 
 export type Layout = {
   /** Screens in the left menu, top to bottom. Always includes 'office'. */
@@ -27,6 +28,8 @@ export type Layout = {
   hidden: string[];
   /** Parts of screens switched off (Settings -> What each screen shows; lib/screen-parts.ts). */
   off: string[];
+  /** How the Dashboard and the job page are arranged (Settings -> Screen designer; lib/screen-design.ts). */
+  design: ScreenDesign;
 };
 
 export type Screen = {
@@ -78,6 +81,7 @@ export const STANDARD_LAYOUT: Layout = {
   labels: {},
   hidden: [],
   off: [],
+  design: STANDARD_DESIGN,
 };
 
 const known = (k: unknown): k is string => typeof k === 'string' && Object.prototype.hasOwnProperty.call(SCREENS, k);
@@ -140,7 +144,15 @@ export function normalizeLayout(raw: unknown): Layout {
 
   const off = Array.isArray(src.off) ? [...new Set(src.off.filter((k): k is string => typeof k === 'string' && PART_KEYS.includes(k)))] : [];
 
-  return { main, sections, labels, hidden, off };
+  // Shortcut blocks may only open screens that still exist in the app.
+  const design = normalizeDesign(src.design, (v) => known(v) && SCREENS[v].view !== null);
+
+  return { main, sections, labels, hidden, off, design };
+}
+
+/** A screen's name as Fred has it (his own name, or the standard one). */
+export function screenLabel(l: Layout, key: string): string {
+  return cleanText(l.labels[key]) || SCREENS[key]?.label || key;
 }
 
 function screen(l: Layout, key: string): Screen {
@@ -187,6 +199,17 @@ export function searchSections(sections: ResolvedSection[], query: string): Reso
 /** True when nothing differs from the standard menu. */
 export function isStandard(l: Layout): boolean {
   return JSON.stringify(normalizeLayout(l)) === JSON.stringify(normalizeLayout(STANDARD_LAYOUT));
+}
+
+/** Only the menu itself (names, order, sections, hidden) — not the screen parts or the designer. */
+export function isStandardMenu(l: Layout): boolean {
+  const menu = (x: Layout) => { const n = normalizeLayout(x); return JSON.stringify([n.main, n.sections, n.labels, n.hidden]); };
+  return menu(l) === menu(STANDARD_LAYOUT);
+}
+
+/** The standard menu, keeping the screen parts switched off and the designer's arrangement. */
+export function resetMenu(l: Layout): Layout {
+  return { ...normalizeLayout(STANDARD_LAYOUT), off: l.off ?? [], design: l.design ?? STANDARD_DESIGN };
 }
 
 // ── Changes Fred makes in Settings. Each returns a new Layout. ───────────────

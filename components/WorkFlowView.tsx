@@ -8,7 +8,7 @@
 // Money comes from the enriched work order (lib/utils rules), never worked out
 // here. Ticking a checklist item and changing techs go through the same server
 // functions the tech portal uses (migration-098), so both sides always agree.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Archive, ArchiveRestore, CalendarClock, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
   Pencil, Plus, Receipt, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
@@ -36,6 +36,7 @@ import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } f
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
 import { listsNow } from '@/lib/app-lists';
 import { shown as partShown } from '@/lib/screen-parts';
+import { designNow } from '@/lib/screen-design';
 import { answeredFields } from '@/lib/custom-fields';
 import { CustomFieldList } from '@/components/CustomFieldInputs';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
@@ -458,6 +459,32 @@ function OwnerJob({
     </>
   );
 
+  const jobDesign = designNow();
+  const jobCards: Record<string, ReactNode> = {
+    'job.timeRequests': !archived && <TimeRequestsCard w={w} job={job} onSaved={refresh} />,
+    'job.quickEdit': !archived && <QuickEditCard w={w} onSaved={refresh} />,
+    'job.techs': <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />,
+    'job.money': <MoneyCard w={w} />,
+    'job.fields': <YourFieldsCard w={w} />,
+    'job.closeout': showCloseout(job) && (
+      <CloseoutCard job={job} items={checklist.items} listName={checklist.name} canEdit={!archived} ownerView
+        onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
+    ),
+    'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,
+    'job.expenses': <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />,
+    'job.photos': <OwnerPhotos w={w} />,
+    'job.sketches': (
+      <Section title="Sketches" subtitle="Floor plan, cable runs, cameras, APs and drops — drawn to scale">
+        <SketchesPanel woId={w.id} compact defaultTitle={`WO ${w.wo_number}${w.site_name ? ` · ${w.site_name}` : w.title ? ` · ${w.title}` : ''}`} />
+      </Section>
+    ),
+    'job.timegps': (
+      <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
+        <WOTimeLogs woId={w.id} />
+      </Section>
+    ),
+  };
+
   return (
     <>
       <WfJobDetail
@@ -468,37 +495,16 @@ function OwnerJob({
         refreshing={refreshing}
         actions={actions}
         onToggleTask={archived ? undefined : toggleTask}
-        side={<>
-          {/* Each part can be switched off in Settings -> What each screen shows. */}
-          {!archived && partShown('job.timeRequests') && <TimeRequestsCard w={w} job={job} onSaved={refresh} />}
-          {!archived && partShown('job.quickEdit') && <QuickEditCard w={w} onSaved={refresh} />}
-          {partShown('job.techs') && <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />}
-          {partShown('job.money') && <MoneyCard w={w} />}
-          {partShown('job.fields') && <YourFieldsCard w={w} />}
-        </>}
+        // Each card can be switched off in Settings -> What each screen shows,
+        // and moved between the two columns in Settings -> Screen designer.
+        side={<>{jobDesign.jobSide.filter(partShown).map((k) => <Fragment key={k}>{jobCards[k]}</Fragment>)}</>}
         below={<>
           {chatOpen && (
             <Section title="Messages" subtitle="The same thread the tech sees in their portal">
               <WorkOrderChatPanel woNumber={w.wo_number} />
             </Section>
           )}
-          {showCloseout(job) && partShown('job.closeout') && (
-            <CloseoutCard job={job} items={checklist.items} listName={checklist.name} canEdit={!archived} ownerView
-              onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
-          )}
-          {partShown('job.report') && <OwnerReport w={w} onEdit={() => onEdit(w)} />}
-          {partShown('job.expenses') && <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />}
-          {partShown('job.photos') && <OwnerPhotos w={w} />}
-          {partShown('job.sketches') && (
-            <Section title="Sketches" subtitle="Floor plan, cable runs, cameras, APs and drops — drawn to scale">
-              <SketchesPanel woId={w.id} compact defaultTitle={`WO ${w.wo_number}${w.site_name ? ` · ${w.site_name}` : w.title ? ` · ${w.title}` : ''}`} />
-            </Section>
-          )}
-          {partShown('job.timegps') && (
-            <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
-              <WOTimeLogs woId={w.id} />
-            </Section>
-          )}
+          {jobDesign.jobBelow.filter(partShown).map((k) => <Fragment key={k}>{jobCards[k]}</Fragment>)}
         </>}
       />
       {logOpen && <JobLogReport w={w} onClose={() => setLogOpen(false)} />}

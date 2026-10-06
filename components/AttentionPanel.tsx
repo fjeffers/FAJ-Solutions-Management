@@ -12,17 +12,19 @@ import { attentionItems, attentionSummary, type AttentionInput } from '@/lib/att
  * is not.
  */
 export default function AttentionPanel({
-  data, onGo,
+  data, onGo, flush = false,
 }: {
   data: AttentionInput;
   onGo: (view: string) => void;
+  /** No space underneath — the Dashboard's rows space their blocks themselves. */
+  flush?: boolean;
 }) {
   const items = useMemo(() => attentionItems(data), [data]);
   const summary = attentionSummary(items);
 
   if (items.length === 0) {
     return (
-      <div className="glass card" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 18px', marginBottom: 20 }}>
+      <div className="glass card" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 18px', marginBottom: flush ? 0 : 20 }}>
         <CheckCircle2 size={20} color="#047857" style={{ flexShrink: 0 }} />
         <div>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Nothing needs you right now.</div>
@@ -35,7 +37,7 @@ export default function AttentionPanel({
   }
 
   return (
-    <div style={{ marginBottom: 22 }}>
+    <div style={{ marginBottom: flush ? 0 : 22 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
         <h2 className="serif" style={{ fontSize: 21, fontWeight: 600, margin: 0 }}>Needs you</h2>
         {summary && <div style={{ fontSize: 12.5, color: '#8a8578' }}>{summary}</div>}

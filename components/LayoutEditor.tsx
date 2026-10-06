@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Eye, EyeOff, FolderPlus, Loader2, RotateCcw, Trash2, Undo2 } from 'lucide-react';
 import {
-  OFFICE_KEY, SETTINGS_KEY, STANDARD_LAYOUT, addSection, isStandard, moveScreen, normalizeLayout, placeOf,
+  OFFICE_KEY, SETTINGS_KEY, addSection, isStandardMenu, moveScreen, normalizeLayout, placeOf, resetMenu,
   removeSection, renameScreen, renameSection, resolveLayout, setHidden, shiftScreen, shiftSection,
   type Layout, type Screen,
 } from '@/lib/app-layout';
@@ -102,9 +102,9 @@ export default function LayoutEditor({ layout, onChange, saveState, saveError, o
             <Undo2 size={14} /> Undo my changes
           </button>
         )}
-        {!isStandard(layout) && (
+        {!isStandardMenu(layout) && (
           <button type="button" className="wf-btn wf-btn-outline wf-btn-sm"
-            onClick={() => { if (window.confirm('Put the menu back to the standard layout? Your names, order, sections and hidden screens go back to how they came.')) onChange(normalizeLayout(STANDARD_LAYOUT)); }}>
+            onClick={() => { if (window.confirm('Put the menu back to the standard layout? Your names, order, sections and hidden screens go back to how they came.')) onChange(resetMenu(layout)); }}>
             <RotateCcw size={14} /> Standard menu
           </button>
         )}

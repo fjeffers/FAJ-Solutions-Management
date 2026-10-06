@@ -11,6 +11,7 @@ import dynamic from 'next/dynamic';
 import {
   ArrowUpRight, Camera, Circle, Eraser, Grid3x3, Hand, Highlighter, Image as ImageIcon, Magnet, Minus, MousePointer2,
   Pencil, Plus, Redo2, Save, Square, Trash2, Type, Undo2, X, Maximize, Cable, BrickWall, LayoutPanelTop, Loader2, Box,
+  Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
   CABLE_TYPES, COLORS, SYMBOLS, SYMBOL_GROUPS, cableInfo, feet, hitTest, midpoint, moveShape, newId, normalizeSketch, pathLength, roomFromCorners, snapPt,
@@ -20,12 +21,14 @@ import {
 // The 3D model (Fred, 2026-10-06: "also 3d model") — three.js, loaded only when opened.
 const Sketch3D = dynamic(() => import('./Sketch3D'), { ssr: false });
 
-type Tool = 'select' | 'hand' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
+type Tool = 'select' | 'hand' | 'moveall' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
   | 'room' | 'wall' | 'cable' | 'symbol' | 'photo' | 'eraser';
 
 const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' | 'draw' | 'edit' }[] = [
   { tool: 'select', label: 'Select / move', icon: <MousePointer2 size={18} />, group: 'edit' },
   { tool: 'hand', label: 'Pan', icon: <Hand size={18} />, group: 'edit' },
+  // Fred, 2026-10-06: "select and move the site around" — drag everything at once.
+  { tool: 'moveall', label: 'Move all', icon: <Move size={18} />, group: 'edit' },
   { tool: 'room', label: 'Room', icon: <LayoutPanelTop size={18} />, group: 'plan' },
   { tool: 'wall', label: 'Wall', icon: <BrickWall size={18} />, group: 'plan' },
   { tool: 'cable', label: 'Cable run', icon: <Cable size={18} />, group: 'plan' },
@@ -94,7 +97,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const bgInput = useRef<HTMLInputElement | null>(null);
   const pendingPhotoAt = useRef<Pt | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const gesture = useRef<{ kind: 'pan'; from: { x: number; y: number }; view: typeof view } | { kind: 'pinch'; d0: number; mid0: Pt; view: typeof view } | { kind: 'move'; id: string; from: Pt; base: Shape; moved: boolean } | null>(null);
+  const gesture = useRef<{ kind: 'pan'; from: { x: number; y: number }; view: typeof view } | { kind: 'pinch'; d0: number; mid0: Pt; view: typeof view } | { kind: 'move'; id: string; from: Pt; base: Shape; moved: boolean } | { kind: 'moveall'; from: Pt; base: Shape[]; moved: boolean } | null>(null);
 
   const viewH = view.w * aspect;
   const summary = useMemo(() => summarize(sketch), [sketch]);
@@ -147,6 +150,10 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     });
   };
   const fit = () => setView({ x: -2, y: -2, w: Math.max(sketch.width, sketch.height / aspect) + 4 });
+  /** Slide the view: the arrow pad and arrow keys (Fred, 2026-10-06: "navigation bars up and down, left and right"). */
+  const panBy = (fx: number, fy: number) => setView((v) => ({ ...v, x: v.x + v.w * fx, y: v.y + v.w * aspect * fy }));
+  /** Nudge the selected item (arrow keys), as one undo step. */
+  const nudge = (id: string, dx: number, dy: number) => commit({ ...sketch, shapes: sketch.shapes.map((s) => (s.id === id ? moveShape(s, dx, dy) : s)) });
 
   // ── Pointer handling ──────────────────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent) => {
@@ -164,6 +171,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     const p = snapIf(raw, plan || tool === 'line' || tool === 'arrow' || tool === 'box');
 
     if (tool === 'hand' || e.button === 1) { gesture.current = { kind: 'pan', from: { x: e.clientX, y: e.clientY }, view }; return; }
+    if (tool === 'moveall') { gesture.current = { kind: 'moveall', from: raw, base: sketch.shapes, moved: false }; return; }
     if (tool === 'select') {
       const hit = hitTest(sketch.shapes, raw, view.w / 60);
       setSelectedId(hit?.id ?? null);
@@ -222,6 +230,15 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       return;
     }
     const raw = toWorld(e.clientX, e.clientY);
+    if (g?.kind === 'moveall') {
+      let dx = raw.x - g.from.x, dy = raw.y - g.from.y;
+      if (snapOn) { dx = Math.round(dx * 2) / 2; dy = Math.round(dy * 2) / 2; }
+      if (dx || dy || g.moved) {
+        g.moved = true;
+        setSketch((s) => ({ ...s, shapes: g.base.map((x) => moveShape(x, dx, dy)) }));
+      }
+      return;
+    }
     if (g?.kind === 'move') {
       let dx = raw.x - g.from.x, dy = raw.y - g.from.y;
       if (snapOn) { dx = Math.round(dx * 2) / 2; dy = Math.round(dy * 2) / 2; }
@@ -249,6 +266,9 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       // Record the move as one step, so Undo puts it back.
       const moved = sketch.shapes.find((s) => s.id === g.id);
       if (moved) { setPast((p) => [...p.slice(-99), { ...sketch, shapes: sketch.shapes.map((s) => (s.id === g.id ? g.base : s)) }]); setFuture([]); setDirty(true); }
+    }
+    if (g?.kind === 'moveall' && g.moved) {
+      setPast((p) => [...p.slice(-99), { ...sketch, shapes: g.base }]); setFuture([]); setDirty(true);
     }
     if (pointers.current.size === 0) gesture.current = null;
     if (!draft) return;
@@ -294,6 +314,14 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
       else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) { e.preventDefault(); removeShape(selectedId); }
       else if (e.key === 'Enter' && draft?.kind === 'cable') finishCable();
+      else if (e.key.startsWith('Arrow')) {
+        // With something selected the arrows nudge it (Shift: 5 ft); otherwise they slide the view.
+        e.preventDefault();
+        const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+        if (!dir) return;
+        if (selectedId) { const step = e.shiftKey ? 5 : 0.5; nudge(selectedId, dir[0] * step, dir[1] * step); }
+        else panBy(dir[0] * 0.15, dir[1] * 0.15);
+      }
       else if (e.key === 'Escape') { if (draft?.kind === 'cable') finishCable(); else { setDraft(null); setSelectedId(null); } }
     };
     window.addEventListener('keydown', onKey);
@@ -552,6 +580,8 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><input type="checkbox" checked={fill} onChange={(e) => setFill(e.target.checked)} /> Fill</label>
             )}
             {tool === 'room' && <span style={{ color: '#455A64' }}>Drag from one corner to the other. Each square is 1 ft.</span>}
+            {tool === 'moveall' && <span style={{ color: '#455A64' }}>Drag anywhere to move the whole site. Arrow keys or the pad slide the view.</span>}
+            {tool === 'select' && <span style={{ color: '#455A64' }}>Tap an item to select it; drag to move it. Arrow keys nudge it (Shift = 5 ft).</span>}
             {tool === 'photo' && <span style={{ color: '#455A64' }}>{busyUpload ? 'Uploading…' : 'Tap the spot, then take or choose the photo.'}</span>}
           </>
         )}
@@ -587,6 +617,18 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             {sketch.shapes.map((s) => renderShape(s))}
             {draftShape()}
           </svg>
+          {/* Arrow pad: slide the drawing up, down, left and right */}
+          <div style={{ position: 'absolute', left: 10, bottom: 10, display: 'grid', gridTemplateColumns: 'repeat(3, 34px)', gridTemplateRows: 'repeat(3, 34px)', gap: 4 }} aria-label="Move the view">
+            <span />
+            <button type="button" onClick={() => panBy(0, -0.2)} aria-label="Move the view up" title="Up" style={smallBtn}><ChevronUp size={18} /></button>
+            <span />
+            <button type="button" onClick={() => panBy(-0.2, 0)} aria-label="Move the view left" title="Left" style={smallBtn}><ChevronLeft size={18} /></button>
+            <button type="button" onClick={fit} aria-label="Centre the plan" title="Centre the plan" style={{ ...smallBtn, padding: 0 }}><Maximize size={14} /></button>
+            <button type="button" onClick={() => panBy(0.2, 0)} aria-label="Move the view right" title="Right" style={smallBtn}><ChevronRight size={18} /></button>
+            <span />
+            <button type="button" onClick={() => panBy(0, 0.2)} aria-label="Move the view down" title="Down" style={smallBtn}><ChevronDown size={18} /></button>
+            <span />
+          </div>
           {/* Zoom */}
           <div style={{ position: 'absolute', right: 10, bottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <button type="button" onClick={() => zoomAt(1 / 1.25)} aria-label="Zoom in" style={smallBtn}><Plus size={16} /></button>

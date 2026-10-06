@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { X, Scissors, Box as BoxIcon, RotateCcw } from 'lucide-react';
+import { X, Scissors, Box as BoxIcon, RotateCcw, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Plus, Minus } from 'lucide-react';
 import { feet, symbolInfo, type Shape, type Sketch, type SymbolKind } from '@/lib/sketch';
 
 const CEILING = 9; // ft
@@ -147,6 +147,9 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
   const mountRef = useRef<HTMLDivElement>(null);
   const [cutaway, setCutaway] = useState(false);
   const resetRef = useRef<() => void>(() => {});
+  // The arrow pad and zoom buttons (Fred, 2026-10-06: "navigation bars up and down, left and right").
+  const panRef = useRef<(right: number, forward: number) => void>(() => {});
+  const zoomRef = useRef<(factor: number) => void>(() => {});
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -171,6 +174,21 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
     };
     home();
     resetRef.current = home;
+    const step = Math.max(W, D) * 0.12;
+    panRef.current = (right, forward) => {
+      // Slide along the ground, relative to where the camera is looking.
+      const fwd = new THREE.Vector3().subVectors(controls.target, camera.position).setY(0).normalize();
+      const side = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+      const move = side.multiplyScalar(right * step).add(fwd.multiplyScalar(forward * step));
+      camera.position.add(move);
+      controls.target.add(move);
+      controls.update();
+    };
+    zoomRef.current = (factor) => {
+      const offset = new THREE.Vector3().subVectors(camera.position, controls.target).multiplyScalar(factor);
+      camera.position.copy(controls.target).add(offset);
+      controls.update();
+    };
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.75));
     const sun = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -267,6 +285,7 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
     };
   }, [sketch, cutaway]);
 
+  const pad: React.CSSProperties = { width: 38, height: 38, borderRadius: 10, border: '1px solid #d8dde5', background: 'rgba(255,255,255,0.95)', color: '#0E1B2E', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.12)' };
   const btn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
   return (
     <div role="dialog" aria-modal="true" aria-label="3D model" style={{ position: 'fixed', inset: 0, zIndex: 320, display: 'flex', flexDirection: 'column', background: '#f2efe9' }}>
@@ -276,7 +295,24 @@ export default function Sketch3D({ sketch, title, onClose }: { sketch: Sketch; t
         <button type="button" onClick={() => setCutaway((v) => !v)} aria-pressed={cutaway} style={{ ...btn, background: cutaway ? '#C9A24B' : 'transparent', color: cutaway ? '#0E1B2E' : '#fff' }}><Scissors size={15} /> Cut away</button>
         <button type="button" onClick={() => resetRef.current()} aria-label="Back to the starting view" style={btn}><RotateCcw size={15} /></button>
       </div>
-      <div ref={mountRef} style={{ flex: 1, minHeight: 0, position: 'relative' }} />
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
+        <div style={{ position: 'absolute', left: 10, bottom: 10, display: 'grid', gridTemplateColumns: 'repeat(3, 38px)', gridTemplateRows: 'repeat(3, 38px)', gap: 4 }} aria-label="Move around">
+          <span />
+          <button type="button" onClick={() => panRef.current(0, 1)} aria-label="Move forward" style={pad}><ChevronUp size={20} /></button>
+          <span />
+          <button type="button" onClick={() => panRef.current(-1, 0)} aria-label="Move left" style={pad}><ChevronLeft size={20} /></button>
+          <button type="button" onClick={() => resetRef.current()} aria-label="Back to the starting view" style={pad}><RotateCcw size={16} /></button>
+          <button type="button" onClick={() => panRef.current(1, 0)} aria-label="Move right" style={pad}><ChevronRight size={20} /></button>
+          <span />
+          <button type="button" onClick={() => panRef.current(0, -1)} aria-label="Move back" style={pad}><ChevronDown size={20} /></button>
+          <span />
+        </div>
+        <div style={{ position: 'absolute', right: 10, bottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <button type="button" onClick={() => zoomRef.current(0.8)} aria-label="Zoom in" style={pad}><Plus size={18} /></button>
+          <button type="button" onClick={() => zoomRef.current(1.25)} aria-label="Zoom out" style={pad}><Minus size={18} /></button>
+        </div>
+      </div>
       <div style={{ padding: '6px 12px', fontSize: 12, color: '#455A64', background: '#fff', borderTop: '1px solid #e2e6ec' }}>
         Drag to turn · pinch or scroll to zoom · right-drag or two fingers to slide. Walls are 9 ft; cameras, APs and speakers sit at the ceiling.
       </div>

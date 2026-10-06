@@ -65,12 +65,14 @@ import { useAppLayout } from '@/components/useAppLayout';
 import { useAppLists } from '@/components/useAppLists';
 import { useCustomFields } from '@/components/useCustomFields';
 import { shown } from '@/lib/screen-parts';
+import SketchesPanel from '@/components/sketch/SketchesPanel';
+import { PrimioBar } from '@/components/wf/PrimioScreens';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
-  'team', 'support', 'office', 'messages',
+  'team', 'support', 'office', 'messages', 'sketches',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -1749,6 +1751,18 @@ Go ahead?`)) return;
             netviewUrl={NETVIEW_FORM_URL}
             badges={{ support: supportCount, 'import-queue': pendingImportCount, messages: messageCount }}
           />
+        )}
+        {view === 'sketches' && (
+          <div className="view-inner wf" style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <PrimioBar title="Sketches" />
+            <SketchesPanel labelFor={(r) => {
+              const wo = r.wo_id ? workOrders.find((w) => w.id === r.wo_id) : null;
+              const sv = r.survey_id ? surveys.find((x) => x.id === r.survey_id) : null;
+              if (wo) return `On WO ${wo.wo_number}${wo.title ? ` · ${wo.title}` : ''}`;
+              if (sv) return `On survey ${sv.survey_number}${sv.site_name ? ` · ${sv.site_name}` : ''}`;
+              return null;
+            }} />
+          </div>
         )}
         {view === 'messages' && (
           <MessagesView

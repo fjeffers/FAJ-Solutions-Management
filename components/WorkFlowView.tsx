@@ -38,6 +38,7 @@ import { listsNow } from '@/lib/app-lists';
 import { shown as partShown } from '@/lib/screen-parts';
 import { answeredFields } from '@/lib/custom-fields';
 import { CustomFieldList } from '@/components/CustomFieldInputs';
+import SketchesPanel from '@/components/sketch/SketchesPanel';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
 
@@ -488,6 +489,11 @@ function OwnerJob({
           {partShown('job.report') && <OwnerReport w={w} onEdit={() => onEdit(w)} />}
           {partShown('job.expenses') && <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />}
           {partShown('job.photos') && <OwnerPhotos w={w} />}
+          {partShown('job.sketches') && (
+            <Section title="Sketches" subtitle="Floor plan, cable runs, cameras, APs and drops — drawn to scale">
+              <SketchesPanel woId={w.id} compact defaultTitle={`WO ${w.wo_number}${w.site_name ? ` · ${w.site_name}` : w.title ? ` · ${w.title}` : ''}`} />
+            </Section>
+          )}
           {partShown('job.timegps') && (
             <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
               <WOTimeLogs woId={w.id} />

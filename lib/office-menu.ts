@@ -76,6 +76,8 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     title: 'Sales',
     items: [
       { view: 'surveys', label: 'Surveys', hint: 'Step 1: site surveys and what they found' },
+      // Fred, 2026-10-06: "add it under winning work" (now Sales).
+      { view: 'sketches', label: 'Sketches', hint: 'Draw your own layout: floor plans to scale, cable runs, cameras, APs and drops' },
       { view: 'quotes', label: 'Quotes', hint: 'Step 2: quotes for clients, built from surveys' },
       { view: 'contracts', label: 'Contracts', hint: 'Step 3: signed agreements; a signed one becomes a job' },
     ],

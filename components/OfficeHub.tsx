@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import {
   Award, Banknote, BarChart3, BookOpen, Building2, Calendar, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, Construction, CreditCard, ExternalLink, FileCheck2, Folder, Handshake, HardHat, KanbanSquare, LayoutGrid, Plus, SquarePlus, Sun,
-  FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, MessageSquare, Network, Package, Receipt, Search, Settings, ShieldCheck,
+  FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, MessageSquare, Network, PencilRuler, Package, Receipt, Search, Settings, ShieldCheck,
   Timer, TrendingUp, UserCog, Users, Wallet, Wrench, type LucideIcon,
 } from 'lucide-react';
 import { searchSections, type ResolvedSection, type Screen } from '@/lib/app-layout';
@@ -19,7 +19,7 @@ const ICONS: Record<string, LucideIcon> = {
   customers: Building2, quickbooks: TrendingUp, netview: FileText, invoices: Receipt,
   contractors: Users, 'contractor-analytics': Award, 'portal-admin': ShieldCheck,
   statements: FileText, '1099': ClipboardCheck, w9: BookOpen,
-  surveys: ClipboardList, quotes: FileSignature, contracts: FileCheck2,
+  surveys: ClipboardList, sketches: PencilRuler, quotes: FileSignature, contracts: FileCheck2,
   scheduling: Calendar, dispatch: MapIcon,
   materials: Package, maintenance: Wrench, network: Network, settings: Settings,
 };

@@ -9,6 +9,9 @@ import { surveyTotals, surveyStage, nextSurveyNumber, readyToQuote } from '@/lib
 import SurveyWizard from '@/components/SurveyWizard';
 import type { QuestionTemplate, Survey, SurveyStatus } from '@/lib/types';
 import { SURVEY_TYPES } from '@/lib/types';
+import { PencilRuler } from 'lucide-react';
+import { Dialog } from '@/components/wf/WfUi';
+import SketchesPanel from '@/components/sketch/SketchesPanel';
 
 const STATUS_META: Record<SurveyStatus, { label: string; color: string; bg: string }> = {
   draft:     { label: 'Draft',  color: '#666',    bg: 'rgba(0,0,0,0.06)' },
@@ -51,6 +54,8 @@ export default function SurveysView({
   onOpenWorkOrder: (workOrderId: string) => void;
 }) {
   const [editing, setEditing] = useState<Partial<Survey> | null>(null);
+  // The survey whose sketches are open (Fred, 2026-10-06: sketch your own layout).
+  const [sketching, setSketching] = useState<Survey | null>(null);
 
   const sorted = useMemo(
     () => [...surveys].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
@@ -149,6 +154,7 @@ export default function SurveysView({
                     {s.work_order_id && (
                       <button title="Open the work order" onClick={() => onOpenWorkOrder(s.work_order_id!)} style={{ ...ICON_BTN, color: '#047857' }}><Briefcase size={15} /></button>
                     )}
+                    <button title="Sketches — floor plan, cable runs, cameras, APs" onClick={() => setSketching(s)} style={{ ...ICON_BTN, color: '#0E1B2E' }}><PencilRuler size={15} /></button>
                     <button title="Edit" onClick={() => setEditing(s)} style={ICON_BTN}><Edit2 size={15} /></button>
                     <button title="Delete" onClick={() => { if (confirm(`Delete survey ${s.survey_number}? The quote and work order it produced are kept.`)) onDelete(s.id); }} style={{ ...ICON_BTN, color: '#b91c1c' }}><Trash2 size={15} /></button>
                   </div>
@@ -157,6 +163,13 @@ export default function SurveysView({
             );
           })}
         </div>
+      )}
+
+      {sketching && (
+        <Dialog title={`Sketches — ${sketching.survey_number}${sketching.site_name ? ` · ${sketching.site_name}` : ''}`} onClose={() => setSketching(null)} wide>
+          <SketchesPanel surveyId={sketching.id} compact
+            defaultTitle={`${sketching.site_name || sketching.client_name || 'Site'} — sketch`} />
+        </Dialog>
       )}
 
       {editing && (

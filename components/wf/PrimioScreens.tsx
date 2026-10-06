@@ -15,6 +15,7 @@ import {
   type WfJob, type WfStatus,
 } from '@/lib/wf';
 import { fmtMoney, todayISO } from '@/lib/utils';
+import { stageName } from '@/lib/app-lists';
 import { Empty } from './WfUi';
 
 // ── App bar ─────────────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ export function boardGroups(rows: BoardRow[]): { key: WfStatus; label: string; l
     list.sort(col.key === 'closed'
       ? (a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || num(a, b)
       : (a, b) => (a.job.date ?? '9999').localeCompare(b.job.date ?? '9999') || num(a, b));
-    return { key: col.key, label: col.label, list };
+    return { key: col.key, label: stageName(col.key), list };
   });
 }
 
@@ -171,17 +172,17 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
     if (focus === 'urgent') return g.list.length > 0; // high-priority jobs, in whichever stages they are
     return g.key === focus;
   });
-  const focusLabel = focus === 'urgent' ? 'High priority' : focus ? DISPATCH_COLUMNS.find((c) => c.key === focus)?.label : null;
+  const focusLabel = focus === 'urgent' ? 'High priority' : focus ? stageName(focus as WfStatus) : null;
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <PrimioBar title="Dispatch board" right={right} />
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
         <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />
-        <StatTile label="Needs a tech" value={count('open')} color={WF_STATUS_COLOR.open} onClick={() => toggle('open')} active={focus === 'open'} />
-        <StatTile label="Awaiting response" value={count('offered')} color={WF_STATUS_COLOR.offered} onClick={() => toggle('offered')} active={focus === 'offered'} />
-        <StatTile label="In progress" value={count('inProgress')} color={WF_STATUS_COLOR.inProgress} onClick={() => toggle('inProgress')} active={focus === 'inProgress'} />
-        <StatTile label="Work done" value={count('workDone')} color="var(--wf-success)" onClick={() => toggle('workDone')} active={focus === 'workDone'} />
+        <StatTile label={stageName('open')} value={count('open')} color={WF_STATUS_COLOR.open} onClick={() => toggle('open')} active={focus === 'open'} />
+        <StatTile label={stageName('offered')} value={count('offered')} color={WF_STATUS_COLOR.offered} onClick={() => toggle('offered')} active={focus === 'offered'} />
+        <StatTile label={stageName('inProgress')} value={count('inProgress')} color={WF_STATUS_COLOR.inProgress} onClick={() => toggle('inProgress')} active={focus === 'inProgress'} />
+        <StatTile label={stageName('workDone')} value={count('workDone')} color="var(--wf-success)" onClick={() => toggle('workDone')} active={focus === 'workDone'} />
         <StatTile label="High priority" value={urgent} color="var(--wf-danger)" onClick={() => toggle('urgent')} active={focus === 'urgent'} />
       </div>
       {focusLabel && (

@@ -62,6 +62,7 @@ import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
 import MessagesView from '@/components/MessagesView';
 import { sectionOfView, type ResolvedLayout } from '@/lib/app-layout';
 import { useAppLayout } from '@/components/useAppLayout';
+import { useAppLists } from '@/components/useAppLists';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
@@ -133,6 +134,9 @@ export default function HomePage() {
   // Fred's own menu: names, order, sections, hidden screens (Settings ->
   // Menu & screens, migration 107). The standard one is lib/office-menu.ts.
   const appLayout = useAppLayout();
+  // Fred's own lists: stage names, priorities, service types… (Settings ->
+  // Lists & stages, migration 109). Read everywhere through lib/app-lists.
+  const appLists = useAppLists();
   const layoutRef = useRef<ResolvedLayout>(appLayout.resolved);
   layoutRef.current = appLayout.resolved;
   const menu = appLayout.visible;
@@ -1381,7 +1385,7 @@ Go ahead?`)) return;
   const scheduleRows: BoardRow[] = useMemo(() => enrichedWOs.map((w) => {
     const job = wfJobFromOwner(w);
     return { job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed' };
-  }), [enrichedWOs]);
+  }), [enrichedWOs, appLists.lists]); // eslint-disable-line react-hooks/exhaustive-deps -- lists changes the names inside each job
 
   /** The number shown beside a screen in the menu: things waiting there. */
   const badgeFor = (v: string | null): number =>
@@ -1829,6 +1833,11 @@ Go ahead?`)) return;
             layoutSaveState={appLayout.saveState}
             layoutSaveError={appLayout.saveError}
             onLayoutRetry={appLayout.retry}
+            lists={appLists.lists}
+            onListsChange={appLists.update}
+            listsSaveState={appLists.saveState}
+            listsSaveError={appLists.saveError}
+            onListsRetry={appLists.retry}
           />
         )}
       </main>

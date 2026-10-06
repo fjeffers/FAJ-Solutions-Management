@@ -16,18 +16,15 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import {
-  ASSIGNMENT_TYPES,
   PAY_TYPES,
   PAYMENT_METHODS,
   SCHEDULE_TYPES,
-  SERVICE_TYPES,
   WO_STATUSES,
-  WORK_ORDER_PRIORITIES,
-  WORK_ORDER_SOURCES,
 } from '@/lib/types';
 import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, PAY_ADDON_KINDS, payAddonAmount, billableAddons, seedPayLines } from '@/lib/utils';
 import { printSignOffSheet } from '@/lib/signoff';
 import { buildNetviewFormUrl } from '@/lib/netview-payroll';
+import { choicesFor } from '@/lib/app-lists';
 import { createClient } from '@/lib/supabase/client';
 
 type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents' | 'chat' | 'closeout';
@@ -951,7 +948,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 <div style={{ position: 'relative' }}>
                   <select className="select input" value={form.service_type ?? ''} onChange={(e) => set('service_type', e.target.value)}>
                     <option value="">Select type</option>
-                    {SERVICE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {choicesFor('serviceTypes', form.service_type).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                   <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                 </div>
@@ -1006,7 +1003,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               <PF label="Source" icon={<Briefcase size={13} />}>
                 <div style={{ position: 'relative' }}>
                   <select className="select input" value={form.source_platform ?? 'Internal'} onChange={(e) => set('source_platform', e.target.value)}>
-                    {WORK_ORDER_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {choicesFor('sources', form.source_platform ?? 'Internal').map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                   <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                 </div>
@@ -1038,7 +1035,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               <PF label="Assignment Type">
                 <div style={{ position: 'relative' }}>
                   <select className="select input" value={form.assignment_type ?? 'Internal'} onChange={(e) => set('assignment_type', e.target.value)}>
-                    {ASSIGNMENT_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {choicesFor('assignmentTypes', form.assignment_type ?? 'Internal').map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                   <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                 </div>
@@ -1046,7 +1043,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               <PF label="Priority" icon={<ShieldCheck size={13} />}>
                 <div style={{ position: 'relative' }}>
                   <select className="select input" value={form.priority ?? 'Normal'} onChange={(e) => set('priority', e.target.value)}>
-                    {WORK_ORDER_PRIORITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {choicesFor('priorities', form.priority ?? 'Normal').map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                   <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                 </div>
@@ -1473,7 +1470,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 <div style={{ position: 'relative' }}>
                   <select className="select input" value={form.service_type ?? ''} onChange={(e) => set('service_type', e.target.value)}>
                     <option value="">Select type</option>
-                    {SERVICE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {choicesFor('serviceTypes', form.service_type).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                   <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                 </div>

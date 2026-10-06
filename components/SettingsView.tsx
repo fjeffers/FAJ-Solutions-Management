@@ -1,8 +1,10 @@
 'use client';
 import ChangePasswordForm from './ChangePasswordForm';
-import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft } from 'lucide-react';
+import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered } from 'lucide-react';
 import CloseoutListsEditor from './CloseoutListsEditor';
 import LayoutEditor from './LayoutEditor';
+import ListsEditor from './ListsEditor';
+import type { AppLists } from '@/lib/app-lists';
 import type { Layout } from '@/lib/app-layout';
 import type { LayoutSaveState } from './useAppLayout';
 import QuestionTemplatesView from './QuestionTemplatesView';
@@ -26,11 +28,18 @@ interface Props {
   layoutSaveState: LayoutSaveState;
   layoutSaveError: string | null;
   onLayoutRetry: () => void;
+  /** Fred's lists (Lists & stages). */
+  lists: AppLists;
+  onListsChange: (next: AppLists) => void;
+  listsSaveState: LayoutSaveState;
+  listsSaveError: string | null;
+  onListsRetry: () => void;
 }
 
 export default function SettingsView({
   templates, onSave, onDelete, onUploadAttachment, deliverableTemplates, onSaveDeliverable, onDeleteDeliverable,
   layout, onLayoutChange, layoutSaveState, layoutSaveError, onLayoutRetry,
+  lists, onListsChange, listsSaveState, listsSaveError, onListsRetry,
 }: Props) {
   return (
     <div className="view-inner" style={{ maxWidth: 960, margin: '0 auto' }}>
@@ -55,6 +64,22 @@ export default function SettingsView({
         </div>
         <div className="wf">
           <LayoutEditor layout={layout} onChange={onLayoutChange} saveState={layoutSaveState} saveError={layoutSaveError} onRetry={onLayoutRetry} />
+        </div>
+      </div>
+
+      {/* ── Lists & stages (migration-109) ── */}
+      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 28 }}>
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(14,27,46,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ListOrdered size={16} color="var(--teal)" />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Lists &amp; stages</h2>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>Stage names, priorities, service types, job sources and assignment types. Checklists and templates are further down.</div>
+          </div>
+        </div>
+        <div className="wf">
+          <ListsEditor lists={lists} onChange={onListsChange} saveState={listsSaveState} saveError={listsSaveError} onRetry={onListsRetry} />
         </div>
       </div>
 

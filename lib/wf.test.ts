@@ -38,7 +38,7 @@ describe('the status a tech sees', () => {
     expect(wfStatusFor('Open', '', false)).toBe('open');
   });
   it('the office reads an offer as waiting on the tech', () => {
-    expect(wfStatusLabel('offered', true)).toBe('Waiting on tech');
+    expect(wfStatusLabel('offered', true)).toBe('Awaiting response');
     expect(wfStatusLabel('offered', false)).toBe('Needs your answer');
   });
 });

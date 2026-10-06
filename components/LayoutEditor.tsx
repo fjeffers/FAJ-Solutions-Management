@@ -151,7 +151,7 @@ export default function LayoutEditor({ layout, onChange, saveState, saveError, o
   );
 }
 
-function SaveLine({ state, error, onRetry }: { state: LayoutSaveState; error: string | null; onRetry: () => void }) {
+export function SaveLine({ state, error, onRetry }: { state: LayoutSaveState; error: string | null; onRetry: () => void }) {
   if (state === 'saving') return <span className="wf-p-small wf-subtle" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Loader2 size={14} className="spin" /> Saving…</span>;
   if (state === 'saved') return <span className="wf-p-small" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--wf-success)', fontWeight: 600 }}><CheckCircle2 size={14} /> Saved</span>;
   if (state === 'error') {

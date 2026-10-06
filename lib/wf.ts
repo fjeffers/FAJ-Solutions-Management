@@ -9,6 +9,7 @@
 // Everything here is pure and unit-tested (lib/wf.test.ts). Money totals are
 // NOT worked out here: the owner screens take them from lib/utils, the one place
 // the money rules live.
+import { isUrgent, labelOf, stageName } from './app-lists';
 import type { EnrichedWorkOrder } from './types';
 import { todayISO } from './utils';
 import {
@@ -32,10 +33,10 @@ export const WF_STATUS_LABEL: Record<WfStatus, string> = {
   declined: 'Declined',
 };
 
-/** What the office reads: the same states, said from its side. */
+/** What the office reads: the same states, said from its side — and named
+ *  the way Fred chose in Settings -> Lists & stages. */
 export function wfStatusLabel(s: WfStatus, ownerView: boolean): string {
-  if (ownerView && s === 'offered') return 'Waiting on tech';
-  return WF_STATUS_LABEL[s];
+  return ownerView ? stageName(s) : WF_STATUS_LABEL[s];
 }
 
 /** WorkFlow's colours: the left bar on a card and the status chip. */
@@ -180,11 +181,14 @@ export function wfStatusFor(woStatus: string | null | undefined, myResponse = ''
   return myResponse === 'accepted' ? 'scheduled' : 'offered';
 }
 
+/**
+ * A job's priority as shown, and whether it counts as high priority (the red
+ * filter on Dispatch). Fred chooses both in Settings -> Lists & stages; as
+ * standard, High, Critical and Emergency count (Emergency didn't, before).
+ */
 function priorityOf(v: string): { high: boolean; label: string } {
-  const p = v.toLowerCase();
-  if (p === 'high' || p === 'urgent' || p === 'critical') return { high: true, label: 'High' };
-  if (p === 'low') return { high: false, label: 'Low' };
-  return { high: false, label: 'Normal' };
+  if (!v.trim()) return { high: false, label: 'Normal' };
+  return { high: isUrgent(v), label: labelOf('priorities', v) };
 }
 
 function base(r: Row, status: WfStatus, owner: boolean): WfJob {

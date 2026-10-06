@@ -34,6 +34,7 @@ import { mapLink } from '@/lib/geo';
 import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseStatus } from '@/lib/expenses';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
+import { listsNow } from '@/lib/app-lists';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
 
@@ -135,7 +136,8 @@ export default function WorkFlowView({
   const [bucket, setBucket] = useState<WfBucket>(initialBucket ?? 'current');
   const setOpenId = onOpenChange;
 
-  const rows: Row[] = useMemo(() => workOrders.map((w) => ({ w, job: wfJobFromOwner(w) })), [workOrders]);
+  const appLists = listsNow(); // stage and priority names (Settings -> Lists & stages)
+  const rows: Row[] = useMemo(() => workOrders.map((w) => ({ w, job: wfJobFromOwner(w) })), [workOrders, appLists]); // eslint-disable-line react-hooks/exhaustive-deps -- lists changes the names inside each job
   const counts = ownerCounts(rows.map((r) => r.job));
   // Techs asking for another date and time on an offer (migration-105).
   const timeAsks = rows.filter((r) => !r.job.archived && r.job.status === 'offered'

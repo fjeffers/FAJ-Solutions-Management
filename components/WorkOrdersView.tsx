@@ -12,6 +12,7 @@ import WorkFlowView, { OwnerAlerts } from '@/components/WorkFlowView';
 import { Dialog } from '@/components/wf/WfUi';
 import { DispatchBoard, type BoardRow } from '@/components/wf/PrimioScreens';
 import { wfJobFromOwner } from '@/lib/wf';
+import { listsNow } from '@/lib/app-lists';
 import { toastInfo, toastSuccess } from '@/lib/toast';
 
 type Stats = {
@@ -81,10 +82,11 @@ export default function WorkOrdersView({
     setWfOpenState(id);
     if (id === null && startOpenId && onJobClosed) onJobClosed();
   };
+  const lists = listsNow(); // stage and priority names (Settings -> Lists & stages)
   const boardRows: BoardRow[] = useMemo(() => workOrders.map((w) => {
     const job = wfJobFromOwner(w);
     return { job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed' };
-  }), [workOrders]);
+  }), [workOrders, lists]); // eslint-disable-line react-hooks/exhaustive-deps -- lists changes the names inside each job
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
   // looking at that work order rather than at a list to hunt through.

@@ -48,7 +48,7 @@ export default function TechLoginPage() {
     const role = (who as { role?: string } | null)?.role;
 
     if (role === 'owner') {
-      setError("That's the management (owner) login. The tech portal only opens with a tech login — sign in here with a tech username.");
+      setError("That's the administrator login — it opens the office at app.fajsolutions.com/admin. The tech portal only opens with a tech login.");
     } else if (role === 'staff') {
       setError("That login is for the office (assistant or accountant), not the tech portal.");
     } else if (claim.reason === 'no_matching_contractor') {

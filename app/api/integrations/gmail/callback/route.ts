@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
   if (!code || !userId) {
-    return NextResponse.redirect(`${baseUrl}/?gmail_error=missing_code`);
+    return NextResponse.redirect(`${baseUrl}/admin?gmail_error=missing_code`);
   }
 
   try {
@@ -25,9 +25,9 @@ export async function GET(req: Request) {
       token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
     }, { onConflict: 'user_id' });
 
-    return NextResponse.redirect(`${baseUrl}/?gmail_connected=1`);
+    return NextResponse.redirect(`${baseUrl}/admin?gmail_connected=1`);
   } catch (err) {
     console.error('Gmail OAuth callback error:', err);
-    return NextResponse.redirect(`${baseUrl}/?gmail_error=connect_failed`);
+    return NextResponse.redirect(`${baseUrl}/admin?gmail_error=connect_failed`);
   }
 }

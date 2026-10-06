@@ -5,9 +5,9 @@ import { OFFICE_GROUPS, SIDEBAR_VIEWS, officeGroupOf, searchOffice } from './off
 
 /** The view names in app/page.tsx's VIEWS list. */
 function appViews(): string[] {
-  const src = readFileSync(join(__dirname, '..', 'app', 'page.tsx'), 'utf8');
+  const src = readFileSync(join(__dirname, '..', 'app', 'admin', 'page.tsx'), 'utf8');
   const m = /const VIEWS = \[([\s\S]*?)\] as const;/.exec(src);
-  if (!m) throw new Error('VIEWS list not found in app/page.tsx');
+  if (!m) throw new Error('VIEWS list not found in app/admin/page.tsx');
   return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
 }
 

@@ -1281,7 +1281,7 @@ export default function SiteLogView() {
                         // a dead badge, so a visit told you a work order existed
                         // and then gave you no way to reach it or say which.
                         <a
-                          href={`/?view=workorders&wo=${encodeURIComponent(woNumbers[v.work_order_id] ?? '')}`}
+                          href={`/admin?view=workorders&wo=${encodeURIComponent(woNumbers[v.work_order_id] ?? '')}`}
                           onClick={(e) => e.stopPropagation()}
                           title="Open this work order"
                           style={{ fontSize: 10, fontWeight: 800, color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', gap: 3, textDecoration: 'none' }}

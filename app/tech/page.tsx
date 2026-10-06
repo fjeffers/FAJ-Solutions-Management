@@ -251,7 +251,7 @@ export default function TechPortalPage() {
                 or go back to management, where you see everything.
               </p>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <a className="wf-btn wf-btn-outline" href="/">Back to management</a>
+                <a className="wf-btn wf-btn-outline" href="/admin">Back to the office</a>
                 <button className="wf-btn wf-btn-navy" onClick={signOut}>Sign out</button>
               </div>
             </>

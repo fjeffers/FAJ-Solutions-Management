@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
   if (!code || !realmId || !userId) {
-    return NextResponse.redirect(`${baseUrl}/?qbo_error=missing_params`);
+    return NextResponse.redirect(`${baseUrl}/admin?qbo_error=missing_params`);
   }
 
   try {
@@ -32,9 +32,9 @@ export async function GET(req: Request) {
       connected_at: new Date().toISOString(),
     }, { onConflict: 'user_id' });
 
-    return NextResponse.redirect(`${baseUrl}/?qbo_connected=1`);
+    return NextResponse.redirect(`${baseUrl}/admin?qbo_connected=1`);
   } catch (err) {
     console.error('QuickBooks OAuth callback error:', err);
-    return NextResponse.redirect(`${baseUrl}/?qbo_error=connect_failed`);
+    return NextResponse.redirect(`${baseUrl}/admin?qbo_error=connect_failed`);
   }
 }

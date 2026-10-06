@@ -43,8 +43,8 @@ export default function UpdatePasswordPage() {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) { setError(error.message); setLoading(false); return; }
     setDone(true);
-    let next = '/';
-    try { next = localStorage.getItem('pw-reset-next') === '/tech' ? '/tech' : '/'; localStorage.removeItem('pw-reset-next'); } catch { /* private window */ }
+    let next = '/admin';
+    try { next = localStorage.getItem('pw-reset-next') === '/tech' ? '/tech' : '/admin'; localStorage.removeItem('pw-reset-next'); } catch { /* private window */ }
     setTimeout(() => router.push(next), 2000);
   };
 

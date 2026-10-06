@@ -100,7 +100,7 @@ export async function buildWeeklyDigest(admin: SupabaseClient): Promise<WeeklyDi
                 <b>${prog}</b> — ${g.count} visit${g.count !== 1 ? 's' : ''} ·
                 <b style="color:#b91c1c;">${money(g.total)}</b>
               </div>`).join('')}
-          <a href="${app}/?view=sitelog" style="display:inline-block;margin-top:10px;background:#0D7377;color:#fff;text-decoration:none;font-weight:700;font-size:13px;border-radius:8px;padding:9px 16px;">Open Site Log → Invoice Visits</a>
+          <a href="${app}/admin?view=sitelog" style="display:inline-block;margin-top:10px;background:#0D7377;color:#fff;text-decoration:none;font-weight:700;font-size:13px;border-radius:8px;padding:9px 16px;">Open Site Log → Invoice Visits</a>
         </div>
 
         <div style="background:#fff;border-radius:12px;border:1px solid #eee;margin:10px 6px;padding:16px 18px;">
@@ -114,7 +114,7 @@ export async function buildWeeklyDigest(admin: SupabaseClient): Promise<WeeklyDi
                 ${inv.due_date && inv.due_date < today ? '<span style="color:#b91c1c;font-weight:800;"> · OVERDUE</span>' : ''}
               </div>`).join('')}
           ${drafts > 0 ? `<div style="font-size:12px;color:#8a6d2f;margin-top:8px;">✍️ ${drafts} draft invoice${drafts !== 1 ? 's' : ''} still need${drafts === 1 ? 's' : ''} to be sent.</div>` : ''}
-          <a href="${app}/?view=invoices" style="display:inline-block;margin-top:10px;background:#fff;color:#0D7377;border:1px solid #0D7377;text-decoration:none;font-weight:700;font-size:13px;border-radius:8px;padding:9px 16px;">Open Invoices</a>
+          <a href="${app}/admin?view=invoices" style="display:inline-block;margin-top:10px;background:#fff;color:#0D7377;border:1px solid #0D7377;text-decoration:none;font-weight:700;font-size:13px;border-radius:8px;padding:9px 16px;">Open Invoices</a>
         </div>
 
         <div style="text-align:center;font-size:11px;color:#aaa;padding:12px 0 4px;">

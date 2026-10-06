@@ -542,7 +542,7 @@ function WOCard({
             {visitsForWO.map((v) => (
               <a
                 key={v.id}
-                href="/?view=sitelog"
+                href="/admin?view=sitelog"
                 onClick={(e) => e.stopPropagation()}
                 title="Open the Site Log"
                 style={{ color: 'var(--teal)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Sparkles, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -10,6 +10,11 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Back to the sign-in this reset came from: the tech portal's or the office's.
+  const [backTo, setBackTo] = useState('/admin/login');
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('next') === '/tech') setBackTo('/tech/login');
+  }, []);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,7 +23,7 @@ export default function ResetPasswordPage() {
     // A tech comes here from the tech sign-in (?next=/tech) and goes back there after.
     try {
       const next = new URLSearchParams(window.location.search).get('next');
-      localStorage.setItem('pw-reset-next', next === '/tech' ? '/tech' : '/');
+      localStorage.setItem('pw-reset-next', next === '/tech' ? '/tech' : '/admin');
     } catch { /* private window */ }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/update-password`,
@@ -59,7 +64,7 @@ export default function ResetPasswordPage() {
         )}
 
         <div style={{ marginTop: 24, textAlign: 'center' }}>
-          <Link href="/login" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--teal)', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+          <Link href={backTo} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--teal)', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
             <ArrowLeft size={14} /> Back to Sign In
           </Link>
         </div>

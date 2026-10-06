@@ -3,7 +3,7 @@
   "short_name": "FAJ Admin",
   "description": "Work orders, site log, quotes and payouts for FAJ Solutions",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/admin",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

@@ -264,7 +264,7 @@ describe('Site Log visit editor', () => {
     const link = screen.getByTitle('Open this work order') as HTMLAnchorElement;
     // It used to be a dead badge reading "HAS WORK ORDER" — no number, no way there.
     expect(link.textContent).toContain('WO #19101348');
-    expect(link.getAttribute('href')).toBe('/?view=workorders&wo=19101348');
+    expect(link.getAttribute('href')).toBe('/admin?view=workorders&wo=19101348');
   });
 
   it('keeps archived work off the board until it is asked for', async () => {

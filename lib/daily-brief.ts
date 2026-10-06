@@ -125,7 +125,7 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
               ),
             )
             .join(''),
-        btn(`${app}/?view=invoices`, 'Open Invoices → Send'),
+        btn(`${app}/admin?view=invoices`, 'Open Invoices → Send'),
       ),
     );
   }
@@ -167,7 +167,7 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
             ),
           )
           .join(''),
-        btn(`${app}/?view=invoices`, 'Open Invoices'),
+        btn(`${app}/admin?view=invoices`, 'Open Invoices'),
       ),
     );
   }
@@ -180,7 +180,7 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
         `<div style="font-size:13px;color:#555;margin:6px 0;">${needs.length} visit${
           needs.length !== 1 ? 's' : ''
         } finished and not yet invoiced.</div>`,
-        btn(`${app}/?view=sitelog`, 'Open Site Log → Invoice Visits'),
+        btn(`${app}/admin?view=sitelog`, 'Open Site Log → Invoice Visits'),
       ),
     );
   }
@@ -194,7 +194,7 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
           .slice(0, 5)
           .map((v) => row(`${v.program ?? 'Visit'}${v.site_code ? ` #${v.site_code}` : ''} — still checked in`))
           .join(''),
-        btn(`${app}/?view=sitelog`, 'Open Site Log'),
+        btn(`${app}/admin?view=sitelog`, 'Open Site Log'),
       ),
     );
   }

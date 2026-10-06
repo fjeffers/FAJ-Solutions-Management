@@ -46,7 +46,9 @@ export async function proxy(request: NextRequest) {
     '/update-password',// set the new password from the emailed link
   ];
 
-  const isAuthRoute = pathname.startsWith('/login');
+  // The office signs in at /admin/login, techs at /tech/login (Fred,
+  // 2026-10-06). /login only forwards to /admin/login.
+  const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/admin/login');
   const isApiRoute  = pathname.startsWith('/api');
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return response;
@@ -59,15 +61,13 @@ export async function proxy(request: NextRequest) {
     url.pathname = pathname.startsWith('/tech') ? '/tech/login'
       : pathname.startsWith('/assistant') ? '/assistant/login'
       : pathname.startsWith('/accountant') ? '/accountant/login'
-      : '/login';
+      : '/admin/login';
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    return NextResponse.redirect(url);
-  }
+  // No longer bounce a signed-in user off the sign-in page: someone signed in
+  // with a tech login who opens /admin/login must be able to switch to the
+  // administrator login. The page itself says who is signed in and offers it.
 
   return response;
 }

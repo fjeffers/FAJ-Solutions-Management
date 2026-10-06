@@ -14,6 +14,7 @@
 // hidden (it's how you undo all this).
 
 import { OFFICE_GROUPS, SIDEBAR_VIEWS, type OfficeGroup } from './office-menu';
+import { PART_KEYS } from './screen-parts';
 
 export type Layout = {
   /** Screens in the left menu, top to bottom. Always includes 'office'. */
@@ -24,6 +25,8 @@ export type Layout = {
   labels: Record<string, string>;
   /** Screens taken off the menu. Nothing is deleted; the screen still works. */
   hidden: string[];
+  /** Parts of screens switched off (Settings -> What each screen shows; lib/screen-parts.ts). */
+  off: string[];
 };
 
 export type Screen = {
@@ -74,6 +77,7 @@ export const STANDARD_LAYOUT: Layout = {
   sections: OFFICE_GROUPS.map((g: OfficeGroup) => ({ id: g.id, title: g.title, items: g.items.map((i) => i.view ?? i.href ?? i.label) })),
   labels: {},
   hidden: [],
+  off: [],
 };
 
 const known = (k: unknown): k is string => typeof k === 'string' && Object.prototype.hasOwnProperty.call(SCREENS, k);
@@ -134,7 +138,9 @@ export function normalizeLayout(raw: unknown): Layout {
     ? [...new Set(src.hidden.filter((k): k is string => known(k) && k !== OFFICE_KEY && k !== SETTINGS_KEY))]
     : [];
 
-  return { main, sections, labels, hidden };
+  const off = Array.isArray(src.off) ? [...new Set(src.off.filter((k): k is string => typeof k === 'string' && PART_KEYS.includes(k)))] : [];
+
+  return { main, sections, labels, hidden, off };
 }
 
 function screen(l: Layout, key: string): Screen {
@@ -237,6 +243,12 @@ export function renameSection(l: Layout, id: string, title: string): Layout {
 
 export function shiftSection(l: Layout, id: string, dir: -1 | 1): Layout {
   return { ...l, sections: swap(l.sections, l.sections.findIndex((s) => s.id === id), dir) };
+}
+
+/** Switch a part of a screen on or off (Settings -> What each screen shows). */
+export function setPartShown(l: Layout, key: string, show: boolean): Layout {
+  const rest = (l.off ?? []).filter((k) => k !== key);
+  return { ...l, off: show ? rest : [...rest, key] };
 }
 
 /** Only an empty section can go — its screens have to be moved out first. */

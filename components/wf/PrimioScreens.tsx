@@ -16,6 +16,7 @@ import {
 } from '@/lib/wf';
 import { fmtMoney, todayISO } from '@/lib/utils';
 import { stageName } from '@/lib/app-lists';
+import { shown as partShown } from '@/lib/screen-parts';
 import { Empty } from './WfUi';
 
 // ── App bar ─────────────────────────────────────────────────────────────────
@@ -116,22 +117,28 @@ export function DispatchCard({ row, onOpen }: { row: BoardRow; onOpen: () => voi
         <span style={{ flex: 1, minWidth: 0, color: 'var(--wf-gold)', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {job.number}
         </span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: job.highPriority ? 'var(--wf-danger)' : 'var(--wf-subtle)' }}>{job.priorityLabel}</span>
+        {partShown('card.priority') && <span style={{ fontSize: 12, fontWeight: 700, color: job.highPriority ? 'var(--wf-danger)' : 'var(--wf-subtle)' }}>{job.priorityLabel}</span>}
       </div>
       <div className="wf-p-title" style={{ marginTop: 4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{job.title}</div>
-      {job.client && <div className="wf-p-small wf-subtle" style={{ marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.client}</div>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8 }} className="wf-p-small">
-        <MapPin size={15} color="var(--wf-subtle)" style={{ flexShrink: 0 }} />
-        <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {[job.city, job.state].filter(Boolean).join(', ') || job.siteName || 'No address'}
-        </span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-        <span className="wf-p-title" style={{ flex: 1 }}>{price > 0 ? fmtMoney(price) : <span className="wf-subtle" style={{ fontWeight: 500 }}>No price</span>}</span>
-        <span className="wf-p-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
-          {job.serviceType || WF_WORK_TYPE_LABEL[workTypeFor(job.serviceType, job.title)]}
-        </span>
-      </div>
+      {partShown('card.client') && job.client && <div className="wf-p-small wf-subtle" style={{ marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.client}</div>}
+      {partShown('card.place') && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8 }} className="wf-p-small">
+          <MapPin size={15} color="var(--wf-subtle)" style={{ flexShrink: 0 }} />
+          <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {[job.city, job.state].filter(Boolean).join(', ') || job.siteName || 'No address'}
+          </span>
+        </div>
+      )}
+      {(partShown('card.price') || partShown('card.type')) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <span className="wf-p-title" style={{ flex: 1 }}>{partShown('card.price') ? (price > 0 ? fmtMoney(price) : <span className="wf-subtle" style={{ fontWeight: 500 }}>No price</span>) : null}</span>
+          {partShown('card.type') && (
+            <span className="wf-p-label" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
+              {job.serviceType || WF_WORK_TYPE_LABEL[workTypeFor(job.serviceType, job.title)]}
+            </span>
+          )}
+        </div>
+      )}
       {row.payNotSet && (
         <div style={{ marginTop: 8 }}>
           <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)', padding: '1px 8px' }}>Tech pay not set</span>
@@ -177,14 +184,14 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <PrimioBar title="Dispatch board" right={right} />
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+      {partShown('dispatch.tiles') && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
         <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />
         <StatTile label={stageName('open')} value={count('open')} color={WF_STATUS_COLOR.open} onClick={() => toggle('open')} active={focus === 'open'} />
         <StatTile label={stageName('offered')} value={count('offered')} color={WF_STATUS_COLOR.offered} onClick={() => toggle('offered')} active={focus === 'offered'} />
         <StatTile label={stageName('inProgress')} value={count('inProgress')} color={WF_STATUS_COLOR.inProgress} onClick={() => toggle('inProgress')} active={focus === 'inProgress'} />
         <StatTile label={stageName('workDone')} value={count('workDone')} color="var(--wf-success)" onClick={() => toggle('workDone')} active={focus === 'workDone'} />
         <StatTile label="High priority" value={urgent} color="var(--wf-danger)" onClick={() => toggle('urgent')} active={focus === 'urgent'} />
-      </div>
+      </div>}
       {focusLabel && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>
           <span>Showing <b>{focusLabel}</b> only</span>

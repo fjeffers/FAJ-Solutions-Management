@@ -13,6 +13,7 @@ import { Dialog } from '@/components/wf/WfUi';
 import { DispatchBoard, type BoardRow } from '@/components/wf/PrimioScreens';
 import { wfJobFromOwner } from '@/lib/wf';
 import { listsNow } from '@/lib/app-lists';
+import { shown } from '@/lib/screen-parts';
 import { toastInfo, toastSuccess } from '@/lib/toast';
 
 type Stats = {
@@ -172,7 +173,7 @@ export default function WorkOrdersView({
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAiOpen(true)}><Sparkles size={15} /> Generate with AI</button>
             <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={onAdd}><Plus size={16} /> New order</button>
           </>}
-          between={<OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}
+          between={shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}
         />
       )}
 

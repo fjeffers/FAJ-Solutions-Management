@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { normalizeLayout, resolveLayout, STANDARD_LAYOUT, visibleLayout, type Layout } from '@/lib/app-layout';
+import { setPartsOffNow } from '@/lib/screen-parts';
 
 const CACHE_KEY = 'faj-app-layout';
 export type LayoutSaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -26,6 +27,9 @@ export function useAppLayout() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const edited = useRef(false);
+
+  // Every screen asks lib/screen-parts what to show; keep it on Fred's choices.
+  setPartsOffNow(layout.off ?? []);
 
   useEffect(() => {
     void supabase.from('user_settings').select('layout').maybeSingle().then(({ data, error }) => {

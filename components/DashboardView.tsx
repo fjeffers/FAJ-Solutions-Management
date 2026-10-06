@@ -1,4 +1,5 @@
 'use client';
+import { shown } from '@/lib/screen-parts';
 import { useMemo } from 'react';
 import { TrendingUp, Clock, CheckCircle, AlertCircle, Briefcase, CreditCard } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
@@ -41,6 +42,7 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
         <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Your business at a glance</p>
       </div>
 
+      {shown('dash.kpis') && (
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
         {[
           { label: 'Billed to Clients', value: fmtMoney(stats.total), icon: <Briefcase size={20} color="var(--teal)" />, color: 'var(--teal)' },
@@ -57,7 +59,9 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
           </div>
         ))}
       </div>
+      )}
 
+      {shown('dash.status') && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 28 }}>
         {[
           { label: 'Paid Jobs', count: liveCounts.paid, color: '#047857', bg: 'rgba(16,185,129,0.1)' },
@@ -70,8 +74,11 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
           </div>
         ))}
       </div>
+      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      {(shown('dash.outstanding') || shown('dash.payments')) && (
+      <div style={{ display: 'grid', gridTemplateColumns: shown('dash.outstanding') && shown('dash.payments') ? '1fr 1fr' : '1fr', gap: 20 }}>
+        {shown('dash.outstanding') && (
         <div className="glass card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}><Clock size={15} color="var(--teal)" /> Outstanding Jobs</div>
@@ -97,6 +104,8 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
             ))
           )}
         </div>
+        )}
+        {shown('dash.payments') && (
         <div className="glass card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}><CreditCard size={15} color="var(--teal)" /> Recent Payments</div>
@@ -114,7 +123,9 @@ export default function DashboardView({ stats, workOrders, payments, onView }: {
             ))
           )}
         </div>
+        )}
       </div>
+      )}
     </div>
   );
 }

@@ -35,6 +35,7 @@ import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseSt
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
 import { listsNow } from '@/lib/app-lists';
+import { shown as partShown } from '@/lib/screen-parts';
 import { answeredFields } from '@/lib/custom-fields';
 import { CustomFieldList } from '@/components/CustomFieldInputs';
 
@@ -467,11 +468,12 @@ function OwnerJob({
         actions={actions}
         onToggleTask={archived ? undefined : toggleTask}
         side={<>
-          {!archived && <TimeRequestsCard w={w} job={job} onSaved={refresh} />}
-          {!archived && <QuickEditCard w={w} onSaved={refresh} />}
-          <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />
-          <MoneyCard w={w} />
-          <YourFieldsCard w={w} />
+          {/* Each part can be switched off in Settings -> What each screen shows. */}
+          {!archived && partShown('job.timeRequests') && <TimeRequestsCard w={w} job={job} onSaved={refresh} />}
+          {!archived && partShown('job.quickEdit') && <QuickEditCard w={w} onSaved={refresh} />}
+          {partShown('job.techs') && <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />}
+          {partShown('job.money') && <MoneyCard w={w} />}
+          {partShown('job.fields') && <YourFieldsCard w={w} />}
         </>}
         below={<>
           {chatOpen && (
@@ -479,16 +481,18 @@ function OwnerJob({
               <WorkOrderChatPanel woNumber={w.wo_number} />
             </Section>
           )}
-          {showCloseout(job) && (
+          {showCloseout(job) && partShown('job.closeout') && (
             <CloseoutCard job={job} items={checklist.items} listName={checklist.name} canEdit={!archived} ownerView
               onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
           )}
-          <OwnerReport w={w} onEdit={() => onEdit(w)} />
-          <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />
-          <OwnerPhotos w={w} />
-          <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
-            <WOTimeLogs woId={w.id} />
-          </Section>
+          {partShown('job.report') && <OwnerReport w={w} onEdit={() => onEdit(w)} />}
+          {partShown('job.expenses') && <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />}
+          {partShown('job.photos') && <OwnerPhotos w={w} />}
+          {partShown('job.timegps') && (
+            <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
+              <WOTimeLogs woId={w.id} />
+            </Section>
+          )}
         </>}
       />
       {logOpen && <JobLogReport w={w} onClose={() => setLogOpen(false)} />}

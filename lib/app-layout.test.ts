@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   SCREENS, STANDARD_LAYOUT, addSection, isStandard, moveScreen, normalizeLayout, placeOf, removeSection,
-  renameScreen, renameSection, resolveLayout, searchSections, sectionOfView, setHidden, shiftScreen, shiftSection,
-  visibleLayout,
+  renameScreen, renameSection, resolveLayout, searchSections, sectionOfView, setHidden, setPartShown, shiftScreen,
+  shiftSection, visibleLayout,
 } from './app-layout';
+import { PART_KEYS } from './screen-parts';
 
 const std = () => normalizeLayout(STANDARD_LAYOUT);
 const keysOf = (l: ReturnType<typeof std>) => [...l.main, ...l.sections.flatMap((s) => s.items)];
@@ -109,6 +110,19 @@ describe('menu layout (Settings -> Menu & screens)', () => {
   it('a blank section name is saved as "Untitled section"', () => {
     const l = normalizeLayout(renameSection(std(), 'money', '   '));
     expect(l.sections.find((s) => s.id === 'money')!.title).toBe('Untitled section');
+  });
+
+  it('screen parts: off only for known parts; on again restores', () => {
+    expect(normalizeLayout({ off: ['dash.kpis', 'dash.kpis', 'nope', 7] }).off).toEqual(['dash.kpis']);
+    let l = setPartShown(std(), 'job.money', false);
+    expect(l.off).toEqual(['job.money']);
+    l = setPartShown(l, 'job.money', true);
+    expect(l.off).toEqual([]);
+    expect(isStandard(setPartShown(std(), 'card.price', false))).toBe(false);
+  });
+
+  it('every screen part has its own key', () => {
+    expect(new Set(PART_KEYS).size).toBe(PART_KEYS.length);
   });
 
   it('search uses the new name and the standard one', () => {

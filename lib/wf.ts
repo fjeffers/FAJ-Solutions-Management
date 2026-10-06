@@ -214,7 +214,7 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     highPriority: pr.high,
     priorityLabel: pr.label,
     description: s(r, 'scope_of_work') || s(r, 'description'),
-    serviceType: s(r, 'service_type'),
+    serviceType: labelOf('serviceTypes', s(r, 'service_type')),
     techs: techList(r),
     pocName: s(r, 'poc_name'),
     pocPhone: s(r, 'poc_phone'),

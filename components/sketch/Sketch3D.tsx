@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { X, Scissors, Box as BoxIcon, RotateCcw, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Plus, Minus, DoorOpen, AppWindow, Eraser, Rotate3d, SquareDashed, Undo2 } from 'lucide-react';
-import { FURNITURE_SIZE, OPENING_SYMBOLS, dist, feet, gapAt, newId, openingsOf, snapToWall, symbolInfo, wallPieces, wallRuns, type Pt, type Shape, type Sketch, type SymbolKind } from '@/lib/sketch';
+import { OPENING_SYMBOLS, dist, footprint, wallTypeInfo, feet, gapAt, newId, openingsOf, snapToWall, symbolInfo, wallPieces, wallRuns, type Pt, type Shape, type Sketch, type SymbolKind } from '@/lib/sketch';
 
 const CEILING = 9; // ft
 const DOOR_TOP = 7; // ft — the wall continues above a doorway
@@ -35,10 +35,10 @@ const MODE_HINT: Record<Mode, string> = {
 };
 
 /** How high each symbol sits, in feet. */
-const MOUNT: Record<SymbolKind, number> = {
+const MOUNT: Partial<Record<SymbolKind, number>> = {
   camera: 8.5, ap: 8.85, speaker: 8.85, drop: 1.5, outlet: 1.25, tv: 5, reader: 4, rack: 0, door: 0, window: 3,
   door2: 0, slider: 0, window2: 3,
-  table: 0, conftable: 0, desk: 0, chair: 0, sofa: 0, cabinet: 0, shelf: 0, counter: 0, bench: 0,
+  // furniture, bath and kitchen stand on the floor (0, the default)
   // Network gear on its own (not drawn inside a rack) is shown wall-mounted.
   switch: 5, router: 4.5, firewall: 4.5, modem: 4, patch: 5.5, server: 0, nvr: 4, ups: 0, starlink: 11,
   tablet: 4, pos: 3.5, pc: 2.5, printer: 3, phone: 3,
@@ -78,9 +78,16 @@ function wallMesh(a: { x: number; y: number }, b: { x: number; y: number }, heig
 
 /** Furniture to size: simple boxes, the right height (table tops at 2.5 ft, seats at 1.5 ft). */
 function furnitureObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D | null {
-  const size = FURNITURE_SIZE[s.sym];
+  const size = footprint(s);
   if (!size) return null;
-  const { w, d } = size;
+  const { w, d, h } = size;
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x9fc6ea, transparent: true, opacity: 0.3, roughness: 0.1 });
+  const cyl = (r: number, ch: number, x: number, y: number, z: number, mat: THREE.Material) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, ch, 20), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  };
   const g = new THREE.Group();
   const wood = new THREE.MeshStandardMaterial({ color: new THREE.Color(symbolInfo(s.sym).color), roughness: 0.7 });
   const light = new THREE.MeshStandardMaterial({ color: 0xe8e0d4, roughness: 0.8 });
@@ -114,6 +121,29 @@ function furnitureObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D 
       for (let y = 0.3; y <= 6; y += 1.4) box(w, 0.08, d, 0, y, 0, wood);
       break;
     }
+    case 'coffee': box(w, 0.12, d, 0, h - 0.06, 0, wood); box(w - 0.3, h - 0.12, d - 0.3, 0, (h - 0.12) / 2, 0, light); break;
+    case 'ldesk': box(w, 0.15, 2.5, 0, 2.45, -d / 2 + 1.25, wood); box(2.5, 0.15, d - 2.5, -w / 2 + 1.25, 2.45, 1.25, wood);
+      box(0.15, 2.4, 2.3, w / 2 - 0.1, 1.2, -d / 2 + 1.25, wood); box(2.3, 2.4, 0.15, -w / 2 + 1.25, 1.2, d / 2 - 0.1, wood); break;
+    case 'cubicle': for (const [bw, bd, x, z] of [[w, 0.2, 0, -d / 2], [0.2, d, -w / 2, 0], [0.2, d, w / 2, 0]] as const) box(bw, h, bd, x, h / 2, z, light);
+      box(w - 0.4, 0.12, 2.3, 0, 2.45, -d / 2 + 1.3, wood); break;
+    case 'bed': case 'twinbed': box(w, 1.2, d, 0, 0.9, 0, white); box(w, 0.6, d, 0, 0.3, 0, wood); box(w, 3.5, 0.25, 0, 1.75, -d / 2, wood); break;
+    case 'toilet': box(w, 1.3, 0.6, 0, 2.2, -d / 2 + 0.3, white); cyl(Math.min(w, d) * 0.38, 1.4, 0, 0.7, 0.2, white); break;
+    case 'sink': box(w, 2.6, d, 0, 1.3, 0, light); box(w, 0.15, d, 0, 2.7, 0, white); break;
+    case 'urinal': box(w, 2, d, 0, 2.5, 0, white); break;
+    case 'tub': box(w, h, d, 0, h / 2, 0, white); break;
+    case 'shower': box(w, 0.25, d, 0, 0.12, 0, white); box(w, h, d, 0, h / 2, 0, glass); break;
+    case 'stairs': {
+      const n = Math.max(2, Math.round(h / 0.6));
+      for (let i = 0; i < n; i++) box(w, (h / n) * (i + 1), d / n, 0, ((h / n) * (i + 1)) / 2, d / 2 - (d / n) * (i + 0.5), light);
+      break;
+    }
+    case 'plant': cyl(w * 0.3, 1.2, 0, 0.6, 0, wood); { const leaf = new THREE.Mesh(new THREE.SphereGeometry(w * 0.55, 16, 12), new THREE.MeshStandardMaterial({ color: 0x43a047, roughness: 0.9 })); leaf.position.y = 2.4; g.add(leaf); } break;
+    case 'trash': cyl(w / 2, h, 0, h / 2, 0, light); break;
+    case 'watercooler': box(w, h - 1, d, 0, (h - 1) / 2, 0, white); cyl(0.45, 1, 0, h - 0.5, 0, glass); break;
+    case 'whiteboard': box(w, h, d, 0, 3 + h / 2, 0, white); break;
+    default:
+      // Reception desk, file cabinet, lockers, dresser, nightstand, fridge, stove, elevator, column: a box its size.
+      box(w, h, d, 0, h / 2, 0, s.sym === 'fridge' || s.sym === 'stove' ? white : s.sym === 'column' || s.sym === 'elevator' ? light : wood);
   }
   g.position.set(s.at.x, 0, s.at.y);
   g.rotation.y = -(s.rot * Math.PI) / 180;
@@ -126,7 +156,7 @@ function symbolObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D {
   const info = symbolInfo(s.sym);
   const color = new THREE.Color(info.color);
   const group = new THREE.Group();
-  const y = MOUNT[s.sym];
+  const y = MOUNT[s.sym] ?? 0;
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
   let body: THREE.Mesh;
   switch (s.sym) {
@@ -314,12 +344,15 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
     // Walls (drawn ones and room sides), cut around doors, windows and openings.
     const openings = openingsOf(sketch.shapes);
     for (const run of wallRuns(sketch.shapes)) {
-      const color = run.glass ? '#9fc6ea' : run.room ? '#e9e4da' : '#d9d2c4';
-      const opacity = run.glass ? 0.38 : run.room && !cutaway ? 0.92 : 1;
+      // Each wall type its own colour and height (a half wall stops at 3½ ft, a cubicle panel at 5).
+      const t = wallTypeInfo(run.wtype);
+      const color = t.type === 'drywall' && run.room ? '#e9e4da' : t.color3d;
+      const opacity = t.opacity < 1 ? t.opacity : run.room && !cutaway && t.type === 'drywall' ? 0.92 : 1;
+      const top = Math.min(t.height ?? CEILING, wallH);
       for (const p of wallPieces(run, openings)) {
-        const parts: [number, number][] = p.kind === 'solid' ? [[0, wallH]]
-          : p.kind === 'door' ? [[DOOR_TOP, wallH]]
-          : [[0, Math.min(SILL, wallH)], [WINDOW_TOP, wallH]];
+        const parts: [number, number][] = p.kind === 'solid' ? [[0, top]]
+          : p.kind === 'door' ? [[DOOR_TOP, top]]
+          : [[0, Math.min(SILL, top)], [WINDOW_TOP, top]];
         for (const [lo, hi] of parts) {
           if (hi - lo < 0.05) continue;
           const m = wallMesh(p.a, p.b, hi - lo, color, opacity, lo);

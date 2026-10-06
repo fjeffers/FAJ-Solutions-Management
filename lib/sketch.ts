@@ -17,10 +17,15 @@ export type SymbolKind =
   | 'camera' | 'ap' | 'drop' | 'outlet' | 'tablet' | 'tv' | 'pos' | 'pc' | 'printer' | 'phone' | 'speaker' | 'reader'
   // building — doors and windows sit in walls (OPENING_WIDTH)
   | 'door' | 'door2' | 'slider' | 'window' | 'window2'
+  // building extras
+  | 'stairs' | 'elevator' | 'column'
   // furniture — drawn to size (FURNITURE_SIZE)
-  | 'table' | 'conftable' | 'desk' | 'chair' | 'sofa' | 'cabinet' | 'shelf' | 'counter' | 'bench';
+  | 'table' | 'conftable' | 'desk' | 'ldesk' | 'reception' | 'cubicle' | 'chair' | 'sofa' | 'coffee' | 'cabinet' | 'filecab'
+  | 'shelf' | 'lockers' | 'whiteboard' | 'counter' | 'bench' | 'plant' | 'trash' | 'bed' | 'twinbed' | 'nightstand' | 'dresser'
+  // bath & kitchen
+  | 'toilet' | 'sink' | 'urinal' | 'shower' | 'tub' | 'fridge' | 'stove' | 'watercooler';
 
-export type SymbolGroup = 'network' | 'devices' | 'building' | 'furniture';
+export type SymbolGroup = 'network' | 'devices' | 'building' | 'furniture' | 'bath';
 
 // Fred, 2026-10-06: "data cables, network equipment, tablet, power outlet,
 // data outlet, any network equipment". The key ('drop' etc.) is what's saved;
@@ -53,34 +58,78 @@ export const SYMBOLS: { kind: SymbolKind; label: string; plural: string; code: s
   { kind: 'slider', label: 'Sliding glass door', plural: 'Sliding glass doors', code: '', color: '#1E88E5', group: 'building' },
   { kind: 'window', label: 'Window', plural: 'Windows', code: '', color: '#78909C', group: 'building' },
   { kind: 'window2', label: 'Wide window', plural: 'Wide windows', code: '', color: '#78909C', group: 'building' },
-  // Fred, 2026-10-06: "under symbol should be the accessories for the room — table, chairs etc."
+  { kind: 'stairs', label: 'Stairs', plural: 'Stairs', code: '', color: '#616161', group: 'building' },
+  { kind: 'elevator', label: 'Elevator', plural: 'Elevators', code: '', color: '#455A64', group: 'building' },
+  { kind: 'column', label: 'Column', plural: 'Columns', code: '', color: '#757575', group: 'building' },
+  // Fred, 2026-10-06: "under symbol should be the accessories for the room — table, chairs etc." and
+  // "add a bed, toilet, sink … I need the accessories to build an office".
+  { kind: 'desk', label: 'Desk', plural: 'Desks', code: '', color: '#795548', group: 'furniture' },
+  { kind: 'ldesk', label: 'L-shaped desk', plural: 'L-shaped desks', code: '', color: '#795548', group: 'furniture' },
+  { kind: 'reception', label: 'Reception desk', plural: 'Reception desks', code: '', color: '#6D4C41', group: 'furniture' },
+  { kind: 'cubicle', label: 'Cubicle', plural: 'Cubicles', code: '', color: '#78909C', group: 'furniture' },
+  { kind: 'chair', label: 'Chair', plural: 'Chairs', code: '', color: '#5D4037', group: 'furniture' },
   { kind: 'table', label: 'Table', plural: 'Tables', code: '', color: '#8D6E63', group: 'furniture' },
   { kind: 'conftable', label: 'Conference table', plural: 'Conference tables', code: '', color: '#6D4C41', group: 'furniture' },
-  { kind: 'desk', label: 'Desk', plural: 'Desks', code: '', color: '#795548', group: 'furniture' },
-  { kind: 'chair', label: 'Chair', plural: 'Chairs', code: '', color: '#5D4037', group: 'furniture' },
+  { kind: 'coffee', label: 'Coffee table', plural: 'Coffee tables', code: '', color: '#8D6E63', group: 'furniture' },
   { kind: 'sofa', label: 'Sofa', plural: 'Sofas', code: '', color: '#7E57C2', group: 'furniture' },
+  { kind: 'filecab', label: 'File cabinet', plural: 'File cabinets', code: '', color: '#607D8B', group: 'furniture' },
   { kind: 'cabinet', label: 'Cabinet', plural: 'Cabinets', code: '', color: '#607D8B', group: 'furniture' },
-  { kind: 'shelf', label: 'Shelving', plural: 'Shelving units', code: '', color: '#546E7A', group: 'furniture' },
+  { kind: 'shelf', label: 'Bookcase / shelving', plural: 'Bookcases / shelving', code: '', color: '#546E7A', group: 'furniture' },
+  { kind: 'lockers', label: 'Lockers', plural: 'Lockers', code: '', color: '#546E7A', group: 'furniture' },
+  { kind: 'whiteboard', label: 'Whiteboard', plural: 'Whiteboards', code: '', color: '#90A4AE', group: 'furniture' },
   { kind: 'counter', label: 'Counter', plural: 'Counters', code: '', color: '#8D6E63', group: 'furniture' },
   { kind: 'bench', label: 'Bench / pew', plural: 'Benches / pews', code: '', color: '#A1887F', group: 'furniture' },
+  { kind: 'plant', label: 'Plant', plural: 'Plants', code: '', color: '#43A047', group: 'furniture' },
+  { kind: 'trash', label: 'Trash can', plural: 'Trash cans', code: '', color: '#757575', group: 'furniture' },
+  { kind: 'bed', label: 'Bed', plural: 'Beds', code: '', color: '#5C6BC0', group: 'furniture' },
+  { kind: 'twinbed', label: 'Twin bed', plural: 'Twin beds', code: '', color: '#5C6BC0', group: 'furniture' },
+  { kind: 'nightstand', label: 'Nightstand', plural: 'Nightstands', code: '', color: '#8D6E63', group: 'furniture' },
+  { kind: 'dresser', label: 'Dresser', plural: 'Dressers', code: '', color: '#8D6E63', group: 'furniture' },
+  { kind: 'toilet', label: 'Toilet', plural: 'Toilets', code: '', color: '#0288D1', group: 'bath' },
+  { kind: 'sink', label: 'Sink', plural: 'Sinks', code: '', color: '#0288D1', group: 'bath' },
+  { kind: 'urinal', label: 'Urinal', plural: 'Urinals', code: '', color: '#0288D1', group: 'bath' },
+  { kind: 'shower', label: 'Shower', plural: 'Showers', code: '', color: '#0288D1', group: 'bath' },
+  { kind: 'tub', label: 'Bathtub', plural: 'Bathtubs', code: '', color: '#0288D1', group: 'bath' },
+  { kind: 'fridge', label: 'Refrigerator', plural: 'Refrigerators', code: '', color: '#607D8B', group: 'bath' },
+  { kind: 'stove', label: 'Stove / range', plural: 'Stoves / ranges', code: '', color: '#424242', group: 'bath' },
+  { kind: 'watercooler', label: 'Water cooler', plural: 'Water coolers', code: '', color: '#0288D1', group: 'bath' },
 ];
 export const SYMBOL_GROUPS: { group: SymbolGroup; label: string }[] = [
   { group: 'network', label: 'Network gear' },
   { group: 'devices', label: 'Devices' },
-  { group: 'building', label: 'Doors & windows' },
+  { group: 'building', label: 'Doors, windows & stairs' },
   { group: 'furniture', label: 'Furniture' },
+  { group: 'bath', label: 'Bath & kitchen' },
 ];
 
-/** Furniture footprints in feet: w along the item, d front to back (turned with the item). */
-export const FURNITURE_SIZE: Partial<Record<SymbolKind, { w: number; d: number }>> = {
-  table: { w: 6, d: 3 }, conftable: { w: 10, d: 4 }, desk: { w: 5, d: 2.5 }, chair: { w: 2, d: 2 }, sofa: { w: 7, d: 3 },
-  cabinet: { w: 3, d: 2 }, shelf: { w: 4, d: 1.5 }, counter: { w: 8, d: 2 }, bench: { w: 10, d: 2 },
+/**
+ * Standard sizes in feet: w along the item, d front to back (both turn with
+ * it), h how tall it stands in 3D. Any piece can be given its own width and
+ * depth (Shape.size).
+ */
+export const FURNITURE_SIZE: Partial<Record<SymbolKind, { w: number; d: number; h: number }>> = {
+  desk: { w: 5, d: 2.5, h: 2.5 }, ldesk: { w: 6, d: 6, h: 2.5 }, reception: { w: 8, d: 3, h: 3.5 }, cubicle: { w: 6, d: 6, h: 4.5 },
+  chair: { w: 2, d: 2, h: 3 }, table: { w: 6, d: 3, h: 2.5 }, conftable: { w: 10, d: 4, h: 2.5 }, coffee: { w: 4, d: 2, h: 1.4 },
+  sofa: { w: 7, d: 3, h: 2.8 }, filecab: { w: 1.5, d: 2.5, h: 4.3 }, cabinet: { w: 3, d: 2, h: 3 }, shelf: { w: 4, d: 1.5, h: 6 },
+  lockers: { w: 6, d: 1.5, h: 6 }, whiteboard: { w: 6, d: 0.3, h: 4 }, counter: { w: 8, d: 2, h: 3 }, bench: { w: 10, d: 2, h: 3 },
+  plant: { w: 1.5, d: 1.5, h: 4 }, trash: { w: 1.2, d: 1.2, h: 2.2 }, bed: { w: 5, d: 6.7, h: 2 }, twinbed: { w: 3.2, d: 6.3, h: 2 },
+  nightstand: { w: 2, d: 1.5, h: 2.2 }, dresser: { w: 5, d: 1.7, h: 3 },
+  toilet: { w: 1.7, d: 2.4, h: 2.5 }, sink: { w: 2, d: 1.7, h: 2.8 }, urinal: { w: 1.5, d: 1.2, h: 2 }, shower: { w: 3, d: 3, h: 7 },
+  tub: { w: 5, d: 2.5, h: 1.7 }, fridge: { w: 3, d: 2.5, h: 6 }, stove: { w: 2.5, d: 2.2, h: 3 }, watercooler: { w: 1.2, d: 1.2, h: 3.5 },
+  stairs: { w: 4, d: 10, h: 9 }, elevator: { w: 6, d: 6, h: 9 }, column: { w: 1.5, d: 1.5, h: 9 },
 };
 export const isFurniture = (k: SymbolKind): boolean => FURNITURE_SIZE[k] !== undefined;
 
+/** A piece's size on the plan: its own, or the standard one. */
+export function footprint(s: { sym: SymbolKind; size?: { w: number; d: number } }): { w: number; d: number; h: number } | null {
+  const std = FURNITURE_SIZE[s.sym];
+  if (!std) return null;
+  return s.size ? { ...std, w: s.size.w, d: s.size.d } : std;
+}
+
 /** Whether p is on a piece of furniture (its turned footprint, plus tol). */
-function onFurniture(s: { sym: SymbolKind; at: Pt; rot: number }, p: Pt, tol: number): boolean {
-  const size = FURNITURE_SIZE[s.sym];
+function onFurniture(s: { sym: SymbolKind; at: Pt; rot: number; size?: { w: number; d: number } }, p: Pt, tol: number): boolean {
+  const size = footprint(s);
   if (!size) return false;
   const r = (-s.rot * Math.PI) / 180, dx = p.x - s.at.x, dy = p.y - s.at.y;
   const lx = dx * Math.cos(r) - dy * Math.sin(r), ly = dx * Math.sin(r) + dy * Math.cos(r);
@@ -106,9 +155,9 @@ export const symbolInfo = (k: SymbolKind) => SYMBOLS.find((s) => s.kind === k)!;
 export const COLORS = ['#0E1B2E', '#C62828', '#1565C0', '#2E7D32', '#EF6C00', '#6A1B9A', '#C9A24B'];
 
 export type Shape =
-  | { id: string; kind: 'room'; x: number; y: number; w: number; h: number; name: string; color: string }
-  /** glass: a glass wall or storefront (Fred, 2026-10-06: "where are the windows, doors, glass"). */
-  | { id: string; kind: 'wall'; a: Pt; b: Pt; color: string; glass?: boolean }
+  | { id: string; kind: 'room'; x: number; y: number; w: number; h: number; name: string; color: string; wtype?: WallType }
+  /** wtype: what the wall is made of (WALL_TYPES); drywall when absent. */
+  | { id: string; kind: 'wall'; a: Pt; b: Pt; color: string; wtype?: WallType }
   /** A stretch of wall taken out (a doorway, a pass-through) — of a drawn wall or a room's side. */
   | { id: string; kind: 'gap'; a: Pt; b: Pt }
   | { id: string; kind: 'cable'; pts: Pt[]; color: string; label: string; cable: CableType }
@@ -117,7 +166,8 @@ export type Shape =
   | { id: string; kind: 'box'; x: number; y: number; w: number; h: number; color: string; width: number; fill: boolean }
   | { id: string; kind: 'ellipse'; x: number; y: number; w: number; h: number; color: string; width: number; fill: boolean }
   | { id: string; kind: 'text'; at: Pt; text: string; color: string; size: number }
-  | { id: string; kind: 'symbol'; sym: SymbolKind; at: Pt; label: string; rot: number }
+  /** size: furniture only, its own width and depth in feet (the standard size when absent). */
+  | { id: string; kind: 'symbol'; sym: SymbolKind; at: Pt; label: string; rot: number; size?: { w: number; d: number } }
   | { id: string; kind: 'photo'; at: Pt; path: string; note: string };
 
 export type Sketch = {
@@ -149,6 +199,40 @@ const pt = (v: unknown): Pt | null => {
 };
 const pts = (v: unknown, cap = 2000): Pt[] => (Array.isArray(v) ? v.map(pt).filter((p): p is Pt => !!p).slice(0, cap) : []);
 
+// ── Wall types (Fred, 2026-10-06: "I need the various types of wall") ─────
+// What a wall is made of matters to FAJ: block, brick and concrete need a core
+// drill to get cable through and eat Wi-Fi; glass and drywall don't. The Wi-Fi
+// figure is a typical loss through one wall at 5 GHz — a guide for AP
+// placement, not a survey.
+
+export type WallType = 'drywall' | 'exterior' | 'block' | 'brick' | 'concrete' | 'glass' | 'half' | 'partition' | 'fire';
+export const WALL_TYPES: {
+  type: WallType; label: string; hint: string;
+  /** On the plan: the wall line's colour and width (feet); dashed for low walls. */
+  color: string; width: number; dash?: string;
+  /** In 3D: colour, see-through-ness, and height when not floor-to-ceiling. */
+  color3d: string; opacity: number; height: number | null;
+  /** Typical Wi-Fi loss through it, dB. */
+  wifiDb: number;
+}[] = [
+  { type: 'drywall', label: 'Drywall', hint: 'Interior stud wall', color: '', width: 0.45, color3d: '#d9d2c4', opacity: 1, height: null, wifiDb: 3 },
+  { type: 'exterior', label: 'Exterior wall', hint: 'Outside wall of the building', color: '#263238', width: 0.8, color3d: '#a59d8f', opacity: 1, height: null, wifiDb: 15 },
+  { type: 'block', label: 'Block (CMU)', hint: 'Concrete block — core drill for cable', color: '#78909C', width: 0.7, color3d: '#b8bec3', opacity: 1, height: null, wifiDb: 12 },
+  { type: 'brick', label: 'Brick', hint: 'Core drill for cable', color: '#B5533C', width: 0.6, color3d: '#b5533c', opacity: 1, height: null, wifiDb: 10 },
+  { type: 'concrete', label: 'Concrete', hint: 'Poured concrete — hardest for Wi-Fi', color: '#424242', width: 0.75, color3d: '#9e9e9e', opacity: 1, height: null, wifiDb: 18 },
+  { type: 'glass', label: 'Glass', hint: 'Storefront or glass partition', color: '#5FA8D3', width: 0.3, color3d: '#9fc6ea', opacity: 0.38, height: null, wifiDb: 4 },
+  { type: 'half', label: 'Half wall', hint: 'Knee wall, about 3½ ft high', color: '#90A4AE', width: 0.35, dash: '0.6 0.3', color3d: '#d9d2c4', opacity: 1, height: 3.5, wifiDb: 1 },
+  { type: 'partition', label: 'Cubicle partition', hint: 'Office panel, about 5 ft high', color: '#B0BEC5', width: 0.25, dash: '0.3 0.15', color3d: '#cfd8dc', opacity: 1, height: 5, wifiDb: 2 },
+  { type: 'fire', label: 'Fire-rated wall', hint: 'Double drywall — firestop every penetration', color: '#C62828', width: 0.5, color3d: '#e9b4ab', opacity: 1, height: null, wifiDb: 6 },
+];
+const WALL_TYPE_KEYS = new Set<string>(WALL_TYPES.map((w) => w.type));
+export const wallTypeInfo = (t: WallType | undefined) => WALL_TYPES.find((w) => w.type === (t ?? 'drywall')) ?? WALL_TYPES[0];
+/** A saved wall's type; glass walls saved before wall types (glass: true) stay glass. */
+function wallTypeOf(o: Record<string, unknown>): WallType {
+  if (typeof o.wtype === 'string' && WALL_TYPE_KEYS.has(o.wtype)) return o.wtype as WallType;
+  return o.glass === true ? 'glass' : 'drywall';
+}
+
 /** A saved value (or anything else) made safe to draw. */
 export function normalizeSketch(raw: unknown): Sketch {
   const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
@@ -164,12 +248,14 @@ export function normalizeSketch(raw: unknown): Sketch {
       case 'room': {
         const w = num(o.w, 0, 0), h = num(o.h, 0, 0);
         if (w < 0.5 || h < 0.5) continue;
-        shapes.push({ id, kind: 'room', x: num(o.x), y: num(o.y), w, h, name: str(o.name, 60), color: color(o.color) });
+        const rt = wallTypeOf(o);
+        shapes.push({ id, kind: 'room', x: num(o.x), y: num(o.y), w, h, name: str(o.name, 60), color: color(o.color), ...(rt !== 'drywall' && { wtype: rt }) });
         break;
       }
       case 'wall': {
         const a = pt(o.a), b = pt(o.b);
-        if (a && b) shapes.push({ id, kind: 'wall', a, b, color: color(o.color), ...(o.glass === true && { glass: true }) });
+        const wt = wallTypeOf(o);
+        if (a && b) shapes.push({ id, kind: 'wall', a, b, color: color(o.color), ...(wt !== 'drywall' && { wtype: wt }) });
         break;
       }
       case 'gap': {
@@ -206,7 +292,13 @@ export function normalizeSketch(raw: unknown): Sketch {
       }
       case 'symbol': {
         const at = pt(o.at);
-        if (at && SYMBOL_KINDS.has(String(o.sym))) shapes.push({ id, kind: 'symbol', sym: o.sym as SymbolKind, at, label: str(o.label, 60), rot: num(o.rot, 0, 0, 359) });
+        if (!at || !SYMBOL_KINDS.has(String(o.sym))) break;
+        const sz = o.size && typeof o.size === 'object' ? (o.size as Record<string, unknown>) : null;
+        const w = sz ? num(sz.w, 0, 0, 60) : 0, d = sz ? num(sz.d, 0, 0, 60) : 0;
+        shapes.push({
+          id, kind: 'symbol', sym: o.sym as SymbolKind, at, label: str(o.label, 60), rot: num(o.rot, 0, 0, 359),
+          ...(FURNITURE_SIZE[o.sym as SymbolKind] && w >= 0.3 && d >= 0.3 && { size: { w, d } }),
+        });
         break;
       }
       case 'photo': {
@@ -255,6 +347,8 @@ export type SketchSummary = {
   rooms: { name: string; area: number }[];
   totalArea: number;
   photos: number;
+  /** Feet of each kind of wall other than drywall (block, brick, glass…), for cabling and Wi-Fi. */
+  walls: { type: WallType; label: string; feet: number }[];
 };
 
 /** What's on the plan, counted — the start of a materials list. */
@@ -282,6 +376,11 @@ export function summarize(s: Sketch): SketchSummary {
     rooms,
     totalArea: rooms.reduce((a, r) => a + r.area, 0),
     photos,
+    walls: (() => {
+      const byType = new Map<WallType, number>();
+      for (const r of wallRuns(s.shapes)) if (r.wtype !== 'drywall') byType.set(r.wtype, (byType.get(r.wtype) ?? 0) + dist(r.a, r.b));
+      return WALL_TYPES.filter((w) => byType.has(w.type)).map((w) => ({ type: w.type, label: w.label, feet: Math.round(byType.get(w.type)!) }));
+    })(),
   };
 }
 
@@ -447,16 +546,16 @@ export const OPENING_SYMBOLS: SymbolKind[] = ['door', 'door2', 'slider', 'window
 /** How close (feet) a door, window or opening must be to a wall to sit in it. */
 export const WALL_SNAP = 1.5;
 
-export type WallRun = { a: Pt; b: Pt; color: string; shapeId: string; room: boolean; glass: boolean };
+export type WallRun = { a: Pt; b: Pt; color: string; shapeId: string; room: boolean; wtype: WallType };
 
 /** Every wall on the plan: the walls drawn on their own, and the four sides of each room. */
 export function wallRuns(shapes: Shape[]): WallRun[] {
   const out: WallRun[] = [];
   for (const s of shapes) {
-    if (s.kind === 'wall') out.push({ a: s.a, b: s.b, color: s.color, shapeId: s.id, room: false, glass: s.glass === true });
+    if (s.kind === 'wall') out.push({ a: s.a, b: s.b, color: s.color, shapeId: s.id, room: false, wtype: s.wtype ?? 'drywall' });
     else if (s.kind === 'room') {
       const c = [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }];
-      c.forEach((a, i) => out.push({ a, b: c[(i + 1) % 4], color: s.color, shapeId: s.id, room: true, glass: false }));
+      c.forEach((a, i) => out.push({ a, b: c[(i + 1) % 4], color: s.color, shapeId: s.id, room: true, wtype: s.wtype ?? 'drywall' }));
     }
   }
   return out;

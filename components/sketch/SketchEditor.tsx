@@ -14,14 +14,14 @@ import {
   Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, DoorOpen, DoorClosed, AppWindow, SquareDashed,
 } from 'lucide-react';
 import {
-  CABLE_TYPES, COLORS, FURNITURE_SIZE, OPENING_SYMBOLS, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
+  CABLE_TYPES, COLORS, OPENING_SYMBOLS, WALL_TYPES, footprint, wallTypeInfo, type WallType, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
   sqft, summarize, symbolInfo, type CableType, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
 
 // The 3D model (Fred, 2026-10-06: "also 3d model") — three.js, loaded only when opened.
 const Sketch3D = dynamic(() => import('./Sketch3D'), { ssr: false });
 
-type Tool = 'select' | 'hand' | 'moveall' | 'opening' | 'glass' | 'doors' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
+type Tool = 'select' | 'hand' | 'moveall' | 'opening' | 'doors' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
   | 'room' | 'wall' | 'cable' | 'symbol' | 'photo' | 'eraser';
 
 const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' | 'draw' | 'edit' }[] = [
@@ -30,10 +30,10 @@ const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' |
   // Fred, 2026-10-06: "select and move the site around" — drag everything at once.
   { tool: 'moveall', label: 'Move all', icon: <Move size={18} />, group: 'edit' },
   { tool: 'room', label: 'Room', icon: <LayoutPanelTop size={18} />, group: 'plan' },
-  { tool: 'wall', label: 'Wall', icon: <BrickWall size={18} />, group: 'plan' },
+  // Drywall, exterior, block, brick, concrete, glass, half wall, partition, fire-rated (WALL_TYPES).
+  { tool: 'wall', label: 'Walls', icon: <BrickWall size={18} />, group: 'plan' },
   // Fred, 2026-10-06: "where are the windows, doors, glass".
   { tool: 'doors', label: 'Doors & windows', icon: <DoorClosed size={18} />, group: 'plan' },
-  { tool: 'glass', label: 'Glass wall', icon: <AppWindow size={18} />, group: 'plan' },
   // Fred, 2026-10-06: "delete a portion of the wall or room".
   { tool: 'opening', label: 'Opening', icon: <SquareDashed size={18} />, group: 'plan' },
   { tool: 'cable', label: 'Cable run', icon: <Cable size={18} />, group: 'plan' },
@@ -78,6 +78,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const [tool, setTool] = useState<Tool>('room');
   const [sym, setSym] = useState<SymbolKind>('camera');
   const [doorKind, setDoorKind] = useState<SymbolKind>('door');
+  const [wallType, setWallType] = useState<WallType>('drywall');
   // Symbol picker: one group at a time, so nothing is lost off the end of the row.
   const [symGroup, setSymGroup] = useState<(typeof SYMBOL_GROUPS)[number]['group']>('network');
   const [cableType, setCableType] = useState<CableType>('cat6');
@@ -179,7 +180,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       return;
     }
     const raw = toWorld(e.clientX, e.clientY);
-    const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol' || tool === 'opening' || tool === 'glass' || tool === 'doors';
+    const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol' || tool === 'opening' || tool === 'doors';
     const p = snapIf(raw, plan || tool === 'line' || tool === 'arrow' || tool === 'box');
 
     if (tool === 'hand' || e.button === 1) { gesture.current = { kind: 'pan', from: { x: e.clientX, y: e.clientY }, view }; return; }
@@ -316,8 +317,8 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         addShape(s); setSelectedId(s.id);
       } else if ((t === 'box' || t === 'ellipse') && r.w >= 0.3 && r.h >= 0.3) {
         addShape({ id: newId(), kind: t, ...r, color, width, fill });
-      } else if ((t === 'wall' || t === 'glass') && Math.hypot(b.x - a.x, b.y - a.y) >= 0.5) {
-        addShape({ id: newId(), kind: 'wall', a, b, color, ...(t === 'glass' && { glass: true }) });
+      } else if (t === 'wall' && Math.hypot(b.x - a.x, b.y - a.y) >= 0.5) {
+        addShape({ id: newId(), kind: 'wall', a, b, color, ...(wallType !== 'drywall' && { wtype: wallType }) });
       } else if (t === 'opening') {
         const gap = gapOnWall(sketch.shapes, a, b);
         if (gap) { const s: Shape = { id: newId(), kind: 'gap', ...gap }; addShape(s); setSelectedId(s.id); }
@@ -408,17 +409,41 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
 
   /** A piece of furniture to size: its footprint, turned, with its name inside. */
   const furniture = (s: Extract<Shape, { kind: 'symbol' }>, color: string, label: string) => {
-    const { w, d } = FURNITURE_SIZE[s.sym]!;
+    const { w, d } = footprint(s)!;
     const sel = s.id === selectedId;
+    const x0 = -w / 2, y0 = -d / 2, line = { stroke: color, strokeWidth: 0.07, fill: 'none' } as const;
+    const round = s.sym === 'plant' || s.sym === 'trash' || s.sym === 'watercooler';
+    const special: Partial<Record<SymbolKind, React.ReactNode>> = {
+      // L-shaped desk: the long run along the back, the return down the left.
+      ldesk: <path d={`M ${x0} ${y0} H ${-x0} V ${y0 + 2.5} H ${x0 + 2.5} V ${-y0} H ${x0} Z`} fill="#F3EDE3" stroke={color} strokeWidth={0.1} />,
+      cubicle: <path d={`M ${x0} ${-y0} V ${y0} H ${-x0} V ${-y0}`} fill="none" stroke={color} strokeWidth={0.25} />,
+      toilet: <><rect x={-w / 2} y={y0} width={w} height={d * 0.3} rx={0.15} fill="#fff" stroke={color} strokeWidth={0.08} /><ellipse cx={0} cy={y0 + d * 0.62} rx={w * 0.42} ry={d * 0.36} fill="#fff" stroke={color} strokeWidth={0.08} /></>,
+      sink: <ellipse cx={0} cy={0.1} rx={w * 0.33} ry={d * 0.3} fill="#fff" stroke={color} strokeWidth={0.07} />,
+      urinal: <ellipse cx={0} cy={0.1} rx={w * 0.32} ry={d * 0.32} fill="#fff" stroke={color} strokeWidth={0.07} />,
+      tub: <rect x={x0 + 0.3} y={y0 + 0.3} width={w - 0.6} height={d - 0.6} rx={0.6} fill="#fff" stroke={color} strokeWidth={0.07} />,
+      shower: <><line x1={x0} y1={y0} x2={-x0} y2={-y0} {...line} /><line x1={-x0} y1={y0} x2={x0} y2={-y0} {...line} /><circle cx={0} cy={0} r={0.2} fill="#fff" stroke={color} strokeWidth={0.06} /></>,
+      stove: <>{[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([i, j]) => <circle key={`${i}${j}`} cx={(i * w) / 4} cy={(j * d) / 4} r={Math.min(w, d) / 6} {...line} />)}</>,
+      fridge: <line x1={x0} y1={y0 + d * 0.15} x2={-x0} y2={y0 + d * 0.15} {...line} />,
+      bed: <>{[-1, 1].map((i) => <rect key={i} x={i < 0 ? x0 + 0.3 : 0.15} y={y0 + 0.3} width={w / 2 - 0.45} height={1.2} rx={0.3} fill="#fff" stroke={color} strokeWidth={0.06} />)}<line x1={x0} y1={y0 + 2} x2={-x0} y2={y0 + 2} {...line} /></>,
+      twinbed: <><rect x={x0 + 0.3} y={y0 + 0.3} width={w - 0.6} height={1.2} rx={0.3} fill="#fff" stroke={color} strokeWidth={0.06} /><line x1={x0} y1={y0 + 2} x2={-x0} y2={y0 + 2} {...line} /></>,
+      stairs: <>{Array.from({ length: Math.max(2, Math.floor(d)) }, (_, i) => <line key={i} x1={x0} y1={y0 + i + 1} x2={-x0} y2={y0 + i + 1} {...line} />)}<path d={`M 0 ${-y0 - 0.6} V ${y0 + 0.8} M -0.5 ${y0 + 1.4} L 0 ${y0 + 0.8} L 0.5 ${y0 + 1.4}`} {...line} strokeWidth={0.1} /></>,
+      elevator: <><line x1={x0} y1={y0} x2={-x0} y2={-y0} {...line} /><line x1={-x0} y1={y0} x2={x0} y2={-y0} {...line} /></>,
+      lockers: <>{Array.from({ length: Math.max(1, Math.round(w / 1.2)) - 1 }, (_, i) => <line key={i} x1={x0 + ((i + 1) * w) / Math.round(w / 1.2)} y1={y0} x2={x0 + ((i + 1) * w) / Math.round(w / 1.2)} y2={-y0} {...line} />)}</>,
+      filecab: <>{[1, 2, 3].map((i) => <line key={i} x1={x0} y1={y0 + (i * d) / 4} x2={-x0} y2={y0 + (i * d) / 4} {...line} />)}</>,
+      plant: <circle cx={0} cy={0} r={w * 0.28} fill="#A5D6A7" stroke={color} strokeWidth={0.06} />,
+    };
     return (
       <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
-        <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={Math.min(0.3, d / 6)} fill="#F3EDE3" stroke={color} strokeWidth={0.1} />
+        {s.sym === 'ldesk' || s.sym === 'cubicle' ? null : round
+          ? <circle cx={0} cy={0} r={w / 2} fill="#F3EDE3" stroke={color} strokeWidth={0.1} />
+          : <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={Math.min(0.3, d / 6)} fill={s.sym === 'column' ? color : s.sym === 'elevator' || s.sym === 'stairs' ? '#ECEFF1' : '#F3EDE3'} stroke={color} strokeWidth={0.1} />}
+        {special[s.sym]}
         {/* Backs for seats; a door line for cabinets */}
         {(s.sym === 'chair' || s.sym === 'sofa' || s.sym === 'bench') && <rect x={-w / 2} y={-d / 2} width={w} height={Math.min(0.5, d / 4)} fill={color} fillOpacity={0.5} />}
         {s.sym === 'sofa' && <><rect x={-w / 2} y={-d / 2} width={0.5} height={d} fill={color} fillOpacity={0.35} /><rect x={w / 2 - 0.5} y={-d / 2} width={0.5} height={d} fill={color} fillOpacity={0.35} /></>}
         {s.sym === 'cabinet' && <line x1={0} y1={-d / 2} x2={0} y2={d / 2} stroke={color} strokeWidth={0.06} />}
         {s.sym === 'shelf' && [-1, 0, 1].map((i) => <line key={i} x1={(i * w) / 4} y1={-d / 2} x2={(i * w) / 4} y2={d / 2} stroke={color} strokeWidth={0.05} />)}
-        {s.sym !== 'chair' && w >= 3 && (
+        {s.sym !== 'chair' && s.sym !== 'stairs' && w >= 3 && d >= 1.2 && (
           <text x={0} y={0.05} fontSize={Math.min(0.6, d * 0.32)} textAnchor="middle" dominantBaseline="middle" fill={color} fontWeight={700} fontFamily="Inter, system-ui, sans-serif" pointerEvents="none">{s.label || label}</text>
         )}
         {sel && <rect x={-w / 2 - 0.3} y={-d / 2 - 0.3} width={w + 0.6} height={d + 0.6} fill="none" stroke="#C9A24B" strokeWidth={0.12} strokeDasharray="0.5 0.3" data-noexport />}
@@ -427,11 +452,26 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   };
 
   /** Wall lines broken where a door, window or opening sits (a window keeps a thin line). */
-  const wallLines = (key: string, runs: { a: Pt; b: Pt }[], stroke: string, width: number, isDraft: boolean) =>
+  const wallLines = (key: string, runs: { a: Pt; b: Pt }[], stroke: string, width: number, isDraft: boolean, dash?: string) =>
     runs.flatMap((run, i) => (isDraft ? [{ ...run, kind: 'solid' as const }] : wallPieces(run, openings)).map((p, j) => (
-      <line key={`${key}-${i}-${j}`} x1={p.a.x} y1={p.a.y} x2={p.b.x} y2={p.b.y} stroke={stroke}
-        strokeWidth={p.kind === 'solid' ? width : p.kind === 'window' ? width / 3 : 0} strokeLinecap={p.kind === 'solid' ? 'square' : 'butt'} />
+      <line key={`${key}-${i}-${j}`} x1={p.a.x} y1={p.a.y} x2={p.b.x} y2={p.b.y} stroke={stroke} strokeDasharray={dash}
+        strokeWidth={p.kind === 'solid' ? width : p.kind === 'window' ? width / 3 : 0} strokeLinecap={p.kind === 'solid' && !dash ? 'square' : 'butt'} />
     )));
+  /**
+   * A wall drawn the way its type looks on a plan: drywall in the room's own
+   * colour, block and brick with a light core, glass blue, low walls dashed.
+   */
+  const typedWall = (key: string, runs: { a: Pt; b: Pt }[], wtype: WallType | undefined, ownColor: string, ownWidth: number, isDraft: boolean) => {
+    const t = wallTypeInfo(wtype);
+    if (t.type === 'drywall') return wallLines(key, runs, ownColor, ownWidth, isDraft);
+    const core = t.type === 'glass' || t.type === 'block' || t.type === 'brick' || t.type === 'fire';
+    return (
+      <>
+        {wallLines(`${key}-o`, runs, t.color, t.width, isDraft, t.dash)}
+        {core && wallLines(`${key}-i`, runs, '#fff', t.width * 0.3, isDraft, t.type === 'block' ? '0.8 0.25' : t.type === 'brick' ? '0.4 0.2' : t.type === 'fire' ? '0.25 0.25' : undefined)}
+      </>
+    );
+  };
 
   const renderShape = (s: Shape, isDraft = false) => {
     const sel = s.id === selectedId && !isDraft;
@@ -450,7 +490,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         return (
           <g key={s.id}>
             <rect x={s.x} y={s.y} width={s.w} height={s.h} fill={s.color} fillOpacity={0.07} />
-            {wallLines(s.id, [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }].map((a, i, c) => ({ a, b: c[(i + 1) % 4] })), s.color, sw(0.3), isDraft)}
+            {typedWall(s.id, [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }].map((a, i, c) => ({ a, b: c[(i + 1) % 4] })), s.wtype, s.color, sw(0.3), isDraft)}
             {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 - LABEL * 0.8 }, s.name || 'Room', `${s.id}-n`, LABEL * 1.1)}
             {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 + LABEL * 0.5 }, label, `${s.id}-d`, LABEL * 0.85, '#455A64')}
             {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 + LABEL * 1.6 }, sqft(s.w * s.h), `${s.id}-a`, LABEL * 0.8, '#455A64')}
@@ -464,9 +504,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         const len = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
         return (
           <g key={s.id}>
-            {s.glass
-              ? <>{wallLines(`${s.id}-g`, [{ a: s.a, b: s.b }], '#5FA8D3', 0.3, isDraft)}{wallLines(`${s.id}-gi`, [{ a: s.a, b: s.b }], '#fff', 0.08, isDraft)}</>
-              : wallLines(s.id, [{ a: s.a, b: s.b }], s.color, 0.45, isDraft)}
+            {typedWall(s.id, [{ a: s.a, b: s.b }], s.wtype, s.color, 0.45, isDraft)}
             {tag(midpoint([s.a, s.b]), feet(len), `${s.id}-l`, LABEL * 0.8, s.color)}
             {sel && <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="#C9A24B" strokeWidth={0.9} strokeOpacity={0.4} data-noexport />}
           </g>
@@ -591,7 +629,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     const r = roomFromCorners(a, b);
     if (t === 'room') return renderShape({ id: '_draft', kind: 'room', ...r, name: 'New room', color }, true);
     if (t === 'box' || t === 'ellipse') return renderShape({ id: '_draft', kind: t, ...r, color, width, fill }, true);
-    if (t === 'wall' || t === 'glass') return renderShape({ id: '_draft', kind: 'wall', a, b, color, ...(t === 'glass' && { glass: true }) }, true);
+    if (t === 'wall') return renderShape({ id: '_draft', kind: 'wall', a, b, color, ...(wallType !== 'drywall' && { wtype: wallType }) }, true);
     if (t === 'opening') {
       const gap = gapOnWall(sketch.shapes, a, b);
       return gap ? renderShape({ id: '_draft', kind: 'gap', ...gap }, true) : <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#C62828" strokeWidth={0.12} strokeDasharray="0.4 0.3" />;
@@ -687,7 +725,18 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><input type="checkbox" checked={fill} onChange={(e) => setFill(e.target.checked)} /> Fill</label>
             )}
             {tool === 'room' && <span style={{ color: '#455A64' }}>Drag from one corner to the other. Each square is 1 ft.</span>}
-            {tool === 'glass' && <span style={{ color: '#455A64' }}>Drag where the glass goes, like a wall (a storefront or glass partition). Put a door in it with Doors &amp; windows.</span>}
+            {tool === 'wall' && <>
+              <span role="group" aria-label="Wall type" style={{ display: 'inline-flex', gap: 4, flexShrink: 0 }}>
+                {WALL_TYPES.map((w) => (
+                  <button key={w.type} type="button" onClick={() => setWallType(w.type)} aria-pressed={wallType === w.type} title={`${w.hint} · Wi-Fi about −${w.wifiDb} dB`}
+                    style={{ ...smallBtn, borderColor: wallType === w.type ? '#0E1B2E' : '#d8dde5', background: wallType === w.type ? '#0E1B2E' : '#fff', color: wallType === w.type ? '#fff' : '#0E1B2E' }}>
+                    <svg width={18} height={8} aria-hidden><line x1={1} y1={4} x2={17} y2={4} stroke={w.color || color} strokeWidth={Math.max(2, w.width * 8)} strokeDasharray={w.dash ? '4 2' : undefined} /></svg>
+                    {w.label}
+                  </button>
+                ))}
+              </span>
+              <span style={{ color: '#455A64', marginLeft: 4 }}>{wallTypeInfo(wallType).hint}. Wi-Fi through it: about −{wallTypeInfo(wallType).wifiDb} dB.</span>
+            </>}
             {tool === 'opening' && <span style={{ color: '#455A64' }}>Drag along a wall or a room&apos;s side to take that stretch of wall out.</span>}
             {tool === 'moveall' && <span style={{ color: '#455A64' }}>Drag anywhere to move the whole site. Arrow keys or the pad slide the view.</span>}
             {tool === 'select' && <span style={{ color: '#455A64' }}>Tap an item to select it; drag to move it. Drag the white squares to change its size or move a wall&apos;s end. Arrow keys nudge it (Shift = 5 ft).</span>}
@@ -799,6 +848,11 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
                 const info = symbolInfo(x.kind);
                 return <div key={x.kind} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: info.color, fontWeight: 700 }}>{info.code ? `${info.code} · ` : ''}{x.label}</span><b>{x.count}</b></div>;
               })}
+              {summary.walls.map((w) => (
+                <div key={w.type} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                  <span style={{ color: wallTypeInfo(w.type).color, fontWeight: 700 }}>{w.label} walls</span><b>{w.feet.toLocaleString('en-US')} ft</b>
+                </div>
+              ))}
               {summary.cables.map((c) => (
                 <div key={c.type} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
                   <span style={{ color: cableInfo(c.type).color, fontWeight: 700 }}>{c.label} ({c.runs} run{c.runs === 1 ? '' : 's'})</span><b>{c.feet.toLocaleString('en-US')} ft</b>
@@ -885,7 +939,7 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
         style={{ width: '100%', height: 34, fontSize: 16, padding: '0 8px', border: '1px solid #d8dde5', borderRadius: 6 }} />
     </label>
   );
-  const heading = { room: 'Room', wall: shape.kind === 'wall' && shape.glass ? 'Glass wall' : 'Wall', gap: 'Opening in a wall', cable: 'Cable run', pen: 'Drawing', line: 'Line', box: 'Box', ellipse: 'Circle', text: 'Text', symbol: shape.kind === 'symbol' ? symbolInfo(shape.sym).label : '', photo: 'Photo' }[shape.kind];
+  const heading = { room: 'Room', wall: shape.kind === 'wall' ? `${wallTypeInfo(shape.wtype).label}${shape.wtype && shape.wtype !== 'drywall' && !wallTypeInfo(shape.wtype).label.toLowerCase().includes('wall') ? ' wall' : ''}` : 'Wall', gap: 'Opening in a wall', cable: 'Cable run', pen: 'Drawing', line: 'Line', box: 'Box', ellipse: 'Circle', text: 'Text', symbol: shape.kind === 'symbol' ? symbolInfo(shape.sym).label : '', photo: 'Photo' }[shape.kind];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#0E1B2E' }}>{heading}</div>
@@ -910,12 +964,27 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
           </div>
         </>
       )}
-      {shape.kind === 'wall' && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
-          <input type="checkbox" checked={!!shape.glass} onChange={(e) => onChange({ glass: e.target.checked } as Partial<Shape>)} style={{ width: 18, height: 18 }} />
-          Glass (storefront or glass partition)
+      {(shape.kind === 'wall' || shape.kind === 'room') && (
+        <label style={{ display: 'block' }}>
+          <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#78909C', marginBottom: 3 }}>{shape.kind === 'room' ? "Room's walls" : 'Wall type'}</span>
+          <select value={shape.wtype ?? 'drywall'} onChange={(e) => onChange({ wtype: e.target.value === 'drywall' ? undefined : (e.target.value as WallType) } as Partial<Shape>)}
+            style={{ width: '100%', height: 34, fontSize: 16, padding: '0 6px', border: '1px solid #d8dde5', borderRadius: 6 }}>
+            {WALL_TYPES.map((w) => <option key={w.type} value={w.type}>{w.label}</option>)}
+          </select>
+          <span style={{ display: 'block', color: '#78909C', fontSize: 12, marginTop: 3 }}>
+            {wallTypeInfo(shape.wtype).hint}. Wi-Fi through it: about −{wallTypeInfo(shape.wtype).wifiDb} dB.
+          </span>
         </label>
       )}
+      {shape.kind === 'symbol' && isFurniture(shape.sym) && (() => {
+        const f = footprint(shape)!;
+        return (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <FeetBox label="Width (ft)" value={f.w} onSet={(v) => onChange({ size: { w: Math.min(Math.max(v, 0.3), 60), d: f.d } } as Partial<Shape>)} />
+            <FeetBox label="Depth (ft)" value={f.d} onSet={(v) => onChange({ size: { w: f.w, d: Math.min(Math.max(v, 0.3), 60) } } as Partial<Shape>)} />
+          </div>
+        );
+      })()}
       {shape.kind === 'symbol' && (isOpeningSymbol(shape.sym) || isFurniture(shape.sym)) && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button type="button" onClick={() => onChange({ rot: (shape.rot + 90) % 360 } as Partial<Shape>)}

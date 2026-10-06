@@ -217,11 +217,11 @@ describe('double doors, sliding glass doors, wide windows and glass walls', () =
     expect(hitTest([d], { x: 12.6, y: 0.2 })?.id).toBe('d');
   });
 
-  it('a glass wall is kept when saved, and is a wall run doors can sit in', () => {
+  it('a glass wall is kept when saved (old glass: true too), and is a wall run doors can sit in', () => {
     const s = normalizeSketch({ shapes: [{ id: 'g', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 12, y: 0 }, glass: true }, { id: 'w', kind: 'wall', a: { x: 0, y: 5 }, b: { x: 12, y: 5 }, glass: 'yes' }] });
-    expect(s.shapes[0]).toMatchObject({ kind: 'wall', glass: true });
-    expect(s.shapes[1]).not.toHaveProperty('glass');
-    expect(wallRuns(s.shapes).map((r) => r.glass)).toEqual([true, false]);
+    expect(s.shapes[0]).toMatchObject({ kind: 'wall', wtype: 'glass' });
+    expect(s.shapes[1]).not.toHaveProperty('wtype');
+    expect(wallRuns(s.shapes).map((r) => r.wtype)).toEqual(['glass', 'drywall']);
     expect(seatInWall({ id: 'd', kind: 'symbol', sym: 'slider', at: { x: 6, y: 0.5 }, label: '', rot: 0 }, s.shapes)).toMatchObject({ at: { x: 6, y: 0 }, rot: 0 });
   });
 });
@@ -234,6 +234,18 @@ describe('furniture', () => {
     const turned: Shape = { ...table, rot: 90 };
     expect(hitTest([turned], { x: 10, y: 14.5 })?.id).toBe('t');
     const chairs: Shape[] = [1, 2, 3].map((i) => ({ id: `c${i}`, kind: 'symbol', sym: 'chair', at: { x: i * 3, y: 2 }, label: '', rot: 0 }));
-    expect(summarize({ ...newSketch(), shapes: [table, ...chairs] }).symbols.map((x) => `${x.count} ${x.label}`)).toEqual(['1 Conference table', '3 Chairs']);
+    expect(summarize({ ...newSketch(), shapes: [table, ...chairs] }).symbols.map((x) => `${x.count} ${x.label}`)).toEqual(['3 Chairs', '1 Conference table']);
+  });
+});
+
+describe('wall types', () => {
+  it('each wall and room keeps its type; unknown types are drywall; footage is counted by type', () => {
+    const s = normalizeSketch({ shapes: [
+      { id: 'b', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 20, y: 0 }, wtype: 'block' },
+      { id: 'x', kind: 'wall', a: { x: 0, y: 5 }, b: { x: 10, y: 5 }, wtype: 'marble' },
+      { id: 'r', kind: 'room', x: 0, y: 10, w: 10, h: 5, wtype: 'exterior' },
+    ] });
+    expect(s.shapes.map((x) => (x as { wtype?: string }).wtype)).toEqual(['block', undefined, 'exterior']);
+    expect(summarize(s).walls).toEqual([{ type: 'exterior', label: 'Exterior wall', feet: 30 }, { type: 'block', label: 'Block (CMU)', feet: 20 }]);
   });
 });

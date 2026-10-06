@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Printer, X } from 'lucide-react';
-import { cableInfo, feet, sqft, summarize, symbolInfo, type Shape, type Sketch } from '@/lib/sketch';
+import { cableInfo, feet, sqft, summarize, symbolInfo, wallTypeInfo, type Shape, type Sketch } from '@/lib/sketch';
 
 export async function downloadFromUrl(url: string, filename: string): Promise<boolean> {
   try {
@@ -90,7 +90,7 @@ export default function SketchReport({ title, sketch, imageUrl, photoUrl, linkLa
           </div>
 
           <H>What&apos;s on the plan</H>
-          {sum.symbols.length === 0 && !sum.cableFeet ? <div style={{ color: '#5E6470' }}>No devices or cable runs drawn.</div> : (
+          {sum.symbols.length === 0 && !sum.cableFeet && sum.walls.length === 0 ? <div style={{ color: '#5E6470' }}>No devices or cable runs drawn.</div> : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr><th style={cell}>Item</th><th style={{ ...cell, textAlign: 'right' }}>Quantity</th></tr></thead>
               <tbody>
@@ -98,6 +98,9 @@ export default function SketchReport({ title, sketch, imageUrl, photoUrl, linkLa
                   const info = symbolInfo(x.kind);
                   return <tr key={x.kind}><td style={cell}><b style={{ color: info.color }}>{info.code ? `${info.code} · ` : ''}</b>{x.label}</td><td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{x.count}</td></tr>;
                 })}
+                {sum.walls.map((w) => (
+                  <tr key={`wall-${w.type}`}><td style={cell}><b style={{ color: wallTypeInfo(w.type).color }}>{w.label}</b> walls <span style={{ color: '#8a8f99' }}>(Wi-Fi about −{wallTypeInfo(w.type).wifiDb} dB each)</span></td><td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{w.feet.toLocaleString('en-US')} ft</td></tr>
+                ))}
                 {sum.cables.map((c) => (
                   <tr key={c.type}><td style={cell}><b style={{ color: cableInfo(c.type).color }}>{c.label}</b> cable ({c.runs} run{c.runs === 1 ? '' : 's'})</td><td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{c.feet.toLocaleString('en-US')} ft</td></tr>
                 ))}

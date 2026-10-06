@@ -115,6 +115,8 @@ export const SERVICE_TYPES: string[] = [
 export type WorkOrder = {
   /** Fred's own fields (Settings -> Custom fields, migration 110), by field id. */
   custom?: Record<string, unknown> | null;
+  /** One of Fred's own Dispatch board columns the job is parked in (migration 113), or null. */
+  board_stage?: string | null;
   id: string;
   user_id: string;
   wo_number: string;

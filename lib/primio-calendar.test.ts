@@ -28,9 +28,9 @@ describe('Dispatch Board, Grid and List draw the same groups', () => {
     row('10', '2026-10-09', 'scheduled'), row('2', null, 'open'), row('7', '2026-10-05', 'closed', '2026-10-01'),
     row('8', '2026-09-01', 'closed', '2026-10-03'), row('3', '2026-10-05', 'scheduled'), row('4', '2026-10-05', 'scheduled'),
   ];
-  const g = boardGroups(rows);
+  const g = boardGroups(rows, { today: '2026-10-01', holds: [] });
   it('every Board stage, in the Board order, even when empty', () => {
-    expect(g.map((x) => x.key)).toEqual(['open', 'offered', 'scheduled', 'inProgress', 'workDone', 'closed', 'declined']);
+    expect(g.map((x) => x.key)).toEqual(['open', 'offered', 'scheduled', 'today', 'inProgress', 'workDone', 'closed', 'declined']);
     expect(g.find((x) => x.key === 'offered')!.list).toEqual([]);
   });
   it('soonest first (ties by WO number); Closed newest first', () => {
@@ -39,5 +39,13 @@ describe('Dispatch Board, Grid and List draw the same groups', () => {
   });
   it('no job is lost or doubled', () => {
     expect(g.reduce((n, x) => n + x.list.length, 0)).toBe(rows.length);
+  });
+  it("Today and Fred's own columns take their jobs out of the stage column", () => {
+    const held = [...rows, ({ job: { number: '9', date: '2026-10-09', status: 'scheduled', hold: 'On hold' }, updatedAt: '' } as unknown as BoardRow)];
+    const g2 = boardGroups(held, { today: '2026-10-05', holds: [{ key: 'On hold', label: 'On hold' }] });
+    expect(g2.find((x) => x.key === 'today')!.list.map((r) => r.job.number)).toEqual(['3', '4']);
+    expect(g2.find((x) => x.key === 'hold:On hold')!.list.map((r) => r.job.number)).toEqual(['9']);
+    expect(g2.find((x) => x.key === 'scheduled')!.list.map((r) => r.job.number)).toEqual(['10']);
+    expect(g2.reduce((n, x) => n + x.list.length, 0)).toBe(held.length);
   });
 });

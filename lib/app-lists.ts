@@ -20,7 +20,7 @@ import type { WfStatus } from './wf';
 import { ASSIGNMENT_TYPES, SERVICE_TYPES, WORK_ORDER_PRIORITIES, WORK_ORDER_SOURCES } from './types';
 
 export type ListItem = { key: string; label: string; hidden: boolean; urgent?: boolean };
-export type ListName = 'priorities' | 'serviceTypes' | 'sources' | 'assignmentTypes';
+export type ListName = 'priorities' | 'serviceTypes' | 'sources' | 'assignmentTypes' | 'boardColumns';
 
 export type AppLists = {
   /** Office names for the job stages, only where they differ from the standard. */
@@ -29,11 +29,16 @@ export type AppLists = {
   serviceTypes: ListItem[];
   sources: ListItem[];
   assignmentTypes: ListItem[];
+  /** Fred's own Dispatch board columns, for jobs waiting on something (lib/dispatch-columns.ts). */
+  boardColumns: ListItem[];
 };
 
 export const NAME_MAX = 40;
 const STAGE_KEYS: WfStatus[] = ['open', 'offered', 'scheduled', 'inProgress', 'workDone', 'closed', 'declined'];
-export const LIST_NAMES: ListName[] = ['priorities', 'serviceTypes', 'sources', 'assignmentTypes'];
+export const LIST_NAMES: ListName[] = ['priorities', 'serviceTypes', 'sources', 'assignmentTypes', 'boardColumns'];
+
+/** As standard, the holding columns Fred used on SimplySub's job board (2026-10-06). */
+export const STANDARD_BOARD_COLUMNS = ['Revisit needed', 'Waiting on material', 'Waiting on deliverables', 'Ready to invoice', 'On hold'];
 
 /** The office's standard stage names (the tech portal keeps its own wording). */
 export const STANDARD_STAGE_NAMES: Record<WfStatus, string> = {
@@ -57,6 +62,7 @@ export const STANDARD_LISTS: AppLists = {
   serviceTypes: SERVICE_TYPES.map(item),
   sources: WORK_ORDER_SOURCES.map(item),
   assignmentTypes: ASSIGNMENT_TYPES.map(item),
+  boardColumns: STANDARD_BOARD_COLUMNS.map(item),
 };
 
 const clean = (v: unknown): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX) : '');
@@ -96,6 +102,7 @@ export function normalizeLists(raw: unknown): AppLists {
     serviceTypes: normalizeList(src.serviceTypes, STANDARD_LISTS.serviceTypes, false),
     sources: normalizeList(src.sources, STANDARD_LISTS.sources, false),
     assignmentTypes: normalizeList(src.assignmentTypes, STANDARD_LISTS.assignmentTypes, false),
+    boardColumns: normalizeList(src.boardColumns, STANDARD_LISTS.boardColumns, false),
   };
 }
 

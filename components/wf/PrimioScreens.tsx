@@ -9,13 +9,14 @@
 //                   the chosen day's jobs underneath
 // The office sees money (the client price) on a card; techs never see these.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, Columns3, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Columns3, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck, CalendarDays, Users, MessageSquare, Camera, GripVertical } from 'lucide-react';
 import {
   WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12,
   type WfJob, type WfStatus,
 } from '@/lib/wf';
 import { fmtMoney, todayISO } from '@/lib/utils';
-import { stageName } from '@/lib/app-lists';
+import { listsNow, stageName } from '@/lib/app-lists';
+import { boardColumns, columnOf, moveTo, type BoardColumn, type Move } from '@/lib/dispatch-columns';
 import { shown as partShown } from '@/lib/screen-parts';
 import { Empty } from './WfUi';
 
@@ -33,7 +34,11 @@ export function PrimioBar({ title, left, right }: { title: string; left?: ReactN
 
 // ── Dispatch board ──────────────────────────────────────────────────────────
 
-export type BoardRow = { job: WfJob; payNotSet?: boolean; updatedAt?: string };
+export type BoardRow = {
+  job: WfJob; payNotSet?: boolean; updatedAt?: string;
+  /** How many messages and photos the job has (shown on the card when there are any). */
+  messages?: number; photos?: number;
+};
 
 /** Primio's columns, with FAJ's own stages (a job can need a tech, and is closed by the office). */
 export const DISPATCH_COLUMNS: { key: WfStatus; label: string }[] = [
@@ -48,20 +53,32 @@ export const DISPATCH_COLUMNS: { key: WfStatus; label: string }[] = [
 
 export type DispatchView = 'board' | 'grid' | 'list';
 
+/** Fred's own board columns in use (Settings -> Lists & stages; hidden ones left out). */
+export function boardHolds(): { key: string; label: string }[] {
+  return listsNow().boardColumns.filter((i) => !i.hidden).map((i) => ({ key: i.key, label: i.label }));
+}
+
+export type BoardGroup = { key: string; label: string; color: string; col: BoardColumn; list: BoardRow[] };
+
 /**
  * The jobs in each Board column, in the Board's order. Board, Grid and List all
  * draw exactly this (Fred, 2026-10-04: "they to mirror board just change the
- * view"): every stage, the same counts, the same order — Closed newest first,
- * the rest soonest first.
+ * view"): every column, the same counts, the same order — Closed newest first,
+ * the rest soonest first. Today and Fred's own columns sit among the stages
+ * (lib/dispatch-columns.ts).
  */
-export function boardGroups(rows: BoardRow[]): { key: WfStatus; label: string; list: BoardRow[] }[] {
+export function boardGroups(rows: BoardRow[], opts: { today?: string; holds?: { key: string; label: string }[] } = {}): BoardGroup[] {
+  const today = opts.today ?? todayISO();
+  const holds = opts.holds ?? boardHolds();
+  const holdKeys = new Set(holds.map((h) => h.key));
   const num = (a: BoardRow, b: BoardRow) => a.job.number.localeCompare(b.job.number, undefined, { numeric: true });
-  return DISPATCH_COLUMNS.map((col) => {
-    const list = rows.filter((r) => r.job.status === col.key);
+  const cols = boardColumns(DISPATCH_COLUMNS.map((c) => ({ key: c.key, label: stageName(c.key), color: stageColor(c.key) })), holds);
+  return cols.map((col) => {
+    const list = rows.filter((r) => columnOf(r.job, today, holdKeys) === col.key);
     list.sort(col.key === 'closed'
       ? (a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || num(a, b)
       : (a, b) => (a.job.date ?? '9999').localeCompare(b.job.date ?? '9999') || num(a, b));
-    return { key: col.key, label: stageName(col.key), list };
+    return { key: col.key, label: col.label, color: col.color, col, list };
   });
 }
 
@@ -106,14 +123,34 @@ function StatTile({ label, value, color, onClick, active }: {
   );
 }
 
-/** One job on the board or under a calendar day (Primio's DispatchCard). */
-export function DispatchCard({ row, onOpen }: { row: BoardRow; onOpen: () => void }) {
+const shortDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+/**
+ * One job on the board or under a calendar day (Primio's DispatchCard). On the
+ * board it can also be dragged to another column, or moved with "Move to" (a
+ * phone can't drag).
+ */
+export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragEnd }: {
+  row: BoardRow; onOpen: () => void;
+  /** The columns it can go to, and what to do when one is picked. */
+  move?: { columns: BoardColumn[]; current: string; onPick: (col: BoardColumn) => void };
+  dragging?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+}) {
   const { job } = row;
   const price = job.clientPrice ?? 0;
+  const t = parseClockTime(job.startTime);
+  const counts = (row.messages ?? 0) > 0 || (row.photos ?? 0) > 0;
   return (
+    <div style={{ position: 'relative', opacity: dragging ? 0.45 : 1 }}
+      draggable={!!onDragStart}
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', job.id); onDragStart?.(); }}
+      onDragEnd={onDragEnd}>
     <button className="wf-card wf-card-click" onClick={onOpen} aria-label={`WO ${job.number}: ${job.title}`}
-      style={{ display: 'block', width: '100%', padding: 16, textAlign: 'left' }}>
+      style={{ display: 'block', width: '100%', padding: 16, paddingBottom: move ? 58 : 16, textAlign: 'left', cursor: onDragStart ? 'grab' : 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {onDragStart && <GripVertical size={14} color="var(--wf-subtle)" style={{ flexShrink: 0, marginLeft: -6 }} aria-hidden />}
         <span style={{ flex: 1, minWidth: 0, color: 'var(--wf-gold)', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {job.number}
         </span>
@@ -129,6 +166,20 @@ export function DispatchCard({ row, onOpen }: { row: BoardRow; onOpen: () => voi
           </span>
         </div>
       )}
+      {partShown('card.when') && job.date && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }} className="wf-p-small">
+          <CalendarDays size={15} color="var(--wf-subtle)" style={{ flexShrink: 0 }} />
+          <span>{shortDay(job.date)}{t ? ` · ${fmtClock12(t)}` : ''}</span>
+        </div>
+      )}
+      {partShown('card.techs') && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, color: job.techs.length ? undefined : 'var(--wf-danger)', fontWeight: job.techs.length ? undefined : 600 }} className="wf-p-small">
+          <Users size={15} color={job.techs.length ? 'var(--wf-subtle)' : 'var(--wf-danger)'} style={{ flexShrink: 0 }} />
+          <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {job.techs.length === 0 ? 'No tech yet' : job.techs.length === 1 ? job.techs[0] : `${job.techs[0]} +${job.techs.length - 1}`}
+          </span>
+        </div>
+      )}
       {(partShown('card.price') || partShown('card.type')) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
           <span className="wf-p-title" style={{ flex: 1 }}>{partShown('card.price') ? (price > 0 ? fmtMoney(price) : <span className="wf-subtle" style={{ fontWeight: 500 }}>No price</span>) : null}</span>
@@ -139,18 +190,42 @@ export function DispatchCard({ row, onOpen }: { row: BoardRow; onOpen: () => voi
           )}
         </div>
       )}
-      {row.payNotSet && (
-        <div style={{ marginTop: 8 }}>
-          <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)', padding: '1px 8px' }}>Tech pay not set</span>
+      {(row.payNotSet || (partShown('card.counts') && counts)) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          {row.payNotSet && <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)', padding: '1px 8px' }}>Tech pay not set</span>}
+          {partShown('card.counts') && (row.messages ?? 0) > 0 && (
+            <span className="wf-chip" title={`${row.messages} message${row.messages === 1 ? '' : 's'}`} style={{ background: 'rgba(14,27,46,0.07)', padding: '1px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <MessageSquare size={12} /> {row.messages}
+            </span>
+          )}
+          {partShown('card.counts') && (row.photos ?? 0) > 0 && (
+            <span className="wf-chip" title={`${row.photos} photo${row.photos === 1 ? '' : 's'}`} style={{ background: 'rgba(201,162,75,0.15)', color: '#8a6d2b', padding: '1px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Camera size={12} /> {row.photos}
+            </span>
+          )}
         </div>
       )}
     </button>
+    {move && (
+      // Outside the card's button, so picking a column doesn't open the job.
+      <select aria-label={`Move WO ${job.number} to another column`} value=""
+        onChange={(e) => { const c = move.columns.find((x) => x.key === e.target.value); if (c) move.onPick(c); }}
+        style={{ position: 'absolute', left: 16, right: 16, bottom: 12, height: 36, fontSize: 16, padding: '0 8px', borderRadius: 8, border: '1px solid var(--wf-line)', background: '#fff', color: 'var(--wf-navy)' }}>
+        <option value="">Move to…</option>
+        {move.columns.filter((c) => c.key !== move.current && c.stage !== 'declined').map((c) => (
+          <option key={c.key} value={c.key}>{c.stage === 'closed' ? 'Close the job…' : c.label}</option>
+        ))}
+      </select>
+    )}
+    </div>
   );
 }
 
-export function DispatchBoard({ rows, onOpen, right, between }: {
+export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
   rows: BoardRow[];
   onOpen: (job: WfJob) => void;
+  /** Moving a job to another column (drag on the Board, or Move to). Without it the board is look-only. */
+  onMove?: (job: WfJob, move: Move, target: BoardColumn) => void;
   /** App bar buttons (New order). */
   right?: ReactNode;
   /** Anything that needs Fred, between the numbers and the search (expenses, time asks). */
@@ -168,28 +243,38 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
   const count = (s: WfStatus) => live.filter((r) => r.job.status === s).length;
   const urgent = live.filter((r) => r.job.highPriority).length;
   const shown = rows.filter((r) => matchesWf(r.job, query));
-  // Tapping a number tile or a stage heading shows just those jobs (Fred,
+  // Tapping a number tile or a column heading shows just those jobs (Fred,
   // 2026-10-04: "now i cant click on anything like tech needed"). The same
-  // focus applies to Board, Grid and List.
-  const [focus, setFocus] = useState<WfStatus | 'urgent' | null>(null);
-  const toggle = (f: WfStatus | 'urgent') => setFocus((cur) => (cur === f ? null : f));
-  const focused = focus === 'urgent' ? shown.filter((r) => r.job.highPriority && r.job.status !== 'closed') : shown;
-  const groups = boardGroups(focused).filter((g) => {
-    if (!focus) return true;
-    if (focus === 'urgent') return g.list.length > 0; // high-priority jobs, in whichever stages they are
-    return g.key === focus;
-  });
-  const focusLabel = focus === 'urgent' ? 'High priority' : focus ? stageName(focus as WfStatus) : null;
+  // focus applies to Board, Grid and List. A stage tile shows that stage's
+  // jobs wherever they sit (Today, or one of Fred's own columns, included).
+  const [focus, setFocus] = useState<string | null>(null);
+  const toggle = (f: string) => setFocus((cur) => (cur === f ? null : f));
+  const all = boardGroups(shown);
+  const stageFocus = focus?.startsWith('stage:') ? focus.slice(6) : null;
+  const groups = !focus ? all
+    : focus === 'urgent' ? all.map((g) => ({ ...g, list: g.list.filter((r) => r.job.highPriority && r.job.status !== 'closed') })).filter((g) => g.list.length > 0)
+    : stageFocus ? all.map((g) => ({ ...g, list: g.list.filter((r) => r.job.status === stageFocus) })).filter((g) => g.list.length > 0 || g.key === stageFocus)
+    : all.filter((g) => g.key === focus);
+  const focusLabel = focus === 'urgent' ? 'High priority' : stageFocus ? stageName(stageFocus as WfStatus) : focus ? all.find((g) => g.key === focus)?.label ?? null : null;
+
+  // Moving cards: drag on the Board (a computer), or Move to on any card.
+  const cols = all.map((g) => g.col);
+  const holdKeys = new Set(boardHolds().map((h) => h.key));
+  const today = todayISO();
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overCol, setOverCol] = useState<string | null>(null);
+  const place = (job: WfJob, target: BoardColumn) => { if (onMove) onMove(job, moveTo(job, target, today, holdKeys), target); };
+  const moveFor = (r: BoardRow) => onMove ? { columns: cols, current: columnOf(r.job, today, holdKeys), onPick: (c: BoardColumn) => place(r.job, c) } : undefined;
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <PrimioBar title="Dispatch board" right={right} />
       {partShown('dispatch.tiles') && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
         <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />
-        <StatTile label={stageName('open')} value={count('open')} color={WF_STATUS_COLOR.open} onClick={() => toggle('open')} active={focus === 'open'} />
-        <StatTile label={stageName('offered')} value={count('offered')} color={WF_STATUS_COLOR.offered} onClick={() => toggle('offered')} active={focus === 'offered'} />
-        <StatTile label={stageName('inProgress')} value={count('inProgress')} color={WF_STATUS_COLOR.inProgress} onClick={() => toggle('inProgress')} active={focus === 'inProgress'} />
-        <StatTile label={stageName('workDone')} value={count('workDone')} color="var(--wf-success)" onClick={() => toggle('workDone')} active={focus === 'workDone'} />
+        <StatTile label={stageName('open')} value={count('open')} color={WF_STATUS_COLOR.open} onClick={() => toggle('stage:open')} active={focus === 'stage:open'} />
+        <StatTile label={stageName('offered')} value={count('offered')} color={WF_STATUS_COLOR.offered} onClick={() => toggle('stage:offered')} active={focus === 'stage:offered'} />
+        <StatTile label={stageName('inProgress')} value={count('inProgress')} color={WF_STATUS_COLOR.inProgress} onClick={() => toggle('stage:inProgress')} active={focus === 'stage:inProgress'} />
+        <StatTile label={stageName('workDone')} value={count('workDone')} color="var(--wf-success)" onClick={() => toggle('stage:workDone')} active={focus === 'stage:workDone'} />
         <StatTile label="High priority" value={urgent} color="var(--wf-danger)" onClick={() => toggle('urgent')} active={focus === 'urgent'} />
       </div>}
       {focusLabel && (
@@ -214,28 +299,45 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
       </div>
       {view === 'board' && (
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>
-          {groups.map((g) => (
-            <section key={g.key} className="wf-dispatch-col">
-              <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} boxed onClick={() => toggle(g.key)} active={focus === g.key} />
-              <div className="wf-dispatch-list">
-                {g.list.length === 0
-                  ? <div className="wf-p-small wf-subtle" style={{ textAlign: 'center', padding: '40px 0' }}>No jobs</div>
-                  : g.list.map((r) => <DispatchCard key={r.job.id} row={r} onOpen={() => onOpen(r.job)} />)}
-              </div>
-            </section>
-          ))}
+          {groups.map((g) => {
+            const dropOk = !!onMove && !!dragId && g.col.stage !== 'declined';
+            return (
+              <section key={g.key} className="wf-dispatch-col"
+                onDragOver={(e) => { if (dropOk) { e.preventDefault(); if (overCol !== g.key) setOverCol(g.key); } }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverCol((c) => (c === g.key ? null : c)); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const row = rows.find((r) => r.job.id === dragId);
+                  setDragId(null); setOverCol(null);
+                  if (row) place(row.job, g.col);
+                }}
+                style={overCol === g.key ? { boxShadow: 'inset 0 0 0 2px var(--wf-gold)', borderRadius: 12 } : undefined}>
+                <StageHead label={g.label} color={g.color} count={g.list.length} boxed onClick={() => toggle(g.key)} active={focus === g.key} />
+                <div className="wf-dispatch-list">
+                  {g.list.length === 0
+                    ? <div className="wf-p-small wf-subtle" style={{ textAlign: 'center', padding: '40px 0' }}>{dropOk ? 'Drop here' : 'No jobs'}</div>
+                    : g.list.map((r) => (
+                      <DispatchCard key={r.job.id} row={r} onOpen={() => onOpen(r.job)} move={moveFor(r)}
+                        dragging={dragId === r.job.id}
+                        onDragStart={onMove && r.job.status !== 'closed' && r.job.status !== 'declined' ? () => setDragId(r.job.id) : undefined}
+                        onDragEnd={() => { setDragId(null); setOverCol(null); }} />
+                    ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
       {view === 'grid' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 16 }}>
           {groups.map((g) => (
             <section key={g.key}>
-              <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} onClick={() => toggle(g.key)} active={focus === g.key} />
+              <StageHead label={g.label} color={g.color} count={g.list.length} onClick={() => toggle(g.key)} active={focus === g.key} />
               {g.list.length === 0
                 ? <div className="wf-p-small wf-subtle" style={{ padding: '12px 4px' }}>No jobs</div>
                 : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 10, marginTop: 10 }}>
-                    {g.list.map((r) => <DispatchCard key={r.job.id} row={r} onOpen={() => onOpen(r.job)} />)}
+                    {g.list.map((r) => <DispatchCard key={r.job.id} row={r} onOpen={() => onOpen(r.job)} move={moveFor(r)} />)}
                   </div>
                 )}
             </section>
@@ -249,10 +351,10 @@ export function DispatchBoard({ rows, onOpen, right, between }: {
 
 /** List view: the Board's stages as table sections, one row per job, in the Board's order. */
 function DispatchTable({ groups, onOpen, onStage, focus }: {
-  groups: { key: WfStatus; label: string; list: BoardRow[] }[];
+  groups: BoardGroup[];
   onOpen: (job: WfJob) => void;
-  onStage: (k: WfStatus) => void;
-  focus: WfStatus | 'urgent' | null;
+  onStage: (k: string) => void;
+  focus: string | null;
 }) {
   const head = (label: string, align: 'left' | 'right' = 'left') => (
     <th style={{ textAlign: align, padding: '10px 12px', fontSize: 12, fontWeight: 600, color: 'var(--wf-subtle)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--wf-line)' }}>{label}</th>
@@ -271,7 +373,7 @@ function DispatchTable({ groups, onOpen, onStage, focus }: {
           <tbody key={g.key}>
             <tr>
               <td colSpan={7} style={{ padding: '0 8px', background: '#F4F2EC' }}>
-                <StageHead label={g.label} color={stageColor(g.key)} count={g.list.length} onClick={() => onStage(g.key)} active={focus === g.key} />
+                <StageHead label={g.label} color={g.color} count={g.list.length} onClick={() => onStage(g.key)} active={focus === g.key} />
               </td>
             </tr>
             {g.list.length === 0 && (

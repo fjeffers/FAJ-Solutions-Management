@@ -11,10 +11,12 @@ import WorkBoard from '@/components/WorkBoard';
 import WorkFlowView, { OwnerAlerts } from '@/components/WorkFlowView';
 import { Dialog } from '@/components/wf/WfUi';
 import { DispatchBoard, type BoardRow } from '@/components/wf/PrimioScreens';
-import { wfJobFromOwner } from '@/lib/wf';
+import { wfJobFromOwner, type WfJob } from '@/lib/wf';
+import type { BoardColumn, Move } from '@/lib/dispatch-columns';
+import { createClient } from '@/lib/supabase/client';
 import { listsNow } from '@/lib/app-lists';
 import { shown } from '@/lib/screen-parts';
-import { toastInfo, toastSuccess } from '@/lib/toast';
+import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -84,10 +86,39 @@ export default function WorkOrdersView({
     if (id === null && startOpenId && onJobClosed) onJobClosed();
   };
   const lists = listsNow(); // stage and priority names (Settings -> Lists & stages)
+  // Message and photo counts for the cards, counted in the database (migration 113).
+  const [jobCounts, setJobCounts] = useState<Record<string, { messages: number; photos: number }>>({});
+  useEffect(() => {
+    void createClient().rpc('board_job_counts').then(({ data }) => {
+      const m: Record<string, { messages: number; photos: number }> = {};
+      for (const r of (data as { wo_id: string; messages: number; photos: number }[] | null) ?? []) m[r.wo_id] = { messages: r.messages, photos: r.photos };
+      setJobCounts(m);
+    });
+  }, [workOrders]);
   const boardRows: BoardRow[] = useMemo(() => workOrders.map((w) => {
     const job = wfJobFromOwner(w);
-    return { job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed' };
-  }), [workOrders, lists]); // eslint-disable-line react-hooks/exhaustive-deps -- lists changes the names inside each job
+    return {
+      job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed',
+      messages: jobCounts[w.id]?.messages ?? 0, photos: jobCounts[w.id]?.photos ?? 0,
+    };
+  }), [workOrders, lists, jobCounts]); // eslint-disable-line react-hooks/exhaustive-deps -- lists changes the names inside each job
+
+  /**
+   * A card moved to another column on the board (lib/dispatch-columns.ts says
+   * what that means). Only the board column or the office stage changes —
+   * closing goes through the usual Close job window.
+   */
+  const moveJob = async (job: WfJob, move: Move, target: BoardColumn) => {
+    if (move.kind === 'none') return;
+    if (move.kind === 'blocked') { toastInfo(move.reason); return; }
+    const w = workOrders.find((x) => x.id === job.id);
+    if (!w) return;
+    if (move.kind === 'close') { onCloseJob(w); return; }
+    const { error } = await createClient().from('work_orders').update(move.patch).eq('id', w.id);
+    if (error) { toastError(`WO ${w.wo_number} didn't move to ${target.label}: ${error.message}`); return; }
+    toastSuccess(move.note);
+    await onRefresh();
+  };
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
   // looking at that work order rather than at a list to hunt through.
@@ -168,6 +199,7 @@ export default function WorkOrdersView({
       ) : (
         <DispatchBoard
           rows={boardRows}
+          onMove={(job, move, target) => void moveJob(job, move, target)}
           onOpen={(j) => { setWfOpen(j.id); window.scrollTo({ top: 0 }); }}
           right={<>
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAiOpen(true)}><Sparkles size={15} /> Generate with AI</button>

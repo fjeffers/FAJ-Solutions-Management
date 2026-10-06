@@ -21,6 +21,7 @@ const LISTS: { list: ListName; title: string; hint: string; noun: string }[] = [
   { list: 'serviceTypes', title: 'Service types', hint: 'What kind of work a job is.', noun: 'service type' },
   { list: 'sources', title: 'Job sources', hint: 'Where a job came from. NetView and FieldNation also switch on their own forms and numbering.', noun: 'source' },
   { list: 'assignmentTypes', title: 'Assignment types', hint: 'How the tech on a job is engaged.', noun: 'assignment type' },
+  { list: 'boardColumns', title: 'Extra board columns', hint: 'Your own columns on the Dispatch board, for jobs waiting on something. Drag a job into one (or use Move to on a phone). Hiding a column puts its jobs back in their stage.', noun: 'column' },
 ];
 
 const iconBtn: React.CSSProperties = {
@@ -167,5 +168,5 @@ function hideAdded(l: AppLists): AppLists {
     const keys = new Set(std[list].map((i) => i.key));
     return [...std[list], ...l[list].filter((i) => !keys.has(i.key)).map((i) => ({ ...i, hidden: true }))];
   };
-  return { stages: {}, priorities: keep('priorities'), serviceTypes: keep('serviceTypes'), sources: keep('sources'), assignmentTypes: keep('assignmentTypes') };
+  return { stages: {}, priorities: keep('priorities'), serviceTypes: keep('serviceTypes'), sources: keep('sources'), assignmentTypes: keep('assignmentTypes'), boardColumns: keep('boardColumns') };
 }

@@ -112,6 +112,8 @@ export type WfJob = {
   archived: boolean;
   /** Owner only. Null on a tech's job — a tech never sees money. */
   clientPrice: number | null;
+  /** Office only: the Dispatch board column of Fred's the job is parked in (migration 113). */
+  hold?: string | null;
 };
 
 type Row = Record<string, unknown>;
@@ -239,6 +241,7 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     timeRequests: owner ? parseTimeRequests(r.time_requests) : {},
     archived: !!s(r, 'archived_at'),
     clientPrice: owner && Number.isFinite(price) ? price : null,
+    hold: owner ? s(r, 'board_stage') || null : null,
   };
 }
 

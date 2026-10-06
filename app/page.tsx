@@ -603,6 +603,8 @@ export default function HomePage() {
       // ?view=paperwork so the W-9 request opens on the forms alone. A job
       // link uses the bare token and shows only the work.
       portal_url: `${window.location.origin}/portal/${c.portal_token}?view=paperwork`,
+      needs_w9: !c.w9_received,
+      needs_agreement: !c.contract_signed_at,
     });
     if (res.ok) await markInviteSent([c.id]);
     setContractorBusy(null);
@@ -627,7 +629,10 @@ export default function HomePage() {
   // limit, and a partial failure needs to name who actually missed out.
   const handleSendAllOnboarding = async (list: Contractor[]) => {
     if (list.length === 0) return;
-    if (!confirm(`Email all ${list.length} contractor${list.length !== 1 ? 's' : ''} a link to file their W-9 and sign the agreement?`)) return;
+    // Fred, 2026-10-06: this went to every tech with an email — him included.
+    // The list is now only techs still missing paperwork; say who, by name.
+    const names = list.map((c) => `• ${c.name}${!c.w9_received && !c.contract_signed_at ? '' : !c.w9_received ? ' (W-9 only)' : ' (agreement only)'}`).join('\n');
+    if (!confirm(`Email these ${list.length} tech${list.length !== 1 ? 's' : ''} a link to file what they still owe (W-9 and/or the agreement)?\n\n${names}\n\nNo one else gets it.`)) return;
     setContractorBusy('ALL');
     const failed: string[] = [];
     const sentIds: string[] = [];
@@ -637,6 +642,8 @@ export default function HomePage() {
         contractor_email: c.email,
         contractor_name: c.name,
         portal_url: `${window.location.origin}/portal/${c.portal_token}?view=paperwork`,
+        needs_w9: !c.w9_received,
+        needs_agreement: !c.contract_signed_at,
       });
       if (res.ok) sentIds.push(c.id); else failed.push(c.name);
     }

@@ -33,8 +33,12 @@ export default function ContractorsView({
   const [selected, setSelected] = useState<Contractor | null>(null);
 
   const filtered = contractors.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()));
-  /** Bulk send covers everyone reachable, not just the filtered view. */
-  const emailable = contractors.filter((c) => c.email);
+  /**
+   * Bulk send: only techs with an email who still owe paperwork (no W-9 or no
+   * signed agreement) — not the filtered view, and never someone whose forms
+   * are done. Fred, 2026-10-06: it used to email everyone, him included.
+   */
+  const emailable = contractors.filter((c) => c.email && (!c.w9_received || !c.contract_signed_at));
 
   if (selected) {
     // The saved copy, so an edit (emergency contact, hire date…) shows at once.
@@ -66,9 +70,9 @@ export default function ContractorsView({
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {emailable.length > 0 && (
               <button className="btn btn-ghost" disabled={busy !== null}
-                title={`Email all ${emailable.length} contractors with an email address a link to file their W-9 and sign the agreement`}
+                title={`Email the ${emailable.length} techs who still owe a W-9 or the signed agreement — you'll see their names first`}
                 onClick={() => onSendAll(emailable)}>
-                <Send size={14} /> {busy === 'ALL' ? 'Sending…' : `Request W-9 from all (${emailable.length})`}
+                <Send size={14} /> {busy === 'ALL' ? 'Sending…' : `Request paperwork from the ${emailable.length} who still need it`}
               </button>
             )}
             <button className="btn btn-primary" onClick={onAdd}><Plus size={15} /> Add Contractor</button>

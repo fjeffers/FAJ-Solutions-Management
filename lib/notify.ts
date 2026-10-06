@@ -31,6 +31,9 @@ export async function sendOnboarding(params: {
   contractor_email: string;
   contractor_name: string;
   portal_url: string;
+  /** What the tech still owes; the email asks only for that. */
+  needs_w9?: boolean;
+  needs_agreement?: boolean;
 }): Promise<{ ok: boolean; error?: string }> {
   if (!params.contractor_email) return { ok: false, error: 'No email' };
   try {

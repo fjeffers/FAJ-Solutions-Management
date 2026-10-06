@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const accepted = action === 'accept';
     await resend.emails.send({
-      from: process.env.FROM_EMAIL || 'FAJ Solutions <support@fajsolutions.net>',
+      from: process.env.FROM_EMAIL || 'FAJ Solutions <support@fajsolutions.com>',
       to: OWNER_EMAIL,
       subject: accepted
         ? `✅ ${contractor.name} ACCEPTED WO #${wo.wo_number}`

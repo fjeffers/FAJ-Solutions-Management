@@ -262,7 +262,7 @@ export default async function PortalPage({ params, searchParams }: {
         )}
 
         <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', marginTop: 32 }}>
-          FAJ Solutions · Questions? Contact support@fajsolutions.net
+          FAJ Solutions · Questions? Contact support@fajsolutions.com
         </div>
       </div>
     </div>

@@ -14,7 +14,7 @@ import {
   Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, DoorOpen, DoorClosed, AppWindow, SquareDashed,
 } from 'lucide-react';
 import {
-  CABLE_TYPES, COLORS, OPENING_SYMBOLS, WALL_TYPES, footprint, wallTypeInfo, type WallType, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
+  CABLE_TYPES, COLORS, OPENING_SYMBOLS, WALL_TYPES, addBendAt, footprint, splitAt, wallTypeInfo, type WallType, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
   sqft, summarize, symbolInfo, type CableType, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
 
@@ -106,6 +106,11 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const bgInput = useRef<HTMLInputElement | null>(null);
   const pendingPhotoAt = useRef<Pt | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
+  // Double-click or double-tap anything to change it (Fred, 2026-10-06): it's
+  // selected, its details open, and where you clicked is kept for Split here /
+  // Add a bend here.
+  const lastTap = useRef<{ t: number; x: number; y: number } | null>(null);
+  const [editPoint, setEditPoint] = useState<{ id: string; at: Pt } | null>(null);
   const gesture = useRef<{ kind: 'pan'; from: { x: number; y: number }; view: typeof view } | { kind: 'pinch'; d0: number; mid0: Pt; view: typeof view } | { kind: 'move'; id: string; from: Pt; base: Shape; moved: boolean } | { kind: 'moveall'; from: Pt; base: Shape[]; moved: boolean } | { kind: 'handle'; id: string; handle: string; base: Shape; moved: boolean } | null>(null);
 
   const viewH = view.w * aspect;
@@ -180,6 +185,25 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       return;
     }
     const raw = toWorld(e.clientX, e.clientY);
+    {
+      const now = performance.now(), last = lastTap.current;
+      lastTap.current = { t: now, x: e.clientX, y: e.clientY };
+      // Tools that put something down on each tap keep doing that.
+      const places = tool === 'symbol' || tool === 'doors' || tool === 'text' || tool === 'photo' || tool === 'cable';
+      if (!places && last && now - last.t < 380 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 14) {
+        const hit = hitTest(sketch.shapes, raw, view.w / 50);
+        if (hit) {
+          lastTap.current = null;
+          gesture.current = null;
+          setDraft(null);
+          setTool('select');
+          setSelectedId(hit.id);
+          setEditPoint({ id: hit.id, at: raw });
+          setShowPanel(true);
+          return;
+        }
+      }
+    }
     const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol' || tool === 'opening' || tool === 'doors';
     const p = snapIf(raw, plan || tool === 'line' || tool === 'arrow' || tool === 'box');
 
@@ -739,7 +763,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             </>}
             {tool === 'opening' && <span style={{ color: '#455A64' }}>Drag along a wall or a room&apos;s side to take that stretch of wall out.</span>}
             {tool === 'moveall' && <span style={{ color: '#455A64' }}>Drag anywhere to move the whole site. Arrow keys or the pad slide the view.</span>}
-            {tool === 'select' && <span style={{ color: '#455A64' }}>Tap an item to select it; drag to move it. Drag the white squares to change its size or move a wall&apos;s end. Arrow keys nudge it (Shift = 5 ft).</span>}
+            {tool === 'select' && <span style={{ color: '#455A64' }}>Double-click anything to change it. Drag to move it; drag the white squares to change its size or move a wall&apos;s end. Arrow keys nudge it (Shift = 5 ft).</span>}
             {tool === 'photo' && <span style={{ color: '#455A64' }}>{busyUpload ? 'Uploading…' : 'Tap the spot, then take or choose the photo.'}</span>}
           </>
         )}
@@ -835,10 +859,39 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         {showPanel && (
           <div style={{ flex: '0 1 280px', minWidth: 240, maxHeight: '100%', overflowY: 'auto', background: '#fff', borderLeft: '1px solid #e2e6ec', padding: 12, display: 'flex', flexDirection: 'column', gap: 14, fontSize: 13 }}>
             {selected ? (
-              <SelectedPanel shape={selected} url={selected.kind === 'photo' ? urls[selected.path] : undefined}
-                onChange={(patch) => updateShape(selected.id, patch)} onDelete={() => removeShape(selected.id)} />
+              <>
+                <SelectedPanel shape={selected} url={selected.kind === 'photo' ? urls[selected.path] : undefined}
+                  onChange={(patch) => updateShape(selected.id, patch)} onDelete={() => removeShape(selected.id)} />
+                {/* Changes at the spot that was double-clicked */}
+                {editPoint?.id === selected.id && (() => {
+                  const parts = splitAt(selected, editPoint.at);
+                  const bent = addBendAt(selected, editPoint.at);
+                  if (!parts && !bent) return null;
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 10, background: '#FBF5E6', border: '1px solid #e7d3a3' }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#8a6d2b' }}>Where you double-clicked</div>
+                      {parts && (
+                        <button type="button" style={{ ...smallBtn, alignSelf: 'flex-start' }}
+                          onClick={() => {
+                            commit({ ...sketch, shapes: sketch.shapes.flatMap((x) => (x.id === selected.id ? parts : [x])) });
+                            setSelectedId(parts[1].id); setEditPoint(null);
+                            setNotice('Split in two — each part can now be changed, moved or deleted on its own.');
+                          }}>
+                          Split here
+                        </button>
+                      )}
+                      {bent && (
+                        <button type="button" style={{ ...smallBtn, alignSelf: 'flex-start' }}
+                          onClick={() => { updateShape(selected.id, bent); setEditPoint(null); setNotice('Bend added — drag its white square to route the cable.'); }}>
+                          Add a bend here
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
             ) : (
-              <div style={{ color: '#78909C' }}>Tap something with <b>Select</b> to resize it, name it, label it or delete it.</div>
+              <div style={{ color: '#78909C' }}>Double-click (or double-tap) anything to change it, or tap it with <b>Select</b>.</div>
             )}
 
             <div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  OPENING_SYMBOLS, dragHandle, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
+  OPENING_SYMBOLS, addBendAt, dragHandle, splitAt, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
   snapPt, sqft, summarize, summaryLine, type Shape,
 } from './sketch';
 
@@ -247,5 +247,25 @@ describe('wall types', () => {
     ] });
     expect(s.shapes.map((x) => (x as { wtype?: string }).wtype)).toEqual(['block', undefined, 'exterior']);
     expect(summarize(s).walls).toEqual([{ type: 'exterior', label: 'Exterior wall', feet: 30 }, { type: 'block', label: 'Block (CMU)', feet: 20 }]);
+  });
+});
+
+describe('double-click changes', () => {
+  it('a wall splits in two where it was double-clicked, keeping its type', () => {
+    const wall: Shape = { id: 'w', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 20, y: 0 }, color: '#000', wtype: 'block' };
+    const parts = splitAt(wall, { x: 8, y: 0.4 }, () => 'w2')!;
+    expect(parts).toEqual([
+      { id: 'w', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 8, y: 0 }, color: '#000', wtype: 'block' },
+      { id: 'w2', kind: 'wall', a: { x: 8, y: 0 }, b: { x: 20, y: 0 }, color: '#000', wtype: 'block' },
+    ]);
+    expect(splitAt(wall, { x: 0.2, y: 0 })).toBeNull(); // right at an end
+    expect(splitAt(room, { x: 5, y: 0 })).toBeNull(); // rooms don't split
+  });
+
+  it('a cable run gets a bend on the segment that was double-clicked', () => {
+    const bent = addBendAt(cable, { x: 30.5, y: 20 }) as Extract<Shape, { kind: 'cable' }>;
+    expect(bent.pts).toEqual([{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 20 }, { x: 30, y: 40 }]);
+    expect(pathLength(bent.pts)).toBe(70); // same footage until the bend is dragged
+    expect(addBendAt(room, { x: 1, y: 1 })).toBeNull();
   });
 });

@@ -669,6 +669,36 @@ export function gapAt(shapes: Shape[], p: Pt, width = DOOR_WIDTH): { a: Pt; b: P
   return { a: { x: w.at.x - Math.cos(r) * half, y: w.at.y - Math.sin(r) * half }, b: { x: w.at.x + Math.cos(r) * half, y: w.at.y + Math.sin(r) * half } };
 }
 
+// ── Double-click changes (Fred, 2026-10-06: "I want to double click on the
+// line and make alterations") ─────────────────────────────────────────────
+
+/** Split a wall, line or opening in two at the point nearest p (null when p is at an end). */
+export function splitAt(s: Shape, p: Pt, newIdFn: () => string = newId): [Shape, Shape] | null {
+  if (s.kind !== 'wall' && s.kind !== 'line' && s.kind !== 'gap') return null;
+  const L = dist(s.a, s.b);
+  if (L < 1) return null;
+  const t = ((p.x - s.a.x) * (s.b.x - s.a.x) + (p.y - s.a.y) * (s.b.y - s.a.y)) / (L * L);
+  if (t * L < 0.5 || (1 - t) * L < 0.5) return null; // too near an end to make two pieces
+  const m = { x: s.a.x + t * (s.b.x - s.a.x), y: s.a.y + t * (s.b.y - s.a.y) };
+  return [{ ...s, b: m }, { ...s, id: newIdFn(), a: m }];
+}
+
+/** Add a bend to a cable run (or a drawn stroke) at the point nearest p, on its nearest segment. */
+export function addBendAt(s: Shape, p: Pt): Shape | null {
+  if (s.kind !== 'cable' || s.pts.length < 2) return null;
+  let best = { i: 1, d: Infinity, at: s.pts[0] };
+  for (let i = 1; i < s.pts.length; i++) {
+    const a = s.pts[i - 1], b = s.pts[i];
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+    const at = { x: a.x + t * dx, y: a.y + t * dy };
+    const d = dist(p, at);
+    if (d < best.d && t > 0.02 && t < 0.98) best = { i, d, at };
+  }
+  if (!Number.isFinite(best.d)) return null;
+  return { ...s, pts: [...s.pts.slice(0, best.i), best.at, ...s.pts.slice(best.i)] };
+}
+
 /** Where a shape's label sits — for the length/area tags. */
 export function midpoint(p: Pt[]): Pt {
   const total = pathLength(p);

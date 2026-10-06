@@ -15,10 +15,12 @@ export type SymbolKind =
   | 'rack' | 'switch' | 'router' | 'firewall' | 'modem' | 'patch' | 'server' | 'nvr' | 'ups' | 'starlink'
   // devices
   | 'camera' | 'ap' | 'drop' | 'outlet' | 'tablet' | 'tv' | 'pos' | 'pc' | 'printer' | 'phone' | 'speaker' | 'reader'
-  // building
-  | 'door' | 'window';
+  // building — doors and windows sit in walls (OPENING_WIDTH)
+  | 'door' | 'door2' | 'slider' | 'window' | 'window2'
+  // furniture — drawn to size (FURNITURE_SIZE)
+  | 'table' | 'conftable' | 'desk' | 'chair' | 'sofa' | 'cabinet' | 'shelf' | 'counter' | 'bench';
 
-export type SymbolGroup = 'network' | 'devices' | 'building';
+export type SymbolGroup = 'network' | 'devices' | 'building' | 'furniture';
 
 // Fred, 2026-10-06: "data cables, network equipment, tablet, power outlet,
 // data outlet, any network equipment". The key ('drop' etc.) is what's saved;
@@ -47,13 +49,43 @@ export const SYMBOLS: { kind: SymbolKind; label: string; plural: string; code: s
   { kind: 'speaker', label: 'Speaker', plural: 'Speakers', code: 'S', color: '#EF6C00', group: 'devices' },
   { kind: 'reader', label: 'Card reader', plural: 'Card readers', code: 'A', color: '#00838F', group: 'devices' },
   { kind: 'door', label: 'Door', plural: 'Doors', code: '', color: '#455A64', group: 'building' },
+  { kind: 'door2', label: 'Double door', plural: 'Double doors', code: '', color: '#455A64', group: 'building' },
+  { kind: 'slider', label: 'Sliding glass door', plural: 'Sliding glass doors', code: '', color: '#1E88E5', group: 'building' },
   { kind: 'window', label: 'Window', plural: 'Windows', code: '', color: '#78909C', group: 'building' },
+  { kind: 'window2', label: 'Wide window', plural: 'Wide windows', code: '', color: '#78909C', group: 'building' },
+  // Fred, 2026-10-06: "under symbol should be the accessories for the room — table, chairs etc."
+  { kind: 'table', label: 'Table', plural: 'Tables', code: '', color: '#8D6E63', group: 'furniture' },
+  { kind: 'conftable', label: 'Conference table', plural: 'Conference tables', code: '', color: '#6D4C41', group: 'furniture' },
+  { kind: 'desk', label: 'Desk', plural: 'Desks', code: '', color: '#795548', group: 'furniture' },
+  { kind: 'chair', label: 'Chair', plural: 'Chairs', code: '', color: '#5D4037', group: 'furniture' },
+  { kind: 'sofa', label: 'Sofa', plural: 'Sofas', code: '', color: '#7E57C2', group: 'furniture' },
+  { kind: 'cabinet', label: 'Cabinet', plural: 'Cabinets', code: '', color: '#607D8B', group: 'furniture' },
+  { kind: 'shelf', label: 'Shelving', plural: 'Shelving units', code: '', color: '#546E7A', group: 'furniture' },
+  { kind: 'counter', label: 'Counter', plural: 'Counters', code: '', color: '#8D6E63', group: 'furniture' },
+  { kind: 'bench', label: 'Bench / pew', plural: 'Benches / pews', code: '', color: '#A1887F', group: 'furniture' },
 ];
 export const SYMBOL_GROUPS: { group: SymbolGroup; label: string }[] = [
   { group: 'network', label: 'Network gear' },
   { group: 'devices', label: 'Devices' },
-  { group: 'building', label: 'Building' },
+  { group: 'building', label: 'Doors & windows' },
+  { group: 'furniture', label: 'Furniture' },
 ];
+
+/** Furniture footprints in feet: w along the item, d front to back (turned with the item). */
+export const FURNITURE_SIZE: Partial<Record<SymbolKind, { w: number; d: number }>> = {
+  table: { w: 6, d: 3 }, conftable: { w: 10, d: 4 }, desk: { w: 5, d: 2.5 }, chair: { w: 2, d: 2 }, sofa: { w: 7, d: 3 },
+  cabinet: { w: 3, d: 2 }, shelf: { w: 4, d: 1.5 }, counter: { w: 8, d: 2 }, bench: { w: 10, d: 2 },
+};
+export const isFurniture = (k: SymbolKind): boolean => FURNITURE_SIZE[k] !== undefined;
+
+/** Whether p is on a piece of furniture (its turned footprint, plus tol). */
+function onFurniture(s: { sym: SymbolKind; at: Pt; rot: number }, p: Pt, tol: number): boolean {
+  const size = FURNITURE_SIZE[s.sym];
+  if (!size) return false;
+  const r = (-s.rot * Math.PI) / 180, dx = p.x - s.at.x, dy = p.y - s.at.y;
+  const lx = dx * Math.cos(r) - dy * Math.sin(r), ly = dx * Math.sin(r) + dy * Math.cos(r);
+  return Math.abs(lx) <= size.w / 2 + tol && Math.abs(ly) <= size.d / 2 + tol;
+}
 
 /** Data cable types, each with its own colour on the plan and its own footage. */
 export type CableType = 'cat6' | 'cat6a' | 'cat5e' | 'fiber' | 'coax' | 'power' | 'other';
@@ -75,7 +107,8 @@ export const COLORS = ['#0E1B2E', '#C62828', '#1565C0', '#2E7D32', '#EF6C00', '#
 
 export type Shape =
   | { id: string; kind: 'room'; x: number; y: number; w: number; h: number; name: string; color: string }
-  | { id: string; kind: 'wall'; a: Pt; b: Pt; color: string }
+  /** glass: a glass wall or storefront (Fred, 2026-10-06: "where are the windows, doors, glass"). */
+  | { id: string; kind: 'wall'; a: Pt; b: Pt; color: string; glass?: boolean }
   /** A stretch of wall taken out (a doorway, a pass-through) — of a drawn wall or a room's side. */
   | { id: string; kind: 'gap'; a: Pt; b: Pt }
   | { id: string; kind: 'cable'; pts: Pt[]; color: string; label: string; cable: CableType }
@@ -136,7 +169,7 @@ export function normalizeSketch(raw: unknown): Sketch {
       }
       case 'wall': {
         const a = pt(o.a), b = pt(o.b);
-        if (a && b) shapes.push({ id, kind: 'wall', a, b, color: color(o.color) });
+        if (a && b) shapes.push({ id, kind: 'wall', a, b, color: color(o.color), ...(o.glass === true && { glass: true }) });
         break;
       }
       case 'gap': {
@@ -279,6 +312,8 @@ export function hitTest(shapes: Shape[], p: Pt, tol = 0.8): Shape | null {
     switch (s.kind) {
       case 'symbol': case 'photo':
         if (dist(p, s.at) <= tol * 1.4) return s;
+        if (s.kind === 'symbol' && isOpeningSymbol(s.sym)) { const o = openingSegment(s); if (segDist(p, o.a, o.b) <= tol) return s; }
+        if (s.kind === 'symbol' && onFurniture(s, p, tol * 0.3)) return s;
         break;
       case 'text':
         if (p.x >= s.at.x - tol && p.x <= s.at.x + s.text.length * s.size * 0.6 + tol && Math.abs(p.y - s.at.y + s.size * 0.35) <= s.size * 0.7 + tol) return s;
@@ -399,22 +434,29 @@ export function setLength(s: Shape, len: number): Shape {
 // ── Doors, windows and openings in walls (Fred, 2026-10-06: "can I draw a
 // door on a wall in the 3D … delete a portion of the wall or room") ────────
 
-/** How wide a door or window symbol is, in feet (as drawn on the plan). */
+/** How wide each door and window is, in feet (as drawn on the plan). */
+export const OPENING_WIDTH: Partial<Record<SymbolKind, number>> = { door: 3, door2: 6, slider: 6, window: 3.2, window2: 6 };
 export const DOOR_WIDTH = 3;
 export const WINDOW_WIDTH = 3.2;
+/** Doors and windows: the symbols that sit in a wall and cut it. */
+export const isOpeningSymbol = (k: SymbolKind): boolean => OPENING_WIDTH[k] !== undefined;
+/** A doorway (wall above it) or a window (wall below and above it). */
+export const openingKindOf = (k: SymbolKind): 'door' | 'window' => (k === 'window' || k === 'window2' ? 'window' : 'door');
+/** The doors and windows offered together (Doors & windows in the sketch pad, and in 3D). */
+export const OPENING_SYMBOLS: SymbolKind[] = ['door', 'door2', 'slider', 'window', 'window2'];
 /** How close (feet) a door, window or opening must be to a wall to sit in it. */
 export const WALL_SNAP = 1.5;
 
-export type WallRun = { a: Pt; b: Pt; color: string; shapeId: string; room: boolean };
+export type WallRun = { a: Pt; b: Pt; color: string; shapeId: string; room: boolean; glass: boolean };
 
 /** Every wall on the plan: the walls drawn on their own, and the four sides of each room. */
 export function wallRuns(shapes: Shape[]): WallRun[] {
   const out: WallRun[] = [];
   for (const s of shapes) {
-    if (s.kind === 'wall') out.push({ a: s.a, b: s.b, color: s.color, shapeId: s.id, room: false });
+    if (s.kind === 'wall') out.push({ a: s.a, b: s.b, color: s.color, shapeId: s.id, room: false, glass: s.glass === true });
     else if (s.kind === 'room') {
       const c = [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }];
-      c.forEach((a, i) => out.push({ a, b: c[(i + 1) % 4], color: s.color, shapeId: s.id, room: true }));
+      c.forEach((a, i) => out.push({ a, b: c[(i + 1) % 4], color: s.color, shapeId: s.id, room: true, glass: false }));
     }
   }
   return out;
@@ -428,10 +470,9 @@ export function openingsOf(shapes: Shape[]): Opening[] {
   const out: Opening[] = [];
   for (const s of shapes) {
     if (s.kind === 'gap') out.push({ a: s.a, b: s.b, kind: 'gap', shapeId: s.id });
-    else if (s.kind === 'symbol' && (s.sym === 'door' || s.sym === 'window')) {
-      const half = (s.sym === 'door' ? DOOR_WIDTH : WINDOW_WIDTH) / 2;
-      const r = (s.rot * Math.PI) / 180, ux = Math.cos(r), uy = Math.sin(r);
-      out.push({ a: { x: s.at.x - ux * half, y: s.at.y - uy * half }, b: { x: s.at.x + ux * half, y: s.at.y + uy * half }, kind: s.sym, shapeId: s.id });
+    else if (s.kind === 'symbol' && isOpeningSymbol(s.sym)) {
+      const { a, b } = openingSegment(s);
+      out.push({ a, b, kind: openingKindOf(s.sym), shapeId: s.id });
     }
   }
   return out;
@@ -494,9 +535,16 @@ export function snapToWall(shapes: Shape[], p: Pt, maxDist = WALL_SNAP): { at: P
   return best && { at: best.at, rot: best.rot, run: best.run };
 }
 
+/** The stretch of wall a door or window takes up. */
+export function openingSegment(s: Extract<Shape, { kind: 'symbol' }>): { a: Pt; b: Pt } {
+  const half = (OPENING_WIDTH[s.sym] ?? 0) / 2;
+  const r = (s.rot * Math.PI) / 180, ux = Math.cos(r), uy = Math.sin(r);
+  return { a: { x: s.at.x - ux * half, y: s.at.y - uy * half }, b: { x: s.at.x + ux * half, y: s.at.y + uy * half } };
+}
+
 /** A door or window moved near a wall sits in it, turned to match. */
 export function seatInWall(s: Shape, shapes: Shape[]): Shape {
-  if (s.kind !== 'symbol' || (s.sym !== 'door' && s.sym !== 'window')) return s;
+  if (s.kind !== 'symbol' || !isOpeningSymbol(s.sym)) return s;
   const w = snapToWall(shapes, s.at);
   return w ? { ...s, at: w.at, rot: w.rot } : s;
 }

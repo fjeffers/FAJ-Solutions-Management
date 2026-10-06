@@ -15,17 +15,21 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { X, Scissors, Box as BoxIcon, RotateCcw, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Plus, Minus, DoorOpen, AppWindow, Eraser, Rotate3d, SquareDashed, Undo2 } from 'lucide-react';
-import { dist, feet, gapAt, newId, openingsOf, snapToWall, symbolInfo, wallPieces, wallRuns, type Pt, type Shape, type Sketch, type SymbolKind } from '@/lib/sketch';
+import { FURNITURE_SIZE, OPENING_SYMBOLS, dist, feet, gapAt, newId, openingsOf, snapToWall, symbolInfo, wallPieces, wallRuns, type Pt, type Shape, type Sketch, type SymbolKind } from '@/lib/sketch';
 
 const CEILING = 9; // ft
 const DOOR_TOP = 7; // ft — the wall continues above a doorway
 const SILL = 3, WINDOW_TOP = 7; // ft — wall below and above a window
 
-type Mode = 'look' | 'door' | 'window' | 'gap' | 'remove';
+type Mode = 'look' | 'gap' | 'remove' | 'door' | 'door2' | 'slider' | 'window' | 'window2';
+const isPlace = (m: Mode): m is 'door' | 'door2' | 'slider' | 'window' | 'window2' => (OPENING_SYMBOLS as string[]).includes(m);
 const MODE_HINT: Record<Mode, string> = {
   look: 'Drag to turn · pinch or scroll to zoom · right-drag or two fingers to slide. Walls are 9 ft; cameras, APs and speakers sit at the ceiling.',
   door: 'Tap a wall to put a door there.',
+  door2: 'Tap a wall to put a double door there.',
+  slider: 'Tap a wall to put a sliding glass door there.',
   window: 'Tap a wall to put a window there.',
+  window2: 'Tap a wall to put a wide window there.',
   gap: 'Tap a wall to cut a 3 ft opening there. Make it wider in 2D (drag its ends).',
   remove: 'Tap a door, window, opening or item to remove it. Tap a stretch of wall to take that stretch out.',
 };
@@ -33,6 +37,8 @@ const MODE_HINT: Record<Mode, string> = {
 /** How high each symbol sits, in feet. */
 const MOUNT: Record<SymbolKind, number> = {
   camera: 8.5, ap: 8.85, speaker: 8.85, drop: 1.5, outlet: 1.25, tv: 5, reader: 4, rack: 0, door: 0, window: 3,
+  door2: 0, slider: 0, window2: 3,
+  table: 0, conftable: 0, desk: 0, chair: 0, sofa: 0, cabinet: 0, shelf: 0, counter: 0, bench: 0,
   // Network gear on its own (not drawn inside a rack) is shown wall-mounted.
   switch: 5, router: 4.5, firewall: 4.5, modem: 4, patch: 5.5, server: 0, nvr: 4, ups: 0, starlink: 11,
   tablet: 4, pos: 3.5, pc: 2.5, printer: 3, phone: 3,
@@ -70,7 +76,53 @@ function wallMesh(a: { x: number; y: number }, b: { x: number; y: number }, heig
   return m;
 }
 
+/** Furniture to size: simple boxes, the right height (table tops at 2.5 ft, seats at 1.5 ft). */
+function furnitureObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D | null {
+  const size = FURNITURE_SIZE[s.sym];
+  if (!size) return null;
+  const { w, d } = size;
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: new THREE.Color(symbolInfo(s.sym).color), roughness: 0.7 });
+  const light = new THREE.MeshStandardMaterial({ color: 0xe8e0d4, roughness: 0.8 });
+  const box = (bw: number, bh: number, bd: number, x: number, y: number, z: number, mat: THREE.Material) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  };
+  switch (s.sym) {
+    case 'table': case 'conftable': case 'desk': {
+      box(w, 0.15, d, 0, 2.45, 0, wood);
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(0.15, 2.4, 0.15, x * (w / 2 - 0.2), 1.2, z * (d / 2 - 0.2), wood);
+      if (s.sym === 'desk') box(w - 0.4, 1.6, 0.08, 0, 1.4, -d / 2 + 0.2, wood); // modesty panel
+      break;
+    }
+    case 'chair':
+      box(w, 0.2, d, 0, 1.5, 0, wood);
+      box(w, 1.6, 0.15, 0, 2.3, -d / 2 + 0.08, wood);
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(0.12, 1.4, 0.12, x * (w / 2 - 0.15), 0.7, z * (d / 2 - 0.15), wood);
+      break;
+    case 'sofa': case 'bench':
+      box(w, s.sym === 'sofa' ? 1.4 : 0.25, d, 0, s.sym === 'sofa' ? 0.7 : 1.5, 0, s.sym === 'sofa' ? wood : light);
+      box(w, s.sym === 'sofa' ? 1.4 : 1.4, 0.4, 0, s.sym === 'sofa' ? 2.1 : 2.2, -d / 2 + 0.2, wood);
+      if (s.sym === 'sofa') { box(0.5, 2, d, -w / 2 + 0.25, 1, 0, wood); box(0.5, 2, d, w / 2 - 0.25, 1, 0, wood); }
+      else for (const x of [-1, 1]) box(0.2, 1.4, d * 0.8, x * (w / 2 - 0.3), 0.7, 0, wood);
+      break;
+    case 'cabinet': box(w, 3, d, 0, 1.5, 0, light); break;
+    case 'counter': box(w, 0.15, d, 0, 3.05, 0, wood); box(w, 3, d - 0.2, 0, 1.5, 0.1, light); break;
+    case 'shelf': {
+      for (const x of [-1, 1]) box(0.08, 6, d, x * (w / 2 - 0.04), 3, 0, light);
+      for (let y = 0.3; y <= 6; y += 1.4) box(w, 0.08, d, 0, y, 0, wood);
+      break;
+    }
+  }
+  g.position.set(s.at.x, 0, s.at.y);
+  g.rotation.y = -(s.rot * Math.PI) / 180;
+  return g;
+}
+
 function symbolObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D {
+  const piece = furnitureObject(s);
+  if (piece) return piece;
   const info = symbolInfo(s.sym);
   const color = new THREE.Color(info.color);
   const group = new THREE.Group();
@@ -135,9 +187,30 @@ function symbolObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D {
       body = new THREE.Mesh(new THREE.BoxGeometry(3, 7, 0.15), new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.45 }));
       body.position.y = 3.5;
       break;
-    case 'window':
-      body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3, 0.12), new THREE.MeshStandardMaterial({ color: 0x9fc6ea, transparent: true, opacity: 0.5 }));
-      body.position.y = y + 1.5;
+    case 'door2': {
+      // Two leaves, a hair apart.
+      body = new THREE.Mesh(new THREE.BoxGeometry(2.95, 7, 0.15), new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.45 }));
+      body.position.set(-1.5, 3.5, 0);
+      const other = new THREE.Mesh(new THREE.BoxGeometry(2.95, 7, 0.15), new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.45 }));
+      other.position.set(1.5, 3.5, 0);
+      group.add(other);
+      break;
+    }
+    case 'slider': {
+      // Glass in a thin dark frame.
+      body = new THREE.Mesh(new THREE.BoxGeometry(6, 7, 0.1), new THREE.MeshStandardMaterial({ color: 0x9fc6ea, transparent: true, opacity: 0.38, roughness: 0.1 }));
+      body.position.y = 3.5;
+      const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(6, 7, 0.12)), new THREE.LineBasicMaterial({ color: 0x37474f }));
+      frame.position.y = 3.5;
+      const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.08, 7, 0.14), new THREE.MeshStandardMaterial({ color: 0x37474f }));
+      mullion.position.y = 3.5;
+      group.add(frame, mullion);
+      break;
+    }
+    case 'window': case 'window2':
+      // Glass from the sill (3 ft) to the head (7 ft), where the wall picks up again.
+      body = new THREE.Mesh(new THREE.BoxGeometry(s.sym === 'window2' ? 6 : 3.2, 4, 0.12), new THREE.MeshStandardMaterial({ color: 0x9fc6ea, transparent: true, opacity: 0.5 }));
+      body.position.y = y + 2;
       break;
     default:
       body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.25), mat);
@@ -241,8 +314,8 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
     // Walls (drawn ones and room sides), cut around doors, windows and openings.
     const openings = openingsOf(sketch.shapes);
     for (const run of wallRuns(sketch.shapes)) {
-      const color = run.room ? '#e9e4da' : '#d9d2c4';
-      const opacity = run.room && !cutaway ? 0.92 : 1;
+      const color = run.glass ? '#9fc6ea' : run.room ? '#e9e4da' : '#d9d2c4';
+      const opacity = run.glass ? 0.38 : run.room && !cutaway ? 0.92 : 1;
       for (const p of wallPieces(run, openings)) {
         const parts: [number, number][] = p.kind === 'solid' ? [[0, wallH]]
           : p.kind === 'door' ? [[DOOR_TOP, wallH]]
@@ -360,7 +433,7 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
         if (m === 'gap') {
           const g = gapAt(sketch.shapes, p);
           if (g) add({ id: newId(), kind: 'gap', ...g });
-        } else {
+        } else if (isPlace(m)) {
           const w = snapToWall(sketch.shapes, p);
           if (w) add({ id: newId(), kind: 'symbol', sym: m, at: w.at, rot: w.rot, label: '' });
         }
@@ -393,6 +466,7 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
   }, [sketch, cutaway]);
 
   const pad: React.CSSProperties = { width: 38, height: 38, borderRadius: 10, border: '1px solid #d8dde5', background: 'rgba(255,255,255,0.95)', color: '#0E1B2E', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.12)' };
+  const side: React.CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: '100%', padding: '8px 2px', borderRadius: 8, border: 'none', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 10, lineHeight: 1.15, textAlign: 'center', cursor: 'pointer', flexShrink: 0 };
   const btn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
   return (
     <div role="dialog" aria-modal="true" aria-label="3D model" style={{ position: 'fixed', inset: 0, zIndex: 320, display: 'flex', flexDirection: 'column', background: '#f2efe9' }}>
@@ -402,25 +476,30 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
         <button type="button" onClick={() => setCutaway((v) => !v)} aria-pressed={cutaway} style={{ ...btn, background: cutaway ? '#C9A24B' : 'transparent', color: cutaway ? '#0E1B2E' : '#fff' }}><Scissors size={15} /> Cut away</button>
         <button type="button" onClick={() => resetRef.current()} aria-label="Back to the starting view" style={btn}><RotateCcw size={15} /></button>
       </div>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      {/* Edit tools down the left (Fred, 2026-10-06: "menu bar to the left") */}
       {editable && (
-        <div style={{ display: 'flex', gap: 6, padding: '6px 10px', background: '#13284A', overflowX: 'auto', flexShrink: 0 }} aria-label="Edit in 3D">
+        <nav style={{ width: 78, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 4px', background: '#13284A', overflowY: 'auto' }} aria-label="Edit in 3D">
           {([
-            ['look', 'Look around', <Rotate3d key="i" size={15} />],
-            ['door', 'Add door', <DoorOpen key="i" size={15} />],
-            ['window', 'Add window', <AppWindow key="i" size={15} />],
-            ['gap', 'Cut opening', <SquareDashed key="i" size={15} />],
-            ['remove', 'Remove', <Eraser key="i" size={15} />],
+            ['look', 'Look around', <Rotate3d key="i" size={17} />],
+            ['door', 'Door', <DoorOpen key="i" size={17} />],
+            ['door2', 'Double door', <DoorOpen key="i" size={17} />],
+            ['slider', 'Sliding glass', <DoorOpen key="i" size={17} />],
+            ['window', 'Window', <AppWindow key="i" size={17} />],
+            ['window2', 'Wide window', <AppWindow key="i" size={17} />],
+            ['gap', 'Cut opening', <SquareDashed key="i" size={17} />],
+            ['remove', 'Remove', <Eraser key="i" size={17} />],
           ] as [Mode, string, React.ReactNode][]).map(([m, label, icon]) => (
             <button key={m} type="button" onClick={() => setMode(m)} aria-pressed={mode === m}
-              style={{ ...btn, flexShrink: 0, background: mode === m ? '#C9A24B' : 'transparent', color: mode === m ? '#0E1B2E' : '#fff' }}>
-              {icon} {label}
+              style={{ ...side, background: mode === m ? '#C9A24B' : 'transparent', color: mode === m ? '#0E1B2E' : '#fff' }}>
+              {icon}<span>{label}</span>
             </button>
           ))}
           <button type="button" onClick={onUndo} disabled={!canUndo} aria-label="Undo"
-            style={{ ...btn, flexShrink: 0, opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'default' }}><Undo2 size={15} /> Undo</button>
-        </div>
+            style={{ ...side, opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'default' }}><Undo2 size={16} /><span>Undo</span></button>
+        </nav>
       )}
-      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
         <div ref={mountRef} style={{ position: 'absolute', inset: 0, cursor: mode === 'look' ? 'grab' : 'crosshair' }} />
         <div style={{ position: 'absolute', left: 10, bottom: 10, display: 'grid', gridTemplateColumns: 'repeat(3, 38px)', gridTemplateRows: 'repeat(3, 38px)', gap: 4 }} aria-label="Move around">
           <span />
@@ -437,6 +516,7 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
           <button type="button" onClick={() => zoomRef.current(0.8)} aria-label="Zoom in" style={pad}><Plus size={18} /></button>
           <button type="button" onClick={() => zoomRef.current(1.25)} aria-label="Zoom out" style={pad}><Minus size={18} /></button>
         </div>
+      </div>
       </div>
       <div style={{ padding: '6px 12px', fontSize: 12, color: mode === 'look' ? '#455A64' : '#0E1B2E', fontWeight: mode === 'look' ? 400 : 700, background: mode === 'look' ? '#fff' : '#FBF5E6', borderTop: '1px solid #e2e6ec' }}>
         {MODE_HINT[mode]}

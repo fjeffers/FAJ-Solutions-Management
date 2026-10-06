@@ -11,17 +11,17 @@ import dynamic from 'next/dynamic';
 import {
   ArrowUpRight, Camera, Circle, Eraser, Grid3x3, Hand, Highlighter, Image as ImageIcon, Magnet, Minus, MousePointer2,
   Pencil, Plus, Redo2, Save, Square, Trash2, Type, Undo2, X, Maximize, Cable, BrickWall, LayoutPanelTop, Loader2, Box,
-  Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, DoorOpen,
+  Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, DoorOpen, DoorClosed, AppWindow, SquareDashed,
 } from 'lucide-react';
 import {
-  CABLE_TYPES, COLORS, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
+  CABLE_TYPES, COLORS, FURNITURE_SIZE, OPENING_SYMBOLS, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
   sqft, summarize, symbolInfo, type CableType, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
 
 // The 3D model (Fred, 2026-10-06: "also 3d model") — three.js, loaded only when opened.
 const Sketch3D = dynamic(() => import('./Sketch3D'), { ssr: false });
 
-type Tool = 'select' | 'hand' | 'moveall' | 'opening' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
+type Tool = 'select' | 'hand' | 'moveall' | 'opening' | 'glass' | 'doors' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
   | 'room' | 'wall' | 'cable' | 'symbol' | 'photo' | 'eraser';
 
 const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' | 'draw' | 'edit' }[] = [
@@ -31,8 +31,11 @@ const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' |
   { tool: 'moveall', label: 'Move all', icon: <Move size={18} />, group: 'edit' },
   { tool: 'room', label: 'Room', icon: <LayoutPanelTop size={18} />, group: 'plan' },
   { tool: 'wall', label: 'Wall', icon: <BrickWall size={18} />, group: 'plan' },
+  // Fred, 2026-10-06: "where are the windows, doors, glass".
+  { tool: 'doors', label: 'Doors & windows', icon: <DoorClosed size={18} />, group: 'plan' },
+  { tool: 'glass', label: 'Glass wall', icon: <AppWindow size={18} />, group: 'plan' },
   // Fred, 2026-10-06: "delete a portion of the wall or room".
-  { tool: 'opening', label: 'Opening', icon: <DoorOpen size={18} />, group: 'plan' },
+  { tool: 'opening', label: 'Opening', icon: <SquareDashed size={18} />, group: 'plan' },
   { tool: 'cable', label: 'Cable run', icon: <Cable size={18} />, group: 'plan' },
   { tool: 'symbol', label: 'Symbol', icon: <Plus size={18} />, group: 'plan' },
   { tool: 'photo', label: 'Photo pin', icon: <Camera size={18} />, group: 'plan' },
@@ -74,6 +77,9 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const [dirty, setDirty] = useState(false);
   const [tool, setTool] = useState<Tool>('room');
   const [sym, setSym] = useState<SymbolKind>('camera');
+  const [doorKind, setDoorKind] = useState<SymbolKind>('door');
+  // Symbol picker: one group at a time, so nothing is lost off the end of the row.
+  const [symGroup, setSymGroup] = useState<(typeof SYMBOL_GROUPS)[number]['group']>('network');
   const [cableType, setCableType] = useState<CableType>('cat6');
   const [color, setColor] = useState(COLORS[0]);
   const [width, setWidth] = useState(WIDTHS[1].w);
@@ -173,7 +179,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       return;
     }
     const raw = toWorld(e.clientX, e.clientY);
-    const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol' || tool === 'opening';
+    const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol' || tool === 'opening' || tool === 'glass' || tool === 'doors';
     const p = snapIf(raw, plan || tool === 'line' || tool === 'arrow' || tool === 'box');
 
     if (tool === 'hand' || e.button === 1) { gesture.current = { kind: 'pan', from: { x: e.clientX, y: e.clientY }, view }; return; }
@@ -199,6 +205,14 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     if (tool === 'pen' || tool === 'marker') { setDraft({ kind: 'stroke', tool, pts: [raw] }); return; }
     if (tool === 'cable') {
       setDraft((d) => (d?.kind === 'cable' ? { ...d, pts: [...d.pts, p] } : { kind: 'cable', pts: [p], hover: p }));
+      return;
+    }
+    if (tool === 'doors') {
+      // Tapped on (or near) a wall: the door or window sits in it, turned to match.
+      const s: Shape = seatInWall({ id: newId(), kind: 'symbol', sym: doorKind, at: p, label: '', rot: 0 }, sketch.shapes);
+      addShape(s);
+      setSelectedId(s.id);
+      if (!snapToWall(sketch.shapes, p)) setNotice('That one isn\u2019t on a wall. Drag it onto a wall, or tap right on the wall line.');
       return;
     }
     if (tool === 'symbol') {
@@ -302,8 +316,8 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         addShape(s); setSelectedId(s.id);
       } else if ((t === 'box' || t === 'ellipse') && r.w >= 0.3 && r.h >= 0.3) {
         addShape({ id: newId(), kind: t, ...r, color, width, fill });
-      } else if (t === 'wall' && Math.hypot(b.x - a.x, b.y - a.y) >= 0.5) {
-        addShape({ id: newId(), kind: 'wall', a, b, color });
+      } else if ((t === 'wall' || t === 'glass') && Math.hypot(b.x - a.x, b.y - a.y) >= 0.5) {
+        addShape({ id: newId(), kind: 'wall', a, b, color, ...(t === 'glass' && { glass: true }) });
       } else if (t === 'opening') {
         const gap = gapOnWall(sketch.shapes, a, b);
         if (gap) { const s: Shape = { id: newId(), kind: 'gap', ...gap }; addShape(s); setSelectedId(s.id); }
@@ -392,6 +406,26 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     </g>
   );
 
+  /** A piece of furniture to size: its footprint, turned, with its name inside. */
+  const furniture = (s: Extract<Shape, { kind: 'symbol' }>, color: string, label: string) => {
+    const { w, d } = FURNITURE_SIZE[s.sym]!;
+    const sel = s.id === selectedId;
+    return (
+      <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
+        <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={Math.min(0.3, d / 6)} fill="#F3EDE3" stroke={color} strokeWidth={0.1} />
+        {/* Backs for seats; a door line for cabinets */}
+        {(s.sym === 'chair' || s.sym === 'sofa' || s.sym === 'bench') && <rect x={-w / 2} y={-d / 2} width={w} height={Math.min(0.5, d / 4)} fill={color} fillOpacity={0.5} />}
+        {s.sym === 'sofa' && <><rect x={-w / 2} y={-d / 2} width={0.5} height={d} fill={color} fillOpacity={0.35} /><rect x={w / 2 - 0.5} y={-d / 2} width={0.5} height={d} fill={color} fillOpacity={0.35} /></>}
+        {s.sym === 'cabinet' && <line x1={0} y1={-d / 2} x2={0} y2={d / 2} stroke={color} strokeWidth={0.06} />}
+        {s.sym === 'shelf' && [-1, 0, 1].map((i) => <line key={i} x1={(i * w) / 4} y1={-d / 2} x2={(i * w) / 4} y2={d / 2} stroke={color} strokeWidth={0.05} />)}
+        {s.sym !== 'chair' && w >= 3 && (
+          <text x={0} y={0.05} fontSize={Math.min(0.6, d * 0.32)} textAnchor="middle" dominantBaseline="middle" fill={color} fontWeight={700} fontFamily="Inter, system-ui, sans-serif" pointerEvents="none">{s.label || label}</text>
+        )}
+        {sel && <rect x={-w / 2 - 0.3} y={-d / 2 - 0.3} width={w + 0.6} height={d + 0.6} fill="none" stroke="#C9A24B" strokeWidth={0.12} strokeDasharray="0.5 0.3" data-noexport />}
+      </g>
+    );
+  };
+
   /** Wall lines broken where a door, window or opening sits (a window keeps a thin line). */
   const wallLines = (key: string, runs: { a: Pt; b: Pt }[], stroke: string, width: number, isDraft: boolean) =>
     runs.flatMap((run, i) => (isDraft ? [{ ...run, kind: 'solid' as const }] : wallPieces(run, openings)).map((p, j) => (
@@ -430,7 +464,9 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         const len = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
         return (
           <g key={s.id}>
-            {wallLines(s.id, [{ a: s.a, b: s.b }], s.color, 0.45, isDraft)}
+            {s.glass
+              ? <>{wallLines(`${s.id}-g`, [{ a: s.a, b: s.b }], '#5FA8D3', 0.3, isDraft)}{wallLines(`${s.id}-gi`, [{ a: s.a, b: s.b }], '#fff', 0.08, isDraft)}</>
+              : wallLines(s.id, [{ a: s.a, b: s.b }], s.color, 0.45, isDraft)}
             {tag(midpoint([s.a, s.b]), feet(len), `${s.id}-l`, LABEL * 0.8, s.color)}
             {sel && <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="#C9A24B" strokeWidth={0.9} strokeOpacity={0.4} data-noexport />}
           </g>
@@ -484,7 +520,26 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         const r = 0.9;
         return (
           <g key={s.id}>
-            {s.sym === 'door' ? (
+            {isFurniture(s.sym) ? furniture(s, info.color, info.label) : s.sym === 'door2' ? (
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
+                <line x1={-3} y1={0} x2={3} y2={0} stroke={info.color} strokeWidth={0.2} />
+                <line x1={-3} y1={0} x2={-3} y2={-3} stroke={info.color} strokeWidth={0.15} />
+                <line x1={3} y1={0} x2={3} y2={-3} stroke={info.color} strokeWidth={0.15} />
+                <path d="M 0 0 A 3 3 0 0 0 -3 -3 M 0 0 A 3 3 0 0 1 3 -3" fill="none" stroke={info.color} strokeWidth={0.1} strokeDasharray="0.3 0.2" />
+              </g>
+            ) : s.sym === 'slider' ? (
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
+                <rect x={-3} y={-0.3} width={6} height={0.6} fill="#E3F2FD" stroke={info.color} strokeWidth={0.08} />
+                <line x1={-3} y1={-0.12} x2={0.4} y2={-0.12} stroke={info.color} strokeWidth={0.14} />
+                <line x1={-0.4} y1={0.12} x2={3} y2={0.12} stroke={info.color} strokeWidth={0.14} />
+              </g>
+            ) : s.sym === 'window2' ? (
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
+                <rect x={-3} y={-0.25} width={6} height={0.5} fill="#fff" stroke={info.color} strokeWidth={0.12} />
+                <line x1={-3} y1={0} x2={3} y2={0} stroke={info.color} strokeWidth={0.08} />
+                <line x1={0} y1={-0.25} x2={0} y2={0.25} stroke={info.color} strokeWidth={0.08} />
+              </g>
+            ) : s.sym === 'door' ? (
               <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
                 <line x1={-1.5} y1={0} x2={1.5} y2={0} stroke={info.color} strokeWidth={0.2} />
                 <path d="M -1.5 0 A 3 3 0 0 1 1.5 -3" fill="none" stroke={info.color} strokeWidth={0.1} strokeDasharray="0.3 0.2" />
@@ -501,8 +556,8 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
                 <text x={s.at.x} y={s.at.y} fontSize={info.code.length > 1 ? 0.75 : 0.95} textAnchor="middle" dominantBaseline="central" fill={info.color} fontWeight={800} fontFamily="Inter, system-ui, sans-serif">{info.code}</text>
               </>
             )}
-            {s.label && tag({ x: s.at.x, y: s.at.y + 1.7 }, s.label, `${s.id}-l`, LABEL * 0.7, info.color)}
-            {sel && <circle cx={s.at.x} cy={s.at.y} r={1.4} fill="none" stroke="#C9A24B" strokeWidth={0.15} strokeDasharray="0.4 0.25" data-noexport />}
+            {s.label && !isFurniture(s.sym) && tag({ x: s.at.x, y: s.at.y + 1.7 }, s.label, `${s.id}-l`, LABEL * 0.7, info.color)}
+            {sel && !isFurniture(s.sym) && <circle cx={s.at.x} cy={s.at.y} r={1.4} fill="none" stroke="#C9A24B" strokeWidth={0.15} strokeDasharray="0.4 0.25" data-noexport />}
           </g>
         );
       }
@@ -536,7 +591,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     const r = roomFromCorners(a, b);
     if (t === 'room') return renderShape({ id: '_draft', kind: 'room', ...r, name: 'New room', color }, true);
     if (t === 'box' || t === 'ellipse') return renderShape({ id: '_draft', kind: t, ...r, color, width, fill }, true);
-    if (t === 'wall') return renderShape({ id: '_draft', kind: 'wall', a, b, color }, true);
+    if (t === 'wall' || t === 'glass') return renderShape({ id: '_draft', kind: 'wall', a, b, color, ...(t === 'glass' && { glass: true }) }, true);
     if (t === 'opening') {
       const gap = gapOnWall(sketch.shapes, a, b);
       return gap ? renderShape({ id: '_draft', kind: 'gap', ...gap }, true) : <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#C62828" strokeWidth={0.12} strokeDasharray="0.4 0.3" />;
@@ -549,9 +604,9 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const toolBtn = (t: (typeof TOOLS)[number]) => (
     <button key={t.tool} type="button" onClick={() => { if (draft?.kind === 'cable') finishCable(); setTool(t.tool); setDraft(null); }}
       title={t.label} aria-label={t.label} aria-pressed={tool === t.tool}
-      style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 54, padding: '6px 4px', borderRadius: 8, border: 'none', cursor: 'pointer',
-        background: tool === t.tool ? '#C9A24B' : 'transparent', color: tool === t.tool ? '#0E1B2E' : '#fff', fontSize: 10.5, fontWeight: 700 }}>
-      {t.icon}<span style={{ whiteSpace: 'nowrap' }}>{t.label.split(' / ')[0]}</span>
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%', padding: '7px 2px', borderRadius: 8, border: 'none', cursor: 'pointer', flexShrink: 0,
+        background: tool === t.tool ? '#C9A24B' : 'transparent', color: tool === t.tool ? '#0E1B2E' : '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1.15 }}>
+      {t.icon}<span style={{ textAlign: 'center' }}>{t.label.split(' / ')[0]}</span>
     </button>
   );
   const smallBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, height: 32, minWidth: 32, padding: '0 8px', borderRadius: 8, border: '1px solid #d8dde5', background: '#fff', color: '#0E1B2E', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' };
@@ -571,32 +626,41 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         </button>
       </div>
 
-      {/* Tools */}
-      <div style={{ display: 'flex', gap: 2, padding: '4px 6px', background: '#13284A', overflowX: 'auto', flexShrink: 0 }}>
-        {TOOLS.filter((t) => t.group === 'edit' && t.tool !== 'eraser').map(toolBtn)}
-        <span style={{ width: 1, background: 'rgba(255,255,255,0.2)', margin: '4px 4px' }} />
-        {TOOLS.filter((t) => t.group === 'plan').map(toolBtn)}
-        <span style={{ width: 1, background: 'rgba(255,255,255,0.2)', margin: '4px 4px' }} />
-        {TOOLS.filter((t) => t.group === 'draw').map(toolBtn)}
-        <span style={{ width: 1, background: 'rgba(255,255,255,0.2)', margin: '4px 4px' }} />
-        {TOOLS.filter((t) => t.tool === 'eraser').map(toolBtn)}
-      </div>
-
       {/* Options for the current tool */}
       {/* One row that swipes sideways on a phone, so the plan keeps its room. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fff', borderBottom: '1px solid #e2e6ec', flexWrap: 'nowrap', overflowX: 'auto', whiteSpace: 'nowrap', fontSize: 12, flexShrink: 0 }}>
         {tool === 'symbol' ? (
-          SYMBOL_GROUPS.map((g) => (
-            <span key={g.group} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: '#90a4ae', marginLeft: 4 }}>{g.label}</span>
-              {SYMBOLS.filter((s) => s.group === g.group).map((s) => (
-                <button key={s.kind} type="button" onClick={() => setSym(s.kind)} aria-pressed={sym === s.kind}
-                  style={{ ...smallBtn, borderColor: sym === s.kind ? s.color : '#d8dde5', background: sym === s.kind ? `${s.color}18` : '#fff', color: s.color }}>
-                  {s.code && <b>{s.code}</b>} {s.label}
+          <>
+            <span role="group" aria-label="Kind of symbol" style={{ display: 'inline-flex', flexShrink: 0, border: '1px solid #d8dde5', borderRadius: 8, overflow: 'hidden' }}>
+              {SYMBOL_GROUPS.map((g) => (
+                <button key={g.group} type="button" onClick={() => { setSymGroup(g.group); setSym(SYMBOLS.find((s) => s.group === g.group)!.kind); }} aria-pressed={symGroup === g.group}
+                  style={{ height: 32, padding: '0 10px', border: 'none', borderRight: '1px solid #e2e6ec', fontSize: 12, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap',
+                    background: symGroup === g.group ? '#0E1B2E' : '#fff', color: symGroup === g.group ? '#fff' : '#0E1B2E' }}>
+                  {g.label}
                 </button>
               ))}
             </span>
-          ))
+            {SYMBOLS.filter((s) => s.group === symGroup).map((s) => (
+              <button key={s.kind} type="button" onClick={() => setSym(s.kind)} aria-pressed={sym === s.kind}
+                style={{ ...smallBtn, borderColor: sym === s.kind ? s.color : '#d8dde5', background: sym === s.kind ? `${s.color}18` : '#fff', color: s.color }}>
+                {s.code && <b>{s.code}</b>} {s.label}
+              </button>
+            ))}
+            {symGroup === 'furniture' && <span style={{ color: '#455A64', marginLeft: 4 }}>Drawn to size. Select one and use Turn to face it another way.</span>}
+          </>
+        ) : tool === 'doors' ? (
+          <>
+            {OPENING_SYMBOLS.map((k) => {
+              const info = SYMBOLS.find((x) => x.kind === k)!;
+              return (
+                <button key={k} type="button" onClick={() => setDoorKind(k)} aria-pressed={doorKind === k}
+                  style={{ ...smallBtn, borderColor: doorKind === k ? '#0E1B2E' : '#d8dde5', background: doorKind === k ? '#0E1B2E' : '#fff', color: doorKind === k ? '#fff' : '#0E1B2E' }}>
+                  {k.startsWith('window') ? <AppWindow size={14} /> : <DoorOpen size={14} />} {info.label} <span style={{ opacity: 0.6, fontWeight: 600 }}>{OPENING_WIDTH[k]} ft</span>
+                </button>
+              );
+            })}
+            <span style={{ color: '#455A64', marginLeft: 4 }}>Tap on a wall — it sits in the wall, facing the right way.</span>
+          </>
         ) : tool === 'cable' ? (
           <>
             {CABLE_TYPES.map((c) => (
@@ -623,7 +687,8 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}><input type="checkbox" checked={fill} onChange={(e) => setFill(e.target.checked)} /> Fill</label>
             )}
             {tool === 'room' && <span style={{ color: '#455A64' }}>Drag from one corner to the other. Each square is 1 ft.</span>}
-            {tool === 'opening' && <span style={{ color: '#455A64' }}>Drag along a wall or a room&apos;s side to take that stretch of wall out. Doors and windows (in Symbol) sit in a wall by themselves.</span>}
+            {tool === 'glass' && <span style={{ color: '#455A64' }}>Drag where the glass goes, like a wall (a storefront or glass partition). Put a door in it with Doors &amp; windows.</span>}
+            {tool === 'opening' && <span style={{ color: '#455A64' }}>Drag along a wall or a room&apos;s side to take that stretch of wall out.</span>}
             {tool === 'moveall' && <span style={{ color: '#455A64' }}>Drag anywhere to move the whole site. Arrow keys or the pad slide the view.</span>}
             {tool === 'select' && <span style={{ color: '#455A64' }}>Tap an item to select it; drag to move it. Drag the white squares to change its size or move a wall&apos;s end. Arrow keys nudge it (Shift = 5 ft).</span>}
             {tool === 'photo' && <span style={{ color: '#455A64' }}>{busyUpload ? 'Uploading…' : 'Tap the spot, then take or choose the photo.'}</span>}
@@ -637,8 +702,19 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       </div>
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 320px', minWidth: 0, minHeight: 260, display: 'flex' }}>
+        {/* Tools, down the left (Fred, 2026-10-06: "menu bar to the left") */}
+        <nav aria-label="Tools" style={{ width: 70, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2, padding: '6px 4px', background: '#13284A', overflowY: 'auto' }}>
+          {TOOLS.filter((t) => t.group === 'edit' && t.tool !== 'eraser').map(toolBtn)}
+          <span style={{ height: 1, flexShrink: 0, background: 'rgba(255,255,255,0.2)', margin: '4px 6px' }} />
+          {TOOLS.filter((t) => t.group === 'plan').map(toolBtn)}
+          <span style={{ height: 1, flexShrink: 0, background: 'rgba(255,255,255,0.2)', margin: '4px 6px' }} />
+          {TOOLS.filter((t) => t.group === 'draw').map(toolBtn)}
+          <span style={{ height: 1, flexShrink: 0, background: 'rgba(255,255,255,0.2)', margin: '4px 6px' }} />
+          {TOOLS.filter((t) => t.tool === 'eraser').map(toolBtn)}
+        </nav>
         {/* Drawing area */}
-        <div ref={wrapRef} style={{ flex: '1 1 320px', minWidth: 0, minHeight: 260, position: 'relative', background: '#fff', touchAction: 'none' }}>
+        <div ref={wrapRef} style={{ flex: '1 1 auto', minWidth: 0, position: 'relative', background: '#fff', touchAction: 'none' }}>
           <svg ref={svgRef} viewBox={`${view.x} ${view.y} ${view.w} ${viewH}`} preserveAspectRatio="xMidYMid meet"
             style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: tool === 'hand' ? 'grab' : tool === 'select' ? 'default' : 'crosshair' }}
             onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
@@ -705,6 +781,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
           {error && <div role="alert" style={{ position: 'absolute', left: 10, top: 10, right: 60, padding: '8px 12px', borderRadius: 8, background: '#fde8e8', color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>{error}</div>}
         </div>
 
+        </div>
         {/* Details: the selected item, and the counts */}
         {showPanel && (
           <div style={{ flex: '0 1 280px', minWidth: 240, maxHeight: '100%', overflowY: 'auto', background: '#fff', borderLeft: '1px solid #e2e6ec', padding: 12, display: 'flex', flexDirection: 'column', gap: 14, fontSize: 13 }}>
@@ -808,7 +885,7 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
         style={{ width: '100%', height: 34, fontSize: 16, padding: '0 8px', border: '1px solid #d8dde5', borderRadius: 6 }} />
     </label>
   );
-  const heading = { room: 'Room', wall: 'Wall', gap: 'Opening in a wall', cable: 'Cable run', pen: 'Drawing', line: 'Line', box: 'Box', ellipse: 'Circle', text: 'Text', symbol: shape.kind === 'symbol' ? symbolInfo(shape.sym).label : '', photo: 'Photo' }[shape.kind];
+  const heading = { room: 'Room', wall: shape.kind === 'wall' && shape.glass ? 'Glass wall' : 'Wall', gap: 'Opening in a wall', cable: 'Cable run', pen: 'Drawing', line: 'Line', box: 'Box', ellipse: 'Circle', text: 'Text', symbol: shape.kind === 'symbol' ? symbolInfo(shape.sym).label : '', photo: 'Photo' }[shape.kind];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#0E1B2E' }}>{heading}</div>
@@ -833,13 +910,27 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
           </div>
         </>
       )}
-      {shape.kind === 'symbol' && (shape.sym === 'door' || shape.sym === 'window') && (
-        <button type="button" onClick={() => onChange({ rot: (shape.rot + 90) % 360 } as Partial<Shape>)}
-          style={{ alignSelf: 'flex-start', height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #d8dde5', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-          Turn 90°
-        </button>
+      {shape.kind === 'wall' && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
+          <input type="checkbox" checked={!!shape.glass} onChange={(e) => onChange({ glass: e.target.checked } as Partial<Shape>)} style={{ width: 18, height: 18 }} />
+          Glass (storefront or glass partition)
+        </label>
       )}
-      {shape.kind === 'symbol' && (shape.sym === 'door' || shape.sym === 'window') && (
+      {shape.kind === 'symbol' && (isOpeningSymbol(shape.sym) || isFurniture(shape.sym)) && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => onChange({ rot: (shape.rot + 90) % 360 } as Partial<Shape>)}
+            style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #d8dde5', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+            Turn 90°
+          </button>
+          {isOpeningSymbol(shape.sym) && (
+            <button type="button" onClick={() => onChange({ rot: (shape.rot + 180) % 360 } as Partial<Shape>)}
+              style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #d8dde5', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+              Flip side
+            </button>
+          )}
+        </div>
+      )}
+      {shape.kind === 'symbol' && isOpeningSymbol(shape.sym) && (
         <div style={{ color: '#78909C', fontSize: 12 }}>Put it on a wall and it sits in the wall, with the gap shown in 3D.</div>
       )}
       {shape.kind === 'cable' && (

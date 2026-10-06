@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  dragHandle, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
+  OPENING_SYMBOLS, dragHandle, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
   snapPt, sqft, summarize, summaryLine, type Shape,
 } from './sketch';
 
@@ -195,5 +195,45 @@ describe('doors, windows and openings in walls', () => {
     expect(moveShape(s.shapes[1], 1, 0)).toMatchObject({ a: { x: 2, y: 0 }, b: { x: 5, y: 0 } });
     expect(handlesOf(s.shapes[1]).map((h) => h.id)).toEqual(['a', 'b']);
     expect(snapToWall([box], { x: 50, y: 50 })).toBeNull();
+  });
+});
+
+describe('double doors, sliding glass doors, wide windows and glass walls', () => {
+  const box: Shape = { id: 'r', kind: 'room', x: 0, y: 0, w: 20, h: 10, name: '', color: '#0E1B2E' };
+  const top = wallRuns([box])[0];
+  const len = (p: { a: { x: number; y: number }; b: { x: number; y: number } }) => Math.round(Math.hypot(p.b.x - p.a.x, p.b.y - p.a.y) * 10) / 10;
+
+  it('each sits in a wall at its own width; sliders and double doors are doorways', () => {
+    const at = (sym: 'door2' | 'slider' | 'window2'): Shape => seatInWall({ id: sym, kind: 'symbol', sym, at: { x: 10, y: 0.6 }, label: '', rot: 0 }, [box]);
+    for (const sym of ['door2', 'slider'] as const) {
+      expect(wallPieces(top, openingsOf([at(sym)])).map((p) => `${p.kind} ${len(p)}`)).toEqual(['solid 7', 'door 6', 'solid 7']);
+    }
+    expect(wallPieces(top, openingsOf([at('window2')])).map((p) => `${p.kind} ${len(p)}`)).toEqual(['solid 7', 'window 6', 'solid 7']);
+    expect(OPENING_SYMBOLS).toEqual(['door', 'door2', 'slider', 'window', 'window2']);
+  });
+
+  it('a wide door can be picked anywhere along it', () => {
+    const d: Shape = { id: 'd', kind: 'symbol', sym: 'door2', at: { x: 10, y: 0 }, label: '', rot: 0 };
+    expect(hitTest([d], { x: 12.6, y: 0.2 })?.id).toBe('d');
+  });
+
+  it('a glass wall is kept when saved, and is a wall run doors can sit in', () => {
+    const s = normalizeSketch({ shapes: [{ id: 'g', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 12, y: 0 }, glass: true }, { id: 'w', kind: 'wall', a: { x: 0, y: 5 }, b: { x: 12, y: 5 }, glass: 'yes' }] });
+    expect(s.shapes[0]).toMatchObject({ kind: 'wall', glass: true });
+    expect(s.shapes[1]).not.toHaveProperty('glass');
+    expect(wallRuns(s.shapes).map((r) => r.glass)).toEqual([true, false]);
+    expect(seatInWall({ id: 'd', kind: 'symbol', sym: 'slider', at: { x: 6, y: 0.5 }, label: '', rot: 0 }, s.shapes)).toMatchObject({ at: { x: 6, y: 0 }, rot: 0 });
+  });
+});
+
+describe('furniture', () => {
+  it('is picked anywhere on its footprint, turned or not, and counted', () => {
+    const table: Shape = { id: 't', kind: 'symbol', sym: 'conftable', at: { x: 10, y: 10 }, label: '', rot: 0 };
+    expect(hitTest([table], { x: 14.5, y: 11.5 })?.id).toBe('t'); // 10 x 4 ft: reaches x 15, y 12
+    expect(hitTest([table], { x: 10, y: 14.5 })).toBeNull();
+    const turned: Shape = { ...table, rot: 90 };
+    expect(hitTest([turned], { x: 10, y: 14.5 })?.id).toBe('t');
+    const chairs: Shape[] = [1, 2, 3].map((i) => ({ id: `c${i}`, kind: 'symbol', sym: 'chair', at: { x: i * 3, y: 2 }, label: '', rot: 0 }));
+    expect(summarize({ ...newSketch(), shapes: [table, ...chairs] }).symbols.map((x) => `${x.count} ${x.label}`)).toEqual(['1 Conference table', '3 Chairs']);
   });
 });

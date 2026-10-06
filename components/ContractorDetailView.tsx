@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import {
   ArrowLeft, Plus, DollarSign, Briefcase, FileText, Download,
   Phone, Mail, Building2, Hash, CreditCard, Clock, ChevronDown,
-  ChevronUp, CheckCircle, XCircle, TrendingUp, AlertCircle, CalendarDays, HeartPulse, Pencil,
+  ChevronUp, CheckCircle, XCircle, TrendingUp, AlertCircle, CalendarDays, HeartPulse, Pencil, Smartphone,
 } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO, contractorOwedOnWO, todayISO } from '@/lib/utils';
 import { techJobs, techLedger, ledgerTotals, tenure } from '@/lib/tech-ledger';
@@ -122,6 +122,8 @@ export default function ContractorDetailView({
   onEditPayment,
   onEdit,
   onOpenJob,
+  onSendTechApp,
+  sendingTechApp = false,
 }: {
   contractor: Contractor;
   workOrders: EnrichedWorkOrder[];
@@ -134,7 +136,16 @@ export default function ContractorDetailView({
   onEdit?: () => void;
   /** Open a job from the Time & pay log. */
   onOpenJob?: (id: string) => void;
+  /** Email the tech the tech app and how to sign in. */
+  onSendTechApp?: () => void;
+  sendingTechApp?: boolean;
 }) {
+  const [copied, setCopied] = useState(false);
+  const appLink = typeof window !== 'undefined' ? `${window.location.origin}/tech` : 'https://app.fajsolutions.com/tech';
+  const copyAppLink = async () => {
+    try { await navigator.clipboard.writeText(appLink); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    catch { window.prompt('Copy the tech app link:', appLink); }
+  };
   const [tab, setTab] = useState<'time' | 'jobs' | 'payments' | 'statement'>('time');
   const [expandedWO, setExpandedWO] = useState<string | null>(null);
   const [qbYear, setQbYear] = useState(new Date().getFullYear());
@@ -218,6 +229,13 @@ export default function ContractorDetailView({
                 {contractor.phone && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Phone size={12} color="#0E1B2E" /> {contractor.phone}</span>}
                 {contractor.email && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Mail size={12} color="#0E1B2E" /> {contractor.email}</span>}
                 {contractor.tax_id && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Hash size={12} color="#0E1B2E" /> {contractor.tax_id_type || 'Tax ID'}: {contractor.tax_id}</span>}
+                {/* Their tech app login (Fred, 2026-10-06: "how to send the app to tech"). */}
+                <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 5, color: contractor.auth_user_id ? '#047857' : '#b45309', fontWeight: 600 }}>
+                  <Smartphone size={12} /> {contractor.auth_user_id ? 'Tech app login set up' : 'No tech app login yet'}
+                  <button onClick={copyAppLink} title="Copy the tech app link to text it" style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 700, color: '#0E1B2E', textDecoration: 'underline', cursor: 'pointer' }}>
+                    {copied ? 'Link copied ✓' : 'Copy app link'}
+                  </button>
+                </span>
                 {contractor.hire_date && (
                   <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <CalendarDays size={12} color="#0E1B2E" /> Hired {fmtDate(contractor.hire_date)}
@@ -244,6 +262,16 @@ export default function ContractorDetailView({
               >
                 <DollarSign size={14} /> Log Payment
               </button>
+              {onSendTechApp && (
+                <button
+                  onClick={onSendTechApp}
+                  disabled={sendingTechApp || !contractor.email}
+                  title={contractor.email ? `Email ${contractor.name} the tech app and how to ${contractor.auth_user_id ? 'sign in' : 'create their login'}` : 'Add an email address first (Edit details)'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: '1.5px solid var(--teal, #0E1B2E)', background: 'transparent', color: 'var(--teal, #0E1B2E)', fontSize: 13, fontWeight: 700, cursor: contractor.email ? 'pointer' : 'default', opacity: contractor.email ? 1 : 0.5 }}
+                >
+                  <Smartphone size={14} /> {sendingTechApp ? 'Sending…' : 'Send tech app'}
+                </button>
+              )}
               {onEdit && (
                 <button
                   onClick={onEdit}

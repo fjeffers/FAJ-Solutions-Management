@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, ChevronRight, Send, BookUp } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, ChevronRight, Send, BookUp, Smartphone } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Contractor, EnrichedWorkOrder, Payment } from '@/lib/types';
 import ContractorDetailView from './ContractorDetailView';
@@ -9,7 +9,7 @@ import { CustomFieldList } from '@/components/CustomFieldInputs';
 
 export default function ContractorsView({
   contractors, workOrders, payments, onAdd, onEdit, onDelete, onViewStatement, onAddJob, onAddPayment, onEditPayment,
-  onSendOnboarding, onSendAll, onSyncQuickBooks, busy, onOpenJob,
+  onSendOnboarding, onSendAll, onSyncQuickBooks, onSendTechApp, busy, onOpenJob,
 }: {
   contractors: Contractor[];
   workOrders: EnrichedWorkOrder[];
@@ -24,6 +24,8 @@ export default function ContractorsView({
   onSendOnboarding: (c: Contractor) => void;
   onSendAll: (list: Contractor[]) => void;
   onSyncQuickBooks: (c: Contractor) => void;
+  /** Email a tech the tech app and how to sign in. */
+  onSendTechApp?: (c: Contractor) => void;
   /** Contractor id with a send/sync in flight, or 'ALL' during a bulk send. */
   busy: string | null;
   /** Open a job from the tech's Time & pay log. */
@@ -48,6 +50,8 @@ export default function ContractorsView({
         contractor={current}
         onEdit={() => onEdit(current)}
         onOpenJob={onOpenJob}
+        onSendTechApp={onSendTechApp ? () => onSendTechApp(current) : undefined}
+        sendingTechApp={busy === current.id}
         workOrders={workOrders}
         payments={payments}
         onBack={() => setSelected(null)}
@@ -146,6 +150,16 @@ export default function ContractorsView({
                     onClick={() => onSendOnboarding(c)}>
                     <Send size={13} /> {busy === c.id ? 'Sending…' : !c.email ? 'Needs email' : c.w9_received ? 'Resend' : 'Request W-9'}
                   </button>
+                  {onSendTechApp && (
+                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }}
+                      title={c.email
+                        ? `Email ${c.name} the tech app (app.fajsolutions.com/tech) and how to ${c.auth_user_id ? 'sign in' : 'create their login'}`
+                        : `Add an email address for ${c.name} first — click the pencil to edit`}
+                      disabled={busy === c.id || !c.email}
+                      onClick={() => onSendTechApp(c)}>
+                      <Smartphone size={13} /> {busy === c.id ? 'Sending…' : 'Send tech app'}
+                    </button>
+                  )}
                   {c.w9_received && !c.qbo_vendor_id && (
                     <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }}
                       title={`Push ${c.name}'s W-9 details to QuickBooks as a 1099 vendor`}

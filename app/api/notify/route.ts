@@ -1,3 +1,4 @@
+import { techAppEmail } from '@/lib/tech-app-email';
 import { onboardingEmail } from '@/lib/onboarding-email';
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
@@ -104,6 +105,14 @@ export async function POST(req: NextRequest) {
       portalUrl: portal_url ?? '',
       needsW9: body.needs_w9 !== false,
       needsAgreement: body.needs_agreement !== false,
+    }));
+  } else if (type === 'tech_app') {
+    // The tech app and how to get in (lib/tech-app-email.ts). Tech side only.
+    ({ subject, html } = techAppEmail({
+      name: contractor_name ?? '',
+      email: contractor_email ?? '',
+      appUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com'}/tech`,
+      hasLogin: body.has_login === true,
     }));
   } else if (type === 'w9_filed') {
     // Goes to Fred, not the tech — the tech already knows they filed it.

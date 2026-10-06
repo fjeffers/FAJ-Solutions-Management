@@ -50,7 +50,7 @@ import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
 import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export1099CSV } from '@/lib/export';
 import { logAudit } from '@/lib/audit';
-import { notifyContractor, sendPortalLink, sendOnboarding } from '@/lib/notify';
+import { notifyContractor, sendPortalLink, sendOnboarding, sendTechApp } from '@/lib/notify';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { stockAdjustments } from '@/lib/materials-used';
 import type { StockInPlan } from '@/lib/stock-in';
@@ -613,6 +613,20 @@ export default function HomePage() {
     if (res.ok) await markInviteSent([c.id]);
     setContractorBusy(null);
     if (res.ok) { toastSuccess(`W-9 request sent to ${c.name}`); await loadCore(); }
+    else toastError(`Couldn't email ${c.name}: ${res.error}`);
+  };
+
+  // Fred, 2026-10-06: "also you remove how to send the app to tech". Emails a
+  // tech the tech app (app.fajsolutions.com/tech) and how to get in.
+  const handleSendTechApp = async (c: Contractor) => {
+    if (!c.email) { toastError(`${c.name} needs an email address first`); return; }
+    if (!window.confirm(`Email ${c.name} the tech app and how to sign in?
+
+It goes to ${c.email}.`)) return;
+    setContractorBusy(c.id);
+    const res = await sendTechApp({ contractor_email: c.email, contractor_name: c.name, has_login: !!c.auth_user_id });
+    setContractorBusy(null);
+    if (res.ok) toastSuccess(`Tech app sent to ${c.name}`);
     else toastError(`Couldn't email ${c.name}: ${res.error}`);
   };
 
@@ -1834,6 +1848,7 @@ Go ahead?`)) return;
             onSendOnboarding={handleSendOnboarding}
             onSendAll={handleSendAllOnboarding}
             onSyncQuickBooks={handleSyncQuickBooks}
+            onSendTechApp={handleSendTechApp}
             busy={contractorBusy}
             onOpenJob={(id) => openJobFrom(id, 'contractors')}
           />

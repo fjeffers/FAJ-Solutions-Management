@@ -25,6 +25,8 @@ export type Contractor = {
   emergency_phone?: string | null;
   emergency_relation?: string | null;
   hire_date?: string | null;
+  /** Their tech app login, once they've made one (migration 067). */
+  auth_user_id?: string | null;
   id: string;
   user_id: string;
   name: string;

@@ -52,6 +52,29 @@ export async function sendOnboarding(params: {
   }
 }
 
+/** Email a tech the tech app (app.fajsolutions.com/tech) and how to get in. */
+export async function sendTechApp(params: {
+  contractor_email: string;
+  contractor_name: string;
+  has_login: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!params.contractor_email) return { ok: false, error: 'No email' };
+  try {
+    const res = await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'tech_app', ...params }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      return { ok: false, error: json.error ?? 'Send failed' };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Unknown error' };
+  }
+}
+
 export async function sendPortalLink(params: {
   contractor_email: string;
   contractor_name: string;

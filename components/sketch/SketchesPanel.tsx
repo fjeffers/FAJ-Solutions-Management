@@ -7,7 +7,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
-import { Download, FileText, PencilRuler, Plus, Trash2 } from 'lucide-react';
+import { Download, FileText, PencilRuler, Plus, Printer, Trash2 } from 'lucide-react';
+import BlankSketchForm from './BlankSketchForm';
 import SketchReport, { downloadFromUrl, fileSafe } from './SketchReport';
 import { createClient } from '@/lib/supabase/client';
 import { newId, newSketch, normalizeSketch, summarize, summaryLine, type Sketch } from '@/lib/sketch';
@@ -38,6 +39,7 @@ export default function SketchesPanel({ woId, surveyId, defaultTitle, compact = 
   const [open, setOpen] = useState<{ id: string | null; title: string; sketch: Sketch } | null>(null);
   // The printable report (Fred, 2026-10-06: "downloadable forms").
   const [report, setReport] = useState<Row | null>(null);
+  const [blankForm, setBlankForm] = useState(false);
 
   const load = useCallback(async () => {
     let q = supabase.from('sketches').select('id, title, data, image_path, updated_at, wo_id, survey_id').order('updated_at', { ascending: false });
@@ -118,6 +120,7 @@ export default function SketchesPanel({ woId, surveyId, defaultTitle, compact = 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" className="wf-btn wf-btn-gold wf-btn-sm" onClick={startNew}><Plus size={15} /> New sketch</button>
+        <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setBlankForm(true)} title="Grid paper with the symbols, to draw by hand"><Printer size={15} /> Blank sketch form</button>
         {!compact && <span className="wf-p-small wf-subtle">Floor plans to scale, cable runs, cameras, APs and drops — counted for you.</span>}
       </div>
       {rows === null ? (
@@ -160,6 +163,7 @@ export default function SketchesPanel({ woId, surveyId, defaultTitle, compact = 
           })}
         </div>
       )}
+      {blankForm && <BlankSketchForm onClose={() => setBlankForm(false)} />}
       {report && (
         <SketchReport title={report.title} sketch={normalizeSketch(report.data)} imageUrl={report.image_path ? thumbs[report.image_path] ?? null : null}
           photoUrl={fileUrl} linkLabel={labelFor?.(report) ?? null} updatedAt={report.updated_at} onClose={() => setReport(null)} />

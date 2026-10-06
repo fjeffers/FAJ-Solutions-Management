@@ -324,6 +324,71 @@ export function moveShape(s: Shape, dx: number, dy: number): Shape {
   }
 }
 
+// ── Changing a shape's size (Fred, 2026-10-06: "am I able to edit the walls
+// or rooms or sides, anything?") ───────────────────────────────────────────
+
+/** The smallest a room or box side can be dragged to, in feet. */
+export const MIN_SIDE = 0.5;
+
+/**
+ * The grab points of a selected shape: the corners and sides of a room, box
+ * or circle; both ends of a wall, line or arrow; every bend of a cable run.
+ */
+export function handlesOf(s: Shape): { id: string; at: Pt }[] {
+  switch (s.kind) {
+    case 'room': case 'box': case 'ellipse': {
+      const { x, y, w, h } = s;
+      return [
+        { id: 'nw', at: { x, y } }, { id: 'n', at: { x: x + w / 2, y } }, { id: 'ne', at: { x: x + w, y } },
+        { id: 'e', at: { x: x + w, y: y + h / 2 } }, { id: 'se', at: { x: x + w, y: y + h } },
+        { id: 's', at: { x: x + w / 2, y: y + h } }, { id: 'sw', at: { x, y: y + h } }, { id: 'w', at: { x, y: y + h / 2 } },
+      ];
+    }
+    case 'wall': case 'line': return [{ id: 'a', at: s.a }, { id: 'b', at: s.b }];
+    case 'cable': return s.pts.map((p, i) => ({ id: `p${i}`, at: p }));
+    default: return [];
+  }
+}
+
+/** Drag one grab point to p. A side stops at MIN_SIDE rather than flipping over. */
+export function dragHandle(s: Shape, id: string, p: Pt): Shape {
+  switch (s.kind) {
+    case 'room': case 'box': case 'ellipse': {
+      let l = s.x, r = s.x + s.w, t = s.y, b = s.y + s.h;
+      if (id === 'nw' || id === 'w' || id === 'sw') l = Math.min(p.x, r - MIN_SIDE);
+      if (id === 'ne' || id === 'e' || id === 'se') r = Math.max(p.x, l + MIN_SIDE);
+      if (id === 'nw' || id === 'n' || id === 'ne') t = Math.min(p.y, b - MIN_SIDE);
+      if (id === 'sw' || id === 's' || id === 'se') b = Math.max(p.y, t + MIN_SIDE);
+      return { ...s, x: l, y: t, w: r - l, h: b - t };
+    }
+    case 'wall': case 'line':
+      return id === 'a' ? { ...s, a: p } : id === 'b' ? { ...s, b: p } : s;
+    case 'cable': {
+      const i = Number(id.slice(1));
+      if (!/^p\d+$/.test(id) || i >= s.pts.length) return s;
+      return { ...s, pts: s.pts.map((q, j) => (j === i ? p : q)) };
+    }
+    default: return s;
+  }
+}
+
+const clampSide = (v: number) => (Number.isFinite(v) ? Math.min(Math.max(v, MIN_SIDE), MAX_SIZE) : MIN_SIDE);
+
+/** Type a room's or box's size in feet; its top-left corner stays put. */
+export function setSize(s: Shape, w: number, h: number): Shape {
+  if (s.kind !== 'room' && s.kind !== 'box' && s.kind !== 'ellipse') return s;
+  return { ...s, w: clampSide(w), h: clampSide(h) };
+}
+
+/** Type a wall's or line's length in feet; its start and direction stay put. */
+export function setLength(s: Shape, len: number): Shape {
+  if (s.kind !== 'wall' && s.kind !== 'line') return s;
+  const L = clampSide(len);
+  const d = dist(s.a, s.b);
+  const ux = d > 0 ? (s.b.x - s.a.x) / d : 1, uy = d > 0 ? (s.b.y - s.a.y) / d : 0;
+  return { ...s, b: { x: s.a.x + ux * L, y: s.a.y + uy * L } };
+}
+
 /** Where a shape's label sits — for the length/area tags. */
 export function midpoint(p: Pt[]): Pt {
   const total = pathLength(p);

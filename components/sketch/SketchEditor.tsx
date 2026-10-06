@@ -14,7 +14,7 @@ import {
   Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
-  CABLE_TYPES, COLORS, SYMBOLS, SYMBOL_GROUPS, cableInfo, feet, hitTest, midpoint, moveShape, newId, normalizeSketch, pathLength, roomFromCorners, snapPt,
+  CABLE_TYPES, COLORS, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, pathLength, roomFromCorners, setLength, setSize, snapPt,
   sqft, summarize, symbolInfo, type CableType, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
 
@@ -97,7 +97,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const bgInput = useRef<HTMLInputElement | null>(null);
   const pendingPhotoAt = useRef<Pt | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const gesture = useRef<{ kind: 'pan'; from: { x: number; y: number }; view: typeof view } | { kind: 'pinch'; d0: number; mid0: Pt; view: typeof view } | { kind: 'move'; id: string; from: Pt; base: Shape; moved: boolean } | { kind: 'moveall'; from: Pt; base: Shape[]; moved: boolean } | null>(null);
+  const gesture = useRef<{ kind: 'pan'; from: { x: number; y: number }; view: typeof view } | { kind: 'pinch'; d0: number; mid0: Pt; view: typeof view } | { kind: 'move'; id: string; from: Pt; base: Shape; moved: boolean } | { kind: 'moveall'; from: Pt; base: Shape[]; moved: boolean } | { kind: 'handle'; id: string; handle: string; base: Shape; moved: boolean } | null>(null);
 
   const viewH = view.w * aspect;
   const summary = useMemo(() => summarize(sketch), [sketch]);
@@ -173,6 +173,11 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     if (tool === 'hand' || e.button === 1) { gesture.current = { kind: 'pan', from: { x: e.clientX, y: e.clientY }, view }; return; }
     if (tool === 'moveall') { gesture.current = { kind: 'moveall', from: raw, base: sketch.shapes, moved: false }; return; }
     if (tool === 'select') {
+      // A grab point of the selected item first: resize a room, move a wall's end.
+      if (selected) {
+        const grab = handlesOf(selected).find((h) => Math.hypot(h.at.x - raw.x, h.at.y - raw.y) <= view.w / 45);
+        if (grab) { gesture.current = { kind: 'handle', id: selected.id, handle: grab.id, base: selected, moved: false }; return; }
+      }
       const hit = hitTest(sketch.shapes, raw, view.w / 60);
       setSelectedId(hit?.id ?? null);
       gesture.current = hit
@@ -239,6 +244,12 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       }
       return;
     }
+    if (g?.kind === 'handle') {
+      g.moved = true;
+      const p = snapOn ? snapPt(raw, 0.5) : raw;
+      setSketch((s) => ({ ...s, shapes: s.shapes.map((x) => (x.id === g.id ? dragHandle(g.base, g.handle, p) : x)) }));
+      return;
+    }
     if (g?.kind === 'move') {
       let dx = raw.x - g.from.x, dy = raw.y - g.from.y;
       if (snapOn) { dx = Math.round(dx * 2) / 2; dy = Math.round(dy * 2) / 2; }
@@ -262,7 +273,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId);
     const g = gesture.current;
-    if (g?.kind === 'move' && g.moved) {
+    if ((g?.kind === 'move' || g?.kind === 'handle') && g.moved) {
       // Record the move as one step, so Undo puts it back.
       const moved = sketch.shapes.find((s) => s.id === g.id);
       if (moved) { setPast((p) => [...p.slice(-99), { ...sketch, shapes: sketch.shapes.map((s) => (s.id === g.id ? g.base : s)) }]); setFuture([]); setDirty(true); }
@@ -446,13 +457,13 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         return (
           <g key={s.id}>
             {s.sym === 'door' ? (
-              <g transform={`translate(${s.at.x} ${s.at.y})`}>
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
                 <line x1={-1.5} y1={0} x2={1.5} y2={0} stroke={info.color} strokeWidth={0.2} />
                 <path d="M -1.5 0 A 3 3 0 0 1 1.5 -3" fill="none" stroke={info.color} strokeWidth={0.1} strokeDasharray="0.3 0.2" />
                 <line x1={-1.5} y1={0} x2={1.5} y2={-3} stroke={info.color} strokeWidth={0.15} />
               </g>
             ) : s.sym === 'window' ? (
-              <g transform={`translate(${s.at.x} ${s.at.y})`}>
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
                 <rect x={-1.6} y={-0.25} width={3.2} height={0.5} fill="#fff" stroke={info.color} strokeWidth={0.12} />
                 <line x1={-1.6} y1={0} x2={1.6} y2={0} stroke={info.color} strokeWidth={0.08} />
               </g>
@@ -581,7 +592,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             )}
             {tool === 'room' && <span style={{ color: '#455A64' }}>Drag from one corner to the other. Each square is 1 ft.</span>}
             {tool === 'moveall' && <span style={{ color: '#455A64' }}>Drag anywhere to move the whole site. Arrow keys or the pad slide the view.</span>}
-            {tool === 'select' && <span style={{ color: '#455A64' }}>Tap an item to select it; drag to move it. Arrow keys nudge it (Shift = 5 ft).</span>}
+            {tool === 'select' && <span style={{ color: '#455A64' }}>Tap an item to select it; drag to move it. Drag the white squares to change its size or move a wall&apos;s end. Arrow keys nudge it (Shift = 5 ft).</span>}
             {tool === 'photo' && <span style={{ color: '#455A64' }}>{busyUpload ? 'Uploading…' : 'Tap the spot, then take or choose the photo.'}</span>}
           </>
         )}
@@ -616,6 +627,11 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             <rect x={0} y={0} width={sketch.width} height={sketch.height} fill="none" stroke="#b7bfcc" strokeWidth={0.08} />
             {sketch.shapes.map((s) => renderShape(s))}
             {draftShape()}
+            {/* Grab points of the selected item: drag to resize or reshape it. */}
+            {tool === 'select' && selected && handlesOf(selected).map((h) => {
+              const hs = view.w / 70;
+              return <rect key={h.id} x={h.at.x - hs / 2} y={h.at.y - hs / 2} width={hs} height={hs} rx={hs / 5} fill="#fff" stroke="#C9A24B" strokeWidth={hs / 5} data-noexport style={{ cursor: 'pointer' }} />;
+            })}
           </svg>
           {/* Arrow pad: slide the drawing up, down, left and right */}
           <div style={{ position: 'absolute', left: 10, bottom: 10, display: 'grid', gridTemplateColumns: 'repeat(3, 34px)', gridTemplateRows: 'repeat(3, 34px)', gap: 4 }} aria-label="Move the view">
@@ -635,6 +651,13 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             <button type="button" onClick={() => zoomAt(1.25)} aria-label="Zoom out" style={smallBtn}><Minus size={16} /></button>
             <button type="button" onClick={fit} aria-label="Fit the plan" title="Fit the plan" style={smallBtn}><Maximize size={15} /></button>
           </div>
+          {/* On a phone the details are tucked away: one tap opens them for the selected item. */}
+          {selected && !showPanel && (
+            <button type="button" onClick={() => setShowPanel(true)}
+              style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', height: 36, padding: '0 14px', borderRadius: 999, border: 'none', background: '#0E1B2E', color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              Edit size &amp; name
+            </button>
+          )}
           {error && <div role="alert" style={{ position: 'absolute', left: 10, top: 10, right: 60, padding: '8px 12px', borderRadius: 8, background: '#fde8e8', color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>{error}</div>}
         </div>
 
@@ -645,7 +668,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
               <SelectedPanel shape={selected} url={selected.kind === 'photo' ? urls[selected.path] : undefined}
                 onChange={(patch) => updateShape(selected.id, patch)} onDelete={() => removeShape(selected.id)} />
             ) : (
-              <div style={{ color: '#78909C' }}>Tap something with <b>Select</b> to name it, label it, change its colour or delete it.</div>
+              <div style={{ color: '#78909C' }}>Tap something with <b>Select</b> to resize it, name it, label it or delete it.</div>
             )}
 
             <div>
@@ -700,6 +723,34 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   );
 }
 
+/** Only the fields a resize changes, so the rest of the item stays as it is. */
+function sizePatch(s: Shape): Partial<Shape> {
+  if (s.kind === 'room' || s.kind === 'box' || s.kind === 'ellipse') return { w: s.w, h: s.h } as Partial<Shape>;
+  if (s.kind === 'wall' || s.kind === 'line') return { b: s.b } as Partial<Shape>;
+  return {};
+}
+
+/** A size in feet: applied when you leave the box or press Enter, not on every keystroke. */
+function FeetBox({ label, value, onSet }: { label: string; value: number; onSet: (v: number) => void }) {
+  const shown = String(Math.round(value * 10) / 10);
+  const [text, setText] = useState(shown);
+  useEffect(() => { setText(shown); }, [shown]);
+  const apply = () => {
+    const v = Number(text);
+    if (Number.isFinite(v) && v > 0 && String(Math.round(v * 10) / 10) !== shown) onSet(v);
+    else setText(shown);
+  };
+  return (
+    <label style={{ display: 'block', flex: 1, minWidth: 0 }}>
+      <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#78909C', marginBottom: 3 }}>{label}</span>
+      <input type="number" inputMode="decimal" min={0.5} step={0.5} value={text}
+        onChange={(e) => setText(e.target.value)} onBlur={apply}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }}
+        style={{ width: '100%', height: 34, fontSize: 16, padding: '0 8px', border: '1px solid #d8dde5', borderRadius: 6 }} />
+    </label>
+  );
+}
+
 function SelectedPanel({ shape, url, onChange, onDelete }: {
   shape: Shape; url?: string; onChange: (patch: Partial<Shape>) => void; onDelete: () => void;
 }) {
@@ -714,13 +765,29 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#0E1B2E' }}>{heading}</div>
-      {shape.kind === 'room' && (
+      {shape.kind === 'room' && field('Name', shape.name, (v) => onChange({ name: v } as Partial<Shape>), 'e.g. Lobby')}
+      {(shape.kind === 'room' || shape.kind === 'box' || shape.kind === 'ellipse') && (
         <>
-          {field('Name', shape.name, (v) => onChange({ name: v } as Partial<Shape>), 'e.g. Lobby')}
-          <div style={{ color: '#455A64' }}>{feet(shape.w)} × {feet(shape.h)} · {sqft(shape.w * shape.h)}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <FeetBox label="Width (ft)" value={shape.w} onSet={(v) => onChange(sizePatch(setSize(shape, v, shape.h)))} />
+            <FeetBox label="Length (ft)" value={shape.h} onSet={(v) => onChange(sizePatch(setSize(shape, shape.w, v)))} />
+          </div>
+          {shape.kind === 'room' && <div style={{ color: '#455A64' }}>{feet(shape.w)} × {feet(shape.h)} · {sqft(shape.w * shape.h)}</div>}
+          <div style={{ color: '#78909C', fontSize: 12 }}>Or drag the white squares on its corners and sides.</div>
         </>
       )}
-      {shape.kind === 'wall' && <div style={{ color: '#455A64' }}>{feet(Math.hypot(shape.b.x - shape.a.x, shape.b.y - shape.a.y))} long</div>}
+      {(shape.kind === 'wall' || shape.kind === 'line') && (
+        <>
+          <FeetBox label="Length (ft)" value={Math.hypot(shape.b.x - shape.a.x, shape.b.y - shape.a.y)} onSet={(v) => onChange(sizePatch(setLength(shape, v)))} />
+          <div style={{ color: '#78909C', fontSize: 12 }}>Or drag either end (the white squares) to stretch or turn it.</div>
+        </>
+      )}
+      {shape.kind === 'symbol' && (shape.sym === 'door' || shape.sym === 'window') && (
+        <button type="button" onClick={() => onChange({ rot: (shape.rot + 90) % 360 } as Partial<Shape>)}
+          style={{ alignSelf: 'flex-start', height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #d8dde5', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+          Turn 90°
+        </button>
+      )}
       {shape.kind === 'cable' && (
         <>
           <label style={{ display: 'block' }}>

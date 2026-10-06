@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  feet, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, snapPt, sqft, summarize,
-  summaryLine, type Shape,
+  dragHandle, feet, handlesOf, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
+  snapPt, sqft, summarize, summaryLine, type Shape,
 } from './sketch';
 
 const room: Shape = { id: 'r', kind: 'room', x: 0, y: 0, w: 24, h: 18, name: 'Lobby', color: '#0E1B2E' };
@@ -109,5 +109,38 @@ describe('network gear and cable types', () => {
     expect(summarize(s).symbols.map((x) => `${x.count} ${x.label}`)).toEqual([
       '2 Network switches', '1 Firewall', '1 Starlink dish', '1 Data outlet', '1 Power outlet', '1 Tablet / kiosk',
     ]);
+  });
+});
+
+describe('changing sizes: rooms, walls and cable bends', () => {
+  it('a room has eight grab points; dragging a side or corner resizes it', () => {
+    expect(handlesOf(room).map((h) => h.id)).toEqual(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']);
+    expect(dragHandle(room, 'e', { x: 30, y: 99 })).toMatchObject({ x: 0, y: 0, w: 30, h: 18 }); // only the right side moves
+    expect(dragHandle(room, 'nw', { x: 4, y: 2 })).toMatchObject({ x: 4, y: 2, w: 20, h: 16 }); // the far corner stays put
+    expect(dragHandle(room, 's', { x: 5, y: -10 })).toMatchObject({ y: 0, h: 0.5 }); // stops at half a foot, never flips
+  });
+
+  it('a wall end can be dragged; typing a length keeps its start and direction', () => {
+    const wall: Shape = { id: 'w', kind: 'wall', a: { x: 0, y: 0 }, b: { x: 3, y: 4 }, color: '#000' };
+    expect(handlesOf(wall).map((h) => h.id)).toEqual(['a', 'b']);
+    expect(dragHandle(wall, 'b', { x: 10, y: 0 })).toMatchObject({ a: { x: 0, y: 0 }, b: { x: 10, y: 0 } });
+    const longer = setLength(wall, 10) as Extract<Shape, { kind: 'wall' }>;
+    expect(longer.a).toEqual({ x: 0, y: 0 });
+    expect(longer.b.x).toBeCloseTo(6);
+    expect(longer.b.y).toBeCloseTo(8);
+  });
+
+  it('typed sizes are kept sensible', () => {
+    expect(setSize(room, 30, 12)).toMatchObject({ x: 0, y: 0, w: 30, h: 12 });
+    expect(setSize(room, -5, Number.NaN)).toMatchObject({ w: 0.5, h: 0.5 });
+    expect(setSize(cable, 5, 5)).toBe(cable); // a cable has no width
+  });
+
+  it('each bend of a cable run can be moved, and the footage follows', () => {
+    expect(handlesOf(cable).map((h) => h.id)).toEqual(['p0', 'p1', 'p2']);
+    const moved = dragHandle(cable, 'p2', { x: 30, y: 10 }) as Extract<Shape, { kind: 'cable' }>;
+    expect(pathLength(moved.pts)).toBe(40);
+    expect(dragHandle(cable, 'p9', { x: 1, y: 1 })).toBe(cable);
+    expect(dragHandle(cable, 'nope', { x: 1, y: 1 })).toBe(cable);
   });
 });

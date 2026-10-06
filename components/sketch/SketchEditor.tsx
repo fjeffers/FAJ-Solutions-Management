@@ -7,14 +7,18 @@
 // (two fingers pan and zoom) or a mouse (wheel zooms). The rules and every
 // measurement are in lib/sketch.ts; this file only draws and edits.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
   ArrowUpRight, Camera, Circle, Eraser, Grid3x3, Hand, Highlighter, Image as ImageIcon, Magnet, Minus, MousePointer2,
-  Pencil, Plus, Redo2, Save, Square, Trash2, Type, Undo2, X, Maximize, Cable, BrickWall, LayoutPanelTop, Loader2,
+  Pencil, Plus, Redo2, Save, Square, Trash2, Type, Undo2, X, Maximize, Cable, BrickWall, LayoutPanelTop, Loader2, Box,
 } from 'lucide-react';
 import {
   COLORS, SYMBOLS, feet, hitTest, midpoint, moveShape, newId, normalizeSketch, pathLength, roomFromCorners, snapPt,
   sqft, summarize, symbolInfo, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
+
+// The 3D model (Fred, 2026-10-06: "also 3d model") — three.js, loaded only when opened.
+const Sketch3D = dynamic(() => import('./Sketch3D'), { ssr: false });
 
 type Tool = 'select' | 'hand' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
   | 'room' | 'wall' | 'cable' | 'symbol' | 'photo' | 'eraser';
@@ -78,6 +82,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const [busyUpload, setBusyUpload] = useState(false);
   // Details start open on a computer, closed on a phone (the plan needs the room).
   const [showPanel, setShowPanel] = useState(true);
+  const [show3d, setShow3d] = useState(false);
   useEffect(() => { if (window.innerWidth < 900) setShowPanel(false); }, []);
   const [view, setView] = useState(() => ({ x: -2, y: -2, w: normalizeSketch(initial).width + 4 }));
 
@@ -486,6 +491,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         <button type="button" onClick={close} aria-label="Close" style={{ ...smallBtn, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}><X size={16} /></button>
         <input value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} aria-label="Sketch name" maxLength={120}
           style={{ flex: '1 1 auto', minWidth: 0, width: 60, height: 34, borderRadius: 8, border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.08)', color: '#fff', padding: '0 10px', fontSize: 16, fontWeight: 700 }} />
+        <button type="button" onClick={() => { if (draft?.kind === 'cable') finishCable(); setShow3d(true); }} title="See it in 3D" style={{ ...smallBtn, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}><Box size={15} /> 3D</button>
         <button type="button" onClick={undo} disabled={!past.length} aria-label="Undo" title="Undo (Ctrl+Z)" style={{ ...smallBtn, opacity: past.length ? 1 : 0.4 }}><Undo2 size={16} /></button>
         <button type="button" onClick={redo} disabled={!future.length} aria-label="Redo" title="Redo (Ctrl+Y)" style={{ ...smallBtn, opacity: future.length ? 1 : 0.4 }}><Redo2 size={16} /></button>
         <button type="button" onClick={() => void save()} disabled={saving} style={{ ...smallBtn, background: '#C9A24B', border: 'none', padding: '0 14px' }}>
@@ -628,6 +634,8 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
           </div>
         )}
       </div>
+
+      {show3d && <Sketch3D sketch={sketch} title={title} onClose={() => setShow3d(false)} />}
 
       <input ref={photoInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void onPhotoChosen(e.target.files?.[0], 'photo'); e.target.value = ''; }} />
       <input ref={bgInput} type="file" accept="image/*" hidden onChange={(e) => { void onPhotoChosen(e.target.files?.[0], 'bg'); e.target.value = ''; }} />

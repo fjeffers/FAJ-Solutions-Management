@@ -40,6 +40,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
       { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },
       { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },
       { view: 'import-queue', label: 'Import', hint: 'Work orders from email and spreadsheets waiting to come in' },
+      { view: 'dispatch', label: 'Dispatch Map', hint: 'Techs and jobs on a map' },
     ],
   },
   {
@@ -68,13 +69,15 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     ],
   },
   {
+    // Fred, 2026-10-05, about "Winning work": "we need review or update".
+    // Renamed Sales, in the order work is won: survey, quote, contract. The
+    // id stays 'winning' so a saved menu still finds it.
     id: 'winning',
-    title: 'Winning work',
+    title: 'Sales',
     items: [
-      { view: 'surveys', label: 'Surveys', hint: 'Site surveys and what they found' },
-      { view: 'quotes', label: 'Quotes', hint: 'Quotes for clients, built from surveys' },
-      { view: 'contracts', label: 'Contracts', hint: 'Contracts and signed agreements' },
-      { view: 'dispatch', label: 'Dispatch Map', hint: 'Techs and jobs on a map' },
+      { view: 'surveys', label: 'Surveys', hint: 'Step 1: site surveys and what they found' },
+      { view: 'quotes', label: 'Quotes', hint: 'Step 2: quotes for clients, built from surveys' },
+      { view: 'contracts', label: 'Contracts', hint: 'Step 3: signed agreements; a signed one becomes a job' },
     ],
   },
   {

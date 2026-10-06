@@ -3,7 +3,7 @@
 // the owner app on one page, grouped like the sidebar, with a search box.
 import { useEffect, useState } from 'react';
 import {
-  Award, Banknote, BarChart3, BookOpen, Building2, Calendar, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, Construction, CreditCard, ExternalLink, FileCheck2, Folder, HardHat, KanbanSquare, LayoutGrid, Plus, SquarePlus, Sun, Trophy,
+  Award, Banknote, BarChart3, BookOpen, Building2, Calendar, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, Construction, CreditCard, ExternalLink, FileCheck2, Folder, Handshake, HardHat, KanbanSquare, LayoutGrid, Plus, SquarePlus, Sun,
   FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, MessageSquare, Network, Package, Receipt, Search, Settings, ShieldCheck,
   Timer, TrendingUp, UserCog, Users, Wallet, Wrench, type LucideIcon,
 } from 'lucide-react';
@@ -32,7 +32,7 @@ export function OfficeIcon({ k, size = 20 }: { k: string; size?: number }) {
 
 /** By section id, so a renamed section keeps its icon; Fred's own sections get a folder. */
 const GROUP_ICONS: Record<string, LucideIcon> = {
-  everyday: Sun, money: Banknote, techs: HardHat, winning: Trophy, onsite: Construction, settings: Settings,
+  everyday: Sun, money: Banknote, techs: HardHat, winning: Handshake, onsite: Construction, settings: Settings,
 };
 
 /**

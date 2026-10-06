@@ -12,7 +12,7 @@ describe('menu layout (Settings -> Menu & screens)', () => {
   it('the standard menu: Dashboard, Dispatch, Schedule, Messages, Office, Settings — everything else in Office', () => {
     const r = visibleLayout(resolveLayout(std()));
     expect(r.main.map((s) => s.label)).toEqual(['Dashboard', 'Dispatch', 'Schedule', 'Messages', 'Office', 'Settings']);
-    expect(r.sections.map((s) => s.title)).toEqual(['Every day', 'Money', 'Techs', 'Winning work', 'On site']);
+    expect(r.sections.map((s) => s.title)).toEqual(['Every day', 'Money', 'Techs', 'Sales', 'On site']);
     expect(isStandard(STANDARD_LAYOUT)).toBe(true);
   });
 

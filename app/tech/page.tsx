@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechPayments, fetchTechSummary, fetchTechUnread, fetchTechDmUnread,
-  fetchTechPortalToken, saveTechProfile, paymentsByYear, fetchTechMessages, sendTechMessage, claimTechAccount,
+  fetchTechPortalToken, saveTechProfile, saveTechEmergency, paymentsByYear, fetchTechMessages, sendTechMessage, claimTechAccount,
 } from '@/lib/tech-portal';
 import { fetchWfTechJobs, fetchCloseoutLists, registerTechHandlers, applyPending, toChatJob } from '@/lib/tech-wf';
 import {
@@ -1579,6 +1579,59 @@ function PayTab({ payments, summary }: { payments: TechPayment[]; summary: TechS
 
 // ── Profile ─────────────────────────────────────────────────────────────────
 
+/**
+ * Who to call if something happens on a job (Fred, 2026-10-06: "an emergency
+ * number"). The tech fills it in; Fred sees it on their profile and can set it
+ * too. Also shows when they started, if Fred has entered it.
+ */
+function EmergencyCard({ profile, onSaved }: { profile: TechProfile; onSaved: (p: TechProfile) => void }) {
+  const [name, setName] = useState(profile.emergency_name ?? '');
+  const [phone, setPhone] = useState(profile.emergency_phone ?? '');
+  const [relation, setRelation] = useState(profile.emergency_relation ?? '');
+  const [saving, setSaving] = useState(false);
+  const dirty = name !== (profile.emergency_name ?? '') || phone !== (profile.emergency_phone ?? '') || relation !== (profile.emergency_relation ?? '');
+  const missing = !profile.emergency_phone;
+
+  const save = async () => {
+    if (name.trim() && !phone.trim()) { toastError('Add their phone number too.'); return; }
+    setSaving(true);
+    try {
+      await saveTechEmergency({ name, phone, relation });
+      onSaved({ ...profile, emergency_name: name.trim() || null, emergency_phone: phone.trim() || null, emergency_relation: relation.trim() || null });
+      toastSuccess('Saved. The office has your emergency contact.');
+    } catch (e) {
+      toastError(isNoSignal(e) ? 'No signal — try saving again when you have it.' : "Couldn't save your emergency contact.");
+    }
+    setSaving(false);
+  };
+
+  const box = (label: string, value: string, set: (v: string) => void, placeholder: string, mode?: 'tel') => (
+    <label style={{ display: 'block' }}>
+      <span className="wf-label" style={{ display: 'block', marginBottom: 4 }}>{label}</span>
+      <input className="wf-input" value={value} onChange={(e) => set(e.target.value)} placeholder={placeholder} inputMode={mode} type={mode === 'tel' ? 'tel' : 'text'} />
+    </label>
+  );
+
+  return (
+    <Section title="Emergency contact" subtitle="Who the office should call if something happens on a job">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {missing && (
+          <div style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(198,40,40,0.08)', color: 'var(--wf-danger)', fontSize: 13, fontWeight: 600 }}>
+            Please add someone the office can call in an emergency.
+          </div>
+        )}
+        {box('Name', name, setName, 'Who to call')}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {box('Phone', phone, setPhone, '(555) 000-0000', 'tel')}
+          {box('Relationship', relation, setRelation, 'Wife, brother…')}
+        </div>
+        <button className="wf-btn wf-btn-navy" onClick={save} disabled={saving || !dirty}><Save size={16} /> {saving ? 'Saving…' : 'Save emergency contact'}</button>
+        {profile.hire_date && <div className="wf-subtle" style={{ fontSize: 12 }}>With FAJ Solutions since {fmtDate(profile.hire_date)}.</div>}
+      </div>
+    </Section>
+  );
+}
+
 function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
   profile: TechProfile; portalToken: string | null; onSaved: (p: TechProfile) => void; onFiled: () => void; onSignOut: () => void;
 }) {
@@ -1630,6 +1683,7 @@ function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
           <button className="wf-btn wf-btn-navy" onClick={save} disabled={saving}><Save size={16} /> {saving ? 'Saving…' : 'Save details'}</button>
         </div>
       </Section>
+      <EmergencyCard profile={profile} onSaved={onSaved} />
       <Section title="Paperwork">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Check ok={!!profile.w9_received} label="W-9 on file" detail={profile.w9_submitted_at ? `Submitted ${fmtDate(profile.w9_submitted_at)}` : 'Not received yet'} />

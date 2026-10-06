@@ -20,6 +20,11 @@ export const ENTITY_TYPES: EntityType[] = [
 export type Contractor = {
   /** Fred's own fields (Settings -> Custom fields, migration 110), by field id. */
   custom?: Record<string, unknown> | null;
+  /** Who to call if something happens on a job, and when they started (migration 111). */
+  emergency_name?: string | null;
+  emergency_phone?: string | null;
+  emergency_relation?: string | null;
+  hire_date?: string | null;
   id: string;
   user_id: string;
   name: string;
@@ -492,6 +497,11 @@ export type TechProfile = {
   contract_signed_at: string | null;
   portal_last_login_at: string | null;
   created_at: string;
+  /** Their emergency contact (they can fill it in) and start date (migration 111). */
+  emergency_name?: string | null;
+  emergency_phone?: string | null;
+  emergency_relation?: string | null;
+  hire_date?: string | null;
 };
 
 /** One job a tech worked. No money on it, by design. */

@@ -1,14 +1,15 @@
 'use client';
 import { useState } from 'react';
 import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, ChevronRight, Send, BookUp } from 'lucide-react';
-import { fmtMoney } from '@/lib/utils';
+import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Contractor, EnrichedWorkOrder, Payment } from '@/lib/types';
 import ContractorDetailView from './ContractorDetailView';
+import { ledgerTotals, techLedger } from '@/lib/tech-ledger';
 import { CustomFieldList } from '@/components/CustomFieldInputs';
 
 export default function ContractorsView({
   contractors, workOrders, payments, onAdd, onEdit, onDelete, onViewStatement, onAddJob, onAddPayment, onEditPayment,
-  onSendOnboarding, onSendAll, onSyncQuickBooks, busy,
+  onSendOnboarding, onSendAll, onSyncQuickBooks, busy, onOpenJob,
 }: {
   contractors: Contractor[];
   workOrders: EnrichedWorkOrder[];
@@ -25,6 +26,8 @@ export default function ContractorsView({
   onSyncQuickBooks: (c: Contractor) => void;
   /** Contractor id with a send/sync in flight, or 'ALL' during a bulk send. */
   busy: string | null;
+  /** Open a job from the tech's Time & pay log. */
+  onOpenJob?: (id: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Contractor | null>(null);
@@ -34,9 +37,13 @@ export default function ContractorsView({
   const emailable = contractors.filter((c) => c.email);
 
   if (selected) {
+    // The saved copy, so an edit (emergency contact, hire date…) shows at once.
+    const current = contractors.find((c) => c.id === selected.id) ?? selected;
     return (
       <ContractorDetailView
-        contractor={selected}
+        contractor={current}
+        onEdit={() => onEdit(current)}
+        onOpenJob={onOpenJob}
         workOrders={workOrders}
         payments={payments}
         onBack={() => setSelected(null)}
@@ -76,10 +83,12 @@ export default function ContractorsView({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {filtered.map((c) => {
-          const jobs = workOrders.filter((w) => w.contractor_name === c.name);
-          const totalBilled = jobs.reduce((s, w) => s + Number(w.total_amount), 0);
+          // The tech's own money (lib/tech-ledger, same rules as Pay Techs) —
+          // not the client's price, which this card showed until 2026-10-06.
+          const book = ledgerTotals(techLedger(c.name, workOrders, payments));
+          const totalEarned = book.earned;
           const totalPaid = payments.filter((p) => p.contractor_name === c.name).reduce((s, p) => s + Number(p.amount), 0);
-          const balance = totalBilled - totalPaid;
+          const balance = book.owed;
           return (
             <div key={c.id} className="glass card" style={{ cursor: 'pointer', transition: 'box-shadow 0.15s, transform 0.12s', border: '1px solid #e8ecf0' }}
               onClick={() => setSelected(c)}
@@ -112,10 +121,10 @@ export default function ContractorsView({
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Stat label="Jobs" value={String(jobs.length)} color="var(--teal)" />
-                  <Stat label="Billed" value={fmtMoney(totalBilled)} />
+                  <Stat label="Jobs" value={String(book.jobs)} color="var(--teal)" />
+                  <Stat label="Earned" value={fmtMoney(totalEarned)} />
                   <Stat label="Paid" value={fmtMoney(totalPaid)} color="#047857" />
-                  <Stat label="Balance" value={fmtMoney(balance)} color={balance > 0 ? '#b91c1c' : '#047857'} />
+                  <Stat label="Owed" value={fmtMoney(balance)} color={balance > 0 ? '#b91c1c' : '#047857'} />
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 11, color: '#aaa', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>W-9</div>
                     {c.w9_received ? <CheckCircle size={18} color="#047857" /> : <XCircle size={18} color="#b91c1c" />}
@@ -148,6 +157,13 @@ export default function ContractorsView({
                   </button>
                   <ChevronRight size={16} color="#ccc" />
                 </div>
+              </div>
+              {/* Hire date, and a flag when there's no emergency contact (Fred, 2026-10-06). */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 8, fontSize: 12 }}>
+                {c.hire_date && <span style={{ color: '#777' }}>Hired {fmtDate(c.hire_date)}</span>}
+                {c.emergency_phone
+                  ? <span style={{ color: '#777' }}>Emergency: {c.emergency_name || 'contact'} · {c.emergency_phone}</span>
+                  : <span style={{ color: '#b45309', fontWeight: 700 }}>No emergency contact</span>}
               </div>
               {/* Fred's own fields (Settings -> Custom fields), when answered. */}
               <div style={{ marginTop: 8 }}><CustomFieldList target="techs" values={c.custom} compact /></div>

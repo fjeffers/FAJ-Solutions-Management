@@ -85,6 +85,16 @@ export async function saveTechProfile(p: {
   return !!(data as { ok?: boolean } | null)?.ok;
 }
 
+/** The tech's own emergency contact (migration 111). Blank clears a box. */
+export async function saveTechEmergency(p: { name: string; phone: string; relation: string }): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_update_emergency', {
+    p_name: p.name, p_phone: p.phone, p_relation: p.relation,
+  });
+  if (error) throw new Error(error.message);
+  return !!(data as { ok?: boolean } | null)?.ok;
+}
+
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
 /**

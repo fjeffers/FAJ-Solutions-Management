@@ -3,9 +3,11 @@ import { useState, useMemo } from 'react';
 import {
   ArrowLeft, Plus, DollarSign, Briefcase, FileText, Download,
   Phone, Mail, Building2, Hash, CreditCard, Clock, ChevronDown,
-  ChevronUp, CheckCircle, XCircle, TrendingUp, AlertCircle,
+  ChevronUp, CheckCircle, XCircle, TrendingUp, AlertCircle, CalendarDays, HeartPulse, Pencil,
 } from 'lucide-react';
-import { fmtMoney, fmtDate, sortByWO } from '@/lib/utils';
+import { fmtMoney, fmtDate, sortByWO, contractorOwedOnWO, todayISO } from '@/lib/utils';
+import { techJobs, techLedger, ledgerTotals, tenure } from '@/lib/tech-ledger';
+import TechTimePay from './TechTimePay';
 import type { Contractor, EnrichedWorkOrder, Payment } from '@/lib/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -21,6 +23,21 @@ function payLabel(wo: EnrichedWorkOrder): string {
     default:
       return 'Fixed';
   }
+}
+
+/**
+ * What the tech earns on a job (lib/utils, like Pay Techs). Null when no tech
+ * pay is set: the old fallback is the client's full price, which is not what
+ * the tech is owed. This page used the client price everywhere until
+ * 2026-10-06 — totals, the job list and the statement export.
+ */
+function earnedOn(wo: EnrichedWorkOrder, name: string): number | null {
+  return wo.contractor_pay && Object.keys(wo.contractor_pay).length > 0 ? contractorOwedOnWO(wo, name) : null;
+}
+
+/** The 1099-NEC reporting threshold: $600 through 2025, $2,000 from 2026. */
+export function threshold1099(year: number): number {
+  return year >= 2026 ? 2000 : 600;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -54,7 +71,7 @@ function exportQBStatement(
     `Prepared,${new Date().toLocaleDateString()}`,
     '',
     '=== WORK ORDERS ===',
-    'WO#,Title,Date,Pay Type,Hours,Rate,Amount,Status',
+    'WO#,Title,Date,Pay Type,Hours,Rate,Earned,Status',
     ...yearWOs.map((w) =>
       [
         w.wo_number,
@@ -63,12 +80,12 @@ function exportQBStatement(
         w.pay_type,
         w.hours_worked ?? '',
         w.hourly_rate ?? w.per_device_rate ?? w.blended_base ?? '',
-        w.total_amount,
+        earnedOn(w, contractor.name) ?? 'Pay not set',
         w.wo_status,
       ].join(','),
     ),
     '',
-    `Total Billed,${yearWOs.reduce((s, w) => s + Number(w.total_amount), 0).toFixed(2)}`,
+    `Total Earned,${yearWOs.reduce((s, w) => s + (earnedOn(w, contractor.name) ?? 0), 0).toFixed(2)}`,
     '',
     '=== PAYMENTS ===',
     'Date,WO#,Amount,Method,Notes',
@@ -78,7 +95,7 @@ function exportQBStatement(
     '',
     `Total Paid,${yearPayments.reduce((s, p) => s + Number(p.amount), 0).toFixed(2)}`,
     `Balance Due,${(
-      yearWOs.reduce((s, w) => s + Number(w.total_amount), 0) -
+      yearWOs.reduce((s, w) => s + (earnedOn(w, contractor.name) ?? 0), 0) -
       yearPayments.reduce((s, p) => s + Number(p.amount), 0)
     ).toFixed(2)}`,
   ].filter((l) => l !== undefined);
@@ -103,6 +120,8 @@ export default function ContractorDetailView({
   onAddJob,
   onAddPayment,
   onEditPayment,
+  onEdit,
+  onOpenJob,
 }: {
   contractor: Contractor;
   workOrders: EnrichedWorkOrder[];
@@ -111,13 +130,17 @@ export default function ContractorDetailView({
   onAddJob: (prefill?: { contractor_name: string }) => void;
   onAddPayment: (prefill?: { contractor_name: string; wo_number?: string }) => void;
   onEditPayment: (p: Payment) => void;
+  /** Open the tech's form (emergency contact, hire date…). */
+  onEdit?: () => void;
+  /** Open a job from the Time & pay log. */
+  onOpenJob?: (id: string) => void;
 }) {
-  const [tab, setTab] = useState<'jobs' | 'payments' | 'statement'>('jobs');
+  const [tab, setTab] = useState<'time' | 'jobs' | 'payments' | 'statement'>('time');
   const [expandedWO, setExpandedWO] = useState<string | null>(null);
   const [qbYear, setQbYear] = useState(new Date().getFullYear());
 
   const myJobs = useMemo(
-    () => sortByWO(workOrders.filter((w) => w.contractor_name === contractor.name)),
+    () => sortByWO(techJobs(workOrders, contractor.name)),
     [workOrders, contractor.name],
   );
   const myPayments = useMemo(
@@ -128,9 +151,11 @@ export default function ContractorDetailView({
     [payments, contractor.name],
   );
 
-  const totalBilled = myJobs.reduce((s, w) => s + Number(w.total_amount), 0);
+  // Money on this page is the tech's, from lib/tech-ledger (same rules as Pay Techs).
+  const totals      = useMemo(() => ledgerTotals(techLedger(contractor.name, workOrders, payments)), [contractor.name, workOrders, payments]);
+  const totalEarned = totals.earned;
   const totalPaid   = myPayments.reduce((s, p) => s + Number(p.amount), 0);
-  const balance     = totalBilled - totalPaid;
+  const balance     = totals.owed;
 
   const paymentsWithBalance = useMemo(() => {
     const sorted = [...myPayments].sort(
@@ -193,6 +218,12 @@ export default function ContractorDetailView({
                 {contractor.phone && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Phone size={12} color="#0E1B2E" /> {contractor.phone}</span>}
                 {contractor.email && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Mail size={12} color="#0E1B2E" /> {contractor.email}</span>}
                 {contractor.tax_id && <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}><Hash size={12} color="#0E1B2E" /> {contractor.tax_id_type || 'Tax ID'}: {contractor.tax_id}</span>}
+                {contractor.hire_date && (
+                  <span style={{ fontSize: 13, color: '#555', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <CalendarDays size={12} color="#0E1B2E" /> Hired {fmtDate(contractor.hire_date)}
+                    {tenure(contractor.hire_date, todayISO()) && <span style={{ color: '#90a4ae' }}>· {tenure(contractor.hire_date, todayISO())}</span>}
+                  </span>
+                )}
                 <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 5 }}>
                   {contractor.w9_received
                     ? <><CheckCircle size={13} color="#047857" /><span style={{ color: '#047857', fontWeight: 600 }}>W-9 On File</span></>
@@ -213,14 +244,42 @@ export default function ContractorDetailView({
               >
                 <DollarSign size={14} /> Log Payment
               </button>
+              {onEdit && (
+                <button
+                  onClick={onEdit}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: '1.5px solid #cfd6df', background: 'transparent', color: '#334', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  <Pencil size={14} /> Edit details
+                </button>
+              )}
             </div>
           </div>
+          {/* Fred, 2026-10-06: "an emergency number". */}
+          {contractor.emergency_phone || contractor.emergency_name ? (
+            <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', borderRadius: 10, background: 'rgba(198,40,40,0.05)', border: '1px solid rgba(198,40,40,0.2)', fontSize: 13 }}>
+              <HeartPulse size={15} color="#b91c1c" />
+              <strong style={{ color: '#b91c1c', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>Emergency contact</strong>
+              <span style={{ fontWeight: 600 }}>{contractor.emergency_name || 'Name not given'}</span>
+              {contractor.emergency_relation && <span style={{ color: '#777' }}>({contractor.emergency_relation})</span>}
+              {contractor.emergency_phone && (
+                <a href={`tel:${contractor.emergency_phone.replace(/[^\d+]/g, '')}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: '#b91c1c', textDecoration: 'none' }}>
+                  <Phone size={13} /> {contractor.emergency_phone}
+                </a>
+              )}
+            </div>
+          ) : (
+            <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', borderRadius: 10, background: '#fff8eb', border: '1px solid #f3dfb8', fontSize: 13, color: '#7c4a03' }}>
+              <AlertCircle size={15} /> No emergency contact on file.
+              {onEdit && <button onClick={onEdit} style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 700, color: '#0E1B2E', textDecoration: 'underline', cursor: 'pointer' }}>Add one</button>}
+              <span style={{ color: '#a07a3a' }}>— or ask {contractor.name.split(' ')[0]} to add it on their Profile in the tech app.</span>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, marginTop: 24, background: '#f7f9fc', borderRadius: 12, border: '1px solid #eef0f4', overflow: 'hidden' }}>
             {[
-              { label: 'Total Billed', value: fmtMoney(totalBilled), color: '#1a1a2e' },
-              { label: 'Total Paid',   value: fmtMoney(totalPaid),   color: '#047857' },
-              { label: 'Balance Due',  value: fmtMoney(balance),     color: balance > 0 ? '#b91c1c' : '#047857' },
-              { label: 'Total Jobs',   value: String(myJobs.length), color: '#1a1a2e' },
+              { label: 'Earned',      value: fmtMoney(totalEarned), color: '#1a1a2e' },
+              { label: 'Paid',        value: fmtMoney(totalPaid),   color: '#047857' },
+              { label: 'Still owed',  value: fmtMoney(balance),     color: balance > 0 ? '#b91c1c' : '#047857' },
+              { label: 'Jobs',        value: String(myJobs.length), color: '#1a1a2e' },
             ].map(({ label, value, color }, i) => (
               <div key={label} style={{ padding: '14px 18px', borderRight: i < 3 ? '1px solid #eef0f4' : 'none', textAlign: 'center' }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
@@ -232,10 +291,15 @@ export default function ContractorDetailView({
       </div>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'white', borderRadius: 12, border: '1px solid #e8ecf0', padding: 6, width: 'fit-content' }}>
+        {TAB_BTN('time', 'Time & pay', <Clock size={13} />)}
         {TAB_BTN('jobs', 'Jobs', <Briefcase size={13} />)}
         {TAB_BTN('payments', 'Payment History', <CreditCard size={13} />)}
         {TAB_BTN('statement', 'QB Statement', <TrendingUp size={13} />)}
       </div>
+
+      {tab === 'time' && (
+        <TechTimePay contractor={contractor} workOrders={workOrders} payments={payments} onOpenJob={onOpenJob} />
+      )}
 
       {tab === 'jobs' && (
         <div style={{ background: 'white', borderRadius: 14, border: '1px solid #e8ecf0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
@@ -249,13 +313,14 @@ export default function ContractorDetailView({
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 100px 120px 90px 90px 28px', gap: 0, padding: '10px 20px', background: '#f7f9fc', borderBottom: '1px solid #eef0f4', fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1.2, textTransform: 'uppercase' }}>
                 <span>WO #</span><span>Title / Service</span><span>Date</span><span>Pay Type</span>
-                <span style={{ textAlign: 'right' }}>Amount</span><span style={{ textAlign: 'center' }}>Status</span><span />
+                <span style={{ textAlign: 'right' }}>Their pay</span><span style={{ textAlign: 'center' }}>Status</span><span />
               </div>
               {myJobs.map((wo) => {
                 const expanded = expandedWO === wo.id;
                 const woPmts = myPayments.filter((p) => p.wo_number === wo.wo_number);
                 const woPaid = woPmts.reduce((s, p) => s + Number(p.amount), 0);
-                const woBalance = Number(wo.total_amount) - woPaid;
+                const woEarned = earnedOn(wo, contractor.name);
+                const woBalance = woEarned == null ? 0 : woEarned - woPaid;
                 const dot = STATUS_DOT[wo.wo_status ?? 'Open'] ?? '#90a4ae';
                 return (
                   <div key={wo.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
@@ -267,7 +332,7 @@ export default function ContractorDetailView({
                       <span style={{ fontSize: 13, color: '#1a1a2e', fontWeight: 600 }}>{wo.title || wo.service_type || '—'}</span>
                       <span style={{ fontSize: 12, color: '#90a4ae' }}>{wo.start_date ? fmtDate(wo.start_date) : '—'}</span>
                       <span style={{ fontSize: 11, color: '#555' }}>{payLabel(wo)}</span>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: '#1a1a2e', textAlign: 'right' }}>{fmtMoney(Number(wo.total_amount))}</span>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: '#1a1a2e', textAlign: 'right' }}>{woEarned == null ? <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309' }}>Pay not set</span> : fmtMoney(woEarned)}</span>
                       <span style={{ textAlign: 'center' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: `${dot}18`, color: dot }}>
                           <span style={{ width: 5, height: 5, borderRadius: '50%', background: dot, display: 'inline-block' }} />{wo.wo_status}
@@ -356,7 +421,7 @@ export default function ContractorDetailView({
                 </div>
               ))}
               <div style={{ padding: '14px 20px', background: 'rgba(14,27,46,0.04)', borderTop: '2px solid #eef0f4', display: 'flex', justifyContent: 'flex-end', gap: 32 }}>
-                <span style={{ fontSize: 13, color: '#555' }}>Total Billed: <strong>{fmtMoney(totalBilled)}</strong></span>
+                <span style={{ fontSize: 13, color: '#555' }}>Earned: <strong>{fmtMoney(totalEarned)}</strong></span>
                 <span style={{ fontSize: 13, color: '#047857' }}>Total Paid: <strong>{fmtMoney(totalPaid)}</strong></span>
                 <span style={{ fontSize: 13, color: balance > 0 ? '#b91c1c' : '#047857', fontWeight: 700 }}>Balance: {fmtMoney(balance)}</span>
               </div>
@@ -387,30 +452,30 @@ export default function ContractorDetailView({
           {(() => {
             const yrJobs = myJobs.filter((w) => { const d = w.start_date || w.created_at; return d && new Date(d).getFullYear() === qbYear; });
             const yrPmts = myPayments.filter((p) => new Date(p.payment_date).getFullYear() === qbYear);
-            const yrBilled = yrJobs.reduce((s, w) => s + Number(w.total_amount), 0);
+            const yrBilled = yrJobs.reduce((s, w) => s + (earnedOn(w, contractor.name) ?? 0), 0);
             const yrPaid = yrPmts.reduce((s, p) => s + Number(p.amount), 0);
             return (
               <div style={{ padding: '0 24px 24px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, margin: '20px 0' }}>
-                  {[{ label: `Jobs in ${qbYear}`, value: String(yrJobs.length), color: '#0E1B2E' }, { label: 'Total Billed', value: fmtMoney(yrBilled), color: '#1a1a2e' }, { label: 'Total Paid', value: fmtMoney(yrPaid), color: '#047857' }].map(({ label, value, color }) => (
+                  {[{ label: `Jobs in ${qbYear}`, value: String(yrJobs.length), color: '#0E1B2E' }, { label: 'Earned', value: fmtMoney(yrBilled), color: '#1a1a2e' }, { label: 'Total Paid', value: fmtMoney(yrPaid), color: '#047857' }].map(({ label, value, color }) => (
                     <div key={label} style={{ padding: '16px', borderRadius: 10, background: '#f7f9fc', border: '1px solid #eef0f4', textAlign: 'center' }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
                       <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
                     </div>
                   ))}
                 </div>
-                {yrPaid >= 600 && (
+                {yrPaid >= threshold1099(qbYear) && (
                   <div style={{ padding: '12px 16px', borderRadius: 10, marginBottom: 20, background: 'rgba(185,28,28,0.06)', border: '1px solid rgba(185,28,28,0.2)', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
                     <AlertCircle size={15} color="#b91c1c" />
-                    <span><strong style={{ color: '#b91c1c' }}>1099-NEC Required</strong> — {contractor.name} received {fmtMoney(yrPaid)} in {qbYear}, which exceeds the $600 threshold.</span>
+                    <span><strong style={{ color: '#b91c1c' }}>1099-NEC Required</strong> — {contractor.name} received {fmtMoney(yrPaid)} in {qbYear}, which is at or over the {fmtMoney(threshold1099(qbYear))} threshold for {qbYear}.</span>
                   </div>
                 )}
                 <div style={{ marginBottom: 24 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#0E1B2E', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 }}>Work Orders — {qbYear}</div>
                   {yrJobs.length === 0 ? <div style={{ fontSize: 13, color: '#aaa', padding: '16px 0' }}>No jobs in {qbYear}.</div> : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead><tr style={{ background: '#f7f9fc', borderBottom: '1px solid #eee' }}>{['WO #', 'Title', 'Date', 'Pay Type', 'Hours', 'Amount', 'Status'].map((h, i) => <th key={h} style={{ padding: '8px 10px', textAlign: i >= 4 ? 'right' : 'left', fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1 }}>{h}</th>)}</tr></thead>
-                      <tbody>{yrJobs.map((w) => (<tr key={w.id} style={{ borderBottom: '1px solid #f5f5f5' }}><td style={{ padding: '10px 10px', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#0E1B2E' }}>#{w.wo_number}</td><td style={{ padding: '10px 10px', color: '#333' }}>{w.title || w.service_type || '—'}</td><td style={{ padding: '10px 10px', color: '#888' }}>{w.start_date ? fmtDate(w.start_date) : '—'}</td><td style={{ padding: '10px 10px', color: '#555' }}>{w.pay_type}</td><td style={{ padding: '10px 10px', textAlign: 'right', color: '#555' }}>{w.hours_worked ?? '—'}</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700 }}>{fmtMoney(Number(w.total_amount))}</td><td style={{ padding: '10px 10px', textAlign: 'right' }}><span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: `${STATUS_DOT[w.wo_status ?? 'Open']}18`, color: STATUS_DOT[w.wo_status ?? 'Open'] }}>{w.wo_status}</span></td></tr>))}</tbody>
+                      <thead><tr style={{ background: '#f7f9fc', borderBottom: '1px solid #eee' }}>{['WO #', 'Title', 'Date', 'Pay Type', 'Hours', 'Their pay', 'Status'].map((h, i) => <th key={h} style={{ padding: '8px 10px', textAlign: i >= 4 ? 'right' : 'left', fontSize: 10, fontWeight: 700, color: '#90a4ae', letterSpacing: 1 }}>{h}</th>)}</tr></thead>
+                      <tbody>{yrJobs.map((w) => (<tr key={w.id} style={{ borderBottom: '1px solid #f5f5f5' }}><td style={{ padding: '10px 10px', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#0E1B2E' }}>#{w.wo_number}</td><td style={{ padding: '10px 10px', color: '#333' }}>{w.title || w.service_type || '—'}</td><td style={{ padding: '10px 10px', color: '#888' }}>{w.start_date ? fmtDate(w.start_date) : '—'}</td><td style={{ padding: '10px 10px', color: '#555' }}>{w.pay_type}</td><td style={{ padding: '10px 10px', textAlign: 'right', color: '#555' }}>{w.hours_worked ?? '—'}</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700 }}>{(earnedOn(w, contractor.name) == null ? 'Pay not set' : fmtMoney(earnedOn(w, contractor.name)))}</td><td style={{ padding: '10px 10px', textAlign: 'right' }}><span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: `${STATUS_DOT[w.wo_status ?? 'Open']}18`, color: STATUS_DOT[w.wo_status ?? 'Open'] }}>{w.wo_status}</span></td></tr>))}</tbody>
                       <tfoot><tr style={{ borderTop: '2px solid #eee' }}><td colSpan={5} style={{ padding: '10px 10px', fontWeight: 700, color: '#555', fontSize: 12 }}>Total</td><td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#1a1a2e' }}>{fmtMoney(yrBilled)}</td><td /></tr></tfoot>
                     </table>
                   )}

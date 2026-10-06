@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import {
-  X, User, Phone, Mail, FileText, Building2, Hash, MapPin,
+  X, User, Phone, Mail, FileText, Building2, Hash, MapPin, CalendarDays, HeartPulse,
   CheckCircle2, Smartphone, Landmark, Eye, EyeOff,
 } from 'lucide-react';
 import type { Contractor, EntityType } from '@/lib/types';
@@ -21,6 +21,10 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
     // Fred's own fields (Settings -> Custom fields); saved by saveContractor.
     custom:              asValues(item?.custom),
     name:                item?.name                ?? '',
+    hire_date:           item?.hire_date           ?? '',
+    emergency_name:      item?.emergency_name      ?? '',
+    emergency_phone:     item?.emergency_phone     ?? '',
+    emergency_relation:  item?.emergency_relation  ?? '',
     phone:               item?.phone               ?? '',
     email:               item?.email               ?? '',
     zelle_phone:         item?.zelle_phone         ?? '',
@@ -124,6 +128,27 @@ export default function ContractorModal({ item, onSave, onClose }: Props) {
                 <input className="input" value={form.zelle_phone ?? ''} onChange={(e) => set('zelle_phone', e.target.value)} placeholder="Phone or email used for Zelle" />
                 <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>Used to pre-fill Zelle when sending payments</div>
               </MF>
+              <MF label="Date of hire" icon={<CalendarDays size={14} />}>
+                <input className="input" type="date" value={form.hire_date ?? ''} onChange={(e) => set('hire_date', e.target.value)} />
+              </MF>
+              {/* Fred, 2026-10-06: "an emergency number". The tech can also
+                  fill this in on their own Profile in the tech app. */}
+              <div style={{ border: '1px solid rgba(198,40,40,0.25)', background: 'rgba(198,40,40,0.04)', borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', color: '#b91c1c', marginBottom: 10 }}>
+                  <HeartPulse size={14} /> Emergency contact
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                  <MF label="Name">
+                    <input className="input" value={form.emergency_name ?? ''} onChange={(e) => set('emergency_name', e.target.value)} placeholder="Who to call" />
+                  </MF>
+                  <MF label="Phone">
+                    <input className="input" value={form.emergency_phone ?? ''} onChange={(e) => set('emergency_phone', e.target.value)} placeholder="(555) 000-0000" type="tel" />
+                  </MF>
+                  <MF label="Relationship">
+                    <input className="input" value={form.emergency_relation ?? ''} onChange={(e) => set('emergency_relation', e.target.value)} placeholder="Wife, brother…" />
+                  </MF>
+                </div>
+              </div>
               <MF label="Notes" icon={<FileText size={14} />}>
                 <textarea className="input" value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="Any notes..." rows={3} />
               </MF>

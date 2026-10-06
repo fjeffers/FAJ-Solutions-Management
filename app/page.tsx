@@ -382,6 +382,11 @@ export default function HomePage() {
       // Fred's own fields (Settings -> Custom fields, migration 110); only
       // when the form sent them, so a partial save can't wipe them.
       ...(c.custom !== undefined ? { custom: c.custom ?? {} } : {}),
+      // Emergency contact and date of hire (migration 111), same rule.
+      ...(c.hire_date !== undefined ? { hire_date: c.hire_date || null } : {}),
+      ...(c.emergency_name !== undefined ? { emergency_name: c.emergency_name?.trim() || null } : {}),
+      ...(c.emergency_phone !== undefined ? { emergency_phone: c.emergency_phone?.trim() || null } : {}),
+      ...(c.emergency_relation !== undefined ? { emergency_relation: c.emergency_relation?.trim() || null } : {}),
     };
     if (c.id) {
       const { error } = await supabase.from('contractors').update(payload).eq('id', c.id);
@@ -1798,6 +1803,7 @@ Go ahead?`)) return;
             onSendAll={handleSendAllOnboarding}
             onSyncQuickBooks={handleSyncQuickBooks}
             busy={contractorBusy}
+            onOpenJob={(id) => openJobFrom(id, 'contractors')}
           />
         )}
         {view === 'statements' && (

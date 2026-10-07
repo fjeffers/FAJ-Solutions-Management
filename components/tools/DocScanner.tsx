@@ -5,15 +5,22 @@
 //   1. Take a photo of a page (or pick one from the phone).
 //   2. Drag the four corners onto the page's corners; pick Color / Gray / B&W.
 //   3. Add more pages, reorder, retake.
-//   4. Name it, pick what it is, and send it to the job — or save / share it.
+//   4. Name it, pick what it is, and send it to the job — or save / share it,
+//      or open it in the PDF editor to sign or mark it up first.
+//
+// The page is found by itself where it can be (lib/doc-scan.ts findPage —
+// paper on a darker surface); the corners can still be dragged. "Card" mode
+// puts both sides of an ID, insurance or business card on one page, life size
+// (Fred, 2026-10-07: "everything from iscanner").
 //
 // The math (flattening and clean-up) is lib/doc-scan.ts. The PDF is made on
 // the phone with pdf-lib and sent to /api/tech/doc, which files it privately
 // on the job. Nothing about money is shown here.
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, Check, ChevronLeft, ChevronRight, Download, Images, Loader2, RotateCw, Send, Share2, Trash2, X } from 'lucide-react';
-import { defaultCorners, enhance, pdfName, warpPage, type Pt, type ScanFilter } from '@/lib/doc-scan';
+import { Camera, Check, ChevronLeft, ChevronRight, Download, Images, Loader2, RotateCw, Send, Share2, Signature, Trash2, X } from 'lucide-react';
+import { defaultCorners, enhance, findPage, pdfName, warpPage, type Pt, type ScanFilter } from '@/lib/doc-scan';
+import { DOC_KINDS, sendTechDoc } from '@/lib/job-docs';
 import { toastError, toastSuccess } from '@/lib/toast';
 
 type Page = {
@@ -27,7 +34,6 @@ type Page = {
   out?: { blob: Blob; url: string; width: number; height: number };
 };
 
-export const DOC_KINDS = ['Signed work order', 'Receipt', 'Site sheet', 'Permit', 'Drawing', 'Other'];
 const FILTERS: { key: ScanFilter; label: string }[] = [{ key: 'bw', label: 'Black & white' }, { key: 'gray', label: 'Gray' }, { key: 'color', label: 'Color' }];
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -59,6 +65,19 @@ function rotate90(src: HTMLCanvasElement): HTMLCanvasElement {
   return c;
 }
 
+/** Where the page's corners are, found by itself when it can be; else a little inside the photo. */
+function startCorners(src: HTMLCanvasElement): Pt[] {
+  const k = Math.min(1, 400 / Math.max(src.width, src.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(8, Math.round(src.width * k)); c.height = Math.max(8, Math.round(src.height * k));
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(src, 0, 0, c.width, c.height);
+  const px = g.getImageData(0, 0, c.width, c.height);
+  const found = findPage({ width: px.width, height: px.height, data: px.data });
+  if (!found) return defaultCorners(src.width, src.height);
+  return found.map((p) => ({ x: Math.min(src.width, (p.x * src.width) / c.width), y: Math.min(src.height, (p.y * src.height) / c.height) }));
+}
+
 const toUrl = (c: HTMLCanvasElement) => new Promise<string>((res) => c.toBlob((b) => res(b ? URL.createObjectURL(b) : c.toDataURL('image/jpeg', 0.8)), 'image/jpeg', 0.8));
 
 /** Flatten and clean one page into a JPEG. */
@@ -73,12 +92,28 @@ async function finishPage(p: Page): Promise<NonNullable<Page['out']>> {
   return { blob, url: URL.createObjectURL(blob), width: flat.width, height: flat.height };
 }
 
-/** All finished pages as one PDF, each page letter-width with its own height. */
-async function makePdf(pages: Page[], title: string): Promise<Blob> {
+/**
+ * All finished pages as one PDF, each page letter-width with its own height —
+ * or, for a card, both sides on one letter page at life size (3⅜ in).
+ */
+async function makePdf(pages: Page[], title: string, card = false): Promise<Blob> {
   const { PDFDocument } = await import('pdf-lib');
   const pdf = await PDFDocument.create();
   pdf.setTitle(title);
   pdf.setProducer('FAJ Solutions');
+  if (card) {
+    const sheet = pdf.addPage([612, 792]);
+    let top = 792 - 72;
+    for (const p of pages) {
+      if (!p.out) continue;
+      const img = await pdf.embedJpg(new Uint8Array(await p.out.blob.arrayBuffer()));
+      const k = 243 / Math.max(p.out.width, p.out.height);
+      const w = p.out.width * k, h = p.out.height * k;
+      sheet.drawImage(img, { x: (612 - w) / 2, y: top - h, width: w, height: h });
+      top -= h + 36;
+    }
+    return new Blob([(await pdf.save()) as BlobPart], { type: 'application/pdf' });
+  }
   for (const p of pages) {
     if (!p.out) continue;
     const img = await pdf.embedJpg(new Uint8Array(await p.out.blob.arrayBuffer()));
@@ -90,17 +125,20 @@ async function makePdf(pages: Page[], title: string): Promise<Blob> {
   return new Blob([bytes as BlobPart], { type: 'application/pdf' });
 }
 
-export default function DocScanner({ woNumber, jobLabel, onClose, onSent }: {
+export default function DocScanner({ woNumber, jobLabel, onClose, onSent, onEdit }: {
   woNumber: string;
   /** Shown at the top, e.g. "WO 19101393 · Wendy's Chester". */
   jobLabel?: string;
   onClose: () => void;
   onSent?: () => void;
+  /** Open the finished scan in the PDF editor (sign, fill in, mark up) instead. */
+  onEdit?: (pdf: Blob, name: string, kind: string) => void;
 }) {
+  const [card, setCard] = useState(false);
   const [pages, setPages] = useState<Page[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [kind, setKind] = useState(DOC_KINDS[0]);
+  const [kind, setKind] = useState<string>(DOC_KINDS[0]);
   const [busy, setBusy] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -110,12 +148,12 @@ export default function DocScanner({ woNumber, jobLabel, onClose, onSent }: {
     setBusy('Opening the photo…');
     try {
       const added: Page[] = [];
-      for (const f of Array.from(files)) {
+      for (const f of Array.from(files).slice(0, card ? Math.max(0, 2 - pages.length) : undefined)) {
         const source = await loadPhoto(f);
-        added.push({ id: newId(), source, sourceUrl: await toUrl(source), corners: defaultCorners(source.width, source.height), filter: 'bw' });
+        added.push({ id: newId(), source, sourceUrl: await toUrl(source), corners: startCorners(source), filter: card ? 'color' : 'bw' });
       }
       setPages((ps) => [...ps, ...added]);
-      setEditing(added[0].id);
+      if (added.length) setEditing(added[0].id);
     } catch (e) {
       toastError(e instanceof Error ? e.message : "That photo couldn't be opened.");
     } finally { setBusy(null); }
@@ -123,7 +161,7 @@ export default function DocScanner({ woNumber, jobLabel, onClose, onSent }: {
 
   const page = pages.find((p) => p.id === editing) ?? null;
   const update = (id: string, patch: Partial<Page>) => setPages((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-  const usePage = async () => {
+  const keepPage = async () => {
     if (!page) return;
     setBusy('Straightening the page…');
     try {
@@ -147,28 +185,31 @@ export default function DocScanner({ woNumber, jobLabel, onClose, onSent }: {
   const done = pages.filter((p) => p.out);
   const title = name.trim() || kind;
 
-  const pdf = async () => { setBusy('Making the PDF…'); try { return await makePdf(done, title); } finally { setBusy(null); } };
+  const pdf = async () => { setBusy('Making the PDF…'); try { return await makePdf(done, title, card); } finally { setBusy(null); } };
+  const sheets = card ? 1 : done.length;
   const send = async () => {
     if (done.length === 0) return;
     const file = await pdf();
     setBusy('Sending…');
-    const fd = new FormData();
-    fd.append('wo_number', woNumber);
-    fd.append('file', new File([file], pdfName(title), { type: 'application/pdf' }));
-    fd.append('name', title);
-    fd.append('kind', kind);
-    fd.append('pages', String(done.length));
     try {
-      const res = await fetch('/api/tech/doc', { method: 'POST', body: fd });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || !json.ok) { toastError(json.error ?? "Couldn't send the document."); return; }
-      toastSuccess(`${title} sent (${done.length} page${done.length === 1 ? '' : 's'}).`);
+      const r = await sendTechDoc(woNumber, file, title, kind, sheets);
+      if (!r.ok) { toastError(r.error); return; }
+      toastSuccess(`${title} sent (${sheets} page${sheets === 1 ? '' : 's'}).`);
       onSent?.();
       onClose();
-    } catch {
-      toastError('No signal. Try again when you have signal, or tap Save to keep it on your phone.');
     } finally { setBusy(null); }
   };
+  const edit = async () => {
+    if (!onEdit || done.length === 0) return;
+    onEdit(await pdf(), title, kind);
+  };
+  const switchMode = (toCard: boolean) => {
+    setCard(toCard);
+    setKind(toCard ? 'Card' : DOC_KINDS[0]);
+    if (toCard) setPages((ps) => ps.slice(0, 2));
+  };
+  const full = card && pages.length >= 2;
+  const label = (i: number) => (card ? (i === 0 ? 'Front' : 'Back') : `Page ${i + 1}`);
   const save = async () => {
     const file = await pdf();
     const a = document.createElement('a');
@@ -198,7 +239,7 @@ export default function DocScanner({ woNumber, jobLabel, onClose, onSent }: {
         <button type="button" className="wf-btn wf-btn-sm" onClick={page ? () => setEditing(null) : onClose} aria-label={page ? 'Back to the pages' : 'Close'}
           style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}>{page ? <ChevronLeft size={16} /> : <X size={16} />}</button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700 }}>{page ? `Page ${pages.indexOf(page) + 1}: drag the corners` : 'Scan a document'}</div>
+          <div style={{ fontWeight: 700 }}>{page ? `${label(pages.indexOf(page))}: check the corners` : card ? 'Scan a card' : 'Scan a document'}</div>
           {jobLabel && !page && <div style={{ fontSize: 12, opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jobLabel}</div>}
         </div>
         {busy && <span style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Loader2 size={14} className="spin" /> {busy}</span>}
@@ -216,20 +257,29 @@ export default function DocScanner({ woNumber, jobLabel, onClose, onSent }: {
             ))}
             <button type="button" className="wf-btn wf-btn-sm" onClick={() => void turn()} style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}><RotateCw size={15} /> Turn</button>
             <span style={{ flex: 1 }} />
-            <button type="button" className="wf-btn wf-btn-gold" disabled={!!busy} onClick={() => void usePage()}><Check size={16} /> Use this page</button>
+            <button type="button" className="wf-btn wf-btn-gold" disabled={!!busy} onClick={() => void keepPage()}><Check size={16} /> Use this page</button>
           </div>
         </>
       ) : (
         <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', gap: 6 }} role="group" aria-label="What are you scanning?">
+            {([[false, 'Pages'], [true, 'Card — both sides']] as const).map(([isCard, text]) => (
+              <button key={text} type="button" className={`wf-btn wf-btn-sm ${card === isCard ? 'wf-btn-navy' : 'wf-btn-outline'}`} aria-pressed={card === isCard} onClick={() => switchMode(isCard)}>{text}</button>
+            ))}
+          </div>
           {pages.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--wf-subtle)', padding: '24px 8px', fontSize: 14 }}>
-              Lay the page flat in good light and take a photo from above. You&apos;ll line up the corners next.
+            <div style={{ textAlign: 'center', color: 'var(--wf-subtle)', padding: '20px 8px', fontSize: 14 }}>
+              {card
+                ? 'Photograph the front of the card on a dark surface, then the back. Both go on one page at their real size.'
+                : 'Lay the page flat on a darker surface, in good light, and take a photo from above. The edges are found for you — drag a corner if it’s off.'}
             </div>
           )}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {pick(pages.length ? 'Add a page' : 'Take a photo', <Camera size={17} />, true, true)}
-            {pick('From photos', <Images size={17} />, false, false)}
-          </div>
+          {!full && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {pick(card ? (pages.length ? 'Photo of the back' : 'Photo of the front') : pages.length ? 'Add a page' : 'Take a photo', <Camera size={17} />, true, true)}
+              {pick('From photos', <Images size={17} />, false, false)}
+            </div>
+          )}
           {pages.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
               {pages.map((p, i) => (
@@ -239,7 +289,7 @@ export default function DocScanner({ woNumber, jobLabel, onClose, onSent }: {
                     <img src={p.out?.url ?? p.sourceUrl} alt={`Page ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#fff' }} />
                   </button>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12.5, fontWeight: 700 }}>
-                    <span style={{ flex: 1 }}>Page {i + 1}{p.out ? '' : ' · tap to finish'}</span>
+                    <span style={{ flex: 1 }}>{label(i)}{p.out ? '' : ' · tap to finish'}</span>
                     <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move earlier"><ChevronLeft size={14} /></button>
                     <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => move(i, 1)} disabled={i === pages.length - 1} aria-label="Move later"><ChevronRight size={14} /></button>
                     <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setPages((ps) => ps.filter((x) => x.id !== p.id))} aria-label="Remove page"><Trash2 size={14} /></button>
@@ -263,6 +313,7 @@ export default function DocScanner({ woNumber, jobLabel, onClose, onSent }: {
               {pages.length > done.length && <div style={{ fontSize: 12.5, color: 'var(--wf-warning)' }}>{pages.length - done.length} page{pages.length - done.length === 1 ? ' isn’t' : 's aren’t'} finished yet and won&apos;t be included.</div>}
               <div className="save-bar" style={{ justifyContent: 'stretch' }}>
                 <button type="button" className="wf-btn wf-btn-navy" style={{ flex: '2 1 160px' }} disabled={!!busy} onClick={() => void send()}><Send size={16} /> Send to the job</button>
+                {onEdit && <button type="button" className="wf-btn wf-btn-gold" style={{ flex: '2 1 160px' }} disabled={!!busy} onClick={() => void edit()}><Signature size={16} /> Sign / mark up</button>}
                 <button type="button" className="wf-btn wf-btn-outline" style={{ flex: '1 1 100px' }} disabled={!!busy} onClick={() => void save()}><Download size={16} /> Save</button>
                 <button type="button" className="wf-btn wf-btn-outline" style={{ flex: '1 1 100px' }} disabled={!!busy} onClick={() => void share()}><Share2 size={16} /> Share</button>
               </div>

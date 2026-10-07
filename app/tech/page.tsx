@@ -48,10 +48,13 @@ import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
   ArrowLeft, Briefcase, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X, ScanLine, Hash, Ruler,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
+import PdfEditor from '@/components/tools/PdfEditor';
+import ReadTool from '@/components/tools/ReadTool';
+import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 
 // Primio's tech tabs — Jobs, Available, Profile (with the W-9 inside) — plus
 // My schedule, Messages and Pay history (Fred, 2026-10-04: "the tech portal is
@@ -885,7 +888,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
             <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
           )}
           <JobPhotos canAdd={canReport} ph={ph} />
-          <JobTools job={job} canAdd={canReport} ph={ph} />
+          <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} /></div>}
         </>}
         bottom={bottom}
@@ -1406,55 +1409,112 @@ function useJobPhotos(job: WfJob, uid: string) {
   return { sent, waiting, busy, add, flush };
 }
 
-// ── Tools: scan, count, measure (Fred, 2026-10-07, sending the iScanner app:
-// "all the above for my tech to use"). Scans go to the job as PDFs
-// (/api/tech/doc, migration 115); counts and measurements as marked-up photos.
+// ── Tools — iScanner's, for techs (Fred, 2026-10-07: "all the above for my
+// tech to use", then "edit and sign pdfs everything from iscanner"):
+//   Scan a document   paper → PDF, sent to the job (/api/tech/doc, migration 115)
+//   Edit & sign a PDF fill in, sign, mark up — a PDF from the phone, a scan, or
+//                     one shared with the job's techs (migration 116)
+//   Read a code       QR/barcode or a label's words → copy, or the job report
+//   Count / Measure   marked-up photos, sent with the job's photos
 
-type SentDoc = { id: string; name: string; kind: string; pages: number | null; created_at: string };
+type JobDoc = { id: string; name: string; kind: string; pages: number | null; created_at: string; mine?: boolean; shared?: boolean };
+type ToolKey = 'scan' | 'edit' | 'read' | 'count' | 'measure';
 
-function JobTools({ job, canAdd, ph }: { job: WfJob; canAdd: boolean; ph: ReturnType<typeof useJobPhotos> }) {
-  const [tool, setTool] = useState<null | 'scan' | 'count' | 'measure'>(null);
-  const [docs, setDocs] = useState<SentDoc[]>([]);
+function JobTools({ job, canAdd, ph, onNote }: {
+  job: WfJob; canAdd: boolean; ph: ReturnType<typeof useJobPhotos>;
+  onNote?: (text: string) => Promise<void>;
+}) {
+  const [tool, setTool] = useState<null | ToolKey>(null);
+  const [docs, setDocs] = useState<JobDoc[]>([]);
+  const [editing, setEditing] = useState<{ file: Blob | null; name: string; kind: string } | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
   const loadDocs = useCallback(async () => {
     const { data, error } = await createClient().rpc('wf_tech_job_docs', { p_wo_number: job.number });
-    if (!error && Array.isArray(data)) setDocs(data as SentDoc[]);
+    if (!error && Array.isArray(data)) setDocs(data as JobDoc[]);
   }, [job.number]);
   useEffect(() => { void loadDocs(); }, [loadDocs]);
   if (!canAdd && docs.length === 0) return null;
+  const jobLabel = `WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`;
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const btn = (key: 'scan' | 'count' | 'measure', icon: React.ReactNode, label: string) => (
-    <button type="button" className="wf-btn wf-btn-outline" style={{ flex: '1 1 140px', justifyContent: 'center' }} onClick={() => setTool(key)}>{icon} {label}</button>
+  const btn = (key: ToolKey, icon: React.ReactNode, label: string) => (
+    <button type="button" className="wf-btn wf-btn-outline" style={{ flex: '1 1 140px', justifyContent: 'center' }}
+      onClick={() => { if (key === 'edit') setEditing({ file: null, name: '', kind: DOC_KINDS[1] }); else setTool(key); }}>{icon} {label}</button>
+  );
+  const openDoc = async (d: JobDoc) => {
+    setOpening(d.id);
+    try {
+      const res = await fetch(`/api/tech/doc?id=${encodeURIComponent(d.id)}`);
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        toastError(j.error ?? "Couldn't open the document.");
+        return;
+      }
+      setEditing({ file: await res.blob(), name: signedName(d.name), kind: d.kind === 'Work order' ? 'Signed work order' : d.kind });
+    } catch {
+      toastError('No signal. Try again when you have signal.');
+    } finally { setOpening(null); }
+  };
+  const shared = docs.filter((d) => d.shared);
+  const sent = docs.filter((d) => !d.shared);
+  const row = (d: JobDoc) => (
+    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--wf-line)', fontSize: 13.5 }}>
+      <FileText size={15} color="var(--wf-subtle)" />
+      <span style={{ flex: 1, minWidth: 0 }}>{d.name}{d.name !== d.kind ? <span className="wf-subtle"> · {d.kind}</span> : null}
+        <span className="wf-subtle" style={{ display: 'block', fontSize: 12 }}>{d.pages ? `${d.pages} p · ` : ''}{when(d.created_at)}</span>
+      </span>
+      {canAdd && (
+        <button type="button" className={`wf-btn wf-btn-sm ${d.shared ? 'wf-btn-gold' : 'wf-btn-outline'}`} disabled={opening === d.id} onClick={() => void openDoc(d)}>
+          {opening === d.id ? 'Opening…' : d.shared ? <><Signature size={14} /> Open &amp; sign</> : 'Open'}
+        </button>
+      )}
+    </div>
   );
   return (
-    <Section title="Tools" subtitle="Scan paperwork to PDF, count things or measure on a photo">
+    <Section title="Tools" subtitle="Scan, fill in and sign PDFs, read codes, count and measure">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {canAdd && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {btn('scan', <ScanLine size={17} />, 'Scan a document')}
+            {btn('edit', <Signature size={17} />, 'Edit & sign a PDF')}
+            {btn('read', <ScanBarcode size={17} />, 'Read a code or label')}
             {btn('count', <Hash size={17} />, 'Count')}
             {btn('measure', <Ruler size={17} />, 'Measure')}
           </div>
         )}
-        {docs.length > 0 && (
+        {shared.length > 0 && (
+          <div>
+            <div className="wf-label" style={{ marginBottom: 4 }}>To fill in or sign</div>
+            {shared.map(row)}
+          </div>
+        )}
+        {sent.length > 0 && (
           <div>
             <div className="wf-label" style={{ marginBottom: 4 }}>Documents you sent</div>
-            {docs.map((d) => (
-              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--wf-line)', fontSize: 13.5 }}>
-                <FileText size={15} color="var(--wf-subtle)" />
-                <span style={{ flex: 1, minWidth: 0 }}>{d.name}{d.name !== d.kind ? <span className="wf-subtle"> · {d.kind}</span> : null}</span>
-                <span className="wf-subtle" style={{ fontSize: 12 }}>{d.pages ? `${d.pages} p · ` : ''}{when(d.created_at)}</span>
-              </div>
-            ))}
+            {sent.map(row)}
           </div>
         )}
       </div>
       {tool === 'scan' && (
-        <DocScanner woNumber={job.number} jobLabel={`WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`}
-          onClose={() => setTool(null)} onSent={() => void loadDocs()} />
+        <DocScanner woNumber={job.number} jobLabel={jobLabel}
+          onClose={() => setTool(null)} onSent={() => void loadDocs()}
+          onEdit={(file, name, kind) => { setTool(null); setEditing({ file, name, kind }); }} />
       )}
+      {tool === 'read' && <ReadTool onClose={() => setTool(null)} onNote={onNote} />}
       {(tool === 'count' || tool === 'measure') && (
         <PhotoMarkup mode={tool} onClose={() => setTool(null)}
           onSave={async (file, source) => { setTool(null); await ph.add(file, source); }} />
+      )}
+      {editing && (
+        <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}
+          send={{ label: 'Send to the job', kinds: [...DOC_KINDS], defaultKind: editing.kind }}
+          onSend={async (r) => {
+            const out = await sendTechDoc(job.number, r.blob, r.name, r.kind, r.pages);
+            if (!out.ok) { toastError(out.error); return false; }
+            toastSuccess(`${r.name} sent.`);
+            void loadDocs();
+            return true;
+          }}
+          onClose={() => setEditing(null)} />
       )}
     </Section>
   );

@@ -11,7 +11,7 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Archive, ArchiveRestore, CalendarClock, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
-  Pencil, Plus, Receipt, Search, Send, Sparkles, Trash2, UserCog, Users, Wallet,
+  FilePlus2, Pencil, Plus, Receipt, Search, Send, Signature, Sparkles, Trash2, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -40,6 +40,8 @@ import { designNow } from '@/lib/screen-design';
 import { answeredFields } from '@/lib/custom-fields';
 import { CustomFieldList } from '@/components/CustomFieldInputs';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
+import PdfEditor, { type SendResult } from '@/components/tools/PdfEditor';
+import { DOC_KINDS, editedName } from '@/lib/job-docs';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
 
@@ -474,7 +476,7 @@ function OwnerJob({
         onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
     ),
     'job.notes': <JobNotesCard woId={w.id} author={author ?? 'Office'} />,
-    'job.docs': <JobDocsCard woId={w.id} />,
+    'job.docs': <JobDocsCard woId={w.id} jobLabel={`WO ${w.wo_number}${w.site_name || w.customer_name ? ` · ${w.site_name || w.customer_name}` : ''}`} archived={archived} />,
     'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,
     'job.expenses': <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />,
     'job.photos': <OwnerPhotos w={w} />,
@@ -525,23 +527,44 @@ function OwnerJob({
   );
 }
 
-// ── Documents: PDFs techs scanned on the job (iScanner-style, migration 115).
-// Private: opened through a short-lived signed link, never a public one.
+// ── Documents on the job (iScanner-style, migrations 115–116): PDFs techs
+// scanned or signed in the field, and PDFs added here — filled in, signed or
+// marked up in the PDF editor (Fred, 2026-10-07: "edit and sign pdfs
+// everything from iscanner"). Tick "Techs can open" on one and the techs on
+// the job get it under Tools to fill in and sign; their signed copy comes back
+// here. Private: opened through a short-lived signed link, never a public one.
 
-type JobDoc = { id: string; name: string; kind: string; pages: number | null; sent_by: string | null; path: string; created_at: string };
+type JobDoc = { id: string; name: string; kind: string; pages: number | null; sent_by: string | null; path: string; created_at: string; for_tech: boolean };
 
-function JobDocsCard({ woId }: { woId: string }) {
+function JobDocsCard({ woId, jobLabel, archived }: { woId: string; jobLabel: string; archived: boolean }) {
   const [docs, setDocs] = useState<JobDoc[] | null>(null);
+  const [editing, setEditing] = useState<{ file: Blob; name: string; kind: string } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const load = async () => {
-    const { data } = await createClient().from('job_docs').select('id, name, kind, pages, sent_by, path, created_at').eq('wo_id', woId).order('created_at', { ascending: false });
+    const { data } = await createClient().from('job_docs').select('id, name, kind, pages, sent_by, path, created_at, for_tech').eq('wo_id', woId).order('created_at', { ascending: false });
     setDocs((data as JobDoc[] | null) ?? []);
   };
   useEffect(() => { void load(); }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!docs || docs.length === 0) return null;
+  if (!docs || (docs.length === 0 && archived)) return null;
   const open = async (d: JobDoc) => {
     const { data, error } = await createClient().storage.from('job-docs').createSignedUrl(d.path, 600);
     if (error || !data?.signedUrl) { toastError("That document couldn't be opened."); return; }
     window.open(data.signedUrl, '_blank', 'noopener');
+  };
+  const editDoc = async (d: JobDoc) => {
+    setBusyId(d.id);
+    const { data, error } = await createClient().storage.from('job-docs').download(d.path);
+    setBusyId(null);
+    if (error || !data) { toastError("That document couldn't be opened."); return; }
+    setEditing({ file: data, name: editedName(d.name), kind: d.kind });
+  };
+  const share = async (d: JobDoc) => {
+    setBusyId(d.id);
+    const { error } = await createClient().from('job_docs').update({ for_tech: !d.for_tech }).eq('id', d.id);
+    setBusyId(null);
+    if (error) { toastError(`It wasn't changed: ${error.message}`); return; }
+    toastSuccess(d.for_tech ? `Techs can no longer open "${d.name}".` : `Techs on this job can now open "${d.name}" under Tools to fill in and sign.`);
+    await load();
   };
   const remove = async (d: JobDoc) => {
     if (!confirm(`Delete "${d.name}"? This can't be undone.`)) return;
@@ -551,21 +574,65 @@ function JobDocsCard({ woId }: { woId: string }) {
     await db.storage.from('job-docs').remove([d.path]);
     await load();
   };
+  /** File a finished PDF from the editor on this job (a new document; the original stays). */
+  const save = async (r: SendResult): Promise<boolean> => {
+    const db = createClient();
+    const { data: me } = await db.auth.getUser();
+    const uid = me.user?.id;
+    if (!uid) { toastError('Your sign-in ran out. Sign in again and retry.'); return false; }
+    const path = `${uid}/${woId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.pdf`;
+    const { error: upErr } = await db.storage.from('job-docs').upload(path, r.blob, { contentType: 'application/pdf', upsert: false });
+    if (upErr) { toastError(`It wasn't saved: ${upErr.message}`); return false; }
+    const { error } = await db.from('job_docs').insert({
+      user_id: uid, wo_id: woId, path, name: r.name.slice(0, 120) || 'Document', kind: r.kind.slice(0, 40),
+      pages: r.pages, bytes: r.blob.size, for_tech: r.forTech,
+    });
+    if (error) { await db.storage.from('job-docs').remove([path]); toastError(`It wasn't saved: ${error.message}`); return false; }
+    toastSuccess(r.forTech ? 'Saved to the job — the techs on it can open it under Tools.' : 'Saved to the job.');
+    await load();
+    return true;
+  };
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   return (
-    <Section title="Documents" subtitle="PDFs scanned on the job — signed work orders, receipts, site sheets">
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {docs.map((d) => (
-          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--wf-line)' }}>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: 'block', fontWeight: 600 }}>{d.name}</span>
-              <span className="wf-subtle" style={{ fontSize: 12.5 }}>{d.kind}{d.pages ? ` · ${d.pages} page${d.pages === 1 ? '' : 's'}` : ''} · {d.sent_by ? `${d.sent_by} · ` : ''}{when(d.created_at)}</span>
-            </span>
-            <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void open(d)}>Open</button>
-            <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void remove(d)} aria-label={`Delete ${d.name}`}><Trash2 size={14} /></button>
-          </div>
-        ))}
-      </div>
+    <Section title="Documents" subtitle="PDFs on the job — scans and signed copies from techs, and PDFs to fill in and sign"
+      right={!archived ? (
+        <label className="wf-btn wf-btn-outline wf-btn-sm" style={{ cursor: 'pointer' }}>
+          <FilePlus2 size={14} /> Add a PDF
+          <input type="file" accept="application/pdf,.pdf" style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setEditing({ file: f, name: f.name.replace(/\.pdf$/i, ''), kind: 'Work order' }); }} />
+        </label>
+      ) : undefined}>
+      {docs.length === 0 ? (
+        <div className="wf-subtle" style={{ fontSize: 13.5 }}>
+          Nothing yet. Add a PDF to fill in or sign it here — tick &ldquo;Techs on this job can open it&rdquo; and they can sign it on site.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {docs.map((d) => (
+            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid var(--wf-line)', flexWrap: 'wrap' }}>
+              <span style={{ flex: '1 1 200px', minWidth: 0 }}>
+                <span style={{ display: 'block', fontWeight: 600 }}>{d.name}</span>
+                <span className="wf-subtle" style={{ fontSize: 12.5 }}>{d.kind}{d.pages ? ` · ${d.pages} page${d.pages === 1 ? '' : 's'}` : ''} · {d.sent_by ? `${d.sent_by} · ` : ''}{when(d.created_at)}</span>
+                {d.for_tech && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 11.5, fontWeight: 700, color: 'var(--wf-success)' }}>· Techs can open</span>}
+              </span>
+              <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void open(d)}>Open</button>
+              {!archived && <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={busyId === d.id} onClick={() => void editDoc(d)}><Signature size={14} /> Edit / sign</button>}
+              {!archived && (
+                <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={busyId === d.id} onClick={() => void share(d)} aria-pressed={d.for_tech}
+                  title={d.for_tech ? 'Stop the techs on this job opening it' : 'Let the techs on this job open it to fill in and sign'}>
+                  <Users size={14} /> {d.for_tech ? 'Unshare' : 'Share with techs'}
+                </button>
+              )}
+              <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void remove(d)} aria-label={`Delete ${d.name}`}><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {editing && (
+        <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}
+          send={{ label: 'Save to the job', kinds: [...DOC_KINDS], defaultKind: editing.kind, techToggle: true }}
+          onSend={save} onClose={() => setEditing(null)} />
+      )}
     </Section>
   );
 }

@@ -164,3 +164,82 @@ export function defaultCorners(width: number, height: number, inset = 0.04): Pt[
 
 /** A file name from a document's name: "Signed work order" → "Signed_work_order.pdf". */
 export const pdfName = (name: string) => `${name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'Scan'}.pdf`;
+
+/**
+ * Find the page in a photo by itself, like iScanner does (Fred, 2026-10-07:
+ * "everything from iscanner"): the paper is the biggest bright patch, and its
+ * corners are that patch's furthest points. Null when there's no clear page
+ * (paper filling the whole photo, a white table, a crumpled sheet) — the tech
+ * then drags the corners as before.
+ */
+export function findPage(img: Pixels): Pt[] | null {
+  // Work on a small copy: plenty to find four corners, and fast on a phone.
+  const k = Math.min(1, 240 / Math.max(img.width, img.height));
+  const w = Math.max(8, Math.round(img.width * k)), h = Math.max(8, Math.round(img.height * k));
+  const gray = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(img.width - 1, Math.floor(x / k)), sy = Math.min(img.height - 1, Math.floor(y / k));
+      const i = (sy * img.width + sx) * 4;
+      gray[y * w + x] = (img.data[i] * 299 + img.data[i + 1] * 587 + img.data[i + 2] * 114) / 1000;
+    }
+  }
+  // Otsu: the brightness that best splits paper from background.
+  const hist = new Array(256).fill(0);
+  for (const g of gray) hist[g]++;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, best = 0, cut = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = gray.length - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const between = wB * wF * (sumB / wB - (sum - sumB) / wF) ** 2;
+    if (between > best) { best = between; cut = t; }
+  }
+  // The biggest bright patch.
+  const seen = new Uint8Array(w * h);
+  let biggest: number[] = [];
+  const stack: number[] = [];
+  for (let s = 0; s < gray.length; s++) {
+    if (seen[s] || gray[s] <= cut) continue;
+    const patch: number[] = [];
+    seen[s] = 1; stack.push(s);
+    while (stack.length) {
+      const p = stack.pop()!;
+      patch.push(p);
+      const x = p % w, y = (p - x) / w;
+      for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) {
+        if (q >= 0 && !seen[q] && gray[q] > cut) { seen[q] = 1; stack.push(q); }
+      }
+    }
+    if (patch.length > biggest.length) biggest = patch;
+  }
+  if (biggest.length < w * h * 0.15) return null;
+  // Its four corners: the furthest points toward each corner of the photo.
+  let tl = biggest[0], tr = tl, br = tl, bl = tl;
+  const xy = (p: number) => { const x = p % w; return [x, (p - x) / w]; };
+  for (const p of biggest) {
+    const [x, y] = xy(p);
+    const [ax, ay] = xy(tl), [bx, by] = xy(tr), [cx, cy] = xy(br), [dx, dy] = xy(bl);
+    if (x + y < ax + ay) tl = p;
+    if (x - y > bx - by) tr = p;
+    if (x + y > cx + cy) br = p;
+    if (x - y < dx - dy) bl = p;
+  }
+  const quad = [tl, tr, br, bl].map(xy);
+  // A real page fills its own outline, and doesn't fill the whole photo.
+  let area = 0;
+  for (let i = 0; i < 4; i++) { const [x1, y1] = quad[i], [x2, y2] = quad[(i + 1) % 4]; area += x1 * y2 - x2 * y1; }
+  area = Math.abs(area) / 2;
+  if (area < w * h * 0.15 || area > w * h * 0.97) return null;
+  if (biggest.length / area < 0.85) return null;
+  // A hair inside the outline, so no sliver of table shows along an edge.
+  const cx = quad.reduce((t, [x]) => t + x, 0) / 4, cy = quad.reduce((t, [, y]) => t + y, 0) / 4;
+  return quad.map(([x, y]) => {
+    const ix = x + 0.5 + (cx - x) * 0.015, iy = y + 0.5 + (cy - y) * 0.015;
+    return { x: Math.min(img.width, ix / k), y: Math.min(img.height, iy / k) };
+  });
+}

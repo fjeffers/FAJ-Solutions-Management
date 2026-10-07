@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyH, defaultCorners, enhance, homography, outputSize, pdfName, warpPage, type Pixels } from './doc-scan';
+import { applyH, defaultCorners, enhance, findPage, homography, outputSize, pdfName, warpPage, type Pixels, type Pt } from './doc-scan';
 
 const solid = (width: number, height: number, rgb: [number, number, number]): Pixels => {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -52,5 +52,41 @@ describe('document scanning', () => {
   it('a file name from the document name', () => {
     expect(pdfName('Signed work order #12')).toBe('Signed_work_order_12.pdf');
     expect(pdfName('   ')).toBe('Scan.pdf');
+  });
+});
+
+describe('finding the page by itself', () => {
+  const photo = (w: number, h: number, quad: Pt[] | null, paper = 235, table = 70): Pixels => {
+    const data = new Uint8ClampedArray(w * h * 4);
+    const inside = (x: number, y: number) => {
+      if (!quad) return false;
+      let c = false;
+      for (let i = 0, j = 3; i < 4; j = i++) {
+        const a = quad[i], b = quad[j];
+        if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+      }
+      return c;
+    };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const v = inside(x + 0.5, y + 0.5) ? paper : table + ((x * 7 + y * 13) % 20);
+      data.set([v, v, v, 255], (y * w + x) * 4);
+    }
+    return { width: w, height: h, data };
+  };
+
+  it('finds a tilted page on a dark table, corners in order', () => {
+    const quad = [{ x: 120, y: 60 }, { x: 610, y: 95 }, { x: 580, y: 760 }, { x: 90, y: 720 }];
+    const found = findPage(photo(700, 840, quad))!;
+    expect(found).not.toBeNull();
+    found.forEach((p, i) => {
+      expect(Math.abs(p.x - quad[i].x)).toBeLessThan(12);
+      expect(Math.abs(p.y - quad[i].y)).toBeLessThan(12);
+    });
+  });
+
+  it('gives up when there is no clear page', () => {
+    expect(findPage(photo(400, 300, null))).toBeNull(); // just the table
+    expect(findPage(photo(400, 300, null, 235, 230))).toBeNull(); // white on white
+    expect(findPage(photo(400, 300, [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 300 }, { x: 0, y: 300 }]))).toBeNull(); // paper fills the photo
   });
 });

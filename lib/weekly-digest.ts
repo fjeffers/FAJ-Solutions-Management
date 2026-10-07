@@ -19,7 +19,9 @@ export async function buildWeeklyDigest(admin: SupabaseClient): Promise<WeeklyDi
     admin.from('invoices').select('*'),
     admin.from('invoice_payments').select('*'),
   ]);
-  const visits = (vRes.data ?? []) as SiteVisit[];
+  // Archived visits are merged or duplicate log entries, never work still to bill
+  // (same rule as the daily brief and the dashboard's "Needs you").
+  const visits = ((vRes.data ?? []) as SiteVisit[]).filter((v) => !v.archived_at);
   const invoices = (iRes.data ?? []) as Invoice[];
   const payments = (pRes.data ?? []) as InvoicePayment[];
 

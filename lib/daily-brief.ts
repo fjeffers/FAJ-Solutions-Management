@@ -33,7 +33,10 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
     admin.from('invoice_payments').select('*'),
     fetchFhjSnapshot(),
   ]);
-  const visits = (vRes.data ?? []) as SiteVisit[];
+  // Archived visits are merged or duplicate log entries (their notes say where the
+  // work was billed) — never money still owed. Fred, 2026-10-06: the brief kept
+  // "showing a balance" from an archived $0 visit.
+  const visits = ((vRes.data ?? []) as SiteVisit[]).filter((v) => !v.archived_at);
   const invoices = (iRes.data ?? []) as Invoice[];
   const payments = (pRes.data ?? []) as InvoicePayment[];
 

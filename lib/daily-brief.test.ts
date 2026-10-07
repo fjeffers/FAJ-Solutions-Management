@@ -38,6 +38,16 @@ const invoice = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('buildDailyBrief', () => {
+  it('never counts an archived visit as work still to bill (Fred, 2026-10-06)', async () => {
+    const brief = await buildDailyBrief(
+      fakeAdmin({
+        site_visits: [visit({ site_name: 'MT. Laurel', site_code: '1114', rate: '$0/hr', hours: null, archived_at: '2026-09-26T12:00:00Z' })],
+      }),
+    );
+    expect(brief.quiet).toBe(true);
+    expect(brief.html).not.toContain('MT. Laurel');
+  });
+
   it('leads with never-sent drafts and totals them', async () => {
     const brief = await buildDailyBrief(
       fakeAdmin({

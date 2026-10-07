@@ -14,7 +14,7 @@ import {
   Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, DoorOpen, DoorClosed, AppWindow, SquareDashed,
 } from 'lucide-react';
 import {
-  CABLE_TYPES, COLORS, OPENING_SYMBOLS, WALL_TYPES, addBendAt, footprint, splitAt, wallTypeInfo, type WallType, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
+  CABLE_TYPES, COLORS, OPENING_SYMBOLS, ROT_HANDLE, WALL_TYPES, addBendAt, footprint, normDeg, roomCenter, roomCorners, splitAt, wallTypeInfo, type WallType, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
   sqft, summarize, symbolInfo, type CableType, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
 
@@ -293,7 +293,12 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     if (g?.kind === 'handle') {
       g.moved = true;
       const p = snapOn ? snapPt(raw, 0.5) : raw;
-      setSketch((s) => ({ ...s, shapes: s.shapes.map((x) => (x.id === g.id ? dragHandle(g.base, g.handle, p) : x)) }));
+      setSketch((s) => ({ ...s, shapes: s.shapes.map((x) => {
+        if (x.id !== g.id) return x;
+        const next = dragHandle(g.base, g.handle, g.handle === ROT_HANDLE ? raw : p);
+        // Turning snaps to 15° steps while Snap is on.
+        return g.handle === ROT_HANDLE && snapOn && (next.kind === 'room' || next.kind === 'symbol') ? { ...next, rot: normDeg(Math.round((next.rot ?? 0) / 15) * 15) } : next;
+      }) }));
       return;
     }
     if (g?.kind === 'move') {
@@ -475,6 +480,27 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
     );
   };
 
+  /**
+   * A wall's length written along it, just outside (Fred, 2026-10-06: "add
+   * measurements to show on each wall"). The text turns with the wall and is
+   * never upside down.
+   */
+  const measure = (a: Pt, b: Pt, key: string, fill: string, offset = 0.85) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 0.5) return null;
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    const at = { x: (a.x + b.x) / 2 + uy * offset, y: (a.y + b.y) / 2 - ux * offset };
+    let deg = (Math.atan2(uy, ux) * 180) / Math.PI;
+    if (deg > 90) deg -= 180; else if (deg < -90) deg += 180;
+    const size = LABEL * 0.75;
+    return (
+      <text key={key} x={at.x} y={at.y} transform={`rotate(${deg} ${at.x} ${at.y})`} fontSize={size} textAnchor="middle" dominantBaseline="middle"
+        stroke="#fff" strokeWidth={size * 0.35} strokeLinejoin="round" paintOrder="stroke" fill={fill} fontWeight={700} fontFamily="Inter, system-ui, sans-serif" pointerEvents="none">
+        {feet(len)}
+      </text>
+    );
+  };
+
   /** Wall lines broken where a door, window or opening sits (a window keeps a thin line). */
   const wallLines = (key: string, runs: { a: Pt; b: Pt }[], stroke: string, width: number, isDraft: boolean, dash?: string) =>
     runs.flatMap((run, i) => (isDraft ? [{ ...run, kind: 'solid' as const }] : wallPieces(run, openings)).map((p, j) => (
@@ -511,16 +537,19 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         );
       case 'room': {
         const label = `${feet(s.w)} × ${feet(s.h)}`;
+        const corners = roomCorners(s);
+        const sides = corners.map((a, i) => ({ a, b: corners[(i + 1) % 4] }));
+        const c = roomCenter(s);
         return (
           <g key={s.id}>
-            <rect x={s.x} y={s.y} width={s.w} height={s.h} fill={s.color} fillOpacity={0.07} />
-            {typedWall(s.id, [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }].map((a, i, c) => ({ a, b: c[(i + 1) % 4] })), s.wtype, s.color, sw(0.3), isDraft)}
-            {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 - LABEL * 0.8 }, s.name || 'Room', `${s.id}-n`, LABEL * 1.1)}
-            {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 + LABEL * 0.5 }, label, `${s.id}-d`, LABEL * 0.85, '#455A64')}
-            {tag({ x: s.x + s.w / 2, y: s.y + s.h / 2 + LABEL * 1.6 }, sqft(s.w * s.h), `${s.id}-a`, LABEL * 0.8, '#455A64')}
-            {tag({ x: s.x + s.w / 2, y: s.y - LABEL * 0.8 }, feet(s.w), `${s.id}-tw`, LABEL * 0.75, s.color)}
-            {tag({ x: s.x - LABEL * 1.6, y: s.y + s.h / 2 }, feet(s.h), `${s.id}-th`, LABEL * 0.75, s.color)}
-            {sel && <rect x={s.x - 0.3} y={s.y - 0.3} width={s.w + 0.6} height={s.h + 0.6} fill="none" stroke="#C9A24B" strokeWidth={0.12} strokeDasharray="0.5 0.3" data-noexport />}
+            <polygon points={corners.map((p) => `${p.x},${p.y}`).join(' ')} fill={s.color} fillOpacity={0.07} />
+            {typedWall(s.id, sides, s.wtype, s.color, sw(0.3), isDraft)}
+            {tag({ x: c.x, y: c.y - LABEL * 0.8 }, s.name || 'Room', `${s.id}-n`, LABEL * 1.1)}
+            {tag({ x: c.x, y: c.y + LABEL * 0.5 }, label, `${s.id}-d`, LABEL * 0.85, '#455A64')}
+            {tag({ x: c.x, y: c.y + LABEL * 1.6 }, sqft(s.w * s.h), `${s.id}-a`, LABEL * 0.8, '#455A64')}
+            {/* The length of every side, outside the wall */}
+            {sides.map((sd, i) => measure(sd.a, sd.b, `${s.id}-m${i}`, s.color, 0.55 + wallTypeInfo(s.wtype).width / 2))}
+            {sel && <rect x={s.x - 0.3} y={s.y - 0.3} width={s.w + 0.6} height={s.h + 0.6} transform={s.rot ? `rotate(${s.rot} ${c.x} ${c.y})` : undefined} fill="none" stroke="#C9A24B" strokeWidth={0.12} strokeDasharray="0.5 0.3" data-noexport />}
           </g>
         );
       }
@@ -529,7 +558,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         return (
           <g key={s.id}>
             {typedWall(s.id, [{ a: s.a, b: s.b }], s.wtype, s.color, 0.45, isDraft)}
-            {tag(midpoint([s.a, s.b]), feet(len), `${s.id}-l`, LABEL * 0.8, s.color)}
+            {len >= 0.5 && measure(s.a, s.b, `${s.id}-l`, s.color, 0.6 + wallTypeInfo(s.wtype).width / 2)}
             {sel && <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke="#C9A24B" strokeWidth={0.9} strokeOpacity={0.4} data-noexport />}
           </g>
         );
@@ -812,6 +841,16 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             {/* Grab points of the selected item: drag to resize or reshape it. */}
             {tool === 'select' && selected && handlesOf(selected).map((h) => {
               const hs = view.w / 70;
+              if (h.id === ROT_HANDLE) {
+                // The turning handle: a gold circle on a short stem from the shape.
+                const c = selected.kind === 'room' ? roomCenter(selected) : selected.kind === 'symbol' ? selected.at : h.at;
+                return (
+                  <g key={h.id} data-noexport>
+                    <line x1={c.x} y1={c.y} x2={h.at.x} y2={h.at.y} stroke="#C9A24B" strokeWidth={hs / 6} strokeDasharray={`${hs / 2} ${hs / 3}`} />
+                    <circle cx={h.at.x} cy={h.at.y} r={hs * 0.75} fill="#C9A24B" stroke="#fff" strokeWidth={hs / 5} style={{ cursor: 'grab' }}><title>Drag to turn</title></circle>
+                  </g>
+                );
+              }
               return <rect key={h.id} x={h.at.x - hs / 2} y={h.at.y - hs / 2} width={hs} height={hs} rx={hs / 5} fill="#fff" stroke="#C9A24B" strokeWidth={hs / 5} data-noexport style={{ cursor: 'pointer' }} />;
             })}
           </svg>
@@ -961,6 +1000,21 @@ function sizePatch(s: Shape): Partial<Shape> {
   return {};
 }
 
+/** An angle in degrees, applied when you leave the box or press Enter. */
+function AngleBox({ value, onSet }: { value: number; onSet: (v: number) => void }) {
+  const shown = String(Math.round(value * 10) / 10);
+  const [text, setText] = useState(shown);
+  useEffect(() => { setText(shown); }, [shown]);
+  const apply = () => { const v = Number(text); if (Number.isFinite(v) && String(v) !== shown) onSet(v); else setText(shown); };
+  return (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+      <input type="number" inputMode="decimal" step={1} value={text} aria-label="Angle in degrees"
+        onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }}
+        style={{ width: 70, height: 32, fontSize: 16, padding: '0 6px', border: '1px solid #d8dde5', borderRadius: 6 }} />°
+    </label>
+  );
+}
+
 /** A size in feet: applied when you leave the box or press Enter, not on every keystroke. */
 function FeetBox({ label, value, onSet }: { label: string; value: number; onSet: (v: number) => void }) {
   const shown = String(Math.round(value * 10) / 10);
@@ -997,6 +1051,19 @@ function SelectedPanel({ shape, url, onChange, onDelete }: {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#0E1B2E' }}>{heading}</div>
       {shape.kind === 'room' && field('Name', shape.name, (v) => onChange({ name: v } as Partial<Shape>), 'e.g. Lobby')}
+      {shape.kind === 'room' && (
+        <div>
+          <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#78909C', marginBottom: 3 }}>Turn the room</span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            {([['⟲ 15°', -15], ['⟳ 15°', 15], ['90°', 90]] as const).map(([lbl, by]) => (
+              <button key={lbl} type="button" onClick={() => onChange({ rot: normDeg((shape.rot ?? 0) + by) } as Partial<Shape>)}
+                style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #d8dde5', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>{lbl}</button>
+            ))}
+            <AngleBox value={shape.rot ?? 0} onSet={(v) => onChange({ rot: normDeg(v) } as Partial<Shape>)} />
+          </div>
+          <div style={{ color: '#78909C', fontSize: 12, marginTop: 3 }}>Or drag the gold circle above the room.</div>
+        </div>
+      )}
       {(shape.kind === 'room' || shape.kind === 'box' || shape.kind === 'ellipse') && (
         <>
           <div style={{ display: 'flex', gap: 8 }}>

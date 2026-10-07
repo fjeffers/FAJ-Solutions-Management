@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  OPENING_SYMBOLS, addBendAt, dragHandle, splitAt, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
+  OPENING_SYMBOLS, ROT_HANDLE, addBendAt, roomCorners, dragHandle, splitAt, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
   snapPt, sqft, summarize, summaryLine, type Shape,
 } from './sketch';
 
@@ -113,8 +113,8 @@ describe('network gear and cable types', () => {
 });
 
 describe('changing sizes: rooms, walls and cable bends', () => {
-  it('a room has eight grab points; dragging a side or corner resizes it', () => {
-    expect(handlesOf(room).map((h) => h.id)).toEqual(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']);
+  it('a room has eight grab points and a turning handle; dragging a side or corner resizes it', () => {
+    expect(handlesOf(room).map((h) => h.id)).toEqual(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'rot']); // plus the turning handle
     expect(dragHandle(room, 'e', { x: 30, y: 99 })).toMatchObject({ x: 0, y: 0, w: 30, h: 18 }); // only the right side moves
     expect(dragHandle(room, 'nw', { x: 4, y: 2 })).toMatchObject({ x: 4, y: 2, w: 20, h: 16 }); // the far corner stays put
     expect(dragHandle(room, 's', { x: 5, y: -10 })).toMatchObject({ y: 0, h: 0.5 }); // stops at half a foot, never flips
@@ -267,5 +267,45 @@ describe('double-click changes', () => {
     expect(bent.pts).toEqual([{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 20 }, { x: 30, y: 40 }]);
     expect(pathLength(bent.pts)).toBe(70); // same footage until the bend is dragged
     expect(addBendAt(room, { x: 1, y: 1 })).toBeNull();
+  });
+});
+
+describe('turning rooms and furniture', () => {
+  const sq: Shape = { id: 'r', kind: 'room', x: 0, y: 0, w: 10, h: 4, name: '', color: '#000' };
+  const close = (pts: { x: number; y: number }[]) => pts.map((q) => [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100]);
+
+  it('a turned room keeps its centre; its walls and corners turn with it', () => {
+    const turned = { ...sq, rot: 90 } as Extract<Shape, { kind: 'room' }>;
+    expect(close(roomCorners(turned))).toEqual([[7, -3], [7, 7], [3, 7], [3, -3]]);
+    expect(wallRuns([turned]).map((r) => Math.round(Math.hypot(r.b.x - r.a.x, r.b.y - r.a.y)))).toEqual([10, 4, 10, 4]);
+    expect(normalizeSketch({ shapes: [turned] }).shapes[0]).toMatchObject({ rot: 90 });
+    expect(normalizeSketch({ shapes: [sq] }).shapes[0]).not.toHaveProperty('rot');
+  });
+
+  it('is picked on its turned edge, and turned by its handle', () => {
+    const turned = { ...sq, rot: 90 } as Shape;
+    expect(hitTest([turned], { x: 7, y: 6 })?.id).toBe('r'); // the turned side
+    expect(hitTest([turned], { x: 9.5, y: 1 })).toBeNull(); // where the unturned corner was
+    const h = handlesOf(sq).find((x) => x.id === ROT_HANDLE)!;
+    expect(h.at.x).toBeCloseTo(5);
+    // Drag the handle out to the right of the centre: a quarter turn.
+    expect(dragHandle(sq, ROT_HANDLE, { x: 20, y: 2 })).toMatchObject({ rot: 90 });
+  });
+
+  it('resizing a turned room keeps its far side in place', () => {
+    const turned = { ...sq, rot: 90 } as Extract<Shape, { kind: 'room' }>;
+    const before = roomCorners(turned);
+    const wider = dragHandle(turned, 'e', { x: 7, y: 9 }) as Extract<Shape, { kind: 'room' }>; // the right side, now facing down
+    expect(Math.round(wider.w * 100) / 100).toBe(12);
+    const after = roomCorners(wider);
+    expect(close([after[0], after[3]])).toEqual(close([before[0], before[3]])); // the left side didn't move
+  });
+
+  it('furniture turns by its handle too', () => {
+    const desk: Shape = { id: 'd', kind: 'symbol', sym: 'desk', at: { x: 0, y: 0 }, label: '', rot: 0 };
+    expect(handlesOf(desk).map((x) => x.id)).toEqual([ROT_HANDLE]);
+    expect(dragHandle(desk, ROT_HANDLE, { x: -5, y: 0 })).toMatchObject({ rot: 270 });
+    const door: Shape = { id: 'o', kind: 'symbol', sym: 'door', at: { x: 0, y: 0 }, label: '', rot: 0 };
+    expect(handlesOf(door)).toEqual([]); // doors sit in their wall
   });
 });

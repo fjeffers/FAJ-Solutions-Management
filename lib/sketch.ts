@@ -155,7 +155,8 @@ export const symbolInfo = (k: SymbolKind) => SYMBOLS.find((s) => s.kind === k)!;
 export const COLORS = ['#0E1B2E', '#C62828', '#1565C0', '#2E7D32', '#EF6C00', '#6A1B9A', '#C9A24B'];
 
 export type Shape =
-  | { id: string; kind: 'room'; x: number; y: number; w: number; h: number; name: string; color: string; wtype?: WallType }
+  /** rot: turned this many degrees about its centre (Fred, 2026-10-06: "still can't rotate the rooms"). */
+  | { id: string; kind: 'room'; x: number; y: number; w: number; h: number; name: string; color: string; wtype?: WallType; rot?: number }
   /** wtype: what the wall is made of (WALL_TYPES); drywall when absent. */
   | { id: string; kind: 'wall'; a: Pt; b: Pt; color: string; wtype?: WallType }
   /** A stretch of wall taken out (a doorway, a pass-through) — of a drawn wall or a room's side. */
@@ -249,7 +250,8 @@ export function normalizeSketch(raw: unknown): Sketch {
         const w = num(o.w, 0, 0), h = num(o.h, 0, 0);
         if (w < 0.5 || h < 0.5) continue;
         const rt = wallTypeOf(o);
-        shapes.push({ id, kind: 'room', x: num(o.x), y: num(o.y), w, h, name: str(o.name, 60), color: color(o.color), ...(rt !== 'drywall' && { wtype: rt }) });
+        const rr = Math.round(num(o.rot, 0, 0, 359.99) * 10) / 10;
+        shapes.push({ id, kind: 'room', x: num(o.x), y: num(o.y), w, h, name: str(o.name, 60), color: color(o.color), ...(rt !== 'drywall' && { wtype: rt }), ...(rr && { rot: rr }) });
         break;
       }
       case 'wall': {
@@ -405,9 +407,10 @@ function segDist(p: Pt, a: Pt, b: Pt): number {
 }
 
 /** The top-most shape under a point (tol in feet), or null. */
-export function hitTest(shapes: Shape[], p: Pt, tol = 0.8): Shape | null {
+export function hitTest(shapes: Shape[], at: Pt, tol = 0.8): Shape | null {
   for (let i = shapes.length - 1; i >= 0; i--) {
     const s = shapes[i];
+    let p = at;
     switch (s.kind) {
       case 'symbol': case 'photo':
         if (dist(p, s.at) <= tol * 1.4) return s;
@@ -440,7 +443,9 @@ export function hitTest(shapes: Shape[], p: Pt, tol = 0.8): Shape | null {
         break;
       case 'room': {
         // The room's edge, or its middle (where its name sits) — not anywhere
-        // inside, so symbols placed in a room stay easy to pick.
+        // inside, so symbols placed in a room stay easy to pick. A turned room
+        // is checked in its own (unturned) frame.
+        if (s.rot) p = rotatePt(p, roomCenter(s), -s.rot);
         const onEdge = [
           [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }], [{ x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }],
           [{ x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }], [{ x: s.x, y: s.y + s.h }, { x: s.x, y: s.y }],
@@ -470,6 +475,23 @@ export function moveShape(s: Shape, dx: number, dy: number): Shape {
 
 /** The smallest a room or box side can be dragged to, in feet. */
 export const MIN_SIDE = 0.5;
+/** The turning handle (rooms and furniture), and how far beyond the shape it sits. */
+export const ROT_HANDLE = 'rot';
+const ROT_REACH = 1.8;
+export const normDeg = (d: number) => Math.round((((d % 360) + 360) % 360) * 10) / 10;
+
+/** p turned deg degrees about c (y down, so positive turns clockwise on screen). */
+export function rotatePt(p: Pt, c: Pt, deg: number): Pt {
+  const r = (deg * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r), dx = p.x - c.x, dy = p.y - c.y;
+  return { x: c.x + dx * cos - dy * sin, y: c.y + dx * sin + dy * cos };
+}
+export const roomCenter = (s: { x: number; y: number; w: number; h: number }): Pt => ({ x: s.x + s.w / 2, y: s.y + s.h / 2 });
+/** A room's corners, turned: top-left, top-right, bottom-right, bottom-left. */
+export function roomCorners(s: { x: number; y: number; w: number; h: number; rot?: number }): Pt[] {
+  const c = roomCenter(s), rot = s.rot ?? 0;
+  const pts = [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }];
+  return rot ? pts.map((p) => rotatePt(p, c, rot)) : pts;
+}
 
 /**
  * The grab points of a selected shape: the corners and sides of a room, box
@@ -479,11 +501,21 @@ export function handlesOf(s: Shape): { id: string; at: Pt }[] {
   switch (s.kind) {
     case 'room': case 'box': case 'ellipse': {
       const { x, y, w, h } = s;
-      return [
+      const list = [
         { id: 'nw', at: { x, y } }, { id: 'n', at: { x: x + w / 2, y } }, { id: 'ne', at: { x: x + w, y } },
         { id: 'e', at: { x: x + w, y: y + h / 2 } }, { id: 'se', at: { x: x + w, y: y + h } },
         { id: 's', at: { x: x + w / 2, y: y + h } }, { id: 'sw', at: { x, y: y + h } }, { id: 'w', at: { x, y: y + h / 2 } },
       ];
+      if (s.kind !== 'room') return list;
+      // A room also has a turning handle, above its top side.
+      const c = roomCenter(s), rot = s.rot ?? 0;
+      return [...list, { id: ROT_HANDLE, at: { x: x + w / 2, y: y - ROT_REACH } }].map((hd) => ({ id: hd.id, at: rot ? rotatePt(hd.at, c, rot) : hd.at }));
+    }
+    case 'symbol': {
+      // Furniture turns with a handle beyond its back.
+      const f = footprint(s);
+      if (!f) return [];
+      return [{ id: ROT_HANDLE, at: rotatePt({ x: s.at.x, y: s.at.y - f.d / 2 - ROT_REACH }, s.at, s.rot) }];
     }
     case 'wall': case 'line': case 'gap': return [{ id: 'a', at: s.a }, { id: 'b', at: s.b }];
     case 'cable': return s.pts.map((p, i) => ({ id: `p${i}`, at: p }));
@@ -493,8 +525,27 @@ export function handlesOf(s: Shape): { id: string; at: Pt }[] {
 
 /** Drag one grab point to p. A side stops at MIN_SIDE rather than flipping over. */
 export function dragHandle(s: Shape, id: string, p: Pt): Shape {
+  if (id === ROT_HANDLE) {
+    // Turning: the handle points the way the room's (or piece's) top now faces.
+    if (s.kind !== 'room' && s.kind !== 'symbol') return s;
+    const c = s.kind === 'room' ? roomCenter(s) : s.at;
+    const deg = normDeg((Math.atan2(p.y - c.y, p.x - c.x) * 180) / Math.PI + 90);
+    return { ...s, rot: deg };
+  }
   switch (s.kind) {
-    case 'room': case 'box': case 'ellipse': {
+    case 'room': {
+      // Resize in the room's own frame, keeping the far side where it is.
+      const rot = s.rot ?? 0, c = roomCenter(s);
+      const q = rot ? rotatePt(p, c, -rot) : p;
+      let l = s.x, r = s.x + s.w, t = s.y, b = s.y + s.h;
+      if (id === 'nw' || id === 'w' || id === 'sw') l = Math.min(q.x, r - MIN_SIDE);
+      if (id === 'ne' || id === 'e' || id === 'se') r = Math.max(q.x, l + MIN_SIDE);
+      if (id === 'nw' || id === 'n' || id === 'ne') t = Math.min(q.y, b - MIN_SIDE);
+      if (id === 'sw' || id === 's' || id === 'se') b = Math.max(q.y, t + MIN_SIDE);
+      const nc = rot ? rotatePt({ x: (l + r) / 2, y: (t + b) / 2 }, c, rot) : { x: (l + r) / 2, y: (t + b) / 2 };
+      return { ...s, x: nc.x - (r - l) / 2, y: nc.y - (b - t) / 2, w: r - l, h: b - t };
+    }
+    case 'box': case 'ellipse': {
       let l = s.x, r = s.x + s.w, t = s.y, b = s.y + s.h;
       if (id === 'nw' || id === 'w' || id === 'sw') l = Math.min(p.x, r - MIN_SIDE);
       if (id === 'ne' || id === 'e' || id === 'se') r = Math.max(p.x, l + MIN_SIDE);
@@ -554,7 +605,7 @@ export function wallRuns(shapes: Shape[]): WallRun[] {
   for (const s of shapes) {
     if (s.kind === 'wall') out.push({ a: s.a, b: s.b, color: s.color, shapeId: s.id, room: false, wtype: s.wtype ?? 'drywall' });
     else if (s.kind === 'room') {
-      const c = [{ x: s.x, y: s.y }, { x: s.x + s.w, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, { x: s.x, y: s.y + s.h }];
+      const c = roomCorners(s);
       c.forEach((a, i) => out.push({ a, b: c[(i + 1) % 4], color: s.color, shapeId: s.id, room: true, wtype: s.wtype ?? 'drywall' }));
     }
   }

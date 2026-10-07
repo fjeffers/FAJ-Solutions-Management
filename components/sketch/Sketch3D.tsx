@@ -366,8 +366,12 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
         const c = s.color;
         const tint = new THREE.Mesh(new THREE.PlaneGeometry(s.w, s.h), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.08 }));
         tint.rotation.x = -Math.PI / 2;
-        tint.position.set(s.x + s.w / 2, 0.03, s.y + s.h / 2);
-        scene.add(tint);
+        // A turned room's floor turns with it (its walls come from wallRuns, already turned).
+        const floorOf = new THREE.Group();
+        floorOf.position.set(s.x + s.w / 2, 0.03, s.y + s.h / 2);
+        floorOf.rotation.y = -((s.rot ?? 0) * Math.PI) / 180;
+        floorOf.add(tint);
+        scene.add(floorOf);
         const tag = labelSprite(`${s.name || 'Room'} · ${feet(s.w)} × ${feet(s.h)}`);
         tag.position.set(s.x + s.w / 2, 0.8, s.y + s.h / 2);
         scene.add(tag);

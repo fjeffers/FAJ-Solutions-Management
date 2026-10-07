@@ -16,7 +16,7 @@ export type SymbolKind =
   // devices
   | 'camera' | 'ap' | 'drop' | 'outlet' | 'tablet' | 'tv' | 'pos' | 'pc' | 'printer' | 'phone' | 'speaker' | 'reader'
   // building — doors and windows sit in walls (OPENING_WIDTH)
-  | 'door' | 'door2' | 'slider' | 'window' | 'window2'
+  | 'door' | 'door2' | 'slider' | 'sliding' | 'pocket' | 'barn' | 'bifold' | 'window' | 'window2'
   // building extras
   | 'stairs' | 'elevator' | 'column'
   // furniture — drawn to size (FURNITURE_SIZE)
@@ -56,6 +56,11 @@ export const SYMBOLS: { kind: SymbolKind; label: string; plural: string; code: s
   { kind: 'door', label: 'Door', plural: 'Doors', code: '', color: '#455A64', group: 'building' },
   { kind: 'door2', label: 'Double door', plural: 'Double doors', code: '', color: '#455A64', group: 'building' },
   { kind: 'slider', label: 'Sliding glass door', plural: 'Sliding glass doors', code: '', color: '#1E88E5', group: 'building' },
+  // Fred, 2026-10-06: "add sliding doors".
+  { kind: 'sliding', label: 'Sliding door', plural: 'Sliding doors', code: '', color: '#6D4C41', group: 'building' },
+  { kind: 'pocket', label: 'Pocket door', plural: 'Pocket doors', code: '', color: '#6D4C41', group: 'building' },
+  { kind: 'barn', label: 'Barn door', plural: 'Barn doors', code: '', color: '#795548', group: 'building' },
+  { kind: 'bifold', label: 'Bi-fold door', plural: 'Bi-fold doors', code: '', color: '#6D4C41', group: 'building' },
   { kind: 'window', label: 'Window', plural: 'Windows', code: '', color: '#78909C', group: 'building' },
   { kind: 'window2', label: 'Wide window', plural: 'Wide windows', code: '', color: '#78909C', group: 'building' },
   { kind: 'stairs', label: 'Stairs', plural: 'Stairs', code: '', color: '#616161', group: 'building' },
@@ -585,7 +590,7 @@ export function setLength(s: Shape, len: number): Shape {
 // door on a wall in the 3D … delete a portion of the wall or room") ────────
 
 /** How wide each door and window is, in feet (as drawn on the plan). */
-export const OPENING_WIDTH: Partial<Record<SymbolKind, number>> = { door: 3, door2: 6, slider: 6, window: 3.2, window2: 6 };
+export const OPENING_WIDTH: Partial<Record<SymbolKind, number>> = { door: 3, door2: 6, slider: 6, sliding: 6, pocket: 3, barn: 3, bifold: 4, window: 3.2, window2: 6 };
 export const DOOR_WIDTH = 3;
 export const WINDOW_WIDTH = 3.2;
 /** Doors and windows: the symbols that sit in a wall and cut it. */
@@ -593,7 +598,7 @@ export const isOpeningSymbol = (k: SymbolKind): boolean => OPENING_WIDTH[k] !== 
 /** A doorway (wall above it) or a window (wall below and above it). */
 export const openingKindOf = (k: SymbolKind): 'door' | 'window' => (k === 'window' || k === 'window2' ? 'window' : 'door');
 /** The doors and windows offered together (Doors & windows in the sketch pad, and in 3D). */
-export const OPENING_SYMBOLS: SymbolKind[] = ['door', 'door2', 'slider', 'window', 'window2'];
+export const OPENING_SYMBOLS: SymbolKind[] = ['door', 'door2', 'slider', 'sliding', 'pocket', 'barn', 'bifold', 'window', 'window2'];
 /** How close (feet) a door, window or opening must be to a wall to sit in it. */
 export const WALL_SNAP = 1.5;
 

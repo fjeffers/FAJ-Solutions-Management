@@ -209,7 +209,12 @@ describe('double doors, sliding glass doors, wide windows and glass walls', () =
       expect(wallPieces(top, openingsOf([at(sym)])).map((p) => `${p.kind} ${len(p)}`)).toEqual(['solid 7', 'door 6', 'solid 7']);
     }
     expect(wallPieces(top, openingsOf([at('window2')])).map((p) => `${p.kind} ${len(p)}`)).toEqual(['solid 7', 'window 6', 'solid 7']);
-    expect(OPENING_SYMBOLS).toEqual(['door', 'door2', 'slider', 'window', 'window2']);
+    expect(OPENING_SYMBOLS).toEqual(['door', 'door2', 'slider', 'sliding', 'pocket', 'barn', 'bifold', 'window', 'window2']);
+    // Sliding, pocket, barn and bi-fold doors are doorways at their own widths.
+    for (const [sym, w] of [['sliding', 6], ['pocket', 3], ['barn', 3], ['bifold', 4]] as const) {
+      const d = seatInWall({ id: sym, kind: 'symbol', sym, at: { x: 10, y: 0.4 }, label: '', rot: 0 }, [box]);
+      expect(wallPieces(top, openingsOf([d])).map((p) => `${p.kind} ${len(p)}`)).toEqual([`solid ${10 - w / 2}`, `door ${w}`, `solid ${10 - w / 2}`]);
+    }
   });
 
   it('a wide door can be picked anywhere along it', () => {

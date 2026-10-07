@@ -618,6 +618,31 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
                 <line x1={3} y1={0} x2={3} y2={-3} stroke={info.color} strokeWidth={0.15} />
                 <path d="M 0 0 A 3 3 0 0 0 -3 -3 M 0 0 A 3 3 0 0 1 3 -3" fill="none" stroke={info.color} strokeWidth={0.1} strokeDasharray="0.3 0.2" />
               </g>
+            ) : s.sym === 'sliding' ? (
+              // Two solid panels that slide past each other.
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
+                <rect x={-3} y={-0.3} width={6} height={0.6} fill="#fff" stroke={info.color} strokeWidth={0.06} />
+                <rect x={-3} y={-0.24} width={3.3} height={0.2} fill={info.color} fillOpacity={0.55} />
+                <rect x={-0.3} y={0.04} width={3.3} height={0.2} fill={info.color} fillOpacity={0.55} />
+              </g>
+            ) : s.sym === 'pocket' ? (
+              // One panel that slides into a pocket inside the wall (dashed).
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
+                <rect x={-1.5} y={-0.1} width={3} height={0.2} fill={info.color} fillOpacity={0.55} stroke={info.color} strokeWidth={0.04} />
+                <line x1={-4.5} y1={0} x2={-1.5} y2={0} stroke={info.color} strokeWidth={0.12} strokeDasharray="0.3 0.2" />
+              </g>
+            ) : s.sym === 'barn' ? (
+              // A panel hung on a track on the face of the wall.
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
+                <line x1={-4.6} y1={-0.55} x2={1.7} y2={-0.55} stroke={info.color} strokeWidth={0.08} />
+                <rect x={-1.7} y={-0.75} width={3.4} height={0.25} fill={info.color} fillOpacity={0.6} stroke={info.color} strokeWidth={0.04} />
+              </g>
+            ) : s.sym === 'bifold' ? (
+              // Two pairs of leaves folding toward the sides.
+              <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
+                <line x1={-2} y1={0} x2={2} y2={0} stroke={info.color} strokeWidth={0.06} strokeDasharray="0.2 0.15" />
+                <path d="M -2 0 L -1.5 -0.9 L -1 0 M 2 0 L 1.5 -0.9 L 1 0" fill="none" stroke={info.color} strokeWidth={0.12} strokeLinejoin="round" />
+              </g>
             ) : s.sym === 'slider' ? (
               <g transform={`translate(${s.at.x} ${s.at.y}) rotate(${s.rot})`}>
                 <rect x={-3} y={-0.3} width={6} height={0.6} fill="#E3F2FD" stroke={info.color} strokeWidth={0.08} />

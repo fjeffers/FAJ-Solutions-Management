@@ -21,18 +21,14 @@ const CEILING = 9; // ft
 const DOOR_TOP = 7; // ft — the wall continues above a doorway
 const SILL = 3, WINDOW_TOP = 7; // ft — wall below and above a window
 
-type Mode = 'look' | 'gap' | 'remove' | 'door' | 'door2' | 'slider' | 'window' | 'window2';
-const isPlace = (m: Mode): m is 'door' | 'door2' | 'slider' | 'window' | 'window2' => (OPENING_SYMBOLS as string[]).includes(m);
-const MODE_HINT: Record<Mode, string> = {
-  look: 'Drag to turn · pinch or scroll to zoom · right-drag or two fingers to slide. Walls are 9 ft; cameras, APs and speakers sit at the ceiling.',
-  door: 'Tap a wall to put a door there.',
-  door2: 'Tap a wall to put a double door there.',
-  slider: 'Tap a wall to put a sliding glass door there.',
-  window: 'Tap a wall to put a window there.',
-  window2: 'Tap a wall to put a wide window there.',
-  gap: 'Tap a wall to cut a 3 ft opening there. Make it wider in 2D (drag its ends).',
-  remove: 'Tap a door, window, opening or item to remove it. Tap a stretch of wall to take that stretch out.',
-};
+/** Look around, cut or remove, or put one of the doors / windows (OPENING_SYMBOLS) on a wall. */
+type Mode = 'look' | 'gap' | 'remove' | SymbolKind;
+const isPlace = (m: Mode): m is SymbolKind => (OPENING_SYMBOLS as string[]).includes(m);
+const modeHint = (m: Mode): string =>
+  m === 'look' ? 'Drag to turn · pinch or scroll to zoom · right-drag or two fingers to slide. Walls are 9 ft; cameras, APs and speakers sit at the ceiling.'
+  : m === 'gap' ? 'Tap a wall to cut a 3 ft opening there. Make it wider in 2D (drag its ends).'
+  : m === 'remove' ? 'Tap a door, window, opening or item to remove it. Tap a stretch of wall to take that stretch out.'
+  : `Tap a wall to put a ${symbolInfo(m).label.toLowerCase()} there.`;
 
 /** How high each symbol sits, in feet. */
 const MOUNT: Partial<Record<SymbolKind, number>> = {
@@ -224,6 +220,39 @@ function symbolObject(s: Extract<Shape, { kind: 'symbol' }>): THREE.Object3D {
       const other = new THREE.Mesh(new THREE.BoxGeometry(2.95, 7, 0.15), new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.45 }));
       other.position.set(1.5, 3.5, 0);
       group.add(other);
+      break;
+    }
+    case 'sliding': case 'pocket': case 'barn': {
+      // Solid sliding panels: two passing each other, one into the wall (shown half open), or one on a track on the wall's face.
+      const wood = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
+      if (s.sym === 'sliding') {
+        body = new THREE.Mesh(new THREE.BoxGeometry(3.1, 7, 0.1), wood);
+        body.position.set(-1.45, 3.5, -0.06);
+        const other = new THREE.Mesh(new THREE.BoxGeometry(3.1, 7, 0.1), wood);
+        other.position.set(1.45, 3.5, 0.06);
+        group.add(other);
+      } else if (s.sym === 'pocket') {
+        body = new THREE.Mesh(new THREE.BoxGeometry(3, 7, 0.1), wood);
+        body.position.set(-1.2, 3.5, 0);
+      } else {
+        body = new THREE.Mesh(new THREE.BoxGeometry(3.4, 7.2, 0.12), wood);
+        body.position.set(-1.3, 3.6, -0.32);
+        const track = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.12, 0.12), new THREE.MeshStandardMaterial({ color: 0x212121 }));
+        track.position.set(-1.4, 7.35, -0.32);
+        group.add(track);
+      }
+      break;
+    }
+    case 'bifold': {
+      // Four leaves, folded part way.
+      const wood = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
+      body = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.01, 0.01), wood);
+      for (const [x, ang] of [[-1.75, 0.6], [-1.25, -0.6], [1.25, 0.6], [1.75, -0.6]] as const) {
+        const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.98, 7, 0.08), wood);
+        leaf.position.set(x, 3.5, -0.25);
+        leaf.rotation.y = ang;
+        group.add(leaf);
+      }
       break;
     }
     case 'slider': {
@@ -519,11 +548,7 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
         <nav style={{ width: 78, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 4px', background: '#13284A', overflowY: 'auto' }} aria-label="Edit in 3D">
           {([
             ['look', 'Look around', <Rotate3d key="i" size={17} />],
-            ['door', 'Door', <DoorOpen key="i" size={17} />],
-            ['door2', 'Double door', <DoorOpen key="i" size={17} />],
-            ['slider', 'Sliding glass', <DoorOpen key="i" size={17} />],
-            ['window', 'Window', <AppWindow key="i" size={17} />],
-            ['window2', 'Wide window', <AppWindow key="i" size={17} />],
+            ...OPENING_SYMBOLS.map((k) => [k, symbolInfo(k).label, k.startsWith('window') ? <AppWindow key="i" size={17} /> : <DoorOpen key="i" size={17} />] as [Mode, string, React.ReactNode]),
             ['gap', 'Cut opening', <SquareDashed key="i" size={17} />],
             ['remove', 'Remove', <Eraser key="i" size={17} />],
           ] as [Mode, string, React.ReactNode][]).map(([m, label, icon]) => (
@@ -556,7 +581,7 @@ export default function Sketch3D({ sketch, title, onClose, onAdd, onRemove, onUn
       </div>
       </div>
       <div style={{ padding: '6px 12px', fontSize: 12, color: mode === 'look' ? '#455A64' : '#0E1B2E', fontWeight: mode === 'look' ? 400 : 700, background: mode === 'look' ? '#fff' : '#FBF5E6', borderTop: '1px solid #e2e6ec' }}>
-        {MODE_HINT[mode]}
+        {modeHint(mode)}
       </div>
     </div>
   );

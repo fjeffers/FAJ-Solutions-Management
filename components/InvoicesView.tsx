@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, X, Printer, Receipt, DollarSign, Briefcase, Share2, Send } from 'lucide-react';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import { printInvoiceSheet } from '@/lib/signoff';
@@ -59,7 +59,12 @@ export default function InvoicesView({
   onDelete,
   onRecordPayment,
   onDeletePayment,
+  startNew,
+  onStarted,
 }: {
+  /** Open a new invoice straight away (Dispatch -> Create -> New invoice). */
+  startNew?: boolean;
+  onStarted?: () => void;
   invoices: Invoice[];
   invoicePayments: InvoicePayment[];
   workOrders: WorkOrder[];
@@ -69,6 +74,12 @@ export default function InvoicesView({
   onDeletePayment: (invoice: Invoice, paymentId: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<Partial<Invoice> | null>(null);
+  useEffect(() => {
+    if (!startNew) return;
+    setEditing({ invoice_number: nextInvoiceNumber(invoices) });
+    onStarted?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startNew]);
   const [paying, setPaying] = useState<Invoice | null>(null);
   const [emailing, setEmailing] = useState<{ payload: EmailPayload; invoice: Invoice } | null>(null);
   const supabase = createClient();

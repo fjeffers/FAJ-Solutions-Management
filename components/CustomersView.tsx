@@ -41,7 +41,11 @@ const ACTIVITY_KINDS: CustomerActivityKind[] = ['call', 'email', 'meeting', 'not
 
 const pct = (n: number | null) => (n == null ? '—' : `${Math.round(n * 100)}%`);
 
-export default function CustomersView() {
+export default function CustomersView({ startNew, onStarted }: {
+  /** Open a new customer straight away (Dispatch -> Create -> New customer). */
+  startNew?: boolean;
+  onStarted?: () => void;
+} = {}) {
   const supabase = createClient();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -56,6 +60,12 @@ export default function CustomersView() {
   const [q, setQ] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<Customer> | null>(null);
+  useEffect(() => {
+    if (!startNew) return;
+    setEditing({ status: 'active' });
+    onStarted?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startNew]);
   const [contactDraft, setContactDraft] = useState<Partial<CustomerContact> | null>(null);
   const [noteDraft, setNoteDraft] = useState<Partial<CustomerActivity> | null>(null);
 

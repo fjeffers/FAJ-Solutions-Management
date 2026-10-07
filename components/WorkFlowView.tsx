@@ -178,6 +178,7 @@ export default function WorkFlowView({
     return (
       <OwnerJob
         row={open}
+        author={ownerFirstName}
         lists={lists}
         contractors={contractors}
         onBack={() => setOpenId(null)}
@@ -335,9 +336,11 @@ export function OwnerAlerts({ workOrders, onOpenJob, onRefresh }: {
 // ── One job, from the office's side ─────────────────────────────────────────
 
 function OwnerJob({
-  row, lists, contractors, onBack, onRefresh, onEdit, onDelete, onDuplicate, onPay, onSend, onSendPortal,
+  row, author, lists, contractors, onBack, onRefresh, onEdit, onDelete, onDuplicate, onPay, onSend, onSendPortal,
   onArchive, onUnarchive, onCloseJob, onReassign,
 }: {
+  /** Who is signed in, for the notes they add. */
+  author?: string;
   row: Row;
   lists: CloseoutList[];
   contractors: Contractor[];
@@ -470,6 +473,7 @@ function OwnerJob({
       <CloseoutCard job={job} items={checklist.items} listName={checklist.name} canEdit={!archived} ownerView
         onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
     ),
+    'job.notes': <JobNotesCard woId={w.id} author={author ?? 'Office'} />,
     'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,
     'job.expenses': <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />,
     'job.photos': <OwnerPhotos w={w} />,
@@ -517,6 +521,74 @@ function OwnerJob({
         />
       )}
     </>
+  );
+}
+
+// ── Notes (from SimplySub's job page, Fred 2026-10-06: "add some of these
+// features") — dated office notes with a kind and who wrote them. Saved in
+// job_notes (migration 114): owner only, never sent to a tech.
+
+const NOTE_KINDS = ['General', 'Site', 'Billing', 'Client', 'Follow-up'];
+type JobNote = { id: string; body: string; kind: string; author: string | null; created_at: string };
+
+function JobNotesCard({ woId, author }: { woId: string; author: string }) {
+  const [notes, setNotes] = useState<JobNote[] | null>(null);
+  const [body, setBody] = useState('');
+  const [kind, setKind] = useState('General');
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    const { data } = await createClient().from('job_notes').select('id, body, kind, author, created_at').eq('wo_id', woId).order('created_at', { ascending: false });
+    setNotes((data as JobNote[] | null) ?? []);
+  };
+  useEffect(() => { void load(); }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const add = async () => {
+    const text = body.trim();
+    if (!text) return;
+    setBusy(true);
+    const sb = createClient();
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) { setBusy(false); toastError('You were signed out. Sign in again, then add the note.'); return; }
+    const { error } = await sb.from('job_notes').insert({ user_id: user.id, wo_id: woId, body: text.slice(0, 4000), kind, author });
+    setBusy(false);
+    if (error) { toastError(`The note didn't save: ${error.message}`); return; }
+    setBody('');
+    await load();
+  };
+  const remove = async (id: string) => {
+    if (!confirm('Delete this note?')) return;
+    const { error } = await createClient().from('job_notes').delete().eq('id', id);
+    if (error) toastError(`The note wasn't deleted: ${error.message}`);
+    await load();
+  };
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <Section title="Notes" subtitle="Office notes on this job — techs never see these">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <select className="wf-input" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Kind of note" style={{ width: 150 }}>
+            {NOTE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </div>
+        <textarea className="wf-input" rows={3} value={body} onChange={(e) => setBody(e.target.value)} maxLength={4000}
+          placeholder="What happened, what to remember, what's next" aria-label="New note" />
+        <div>
+          <button className="wf-btn wf-btn-navy wf-btn-sm" disabled={busy || !body.trim()} onClick={() => void add()}>{busy ? 'Saving…' : 'Add note'}</button>
+        </div>
+        {notes === null ? <div className="wf-subtle" style={{ fontSize: 13 }}>Loading…</div>
+          : notes.length === 0 ? <div className="wf-subtle" style={{ fontSize: 13 }}>No notes yet.</div>
+          : notes.map((n) => (
+            <div key={n.id} style={{ borderTop: '1px solid var(--wf-line)', paddingTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+                <span className="wf-chip" style={{ background: 'rgba(201,162,75,0.15)', color: '#8a6d2b', padding: '1px 8px' }}>{n.kind}</span>
+                <span className="wf-subtle">{n.author ? `${n.author} · ` : ''}{when(n.created_at)}</span>
+                <span style={{ flex: 1 }} />
+                <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void remove(n.id)} aria-label="Delete note" title="Delete note"><Trash2 size={14} /></button>
+              </div>
+              <div style={{ whiteSpace: 'pre-wrap', marginTop: 4, fontSize: 14 }}>{n.body}</div>
+            </div>
+          ))}
+      </div>
+    </Section>
   );
 }
 

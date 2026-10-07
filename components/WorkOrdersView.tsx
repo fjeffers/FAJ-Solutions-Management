@@ -1,7 +1,7 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { reassignWorkOrder, describeReassignment } from '@/lib/reassign';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer, UserCog, Columns3, List } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer, UserCog, Columns3, List, UserPlus, FileText, ReceiptText, ChevronDown } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO, workOrderBreakdownText } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor, Payment } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
@@ -39,7 +39,7 @@ const PAY_META: Record<string, { bg: string; color: string }> = {
 };
 
 export default function WorkOrdersView({
-  workOrders, stats, onAdd, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
+  workOrders, stats, onAdd, onCreate, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
   onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed,
@@ -55,6 +55,8 @@ export default function WorkOrdersView({
   siteVisits?: LinkedVisit[];
   stats: Stats;
   onAdd: () => void;
+  /** The Create menu's other items (a new customer, quote or invoice, or paying a tech). */
+  onCreate?: (what: 'customer' | 'quote' | 'invoice' | 'payment') => void;
   onAddFromAI: (fields: Partial<WorkOrder>) => void;
   onEdit: (w: EnrichedWorkOrder) => void;
   onDelete: (id: string) => void;
@@ -87,11 +89,13 @@ export default function WorkOrdersView({
   };
   const lists = listsNow(); // stage and priority names (Settings -> Lists & stages)
   // Message and photo counts for the cards, counted in the database (migration 113).
-  const [jobCounts, setJobCounts] = useState<Record<string, { messages: number; photos: number }>>({});
+  const [jobCounts, setJobCounts] = useState<Record<string, { messages: number; photos: number; hours: number | null }>>({});
   useEffect(() => {
     void createClient().rpc('board_job_counts').then(({ data }) => {
-      const m: Record<string, { messages: number; photos: number }> = {};
-      for (const r of (data as { wo_id: string; messages: number; photos: number }[] | null) ?? []) m[r.wo_id] = { messages: r.messages, photos: r.photos };
+      const m: Record<string, { messages: number; photos: number; hours: number | null }> = {};
+      for (const r of (data as { wo_id: string; messages: number; photos: number; hours: number | string | null }[] | null) ?? []) {
+        m[r.wo_id] = { messages: r.messages, photos: r.photos, hours: r.hours == null ? null : Number(r.hours) };
+      }
       setJobCounts(m);
     });
   }, [workOrders]);
@@ -99,7 +103,7 @@ export default function WorkOrdersView({
     const job = wfJobFromOwner(w);
     return {
       job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed',
-      messages: jobCounts[w.id]?.messages ?? 0, photos: jobCounts[w.id]?.photos ?? 0,
+      messages: jobCounts[w.id]?.messages ?? 0, photos: jobCounts[w.id]?.photos ?? 0, hours: jobCounts[w.id]?.hours ?? null,
     };
   }), [workOrders, lists, jobCounts]); // eslint-disable-line react-hooks/exhaustive-deps -- lists changes the names inside each job
 
@@ -204,6 +208,15 @@ export default function WorkOrdersView({
           right={<>
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAiOpen(true)}><Sparkles size={15} /> Generate with AI</button>
             <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={onAdd}><Plus size={16} /> New order</button>
+            {onCreate && (
+              <CreateMenu items={[
+                { label: 'New job', icon: <Wrench size={16} />, onClick: onAdd },
+                { label: 'New customer', icon: <UserPlus size={16} />, onClick: () => onCreate('customer') },
+                { label: 'New quote', icon: <FileText size={16} />, onClick: () => onCreate('quote') },
+                { label: 'New invoice', icon: <ReceiptText size={16} />, onClick: () => onCreate('invoice') },
+                { label: 'Pay a tech', icon: <DollarSign size={16} />, onClick: () => onCreate('payment') },
+              ]} />
+            )}
           </>}
           between={shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}
         />
@@ -227,6 +240,37 @@ export default function WorkOrdersView({
           onClose={() => setReassigning(null)}
           onConfirm={async (from, to) => { await onReassign(reassigning, from, to); setReassigning(null); }}
         />
+      )}
+    </div>
+  );
+}
+
+/** Dispatch's Create menu (from SimplySub's job board): every "new" in one place. */
+function CreateMenu({ items }: { items: { label: string; icon: ReactNode; onClick: () => void }[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button className="wf-btn wf-btn-outline wf-btn-sm" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Plus size={15} /> Create <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 60, minWidth: 210, background: '#fff', border: '1px solid var(--wf-line)', borderRadius: 12, boxShadow: '0 12px 30px rgba(0,0,0,0.15)', padding: 6 }}>
+          {items.map((it) => (
+            <button key={it.label} type="button" role="menuitem" onClick={() => { setOpen(false); it.onClick(); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px', border: 'none', background: 'transparent', borderRadius: 8, textAlign: 'left', fontWeight: 600, fontSize: 14, cursor: 'pointer', color: 'var(--wf-navy)' }}>
+              {it.icon}{it.label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

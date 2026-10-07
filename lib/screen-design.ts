@@ -33,7 +33,7 @@ export type ScreenDesign = {
 
 export const DASH_PART_KEYS = ['dash.attention', 'dash.kpis', 'dash.status', 'dash.outstanding', 'dash.payments'];
 const STANDARD_SIDE = ['job.timeRequests', 'job.quickEdit', 'job.techs', 'job.money', 'job.fields'];
-const STANDARD_BELOW = ['job.closeout', 'job.report', 'job.expenses', 'job.photos', 'job.sketches', 'job.timegps'];
+const STANDARD_BELOW = ['job.closeout', 'job.notes', 'job.report', 'job.expenses', 'job.photos', 'job.sketches', 'job.timegps'];
 export const JOB_PART_KEYS = [...STANDARD_SIDE, ...STANDARD_BELOW];
 
 export const STANDARD_DESIGN: ScreenDesign = {

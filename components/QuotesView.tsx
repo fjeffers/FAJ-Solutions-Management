@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, X, Printer, CheckCircle2, FileText, Share2, FileCheck2, Layers } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import { printQuoteSheet } from '@/lib/signoff';
@@ -37,7 +37,12 @@ export default function QuotesView({
   onDelete,
   onAccept,
   onBuildContract,
+  startNew,
+  onStarted,
 }: {
+  /** Open a new quote straight away (Dispatch -> Create -> New quote). */
+  startNew?: boolean;
+  onStarted?: () => void;
   quotes: Quote[];
   materials?: Material[];
   kits?: MaterialKit[];
@@ -47,6 +52,12 @@ export default function QuotesView({
   onBuildContract: (quote: Quote) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<Partial<Quote> | null>(null);
+  useEffect(() => {
+    if (!startNew) return;
+    setEditing({ quote_number: nextQuoteNumber(quotes) });
+    onStarted?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startNew]);
   const supabase = createClient();
 
   // Share a client-facing link (/quote/<token>) — token created once and

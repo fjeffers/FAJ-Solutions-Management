@@ -9,7 +9,7 @@
 //                   the chosen day's jobs underneath
 // The office sees money (the client price) on a card; techs never see these.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, Columns3, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck, CalendarDays, Users, MessageSquare, Camera, GripVertical } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Columns3, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck, CalendarDays, Users, MessageSquare, Camera, GripVertical, Clock } from 'lucide-react';
 import {
   WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12,
   type WfJob, type WfStatus,
@@ -36,8 +36,8 @@ export function PrimioBar({ title, left, right }: { title: string; left?: ReactN
 
 export type BoardRow = {
   job: WfJob; payNotSet?: boolean; updatedAt?: string;
-  /** How many messages and photos the job has (shown on the card when there are any). */
-  messages?: number; photos?: number;
+  /** How many messages and photos the job has, and hours worked on it (shown on the card when there are any). */
+  messages?: number; photos?: number; hours?: number | null;
 };
 
 /** Primio's columns, with FAJ's own stages (a job can need a tech, and is closed by the office). */
@@ -141,7 +141,10 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
   const { job } = row;
   const price = job.clientPrice ?? 0;
   const t = parseClockTime(job.startTime);
-  const counts = (row.messages ?? 0) > 0 || (row.photos ?? 0) > 0;
+  const hours = row.hours ?? 0;
+  const tasksDone = job.tasks.filter((t) => t.done).length;
+  const pctDone = job.tasks.length ? Math.round((tasksDone / job.tasks.length) * 100) : null;
+  const counts = (row.messages ?? 0) > 0 || (row.photos ?? 0) > 0 || hours > 0 || pctDone !== null;
   return (
     <div style={{ position: 'relative', opacity: dragging ? 0.45 : 1 }}
       draggable={!!onDragStart}
@@ -193,6 +196,16 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
       {(row.payNotSet || (partShown('card.counts') && counts)) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           {row.payNotSet && <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)', padding: '1px 8px' }}>Tech pay not set</span>}
+          {partShown('card.counts') && pctDone !== null && (
+            <span className="wf-chip" title={`${tasksDone} of ${job.tasks.length} checklist items done`} style={{ background: pctDone === 100 ? 'rgba(4,120,87,0.12)' : 'rgba(14,27,46,0.07)', color: pctDone === 100 ? 'var(--wf-success)' : undefined, padding: '1px 8px' }}>
+              {pctDone}% done
+            </span>
+          )}
+          {partShown('card.counts') && hours > 0 && (
+            <span className="wf-chip" title={`${hours} hours worked`} style={{ background: 'rgba(2,136,209,0.1)', color: '#01579B', padding: '1px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Clock size={12} /> {Math.round(hours * 10) / 10} h
+            </span>
+          )}
           {partShown('card.counts') && (row.messages ?? 0) > 0 && (
             <span className="wf-chip" title={`${row.messages} message${row.messages === 1 ? '' : 's'}`} style={{ background: 'rgba(14,27,46,0.07)', padding: '1px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <MessageSquare size={12} /> {row.messages}

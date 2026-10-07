@@ -103,6 +103,8 @@ export default function HomePage() {
   // Safe to initialize from the URL: the loading screen renders identically on
   // server and client, so there's no hydration mismatch.
   const [view, setViewState] = useState<View>(viewFromUrl);
+  // Dispatch -> Create: which screen should open with a new, blank form.
+  const [createIntent, setCreateIntent] = useState<'customer' | 'quote' | 'invoice' | null>(null);
   const setView = (v: View) => {
     setViewState(v);
     openOfficeFor(v);
@@ -1724,9 +1726,10 @@ Go ahead?`)) return;
           />
         )}
         {view === 'quotes' && (
-          <QuotesView quotes={quotes} materials={materials} kits={materialKits} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} onBuildContract={buildContractFromQuote} />
+          <QuotesView quotes={quotes} materials={materials} kits={materialKits} onSave={saveQuote} onDelete={deleteQuote} onAccept={acceptQuote} onBuildContract={buildContractFromQuote}
+            startNew={createIntent === 'quote'} onStarted={() => setCreateIntent(null)} />
         )}
-        {view === 'customers' && <CustomersView />}
+        {view === 'customers' && <CustomersView startNew={createIntent === 'customer'} onStarted={() => setCreateIntent(null)} />}
         {view === 'portal-admin' && <PortalAdminView />}
         {view === 'network' && <NetworkView />}
         {view === 'sitelog' && <SiteLogView />}
@@ -1734,6 +1737,7 @@ Go ahead?`)) return;
         {view === 'maintenance' && <MaintenanceView />}
         {view === 'invoices' && (
           <InvoicesView
+            startNew={createIntent === 'invoice'} onStarted={() => setCreateIntent(null)}
             invoices={invoices}
             invoicePayments={invoicePayments}
             workOrders={workOrders}
@@ -1805,6 +1809,12 @@ Go ahead?`)) return;
             payments={payments}
             onReassign={reassignJob}
             onAdd={() => setModal({ type: 'wo', item: null })}
+            // Dispatch -> Create (Fred, from SimplySub's board): straight to the new form.
+            onCreate={(what) => {
+              if (what === 'payment') { setModal({ type: 'payment', item: null }); return; }
+              setCreateIntent(what);
+              setView(what === 'customer' ? 'customers' : what === 'quote' ? 'quotes' : 'invoices');
+            }}
             onAddFromAI={(fields) => setModal({ type: 'wo', item: null, prefill: fields })}
             onEdit={(w) => setModal({ type: 'wo', item: w })}
             onDelete={deleteWorkOrder}

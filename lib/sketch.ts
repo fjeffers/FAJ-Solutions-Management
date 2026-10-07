@@ -755,6 +755,34 @@ export function addBendAt(s: Shape, p: Pt): Shape | null {
   return { ...s, pts: [...s.pts.slice(0, best.i), best.at, ...s.pts.slice(best.i)] };
 }
 
+/**
+ * The box around everything drawn, plus a margin for labels and door swings —
+ * the report frames the plan to what's on it, not the whole plan area.
+ */
+export function contentBounds(s: Sketch, margin = 3): { x: number; y: number; w: number; h: number } {
+  const xs: number[] = [], ys: number[] = [];
+  const add = (p: Pt, r = 0) => { xs.push(p.x - r, p.x + r); ys.push(p.y - r, p.y + r); };
+  for (const sh of s.shapes) {
+    switch (sh.kind) {
+      case 'room': roomCorners(sh).forEach((p) => add(p)); break;
+      case 'wall': case 'line': case 'gap': add(sh.a); add(sh.b); break;
+      case 'cable': case 'pen': sh.pts.forEach((p) => add(p)); break;
+      case 'box': case 'ellipse': add({ x: sh.x, y: sh.y }); add({ x: sh.x + sh.w, y: sh.y + sh.h }); break;
+      case 'text': add(sh.at, sh.size); xs.push(sh.at.x + sh.text.length * sh.size * 0.6); break;
+      case 'symbol': {
+        const f = footprint(sh), o = OPENING_WIDTH[sh.sym];
+        add(sh.at, o !== undefined ? Math.max(o / 2, 3.2) : f ? Math.hypot(f.w, f.d) / 2 : 2.5);
+        break;
+      }
+      case 'photo': add(sh.at, 2); break;
+    }
+  }
+  if (xs.length === 0) return { x: 0, y: 0, w: s.width, h: s.height };
+  const x0 = Math.min(...xs) - margin, x1 = Math.max(...xs) + margin;
+  const y0 = Math.min(...ys) - margin, y1 = Math.max(...ys) + margin;
+  return { x: x0, y: y0, w: Math.max(x1 - x0, 4), h: Math.max(y1 - y0, 4) };
+}
+
 /** Where a shape's label sits — for the length/area tags. */
 export function midpoint(p: Pt[]): Pt {
   const total = pathLength(p);

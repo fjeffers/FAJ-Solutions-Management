@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  OPENING_SYMBOLS, ROT_HANDLE, addBendAt, roomCorners, dragHandle, splitAt, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
+  OPENING_SYMBOLS, ROT_HANDLE, addBendAt, contentBounds, roomCorners, dragHandle, splitAt, feet, gapAt, gapOnWall, handlesOf, openingsOf, seatInWall, snapToWall, wallPieces, wallRuns, hitTest, midpoint, moveShape, newSketch, normalizeSketch, pathLength, roomFromCorners, setLength, setSize,
   snapPt, sqft, summarize, summaryLine, type Shape,
 } from './sketch';
 
@@ -312,5 +312,15 @@ describe('turning rooms and furniture', () => {
     expect(dragHandle(desk, ROT_HANDLE, { x: -5, y: 0 })).toMatchObject({ rot: 270 });
     const door: Shape = { id: 'o', kind: 'symbol', sym: 'door', at: { x: 0, y: 0 }, label: '', rot: 0 };
     expect(handlesOf(door)).toEqual([]); // doors sit in their wall
+  });
+});
+
+describe('the report frames the plan to what is drawn', () => {
+  it('is the drawing plus a margin; an empty plan is the whole plan area', () => {
+    const sk = { ...newSketch(), width: 80, height: 50, shapes: [room] }; // 24 x 18 at 0,0
+    expect(contentBounds(sk)).toEqual({ x: -3, y: -3, w: 30, h: 24 });
+    expect(contentBounds({ ...newSketch(), width: 80, height: 50 })).toEqual({ x: 0, y: 0, w: 80, h: 50 });
+    const withDoor = { ...sk, shapes: [room, { id: 'd', kind: 'symbol', sym: 'door', at: { x: 12, y: 0 }, label: '', rot: 0 } as Shape] };
+    expect(contentBounds(withDoor).y).toBeLessThan(-3); // room for the door's swing
   });
 });

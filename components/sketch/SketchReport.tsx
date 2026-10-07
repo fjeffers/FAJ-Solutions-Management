@@ -1,13 +1,36 @@
 'use client';
 // A sketch as a report to print, save as PDF or send (Fred, 2026-10-06:
-// "downloadable forms"). The plan picture, what's on it — devices counted,
-// cable footage, rooms with their size and square footage — and every pinned
-// photo with its note. Printing shows only the report: it borrows the job
-// log's print rules (app/wf.css, #job-log-root / body.job-log-open).
-import { useEffect, useState } from 'react';
+// "downloadable forms"). The plan, what's on it — devices counted, cable
+// footage, rooms with their size and square footage — and every pinned photo
+// with its note. Printing shows only the report: it borrows the job log's
+// print rules (app/wf.css, #job-log-root / body.job-log-open).
+//
+// The plan is drawn here as SVG by the same code as the sketch pad
+// (components/sketch/draw.tsx), framed to what's drawn — Fred, 2026-10-06,
+// holding up the PDF: "this is how it should look after it saves to PDF".
+// The saved picture used to be printed instead: small, soft, with the counts
+// baked in under it a second time. Printed, the plan gets a page of its own,
+// sideways, with no browser header or footer.
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Printer, X } from 'lucide-react';
-import { cableInfo, feet, sqft, summarize, symbolInfo, wallTypeInfo, type Shape, type Sketch } from '@/lib/sketch';
+import { cableInfo, contentBounds, feet, openingsOf, sqft, summarize, symbolInfo, wallTypeInfo, type Shape, type Sketch } from '@/lib/sketch';
+import { SketchDefs, makeDraw } from './draw';
+
+/** Print rules for this report only: letter, sideways, no margin (so no browser header or footer). */
+const PRINT_CSS = `
+@media print {
+  @page { size: letter landscape; margin: 0; }
+  #job-log-root .sr-plan-sheet { break-after: page; }
+  #job-log-root .sr-plan-body { padding: 5mm 12mm 0 !important; }
+  #job-log-root .sr-plan-frame { border: none !important; margin-top: 3mm !important; }
+  #job-log-root svg.sr-plan { max-height: 158mm; }
+  #job-log-root .sr-details { padding: 12mm 14mm !important; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  #job-log-root .sr-details h3 { break-after: avoid; }
+  #job-log-root .sr-details tr, #job-log-root .sr-details figure { break-inside: avoid; }
+  #job-log-root .sr-details th, #job-log-root .sr-details td { padding-top: 4px !important; padding-bottom: 4px !important; }
+  #job-log-root .sr-details h3 { margin-top: 14px !important; }
+}`;
 
 export async function downloadFromUrl(url: string, filename: string): Promise<boolean> {
   try {
@@ -41,6 +64,15 @@ export default function SketchReport({ title, sketch, imageUrl, photoUrl, linkLa
   const photos = sketch.shapes.filter((s): s is Extract<Shape, { kind: 'photo' }> => s.kind === 'photo');
   const rooms = sketch.shapes.filter((s): s is Extract<Shape, { kind: 'room' }> => s.kind === 'room');
   const [urls, setUrls] = useState<Record<string, string>>({});
+  const [bgUrl, setBgUrl] = useState<string | null>(null);
+  // The plan, drawn (no selection marks; the faint marks for removed stretches of wall aren't printed).
+  const draw = useMemo(() => makeDraw({ selectedId: null, openings: openingsOf(sketch.shapes) }), [sketch]);
+  const frame = useMemo(() => contentBounds(sketch), [sketch]);
+  const arrowColors = useMemo(() => [...new Set(sketch.shapes.filter((s) => s.kind === 'line').map((s) => (s as Extract<Shape, { kind: 'line' }>).color))], [sketch]);
+  useEffect(() => {
+    if (sketch.bg) void photoUrl(sketch.bg.path).then(setBgUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sketch]);
 
   useEffect(() => {
     document.body.classList.add('job-log-open');
@@ -69,7 +101,9 @@ export default function SketchReport({ title, sketch, imageUrl, photoUrl, linkLa
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
       </div>
 
-      <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>
+      <style>{PRINT_CSS}</style>
+      <div className="jl-page" style={{ maxWidth: 1000, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>
+        <div className="sr-plan-sheet">
         <div className="jl-band" style={{ background: 'linear-gradient(180deg, #13284A 0%, #0E1B2E 100%)', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/wf/logo-wide.png" alt="FAJ Solutions" style={{ height: 54, width: 'auto' }} />
@@ -78,17 +112,30 @@ export default function SketchReport({ title, sketch, imageUrl, photoUrl, linkLa
             <div style={{ fontSize: 12, opacity: 0.85 }}>{date}</div>
           </div>
         </div>
-        <div style={{ padding: '18px 24px 26px' }}>
-          <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 20, fontWeight: 700 }}>{title}</div>
-          {linkLabel && <div style={{ color: '#5E6470', marginTop: 2 }}>{linkLabel}</div>}
-
-          <div className="jl-avoid" style={{ marginTop: 14, border: '1px solid #ECE8DF', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
-            {imageUrl
-              // eslint-disable-next-line @next/next/no-img-element
-              ? <img src={imageUrl} alt={`Plan: ${title}`} style={{ width: '100%', display: 'block' }} />
-              : <div style={{ padding: 30, textAlign: 'center', color: '#90a4ae' }}>Save the sketch to make its picture.</div>}
+        <div className="sr-plan-body" style={{ padding: '18px 24px 22px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 20, fontWeight: 700 }}>{title}</div>
+            {linkLabel && <div style={{ color: '#5E6470' }}>{linkLabel}</div>}
+            <div style={{ marginLeft: 'auto', color: '#90a4ae', fontSize: 11 }}>Each grid square = 1 ft</div>
           </div>
 
+          <div className="jl-avoid sr-plan-frame" style={{ marginTop: 14, border: '1px solid #ECE8DF', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+            <svg className="sr-plan" viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`} preserveAspectRatio="xMidYMid meet"
+              role="img" aria-label={`Plan: ${title}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+              <SketchDefs arrowColors={arrowColors} />
+              <rect x={frame.x} y={frame.y} width={frame.w} height={frame.h} fill="#fff" />
+              {sketch.bg && bgUrl && (
+                <image href={bgUrl} x={0} y={0} width={sketch.width} height={sketch.height} preserveAspectRatio="xMidYMid meet" opacity={sketch.bg.opacity} />
+              )}
+              <rect x={0} y={0} width={sketch.width} height={sketch.height} fill="url(#grid5)" />
+              {sketch.shapes.filter((s) => s.kind !== 'gap').map((s) => draw.renderShape(s))}
+            </svg>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 10.5, color: '#90a4ae' }}>Each grid square = 1 ft. Plan size {feet(sketch.width)} × {feet(sketch.height)}. FAJ Solutions · Bringing People and Technology Together.</div>
+        </div>
+        </div>
+
+        <div className="sr-details" style={{ padding: '4px 24px 26px' }}>
           <H>What&apos;s on the plan</H>
           {sum.symbols.length === 0 && !sum.cableFeet && sum.walls.length === 0 ? <div style={{ color: '#5E6470' }}>No devices or cable runs drawn.</div> : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -138,7 +185,6 @@ export default function SketchReport({ title, sketch, imageUrl, photoUrl, linkLa
             </>
           )}
 
-          <div style={{ marginTop: 22, fontSize: 11, color: '#90a4ae' }}>Each grid square = 1 ft. Plan size {feet(sketch.width)} × {feet(sketch.height)}. FAJ Solutions · Bringing People and Technology Together.</div>
         </div>
       </div>
     </div>,

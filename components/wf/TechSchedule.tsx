@@ -101,7 +101,7 @@ export default function TechSchedule({ jobs, crewWeeks, onOpen, onOpenCrew }: {
       </div>
 
       {undated.length > 0 && (
-        <Section title="No date yet" subtitle="Yours, waiting on a date from the office">
+        <Section title="No date yet" subtitle="Yours, waiting on a date">
           <div style={{ margin: '0 -14px' }}>
             {undated.map((j) => <ScheduleRow key={j.id} job={j} onOpen={() => onOpen(j.id)} />)}
           </div>
@@ -112,7 +112,7 @@ export default function TechSchedule({ jobs, crewWeeks, onOpen, onOpenCrew }: {
         <CalendarDays size={22} color="var(--wf-gold)" style={{ flexShrink: 0 }} />
         <div style={{ flex: '1 1 200px', minWidth: 0 }}>
           <div style={{ fontWeight: 600 }}>Put your jobs on your phone calendar</div>
-          <div className="wf-subtle" style={{ fontSize: 12.5 }}>Saves your upcoming jobs as a calendar file. Open it to add them. Do it again when the office changes a date.</div>
+          <div className="wf-subtle" style={{ fontSize: 12.5 }}>Saves your upcoming jobs as a calendar file. Open it to add them. Do it again when a date changes.</div>
         </div>
         <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={saveCalendar}><Download size={15} /> Add to calendar</button>
       </div>

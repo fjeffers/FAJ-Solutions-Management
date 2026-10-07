@@ -130,7 +130,7 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
       {edit && onSign && !c.signoff && (
         <>
           <div className="wf-subtle" style={{ fontSize: 12.5, margin: '8px 0' }}>
-            Hand the phone to the on-site contact to sign once the work is done{job.signatureRequired ? ' — the office needs it on this job' : ''}.
+            Hand the phone to the on-site contact to sign once the work is done{job.signatureRequired ? ' — this job needs it' : ''}.
           </div>
           <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => setSignOpen(true)}><PenLine size={15} /> Get customer signature</button>
         </>

@@ -53,11 +53,11 @@ export default function TechLoginPage() {
     if (role === 'owner' || role === 'staff') {
       setError("That login isn't a tech account. Sign in with your tech username or email.");
     } else if (claim.reason === 'no_matching_contractor') {
-      setError("Signed in, but this login's email isn't on any tech record. Ask Fred to put this email on your tech record, then sign in again.");
+      setError("Signed in, but this login's email isn't on any tech record. Ask FAJ Solutions to put this email on your tech record, then sign in again.");
     } else if (claim.reason === 'email_not_confirmed') {
       setError('Check your inbox and confirm your email address, then sign in again.');
     } else {
-      setError('Signed in, but we could not open your tech account. Contact Fred.');
+      setError('Signed in, but we could not open your tech account. Contact FAJ Solutions.');
     }
     await supabase.auth.signOut();
     setLoading(false);
@@ -133,7 +133,7 @@ export default function TechLoginPage() {
           <img src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ width: 220, maxWidth: '80%', height: 'auto', marginBottom: 6 }} />
           <div className="wf-hero-greet" style={{ fontSize: 30 }}>Tech Portal</div>
           <div style={{ color: 'rgba(255,255,255,0.82)', marginTop: 6, fontSize: 13 }}>
-            {mode === 'signin' ? 'Your jobs, your hours, your pay.' : 'Make your login. Use the email Fred has on file for you.'}
+            {mode === 'signin' ? 'Your jobs, your hours, your pay.' : 'Make your login. Use the email FAJ has on file for you.'}
           </div>
         </div>
         <div style={{ padding: 24 }}>
@@ -174,7 +174,7 @@ export default function TechLoginPage() {
                 <input
                   id="tl-email" className="wf-input" type="email" required autoComplete="email" autoCapitalize="none"
                   value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="The email Fred has on file for you"
+                  placeholder="The email FAJ has on file for you"
                 />
               </div>
 

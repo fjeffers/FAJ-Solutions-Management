@@ -215,7 +215,7 @@ export default function TechPortalPage() {
 
   const signOut = async () => {
     const waiting = boxRef.current?.pending.length ?? 0;
-    if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} reached the office yet. They stay on this phone and go out the next time you sign in. Sign out anyway?`)) return;
+    if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} been sent yet. They stay on this phone and go out the next time you sign in. Sign out anyway?`)) return;
     if (uid) clearCopies(kv, uid, COPIES);
     await supabase.auth.signOut();
     router.replace('/tech/login');
@@ -259,7 +259,7 @@ export default function TechPortalPage() {
               <div className="wf-h1" style={{ fontSize: 22 }}>Not a tech account</div>
               <p className="wf-subtle" style={{ margin: '8px 0 18px' }}>
                 You&apos;re signed in, but this login&apos;s email isn&apos;t on any tech record.
-                If you&apos;re a tech, ask Fred to put this email on your tech record, then sign in again.
+                If you&apos;re a tech, ask FAJ Solutions to put this email on your tech record, then sign in again.
               </p>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
                 <button className="wf-btn wf-btn-navy" onClick={signOut}>Sign out</button>
@@ -349,7 +349,7 @@ export default function TechPortalPage() {
           {box && box.problems.length > 0 && (
             <div className="wf-card" style={{ padding: 14, marginBottom: 14, borderColor: 'rgba(198,40,40,0.35)', background: 'rgba(198,40,40,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontWeight: 700, color: 'var(--wf-danger)', flex: 1 }}>The office didn&apos;t accept {box.problems.length === 1 ? 'one tap' : `${box.problems.length} taps`} made with no signal</div>
+                <div style={{ fontWeight: 700, color: 'var(--wf-danger)', flex: 1 }}>FAJ couldn&apos;t accept {box.problems.length === 1 ? 'one tap' : `${box.problems.length} taps`} made with no signal</div>
                 <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => box.clearProblems()} aria-label="Dismiss"><X size={16} /></button>
               </div>
               {box.problems.map((p) => <div key={p} style={{ fontSize: 13, marginTop: 4 }}>{p}</div>)}
@@ -443,7 +443,7 @@ function PaperworkGate({ profile, portalToken, onFiled, onRetry, onSignOut }: {
           <div className="wf-hero-date">FAJ Solutions · Tech Portal</div>
           <h1 className="wf-hero-greet">Welcome, {profile.name.split(/\s+/)[0]}</h1>
           <div style={{ color: 'rgba(255,255,255,0.85)', marginTop: 8, maxWidth: 520 }}>
-            Before you can see your jobs, Fred needs two things from you. It takes a few minutes, and you only do it once.
+            Before you can see your jobs, we need two things from you. It takes a few minutes, and you only do it once.
           </div>
         </div>
 
@@ -477,7 +477,7 @@ function PaperworkGate({ profile, portalToken, onFiled, onRetry, onSignOut }: {
 
         <div style={{ textAlign: 'center' }}>
           <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 8 }}>
-            Your tax number goes straight to the office&apos;s secure files. It is never kept on this phone.
+            Your tax number goes straight to FAJ&apos;s secure files. It is never kept on this phone.
           </div>
           <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onSignOut}><LogOut size={16} /> Sign out</button>
         </div>
@@ -551,7 +551,7 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, g
               {!profile.w9_received && !profile.contract_signed_at ? 'Your W-9 and agreement are outstanding'
                 : !profile.w9_received ? 'Your W-9 is outstanding' : 'Your contractor agreement is unsigned'}
             </span>
-            <span className="wf-subtle" style={{ fontSize: 12.5 }}>Fred can&apos;t pay you without it. Tap to finish — it takes a minute.</span>
+            <span className="wf-subtle" style={{ fontSize: 12.5 }}>We can&apos;t pay you without it. Tap to finish — it takes a minute.</span>
           </span>
         </button>
       )}
@@ -614,7 +614,7 @@ function AvailableTab({ offers, act, onOpen }: {
         <Empty
           icon={<Inbox size={34} />}
           title="No available jobs"
-          message={offers.length ? 'Nothing matches your filters right now.' : 'New jobs Fred sends you show up here to accept.'}
+          message={offers.length ? 'Nothing matches your filters right now.' : 'New jobs sent to you show up here to accept.'}
         />
       ) : shown.map((j, i) => <AvailableJobCard key={j.id} job={j} here={here} index={i} act={act} onOpen={() => onOpen(j.id)} />)}
     </div>
@@ -660,8 +660,8 @@ function OfferButtons({ job, act }: { job: WfJob; act: (a: PendingAction, sent?:
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button className="wf-btn wf-btn-outline" style={{ flex: 1, minWidth: 0 }}
         onClick={() => {
-          if (!confirm(`Not interested in WO ${job.number}? It goes back to the office so Fred can give it to someone else.`)) return;
-          void act(makeAction('respond', { number: job.number, accept: false }, `Decline WO ${job.number}`), 'Sent back to the office.');
+          if (!confirm(`Not interested in WO ${job.number}? It goes back so it can go to someone else.`)) return;
+          void act(makeAction('respond', { number: job.number, accept: false }, `Decline WO ${job.number}`), 'Sent back.');
         }}>
         <ThumbsDown size={16} /> Not interested
       </button>
@@ -694,7 +694,7 @@ function TimeRequestDialog({ job, act, onClose }: {
     void act(
       makeAction('timeRequest', withdraw ? { number: job.number, date: null } : { number: job.number, date, time, note: note.trim() },
         withdraw ? `Take back the time ask on WO ${job.number}` : `Ask for another time on WO ${job.number}`),
-      withdraw ? 'Ask taken back.' : 'Sent to Fred. His answer shows on the job.',
+      withdraw ? 'Ask taken back.' : 'Sent. The answer shows on the job.',
     );
   };
   return (
@@ -703,12 +703,12 @@ function TimeRequestDialog({ job, act, onClose }: {
         {mine && <button className="wf-btn wf-btn-ghost" onClick={() => send(true)}>Take back my ask</button>}
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
         <button className="wf-btn wf-btn-navy" disabled={!date || date < minDate} onClick={() => send(false)}>
-          <Send size={16} /> Send to Fred
+          <Send size={16} /> Send
         </button>
       </>}>
       <p style={{ marginTop: 0 }}>
         WO {job.number} is set for <b>{job.date ? requestWhen({ date: job.date, time: job.startTime }) : 'no date yet'}</b>.
-        Pick a time that works for you — Fred will use it or keep the original.
+        Pick a time that works for you — we&apos;ll use it or keep the original.
       </p>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 150px' }}>
@@ -720,7 +720,7 @@ function TimeRequestDialog({ job, act, onClose }: {
           <input id={`ask-time-${job.id}`} className="wf-input" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
         </div>
       </div>
-      <label className="wf-label" htmlFor={`ask-note-${job.id}`} style={{ display: 'block', margin: '12px 0 4px' }}>Note for Fred</label>
+      <label className="wf-label" htmlFor={`ask-note-${job.id}`} style={{ display: 'block', margin: '12px 0 4px' }}>Note</label>
       <textarea id={`ask-note-${job.id}`} className="wf-input" rows={3} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)}
         placeholder="I'm on another job until 3. I can be there by 4." />
     </Dialog>
@@ -796,7 +796,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const saveReport = async (extra: Record<string, string> = {}, quiet = false, notesNow: string = notes) => {
     const all = { ...answers, ...extra };
     await act(makeAction('report', { number: job.number, notes: notesNow, answers: all }, `Job report for WO ${job.number}`),
-      quiet ? undefined : 'Saved. The office can see it.');
+      quiet ? undefined : 'Saved and sent.');
     setAnswers({});
   };
 
@@ -831,7 +831,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   } else if (job.status === 'workDone') {
     bottom = (
       <div className="wf-card" style={{ padding: 12, textAlign: 'center', color: 'var(--wf-success)', fontWeight: 600 }}>
-        Sent to Fred — the office takes it from here.
+        Sent — you&apos;re all set.
         {dirty && <button className="wf-btn wf-btn-outline wf-btn-sm" style={{ marginLeft: 10 }} onClick={() => void saveReport()}><Save size={15} /> Save changes</button>}
       </div>
     );
@@ -907,7 +907,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
             void act(
               makeAction('workdone', { number: job.number, notes, clockOut, lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null },
                 `Work done on WO ${job.number}`, at),
-              'Work done. The office has it.',
+              'Work done. Sent.',
             );
           }}
         />
@@ -981,7 +981,7 @@ function JobExpenses({ expenses, canAdd, onAdd }: { expenses: TechExpense[]; can
       right={canAdd ? <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onAdd}><Receipt size={15} /> Add</button> : undefined}
     >
       {expenses.length === 0 ? (
-        <div className="wf-subtle" style={{ fontSize: 13 }}>No expenses yet. Snap the receipt and Fred pays you back once he approves it.</div>
+        <div className="wf-subtle" style={{ fontSize: 13 }}>No expenses yet. Snap the receipt and you&apos;re paid back once it&apos;s approved.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {expenses.map((e) => {
@@ -993,7 +993,7 @@ function JobExpenses({ expenses, canAdd, onAdd }: { expenses: TechExpense[]; can
                   <div className="wf-subtle" style={{ fontSize: 12.5 }}>
                     {fmtDate(e.expense_date)}{e.has_receipt ? ' · receipt attached' : ' · no receipt photo'}{e.note ? ` · ${e.note}` : ''}
                   </div>
-                  {e.status === 'declined' && e.decline_reason && <div style={{ fontSize: 12.5, color: 'var(--wf-danger)' }}>Fred: {e.decline_reason}</div>}
+                  {e.status === 'declined' && e.decline_reason && <div style={{ fontSize: 12.5, color: 'var(--wf-danger)' }}>Note: {e.decline_reason}</div>}
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="wf-display" style={{ fontWeight: 700 }}>{fmtMoney(e.amount)}</div>
@@ -1048,7 +1048,7 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       setBusy(false);
       if (!res.ok || !json.ok) { toastError(json.error ?? "Couldn't send that expense."); return; }
-      toastSuccess(`Expense sent to Fred: ${fmtMoney(amt)}.`);
+      toastSuccess(`Expense sent: ${fmtMoney(amt)}.`);
       onSaved();
     } catch {
       setBusy(false);
@@ -1063,7 +1063,7 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
       onClose={onClose}
       footer={<>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-navy" disabled={busy || !amount.trim()} onClick={() => void send()}><Receipt size={16} /> {busy ? 'Sending…' : 'Send to Fred'}</button>
+        <button className="wf-btn wf-btn-navy" disabled={busy || !amount.trim()} onClick={() => void send()}><Receipt size={16} /> {busy ? 'Sending…' : 'Send'}</button>
       </>}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1176,13 +1176,13 @@ function JobReport({ job, uid, canEdit, notes, setNotes, answers, setAnswers, di
   return (
     <Section
       title="Job report"
-      subtitle={job.questions.length ? `${answeredCount} of ${job.questions.length} questions answered` : 'Notes for the office'}
+      subtitle={job.questions.length ? `${answeredCount} of ${job.questions.length} questions answered` : 'Your notes'}
       right={canEdit && dirty ? <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)' }}>Not saved</span> : undefined}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {job.deliverableInstructions && (
           <div style={{ padding: 10, borderRadius: 10, background: 'rgba(201,162,75,0.1)', fontSize: 13 }}>
-            <div style={{ fontWeight: 600, marginBottom: 2 }}>What the office needs back</div>
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>What we need back</div>
             <div style={{ whiteSpace: 'pre-wrap' }}>{job.deliverableInstructions}</div>
           </div>
         )}
@@ -1238,7 +1238,7 @@ function JobReport({ job, uid, canEdit, notes, setNotes, answers, setAnswers, di
 
         <div>
           <label className="wf-label" htmlFor={`notes-${job.id}`} style={{ display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--wf-text)', fontSize: 13.5 }}>
-            Notes for the office
+            Your notes
           </label>
           <textarea id={`notes-${job.id}`} className="wf-input" rows={4} value={notes} disabled={!canEdit}
             onChange={(e) => setNotes(e.target.value)}
@@ -1278,7 +1278,7 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
     >
       {missing.length > 0 ? (
         <>
-          <p style={{ marginTop: 0 }}>Before the job goes back to the office, finish these under <b>Closeout</b>, <b>Job report</b> and <b>Photos</b>:</p>
+          <p style={{ marginTop: 0 }}>Before you send the job in, finish these under <b>Closeout</b>, <b>Job report</b> and <b>Photos</b>:</p>
           <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
             {missing.map((m) => <li key={m}>{m}</li>)}
           </ul>
@@ -1286,7 +1286,7 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
       ) : (
         <>
           <p style={{ marginTop: 0 }}>
-            Your notes and answers are saved, {isClockedIn(job) ? 'you will be clocked out, ' : ''}and the office is told the job is finished.
+            Your notes and answers are saved, {isClockedIn(job) ? 'you will be clocked out, ' : ''}and the job is marked finished.
           </p>
         </>
       )}
@@ -1385,7 +1385,7 @@ function useJobPhotos(job: WfJob, uid: string) {
       return;
     }
     const meta = { woNumber: job.number, blob, takenAt: at.toISOString(), lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source };
-    setBusy('Sending to the office…');
+    setBusy('Sending…');
     const r = await sendPhoto(meta);
     setBusy(null);
     if (r !== 'offline' && 'url' in r) {
@@ -1394,7 +1394,7 @@ function useJobPhotos(job: WfJob, uid: string) {
     } else if (r === 'offline') {
       await queuePhoto({ ...meta, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, uid });
       await loadWaiting();
-      toastInfo('No signal — photo saved on this phone. It goes to the office as soon as you have signal.');
+      toastInfo('No signal — photo saved on this phone. It sends as soon as you have signal.');
     } else {
       toastError('error' in r ? r.error : "Couldn't send the photo.");
     }
@@ -1494,11 +1494,11 @@ function JobMessages({ number }: { number: string }) {
   };
 
   return (
-    <Section title="Messages" subtitle="With the office, about this job">
+    <Section title="Messages" subtitle="With FAJ, about this job">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '46vh', overflowY: 'auto', marginBottom: 10 }}>
         {failed ? <div className="wf-subtle">Messages need signal. Try again when you have it.</div>
           : messages === null ? <div className="wf-subtle">Loading…</div>
-          : messages.length === 0 ? <div className="wf-subtle">No messages yet. Ask the office anything about this job.</div>
+          : messages.length === 0 ? <div className="wf-subtle">No messages yet. Ask us anything about this job.</div>
           : messages.map((m) => {
             const mine = m.sender_role === 'contractor';
             return (
@@ -1519,7 +1519,7 @@ function JobMessages({ number }: { number: string }) {
         <div ref={bottom} />
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-        <textarea className="wf-input" rows={2} value={draft} placeholder="Message the office…" style={{ flex: 1, resize: 'none' }}
+        <textarea className="wf-input" rows={2} value={draft} placeholder="Write a message…" style={{ flex: 1, resize: 'none' }}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
         <button className="wf-btn wf-btn-navy" onClick={send} disabled={sending || !draft.trim()} aria-label="Send"><Send size={17} /></button>
@@ -1597,7 +1597,7 @@ function EmergencyCard({ profile, onSaved }: { profile: TechProfile; onSaved: (p
     try {
       await saveTechEmergency({ name, phone, relation });
       onSaved({ ...profile, emergency_name: name.trim() || null, emergency_phone: phone.trim() || null, emergency_relation: relation.trim() || null });
-      toastSuccess('Saved. The office has your emergency contact.');
+      toastSuccess('Saved. We have your emergency contact.');
     } catch (e) {
       toastError(isNoSignal(e) ? 'No signal — try saving again when you have it.' : "Couldn't save your emergency contact.");
     }
@@ -1612,11 +1612,11 @@ function EmergencyCard({ profile, onSaved }: { profile: TechProfile; onSaved: (p
   );
 
   return (
-    <Section title="Emergency contact" subtitle="Who the office should call if something happens on a job">
+    <Section title="Emergency contact" subtitle="Who we should call if something happens on a job">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {missing && (
           <div style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(198,40,40,0.08)', color: 'var(--wf-danger)', fontSize: 13, fontWeight: 600 }}>
-            Please add someone the office can call in an emergency.
+            Please add someone we can call in an emergency.
           </div>
         )}
         {box('Name', name, setName, 'Who to call')}
@@ -1647,7 +1647,7 @@ function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
     try {
       await saveTechProfile({ phone, address, city, state, zip });
       onSaved({ ...profile, phone, address, city, state, zip });
-      toastSuccess('Saved. The office has your new details.');
+      toastSuccess('Saved. We have your new details.');
     } catch (e) {
       toastError(isNoSignal(e) ? 'No signal — try saving again when you have it.' : "Couldn't save your details.");
     }

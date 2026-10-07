@@ -30,7 +30,7 @@ async function call(fn: string, args: Record<string, unknown>): Promise<void> {
   const { data, error } = await createClient().rpc(fn, args);
   if (error) {
     if (isNoSignal(error)) throw new Error(error.message);
-    throw new RefusedError("The office couldn't save that.");
+    throw new RefusedError("That couldn't be saved. Try again.");
   }
   const r = (data ?? {}) as { ok?: boolean; reason?: string };
   if (r.ok === false) throw new RefusedError(wfReasonText(r.reason ?? ''));

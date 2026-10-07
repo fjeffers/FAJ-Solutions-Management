@@ -220,7 +220,7 @@ export function ScheduleCard({ job }: { job: WfJob }) {
         <div>
           <div style={{ fontWeight: 600 }}>{day}</div>
           <div>{times || 'No set time'}</div>
-          {!job.date && <div className="wf-subtle" style={{ fontSize: 12 }}>The office will set the date.</div>}
+          {!job.date && <div className="wf-subtle" style={{ fontSize: 12 }}>The date will be set soon.</div>}
         </div>
       </div>
     </Section>

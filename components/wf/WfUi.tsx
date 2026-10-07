@@ -195,8 +195,8 @@ export function TimeRequestLine({ job, ownerView }: { job: WfJob; ownerView: boo
   }
   const r = job.myTimeRequest;
   if (!r || job.status !== 'offered') return null;
-  if (r.state === 'waiting') return line(`You asked for ${requestWhen(r)} · waiting on Fred`, 'gold');
-  if (r.state === 'kept') return line('Fred kept the original time', 'grey');
+  if (r.state === 'waiting') return line(`You asked for ${requestWhen(r)} · waiting for an answer`, 'gold');
+  if (r.state === 'kept') return line('The original time stays', 'grey');
   return null;
 }
 

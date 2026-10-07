@@ -73,7 +73,7 @@ export default function TechJobActions({
           background: 'rgba(16,185,129,0.08)', color: '#047857', fontWeight: 600,
           display: 'flex', alignItems: 'center', gap: 7,
         }}>
-          <CheckCircle2 size={15} /> Sent to Fred — it comes back here once it's paid
+          <CheckCircle2 size={15} /> Sent to Fred — it comes back here once it&apos;s paid
         </div>
       </div>
     );

@@ -1497,7 +1497,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
             {contacts.length === 0 && (
               <div style={{ textAlign: 'center', padding: '24px 0', color: '#aaa', fontSize: 13 }}>
-                No contacts yet — click "Add Contact" to get started.
+                No contacts yet — click &quot;Add Contact&quot; to get started.
               </div>
             )}
 

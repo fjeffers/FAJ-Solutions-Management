@@ -90,7 +90,7 @@ export default function LayoutEditor({ layout, onChange, saveState, saveError, o
       <p className="wf-p-small" style={{ margin: 0, color: 'var(--wf-subtle)', lineHeight: 1.5 }}>
         Rename, reorder, hide or move any screen, and make Office sections of your own. Changes show in the menu
         right away and save by themselves. <strong>Hiding only takes a screen off the menu</strong> — nothing is
-        deleted, and you can show it again here. Office always stays in the left menu and Settings can't be
+        deleted, and you can show it again here. Office always stays in the left menu and Settings can&apos;t be
         hidden, so you can always get back here.
       </p>
 

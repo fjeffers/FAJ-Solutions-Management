@@ -177,7 +177,7 @@ export default function DeliverableTemplatesView({
           <div style={{ fontSize: 40, marginBottom: 12 }}>☑️</div>
           <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No deliverable templates yet</div>
           <div style={{ fontSize: 13, marginBottom: 20 }}>
-            Create reusable checklists like "Sanctuary Wealth Site Survey" or "Standard Closeout" and apply them to any work order.
+            Create reusable checklists like &quot;Sanctuary Wealth Site Survey&quot; or &quot;Standard Closeout&quot; and apply them to any work order.
           </div>
           <button className="btn btn-primary" onClick={() => setEditing({})}>
             <Plus size={14} /> Create First Template

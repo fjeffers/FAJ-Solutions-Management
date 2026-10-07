@@ -21,7 +21,7 @@ export default function ScreenPartsEditor({ layout, onChange, saveState, saveErr
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '18px 28px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <p className="wf-p-small" style={{ margin: 0, color: 'var(--wf-subtle)', lineHeight: 1.5, flex: '1 1 300px' }}>
-          Untick anything you don't want to see. It only hides that part — nothing is lost, and you can tick it again any time.
+          Untick anything you don&apos;t want to see. It only hides that part — nothing is lost, and you can tick it again any time.
         </p>
         <SaveLine state={saveState} error={saveError} onRetry={onRetry} />
         {anyOff && (

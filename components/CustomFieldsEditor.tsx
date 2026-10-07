@@ -54,7 +54,7 @@ export default function CustomFieldsEditor({ fields, onChange, saveState, saveEr
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '18px 28px 24px' }}>
       <p className="wf-p-small" style={{ margin: 0, color: 'var(--wf-subtle)', lineHeight: 1.5 }}>
         Add your own boxes to the job, tech and customer forms. They show on the form under “Your fields” and on the
-        record once filled in. <strong>Techs never see them</strong>, so they're safe for prices, PO numbers or notes.
+        record once filled in. <strong>Techs never see them</strong>, so they&apos;re safe for prices, PO numbers or notes.
         Renaming a field keeps every answer. Remove takes it off the forms but keeps the answers, and Restore brings it back.
       </p>
 

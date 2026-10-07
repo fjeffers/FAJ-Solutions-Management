@@ -153,7 +153,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
             <div style={{ background: 'rgba(14,27,46,0.06)', borderRadius: 12, padding: '14px 16px', marginTop: 18, fontSize: 13, color: '#333' }}>
               <b>Ready to move forward?</b> Reply to the message this quote came with, or email
               {' '}<a href="mailto:fajsolutions@gmail.com" style={{ color: '#0E1B2E', fontWeight: 700 }}>fajsolutions@gmail.com</a>{' '}
-              to approve — we'll schedule your work right away.
+              to approve — we&apos;ll schedule your work right away.
             </div>
           </div>
 

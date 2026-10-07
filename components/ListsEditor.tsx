@@ -59,7 +59,7 @@ export default function ListsEditor({ lists, onChange, saveState, saveError, onR
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '18px 28px 24px' }}>
       <p className="wf-p-small" style={{ margin: 0, color: 'var(--wf-subtle)', lineHeight: 1.5 }}>
         Rename, add, reorder or hide the choices on your jobs. Changes save by themselves.{' '}
-        <strong>Nothing is ever deleted:</strong> a hidden choice just isn't offered for new jobs, and jobs that
+        <strong>Nothing is ever deleted:</strong> a hidden choice just isn&apos;t offered for new jobs, and jobs that
         already use it keep it. Renaming changes the name everywhere, old jobs included. Expense categories
         stay fixed, because each one decides how a tech is paid back.
       </p>

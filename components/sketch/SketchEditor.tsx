@@ -11,17 +11,17 @@ import dynamic from 'next/dynamic';
 import {
   ArrowUpRight, Camera, Circle, Eraser, Grid3x3, Hand, Highlighter, Image as ImageIcon, Magnet, Minus, MousePointer2,
   Pencil, Plus, Redo2, Save, Square, Trash2, Type, Undo2, X, Maximize, Cable, BrickWall, LayoutPanelTop, Loader2, Box,
-  Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, DoorOpen, DoorClosed, AppWindow, SquareDashed,
+  Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, SquareDashed,
 } from 'lucide-react';
 import {
-  CABLE_TYPES, COLORS, OPENING_SYMBOLS, ROT_HANDLE, WALL_TYPES, addBendAt, footprint, normDeg, roomCenter, roomCorners, splitAt, wallTypeInfo, type WallType, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
+  CABLE_TYPES, COLORS, ROT_HANDLE, WALL_TYPES, addBendAt, footprint, normDeg, roomCenter, roomCorners, splitAt, wallTypeInfo, type WallType, OPENING_WIDTH, isFurniture, SYMBOLS, SYMBOL_GROUPS, cableInfo, dragHandle, feet, gapOnWall, isOpeningSymbol, snapToWall, handlesOf, hitTest, midpoint, moveShape, newId, normalizeSketch, openingsOf, pathLength, roomFromCorners, seatInWall, setLength, setSize, snapPt, wallPieces,
   sqft, summarize, symbolInfo, type CableType, type Pt, type Shape, type Sketch, type SymbolKind,
 } from '@/lib/sketch';
 
 // The 3D model (Fred, 2026-10-06: "also 3d model") — three.js, loaded only when opened.
 const Sketch3D = dynamic(() => import('./Sketch3D'), { ssr: false });
 
-type Tool = 'select' | 'hand' | 'moveall' | 'opening' | 'doors' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
+type Tool = 'select' | 'hand' | 'moveall' | 'opening' | 'pen' | 'marker' | 'line' | 'arrow' | 'box' | 'ellipse' | 'text'
   | 'room' | 'wall' | 'cable' | 'symbol' | 'photo' | 'eraser';
 
 const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' | 'draw' | 'edit' }[] = [
@@ -33,7 +33,6 @@ const TOOLS: { tool: Tool; label: string; icon: React.ReactNode; group: 'plan' |
   // Drywall, exterior, block, brick, concrete, glass, half wall, partition, fire-rated (WALL_TYPES).
   { tool: 'wall', label: 'Walls', icon: <BrickWall size={18} />, group: 'plan' },
   // Fred, 2026-10-06: "where are the windows, doors, glass".
-  { tool: 'doors', label: 'Doors & windows', icon: <DoorClosed size={18} />, group: 'plan' },
   // Fred, 2026-10-06: "delete a portion of the wall or room".
   { tool: 'opening', label: 'Opening', icon: <SquareDashed size={18} />, group: 'plan' },
   { tool: 'cable', label: 'Cable run', icon: <Cable size={18} />, group: 'plan' },
@@ -77,7 +76,6 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
   const [dirty, setDirty] = useState(false);
   const [tool, setTool] = useState<Tool>('room');
   const [sym, setSym] = useState<SymbolKind>('camera');
-  const [doorKind, setDoorKind] = useState<SymbolKind>('door');
   const [wallType, setWallType] = useState<WallType>('drywall');
   // Symbol picker: one group at a time, so nothing is lost off the end of the row.
   const [symGroup, setSymGroup] = useState<(typeof SYMBOL_GROUPS)[number]['group']>('network');
@@ -189,7 +187,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       const now = performance.now(), last = lastTap.current;
       lastTap.current = { t: now, x: e.clientX, y: e.clientY };
       // Tools that put something down on each tap keep doing that.
-      const places = tool === 'symbol' || tool === 'doors' || tool === 'text' || tool === 'photo' || tool === 'cable';
+      const places = tool === 'symbol' || tool === 'text' || tool === 'photo' || tool === 'cable';
       if (!places && last && now - last.t < 380 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 14) {
         const hit = hitTest(sketch.shapes, raw, view.w / 50);
         if (hit) {
@@ -204,7 +202,7 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
         }
       }
     }
-    const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol' || tool === 'opening' || tool === 'doors';
+    const plan = tool === 'room' || tool === 'wall' || tool === 'cable' || tool === 'symbol' || tool === 'opening';
     const p = snapIf(raw, plan || tool === 'line' || tool === 'arrow' || tool === 'box');
 
     if (tool === 'hand' || e.button === 1) { gesture.current = { kind: 'pan', from: { x: e.clientX, y: e.clientY }, view }; return; }
@@ -232,19 +230,12 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
       setDraft((d) => (d?.kind === 'cable' ? { ...d, pts: [...d.pts, p] } : { kind: 'cable', pts: [p], hover: p }));
       return;
     }
-    if (tool === 'doors') {
-      // Tapped on (or near) a wall: the door or window sits in it, turned to match.
-      const s: Shape = seatInWall({ id: newId(), kind: 'symbol', sym: doorKind, at: p, label: '', rot: 0 }, sketch.shapes);
-      addShape(s);
-      setSelectedId(s.id);
-      if (!snapToWall(sketch.shapes, p)) setNotice('That one isn\u2019t on a wall. Drag it onto a wall, or tap right on the wall line.');
-      return;
-    }
     if (tool === 'symbol') {
       // A door or window tapped near a wall sits in it, turned to match.
       const s: Shape = seatInWall({ id: newId(), kind: 'symbol', sym, at: p, label: '', rot: 0 }, sketch.shapes);
       addShape(s);
       setSelectedId(s.id);
+      if (isOpeningSymbol(sym) && !snapToWall(sketch.shapes, p)) setNotice('That one isn\u2019t on a wall. Drag it onto a wall, or tap right on the wall line.');
       return;
     }
     if (tool === 'text') {
@@ -759,23 +750,11 @@ export default function SketchEditor({ title: initialTitle, initial, onSave, onC
             {SYMBOLS.filter((s) => s.group === symGroup).map((s) => (
               <button key={s.kind} type="button" onClick={() => setSym(s.kind)} aria-pressed={sym === s.kind}
                 style={{ ...smallBtn, borderColor: sym === s.kind ? s.color : '#d8dde5', background: sym === s.kind ? `${s.color}18` : '#fff', color: s.color }}>
-                {s.code && <b>{s.code}</b>} {s.label}
+                {s.code && <b>{s.code}</b>} {s.label}{OPENING_WIDTH[s.kind] !== undefined && <span style={{ opacity: 0.6, fontWeight: 600 }}> {OPENING_WIDTH[s.kind]} ft</span>}
               </button>
             ))}
             {symGroup === 'furniture' && <span style={{ color: '#455A64', marginLeft: 4 }}>Drawn to size. Select one and use Turn to face it another way.</span>}
-          </>
-        ) : tool === 'doors' ? (
-          <>
-            {OPENING_SYMBOLS.map((k) => {
-              const info = SYMBOLS.find((x) => x.kind === k)!;
-              return (
-                <button key={k} type="button" onClick={() => setDoorKind(k)} aria-pressed={doorKind === k}
-                  style={{ ...smallBtn, borderColor: doorKind === k ? '#0E1B2E' : '#d8dde5', background: doorKind === k ? '#0E1B2E' : '#fff', color: doorKind === k ? '#fff' : '#0E1B2E' }}>
-                  {k.startsWith('window') ? <AppWindow size={14} /> : <DoorOpen size={14} />} {info.label} <span style={{ opacity: 0.6, fontWeight: 600 }}>{OPENING_WIDTH[k]} ft</span>
-                </button>
-              );
-            })}
-            <span style={{ color: '#455A64', marginLeft: 4 }}>Tap on a wall — it sits in the wall, facing the right way.</span>
+            {symGroup === 'building' && <span style={{ color: '#455A64', marginLeft: 4 }}>Tap on a wall — a door or window sits in the wall, facing the right way.</span>}
           </>
         ) : tool === 'cable' ? (
           <>

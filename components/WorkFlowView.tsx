@@ -466,7 +466,7 @@ function OwnerJob({
   const jobCards: Record<string, ReactNode> = {
     'job.timeRequests': !archived && <TimeRequestsCard w={w} job={job} onSaved={refresh} />,
     'job.quickEdit': !archived && <QuickEditCard w={w} onSaved={refresh} />,
-    'job.techs': <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} onReassign={() => onReassign(w)} />,
+    'job.techs': <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} />,
     'job.money': <MoneyCard w={w} />,
     'job.fields': <YourFieldsCard w={w} />,
     'job.closeout': showCloseout(job) && (
@@ -839,8 +839,8 @@ const ANSWER: Record<string, { label: string; color: string }> = {
 };
 
 /** Who is on the job, how each answered, what each gets — and a button to change it. */
-function TechsCard({ w, job, onChange, onReassign }: {
-  w: EnrichedWorkOrder; job: WfJob; onChange?: () => void; onReassign: () => void;
+function TechsCard({ w, job, onChange }: {
+  w: EnrichedWorkOrder; job: WfJob; onChange?: () => void;
 }) {
   const pay = w.contractor_pay ?? {};
   return (
@@ -868,16 +868,14 @@ function TechsCard({ w, job, onChange, onReassign }: {
           })}
         </div>
       )}
+      {/* One button for every tech change (Fred, 2026-10-07: "assign and reassign
+          should be all under changes") — assign, add, remove and reassign live in
+          the window it opens. */}
       {onChange && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <button className="wf-btn wf-btn-outline wf-btn-sm" style={{ flex: 1 }} onClick={onChange}>
             <UserCog size={15} /> {job.techs.length ? 'Change techs' : 'Assign techs'}
           </button>
-          {job.techs.length > 0 && (
-            <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onReassign} title="Hand the job from one tech to another, splitting paid and unpaid money">
-              Reassign…
-            </button>
-          )}
         </div>
       )}
     </Section>
@@ -998,8 +996,17 @@ function TechPicker({ w, job, contractors, onClose, onSaved, onReassign }: {
         </div>
       )}
       <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 14 }}>
-        New techs get the job as an offer to accept in their portal. Pay left blank shows as &ldquo;Pay not set&rdquo; until you fill it in.
+        Tap names to add or take techs off. New techs get the job as an offer to accept in their portal. Pay left blank shows as &ldquo;Pay not set&rdquo; until you fill it in.
       </div>
+      {job.techs.length > 0 && !paidBlock && (
+        <div style={{ marginTop: 14, padding: 12, borderRadius: 12, border: '1px solid var(--wf-line)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ flex: '1 1 220px', fontSize: 13.5 }}>
+            <b>Handing the job from one tech to another?</b>
+            <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5 }}>Reassign moves it and keeps what&apos;s already been paid with the right tech.</span>
+          </span>
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onReassign}>Reassign…</button>
+        </div>
+      )}
     </Dialog>
   );
 }

@@ -531,9 +531,21 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, g
   // Fred, 2026-10-07: "show schedule, assigned, pending, completed, and
   // declined" — always all five, with their counts. Assigned jobs (still
   // needing a yes or no) are here too, as well as under Available.
-  const [filter, setFilter] = useState<TechFilter | 'all'>('all');
+  // Fred, again the same day: "all jobs removed" — just the five. It opens on
+  // Scheduled, or the first list that has anything in it. A search looks
+  // through all five.
+  const [filter, setFilter] = useState<TechFilter>(() =>
+    TECH_FILTERS.find((f) => jobs.some((j) => techFilterOf(j.status) === f.key))?.key ?? 'scheduled');
   const mine = jobs.filter((j) => techFilterOf(j.status) && matchesWf(j, search));
-  const shown = sortTechJobs(mine.filter((j) => filter === 'all' || techFilterOf(j.status) === filter));
+  const searching = search.trim() !== '';
+  const shown = sortTechJobs(searching ? mine : mine.filter((j) => techFilterOf(j.status) === filter));
+  const EMPTY: Record<TechFilter, string> = {
+    scheduled: offers > 0 ? 'Nothing scheduled. Accept a job under Assigned and it shows here.' : 'Nothing scheduled right now.',
+    assigned: 'Nothing waiting for your answer.',
+    pending: 'Nothing waiting for approval.',
+    completed: 'No completed jobs in the last 45 days.',
+    declined: "You haven't declined any jobs.",
+  };
   const first = name.trim().split(/\s+/)[0] ?? '';
 
   return (
@@ -568,16 +580,17 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, g
 
       <h2 className="wf-title">Work orders</h2>
       <Filters
-        value={filter}
+        value={searching ? 'all' : filter}
+        showAll={false}
         options={TECH_FILTERS.map((f) => ({ key: f.key, label: f.label, count: mine.filter((j) => techFilterOf(j.status) === f.key).length }))}
-        onChange={setFilter}
+        onChange={(v) => { if (v !== 'all') { setFilter(v); setSearch(''); } }}
       />
       <input className="wf-input" value={search} onChange={(e) => setSearch(e.target.value)}
         placeholder="Search WO number, client, city…" aria-label="Search your jobs" />
       {shown.length === 0 ? (
         <Empty
-          title={search ? 'Nothing matches your search' : 'No jobs here'}
-          message={search ? 'Try another word, or clear the search.' : offers > 0 ? 'Accept a job under Available and it shows here.' : 'Nothing matches this filter right now.'}
+          title={searching ? 'Nothing matches your search' : 'No jobs here'}
+          message={searching ? 'Try another word, or clear the search.' : EMPTY[filter]}
         />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 400px), 1fr))', gap: 12 }}>

@@ -86,11 +86,13 @@ export function Banner({ title, subtitle, onClick, tone = 'gold' }: {
 }
 
 /** "All jobs" plus a chip for each stage that has jobs in it. */
-export function Filters<T extends string>({ value, options, onChange, allLabel = 'All jobs', ariaLabel = 'Show jobs by stage', total: totalIn }: {
+export function Filters<T extends string>({ value, options, onChange, allLabel = 'All jobs', showAll = true, ariaLabel = 'Show jobs by stage', total: totalIn }: {
   value: T | 'all';
   options: { key: T; label: string; count: number }[];
   onChange: (v: T | 'all') => void;
   allLabel?: string;
+  /** False: no "All" button, just the stages (the tech's My jobs). */
+  showAll?: boolean;
   ariaLabel?: string;
   /** The "All" count when it isn't the sum of the chips (Dispatch leaves Closed out of All). */
   total?: number;
@@ -98,9 +100,11 @@ export function Filters<T extends string>({ value, options, onChange, allLabel =
   const total = totalIn ?? options.reduce((n, o) => n + o.count, 0);
   return (
     <div className="wf-filters" role="group" aria-label={ariaLabel}>
-      <button className="wf-filter" aria-pressed={value === 'all'} onClick={() => onChange('all')}>
-        {allLabel}<span className="wf-count">{total}</span>
-      </button>
+      {showAll && (
+        <button className="wf-filter" aria-pressed={value === 'all'} onClick={() => onChange('all')}>
+          {allLabel}<span className="wf-count">{total}</span>
+        </button>
+      )}
       {options.map((o) => (
         <button key={o.key} className="wf-filter" aria-pressed={value === o.key} onClick={() => onChange(o.key)}>
           {o.label}<span className="wf-count">{o.count}</span>

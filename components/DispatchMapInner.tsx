@@ -81,7 +81,8 @@ export default function DispatchMapInner({
           <Popup>
             <div style={{ fontSize: 12 }}>
               <div style={{ fontWeight: 700 }}>{c.contractor.name}</div>
-              <div style={{ color: '#888' }}>Last seen {new Date(c.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
+              <div style={{ color: '#888' }}>{c.what ?? 'Last seen'}{c.woNumber ? ` · WO ${c.woNumber}` : ''}</div>
+              <div style={{ color: '#888' }}>{new Date(c.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
             </div>
           </Popup>
         </Marker>

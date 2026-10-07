@@ -1,7 +1,9 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { MapPin, Navigation, Radio } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { agoText, freshness, fromPhotos, fromPunches, fromTimeLogs, latestByTech, type Sighting } from '@/lib/tech-locations';
 import { STATUS_COLORS } from '@/lib/utils';
 import type { Contractor, EnrichedWorkOrder, WorkOrder, ContractorTimeLog } from '@/lib/types';
 
@@ -25,7 +27,7 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
 }
 
 export type MapWO = EnrichedWorkOrder & { site_lat: number; site_lng: number };
-export type LiveContractor = { contractor: Contractor; lat: number; lng: number; at: string };
+export type LiveContractor = { contractor: Contractor; lat: number; lng: number; at: string; what?: string; woNumber?: string | null };
 
 export default function DispatchMapView({
   workOrders,
@@ -52,27 +54,25 @@ export default function DispatchMapView({
 
   const unmappedCount = activeWOs.length - mappedWOs.length;
 
-  // Most recent known position per contractor (arrived > travel start), regardless of WO status.
-  const liveContractors: LiveContractor[] = useMemo(() => {
-    const latest = new Map<string, ContractorTimeLog>();
-    for (const log of contractorTimeLogs) {
-      const existing = latest.get(log.contractor_name);
-      if (!existing || new Date(log.updated_at) > new Date(existing.updated_at)) {
-        latest.set(log.contractor_name, log);
-      }
-    }
-    const result: LiveContractor[] = [];
-    for (const [name, log] of latest) {
-      const lat = log.arrived_lat ?? log.travel_start_lat;
-      const lng = log.arrived_lng ?? log.travel_start_lng;
-      const at = log.arrived_at ?? log.travel_start_at;
-      if (lat == null || lng == null || !at) continue;
-      const contractor = contractors.find((c) => c.name === name);
-      if (!contractor) continue;
-      result.push({ contractor, lat, lng, at });
-    }
-    return result;
-  }, [contractorTimeLogs, contractors]);
+  // Where everyone is (lib/tech-locations.ts): each tech's newest known spot —
+  // clock punches and job-photo locations from the last 30 days, plus the
+  // started-driving / arrived records — not just the time-log records as before.
+  const [recent, setRecent] = useState<Sighting[]>([]);
+  useEffect(() => {
+    const since = new Date(Date.now() - 30 * 86400000).toISOString();
+    const db = createClient();
+    void Promise.all([
+      db.from('job_punches').select('contractor_name, kind, at, lat, lng, wo_number').gte('at', since).not('lat', 'is', null).order('at', { ascending: false }).limit(2000),
+      db.from('wo_photos').select('contractor_name, taken_at, created_at, lat, lng, wo_number').gte('created_at', since).not('lat', 'is', null).order('created_at', { ascending: false }).limit(2000),
+    ]).then(([p, ph]) => {
+      setRecent([...fromPunches((p.data as Parameters<typeof fromPunches>[0] | null) ?? []), ...fromPhotos((ph.data as Parameters<typeof fromPhotos>[0] | null) ?? [])]);
+    });
+  }, []);
+  const sightings = useMemo(() => latestByTech([...fromTimeLogs(contractorTimeLogs), ...recent]), [contractorTimeLogs, recent]);
+  const liveContractors: LiveContractor[] = useMemo(() => sightings.flatMap((s) => {
+    const contractor = contractors.find((c) => c.name === s.name);
+    return contractor ? [{ contractor, lat: s.lat, lng: s.lng, at: s.at, what: s.what, woNumber: s.woNumber }] : [];
+  }), [sightings, contractors]);
 
   const selected = mappedWOs.find((w) => w.id === selectedWO) ?? null;
 
@@ -96,7 +96,7 @@ export default function DispatchMapView({
 
       <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 300px' : '1fr', gap: 20 }}>
         <div className="glass card" style={{ padding: 0, overflow: 'hidden' }}>
-          {mappedWOs.length === 0 ? (
+          {mappedWOs.length === 0 && liveContractors.length === 0 ? (
             <div style={{ height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa', fontSize: 13, flexDirection: 'column', gap: 8 }}>
               <MapPin size={28} color="#ccc" />
               No work orders geocoded yet — save a work order with a site address to plot it here.
@@ -153,6 +153,32 @@ export default function DispatchMapView({
               </div>
             )}
             <button className="btn btn-ghost" style={{ width: '100%', marginTop: 12, fontSize: 12 }} onClick={() => setSelectedWO(null)}>Close</button>
+          </div>
+        )}
+      </div>
+
+      {/* Where everyone is: the newest thing each tech did with a location */}
+      <div className="glass card" style={{ marginTop: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Where everyone is</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>The last place each tech clocked in or out, started driving, arrived or took a job photo.</div>
+        {liveContractors.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#aaa' }}>No locations yet. They show once a tech clocks in, arrives or takes a job photo with location on.</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 }}>
+            {liveContractors.map((c) => {
+              const f = freshness(c.at);
+              const dot = f === 'live' ? '#16a34a' : f === 'today' ? '#d97706' : '#9ca3af';
+              return (
+                <a key={c.contractor.id} href={`https://www.google.com/maps?q=${c.lat},${c.lng}`} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, border: '1px solid #eee', background: '#fff', color: 'inherit', textDecoration: 'none' }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 999, background: dot, marginTop: 4, flexShrink: 0 }} title={f === 'live' ? 'In the last 2 hours' : f === 'today' ? 'Earlier today' : 'Before today'} />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 700, fontSize: 13 }}>{c.contractor.name}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: '#666' }}>{c.what ?? 'Seen'}{c.woNumber ? ` · WO ${c.woNumber}` : ''} · {agoText(c.at)}</span>
+                  </span>
+                </a>
+              );
+            })}
           </div>
         )}
       </div>

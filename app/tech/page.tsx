@@ -48,8 +48,10 @@ import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
   ArrowLeft, Briefcase, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X, ScanLine, Hash, Ruler,
 } from 'lucide-react';
+import DocScanner from '@/components/tools/DocScanner';
+import PhotoMarkup from '@/components/tools/PhotoMarkup';
 
 // Primio's tech tabs — Jobs, Available, Profile (with the W-9 inside) — plus
 // My schedule, Messages and Pay history (Fred, 2026-10-04: "the tech portal is
@@ -883,6 +885,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
             <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
           )}
           <JobPhotos canAdd={canReport} ph={ph} />
+          <JobTools job={job} canAdd={canReport} ph={ph} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} /></div>}
         </>}
         bottom={bottom}
@@ -1401,6 +1404,60 @@ function useJobPhotos(job: WfJob, uid: string) {
   };
 
   return { sent, waiting, busy, add, flush };
+}
+
+// ── Tools: scan, count, measure (Fred, 2026-10-07, sending the iScanner app:
+// "all the above for my tech to use"). Scans go to the job as PDFs
+// (/api/tech/doc, migration 115); counts and measurements as marked-up photos.
+
+type SentDoc = { id: string; name: string; kind: string; pages: number | null; created_at: string };
+
+function JobTools({ job, canAdd, ph }: { job: WfJob; canAdd: boolean; ph: ReturnType<typeof useJobPhotos> }) {
+  const [tool, setTool] = useState<null | 'scan' | 'count' | 'measure'>(null);
+  const [docs, setDocs] = useState<SentDoc[]>([]);
+  const loadDocs = useCallback(async () => {
+    const { data, error } = await createClient().rpc('wf_tech_job_docs', { p_wo_number: job.number });
+    if (!error && Array.isArray(data)) setDocs(data as SentDoc[]);
+  }, [job.number]);
+  useEffect(() => { void loadDocs(); }, [loadDocs]);
+  if (!canAdd && docs.length === 0) return null;
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const btn = (key: 'scan' | 'count' | 'measure', icon: React.ReactNode, label: string) => (
+    <button type="button" className="wf-btn wf-btn-outline" style={{ flex: '1 1 140px', justifyContent: 'center' }} onClick={() => setTool(key)}>{icon} {label}</button>
+  );
+  return (
+    <Section title="Tools" subtitle="Scan paperwork to PDF, count things or measure on a photo">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {canAdd && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {btn('scan', <ScanLine size={17} />, 'Scan a document')}
+            {btn('count', <Hash size={17} />, 'Count')}
+            {btn('measure', <Ruler size={17} />, 'Measure')}
+          </div>
+        )}
+        {docs.length > 0 && (
+          <div>
+            <div className="wf-label" style={{ marginBottom: 4 }}>Documents you sent</div>
+            {docs.map((d) => (
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--wf-line)', fontSize: 13.5 }}>
+                <FileText size={15} color="var(--wf-subtle)" />
+                <span style={{ flex: 1, minWidth: 0 }}>{d.name}{d.name !== d.kind ? <span className="wf-subtle"> · {d.kind}</span> : null}</span>
+                <span className="wf-subtle" style={{ fontSize: 12 }}>{d.pages ? `${d.pages} p · ` : ''}{when(d.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {tool === 'scan' && (
+        <DocScanner woNumber={job.number} jobLabel={`WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`}
+          onClose={() => setTool(null)} onSent={() => void loadDocs()} />
+      )}
+      {(tool === 'count' || tool === 'measure') && (
+        <PhotoMarkup mode={tool} onClose={() => setTool(null)}
+          onSave={async (file, source) => { setTool(null); await ph.add(file, source); }} />
+      )}
+    </Section>
+  );
 }
 
 function JobPhotos({ canAdd, ph }: { canAdd: boolean; ph: ReturnType<typeof useJobPhotos> }) {

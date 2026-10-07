@@ -49,6 +49,7 @@ export const SCREEN_PARTS: ScreenParts[] = [
       { key: 'job.report', label: "Tech's report", hint: 'Answers and notes the tech saved' },
       { key: 'job.expenses', label: 'Expenses', hint: 'Receipts techs sent on this job' },
       { key: 'job.photos', label: 'Photos', hint: 'Photos from the job' },
+      { key: 'job.docs', label: 'Documents', hint: 'PDFs techs scanned on the job' },
       { key: 'job.sketches', label: 'Sketches', hint: 'Floor plans and layouts drawn for this job' },
       { key: 'job.timegps', label: 'Time & GPS', hint: 'When each tech clocked in and out, and where' },
     ],

@@ -474,6 +474,7 @@ function OwnerJob({
         onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
     ),
     'job.notes': <JobNotesCard woId={w.id} author={author ?? 'Office'} />,
+    'job.docs': <JobDocsCard woId={w.id} />,
     'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,
     'job.expenses': <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />,
     'job.photos': <OwnerPhotos w={w} />,
@@ -521,6 +522,51 @@ function OwnerJob({
         />
       )}
     </>
+  );
+}
+
+// ── Documents: PDFs techs scanned on the job (iScanner-style, migration 115).
+// Private: opened through a short-lived signed link, never a public one.
+
+type JobDoc = { id: string; name: string; kind: string; pages: number | null; sent_by: string | null; path: string; created_at: string };
+
+function JobDocsCard({ woId }: { woId: string }) {
+  const [docs, setDocs] = useState<JobDoc[] | null>(null);
+  const load = async () => {
+    const { data } = await createClient().from('job_docs').select('id, name, kind, pages, sent_by, path, created_at').eq('wo_id', woId).order('created_at', { ascending: false });
+    setDocs((data as JobDoc[] | null) ?? []);
+  };
+  useEffect(() => { void load(); }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!docs || docs.length === 0) return null;
+  const open = async (d: JobDoc) => {
+    const { data, error } = await createClient().storage.from('job-docs').createSignedUrl(d.path, 600);
+    if (error || !data?.signedUrl) { toastError("That document couldn't be opened."); return; }
+    window.open(data.signedUrl, '_blank', 'noopener');
+  };
+  const remove = async (d: JobDoc) => {
+    if (!confirm(`Delete "${d.name}"? This can't be undone.`)) return;
+    const db = createClient();
+    const { error } = await db.from('job_docs').delete().eq('id', d.id);
+    if (error) { toastError(`It wasn't deleted: ${error.message}`); return; }
+    await db.storage.from('job-docs').remove([d.path]);
+    await load();
+  };
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <Section title="Documents" subtitle="PDFs scanned on the job — signed work orders, receipts, site sheets">
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {docs.map((d) => (
+          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--wf-line)' }}>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 600 }}>{d.name}</span>
+              <span className="wf-subtle" style={{ fontSize: 12.5 }}>{d.kind}{d.pages ? ` · ${d.pages} page${d.pages === 1 ? '' : 's'}` : ''} · {d.sent_by ? `${d.sent_by} · ` : ''}{when(d.created_at)}</span>
+            </span>
+            <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void open(d)}>Open</button>
+            <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void remove(d)} aria-label={`Delete ${d.name}`}><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+    </Section>
   );
 }
 

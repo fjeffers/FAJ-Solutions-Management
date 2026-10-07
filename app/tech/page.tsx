@@ -23,9 +23,9 @@ import {
   type PendingAction,
 } from '@/lib/wf-outbox';
 import {
-  techCounts, matchesWf, sortWf, canWork, isClockedIn, isFinished, formatDuration, statusesPresent, whenText,
-  fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, WF_STATUS_LABEL,
-  type WfJob, type WfQuestion, type WfStatus, type WfTask, type WfWorkType,
+  techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
+  fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf,
+  type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
@@ -48,7 +48,7 @@ import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
   ArrowLeft, Briefcase, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Users, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -337,9 +337,14 @@ export default function TechPortalPage() {
 
       <div className={`wf-main${openJob ? '' : ' wf-has-tabbar'}`}>
         <header className="wf-topbar">
-          <button className="wf-btn wf-btn-ghost wf-btn-sm wf-menu-btn" onClick={() => setRailOpen(true)} aria-label="Open the menu">
-            <Menu size={20} />
-          </button>
+          {openJob ? (
+            <button className="wf-back-round" onClick={() => setOpenId(null)} aria-label="Back to the list" title="Back"
+              style={{ width: 36, height: 36 }}><ArrowLeft size={18} /></button>
+          ) : (
+            <button className="wf-btn wf-btn-ghost wf-btn-sm wf-menu-btn" onClick={() => setRailOpen(true)} aria-label="Open the menu">
+              <Menu size={20} />
+            </button>
+          )}
           <div className="wf-title" style={{ flex: 1, fontSize: 17, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {openJob ? `WO ${openJob.number}` : TAB_TITLE[tab]}
           </div>
@@ -523,12 +528,12 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, g
   onOpen: (id: string) => void; go: (t: Tab) => void;
 }) {
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<WfStatus | 'all'>('all');
-  // Offers live under Available, as in Primio.
-  const mine = jobs.filter((j) => j.status !== 'offered' && matchesWf(j, search));
-  const present = statusesPresent(mine);
-  const st = status !== 'all' && present.includes(status) ? status : 'all';
-  const shown = sortWf(mine.filter((j) => st === 'all' || j.status === st));
+  // Fred, 2026-10-07: "show schedule, assigned, pending, completed, and
+  // declined" — always all five, with their counts. Assigned jobs (still
+  // needing a yes or no) are here too, as well as under Available.
+  const [filter, setFilter] = useState<TechFilter | 'all'>('all');
+  const mine = jobs.filter((j) => techFilterOf(j.status) && matchesWf(j, search));
+  const shown = sortTechJobs(mine.filter((j) => filter === 'all' || techFilterOf(j.status) === filter));
   const first = name.trim().split(/\s+/)[0] ?? '';
 
   return (
@@ -563,9 +568,9 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, g
 
       <h2 className="wf-title">Work orders</h2>
       <Filters
-        value={st}
-        options={present.map((p) => ({ key: p, label: WF_STATUS_LABEL[p], count: mine.filter((j) => j.status === p).length }))}
-        onChange={setStatus}
+        value={filter}
+        options={TECH_FILTERS.map((f) => ({ key: f.key, label: f.label, count: mine.filter((j) => techFilterOf(j.status) === f.key).length }))}
+        onChange={setFilter}
       />
       <input className="wf-input" value={search} onChange={(e) => setSearch(e.target.value)}
         placeholder="Search WO number, client, city…" aria-label="Search your jobs" />
@@ -663,21 +668,21 @@ function OfferButtons({ job, act }: { job: WfJob; act: (a: PendingAction, sent?:
   const [askOpen, setAskOpen] = useState(false);
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      <button className="wf-btn wf-btn-outline" style={{ flex: 1, minWidth: 0 }}
-        onClick={() => {
-          if (!confirm(`Not interested in WO ${job.number}? It goes back so it can go to someone else.`)) return;
-          void act(makeAction('respond', { number: job.number, accept: false }, `Decline WO ${job.number}`), 'Sent back.');
-        }}>
-        <ThumbsDown size={16} /> Not interested
+      <button className="wf-btn wf-btn-gold" style={{ flex: '1 1 100%' }}
+        onClick={() => void act(makeAction('respond', { number: job.number, accept: true }, `Accept WO ${job.number}`), 'Accepted. It is in My jobs.')}>
+        <ThumbsUp size={16} /> Accept
       </button>
       {/* Fred, 2026-10-04: counter-offers from Primio, but never about pay —
           a tech can only ask for another date and time. */}
-      <button className="wf-btn wf-btn-outline" style={{ flex: 1 }} onClick={() => setAskOpen(true)}>
+      <button className="wf-btn wf-btn-outline" style={{ flex: '1 1 0', minWidth: 0 }} onClick={() => setAskOpen(true)}>
         <CalendarClock size={16} /> Another time
       </button>
-      <button className="wf-btn wf-btn-gold" style={{ flex: 2 }}
-        onClick={() => void act(makeAction('respond', { number: job.number, accept: true }, `Accept WO ${job.number}`), 'Accepted. It is in My jobs.')}>
-        <ThumbsUp size={16} /> Accept
+      <button className="wf-btn wf-btn-outline" style={{ flex: '1 1 0', minWidth: 0 }}
+        onClick={() => {
+          if (!confirm(`Decline WO ${job.number}? It goes back so it can go to someone else.`)) return;
+          void act(makeAction('respond', { number: job.number, accept: false }, `Decline WO ${job.number}`), 'Declined.');
+        }}>
+        <ThumbsDown size={16} /> Decline
       </button>
       {askOpen && <TimeRequestDialog job={job} act={act} onClose={() => setAskOpen(false)} />}
     </div>
@@ -847,6 +852,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
       <WfJobDetail
         job={job}
         ownerView={false}
+        hideBar
         onBack={onBack}
         onRefresh={onRefresh}
         refreshing={refreshing}
@@ -1141,7 +1147,7 @@ function NoteDialog({ onClose, onSave }: { onClose: () => void; onSave: (text: s
  * for the office. Saved with the Save button (or when the work is marked
  * done), and kept on the phone with no signal like every other tap.
  */
-function JobReport({ job, uid, canEdit, notes, setNotes, answers, setAnswers, dirty, onSave }: {
+function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, onSave }: {
   job: WfJob; uid: string; canEdit: boolean;
   notes: string; setNotes: (v: string) => void;
   answers: Record<string, string>; setAnswers: (f: (a: Record<string, string>) => Record<string, string>) => void;
@@ -1250,12 +1256,6 @@ function JobReport({ job, uid, canEdit, notes, setNotes, answers, setAnswers, di
             onChange={(e) => setNotes(e.target.value)}
             placeholder="What you did, parts used, anything left to do, anything the client said" />
         </div>
-
-        {canEdit && (
-          <button className="wf-btn wf-btn-navy" onClick={() => void onSave()} disabled={!dirty || !uid}>
-            <Save size={16} /> {dirty ? 'Save report' : 'Report saved'}
-          </button>
-        )}
       </div>
     </Section>
   );
@@ -1437,7 +1437,7 @@ function JobTools({ job, canAdd, ph, onNote }: {
   const jobLabel = `WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`;
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const btn = (key: ToolKey, icon: React.ReactNode, label: string) => (
-    <button type="button" className="wf-btn wf-btn-outline" style={{ flex: '1 1 140px', justifyContent: 'center' }}
+    <button type="button" className="wf-btn wf-btn-outline" style={{ justifyContent: 'center', minWidth: 0 }}
       onClick={() => { if (key === 'edit') setEditing({ file: null, name: '', kind: DOC_KINDS[1] }); else setTool(key); }}>{icon} {label}</button>
   );
   const openDoc = async (d: JobDoc) => {
@@ -1459,7 +1459,7 @@ function JobTools({ job, canAdd, ph, onNote }: {
   const row = (d: JobDoc) => (
     <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--wf-line)', fontSize: 13.5 }}>
       <FileText size={15} color="var(--wf-subtle)" />
-      <span style={{ flex: 1, minWidth: 0 }}>{d.name}{d.name !== d.kind ? <span className="wf-subtle"> · {d.kind}</span> : null}
+      <span style={{ flex: 1, minWidth: 0 }}>{d.name}{!d.name.toLowerCase().includes(d.kind.toLowerCase()) ? <span className="wf-subtle"> · {d.kind}</span> : null}
         <span className="wf-subtle" style={{ display: 'block', fontSize: 12 }}>{d.pages ? `${d.pages} p · ` : ''}{when(d.created_at)}</span>
       </span>
       {canAdd && (
@@ -1473,10 +1473,10 @@ function JobTools({ job, canAdd, ph, onNote }: {
     <Section title="Tools" subtitle="Scan, fill in and sign PDFs, read codes, count and measure">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {canAdd && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {btn('scan', <ScanLine size={17} />, 'Scan a document')}
-            {btn('edit', <Signature size={17} />, 'Edit & sign a PDF')}
-            {btn('read', <ScanBarcode size={17} />, 'Read a code or label')}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+            {btn('scan', <ScanLine size={17} />, 'Scan')}
+            {btn('edit', <Signature size={17} />, 'Sign a PDF')}
+            {btn('read', <ScanBarcode size={17} />, 'Read a code')}
             {btn('count', <Hash size={17} />, 'Count')}
             {btn('measure', <Ruler size={17} />, 'Measure')}
           </div>
@@ -1661,9 +1661,9 @@ function PayTab({ payments, summary }: { payments: TechPayment[]; summary: TechS
             <div className="wf-label">Paid all time</div>
             <div className="wf-display" style={{ fontSize: 22, fontWeight: 700 }}>{fmtMoney(summary.paid_all_time)}</div>
           </div>
-          <div className="wf-card" style={{ padding: 14 }}>
+          <div className="wf-card" style={{ padding: '10px 14px', gridColumn: '1 / -1', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
             <div className="wf-label">Jobs worked</div>
-            <div className="wf-display" style={{ fontSize: 22, fontWeight: 700 }}>{summary.jobs_total}</div>
+            <div className="wf-display" style={{ fontSize: 18, fontWeight: 700 }}>{summary.jobs_total}</div>
           </div>
         </div>
       )}

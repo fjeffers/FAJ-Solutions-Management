@@ -24,7 +24,7 @@ export default function TechChat({ jobs, onRead }: { jobs: TechJob[]; onRead: ()
     <div>
       <div style={{ display: 'flex', gap: 4, background: '#f4f1ea', borderRadius: 999, padding: 3, marginBottom: 16 }}>
         <ModeBtn active={mode === 'office'} onClick={() => { setMode('office'); setOpenJob(null); }}
-          icon={<Building2 size={13} />} label="The office" />
+          icon={<Building2 size={13} />} label="Job messages" />
         <ModeBtn active={mode === 'techs'} onClick={() => setMode('techs')}
           icon={<Users size={13} />} label="Other techs" />
       </div>
@@ -157,7 +157,7 @@ function Thread({ job, onBack }: { job: TechJob; onBack: () => void }) {
           </div>
         ) : messages.length === 0 ? (
           <div style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: '20px 10px' }}>
-            No messages yet. Ask the office anything about this job.
+            No messages yet. Ask anything about this job here.
           </div>
         ) : (
           messages.map((m) => {
@@ -190,7 +190,7 @@ function Thread({ job, onBack }: { job: TechJob; onBack: () => void }) {
 
       <div style={{ display: 'flex', gap: 7, alignItems: 'flex-end' }}>
         <textarea
-          className="input" rows={2} value={draft} placeholder="Message the office…"
+          className="input" rows={2} value={draft} placeholder="Write a message…"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           style={{ flex: 1, resize: 'none' }}

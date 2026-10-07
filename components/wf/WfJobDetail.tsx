@@ -61,7 +61,7 @@ export function DetailHeader({ job, ownerView }: { job: WfJob; ownerView: boolea
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 16px' }}>
         <InfoItem icon={<Info size={16} />} title={`Status: ${wfStatusLabel(job.status, ownerView)}`}
           lines={[`Time logged: ${logged ? formatDuration(logged) : '0m'}`, whenText(job)]} />
-        <InfoItem icon={<MapPin size={16} />} title={`Location: ${city || job.siteName || 'not set'}`} lines={[fullAddress(job)]} />
+        <InfoItem icon={<MapPin size={16} />} title={`Location: ${(ownerView ? city || job.siteName : job.siteName || city) || 'not set'}`} lines={[fullAddress(job)]} />
         <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], `${job.priorityLabel} priority`]} />
         <InfoItem icon={<CalendarDays size={16} />} title="Schedule"
           lines={[times || 'No set time', ownerView && (job.clientPrice ?? 0) > 0 ? `Client pays: ${fmtMoney(job.clientPrice)}` : '']} />
@@ -248,10 +248,12 @@ export function LocationCard({ job }: { job: WfJob }) {
  * techs / money on the right. On a phone: one column, clock first.
  */
 export default function WfJobDetail({
-  job, ownerView, onBack, onRefresh, refreshing, actions, clock, side, onToggleTask, bottom, below,
+  job, ownerView, hideBar, onBack, onRefresh, refreshing, actions, clock, side, onToggleTask, bottom, below,
 }: {
   job: WfJob;
   ownerView: boolean;
+  /** The page's own top bar already has Back and Refresh (the tech portal). */
+  hideBar?: boolean;
   onBack: () => void;
   onRefresh?: () => void;
   refreshing?: boolean;
@@ -269,7 +271,7 @@ export default function WfJobDetail({
 }) {
   return (
     <div className="wf-rise">
-      <div style={{ marginBottom: 12 }}>
+      {!hideBar && <div style={{ marginBottom: 12 }}>
         <PrimioBar
           title="Work order"
           left={<button className="wf-back-round" onClick={onBack} aria-label="Back to the list" title="Back"><ArrowLeft size={20} /></button>}
@@ -279,7 +281,7 @@ export default function WfJobDetail({
             </button>
           )}
         />
-      </div>
+      </div>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <DetailHeader job={job} ownerView={ownerView} />
@@ -287,22 +289,28 @@ export default function WfJobDetail({
         <div className="wf-detail-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
             {clock && <div className="wf-only-narrow">{clock}</div>}
-            <InfoListCard title="Overview" rows={[
-              ['Company', job.client], ['Work order ID', job.number], ['Site', job.siteName], ['Priority', job.priorityLabel],
-            ]} />
-            <InfoListCard title="Work Experience" rows={[
-              ['Type of work', job.serviceType || WF_WORK_TYPE_LABEL[workTypeFor(job.serviceType, job.title)]],
-              ['Skills needed', job.skills], ['Tools to bring', job.tools],
-            ]} />
+            {ownerView ? (
+              <>
+                <InfoListCard title="Overview" rows={[
+                  ['Company', job.client], ['Work order ID', job.number], ['Site', job.siteName], ['Priority', job.priorityLabel],
+                ]} />
+                <InfoListCard title="Work Experience" rows={[
+                  ['Type of work', job.serviceType || WF_WORK_TYPE_LABEL[workTypeFor(job.serviceType, job.title)]],
+                  ['Skills needed', job.skills], ['Tools to bring', job.tools],
+                ]} />
+              </>
+            ) : (
+              <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
+            )}
             <DescriptionCard job={job} />
             <SiteInfoCard job={job} />
             <ChecklistCard job={job} onToggle={onToggleTask} />
             {below}
-            <LocationCard job={job} />
+            {ownerView && <LocationCard job={job} />}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
             {side}
-            <ScheduleCard job={job} />
+            {ownerView && <ScheduleCard job={job} />}
             {clock && <div className="wf-only-wide">{clock}</div>}
           </div>
         </div>

@@ -43,7 +43,7 @@ export function isNoSignal(e: unknown): boolean {
 /** Plain words for what happened to a tap. */
 export function outcomeMessage(o: ActionOutcome, sent?: string): string | null {
   if (o.status === 'refused') return o.error;
-  if (o.status === 'queued') return 'No signal — saved on this phone. It goes to the office as soon as you have signal.';
+  if (o.status === 'queued') return 'No signal — saved on this phone. It sends as soon as you have signal.';
   return sent ?? null;
 }
 
@@ -239,7 +239,7 @@ export class Outbox {
           }
           this.pending = this.pending.filter((p) => p.id !== a.id);
           this.write();
-          this.problems = [...this.problems, `${a.label}: ${e instanceof Error ? e.message : 'not accepted by the office'}`];
+          this.problems = [...this.problems, `${a.label}: ${e instanceof Error ? e.message : 'not accepted'}`];
         }
       }
       if (sent > 0) {

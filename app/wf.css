@@ -61,6 +61,16 @@ button.wf-stat { cursor: pointer; }
 button.wf-stat:hover { background: rgba(255, 255, 255, 0.22); }
 .wf-stat-value { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 21px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wf-stat-label { font-size: 11.5px; color: rgba(255, 255, 255, 0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Three stats share one row, rather than two and one left alone underneath. */
+.wf-stats:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 480px) {
+  .wf-hero { padding: 18px; border-radius: 20px; }
+  .wf-hero-greet { font-size: 23px; }
+  .wf-stats { margin-top: 14px; gap: 6px; }
+  .wf-stat { padding: 9px 10px; }
+  .wf-stat-value { font-size: 18px; }
+  .wf-stat-label { white-space: normal; line-height: 1.25; }
+}
 
 .wf-chip {
   display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;

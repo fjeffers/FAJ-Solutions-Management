@@ -3,7 +3,7 @@ import {
   wfStatusFor, wfJobFromTech, wfJobFromOwner, parseClockTime, whenText, fullAddress, place,
   tasksDone, isClockedIn, canWork, withTask, clockedIn, clockedOut, markedWorkDone, workedMs,
   formatDuration, formatClock, matchesWf, sortWf, ownerCounts, techCounts, statusesPresent, jobImage,
-  wfStatusLabel, reportMissing,
+  wfStatusLabel, reportMissing, sortTechJobs, techFilterOf, TECH_FILTERS,
 } from './wf';
 import {
   Outbox, RefusedError, isNoSignal, makeAction, saveCopy, loadCopy, lastUid, clearCopies, type KeyValue,
@@ -39,7 +39,18 @@ describe('the status a tech sees', () => {
   });
   it('the office reads an offer as waiting on the tech', () => {
     expect(wfStatusLabel('offered', true)).toBe('Awaiting response');
-    expect(wfStatusLabel('offered', false)).toBe('Needs your answer');
+    expect(wfStatusLabel('offered', false)).toBe('Assigned');
+  });
+  it("a tech's jobs sort into Fred's five filters", () => {
+    expect(TECH_FILTERS.map((f) => f.label)).toEqual(['Scheduled', 'Assigned', 'Pending', 'Completed', 'Declined']);
+    expect(techFilterOf('scheduled')).toBe('scheduled');
+    expect(techFilterOf('inProgress')).toBe('scheduled');
+    expect(techFilterOf('offered')).toBe('assigned');
+    expect(techFilterOf('workDone')).toBe('pending');
+    expect(techFilterOf('closed')).toBe('completed');
+    expect(techFilterOf('declined')).toBe('declined');
+    expect(wfStatusLabel('workDone', false)).toBe('Pending');
+    expect(wfStatusLabel('closed', false)).toBe('Completed');
   });
 });
 
@@ -168,6 +179,16 @@ describe('lists', () => {
       wfJobFromOwner({ id: 's', wo_number: '2', wo_status: 'Open', scheduled_date: '2026-09-30' }),
     ];
     expect(sortWf(past, '2026-10-02').map((j) => j.number)).toEqual(['2', '1']);
+  });
+  it("the same day goes by start time, and the job on the clock leads a tech's list", () => {
+    const day = [
+      wfJobFromTech({ id: 'a', wo_number: '50', wo_status: 'Assigned', my_response: 'accepted', start_date: '2026-10-07', start_time: '10:00 AM' }),
+      wfJobFromTech({ id: 'b', wo_number: '51', wo_status: 'Assigned', my_response: 'accepted', start_date: '2026-10-07', start_time: '' }),
+      wfJobFromTech({ id: 'c', wo_number: '52', wo_status: 'In Progress', my_response: 'accepted', start_date: '2026-10-07', start_time: '7:30 AM' }),
+      wfJobFromTech({ id: 'd', wo_number: '53', wo_status: 'In Progress', my_response: 'accepted', start_date: '2026-10-09', start_time: '6:00 AM', checked_in_at: '2026-10-07T12:00:00Z' }),
+    ];
+    expect(sortWf(day, '2026-10-07').map((j) => j.number)).toEqual(['52', '50', '51', '53']);
+    expect(sortTechJobs(day, '2026-10-07').map((j) => j.number)).toEqual(['53', '52', '50', '51']);
   });
   it("the office's three numbers", () => {
     expect(ownerCounts(jobs, '2026-10-05')).toEqual({ needTech: 1, waiting: 1, today: 1, workDone: 1 });
@@ -346,7 +367,7 @@ describe('the job report', () => {
   });
   it('lists what is still missing before work done', () => {
     expect(reportMissing(job, '', {}, 0)).toEqual([
-      'Write what you did, in the notes for the office', 'Answer: Serial number', 'Answer: Odd', 'Add at least one photo of the work',
+      'Write what you did, in your notes', 'Answer: Serial number', 'Answer: Odd', 'Add at least one photo of the work',
     ]);
     expect(reportMissing(job, 'Swapped the switch', { q1: 'SN-1', q3: 'n/a' }, 2)).toEqual([]);
   });

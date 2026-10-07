@@ -205,7 +205,10 @@ export function Section({ title, subtitle, right, children }: {
   title: string; subtitle?: string; right?: ReactNode; children: ReactNode;
 }) {
   return (
-    <section className="wf-card" style={{ overflow: 'hidden' }}>
+    // clip, not hidden: hidden would trap a floating Save row (.save-bar) inside
+    // the card, where the tech portal's lift above the bottom tabs pushed it up
+    // over the text above it.
+    <section className="wf-card" style={{ overflow: 'clip' }}>
       <div className="wf-section-head">
         <div style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
           <h3 className="wf-section-title">{title}</h3>

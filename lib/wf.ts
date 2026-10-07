@@ -22,16 +22,42 @@ export type WfStatus = 'open' | 'offered' | 'scheduled' | 'inProgress' | 'workDo
 /** Order the filter chips appear in. */
 export const WF_STATUS_ORDER: WfStatus[] = ['open', 'offered', 'scheduled', 'inProgress', 'workDone', 'closed', 'declined'];
 
-/** What a tech reads. */
+/** What a tech reads — Fred's words for a tech's jobs (2026-10-07: "schedule,
+ *  assigned, pending, completed, and declined"). */
 export const WF_STATUS_LABEL: Record<WfStatus, string> = {
   open: 'Needs a tech',
-  offered: 'Needs your answer',
+  offered: 'Assigned',
   scheduled: 'Scheduled',
   inProgress: 'In progress',
-  workDone: 'Work done',
-  closed: 'Closed',
+  workDone: 'Pending',
+  closed: 'Completed',
   declined: 'Declined',
 };
+
+/**
+ * The filters on a tech's My jobs, always shown in this order with their
+ * counts (Fred, 2026-10-07). Scheduled includes the job they're working now;
+ * Assigned is a job sent to them that still needs a yes or no; Pending is
+ * work done, waiting to be approved.
+ */
+export type TechFilter = 'scheduled' | 'assigned' | 'pending' | 'completed' | 'declined';
+export const TECH_FILTERS: { key: TechFilter; label: string }[] = [
+  { key: 'scheduled', label: 'Scheduled' },
+  { key: 'assigned', label: 'Assigned' },
+  { key: 'pending', label: 'Pending' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'declined', label: 'Declined' },
+];
+export function techFilterOf(s: WfStatus): TechFilter | null {
+  switch (s) {
+    case 'scheduled': case 'inProgress': return 'scheduled';
+    case 'offered': return 'assigned';
+    case 'workDone': return 'pending';
+    case 'closed': return 'completed';
+    case 'declined': return 'declined';
+    default: return null;
+  }
+}
 
 /** What the office reads: the same states, said from its side — and named
  *  the way Fred chose in Settings -> Lists & stages. */
@@ -399,14 +425,23 @@ export function matchesWf(j: WfJob, query: string): boolean {
  */
 export function sortWf(jobs: WfJob[], today: string = todayISO()): WfJob[] {
   const rank = (j: WfJob) => (!j.date ? 2 : j.date >= today ? 0 : 1);
+  // Same day: earliest start first (a job with no time goes after the timed ones).
+  const minutes = (j: WfJob) => { const t = parseClockTime(j.startTime); return t ? t[0] * 60 + t[1] : 24 * 60; };
   return [...jobs].sort((a, b) => {
     const ra = rank(a), rb = rank(b);
     if (ra !== rb) return ra - rb;
     if (a.date !== b.date && a.date && b.date) {
       return ra === 0 ? (a.date < b.date ? -1 : 1) : (a.date < b.date ? 1 : -1);
     }
+    if (minutes(a) !== minutes(b)) return minutes(a) - minutes(b);
     return a.number.localeCompare(b.number, undefined, { numeric: true });
   });
+}
+
+/** A tech's list: the job they're on the clock for first, then sortWf. */
+export function sortTechJobs(jobs: WfJob[], today: string = todayISO()): WfJob[] {
+  const sorted = sortWf(jobs, today);
+  return [...sorted.filter(isClockedIn), ...sorted.filter((j) => !isClockedIn(j))];
 }
 
 /** The stages that actually have jobs in them, for the filter chips. */
@@ -483,7 +518,7 @@ export function withReport(j: WfJob, notes: string | null, answers: Record<strin
  */
 export function reportMissing(j: WfJob, notes: string, answers: Record<string, string>, photoCount: number): string[] {
   const missing: string[] = [];
-  if (!notes.trim()) missing.push('Write what you did, in the notes for the office');
+  if (!notes.trim()) missing.push('Write what you did, in your notes');
   for (const q of j.questions) {
     if (!(answers[q.id] ?? q.answer).trim()) missing.push(`Answer: ${q.label}`);
   }
@@ -504,7 +539,7 @@ export function wfReasonText(reason: string, name?: string): string {
     case 'bad_closeout': return "That closeout entry wasn't complete. Check it and try again.";
     case 'bad_date': return 'Pick a date from today on.';
     case 'already_taken': return 'Someone else already took that job.';
-    case 'no_such_task': return 'That checklist item was changed in the office. Pull down to refresh.';
+    case 'no_such_task': return 'That checklist item was changed. Tap refresh to see the latest.';
     case 'not_owner': return 'Only the owner can do that.';
     case 'closed': return 'That job is closed. Reopen it first.';
     case 'unknown_tech': return `${name ?? 'That tech'} is not on your contractor list.`;
@@ -523,7 +558,7 @@ export type WfBucket = 'available' | 'current' | 'pending' | 'closed';
 export const WF_BUCKETS: { key: WfBucket; label: string; hint: { tech: string; office: string } }[] = [
   { key: 'available', label: 'Available', hint: { tech: 'Sent to you — waiting for your answer', office: 'Needs a tech, or waiting on a tech to answer' } },
   { key: 'current',   label: 'Current',   hint: { tech: 'Accepted — scheduled or in progress', office: 'Scheduled or in progress' } },
-  { key: 'pending',   label: 'Pending',   hint: { tech: 'Work done — waiting on the office', office: 'Work done — close and bill' } },
+  { key: 'pending',   label: 'Pending',   hint: { tech: 'Work done — waiting for approval', office: 'Work done — close and bill' } },
   { key: 'closed',    label: 'Closed',    hint: { tech: 'Finished and closed', office: 'Approved, paid or archived' } },
 ];
 

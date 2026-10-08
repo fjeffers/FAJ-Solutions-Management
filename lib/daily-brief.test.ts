@@ -3,8 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildDailyBrief } from './daily-brief';
 
 // Minimal stand-in for the service-role client: the composer only ever calls
-// .from(table).select('*'). FHJ env vars are unset in tests, so every case here
-// also exercises the "second business not configured" path.
+// .from(table).select('*').
 const fakeAdmin = (tables: Record<string, unknown[]>) =>
   ({
     from: (t: string) => ({ select: async () => ({ data: tables[t] ?? [], error: null }) }),
@@ -129,10 +128,9 @@ describe('buildDailyBrief', () => {
     expect(brief.html).toContain('All clear');
   });
 
-  it('omits the travel section and says so when FHJ is not configured', async () => {
+  it('is FAJ only — never mentions FHJ, a separate company (Fred, 2026-10-08)', async () => {
     const brief = await buildDailyBrief(fakeAdmin({}));
-    expect(brief.stats.fhjLeads).toBe(0);
-    expect(brief.html).toContain('FHJ_SUPABASE_SERVICE_ROLE_KEY');
-    expect(brief.html).not.toContain('waiting on you');
+    expect(brief.html).not.toMatch(/FHJ|Dream Destinations|travel lead/i);
+    expect(Object.keys(brief.stats).some((k) => /fhj/i.test(k))).toBe(false);
   });
 });

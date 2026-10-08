@@ -1,18 +1,17 @@
-// Weekday morning brief — the short "what needs you today" email, across BOTH of
-// Fred's businesses. Sibling of weekly-digest.ts, which is the fuller Monday
-// retrospective; this one is deliberately narrower and answers one question:
-// what is costing money by sitting still?
+// Weekday morning brief — the short "what needs you today" email for FAJ Solutions.
+// Sibling of weekly-digest.ts, which is the fuller Monday retrospective; this one is
+// deliberately narrower and answers one question: what is costing money by sitting still?
 //
-// Three things earn a spot here, in order:
-//   1. Invoices never sent      — money not even asked for; Fred's own bottleneck
-//   2. FHJ leads with no reply  — commission lost to silence
-//   3. Invoices past due        — a client being slow
+// FAJ only. FHJ Dream Destinations is a separate company and stays out of this
+// email (Fred, 2026-10-08: "Faj and fhj are separat company").
 //
-// The travel section is omitted entirely when FHJ isn't configured (see lib/fhj.ts).
+// What earns a spot here, in order:
+//   1. Invoices never sent  — money not even asked for; Fred's own bottleneck
+//   2. Invoices past due    — a client being slow
+//   3. Work done, not billed, and forgotten checkouts
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SiteVisit, Invoice, InvoicePayment } from './types';
 import { visitAmount } from './visits';
-import { fetchFhjSnapshot, fhjConfigured } from './fhj';
 import { todayISO } from './utils';
 
 const money = (n: number) =>
@@ -27,11 +26,10 @@ export type DailyBrief = {
 };
 
 export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief> {
-  const [vRes, iRes, pRes, fhj] = await Promise.all([
+  const [vRes, iRes, pRes] = await Promise.all([
     admin.from('site_visits').select('*'),
     admin.from('invoices').select('*'),
     admin.from('invoice_payments').select('*'),
-    fetchFhjSnapshot(),
   ]);
   // Archived visits are merged or duplicate log entries (their notes say where the
   // work was billed) — never money still owed. Fred, 2026-10-06: the brief kept
@@ -88,14 +86,8 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
     day: 'numeric',
   });
 
-  const agingLeads = fhj?.leads.filter((l) => l.daysWaiting >= 2) ?? [];
   const quiet =
-    drafts.length === 0 &&
-    overdue.length === 0 &&
-    needs.length === 0 &&
-    stuck.length === 0 &&
-    (fhj?.leads.length ?? 0) === 0 &&
-    (fhj?.unreadMessages ?? 0) === 0;
+    drafts.length === 0 && overdue.length === 0 && needs.length === 0 && stuck.length === 0;
 
   const card = (accent: string, label: string, body: string, cta?: string) => `
     <div style="background:#fff;border-radius:12px;border:1px solid #eee;border-left:4px solid ${accent};margin:10px 0;padding:16px 18px;">
@@ -129,30 +121,6 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
             )
             .join(''),
         btn(`${app}/admin?view=invoices`, 'Open Invoices → Send'),
-      ),
-    );
-  }
-
-  if (agingLeads.length > 0) {
-    sections.push(
-      card(
-        '#7c3aed',
-        `${agingLeads.length} travel lead${agingLeads.length !== 1 ? 's' : ''} waiting on you`,
-        `<div style="font-size:13px;color:#555;margin:6px 0 2px;">FHJ earns commission on booked trips — an unanswered lead is the whole loss.</div>` +
-          agingLeads
-            .slice(0, 6)
-            .map((l) =>
-              row(
-                `<b>${l.name}</b>${l.destination ? ` · ${l.destination}` : ''}${
-                  l.budget ? ` · ${l.budget}` : ''
-                } · <b style="color:#7c3aed;">${l.daysWaiting} day${l.daysWaiting !== 1 ? 's' : ''} waiting</b>` +
-                  (l.occasion
-                    ? `<div style="font-size:11px;color:#888;">${l.occasion}</div>`
-                    : ''),
-              ),
-            )
-            .join(''),
-        btn('https://www.fhjdreamdestinations.com/admin', 'Open FHJ Admin'),
       ),
     );
   }
@@ -202,31 +170,6 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
     );
   }
 
-  if (fhj && fhj.unreadMessages > 0) {
-    sections.push(
-      card(
-        '#7c3aed',
-        `${fhj.unreadMessages} unread concierge message${fhj.unreadMessages !== 1 ? 's' : ''}`,
-        `<div style="font-size:13px;color:#555;margin:6px 0;">Existing FHJ clients are waiting in the portal chat.</div>`,
-      ),
-    );
-  }
-
-  if (fhj && fhj.appointments.length > 0) {
-    sections.push(
-      card(
-        '#7c3aed',
-        `${fhj.appointments.length} consultation request${fhj.appointments.length !== 1 ? 's' : ''}`,
-        fhj.appointments
-          .slice(0, 5)
-          .map((a) =>
-            row(`<b>${a.name}</b>${a.type ? ` · ${a.type}` : ''}${a.date ? ` · ${a.date}` : ''}`),
-          )
-          .join(''),
-      ),
-    );
-  }
-
   if (quiet) {
     sections.push(
       card(
@@ -238,13 +181,6 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
       ),
     );
   }
-
-  const fhjNote = fhjConfigured()
-    ? ''
-    : `<div style="font-size:11px;color:#b45309;background:#fffbeb;border-radius:8px;padding:10px 12px;margin:10px 0;">
-         FHJ Dream Destinations isn't connected yet, so travel leads aren't included.
-         Add <b>FHJ_SUPABASE_URL</b> and <b>FHJ_SUPABASE_SERVICE_ROLE_KEY</b> in Vercel to switch it on.
-       </div>`;
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;background:#f4f1ea;padding:24px 12px;">
@@ -262,7 +198,6 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
       </div>
       <div style="background:#faf9f6;border-radius:0 0 16px 16px;padding:14px 18px;border:1px solid #eee;border-top:none;">
         ${sections.join('')}
-        ${fhjNote}
         <div style="text-align:center;font-size:11px;color:#aaa;padding:12px 0 4px;">
           Sent weekday mornings by your business manager · <a href="${app}" style="color:#0D7377;">app.fajsolutions.com</a>
         </div>
@@ -273,8 +208,6 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
   // Subject leads with the most urgent number so it reads on a phone lock screen.
   let subject: string;
   if (draftTotal > 0) subject = `☕ ${money(draftTotal)} never sent — morning brief`;
-  else if (agingLeads.length > 0)
-    subject = `☕ ${agingLeads.length} travel lead${agingLeads.length !== 1 ? 's' : ''} waiting — morning brief`;
   else if (overdueTotal > 0) subject = `☕ ${money(overdueTotal)} overdue — morning brief`;
   else if (needsTotal > 0) subject = `☕ ${money(needsTotal)} ready to bill — morning brief`;
   else subject = '☕ Morning brief — all clear';
@@ -292,9 +225,6 @@ export async function buildDailyBrief(admin: SupabaseClient): Promise<DailyBrief
       needsInvoiceCount: needs.length,
       needsInvoiceTotal: Math.round(needsTotal),
       stuckCheckouts: stuck.length,
-      fhjLeads: fhj?.leads.length ?? 0,
-      fhjAgingLeads: agingLeads.length,
-      fhjUnread: fhj?.unreadMessages ?? 0,
     },
   };
 }

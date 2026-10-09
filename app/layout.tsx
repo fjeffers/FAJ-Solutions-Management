@@ -1,3 +1,4 @@
+import { isPracticeCopy } from '@/lib/practice';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import './wf.css';
@@ -35,6 +36,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         {children}
+        {isPracticeCopy && (
+          <div role="note" style={{ position: 'fixed', top: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 10000, pointerEvents: 'none', background: '#B45309', color: '#fff', font: '600 12px/1 Inter, Arial, sans-serif', padding: '6px 12px', borderRadius: 999, boxShadow: '0 2px 8px rgba(0,0,0,0.25)', whiteSpace: 'nowrap' }}>
+            Practice copy — made-up data, nothing here is real
+          </div>
+        )}
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}`,

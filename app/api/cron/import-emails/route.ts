@@ -1,13 +1,16 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { scanGmailConnection } from '@/lib/email-import-scan';
 import { NextResponse } from 'next/server';
+import { isPracticeCopy } from '@/lib/practice';
 
 // Triggered by Vercel Cron (see vercel.json), not a logged-in user — auth is a shared
 // secret header instead of a Supabase session. Runs once daily (Hobby plan limit) — see
 // app/api/import-queue/check-now/route.ts for the user-triggered on-demand equivalent.
 export async function GET(req: Request) {
+  if (isPracticeCopy) return NextResponse.json({ ok: true, skipped: 'practice copy' });
   const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // No secret set means no scheduled run at all (a blank secret would accept "Bearer undefined").
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

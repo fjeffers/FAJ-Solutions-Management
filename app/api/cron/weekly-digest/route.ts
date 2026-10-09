@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isPracticeCopy } from '@/lib/practice';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildWeeklyDigest } from '@/lib/weekly-digest';
@@ -6,8 +7,10 @@ import { buildWeeklyDigest } from '@/lib/weekly-digest';
 // Monday money brief — triggered by Vercel Cron (vercel.json, Mondays 12:00 UTC
 // ≈ 8am ET). Same shared-secret auth as the email-import cron.
 export async function GET(req: Request) {
+  if (isPracticeCopy) return NextResponse.json({ ok: true, skipped: 'practice copy' });
   const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // No secret set means no scheduled run at all (a blank secret would accept "Bearer undefined").
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

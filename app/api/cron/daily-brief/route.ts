@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isPracticeCopy } from '@/lib/practice';
 import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildDailyBrief } from '@/lib/daily-brief';
@@ -10,8 +11,10 @@ import { buildDailyBrief } from '@/lib/daily-brief';
 // Same shared-secret auth as the other crons. `?force=1` sends even on a quiet day,
 // which is how you test it without waiting for something to go wrong.
 export async function GET(req: Request) {
+  if (isPracticeCopy) return NextResponse.json({ ok: true, skipped: 'practice copy' });
   const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // No secret set means no scheduled run at all (a blank secret would accept "Bearer undefined").
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

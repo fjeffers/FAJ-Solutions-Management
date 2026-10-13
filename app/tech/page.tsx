@@ -332,13 +332,12 @@ export default function TechPortalPage() {
           </div>
         </div>
         {railItem('jobs', <Briefcase size={18} />)}
-        {projectJobs.length > 0 && (
-          <button className="wf-rail-item" aria-current={tab === 'projects' ? 'page' : undefined} onClick={() => go('projects')}
-            style={{ paddingLeft: 34, fontSize: 14 }}>
-            <FolderKanban size={16} /> Projects
-            <span className="wf-rail-badge" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}>{projectJobs.length}</span>
-          </button>
-        )}
+        {/* Always under My jobs (Fred, 2026-10-13: "right under my jobs ... projects"). */}
+        <button className="wf-rail-item" aria-current={tab === 'projects' ? 'page' : undefined} onClick={() => go('projects')}
+          style={{ paddingLeft: 34, fontSize: 14 }}>
+          <FolderKanban size={16} /> Projects
+          {projectJobs.length > 0 && <span className="wf-rail-badge" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}>{projectJobs.length}</span>}
+        </button>
         {railItem('available', <Inbox size={18} />, offers.length)}
         {railItem('schedule', <CalendarDays size={18} />)}
         {railItem('chat', <MessageSquare size={18} />, unread)}
@@ -635,7 +634,7 @@ function ProjectsTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => 
     groups.set(k, [...(groups.get(k) ?? []), j]);
   }
   if (jobs.length === 0) {
-    return <Empty title="No projects" message="Project sites the office gives you show up here." />;
+    return <Empty title="No projects yet" message="When the office puts you on a project site, it shows here with Start travel, Start job, Lunch, Off site and the drive to the hotel or home." />;
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>

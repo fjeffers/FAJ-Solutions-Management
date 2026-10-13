@@ -50,10 +50,11 @@ describe('menu layout (Settings -> Menu & screens)', () => {
   it('rename: kept as typed while typing, tidied on save, blank means the standard name', () => {
     let l = renameScreen(std(), 'sitelog', 'Visits ');
     expect(l.labels.sitelog).toBe('Visits ');
-    expect(resolveLayout(l).sections[0].items[0].label).toBe('Visits');
+    const siteLog = (x: typeof l) => resolveLayout(x).sections[0].items.find((i) => i.key === 'sitelog')!;
+    expect(siteLog(l).label).toBe('Visits');
     expect(normalizeLayout(l).labels.sitelog).toBe('Visits');
     l = renameScreen(l, 'sitelog', '');
-    expect(resolveLayout(l).sections[0].items[0].label).toBe('Site Log');
+    expect(siteLog(l).label).toBe('Site Log');
     expect(normalizeLayout(l).labels).toEqual({});
     expect(normalizeLayout(renameScreen(std(), 'sitelog', 'Site Log')).labels).toEqual({});
   });
@@ -88,8 +89,10 @@ describe('menu layout (Settings -> Menu & screens)', () => {
     let l = shiftScreen(std(), 'office', -1);
     expect(l.main).toEqual(['dashboard', 'workorders', 'scheduling', 'office', 'messages', 'settings']);
     expect(shiftScreen(std(), 'dashboard', -1).main).toEqual(std().main);
+    // Every day starts Projects, Site Log, Pay Techs (Projects added 2026-10-13).
     l = shiftScreen(std(), 'payables', -1);
-    expect(l.sections[0].items.slice(0, 2)).toEqual(['payables', 'sitelog']);
+    expect(l.sections[0].items.slice(0, 3)).toEqual(['projects', 'payables', 'sitelog']);
+    expect(shiftScreen(std(), 'projects', -1).sections[0].items[0]).toBe('projects');
     l = shiftSection(std(), 'money', -1);
     expect(l.sections.map((s) => s.id).slice(0, 2)).toEqual(['money', 'everyday']);
     expect(shiftSection(std(), 'everyday', -1).sections).toEqual(std().sections);

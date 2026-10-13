@@ -67,12 +67,13 @@ import { useCustomFields } from '@/components/useCustomFields';
 import { shown } from '@/lib/screen-parts';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
 import { PrimioBar } from '@/components/wf/PrimioScreens';
+import { ProjectsView } from '@/components/wf/ProjectOffice';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
-  'team', 'support', 'office', 'messages', 'sketches',
+  'team', 'support', 'office', 'messages', 'sketches', 'projects',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -1734,6 +1735,7 @@ Go ahead?`)) return;
         {view === 'portal-admin' && <PortalAdminView />}
         {view === 'network' && <NetworkView />}
         {view === 'sitelog' && <SiteLogView />}
+        {view === 'projects' && <ProjectsView workOrders={enrichedWOs} onOpen={(id) => openJobFrom(id, 'projects')} />}
         {view === 'team' && <TeamView onOpenContractors={() => navigate('contractors')} />}
         {view === 'maintenance' && <MaintenanceView />}
         {view === 'invoices' && (

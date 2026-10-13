@@ -17,7 +17,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
   buildDayLogs, dayOf, hoursOf, legLabel, parseDayEvents, totalsOf, type DayEvent, type DayLog,
 } from '@/lib/project-day';
-import { parseCloseout, listFor, skipReason, type CloseoutList } from '@/lib/closeout';
+import { parseCloseout, parseCloseoutLists, listFor, skipReason, type CloseoutList } from '@/lib/closeout';
 import { EXPENSE_CATEGORIES, expenseCategoryLabel, expenseReasonText, parseExpenseAmount } from '@/lib/expenses';
 import { inRange } from '@/lib/job-log';
 import { formatDuration } from '@/lib/wf';
@@ -487,5 +487,97 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
       </div>
     </div>,
     document.body,
+  );
+}
+
+// ── Office › Projects ───────────────────────────────────────────────────────
+
+/**
+ * Every project in one place (Fred, 2026-10-13: "a project section"): each
+ * project with its sites, the time, travel and miles so far, receipts, and the
+ * client report. A site opens its work order.
+ */
+export function ProjectsView({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; onOpen: (id: string) => void }) {
+  const sites = useMemo(() => workOrders.filter((w) => w.is_project), [workOrders]);
+  const [events, setEvents] = useState<(DayEvent & { woId: string })[]>([]);
+  const [receipts, setReceipts] = useState<Record<string, number>>({});
+  const [lists, setLists] = useState<CloseoutList[]>([]);
+  const [report, setReport] = useState<{ name: string; id: string } | null>(null);
+  const ids = useMemo(() => sites.map((w) => w.id), [sites]);
+  useEffect(() => {
+    const db = createClient();
+    void db.from('closeout_lists').select('id, name, keywords, items, sort').order('sort')
+      .then(({ data }) => setLists(parseCloseoutLists(data)));
+  }, []);
+  useEffect(() => {
+    if (ids.length === 0) return;
+    void loadEvents(ids).then(setEvents);
+    void createClient().from('job_expenses').select('wo_id, amount, status').in('wo_id', ids).eq('status', 'approved')
+      .then(({ data }) => {
+        const m: Record<string, number> = {};
+        for (const r of (data as { wo_id: string; amount: number }[] | null) ?? []) m[r.wo_id] = (m[r.wo_id] ?? 0) + Number(r.amount);
+        setReceipts(m);
+      });
+  }, [ids]);
+
+  const groups = useMemo(() => {
+    const g = new Map<string, EnrichedWorkOrder[]>();
+    for (const w of sites) {
+      const k = (w.project_name ?? '').trim() || 'No project name';
+      g.set(k, [...(g.get(k) ?? []), w]);
+    }
+    return [...g.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [sites]);
+
+  return (
+    <div className="wf" style={{ padding: 16, maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <h1 className="wf-h1" style={{ margin: 0 }}>Projects</h1>
+        <div className="wf-subtle">Multi-day sites: travel, time on site, miles and receipts from the techs&apos; phones, and the report for the client.</div>
+      </div>
+      {groups.length === 0 ? (
+        <Section title="No projects yet">
+          <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+            To start one: open a work order, tap <b>Edit job</b>, type the project&apos;s name under <b>Project / Campaign</b> and tick
+            <b> Project site</b>. Do that for each site (same project name). The techs on it then see it under <b>Projects</b> in their
+            app, with Start travel, Start job, Lunch, Off site and the drive to the hotel or home.
+          </div>
+        </Section>
+      ) : groups.map(([name, list]) => {
+        const listIds = new Set(list.map((w) => w.id));
+        const t = totalsOf(buildDayLogs(events.filter((e) => listIds.has(e.woId)), new Date(), TZ));
+        const spent = list.reduce((s, w) => s + (receipts[w.id] ?? 0), 0);
+        return (
+          <Section key={name} title={name}
+            subtitle={`${list.length} ${list.length === 1 ? 'site' : 'sites'} · ${t.days} days · ${formatDuration(t.onSiteMs)} on site · ${formatDuration(t.travelMs)} travel · ${t.miles} mi · ${fmtMoney(spent)} receipts`}
+            right={<button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReport({ name: name === 'No project name' ? '' : name, id: list[0].id })}>
+              <FileText size={15} /> Client report
+            </button>}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {list.map((w) => {
+                const s = totalsOf(buildDayLogs(events.filter((e) => e.woId === w.id), new Date(), TZ));
+                return (
+                  <button key={w.id} onClick={() => onOpen(w.id)}
+                    style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 4px', border: 'none', borderTop: '1px solid var(--wf-line)', background: 'transparent', font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'inherit' }}>
+                    <MapPin size={16} color="var(--wf-subtle)" />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <b>WO {w.wo_number}</b> · {w.site_name || w.title || 'Site'}{w.site_city ? `, ${w.site_city}` : ''}
+                      <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5 }}>
+                        {(w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean).join(', ') || 'No tech yet'}
+                        {' · '}{w.wo_status ?? 'Open'}{w.scheduled_date || w.start_date ? ` · ${fmtDay(String(w.scheduled_date || w.start_date).slice(0, 10))}` : ''}
+                      </span>
+                    </span>
+                    <span className="wf-subtle" style={{ fontSize: 12.5, textAlign: 'right' }}>
+                      {s.days ? `${formatDuration(s.onSiteMs)} on site · ${s.miles} mi` : 'Not started'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+        );
+      })}
+      {report && <ProjectReport projectName={report.name} startWoId={report.id} lists={lists} onClose={() => setReport(null)} />}
+    </div>
   );
 }

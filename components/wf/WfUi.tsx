@@ -115,10 +115,12 @@ export function Filters<T extends string>({ value, options, onChange, allLabel =
 }
 
 /** A job in a list: photo, number, stage, title, where and when — and, for the office, who and how much. */
-export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet = false }: {
+export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet = false, brief = false }: {
   job: WfJob; ownerView?: boolean; onOpen: () => void; index?: number;
   /** Office only: techs are on it but nobody has set what they get. */
   payNotSet?: boolean;
+  /** A line of what the job is (the Projects list). */
+  brief?: boolean;
 }) {
   const accent = WF_STATUS_COLOR[job.status];
   const done = tasksDone(job);
@@ -146,6 +148,11 @@ export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet =
             {job.title}
           </div>
           {where && <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{where}</div>}
+          {brief && job.description && (
+            <div style={{ fontSize: 12.5, marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              {job.description}
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, fontSize: 12.5, fontWeight: 500 }}>
             <Clock size={14} color="var(--wf-gold)" style={{ flexShrink: 0 }} />
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{whenText(job)}</span>

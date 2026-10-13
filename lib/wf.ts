@@ -12,6 +12,7 @@
 import { isUrgent, labelOf, stageName } from './app-lists';
 import type { EnrichedWorkOrder } from './types';
 import { todayISO } from './utils';
+import { parseDayEvents, sortEvents, type DayEvent } from './project-day';
 import {
   parseCloseout, parseTimeRequest, parseTimeRequests, applyCloseoutOp,
   type Closeout, type CloseoutOp, type TimeRequest,
@@ -140,6 +141,11 @@ export type WfJob = {
   clientPrice: number | null;
   /** Office only: the Dispatch board column of Fred's the job is parked in (migration 113). */
   hold?: string | null;
+  /** Part of a project: the tech gets the project day (migration 117). */
+  isProject?: boolean;
+  projectName?: string;
+  /** Tech only, on a project job: their own travel, lunch and clock taps. */
+  myDay?: DayEvent[];
 };
 
 type Row = Record<string, unknown>;
@@ -268,6 +274,9 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     archived: !!s(r, 'archived_at'),
     clientPrice: owner && Number.isFinite(price) ? price : null,
     hold: owner ? s(r, 'board_stage') || null : null,
+    isProject: r.is_project === true,
+    projectName: s(r, 'project_name'),
+    myDay: owner ? [] : parseDayEvents(r.my_day),
   };
 }
 
@@ -492,6 +501,11 @@ export function answered(j: WfJob, accept: boolean): WfJob {
 }
 
 /** A closeout change shows at once, signal or not. */
+/** A project-day tap shows at once on the phone, signal or not. */
+export function withDayEvent(j: WfJob, ev: DayEvent): WfJob {
+  return { ...j, myDay: sortEvents([...(j.myDay ?? []), ev]) };
+}
+
 export function withCloseout(j: WfJob, op: CloseoutOp): WfJob {
   return { ...j, closeout: applyCloseoutOp(j.closeout, op) };
 }

@@ -4,7 +4,7 @@
 // — paid to that tech, not billed to the client — so every money figure
 // comes from lib/utils as before. Pure helpers here, tested in expenses.test.ts.
 
-export type ExpenseCategory = 'materials' | 'fuel' | 'tolls_parking' | 'equipment' | 'meals' | 'other';
+export type ExpenseCategory = 'materials' | 'fuel' | 'tolls_parking' | 'equipment' | 'meals' | 'hotel' | 'other';
 export type ExpenseStatus = 'submitted' | 'approved' | 'declined';
 
 export const EXPENSE_CATEGORIES: { key: ExpenseCategory; label: string }[] = [
@@ -13,6 +13,7 @@ export const EXPENSE_CATEGORIES: { key: ExpenseCategory; label: string }[] = [
   { key: 'tolls_parking', label: 'Tolls & parking' },
   { key: 'equipment', label: 'Tools & equipment rental' },
   { key: 'meals', label: 'Meals' },
+  { key: 'hotel', label: 'Hotel' },
   { key: 'other', label: 'Other' },
 ];
 
@@ -40,6 +41,8 @@ export function expenseReasonText(reason: string): string {
     case 'closed_or_not_yours': return 'That job is closed or no longer yours.';
     case 'not_owner': return 'Only Fred can approve expenses.';
     case 'not_found': return 'That expense was not found.';
+    case 'office_expense': return 'You added this receipt yourself, so there is nothing to approve.';
+    case 'bad_file': return 'That receipt file could not be used.';
     default: return "That didn't go through. Try again.";
   }
 }

@@ -65,7 +65,17 @@ export function deliverablesFor(title: string, description: string): string[] {
 
 export type DelayEntry = { id: string; reason: string; start: string; end: string };
 export type SignOff = { name: string; signedAt: string };
-export type Closeout = { done: string[]; delays: DelayEntry[]; signoff: SignOff | null };
+export type SignSkip = { reason: string; at: string };
+export type Closeout = {
+  done: string[]; delays: DelayEntry[]; signoff: SignOff | null;
+  /**
+   * Deliverables the tech couldn't do, with why (Fred, 2026-10-13: "if they
+   * can't get a certain picture ... they need to give a reason"). Migration 117.
+   */
+  skipped?: Record<string, string>;
+  /** No customer signature, and why ("contact not on site"). */
+  signSkip?: SignSkip | null;
+};
 
 export const EMPTY_CLOSEOUT: Closeout = { done: [], delays: [], signoff: null };
 
@@ -84,8 +94,19 @@ export function parseCloseout(raw: unknown): Closeout {
     : [];
   const s = raw.signoff;
   const signoff = isObj(s) && str(s.name) ? { name: str(s.name), signedAt: str(s.signed_at ?? s.signedAt) } : null;
-  return { done, delays, signoff };
+  const out: Closeout = { done, delays, signoff };
+  if (isObj(raw.skipped)) {
+    const skipped: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw.skipped)) if (str(k) && str(v) && !done.includes(str(k))) skipped[str(k)] = str(v);
+    if (Object.keys(skipped).length > 0) out.skipped = skipped;
+  }
+  const k = raw.sign_skip ?? raw.signSkip;
+  if (isObj(k) && str(k.reason) && !signoff) out.signSkip = { reason: str(k.reason), at: str(k.at) };
+  return out;
 }
+
+/** Why a deliverable wasn't done, if the tech said. */
+export const skipReason = (c: Closeout, item: string): string => (c.done.includes(item) ? '' : c.skipped?.[item] ?? '');
 
 export const delayMs = (d: DelayEntry): number => Math.max(0, Date.parse(d.end) - Date.parse(d.start));
 export const totalDelayMs = (c: Closeout): number => c.delays.reduce((sum, d) => sum + delayMs(d), 0);
@@ -100,9 +121,10 @@ export const doneCount = (c: Closeout, items: string[]): number => items.filter(
  */
 export function closeoutMissing(c: Closeout, items: string[], signatureRequired: boolean): string[] {
   const out: string[] = [];
-  const left = items.length - doneCount(c, items);
+  // A deliverable the tech couldn't do counts once they've said why.
+  const left = items.filter((i) => !c.done.includes(i) && !skipReason(c, i)).length;
   if (left > 0) out.push(`Tick off ${left} more deliverable${left === 1 ? '' : 's'} under Closeout`);
-  if (signatureRequired && !c.signoff) out.push('Get the customer to sign off under Closeout');
+  if (signatureRequired && !c.signoff && !c.signSkip) out.push('Get the customer to sign off under Closeout');
   return out;
 }
 
@@ -112,21 +134,39 @@ export type CloseoutOp =
   | { op: 'add_delay'; delay: DelayEntry }
   | { op: 'remove_delay'; id: string }
   | { op: 'sign'; name: string; at: string }
-  | { op: 'clear_sign' };
+  | { op: 'clear_sign' }
+  /** Couldn't do it: the reason (an empty reason takes it back). */
+  | { op: 'skip'; item: string; reason: string }
+  | { op: 'skip_sign'; reason: string; at: string };
 
 /** Shows a change at once on the phone, signal or not. */
 export function applyCloseoutOp(c: Closeout, o: CloseoutOp): Closeout {
   switch (o.op) {
     case 'tick': {
       const rest = c.done.filter((d) => d !== o.item);
-      return { ...c, done: o.done ? [...rest, o.item] : rest };
+      if (!o.done) return { ...c, done: rest };
+      if (!c.skipped || !(o.item in c.skipped)) return { ...c, done: [...rest, o.item] };
+      // Done after all: the reason no longer applies.
+      const { [o.item]: _gone, ...skipped } = c.skipped; // eslint-disable-line @typescript-eslint/no-unused-vars
+      return { ...c, done: [...rest, o.item], skipped };
     }
+    case 'skip': {
+      const { [o.item]: _old, ...skipped } = c.skipped ?? {}; // eslint-disable-line @typescript-eslint/no-unused-vars
+      const reason = o.reason.trim();
+      return reason
+        ? { ...c, done: c.done.filter((d) => d !== o.item), skipped: { ...skipped, [o.item]: reason } }
+        : { ...c, skipped };
+    }
+    case 'skip_sign':
+      return { ...c, signSkip: o.reason.trim() ? { reason: o.reason.trim(), at: o.at } : null };
     case 'add_delay':
       return c.delays.some((d) => d.id === o.delay.id) ? c : { ...c, delays: [...c.delays, o.delay] };
     case 'remove_delay':
       return { ...c, delays: c.delays.filter((d) => d.id !== o.id) };
     case 'sign':
-      return { ...c, signoff: { name: o.name.trim(), signedAt: o.at } };
+      return c.signSkip
+        ? { ...c, signoff: { name: o.name.trim(), signedAt: o.at }, signSkip: null }
+        : { ...c, signoff: { name: o.name.trim(), signedAt: o.at } };
     case 'clear_sign':
       return { ...c, signoff: null };
   }
@@ -140,6 +180,8 @@ export function closeoutArgs(o: CloseoutOp): Record<string, unknown> {
     case 'remove_delay': return { id: o.id };
     case 'sign': return { name: o.name };
     case 'clear_sign': return {};
+    case 'skip': return { item: o.item, reason: o.reason };
+    case 'skip_sign': return { reason: o.reason };
   }
 }
 
@@ -151,6 +193,8 @@ export function closeoutOpFrom(op: string, args: Raw, at: string): CloseoutOp | 
     case 'remove_delay': return { op, id: str(args.id) };
     case 'sign': return str(args.name) ? { op, name: str(args.name), at } : null;
     case 'clear_sign': return { op };
+    case 'skip': return str(args.item) ? { op, item: str(args.item), reason: str(args.reason) } : null;
+    case 'skip_sign': return { op, reason: str(args.reason), at };
     default: return null;
   }
 }

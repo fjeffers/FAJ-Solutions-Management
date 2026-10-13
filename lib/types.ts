@@ -210,6 +210,8 @@ export type WorkOrder = {
   external_wo_id: string | null;
   customer_name: string | null;
   project_name: string | null;
+  /** Part of a project: techs get the project day (migration 117). */
+  is_project?: boolean;
   client_reference: string | null;
   buyer_company: string | null;
   assignment_type: string | null;

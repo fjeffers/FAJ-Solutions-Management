@@ -42,6 +42,7 @@ import { CustomFieldList } from '@/components/CustomFieldInputs';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
 import PdfEditor, { type SendResult } from '@/components/tools/PdfEditor';
 import { DOC_KINDS, editedName } from '@/lib/job-docs';
+import { ProjectDayCard, EXPENSES_CHANGED } from '@/components/wf/ProjectOffice';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
 
@@ -475,6 +476,7 @@ function OwnerJob({
       <CloseoutCard job={job} items={checklist.items} listName={checklist.name} canEdit={!archived} ownerView
         onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
     ),
+    'job.project': w.is_project ? <ProjectDayCard w={w} lists={lists} /> : null,
     'job.notes': <JobNotesCard woId={w.id} author={author ?? 'Office'} />,
     'job.docs': <JobDocsCard woId={w.id} jobLabel={`WO ${w.wo_number}${w.site_name || w.customer_name ? ` · ${w.site_name || w.customer_name}` : ''}`} archived={archived} />,
     'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,
@@ -1213,6 +1215,8 @@ type ExpenseRow = {
   id: string; wo_id: string; wo_number: string; contractor_name: string; category: string; vendor: string | null;
   amount: number; expense_date: string; note: string | null; receipt_path: string | null;
   status: ExpenseStatus; decline_reason: string | null;
+  /** 'faj': a receipt the office added itself (migration 117) — nothing to approve, nobody to pay back. */
+  paid_by?: 'tech' | 'faj';
 };
 
 /** The receipts techs put on this job, with Approve / Decline. */
@@ -1220,16 +1224,23 @@ function OwnerExpenses({ woId, onDecided }: { woId: string; onDecided: () => voi
   const [rows, setRows] = useState<ExpenseRow[] | null>(null);
   const load = async () => {
     const { data } = await createClient().from('job_expenses')
-      .select('id, wo_id, wo_number, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status, decline_reason')
+      .select('id, wo_id, wo_number, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status, decline_reason, paid_by')
       .eq('wo_id', woId).order('created_at', { ascending: false });
     setRows((data as ExpenseRow[] | null) ?? []);
   };
   useEffect(() => { void load(); }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The office adds receipts from the Project day card.
+  useEffect(() => {
+    const again = () => { void load(); };
+    window.addEventListener(EXPENSES_CHANGED, again);
+    return () => window.removeEventListener(EXPENSES_CHANGED, again);
+  }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!rows || rows.length === 0) return null;
   const waiting = rows.filter((r) => r.status === 'submitted').length;
-  const approved = rows.filter((r) => r.status === 'approved').reduce((s, r) => s + Number(r.amount), 0);
+  const approved = rows.filter((r) => r.status === 'approved' && r.paid_by !== 'faj').reduce((s, r) => s + Number(r.amount), 0);
+  const office = rows.filter((r) => r.paid_by === 'faj').reduce((s, r) => s + Number(r.amount), 0);
   return (
-    <Section title="Expenses" subtitle={`${waiting ? `${waiting} waiting · ` : ''}${fmtMoney(approved)} approved — paid back to the tech, not billed to the client`}>
+    <Section title="Expenses" subtitle={`${waiting ? `${waiting} waiting · ` : ''}${fmtMoney(approved)} approved — paid back to the tech, not billed to the client${office ? ` · ${fmtMoney(office)} paid by FAJ` : ''}`}>
       <ExpenseList rows={rows} onDecided={async () => { await load(); onDecided(); }} />
     </Section>
   );
@@ -1254,6 +1265,21 @@ function ExpenseList({ rows, showJob = false, onOpenJob, onDecided }: {
       setUrls((u) => ({ ...u, ...next }));
     });
   }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** A receipt the office added itself: removed with its file (no tech is involved). */
+  const removeOffice = async (r: ExpenseRow) => {
+    if (!confirm(`Remove the ${fmtMoney(r.amount)} ${expenseCategoryLabel(r.category).toLowerCase()} receipt?`)) return;
+    setBusy(r.id);
+    try {
+      const res = await fetch(`/api/owner/expense?id=${encodeURIComponent(r.id)}`, { method: 'DELETE' });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) { toastError(j.error ?? "Couldn't remove it."); return; }
+      toastSuccess('Receipt removed.');
+      await onDecided();
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const decide = async (r: ExpenseRow, approve: boolean) => {
     let reason: string | null = null;
@@ -1291,7 +1317,9 @@ function ExpenseList({ rows, showJob = false, onOpenJob, onDecided }: {
               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                 <span className="wf-display" style={{ fontWeight: 700, fontSize: 16 }}>{fmtMoney(r.amount)}</span>
                 <span style={{ fontWeight: 600 }}>{expenseCategoryLabel(r.category)}{r.vendor ? ` · ${r.vendor}` : ''}</span>
-                <span className="wf-chip" style={{ color: st.color, background: st.bg }}>{r.status === 'submitted' ? 'Waiting' : st.label}</span>
+                {r.paid_by === 'faj'
+                  ? <span className="wf-chip" style={{ color: 'var(--wf-navy)', background: 'rgba(14,27,46,0.08)' }}>Paid by FAJ</span>
+                  : <span className="wf-chip" style={{ color: st.color, background: st.bg }}>{r.status === 'submitted' ? 'Waiting' : st.label}</span>}
               </div>
               <div className="wf-subtle" style={{ fontSize: 12.5 }}>
                 {r.contractor_name} · {new Date(`${r.expense_date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
@@ -1299,6 +1327,13 @@ function ExpenseList({ rows, showJob = false, onOpenJob, onDecided }: {
               </div>
               {r.note && <div style={{ fontSize: 13, marginTop: 2 }}>{r.note}</div>}
               {r.status === 'declined' && r.decline_reason && <div style={{ fontSize: 12.5, color: 'var(--wf-danger)' }}>Declined: {r.decline_reason}</div>}
+              {r.paid_by === 'faj' ? (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={busy === r.id} onClick={() => void removeOffice(r)}>
+                    <Trash2 size={15} /> Remove
+                  </button>
+                </div>
+              ) : (
               <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
                 {r.status !== 'approved' && (
                   <button className="wf-btn wf-btn-success wf-btn-sm" disabled={busy === r.id} onClick={() => void decide(r, true)}>
@@ -1311,6 +1346,7 @@ function ExpenseList({ rows, showJob = false, onOpenJob, onDecided }: {
                   </button>
                 )}
               </div>
+              )}
             </div>
           </div>
         );

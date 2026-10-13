@@ -163,3 +163,37 @@ describe('checklists edited in admin', () => {
     expect(listFor([], 'Drops', '').name).toBe('Standard job');
   });
 });
+
+describe('a reason instead of a deliverable or signature (migration 117)', () => {
+  const items = ['Before photos', 'Roof photo', 'After photos'];
+  it('a deliverable with a reason no longer holds up Work done', () => {
+    let c = applyCloseoutOp({ ...EMPTY_CLOSEOUT, done: ['Before photos', 'After photos'] }, { op: 'skip', item: 'Roof photo', reason: ' No roof access ' });
+    expect(c.skipped).toEqual({ 'Roof photo': 'No roof access' });
+    expect(closeoutMissing(c, items, false)).toEqual([]);
+    // An empty reason takes it back.
+    c = applyCloseoutOp(c, { op: 'skip', item: 'Roof photo', reason: '' });
+    expect(closeoutMissing(c, items, false)).toEqual(['Tick off 1 more deliverable under Closeout']);
+  });
+  it('ticking it after all drops the reason', () => {
+    const c = applyCloseoutOp(applyCloseoutOp(EMPTY_CLOSEOUT, { op: 'skip', item: 'Roof photo', reason: 'Raining' }),
+      { op: 'tick', item: 'Roof photo', done: true });
+    expect(c.done).toEqual(['Roof photo']);
+    expect(c.skipped).toEqual({});
+  });
+  it('no signature, with why, counts as handled; signing replaces it', () => {
+    const all = { ...EMPTY_CLOSEOUT, done: items };
+    const noSign = applyCloseoutOp(all, { op: 'skip_sign', reason: 'Contact not on site', at: '2026-10-13T20:00:00Z' });
+    expect(closeoutMissing(noSign, items, true)).toEqual([]);
+    const signed = applyCloseoutOp(noSign, { op: 'sign', name: 'Pat', at: '2026-10-13T20:05:00Z' });
+    expect(signed.signSkip).toBeNull();
+    expect(signed.signoff?.name).toBe('Pat');
+  });
+  it('reads what the server stores, and round-trips through the outbox', () => {
+    const c = parseCloseout({ done: ['A'], skipped: { B: 'Locked room', A: 'stale' }, sign_skip: { reason: 'Not on site', at: 'x' } });
+    expect(c.skipped).toEqual({ B: 'Locked room' });
+    expect(c.signSkip).toEqual({ reason: 'Not on site', at: 'x' });
+    const op: CloseoutOp = { op: 'skip', item: 'B', reason: 'Locked room' };
+    expect(closeoutOpFrom('skip', closeoutArgs(op), 'now')).toEqual(op);
+    expect(closeoutOpFrom('skip_sign', { reason: 'Gone' }, 't')).toEqual({ op: 'skip_sign', reason: 'Gone', at: 't' });
+  });
+});

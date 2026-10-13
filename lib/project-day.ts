@@ -1,0 +1,237 @@
+// The project day (Fred, 2026-10-13: "my jobs, and right under my jobs ...
+// projects ... the starting travel, when you're on site, when you're leaving
+// the site, and it needs to calculate the mileage"). Migration 117.
+//
+// A tech on a project job goes through the day in order:
+//   Start travel (from home or the hotel)  → travel_start, GPS
+//   Start job (arrived on site)             → travel_end + clock 'in'
+//   Lunch / Back from lunch                 → lunch_start / lunch_end
+//   Off site                                → clock 'out'
+//   Travel to the hotel / home / next site  → travel_start (from the site)
+//   Arrived — sign out                      → travel_end
+// Travel and lunch taps live in job_day_events; Start job and Off site are the
+// ordinary clock (job_punches), so hours and pay are worked out as before.
+//
+// Pure and unit-tested (lib/project-day.test.ts).
+
+export type DayKind = 'travel_start' | 'travel_end' | 'lunch_start' | 'lunch_end' | 'in' | 'out';
+export type Origin = 'home' | 'hotel' | 'site' | 'other';
+export type Dest = 'site' | 'hotel' | 'home' | 'next_site';
+
+export type DayEvent = {
+  kind: DayKind;
+  at: string;
+  origin?: Origin | null;
+  dest?: Dest | null;
+  /** Miles for the leg that ends here (travel_end only). */
+  miles?: number | null;
+  /** Who tapped (the office reads every tech's taps). */
+  tech?: string;
+  /** The job_day_events row, so the office can correct the miles. */
+  id?: string;
+};
+
+const KINDS: DayKind[] = ['travel_start', 'travel_end', 'lunch_start', 'lunch_end', 'in', 'out'];
+const ORIGINS: Origin[] = ['home', 'hotel', 'site', 'other'];
+const DESTS: Dest[] = ['site', 'hotel', 'home', 'next_site'];
+
+export const ORIGIN_LABEL: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Other' };
+export const DEST_LABEL: Record<Dest, string> = { site: 'Site', hotel: 'Hotel', home: 'Home', next_site: 'Next site' };
+
+type Raw = Record<string, unknown>;
+const isObj = (v: unknown): v is Raw => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** wf_tech_jobs → my_day (or job_day_events / job_punches rows) → clean taps, oldest first. */
+export function parseDayEvents(raw: unknown): DayEvent[] {
+  if (!Array.isArray(raw)) return [];
+  const out: DayEvent[] = [];
+  for (const r of raw) {
+    if (!isObj(r)) continue;
+    const kind = String(r.kind ?? '') as DayKind;
+    const at = String(r.at ?? '');
+    if (!KINDS.includes(kind) || !Number.isFinite(Date.parse(at))) continue;
+    const ev: DayEvent = { kind, at };
+    const o = String(r.origin ?? '') as Origin;
+    const d = String(r.dest ?? '') as Dest;
+    if (ORIGINS.includes(o)) ev.origin = o;
+    if (DESTS.includes(d)) ev.dest = d;
+    const m = r.miles == null || r.miles === '' ? NaN : Number(r.miles);
+    if (Number.isFinite(m) && m >= 0) ev.miles = m;
+    if (typeof r.contractor_name === 'string' && r.contractor_name) ev.tech = r.contractor_name;
+    else if (typeof r.tech === 'string' && r.tech) ev.tech = r.tech;
+    if (typeof r.id === 'string' && r.id) ev.id = r.id;
+    out.push(ev);
+  }
+  return sortEvents(out);
+}
+
+const ORDER: Record<DayKind, number> = { travel_end: 0, in: 1, lunch_start: 2, lunch_end: 3, out: 4, travel_start: 5 };
+
+/** Oldest first; taps at the same moment in the order they happen (arrive before start job). */
+export function sortEvents(events: DayEvent[]): DayEvent[] {
+  return [...events].sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || ORDER[a.kind] - ORDER[b.kind]);
+}
+
+/** YYYY-MM-DD of a moment in a time zone. */
+export function dayOf(iso: string, timeZone?: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+}
+
+// ── Where the tech is in the day ────────────────────────────────────────────
+
+export type DayState =
+  | { stage: 'ready' }
+  | { stage: 'travel'; since: string; dest: Dest; origin: Origin | null }
+  | { stage: 'onsite'; since: string; lunchMs: number }
+  | { stage: 'lunch'; since: string; onSiteSince: string; lunchMs: number }
+  | { stage: 'offsite'; since: string };
+
+/**
+ * The one thing the tech can do next, from their taps on this job. Off site
+ * lasts until they set off (or until the next day: an evening with no drive
+ * starts fresh in the morning).
+ */
+export function dayState(events: DayEvent[], now: Date = new Date(), timeZone?: string): DayState {
+  let st: DayState = { stage: 'ready' };
+  for (const e of sortEvents(events)) {
+    const t = Date.parse(e.at);
+    switch (e.kind) {
+      case 'travel_start':
+        st = { stage: 'travel', since: e.at, dest: e.dest ?? 'site', origin: e.origin ?? null };
+        break;
+      case 'travel_end':
+        if (st.stage === 'travel') st = { stage: 'ready' };
+        break;
+      case 'in':
+        st = { stage: 'onsite', since: e.at, lunchMs: 0 };
+        break;
+      case 'lunch_start':
+        if (st.stage === 'onsite') st = { stage: 'lunch', since: e.at, onSiteSince: st.since, lunchMs: st.lunchMs };
+        break;
+      case 'lunch_end':
+        if (st.stage === 'lunch') st = { stage: 'onsite', since: st.onSiteSince, lunchMs: st.lunchMs + Math.max(0, t - Date.parse(st.since)) };
+        break;
+      case 'out':
+        if (st.stage === 'onsite' || st.stage === 'lunch') st = { stage: 'offsite', since: e.at };
+        break;
+    }
+  }
+  if (st.stage === 'offsite' && dayOf(st.since, timeZone) !== dayOf(now.toISOString(), timeZone)) return { stage: 'ready' };
+  return st;
+}
+
+/** Time on site so far, lunch taken out. */
+export function onSiteMs(st: DayState, now: Date = new Date()): number {
+  if (st.stage === 'onsite') return Math.max(0, now.getTime() - Date.parse(st.since) - st.lunchMs);
+  if (st.stage === 'lunch') return Math.max(0, Date.parse(st.since) - Date.parse(st.onSiteSince) - st.lunchMs);
+  return 0;
+}
+
+// ── The log: travel legs and time on site, per tech per day ────────────────
+
+export type Leg = {
+  tech: string; day: string; start: string; end: string | null;
+  origin: Origin | null; dest: Dest; ms: number; miles: number | null;
+  /** The travel_end row holding the miles (the office can correct it). */
+  endId: string | null;
+};
+
+export type SiteSpan = { tech: string; day: string; in: string; out: string | null; lunchMs: number; ms: number };
+
+export type DayLog = {
+  tech: string; day: string; legs: Leg[]; spans: SiteSpan[];
+  travelMs: number; onSiteMs: number; lunchMs: number; miles: number;
+};
+
+/** Every tech's taps on a job → one log per tech per day, oldest first. */
+export function buildDayLogs(events: DayEvent[], now: Date = new Date(), timeZone?: string): DayLog[] {
+  const byTech = new Map<string, DayEvent[]>();
+  for (const e of events) {
+    const k = e.tech ?? '';
+    byTech.set(k, [...(byTech.get(k) ?? []), e]);
+  }
+  const legs: Leg[] = [];
+  const spans: SiteSpan[] = [];
+  const nowMs = now.getTime();
+  for (const [tech, list] of byTech) {
+    const evs = sortEvents(list);
+    let leg: { start: DayEvent } | null = null;
+    let span: { in: DayEvent; lunchMs: number; lunchFrom: number | null } | null = null;
+    const closeLeg = (end: DayEvent | null) => {
+      if (!leg) return;
+      const s = leg.start;
+      const endMs = end ? Date.parse(end.at) : nowMs;
+      legs.push({
+        tech, day: dayOf(s.at, timeZone), start: s.at, end: end?.at ?? null,
+        origin: s.origin ?? null, dest: s.dest ?? 'site', ms: Math.max(0, endMs - Date.parse(s.at)),
+        miles: end?.kind === 'travel_end' && end.miles != null ? end.miles : null,
+        endId: end?.kind === 'travel_end' ? end.id ?? null : null,
+      });
+      leg = null;
+    };
+    const closeSpan = (out: DayEvent | null) => {
+      if (!span) return;
+      const endMs = out ? Date.parse(out.at) : nowMs;
+      const lunch = span.lunchMs + (span.lunchFrom != null ? Math.max(0, endMs - span.lunchFrom) : 0);
+      spans.push({
+        tech, day: dayOf(span.in.at, timeZone), in: span.in.at, out: out?.at ?? null, lunchMs: lunch,
+        ms: Math.max(0, endMs - Date.parse(span.in.at) - lunch),
+      });
+      span = null;
+    };
+    for (const e of evs) {
+      switch (e.kind) {
+        case 'travel_start': closeLeg(e); leg = { start: e }; break;
+        case 'travel_end': closeLeg(e); break;
+        case 'in': closeLeg(e); closeSpan(e); span = { in: e, lunchMs: 0, lunchFrom: null }; break;
+        case 'lunch_start': if (span && span.lunchFrom == null) span.lunchFrom = Date.parse(e.at); break;
+        case 'lunch_end':
+          if (span && span.lunchFrom != null) { span.lunchMs += Math.max(0, Date.parse(e.at) - span.lunchFrom); span.lunchFrom = null; }
+          break;
+        case 'out': closeSpan(e); break;
+      }
+    }
+    closeLeg(null);
+    closeSpan(null);
+  }
+  // A leg that ran into "Start job" without its own end: the 'in' closed it,
+  // which shows up above as a leg ending at the in (no miles). Fine.
+  const keys = new Map<string, DayLog>();
+  const keyOf = (tech: string, day: string) => `${day}|${tech}`;
+  const get = (tech: string, day: string) => {
+    const k = keyOf(tech, day);
+    let d = keys.get(k);
+    if (!d) { d = { tech, day, legs: [], spans: [], travelMs: 0, onSiteMs: 0, lunchMs: 0, miles: 0 }; keys.set(k, d); }
+    return d;
+  };
+  for (const l of legs) { const d = get(l.tech, l.day); d.legs.push(l); d.travelMs += l.ms; d.miles += l.miles ?? 0; }
+  for (const s of spans) { const d = get(s.tech, s.day); d.spans.push(s); d.onSiteMs += s.ms; d.lunchMs += s.lunchMs; }
+  const out = [...keys.values()];
+  for (const d of out) {
+    d.legs.sort((a, b) => a.start.localeCompare(b.start));
+    d.spans.sort((a, b) => a.in.localeCompare(b.in));
+    d.miles = Math.round(d.miles * 10) / 10;
+  }
+  return out.sort((a, b) => a.day.localeCompare(b.day) || a.tech.localeCompare(b.tech));
+}
+
+export type DayTotals = { travelMs: number; onSiteMs: number; lunchMs: number; miles: number; days: number };
+
+export function totalsOf(logs: DayLog[]): DayTotals {
+  const t = logs.reduce((s, d) => ({
+    travelMs: s.travelMs + d.travelMs, onSiteMs: s.onSiteMs + d.onSiteMs, lunchMs: s.lunchMs + d.lunchMs,
+    miles: s.miles + d.miles, days: s.days,
+  }), { travelMs: 0, onSiteMs: 0, lunchMs: 0, miles: 0, days: 0 });
+  t.days = new Set(logs.map((d) => d.day)).size;
+  t.miles = Math.round(t.miles * 10) / 10;
+  return t;
+}
+
+/** "Home → Site", "Site → Hotel". */
+export function legLabel(l: Pick<Leg, 'origin' | 'dest'>): string {
+  const from = l.origin ? ORIGIN_LABEL[l.origin] : 'Start';
+  return `${from} → ${DEST_LABEL[l.dest]}`;
+}
+
+/** 5400000 → "1.5 h" (for reports, where whole decimals read easier than 1h 30m). */
+export const hoursOf = (ms: number): number => Math.round((ms / 3_600_000) * 100) / 100;

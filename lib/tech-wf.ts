@@ -6,8 +6,9 @@
 import { createClient } from '@/lib/supabase/client';
 import {
   wfJobFromTech, clockedIn, clockedOut, withTask, answered, markedWorkDone, withReport, withCloseout, withTimeRequest,
-  wfReasonText, type WfJob,
+  withDayEvent, wfReasonText, type WfJob,
 } from './wf';
+import type { DayEvent, DayKind, Dest, Origin } from './project-day';
 import { closeoutOpFrom, parseCloseoutLists, type CloseoutList } from './closeout';
 import { RefusedError, isNoSignal, type Outbox, type PendingAction } from './wf-outbox';
 import type { TechJob } from './types';
@@ -44,6 +45,15 @@ export function registerTechHandlers(box: Outbox): void {
     await call('wf_tech_clock_gps', {
       p_wo_number: a.number, p_action: a.action, p_at: at.toISOString(),
       p_lat: a.lat ?? null, p_lng: a.lng ?? null, p_accuracy: a.acc ?? null,
+    });
+  });
+  // The project day: travel and lunch taps (migration 117). Start job and Off
+  // site go through 'clock' like any job.
+  box.register('day', async (a, at) => {
+    await call('wf_tech_day_event', {
+      p_wo_number: a.number, p_kind: a.kind, p_at: at.toISOString(),
+      p_lat: a.lat ?? null, p_lng: a.lng ?? null, p_accuracy: a.acc ?? null,
+      p_origin: a.origin ?? null, p_dest: a.dest ?? null,
     });
   });
   // The job report: notes for the office and answers to its questions.
@@ -106,10 +116,22 @@ export function applyPending(jobs: WfJob[], pending: PendingAction[]): WfJob[] {
     list = list.map((j) => {
       if (j.number !== number) return j;
       switch (p.kind) {
-        case 'clock': return p.args.action === 'in' ? clockedIn(j, at) : clockedOut(j, at);
+        case 'clock': {
+          const k = p.args.action === 'in' ? clockedIn(j, at) : clockedOut(j, at);
+          return j.isProject ? withDayEvent(k, { kind: p.args.action === 'in' ? 'in' : 'out', at: p.at }) : k;
+        }
+        case 'day': {
+          const ev: DayEvent = { kind: String(p.args.kind) as DayKind, at: p.at };
+          if (p.args.origin) ev.origin = String(p.args.origin) as Origin;
+          if (p.args.dest) ev.dest = String(p.args.dest) as Dest;
+          return withDayEvent(j, ev);
+        }
+        case 'workdone': {
+          const done = markedWorkDone(j, String(p.args.notes ?? ''), at);
+          return j.isProject && p.args.clockOut ? withDayEvent(done, { kind: 'out', at: p.at }) : done;
+        }
         case 'task': return withTask(j, String(p.args.task), !!p.args.done);
         case 'respond': return answered(j, !!p.args.accept);
-        case 'workdone': return markedWorkDone(j, String(p.args.notes ?? ''), at);
         case 'report': return withReport(j, typeof p.args.notes === 'string' ? p.args.notes : null,
           (p.args.answers && typeof p.args.answers === 'object' ? p.args.answers : {}) as Record<string, string>);
         case 'closeout': {

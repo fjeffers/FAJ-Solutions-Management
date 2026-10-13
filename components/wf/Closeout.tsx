@@ -7,9 +7,9 @@
 //   Approval       the customer's printed name and finger signature
 // The tech fills it in; the office sees the same card, read only. No money.
 import { useState } from 'react';
-import { CheckCircle2, Circle, Clock, PenLine, Plus, Trash2 } from 'lucide-react';
+import { Ban, CheckCircle2, Circle, Clock, PenLine, Plus, Trash2 } from 'lucide-react';
 import {
-  closeoutMissing, delayFromTimes, delayMs, doneCount, totalDelayMs, type CloseoutOp,
+  closeoutMissing, delayFromTimes, delayMs, doneCount, skipReason, totalDelayMs, type CloseoutOp,
 } from '@/lib/closeout';
 import { formatDuration, type WfJob } from '@/lib/wf';
 import { Dialog, Section } from './WfUi';
@@ -44,7 +44,10 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
   const c = job.closeout;
   const [delayOpen, setDelayOpen] = useState(false);
   const [signOpen, setSignOpen] = useState(false);
+  /** "Can't do it" for this deliverable, or '__sign__' for the signature. */
+  const [why, setWhy] = useState<string | null>(null);
   const done = doneCount(c, items);
+  const cant = items.filter((i) => skipReason(c, i)).length;
   const lost = totalDelayMs(c);
   const missing = closeoutMissing(c, items, job.signatureRequired);
   const edit = canEdit && !!onOp;
@@ -52,7 +55,7 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
   return (
     <Section
       title="Closeout"
-      subtitle={`${done} of ${items.length} deliverables · ${c.signoff ? 'signed off' : job.signatureRequired ? 'sign-off needed' : 'not signed'}`}
+      subtitle={`${done} of ${items.length} deliverables${cant ? ` · ${cant} can't be done` : ''} · ${c.signoff ? 'signed off' : c.signSkip ? 'no signature (reason given)' : job.signatureRequired ? 'sign-off needed' : 'not signed'}`}
       right={missing.length === 0 ? <CheckCircle2 size={20} color="var(--wf-success)" aria-label="Closeout complete" /> : undefined}
     >
       {/* Deliverables */}
@@ -60,25 +63,37 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
       <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 6 }}>
         {ownerView
           ? (edit ? 'The tech ticks these off in the portal — or tick them here yourself.' : 'What the tech ticked off for this job.')
-          : 'Take each photo under Photos, then tick it off here. Every item is needed before Work done.'}
+          : "Take each photo under Photos, then tick it off here. Can't do one? Tap Can't do it and say why."}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '0 -6px' }}>
         {items.map((item) => {
           const on = c.done.includes(item);
+          const reason = skipReason(c, item);
           return (
-            <button
-              key={item}
-              onClick={edit ? () => onOp!({ op: 'tick', item, done: !on }) : undefined}
-              disabled={!edit}
-              aria-pressed={on}
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10, padding: '7px 6px', borderRadius: 8, border: 'none',
-                background: 'transparent', font: 'inherit', textAlign: 'left', cursor: edit ? 'pointer' : 'default', color: 'inherit',
-              }}
-            >
-              {on ? <CheckCircle2 size={21} color="var(--wf-success)" style={{ flexShrink: 0 }} /> : <Circle size={21} color="var(--wf-subtle)" style={{ flexShrink: 0 }} />}
-              <span style={{ flex: 1, paddingTop: 1, color: on ? 'var(--wf-subtle)' : undefined }}>{item}</span>
-            </button>
+            <div key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+              <button
+                onClick={edit ? () => onOp!({ op: 'tick', item, done: !on }) : undefined}
+                disabled={!edit}
+                aria-pressed={on}
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'flex-start', gap: 10, padding: '7px 6px', borderRadius: 8, border: 'none',
+                  background: 'transparent', font: 'inherit', textAlign: 'left', cursor: edit ? 'pointer' : 'default', color: 'inherit',
+                }}
+              >
+                {on ? <CheckCircle2 size={21} color="var(--wf-success)" style={{ flexShrink: 0 }} />
+                  : reason ? <Ban size={21} color="var(--wf-warning)" style={{ flexShrink: 0 }} />
+                    : <Circle size={21} color="var(--wf-subtle)" style={{ flexShrink: 0 }} />}
+                <span style={{ flex: 1, paddingTop: 1, color: on ? 'var(--wf-subtle)' : undefined }}>
+                  {item}
+                  {reason && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--wf-warning)', fontWeight: 600 }}>Can&apos;t be done: {reason}</span>}
+                </span>
+              </button>
+              {edit && !ownerView && !on && (
+                reason
+                  ? <button className="wf-btn wf-btn-ghost wf-btn-sm" style={{ flexShrink: 0 }} onClick={() => onOp!({ op: 'skip', item, reason: '' })}>Undo</button>
+                  : <button className="wf-btn wf-btn-ghost wf-btn-sm" style={{ flexShrink: 0, fontSize: 12.5 }} onClick={() => setWhy(item)}>Can&apos;t do it</button>
+              )}
+            </div>
           );
         })}
       </div>
@@ -124,15 +139,25 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
         </>}
       </div>
       {c.signoff && ownerView && <div className="wf-subtle" style={{ fontSize: 12, marginTop: 6 }}>The signature picture is with the job&apos;s photos.</div>}
-      {!c.signoff && ownerView && job.signatureRequired && (
+      {!c.signoff && c.signSkip && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <Ban size={16} color="var(--wf-warning)" />
+          <span style={{ flex: 1, fontSize: 13, color: 'var(--wf-warning)', fontWeight: 600 }}>No signature: {c.signSkip.reason}</span>
+          {edit && !ownerView && <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => onOp!({ op: 'skip_sign', reason: '', at: new Date().toISOString() })}>Undo</button>}
+        </div>
+      )}
+      {!c.signoff && !c.signSkip && ownerView && job.signatureRequired && (
         <div style={{ fontSize: 12.5, marginTop: 6, color: 'var(--wf-warning)', fontWeight: 600 }}>Customer signature required — not signed yet.</div>
       )}
-      {edit && onSign && !c.signoff && (
+      {edit && onSign && !c.signoff && !c.signSkip && (
         <>
           <div className="wf-subtle" style={{ fontSize: 12.5, margin: '8px 0' }}>
             Hand the phone to the on-site contact to sign once the work is done{job.signatureRequired ? ' — this job needs it' : ''}.
           </div>
-          <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => setSignOpen(true)}><PenLine size={15} /> Get customer signature</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => setSignOpen(true)}><PenLine size={15} /> Get customer signature</button>
+            {!ownerView && <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setWhy('__sign__')}>Can&apos;t get a signature</button>}
+          </div>
         </>
       )}
       {edit && c.signoff && (
@@ -144,12 +169,50 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
         </div>
       )}
 
+      {why && (
+        <ReasonDialog
+          key={why}
+          title={why === '__sign__' ? "Why can't you get a signature?" : "Why can't this be done?"}
+          what={why === '__sign__' ? 'Customer signature' : why}
+          ideas={why === '__sign__'
+            ? ['Contact not on site', 'Contact refused to sign', 'Site closed when we finished']
+            : ['No access to that area', 'Not part of this site', 'Equipment not delivered']}
+          onClose={() => setWhy(null)}
+          onSave={(reason) => {
+            onOp?.(why === '__sign__' ? { op: 'skip_sign', reason, at: new Date().toISOString() } : { op: 'skip', item: why, reason });
+            setWhy(null);
+          }}
+        />
+      )}
       {delayOpen && <DelayDialog onClose={() => setDelayOpen(false)} onAdd={(op) => { setDelayOpen(false); onOp?.(op); }} />}
       {signOpen && onSign && (
         <SignOffDialog contact={job.pocName} onClose={() => setSignOpen(false)}
           onSign={async (name, blob) => { await onSign(name, blob); setSignOpen(false); }} />
       )}
     </Section>
+  );
+}
+
+function ReasonDialog({ title, what, ideas, onClose, onSave }: {
+  title: string; what: string; ideas: string[]; onClose: () => void; onSave: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  return (
+    <Dialog title={title} onClose={onClose}
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="wf-btn wf-btn-navy" disabled={!reason.trim()} onClick={() => onSave(reason.trim())}>Save reason</button>
+      </>}>
+      <div className="wf-subtle" style={{ fontSize: 13, marginBottom: 8 }}>{what}</div>
+      <input className="wf-input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} autoFocus
+        placeholder="Say why. The office and the client see this." aria-label="Reason" />
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+        {ideas.map((i) => (
+          <button key={i} className="wf-chip" onClick={() => setReason(i)}
+            style={{ border: '1px solid var(--wf-line)', background: 'var(--wf-card)', cursor: 'pointer', font: 'inherit', fontSize: 12.5 }}>{i}</button>
+        ))}
+      </div>
+    </Dialog>
   );
 }
 

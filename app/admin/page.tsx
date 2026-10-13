@@ -448,6 +448,7 @@ export default function HomePage() {
       external_wo_id:  w.external_wo_id  ?? null,
       customer_name:   w.customer_name   ?? null,
       project_name:    w.project_name    ?? null,
+      is_project:      w.is_project      ?? false,
       client_reference: w.client_reference ?? null,
       buyer_company:   w.buyer_company   ?? null,
       assignment_type: w.assignment_type ?? 'Internal',

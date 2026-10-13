@@ -189,6 +189,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     external_wo_id:  item?.external_wo_id  ?? '',
     customer_name:   item?.customer_name   ?? '',
     project_name:    item?.project_name    ?? '',
+    is_project:      item?.is_project      ?? false,
     client_reference: item?.client_reference ?? '',
     buyer_company:   item?.buyer_company   ?? '',
     assignment_type: item?.assignment_type ?? 'Internal',
@@ -659,6 +660,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       external_wo_id:  form.external_wo_id  || null,
       customer_name:   form.customer_name   || null,
       project_name:    form.project_name    || null,
+      is_project:      !!form.is_project,
       client_reference: form.client_reference || null,
       buyer_company:   form.buyer_company   || null,
       expense_budget:  form.expense_budget  ?? null,
@@ -1030,6 +1032,12 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <PF label="Project / Campaign">
                 <input className="input" value={form.project_name ?? ''} onChange={(e) => set('project_name', e.target.value)} placeholder="Rollout, refresh, service call..." />
+                {/* Fred, 2026-10-13: projects get the travel / on site / hotel day,
+                    receipts and miles, and the client report (migration 117). */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13.5, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.is_project} onChange={(e) => set('is_project', e.target.checked)} />
+                  <span><b>Project site</b>: techs log travel, time on site, lunch and receipts; miles from GPS</span>
+                </label>
               </PF>
               <PF label="Client Reference">
                 <input className="input" value={form.client_reference ?? ''} onChange={(e) => set('client_reference', e.target.value)} placeholder="Ticket, PO, store, or billing code" />

@@ -29,6 +29,8 @@ import {
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
+import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
+import { dayState } from '@/lib/project-day';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
@@ -47,7 +49,7 @@ import SignaturePad from '@/components/wf/SignaturePad';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  ArrowLeft, Briefcase, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  ArrowLeft, Briefcase, FolderKanban, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
   RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
@@ -59,14 +61,17 @@ import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 // Primio's tech tabs — Jobs, Available, Profile (with the W-9 inside) — plus
 // My schedule, Messages and Pay history (Fred, 2026-10-04: "the tech portal is
 // whatever Primio has", keeping those three).
-type Tab = 'jobs' | 'available' | 'schedule' | 'chat' | 'pay' | 'profile';
+// Projects sits under My jobs in the menu (Fred, 2026-10-13: "my jobs, and
+// right under my jobs ... projects"); it is not one of the bottom tabs.
+type Tab = 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'pay' | 'profile';
 const TABS: Tab[] = ['jobs', 'available', 'schedule', 'chat', 'pay', 'profile'];
+const ALL_TABS: Tab[] = [...TABS, 'projects'];
 const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
 const TAB_TITLE: Record<Tab, string> = {
-  jobs: 'My jobs', available: 'Available jobs', schedule: 'My schedule', chat: 'Messages', pay: 'Pay history', profile: 'Profile',
+  jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My schedule', chat: 'Messages', pay: 'Pay history', profile: 'Profile',
 };
 const TAB_SHORT: Record<Tab, string> = {
-  jobs: 'Jobs', available: 'Available', schedule: 'Schedule', chat: 'Messages', pay: 'Pay', profile: 'Profile',
+  jobs: 'Jobs', projects: 'Projects', available: 'Available', schedule: 'Schedule', chat: 'Messages', pay: 'Pay', profile: 'Profile',
 };
 
 export default function TechPortalPage() {
@@ -84,7 +89,7 @@ export default function TechPortalPage() {
     // Old links still land in the right place.
     if (t === 'open' || t === 'offers') return 'available';
     if (t === 'paperwork') return 'profile';
-    return TABS.includes(t as Tab) ? (t as Tab) : 'jobs';
+    return ALL_TABS.includes(t as Tab) ? (t as Tab) : 'jobs';
   });
   const [openId, setOpenId] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(false);
@@ -230,6 +235,7 @@ export default function TechPortalPage() {
 
   const counts = techCounts(jobs);
   const offers = jobs.filter((j) => j.status === 'offered');
+  const projectJobs = jobs.filter((j) => j.isProject && j.status !== 'offered' && j.status !== 'declined');
   const paperworkDue = (profile && !profile.w9_received ? 1 : 0) + (profile && !profile.contract_signed_at ? 1 : 0);
   const openJob = openId ? jobs.find((j) => j.id === openId) ?? null : null;
 
@@ -326,6 +332,13 @@ export default function TechPortalPage() {
           </div>
         </div>
         {railItem('jobs', <Briefcase size={18} />)}
+        {projectJobs.length > 0 && (
+          <button className="wf-rail-item" aria-current={tab === 'projects' ? 'page' : undefined} onClick={() => go('projects')}
+            style={{ paddingLeft: 34, fontSize: 14 }}>
+            <FolderKanban size={16} /> Projects
+            <span className="wf-rail-badge" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}>{projectJobs.length}</span>
+          </button>
+        )}
         {railItem('available', <Inbox size={18} />, offers.length)}
         {railItem('schedule', <CalendarDays size={18} />)}
         {railItem('chat', <MessageSquare size={18} />, unread)}
@@ -372,9 +385,11 @@ export default function TechPortalPage() {
           ) : tab === 'jobs' ? (
             <JobsHome
               name={profile?.name ?? ''} jobs={jobs} counts={counts} offers={offers.length}
-              paperworkDue={paperworkDue} profile={profile}
+              paperworkDue={paperworkDue} profile={profile} projects={projectJobs.length}
               onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} go={go}
             />
+          ) : tab === 'projects' ? (
+            <ProjectsTab jobs={projectJobs} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} />
           ) : tab === 'available' ? (
             <AvailableTab offers={offers} act={act} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} />
           ) : tab === 'schedule' ? (
@@ -407,7 +422,7 @@ export default function TechPortalPage() {
           <nav className="wf-tabbar" aria-label="Tech portal tabs">
             {TABS.map((t) => {
               const badge = t === 'available' ? offers.length : t === 'chat' ? unread : t === 'profile' ? paperworkDue : 0;
-              const Icon = { jobs: Briefcase, available: Inbox, schedule: CalendarDays, chat: MessageSquare, pay: Wallet, profile: User }[t];
+              const Icon = { jobs: Briefcase, projects: FolderKanban, available: Inbox, schedule: CalendarDays, chat: MessageSquare, pay: Wallet, profile: User }[t];
               return (
                 <button key={t} className="wf-tab" aria-current={tab === t ? 'page' : undefined} onClick={() => go(t)}>
                   <span style={{ position: 'relative', display: 'inline-flex' }}>
@@ -522,9 +537,9 @@ function SyncStatus({ box, savedAt }: { box: Outbox | null; savedAt: string | nu
 
 // ── Jobs (Primio's home) ───────────────────────────────────────────────────
 
-function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, go }: {
+function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, projects, onOpen, go }: {
   name: string; jobs: WfJob[]; counts: ReturnType<typeof techCounts>; offers: number;
-  paperworkDue: number; profile: TechProfile | null;
+  paperworkDue: number; profile: TechProfile | null; projects: number;
   onOpen: (id: string) => void; go: (t: Tab) => void;
 }) {
   const [search, setSearch] = useState('');
@@ -536,7 +551,9 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, g
   // through all five.
   const [filter, setFilter] = useState<TechFilter>(() =>
     TECH_FILTERS.find((f) => jobs.some((j) => techFilterOf(j.status) === f.key))?.key ?? 'scheduled');
-  const mine = jobs.filter((j) => techFilterOf(j.status) && matchesWf(j, search));
+  // Project sites have their own list (Projects, under My jobs). An offer
+  // still shows here under Assigned until it's accepted.
+  const mine = jobs.filter((j) => (!j.isProject || j.status === 'offered') && techFilterOf(j.status) && matchesWf(j, search));
   const searching = search.trim() !== '';
   const shown = sortTechJobs(searching ? mine : mine.filter((j) => techFilterOf(j.status) === filter));
   const EMPTY: Record<TechFilter, string> = {
@@ -564,6 +581,13 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, g
         subtitle={offers > 0 ? `${offers} ${offers === 1 ? 'job is' : 'jobs are'} waiting for your answer` : 'No new jobs right now'}
         onClick={() => go('available')}
       />
+      {projects > 0 && (
+        <Banner
+          title="Projects"
+          subtitle={`${projects} project ${projects === 1 ? 'site' : 'sites'}: travel, time on site, receipts`}
+          onClick={() => go('projects')}
+        />
+      )}
       {paperworkDue > 0 && profile && (
         <button className="wf-card wf-card-click" onClick={() => go('profile')}
           style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderColor: 'rgba(180,83,9,0.35)', background: 'rgba(180,83,9,0.05)' }}>
@@ -597,6 +621,40 @@ function JobsHome({ name, jobs, counts, offers, paperworkDue, profile, onOpen, g
           {shown.map((j, i) => <JobCard key={j.id} job={j} index={i} onOpen={() => onOpen(j.id)} />)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Projects (migration 117) ────────────────────────────────────────────────
+
+/** Project sites, grouped by project: name, date and time, WO number, a line of what it is. */
+function ProjectsTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => void }) {
+  const groups = new Map<string, WfJob[]>();
+  for (const j of sortTechJobs(jobs)) {
+    const k = j.projectName?.trim() || 'Project';
+    groups.set(k, [...(groups.get(k) ?? []), j]);
+  }
+  if (jobs.length === 0) {
+    return <Empty title="No projects" message="Project sites the office gives you show up here." />;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {[...groups.entries()].map(([name, list]) => {
+        const open = list.filter((j) => !isFinished(j));
+        return (
+          <section key={name} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <h2 className="wf-title" style={{ margin: 0 }}>{name}</h2>
+              <div className="wf-subtle" style={{ fontSize: 12.5 }}>
+                {list.length} {list.length === 1 ? 'site' : 'sites'}{open.length < list.length ? ` · ${list.length - open.length} finished` : ''}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 400px), 1fr))', gap: 12 }}>
+              {list.map((j, i) => <JobCard key={j.id} job={j} index={i} brief onOpen={() => onOpen(j.id)} />)}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -777,6 +835,10 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const canReport = working || job.status === 'workDone';
   const checklist = useMemo(() => listFor(lists, job.title, job.description), [lists, job.title, job.description]);
   const deliverables = checklist.items;
+  // A project site always needs the signature, or the reason there isn't one.
+  const project = !!job.isProject;
+  const jobForCloseout = project ? { ...job, signatureRequired: true } : job;
+  const [offOpen, setOffOpen] = useState(false);
 
   /** One closeout change — sent now, or kept on the phone with no signal. */
   const closeoutOp = (op: CloseoutOp) => {
@@ -811,6 +873,55 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
       on ? 'Clocked out.' : 'Clocked in. The job is in progress.',
     );
   };
+  // The project day (migration 117). Each tap: the time now, the position if
+  // the phone gives it within a few seconds, then into the outbox.
+  const where = async () => {
+    setLocating(true);
+    const pos = await getPosition(6000);
+    setLocating(false);
+    return { lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null };
+  };
+  const dayTap = async (kind: string, extra: Record<string, unknown>, label: string, sent: string) => {
+    const at = new Date();
+    const g = await where();
+    await act(makeAction('day', { number: job.number, kind, ...g, ...extra }, `${label} — WO ${job.number}`, at), sent);
+  };
+  const dayOn: DayActions = {
+    startTravel: (origin) => void dayTap('travel_start', { origin, dest: 'site' }, 'Start travel', 'Travel started. Drive safe.'),
+    startJob: async () => {
+      const at = new Date();
+      const g = await where();
+      if (dayState(job.myDay ?? []).stage === 'travel') {
+        await act(makeAction('day', { number: job.number, kind: 'travel_end', ...g }, `Arrived — WO ${job.number}`, at));
+      }
+      await act(makeAction('clock', { number: job.number, action: 'in', ...g }, `Start job on WO ${job.number}`, at),
+        'Job started. Your time on site is running.');
+    },
+    lunch: (start) => void dayTap(start ? 'lunch_start' : 'lunch_end', {}, start ? 'Lunch' : 'Back from lunch',
+      start ? 'Lunch started.' : 'Back on site.'),
+    offSite: () => setOffOpen(true),
+    travelAfter: (dest) => void dayTap('travel_start', { origin: 'site', dest }, 'Start travel', 'Travel started. Drive safe.'),
+    arrived: () => void dayTap('travel_end', {}, 'Arrived', 'Signed out for the day.'),
+  };
+  const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, true)];
+  const leaveSite = async (finished: boolean) => {
+    setOffOpen(false);
+    const at = new Date();
+    const g = await where();
+    if (dayState(job.myDay ?? []).stage === 'lunch') {
+      await act(makeAction('day', { number: job.number, kind: 'lunch_end', ...g }, `Back from lunch — WO ${job.number}`, at));
+    }
+    if (finished) {
+      await act(makeAction('report', { number: job.number, notes, answers }, `Job report for WO ${job.number}`));
+      setAnswers({});
+      await act(makeAction('workdone', { number: job.number, notes, clockOut: isClockedIn(job), ...g }, `Site finished on WO ${job.number}`, at),
+        'Site finished and sent to the office. Pick where you are heading.');
+    } else {
+      await act(makeAction('clock', { number: job.number, action: 'out', ...g }, `Off site — WO ${job.number}`, at),
+        'Off site. Pick where you are heading.');
+    }
+  };
+
   const toggleTask = (t: WfTask, done: boolean) => {
     void act(makeAction('task', { number: job.number, task: t.id, done }, `${done ? 'Tick' : 'Untick'} "${t.label}" on WO ${job.number}`));
   };
@@ -840,7 +951,16 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const showClock = !isFinished(job) && job.status !== 'declined' && job.status !== 'offered';
   let bottom: React.ReactNode = null;
   if (job.status === 'offered') bottom = <OfferButtons job={job} act={act} />;
-  else if (working) {
+  else if (working && project) {
+    bottom = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <button className="wf-btn wf-btn-outline" disabled={!dirty} onClick={() => void saveReport()}>
+          <Save size={17} /> {dirty ? 'Save notes' : 'Saved'}
+        </button>
+        <div className="wf-subtle" style={{ fontSize: 12, textAlign: 'center' }}>When the site is done: Off site, then This site is finished.</div>
+      </div>
+    );
+  } else if (working) {
     bottom = (
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="wf-btn wf-btn-outline" style={{ flex: 1 }} disabled={!dirty} onClick={() => void saveReport()}>
@@ -872,7 +992,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
         actions={canReport ? (
           <QuickActions
             job={job}
-            showClock={showClock}
+            showClock={showClock && !project}
             clockEnabled={working || isClockedIn(job)}
             locating={locating}
             photoBusy={!!ph.busy}
@@ -890,11 +1010,13 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
             <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={15} /> Directions</a>
           )}
         </>}
-        clock={showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
+        clock={project && (working || job.status === 'workDone')
+          ? <ProjectDayCard job={job} busy={locating} enabled={working} on={dayOn} />
+          : showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
         onToggleTask={working ? toggleTask : undefined}
         below={<>
           {job.status !== 'offered' && job.status !== 'declined' && (
-            <CloseoutCard job={job} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
+            <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
           )}
           {job.status !== 'offered' && job.status !== 'declined' && (
             <JobReport
@@ -912,6 +1034,10 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
         </>}
         bottom={bottom}
       />
+      {offOpen && (
+        <OffSiteDialog missing={offSiteMissing} onClose={() => setOffOpen(false)}
+          onBack={() => void leaveSite(false)} onFinished={() => void leaveSite(true)} />
+      )}
       {expenseOpen && <ExpenseDialog job={job} onClose={() => setExpenseOpen(false)} onSaved={() => { setExpenseOpen(false); void loadExpenses(); }} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {doneOpen && (

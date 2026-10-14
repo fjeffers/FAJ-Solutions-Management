@@ -16,9 +16,23 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/(.*)",
+        // Nothing may be shown inside another site's page ...
+        source: "/((?!sheet/).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
+      {
+        // ... except the live project sheet, inside our own Office > Projects
+        // (Fred, 2026-10-14: the office sees exactly what the client sees).
+        source: "/sheet/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+        ],
+      },
+      {
+        source: "/(.*)",
+        headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(self)" },

@@ -515,11 +515,15 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
  * client report. A site opens its work order.
  */
 export function ProjectsView({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; onOpen: (id: string) => void }) {
+  // Fred, 2026-10-14: "the client gets a URL and the technician gets an app"
+  // ... "the projects need to be clean". A short list of projects; opening one
+  // shows its live sheet exactly as the client sees it, with Send the sheet,
+  // the client report and a small Setup (sites, who gets alerts).
   const sites = useMemo(() => workOrders.filter((w) => w.is_project), [workOrders]);
   const [events, setEvents] = useState<(DayEvent & { woId: string })[]>([]);
-  const [receipts, setReceipts] = useState<Record<string, number>>({});
   const [lists, setLists] = useState<CloseoutList[]>([]);
   const [report, setReport] = useState<{ name: string; id: string } | null>(null);
+  const [openName, setOpenName] = useState<string | null>(null);
   const ids = useMemo(() => sites.map((w) => w.id), [sites]);
   useEffect(() => {
     const db = createClient();
@@ -529,12 +533,6 @@ export function ProjectsView({ workOrders, onOpen }: { workOrders: EnrichedWorkO
   useEffect(() => {
     if (ids.length === 0) return;
     void loadEvents(ids).then(setEvents);
-    void createClient().from('job_expenses').select('wo_id, amount, status').in('wo_id', ids).eq('status', 'approved')
-      .then(({ data }) => {
-        const m: Record<string, number> = {};
-        for (const r of (data as { wo_id: string; amount: number }[] | null) ?? []) m[r.wo_id] = (m[r.wo_id] ?? 0) + Number(r.amount);
-        setReceipts(m);
-      });
   }, [ids]);
 
   const groups = useMemo(() => {
@@ -546,57 +544,121 @@ export function ProjectsView({ workOrders, onOpen }: { workOrders: EnrichedWorkO
     return [...g.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [sites]);
 
+  const reportModal = report && <ProjectReport projectName={report.name} startWoId={report.id} lists={lists} onClose={() => setReport(null)} />;
+  const opened = openName ? groups.find(([n]) => n === openName) ?? null : null;
+  if (opened) {
+    const [name, list] = opened;
+    return (
+      <>
+        <ProjectSheetPanel name={name} list={list} onBack={() => setOpenName(null)} onOpen={onOpen}
+          onReport={() => setReport({ name: name === 'No project name' ? '' : name, id: list[0].id })} />
+        {reportModal}
+      </>
+    );
+  }
+
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   return (
-    <div className="wf" style={{ padding: 16, maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="wf" style={{ padding: 16, maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div>
         <h1 className="wf-h1" style={{ margin: 0 }}>Projects</h1>
-        <div className="wf-subtle">Multi-day sites: travel, time on site, miles and receipts from the techs&apos; phones, and the report for the client.</div>
+        <div className="wf-subtle">Your client follows each project on its live sheet. Your techs work it from the app.</div>
       </div>
-      <PushSwitch />
+      <PushSwitch hideWhenOn />
       {groups.length === 0 ? (
         <Section title="No projects yet">
           <div style={{ fontSize: 14, lineHeight: 1.6 }}>
             To start one: open a work order, tap <b>Edit job</b>, type the project&apos;s name under <b>Project / Campaign</b> and tick
-            <b> Project site</b>. Do that for each site (same project name). The techs on it then see it under <b>Projects</b> in their
-            app, with Start travel, Start job, Lunch, Off site and the drive to the hotel or home.
+            <b> Project site</b>. Do that for each site (same project name). The techs on it then see it under <b>Projects</b> in their app.
           </div>
         </Section>
       ) : groups.map(([name, list]) => {
         const listIds = new Set(list.map((w) => w.id));
-        const t = totalsOf(buildDayLogs(events.filter((e) => listIds.has(e.woId)), new Date(), TZ));
-        const spent = list.reduce((s, w) => s + (receipts[w.id] ?? 0), 0);
+        const evs = events.filter((e) => listIds.has(e.woId));
+        const last = evs.reduce((m, e) => (e.at > m ? e.at : m), '');
+        const t = totalsOf(buildDayLogs(evs, new Date(), TZ));
+        const techs = [...new Set(list.flatMap((w) => (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean) as string[]))];
+        const openSites = list.filter((w) => !['Work Done', 'Approved', 'Paid', 'Cancelled'].includes(w.wo_status ?? '')).length;
         return (
-          <Section key={name} title={name}
-            subtitle={`${list.length} ${list.length === 1 ? 'site' : 'sites'} · ${t.days} days · ${formatDuration(t.onSiteMs)} on site · ${formatDuration(t.travelMs)} travel · ${t.miles} mi · ${fmtMoney(spent)} receipts`}
-            right={<button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReport({ name: name === 'No project name' ? '' : name, id: list[0].id })}>
-              <FileText size={15} /> Client report
-            </button>}>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {list.map((w) => {
-                const s = totalsOf(buildDayLogs(events.filter((e) => e.woId === w.id), new Date(), TZ));
-                return (
-                  <button key={w.id} onClick={() => onOpen(w.id)}
-                    style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 4px', border: 'none', borderTop: '1px solid var(--wf-line)', background: 'transparent', font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'inherit' }}>
-                    <MapPin size={16} color="var(--wf-subtle)" />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <b>WO {w.wo_number}</b> · {w.site_name || w.title || 'Site'}{w.site_city ? `, ${w.site_city}` : ''}
-                      <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5 }}>
-                        {(w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean).join(', ') || 'No tech yet'}
-                        {' · '}{w.wo_status ?? 'Open'}{w.scheduled_date || w.start_date ? ` · ${fmtDay(String(w.scheduled_date || w.start_date).slice(0, 10))}` : ''}
-                      </span>
-                    </span>
-                    <span className="wf-subtle" style={{ fontSize: 12.5, textAlign: 'right' }}>
-                      {s.days ? `${formatDuration(s.onSiteMs)} on site · ${s.miles} mi` : 'Not started'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {name !== 'No project name' && <AlertPeople project={name} />}
-          </Section>
+          <button key={name} className="wf-card" onClick={() => setOpenName(name)}
+            style={{ padding: '14px 16px', textAlign: 'left', font: 'inherit', color: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <b style={{ fontSize: 16 }}>{name}</b>
+              <span className="wf-subtle" style={{ display: 'block', fontSize: 13, marginTop: 3 }}>
+                {list.length} {list.length === 1 ? 'site' : 'sites'} · {openSites} open · {techs.length} {techs.length === 1 ? 'tech' : 'techs'}
+                {t.days ? ` · ${formatDuration(t.onSiteMs)} on site · ${t.miles} mi` : ''}
+              </span>
+            </span>
+            <span className="wf-subtle" style={{ fontSize: 12.5, textAlign: 'right' }}>{last ? `Updated ${when(last)}` : 'Not started'}</span>
+            <span aria-hidden style={{ fontSize: 20, color: 'var(--wf-subtle)' }}>›</span>
+          </button>
         );
       })}
-      {report && <ProjectReport projectName={report.name} startWoId={report.id} lists={lists} onClose={() => setReport(null)} />}
+      {reportModal}
+    </div>
+  );
+}
+
+/** One project: its live sheet as the client sees it, and a small setup. */
+function ProjectSheetPanel({ name, list, onBack, onOpen, onReport }: {
+  name: string; list: EnrichedWorkOrder[]; onBack: () => void; onOpen: (id: string) => void; onReport: () => void;
+}) {
+  const db = useMemo(() => createClient(), []);
+  const noName = name === 'No project name';
+  const [url, setUrl] = useState<string | null>(null);
+  const [people, setPeople] = useState<AlertPersonRow[]>([]);
+  const [sending, setSending] = useState(false);
+  const [setup, setSetup] = useState(false);
+  useEffect(() => {
+    if (noName) return;
+    void db.rpc('project_sheet_token', { p_project: name, p_new: false })
+      .then(({ data }) => setUrl(typeof data === 'string' ? `${window.location.origin}/sheet/${data}` : null));
+    void db.from('project_alert_people').select('id, name, role, email, phone, auth_user_id, by_email, by_push, by_text').eq('project_name', name)
+      .then(({ data }) => setPeople((data as AlertPersonRow[] | null) ?? []));
+  }, [db, name, noName, setup]);
+
+  return (
+    <div className="wf" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onBack}>← Projects</button>
+        <h1 className="wf-h1" style={{ margin: 0, flex: 1, minWidth: 160, fontSize: 20 }}>{name}</h1>
+        {url && <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => setSending(true)}>Send the sheet</button>}
+        {url && <a className="wf-btn wf-btn-outline wf-btn-sm" href={url} target="_blank" rel="noopener noreferrer">Open as the client sees it</a>}
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onReport}><FileText size={15} /> Client report</button>
+        {!noName && <button className="wf-btn wf-btn-ghost wf-btn-sm" aria-expanded={setup} onClick={() => setSetup((s) => !s)}>{setup ? 'Hide setup' : 'Setup'}</button>}
+      </div>
+
+      {setup && !noName && (
+        <div className="wf-card" style={{ padding: 12 }}>
+          <div className="wf-label" style={{ marginBottom: 4 }}>Sites</div>
+          {list.map((w) => (
+            <button key={w.id} onClick={() => onOpen(w.id)}
+              style={{ display: 'flex', gap: 10, alignItems: 'center', width: '100%', padding: '8px 2px', border: 'none', borderTop: '1px solid var(--wf-line)', background: 'transparent', font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'inherit' }}>
+              <MapPin size={15} color="var(--wf-subtle)" />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <b>WO {w.wo_number}</b> · {w.site_name || w.title || 'Site'}{w.site_city ? `, ${w.site_city}` : ''}
+                <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5 }}>
+                  {(w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean).join(', ') || 'No tech yet'} · {w.wo_status ?? 'Open'}
+                </span>
+              </span>
+            </button>
+          ))}
+          <AlertPeople project={name} />
+        </div>
+      )}
+
+      {noName ? (
+        <Section title="Give these sites a project name">
+          <div style={{ fontSize: 14 }}>Open each work order, tap <b>Edit job</b> and type the project&apos;s name under <b>Project / Campaign</b>. Then it gets its live sheet.</div>
+        </Section>
+      ) : url ? (
+        <iframe title={`${name} live sheet`} src={url}
+          style={{ width: '100%', height: 'calc(100vh - 150px)', minHeight: 520, border: '1px solid var(--wf-line)', borderRadius: 10, background: '#fff' }} />
+      ) : <div className="wf-subtle">Loading the sheet…</div>}
+
+      {sending && url && (
+        <SendSheetDialog project={name} url={url} people={people.filter((p) => p.role !== 'owner')} onClose={() => setSending(false)} />
+      )}
     </div>
   );
 }

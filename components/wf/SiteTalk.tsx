@@ -11,7 +11,7 @@
 //
 // Shown at the top of a project job: the "without access" clock, the PM's
 // questions waiting for an answer, and "Can't get in?".
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DoorClosed, KeyRound, MessageCircleQuestion } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchTechMessages } from '@/lib/tech-portal';
@@ -19,6 +19,7 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import type { TechMessage } from '@/lib/types';
 import { milesBetween } from '@/lib/geo';
 import { Dialog } from './WfUi';
+import { PushSwitch } from './PushSwitch';
 
 export const NO_ACCESS_REASONS = [
   'Lockbox or door code not working',
@@ -70,7 +71,35 @@ export function useSiteTalk(number: string, enabled: boolean) {
     if (!err) await load();
     return err;
   };
-  return { msgs, contacts, load, send };
+  /** They've seen this job's messages (migration 123). */
+  const markRead = useCallback(async () => {
+    try { await createClient().rpc('wf_tech_mark_read', { p_wo_number: number }); } catch { /* next time */ }
+    await load();
+  }, [number, load]);
+  return { msgs, contacts, load, send, markRead };
+}
+
+/**
+ * Get the tech's attention (Fred, 2026-10-14: "needs to alert them, not just
+ * come through"): a buzz and a two-tone beep. Phones that block one still do
+ * the other; a closed app gets the phone pop-up instead (push).
+ */
+export function buzz() {
+  try { navigator.vibrate?.([250, 120, 250]); } catch { /* not on this phone */ }
+  try {
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(880, ctx.currentTime);
+    o.frequency.setValueAtTime(1175, ctx.currentTime + 0.18);
+    g.gain.setValueAtTime(0.18, ctx.currentTime);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.4);
+    window.setTimeout(() => { void ctx.close(); }, 700);
+  } catch { /* sound blocked until they tap once */ }
 }
 
 const mins = (fromIso: string, to = Date.now()) => Math.max(0, Math.round((to - Date.parse(fromIso)) / 60000));
@@ -109,8 +138,11 @@ export function SiteAccessBar({ number, talk, showProblem, late }: {
   number: string; talk: ReturnType<typeof useSiteTalk>; showProblem: boolean;
   late?: { marks: LateMark[]; load: () => Promise<void> };
 }) {
-  const { msgs, contacts, send } = talk;
+  const { msgs, contacts, send, markRead } = talk;
   const [tick, setTick] = useState(() => Date.now());
+  const [replyText, setReplyText] = useState('');
+  const [popBusy, setPopBusy] = useState(false);
+  const alerted = useRef<Set<string>>(new Set());
   const [reporting, setReporting] = useState(false);
   const [answering, setAnswering] = useState<string | null>(null);
   const [answer, setAnswer] = useState('');
@@ -131,6 +163,32 @@ export function SiteAccessBar({ number, talk, showProblem, late }: {
   }, [reply]);
   const questions = msgs.filter((m) => m.kind === 'question' && !m.resolved_at && !isMine(m) && m.for_me !== false);
   const lateNow = (late?.marks ?? []).filter((m) => !m.answered_at);
+  // New messages for them they haven't seen: pop up, buzz, beep.
+  const incoming = msgs.filter((m) => !isMine(m) && m.sender_role !== 'contractor' && m.for_me !== false && m.read === false
+    && m.kind !== 'question' && !(issue && m.parent_id === issue.id));
+  const pop = incoming[0] ?? null;
+  useEffect(() => {
+    const fresh = [...incoming, ...questions, ...(reply ? [reply] : [])].filter((m) => !alerted.current.has(m.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((m) => alerted.current.add(m.id));
+    buzz();
+  }, [incoming, questions, reply]);
+  const gotIt = async () => {
+    setPopBusy(true);
+    await markRead();
+    setReplyText('');
+    setPopBusy(false);
+  };
+  const replyToPop = async () => {
+    if (!pop || !replyText.trim()) return;
+    setPopBusy(true);
+    const err = await send({ kind: 'message', parent: pop.id, to: pop.on_sheet ? pop.sender_name : 'FAJ', body: replyText.trim() });
+    if (err) { toastError(err); setPopBusy(false); return; }
+    await markRead();
+    setReplyText('');
+    setPopBusy(false);
+    toastSuccess('Reply sent.');
+  };
 
   const resolve = async () => {
     if (!issue) return;
@@ -156,13 +214,16 @@ export function SiteAccessBar({ number, talk, showProblem, late }: {
     setBusy(false);
     if (err) { toastError(err); return; }
     setAnswer(''); setAnswering(null);
+    void markRead();
     toastSuccess('Answer sent.');
   };
 
-  if (!issue && questions.length === 0 && lateNow.length === 0 && !showProblem) return null;
+  if (!issue && questions.length === 0 && lateNow.length === 0 && !showProblem && !pop) return null;
   void tick;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+      {/* Alerts even with the app closed: ask once, then out of the way. */}
+      <PushSwitch hideWhenOn onText="" offText="Turn on alerts so the project manager can reach you right away, even with the app closed." />
       {lateNow.map((m) => <LateCard key={m.id} mark={m} onDone={() => void late?.load()} />)}
 
       {issue && (
@@ -215,6 +276,22 @@ export function SiteAccessBar({ number, talk, showProblem, late }: {
             setReporting(false);
             toastSuccess(stopped ? `Sent. The clock runs until you tap ${pr.button}.` : 'Sent to the project manager.');
           }} />
+      )}
+
+      {pop && !(issue && prompted && reply) && (
+        <Dialog title={`Message from ${pop.sender_name}`} onClose={() => void gotIt()}
+          footer={<>
+            <button className="wf-btn wf-btn-ghost" disabled={popBusy} onClick={() => void gotIt()}>Got it</button>
+            <button className="wf-btn wf-btn-navy" disabled={popBusy || !replyText.trim()} onClick={() => void replyToPop()}>Reply</button>
+          </>}>
+          <div className="wf-subtle" style={{ fontSize: 12, marginBottom: 4 }}>
+            {pop.sender_role === 'client' ? 'On the project sheet' : 'From FAJ'} · {new Date(pop.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · WO {number}
+          </div>
+          <p style={{ marginTop: 0, whiteSpace: 'pre-wrap', fontSize: 16 }}>{pop.content}</p>
+          {incoming.length > 1 && <div className="wf-subtle" style={{ fontSize: 12, marginBottom: 6 }}>{incoming.length - 1} more under Messages.</div>}
+          <textarea className="wf-input" rows={2} value={replyText} onChange={(e) => setReplyText(e.target.value)} style={{ fontSize: 16 }}
+            placeholder={`Reply to ${pop.sender_name}`} />
+        </Dialog>
       )}
 
       {issue && prompted && reply && (

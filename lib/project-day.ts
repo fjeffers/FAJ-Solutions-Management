@@ -103,6 +103,13 @@ export function dayState(events: DayEvent[], now: Date = new Date(), timeZone?: 
   let clockIn: string | null = null;
   for (const e of sortEvents(events)) {
     const t = Date.parse(e.at);
+    // A day left open (clocked in or off site, never signed out) is over once
+    // a tap comes on a later day — or this morning's Clock in is ignored
+    // (Fred, 2026-10-14: Clock in tapped 7 times and never moved on).
+    if ((st.stage === 'offsite' || st.stage === 'clocked') && dayOf(st.since, timeZone) !== dayOf(e.at, timeZone)) {
+      st = { stage: 'ready' };
+      clockIn = null;
+    }
     switch (e.kind) {
       case 'day_start':
         if (st.stage === 'ready') { clockIn = e.at; st = { stage: 'clocked', since: e.at }; }

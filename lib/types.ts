@@ -611,6 +611,8 @@ export type TechMessage = {
   mine?: boolean;
   /** Meant for this tech (to them, or to everyone). */
   for_me?: boolean;
+  /** The tech has seen it (migration 123). */
+  read?: boolean;
 };
 
 /** A tech in the roster, for the message dropdown. Names only, by design. */

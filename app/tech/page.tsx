@@ -31,7 +31,7 @@ import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type Closeou
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
-import { LeftSiteDialog, SiteAccessBar, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
+import { LeftSiteDialog, SiteAccessBar, buzz, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate } from '@/lib/utils';
@@ -110,6 +110,29 @@ export default function TechPortalPage() {
 
   const boxRef = useRef<Outbox | null>(null);
   const [, bump] = useReducer((n: number) => n + 1, 0);
+
+  // A new message alerts them anywhere in the app, not only on that job
+  // (Fred, 2026-10-14: "needs to alert them, not just come through").
+  const lastUnread = useRef<number | null>(null);
+  useEffect(() => {
+    if (!uid) return;
+    const check = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const [u1, u2] = await Promise.all([fetchTechUnread(), fetchTechDmUnread()]);
+        const n = u1 + u2;
+        if (lastUnread.current !== null && n > lastUnread.current) {
+          buzz();
+          toastInfo(n - lastUnread.current === 1 ? 'New message. Open the job or Messages to read it.' : `${n - lastUnread.current} new messages.`);
+        }
+        lastUnread.current = n;
+        setUnread(n);
+      } catch { /* no signal: try again shortly */ }
+    };
+    void check();
+    const t = window.setInterval(() => { void check(); }, 20_000);
+    return () => window.clearInterval(t);
+  }, [uid]);
   const box = boxRef.current;
   const pending = box?.pending ?? [];
   const jobs = useMemo(() => applyPending(officeJobs, pending), [officeJobs, pending]);
@@ -1802,6 +1825,11 @@ function JobMessages({ number, talk }: { number: string; talk?: ReturnType<typeo
     catch { setFailed(true); }
   }, [number, talk]);
   useEffect(() => { void load(); }, [load]);
+  // Opening the thread means they've seen it (migration 123).
+  useEffect(() => {
+    if (talk) { void talk.markRead(); return; }
+    void createClient().rpc('wf_tech_mark_read', { p_wo_number: number });
+  }, [number]); // eslint-disable-line react-hooks/exhaustive-deps
   const messages = talk ? talk.msgs : own;
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages?.length]);
 

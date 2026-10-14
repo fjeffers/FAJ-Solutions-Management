@@ -14,8 +14,10 @@ function base64ToBytes(b64: string): Uint8Array {
  * gets project alerts (migration 119); a tech gets the project sheet's
  * questions and replies (migration 121), with their own words.
  */
-export function PushSwitch({ onText = 'On. Project alerts pop up here the moment they happen.', offText = 'Off. Turn on to get project alerts on this phone or computer.' }: {
+export function PushSwitch({ onText = 'On. Project alerts pop up here the moment they happen.', offText = 'Off. Turn on to get project alerts on this phone or computer.', hideWhenOn = false }: {
   onText?: string; offText?: string;
+  /** Show nothing once pop-ups are on (or still checking): the job screen stays clean. */
+  hideWhenOn?: boolean;
 } = {}) {
   const [state, setState] = useState<'checking' | 'off' | 'on' | 'unsupported' | 'blocked'>('checking');
   const [busy, setBusy] = useState(false);
@@ -58,6 +60,7 @@ export function PushSwitch({ onText = 'On. Project alerts pop up here the moment
       setBusy(false);
     }
   };
+  if (hideWhenOn && (state === 'on' || state === 'checking')) return null;
   return (
     <div className="wf-card" style={{ padding: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
       <div style={{ flex: '1 1 220px' }}>

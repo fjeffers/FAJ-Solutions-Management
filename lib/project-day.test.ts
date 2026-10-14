@@ -165,3 +165,15 @@ describe('Clock in first (migration 118)', () => {
     expect(dayState([ev('in', '08:00'), ev('day_start', '09:00')], new Date(at('09:30')), TZ).stage).toBe('onsite');
   });
 });
+
+describe('a day left open does not block the next morning (2026-10-14)', () => {
+  it('yesterday clocked in, never signed out: this morning Clock in moves on', () => {
+    const evs = [ev('day_start', '20:46', {}, '2026-10-13'), ev('day_start', '08:56', {}, '2026-10-14')];
+    const st = dayState(evs, new Date(at('08:57', '2026-10-14')), TZ);
+    expect(st).toMatchObject({ stage: 'clocked', since: at('08:56', '2026-10-14') });
+  });
+  it('yesterday left off site: this morning Clock in moves on', () => {
+    const evs = [ev('in', '09:00', {}, '2026-10-13'), ev('out', '16:00', {}, '2026-10-13'), ev('day_start', '07:00', {}, '2026-10-14')];
+    expect(dayState(evs, new Date(at('07:05', '2026-10-14')), TZ).stage).toBe('clocked');
+  });
+});

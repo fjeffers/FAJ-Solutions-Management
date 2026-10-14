@@ -53,7 +53,8 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
   // The grid: the techs' lines and the site's own messages, in time order.
   type Item = { at: string; day: string; row?: SheetRow; msg?: SheetMessage };
   const items: Item[] = useMemo(() => {
-    const msgs = siteMsgs.filter((m) => !m.rowRef && !m.parentId && (!shownTech || m.from === shownTech || m.to === shownTech));
+    const msgs = siteMsgs.filter((m) => !m.rowRef && !m.parentId && !(m.kind === 'issue' && !m.resolvedAt)
+      && (!shownTech || m.from === shownTech || m.to === shownTech));
     const dayOf = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
     return [...rows.map((r) => ({ at: r.at, day: r.day, row: r })), ...msgs.map((m) => ({ at: m.at, day: dayOf(m.at), msg: m }))]
       .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -206,9 +207,9 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
                         <td data-k="Details">
                           {extra}
                           {r.receiptId && <> {extra ? '· ' : ''}<a href={`/sheet/${token}/receipt/${r.receiptId}`} target="_blank" rel="noopener noreferrer">Receipt</a></>}
-                          <button className="ps-link ps-noprint" onClick={() => setNoteFor(noteFor === r.id ? null : r.id)}>
-                            {r.kind === 'photo' ? 'Note or ask about this photo' : 'Note / ask'}
-                          </button>
+                          {r.kind === 'photo' && (
+                            <button className="ps-link ps-noprint" onClick={() => setNoteFor(noteFor === r.id ? null : r.id)}>Note or ask about this photo</button>
+                          )}
                         </td>
                         <td data-k="Photo">
                           {r.photo && (

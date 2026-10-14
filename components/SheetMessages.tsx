@@ -107,18 +107,24 @@ export function Bubble({ m, all, now, site, techs, send }: {
   const [replying, setReplying] = useState(false);
   const replies = all.filter((x) => x.parentId === m.id);
   const waiting = m.kind === 'issue' && !m.resolvedAt;
+  const access = m.body.startsWith('No access');
   return (
     <div className={`ps-bubble ${m.role}${waiting ? ' waiting' : ''}`}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
         <b>{m.from}</b>
         <span style={{ color: SUBTLE, fontSize: 12 }}>{time(m.at)} · {messageTitle(m, all)}</span>
       </div>
-      {m.kind === 'issue'
-        ? m.reason && <div style={{ marginTop: 2 }}>Why: {m.reason}</div>
+      {m.kind === 'issue' || m.kind === 'away' || m.kind === 'late'
+        ? <>
+          {m.reason && m.kind === 'issue' && <div style={{ marginTop: 2 }}>{access ? 'Why: ' : ''}{m.reason}</div>}
+          {m.kind === 'late' && m.body && <div style={{ marginTop: 2 }}>{m.body}</div>}
+          {m.kind === 'away' && m.body && m.body !== 'Stepped off site' && <div style={{ marginTop: 2 }}>{m.body}</div>}
+        </>
         : m.kind !== 'resolved' && m.body && <div style={{ whiteSpace: 'pre-wrap', marginTop: 2 }}>{m.body}</div>}
       {m.kind === 'issue' && (
         <div style={{ fontWeight: 700, marginTop: 4, color: waiting ? '#B42318' : '#047857' }}>
-          {waiting ? `Waiting without access · ${waitMinutes(m, now)} min` : `Waited ${waitMinutes(m, now)} min without access`}
+          {waiting ? `${access ? 'Waiting without access' : 'Stopped'} · ${waitMinutes(m, now)} min`
+            : `Waited ${waitMinutes(m, now)} min${access ? ' without access' : ''}`}
         </div>
       )}
       {m.kind === 'question' && !m.resolvedAt && <div style={{ color: '#B54708', fontSize: 12, marginTop: 2 }}>Waiting for an answer</div>}

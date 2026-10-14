@@ -64,6 +64,14 @@ export function registerTechHandlers(box: Outbox): void {
       p_answers: a.answers && typeof a.answers === 'object' ? a.answers : null,
     });
   });
+  // A message for the live project sheet (migration 121/122): the end-of-day
+  // report and "stepped off site" wait on the phone with no signal.
+  box.register('sitemsg', async (a) => {
+    await call('wf_tech_site_send', {
+      p_wo_number: a.number, p_body: typeof a.body === 'string' ? a.body : '', p_to: a.to ?? null,
+      p_kind: a.kind ?? 'message', p_reason: a.reason ?? null, p_parent: null,
+    });
+  });
   box.register('task', async (a) => {
     await call('wf_set_task', { p_wo_number: a.number, p_task_id: a.task, p_done: a.done });
   });

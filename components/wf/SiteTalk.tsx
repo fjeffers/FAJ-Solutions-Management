@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/client';
 import { fetchTechMessages } from '@/lib/tech-portal';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { TechMessage } from '@/lib/types';
+import { milesBetween } from '@/lib/geo';
 import { Dialog } from './WfUi';
 
 export const NO_ACCESS_REASONS = [
@@ -85,7 +86,29 @@ function markAsked(id: string) {
   } catch { /* fine: it may ask once more */ }
 }
 
-export function SiteAccessBar({ number, talk, working }: { number: string; talk: ReturnType<typeof useSiteTalk>; working: boolean }) {
+/**
+ * Problems on site: can't get in, missing materials, something else (Fred,
+ * 2026-10-14). Stopped → an "issue" with a clock that runs until the tech is
+ * back to work; still working → just a message to the project manager.
+ */
+export type ProblemKind = 'access' | 'materials' | 'other';
+export const PROBLEMS: Record<ProblemKind, { label: string; head: string; clock: string; done: string; ask: string; yes: string; still: string; button: string }> = {
+  access: { label: "Can't get into the building", head: 'No access to the building', clock: 'No access', done: 'Got access', ask: 'Do you have access now?', yes: "Yes, I'm in", still: 'Still no access.', button: "I'm in" },
+  materials: { label: 'Missing materials', head: 'Missing materials', clock: 'Waiting on materials', done: 'Back to work', ask: 'Can you get back to work?', yes: 'Yes, back to work', still: 'Still waiting on materials.', button: 'Back to work' },
+  other: { label: 'Something else', head: 'Stopped on site', clock: 'Stopped', done: 'Back to work', ask: 'Can you get back to work?', yes: 'Yes, back to work', still: 'Still stopped.', button: 'Back to work' },
+};
+export const problemOf = (body: string): ProblemKind =>
+  body.startsWith('Missing materials') ? 'materials' : body.startsWith('No access') ? 'access' : 'other';
+
+/**
+ * The top of a project job: only what needs the tech right now (Fred,
+ * 2026-10-14: "I need this clean"). A running clock, questions to answer,
+ * a late start, and one small "Problem on site?" while they're working.
+ */
+export function SiteAccessBar({ number, talk, showProblem, late }: {
+  number: string; talk: ReturnType<typeof useSiteTalk>; showProblem: boolean;
+  late?: { marks: LateMark[]; load: () => Promise<void> };
+}) {
   const { msgs, contacts, send } = talk;
   const [tick, setTick] = useState(() => Date.now());
   const [reporting, setReporting] = useState(false);
@@ -99,29 +122,31 @@ export function SiteAccessBar({ number, talk, working }: { number: string; talk:
   }, []);
 
   const issue = [...msgs].reverse().find((m) => m.kind === 'issue' && isMine(m) && !m.resolved_at) ?? null;
-  // Someone got back to them after they said they couldn't get in.
+  const p = PROBLEMS[problemOf(issue?.content ?? '')];
+  // Someone got back to them after they reported it.
   const reply = issue ? [...msgs].reverse().find((m) => !isMine(m) && m.sender_role !== 'contractor' && m.created_at > issue.created_at
-    && (m.parent_id === issue.id || (!m.parent_id && m.for_me !== false))) ?? null : null;
+    && (m.parent_id === issue.id || (!m.parent_id && (m.kind ?? 'message') === 'message' && m.for_me !== false))) ?? null : null;
   useEffect(() => {
     if (reply && !askedBefore(reply.id)) setPrompted(reply.id);
   }, [reply]);
   const questions = msgs.filter((m) => m.kind === 'question' && !m.resolved_at && !isMine(m) && m.for_me !== false);
+  const lateNow = (late?.marks ?? []).filter((m) => !m.answered_at);
 
   const resolve = async () => {
     if (!issue) return;
     setBusy(true);
-    const err = await send({ kind: 'resolved', parent: issue.id, body: 'Got access' });
+    const err = await send({ kind: 'resolved', parent: issue.id, body: p.done });
     setBusy(false);
     if (err) { toastError(err); return; }
     if (prompted) markAsked(prompted);
     setPrompted(null);
-    toastSuccess(`Logged: ${mins(issue.created_at)} min without access.`);
+    toastSuccess(`Logged: ${mins(issue.created_at)} min ${p === PROBLEMS.access ? 'without access' : 'stopped'}.`);
   };
   const notYet = async () => {
     if (!issue || !prompted) return;
     markAsked(prompted);
     setPrompted(null);
-    const err = await send({ kind: 'message', parent: issue.id, to: issue.to_name ?? 'Everyone', body: 'Still no access.' });
+    const err = await send({ kind: 'message', parent: issue.id, to: issue.to_name ?? 'Everyone', body: p.still });
     if (err) toastError(err);
   };
   const sendAnswer = async (q: TechMessage) => {
@@ -134,19 +159,21 @@ export function SiteAccessBar({ number, talk, working }: { number: string; talk:
     toastSuccess('Answer sent.');
   };
 
-  if (!issue && questions.length === 0 && !working) return null;
+  if (!issue && questions.length === 0 && lateNow.length === 0 && !showProblem) return null;
   void tick;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+      {lateNow.map((m) => <LateCard key={m.id} mark={m} onDone={() => void late?.load()} />)}
+
       {issue && (
         <div className="wf-card" style={{ padding: 12, borderColor: '#FDA29B', background: '#FEF3F2' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <DoorClosed size={18} color="#B42318" />
-            <b style={{ flex: 1, color: '#B42318' }}>No access · {mins(issue.created_at)} min</b>
-            <button className="wf-btn wf-btn-navy wf-btn-sm" disabled={busy} onClick={() => void resolve()}><KeyRound size={15} /> I&apos;m in</button>
+            <b style={{ flex: 1, color: '#B42318' }}>{p.clock} · {mins(issue.created_at)} min</b>
+            <button className="wf-btn wf-btn-navy wf-btn-sm" disabled={busy} onClick={() => void resolve()}><KeyRound size={15} /> {p.button}</button>
           </div>
           <div className="wf-subtle" style={{ fontSize: 13, marginTop: 4 }}>
-            {issue.reason}{issue.to_name ? ` · sent to ${issue.to_name}` : ''}. The clock runs until you tap I&apos;m in.
+            {issue.reason}{issue.to_name ? ` · sent to ${issue.to_name}` : ''}. The clock runs until you tap {p.button}.
           </div>
           {reply && <div style={{ marginTop: 6, fontSize: 14 }}><b>{reply.sender_name}:</b> {reply.content}</div>}
         </div>
@@ -171,70 +198,238 @@ export function SiteAccessBar({ number, talk, working }: { number: string; talk:
         </div>
       ))}
 
-      {!issue && working && (
-        <button className="wf-btn wf-btn-outline wf-btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setReporting(true)}>
-          <DoorClosed size={15} /> Can&apos;t get in?
+      {!issue && showProblem && (
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setReporting(true)}>
+          <DoorClosed size={15} /> Problem on site?
         </button>
       )}
 
       {reporting && (
-        <NoAccessDialog contacts={contacts} onClose={() => setReporting(false)}
-          onSend={async (to, reason, note) => {
-            const err = await send({ kind: 'issue', to, reason, body: note ? `No access to the building. ${note}` : 'No access to the building' });
+        <ProblemDialog contacts={contacts} onClose={() => setReporting(false)}
+          onSend={async (kind, to, reason, stopped, note) => {
+            const pr = PROBLEMS[kind];
+            const err = stopped
+              ? await send({ kind: 'issue', to, reason, body: note ? `${pr.head}. ${note}` : pr.head })
+              : await send({ kind: 'message', to, body: `${pr.head} (still working): ${reason}${note ? `. ${note}` : ''}` });
             if (err) { toastError(err); return; }
             setReporting(false);
-            toastSuccess(`Sent${to && to !== 'Everyone' ? ` to ${to}` : ''}. The clock is running until you tap I'm in.`);
+            toastSuccess(stopped ? `Sent. The clock runs until you tap ${pr.button}.` : 'Sent to the project manager.');
           }} />
       )}
 
       {issue && prompted && reply && (
-        <Dialog title="Do you have access now?" onClose={() => { markAsked(prompted); setPrompted(null); }}
+        <Dialog title={p.ask} onClose={() => { markAsked(prompted); setPrompted(null); }}
           footer={<>
             <button className="wf-btn wf-btn-ghost" onClick={() => void notYet()}>Not yet</button>
-            <button className="wf-btn wf-btn-navy" disabled={busy} onClick={() => void resolve()}><KeyRound size={16} /> Yes, I&apos;m in</button>
+            <button className="wf-btn wf-btn-navy" disabled={busy} onClick={() => void resolve()}><KeyRound size={16} /> {p.yes}</button>
           </>}>
           <p style={{ marginTop: 0 }}><b>{reply.sender_name}:</b> {reply.content}</p>
-          <p className="wf-subtle" style={{ marginBottom: 0 }}>Without access so far: {mins(issue.created_at)} min (WO {number}).</p>
+          <p className="wf-subtle" style={{ marginBottom: 0 }}>{p.clock} so far: {mins(issue.created_at)} min (WO {number}).</p>
         </Dialog>
       )}
     </div>
   );
 }
 
-function NoAccessDialog({ contacts, onSend, onClose }: {
-  contacts: SiteContact[]; onSend: (to: string, reason: string, note: string) => Promise<void>; onClose: () => void;
+function ProblemDialog({ contacts, onSend, onClose }: {
+  contacts: SiteContact[];
+  onSend: (kind: ProblemKind, to: string, reason: string, stopped: boolean, note: string) => Promise<void>;
+  onClose: () => void;
 }) {
-  const [to, setTo] = useState(contacts.find((c) => c.role === 'pm')?.name ?? 'Everyone');
+  const pmName = () => contacts.find((c) => c.role === 'pm')?.name ?? 'Everyone';
+  const [kind, setKind] = useState<ProblemKind | null>(null);
+  const [to, setTo] = useState(pmName());
+  const [reason, setReason] = useState('');
+  const [text, setText] = useState('');
+  const [note, setNote] = useState('');
+  const [stopped, setStopped] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (to === 'Everyone') setTo(pmName()); }, [contacts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const why = kind === 'access' ? (reason === 'Other' ? text.trim() : reason) : text.trim();
+  const isStopped = kind === 'access' ? true : stopped;
+  const ready = !!kind && !!why && isStopped !== null;
+
+  return (
+    <Dialog title={kind ? PROBLEMS[kind].label : 'Problem on site'} onClose={onClose}
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" onClick={kind ? () => { setKind(null); setReason(''); setText(''); setStopped(null); } : onClose}>{kind ? 'Back' : 'Cancel'}</button>
+        {kind && (
+          <button className="wf-btn wf-btn-navy" disabled={busy || !ready}
+            onClick={async () => { setBusy(true); await onSend(kind, to, why, !!isStopped, note.trim()); setBusy(false); }}>Send now</button>
+        )}
+      </>}>
+      {!kind ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(Object.keys(PROBLEMS) as ProblemKind[]).map((k) => (
+            <button key={k} type="button" className="wf-btn wf-btn-outline" style={{ justifyContent: 'flex-start' }} onClick={() => setKind(k)}>{PROBLEMS[k].label}</button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <label className="wf-label" htmlFor="pb-to">Send to</label>
+          <select id="pb-to" className="wf-input" style={{ fontSize: 16, marginBottom: 10 }} value={to} onChange={(e) => setTo(e.target.value)}>
+            {contacts.map((c) => <option key={c.name} value={c.name}>{c.name}{c.role === 'pm' ? ' (project manager)' : ''}</option>)}
+            <option value="Everyone">Everyone on the project sheet</option>
+          </select>
+
+          {kind === 'access' ? (
+            <>
+              <div className="wf-label">Why?</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                {[...NO_ACCESS_REASONS, 'Other'].map((r) => (
+                  <button key={r} type="button" className={`wf-btn ${reason === r ? 'wf-btn-navy' : 'wf-btn-outline'}`} style={{ justifyContent: 'flex-start' }} onClick={() => setReason(r)}>{r}</button>
+                ))}
+              </div>
+              {reason === 'Other' && (
+                <input className="wf-input" style={{ marginTop: 8, fontSize: 16 }} autoFocus value={text} maxLength={200} onChange={(e) => setText(e.target.value)} placeholder="What's stopping you?" />
+              )}
+            </>
+          ) : (
+            <>
+              <label className="wf-label" htmlFor="pb-what">{kind === 'materials' ? "What's missing, and how many?" : "What's wrong?"}</label>
+              <textarea id="pb-what" className="wf-input" rows={3} autoFocus value={text} maxLength={500} onChange={(e) => setText(e.target.value)} style={{ fontSize: 16 }}
+                placeholder={kind === 'materials' ? 'e.g. 2 boxes of Cat6, 1 24-port patch panel, 50 RJ45 jacks' : 'Tell the project manager what happened'} />
+              <div className="wf-label" style={{ marginTop: 10 }}>Can you keep working?</div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                <button type="button" className={`wf-btn ${stopped === false ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setStopped(false)}>Yes, on other work</button>
+                <button type="button" className={`wf-btn ${stopped === true ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setStopped(true)}>No, I&apos;m stopped</button>
+              </div>
+            </>
+          )}
+
+          <textarea className="wf-input" rows={2} style={{ marginTop: 10, fontSize: 16 }} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)}
+            placeholder="Anything else for them (optional)" />
+          <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 6 }}>
+            {isStopped ? 'A clock starts now and runs until you tap back to work. It goes on the project sheet.' : 'The project manager gets it on the project sheet right away.'}
+          </div>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+// ── Running late (migration 122) ────────────────────────────────────────────
+// Fred, 2026-10-14: "even if the schedule time and the tech is not there, mark
+// late after 30 min, with a reason ... especially if there are multiple days".
+// The database flags it every scheduled day; the tech says why here.
+
+export const LATE_REASONS = ['Traffic', 'Previous site ran over', 'Picking up parts or material', 'Car trouble', 'Personal or emergency'];
+export type LateMark = { id: string; day: string; start: string | null; due_at: string; reason: string | null; answered_at: string | null };
+
+export function useLateMarks(number: string, enabled: boolean) {
+  const [marks, setMarks] = useState<LateMark[]>([]);
+  const load = useCallback(async () => {
+    try {
+      const { data } = await createClient().rpc('wf_tech_late', { p_wo_number: number });
+      setMarks(Array.isArray(data) ? (data as LateMark[]) : []);
+    } catch { /* no signal: keep what's showing */ }
+  }, [number]);
+  useEffect(() => {
+    if (!enabled) return;
+    void load();
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') void load(); }, 60_000);
+    return () => window.clearInterval(t);
+  }, [enabled, load]);
+  return { marks, load };
+}
+
+export function LateCard({ mark, onDone }: { mark: LateMark; onDone: () => void }) {
   const [reason, setReason] = useState('');
   const [other, setOther] = useState('');
-  const [note, setNote] = useState('');
+  const [eta, setEta] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (contacts.length > 0 && to === 'Everyone') setTo(contacts.find((c) => c.role === 'pm')?.name ?? 'Everyone'); }, [contacts]); // eslint-disable-line react-hooks/exhaustive-deps
   const why = reason === 'Other' ? other.trim() : reason;
+  const send = async () => {
+    setBusy(true);
+    try {
+      const { data, error } = await createClient().rpc('wf_tech_late_reason', { p_id: mark.id, p_reason: why, p_eta_min: eta, p_note: null });
+      if (error || !(data as { ok?: boolean } | null)?.ok) { toastError(error ? 'No signal — try again when you have it.' : "Couldn't send that."); return; }
+      toastSuccess('Sent. The project manager can see it.');
+      onDone();
+    } finally { setBusy(false); }
+  };
   return (
-    <Dialog title="No access to the building" onClose={onClose}
-      footer={<>
-        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-navy" disabled={busy || !why}
-          onClick={async () => { setBusy(true); await onSend(to, why, note.trim()); setBusy(false); }}>Send now</button>
-      </>}>
-      <label className="wf-label" htmlFor="na-to">Send to</label>
-      <select id="na-to" className="wf-input" style={{ fontSize: 16, marginBottom: 10 }} value={to} onChange={(e) => setTo(e.target.value)}>
-        {contacts.map((c) => <option key={c.name} value={c.name}>{c.name}{c.role === 'pm' ? ' (project manager)' : ''}</option>)}
-        <option value="Everyone">Everyone on the project sheet</option>
-      </select>
-      <div className="wf-label">Why?</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-        {[...NO_ACCESS_REASONS, 'Other'].map((r) => (
-          <button key={r} type="button" className={`wf-btn ${reason === r ? 'wf-btn-navy' : 'wf-btn-outline'}`} style={{ justifyContent: 'flex-start' }} onClick={() => setReason(r)}>{r}</button>
+    <div className="wf-card" style={{ padding: 12, borderColor: '#FEC84B', background: '#FFFAEB' }}>
+      <b>You&apos;re past the {mark.start ?? 'scheduled'} start</b>
+      <div className="wf-subtle" style={{ fontSize: 13, marginTop: 2 }}>The project manager sees you&apos;re not on site yet. What&apos;s going on?</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+        {[...LATE_REASONS, 'Other'].map((r) => (
+          <button key={r} type="button" className={`wf-btn wf-btn-sm ${reason === r ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setReason(r)}>{r}</button>
         ))}
       </div>
       {reason === 'Other' && (
-        <input className="wf-input" style={{ marginTop: 8, fontSize: 16 }} autoFocus value={other} maxLength={200} onChange={(e) => setOther(e.target.value)} placeholder="What's stopping you?" />
+        <input className="wf-input" style={{ marginTop: 8, fontSize: 16 }} value={other} maxLength={200} onChange={(e) => setOther(e.target.value)} placeholder="What's going on?" />
       )}
-      <textarea className="wf-input" rows={2} style={{ marginTop: 10, fontSize: 16 }} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)}
-        placeholder="Anything else for them (optional)" />
-      <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 6 }}>A clock starts now and runs until you tap I&apos;m in. It goes on the project sheet.</div>
+      <div className="wf-label" style={{ marginTop: 10 }}>There in about</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+        {[10, 20, 30, 45, 60].map((m) => (
+          <button key={m} type="button" className={`wf-btn wf-btn-sm ${eta === m ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setEta(eta === m ? null : m)}>{m === 60 ? '1 hr+' : `${m} min`}</button>
+        ))}
+      </div>
+      <button className="wf-btn wf-btn-gold" style={{ marginTop: 10 }} disabled={busy || !why} onClick={() => void send()}>Send</button>
+    </div>
+  );
+}
+
+// ── Stepped off site (migration 122) ────────────────────────────────────────
+// Fred, 2026-10-14: "he leaves the site, the GPS should show him off site and
+// ask a reason: break, lunch, leaving for the day or other, he explains; the
+// PM gets that notification". A phone only shares its position while the app
+// is open, so this checks while the job is on screen (and the moment it opens).
+
+/** Farther than this from the site, twice in a row, counts as off site. */
+const AWAY_MILES = 0.25;
+const NEAR_MILES = 0.15;
+/** A position this vague (meters) is ignored either way. */
+const MAX_ACCURACY_M = 300;
+
+export function useLeftSite(siteLat: number | null, siteLng: number | null, enabled: boolean) {
+  const [away, setAway] = useState(false);
+  const [quietUntil, setQuietUntil] = useState(0);
+  const [backAt, setBackAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (!enabled || siteLat == null || siteLng == null || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    let far = 0, near = 0;
+    const id = navigator.geolocation.watchPosition((p) => {
+      if (p.coords.accuracy > MAX_ACCURACY_M) return;
+      const miles = milesBetween(siteLat, siteLng, p.coords.latitude, p.coords.longitude);
+      if (miles > AWAY_MILES) { far += 1; near = 0; } else if (miles < NEAR_MILES) { near += 1; far = 0; }
+      if (far >= 2 && Date.now() > quietUntil) setAway(true);
+      if (near >= 2) setBackAt(Date.now());
+    }, () => { /* no position: nothing to say */ }, { enableHighAccuracy: false, maximumAge: 60_000, timeout: 30_000 });
+    return () => navigator.geolocation.clearWatch(id);
+  }, [enabled, siteLat, siteLng, quietUntil]);
+  return {
+    away,
+    backAt,
+    /** Answered (or "I'm still here"): don't ask again for a while. */
+    dismiss: (minutes = 30) => { setAway(false); setQuietUntil(Date.now() + minutes * 60_000); },
+  };
+}
+
+export const AWAY_REASONS = ['Break', 'Lunch', 'Leaving for the day'];
+
+export function LeftSiteDialog({ onPick, onStillHere }: { onPick: (reason: string, note: string) => void; onStillHere: () => void }) {
+  const [reason, setReason] = useState('');
+  const [note, setNote] = useState('');
+  return (
+    <Dialog title="Looks like you left the site" onClose={onStillHere}
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" onClick={onStillHere}>I&apos;m still on site</button>
+        <button className="wf-btn wf-btn-navy" disabled={!reason || (reason === 'Other' && !note.trim())} onClick={() => onPick(reason, note.trim())}>Send</button>
+      </>}>
+      <p style={{ marginTop: 0 }}>Your phone shows you away from the site. Why?</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {[...AWAY_REASONS, 'Other'].map((r) => (
+          <button key={r} type="button" className={`wf-btn ${reason === r ? 'wf-btn-navy' : 'wf-btn-outline'}`} style={{ justifyContent: 'flex-start' }} onClick={() => setReason(r)}>{r}</button>
+        ))}
+      </div>
+      {(reason === 'Other' || reason === 'Break') && (
+        <input className="wf-input" style={{ marginTop: 8, fontSize: 16 }} value={note} maxLength={300} onChange={(e) => setNote(e.target.value)}
+          placeholder={reason === 'Other' ? "Tell the project manager what's going on" : 'Anything to add (optional)'} />
+      )}
+      <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 6 }}>The project manager gets this on the project sheet.</div>
     </Dialog>
   );
 }

@@ -48,9 +48,11 @@ export type SheetInput = {
     created_at: string; paid_by?: string | null;
   }[];
   lists: CloseoutList[];
+  /** Not on site 30 minutes after the start (project_late, migration 122). */
+  lates?: { wo_id: string; tech: string; due_at: string; start_label?: string | null }[];
 };
 
-export type RowKind = 'clock' | 'drive' | 'arrive' | 'start' | 'lunch' | 'back' | 'off' | 'signout' | 'photo' | 'receipt' | 'signoff';
+export type RowKind = 'clock' | 'drive' | 'arrive' | 'start' | 'lunch' | 'back' | 'off' | 'signout' | 'photo' | 'receipt' | 'signoff' | 'late';
 
 export type SheetRow = {
   id: string; at: string; day: string; time: string;
@@ -212,6 +214,17 @@ export function buildSheet(i: SheetInput, now: Date = new Date(), timeZone = 'Am
       });
     }
 
+    // Late: not on site 30 minutes after the start (the why comes as a message).
+    for (const l of i.lates ?? []) {
+      if (l.wo_id !== j.id || !Number.isFinite(Date.parse(l.due_at))) continue;
+      rows.push({
+        id: `${j.id}:late:${l.tech}:${l.due_at}`, at: l.due_at, day: dayOf(l.due_at, timeZone), time: time(l.due_at),
+        tech: str(l.tech), kind: 'late', activity: 'Not on site yet',
+        where: '', ...base, details: `30 min past the ${str(l.start_label) || 'scheduled'} start`,
+        miles: null, photo: null, amount: null, receiptId: null,
+      });
+    }
+
     // The customer's sign-off, or why there isn't one.
     const c = parseCloseout(j.closeout);
     const done = c.signoff && Number.isFinite(Date.parse(c.signoff.signedAt))
@@ -358,7 +371,7 @@ export function sheetEmailHtml(s: Sheet, o: {
 // messages meant for the sheet (on_sheet) ever get here: a tech's messages to
 // FAJ stay private.
 
-export type SheetMessageKind = 'message' | 'question' | 'answer' | 'note' | 'issue' | 'resolved';
+export type SheetMessageKind = 'message' | 'question' | 'answer' | 'note' | 'issue' | 'resolved' | 'report' | 'away' | 'late';
 export type SheetMessage = {
   id: string; wo: string; at: string; from: string;
   /** client = someone on the sheet (the PM or the client); tech; office. */
@@ -367,7 +380,7 @@ export type SheetMessage = {
   rowRef: string; parentId: string; resolvedAt: string;
 };
 
-const MESSAGE_KINDS: SheetMessageKind[] = ['message', 'question', 'answer', 'note', 'issue', 'resolved'];
+const MESSAGE_KINDS: SheetMessageKind[] = ['message', 'question', 'answer', 'note', 'issue', 'resolved', 'report', 'away', 'late'];
 
 /** work_order_messages rows → clean sheet messages, oldest first. */
 export function parseSheetMessages(raw: unknown): SheetMessage[] {
@@ -400,8 +413,13 @@ export function messageTitle(m: SheetMessage, all: SheetMessage[] = []): string 
     case 'issue': return `${m.body || 'No access to the building'}${to}`;
     case 'resolved': {
       const issue = all.find((x) => x.id === m.parentId);
-      return issue ? `Has access now · waited ${waitMinutes({ at: issue.at, resolvedAt: m.at })} min without access` : 'Has access now';
+      const access = !issue || issue.body.startsWith('No access');
+      const head = access ? 'Has access now' : 'Back to work';
+      return issue ? `${head} · waited ${waitMinutes({ at: issue.at, resolvedAt: m.at })} min${access ? ' without access' : ''}` : head;
     }
+    case 'report': return 'End-of-day report';
+    case 'away': return `Stepped off site: ${m.reason || 'other'}`;
+    case 'late': return `Running late: ${m.reason || 'no reason given'}`;
     case 'question': return `Asked a question${to}`;
     case 'note': return `Added a note${to}`;
     case 'answer': return `Answered${to}`;

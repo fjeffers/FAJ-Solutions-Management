@@ -31,7 +31,7 @@ import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type Closeou
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
-import { SiteAccessBar, sendSiteMessage, useSiteTalk } from '@/components/wf/SiteTalk';
+import { LeftSiteDialog, SiteAccessBar, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate } from '@/lib/utils';
@@ -844,10 +844,13 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const jobForCloseout = project ? { ...job, signatureRequired: true } : job;
   // The live sheet's messages: No access, the PM's questions (migration 121).
   const talk = useSiteTalk(job.number, project && job.status !== 'offered' && job.status !== 'declined');
+  // Running late, and stepped off site (migration 122).
+  const late = useLateMarks(job.number, project && working);
   const [offOpen, setOffOpen] = useState(false);
   // A project site shows only its date, time, description and the day card
   // until Start job; the whole job opens while they're on site.
   const dayStage = project ? dayState(job.myDay ?? []).stage : null;
+  const left = useLeftSite(job.siteLat, job.siteLng, project && working && dayStage === 'onsite');
   const simple = project && dayStage !== 'onsite' && dayStage !== 'lunch';
 
   /** One closeout change — sent now, or kept on the phone with no signal. */
@@ -917,7 +920,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     arrived: () => void dayTap('travel_end', {}, 'Arrived', 'Signed out for the day.'),
   };
   const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, true)];
-  const leaveSite = async (finished: boolean) => {
+  const leaveSite = async (finished: boolean, report?: { done: string; left: string }) => {
     setOffOpen(false);
     const at = new Date();
     const g = await where();
@@ -932,6 +935,12 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     } else {
       await act(makeAction('clock', { number: job.number, action: 'out', ...g }, `Off site — WO ${job.number}`, at),
         'Off site. Pick where you are heading.');
+      // Today's report goes on the project sheet (Fred, 2026-10-14: "what was
+      // done, what's remaining, and then it asks traveling to home or hotel").
+      if (report?.done) {
+        const body = `Done today: ${report.done}${report.left ? `\nStill to do: ${report.left}` : ''}`;
+        await act(makeAction('sitemsg', { number: job.number, kind: 'report', body, to: 'Everyone' }, `Today's report for WO ${job.number}`, at));
+      }
     }
   };
 
@@ -1026,7 +1035,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
         </>}
         clock={project && (working || job.status === 'workDone')
           ? <>
-            <SiteAccessBar number={job.number} talk={talk} working={working} />
+            <SiteAccessBar number={job.number} talk={talk} late={late}
+              showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
             <ProjectDayCard job={job} busy={locating} enabled={working} on={dayOn} onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
           </>
           : showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
@@ -1053,10 +1063,21 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
       />
       {offOpen && (
         <OffSiteDialog missing={offSiteMissing} onClose={() => setOffOpen(false)}
-          onBack={() => void leaveSite(false)} onFinished={() => void leaveSite(true)} />
+          onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
       )}
       {expenseOpen && <ExpenseDialog job={job} onClose={() => setExpenseOpen(false)} onSaved={() => { setExpenseOpen(false); void loadExpenses(); }} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
+      {left.away && project && working && (
+        <LeftSiteDialog onStillHere={() => left.dismiss(30)} onPick={(reason, note) => {
+          if (reason === 'Leaving for the day') { left.dismiss(600); setOffOpen(true); return; }
+          left.dismiss(reason === 'Lunch' ? 90 : 30);
+          if (reason === 'Lunch') dayOn.lunch(true);
+          void act(makeAction('sitemsg', {
+            number: job.number, kind: 'away', to: 'Everyone',
+            reason: reason === 'Other' ? note : reason, body: reason !== 'Other' && note ? note : '',
+          }, `Stepped off site — WO ${job.number}`), 'Sent to the project manager.');
+        }} />
+      )}
       {ph.pending && <PhotoLabelDialog preview={ph.pending.preview} choices={photoLabelChoices(deliverables)} onPick={ph.answer} onCancel={ph.cancel} />}
       {doneOpen && (
         <WorkDoneDialog

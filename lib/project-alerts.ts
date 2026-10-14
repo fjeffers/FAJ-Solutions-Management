@@ -9,7 +9,9 @@ export type AlertKind =
   | 'day_start' | 'travel_start' | 'travel_end' | 'sign_out' | 'start_job' | 'off_site'
   | 'site_finished' | 'photos' | 'receipt' | 'notes' | 'answers' | 'test'
   // Messages on the live sheet (migration 121).
-  | 'message' | 'issue' | 'resolved' | 'answer' | 'client_message';
+  | 'message' | 'issue' | 'resolved' | 'answer' | 'client_message'
+  // End of day, stepped off site, running late (migration 122).
+  | 'report' | 'away' | 'late';
 
 export type AlertRow = {
   id: string; user_id: string; wo_id: string | null; wo_number: string; project_name: string;
@@ -116,20 +118,42 @@ export function alertMessage(a: AlertRow, job: AlertJob | null, timeZone = 'Amer
       if (str(d.body)) lines.push(str(d.body));
       break;
     }
-    case 'issue':
-      title = `${who}: ${str(d.body) || 'No access to the building'}`;
-      if (str(d.reason)) lines.push(`Why: ${str(d.reason)}`);
-      lines.push('Waiting without access until they say they are in. Reply on the live sheet.');
+    case 'issue': {
+      const body = str(d.body) || 'No access to the building';
+      const access = body.startsWith('No access');
+      title = `${who}: ${body}`;
+      if (str(d.reason)) lines.push(access ? `Why: ${str(d.reason)}` : str(d.reason));
+      lines.push(access ? 'Waiting without access until they say they are in. Reply on the live sheet.'
+        : "Stopped until they're back to work. Reply on the live sheet.");
       break;
+    }
     case 'resolved': {
       const m = Number(d.waited_min);
-      title = `${who} has access now`;
-      if (Number.isFinite(m)) lines.push(`Waited ${m} min without access`);
+      const access = !str(d.body) || str(d.body) === 'Got access';
+      title = access ? `${who} has access now` : `${who} is back to work`;
+      if (Number.isFinite(m)) lines.push(`Waited ${m} min ${access ? 'without access' : 'stopped'}`);
       break;
     }
     case 'answer':
       title = `${who} answered${str(d.to) ? ` ${str(d.to)}` : ''}`;
       if (str(d.body)) lines.push(str(d.body));
+      break;
+    case 'report':
+      title = `${who}'s end-of-day report`;
+      if (str(d.body)) lines.push(...str(d.body).split('\n').map((l) => l.trim()).filter(Boolean));
+      break;
+    case 'away':
+      title = `${who} stepped off site: ${str(d.reason) || 'other'}`;
+      if (str(d.body) && str(d.body) !== 'Stepped off site') lines.push(str(d.body));
+      break;
+    case 'late':
+      if (str(d.reason)) {
+        title = `${who} is running late: ${str(d.reason)}`;
+        if (str(d.body)) lines.push(str(d.body));
+      } else {
+        title = `${who} is not on site yet`;
+        lines.push(`30 minutes past the ${str(d.start) || 'scheduled'} start. They've been asked why.`);
+      }
       break;
     case 'client_message': {
       const what = str(d.kind) === 'question' ? 'asked a question' : str(d.kind) === 'note' ? 'added a note' : 'sent a message';

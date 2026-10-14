@@ -49,7 +49,8 @@ function SiteReport({ sheet, site, messages, now }: { sheet: Sheet; site: SheetS
     })),
     ...messages.map((m) => ({
       at: m.at, day: dayOf(m.at), when: time(m.at), who: m.from, what: messageTitle(m, messages), where: '',
-      extra: m.kind === 'issue' ? [m.reason, `${waitMinutes(m, now)} min without access${m.resolvedAt ? '' : ' (still waiting)'}`].filter(Boolean).join(' · ')
+      extra: m.kind === 'issue' ? [m.reason, `${waitMinutes(m, now)} min ${m.body.startsWith('No access') ? 'without access' : 'stopped'}${m.resolvedAt ? '' : ' (still waiting)'}`].filter(Boolean).join(' · ')
+        : m.kind === 'away' || m.kind === 'late' ? [m.reason, m.body !== 'Stepped off site' ? m.body : ''].filter(Boolean).join(' · ')
         : m.kind === 'resolved' ? '' : m.body,
     })),
   ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -76,7 +77,7 @@ function SiteReport({ sheet, site, messages, now }: { sheet: Sheet; site: SheetS
           ['Miles', String(site.miles)],
           ['Photos', String(photos.length)],
           ['Receipts', money2(site.receiptTotal)],
-          ['Without access', waited ? `${waited} min` : 'None'],
+          ['Time stopped', waited ? `${waited} min` : 'None'],
         ].map(([k, v]) => <div key={k} className="pr-tile"><div className="k">{k}</div><div className="v">{v}</div></div>)}
       </div>
 

@@ -107,6 +107,12 @@ describe('buildSheet', () => {
     ]);
   });
 
+  it('a late flag is a line on the page', () => {
+    const s2 = buildSheet(input({ lates: [{ wo_id: 'wo-1', tech: 'Davis', due_at: at('08:30'), start_label: '8:00 AM' }] }), NOW);
+    const late = pageRows(s2, 'wo-1', 'Davis').find((r) => r.kind === 'late')!;
+    expect(late).toMatchObject({ time: '8:30 AM', activity: 'Not on site yet', details: '30 min past the 8:00 AM start' });
+  });
+
   it('a later visit to the same site lands on the same page', () => {
     const more = input();
     more.taps.push({ id: 'e9', wo_id: 'wo-1', contractor_name: 'Mike', kind: 'travel_end', at: at('07:30', '2026-10-15'), dest: 'site', miles: 3 });

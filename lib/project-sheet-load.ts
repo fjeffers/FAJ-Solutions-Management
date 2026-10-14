@@ -54,6 +54,7 @@ export async function loadSheet(admin: SupabaseClient, userId: string, project: 
       .in('wo_id', ids).neq('status', 'declined'),
     admin.from('closeout_lists').select('id, name, keywords, items, sort').eq('user_id', userId),
   ]);
+  const { data: lates } = await admin.from('project_late').select('wo_id, tech, due_at, start_label').in('wo_id', ids);
   const dayRows = (events.data ?? []) as Raw[];
   if (lookups > 0) await fillPlaces(admin as never, dayRows, lookups);
   return buildSheet({
@@ -62,6 +63,7 @@ export async function loadSheet(admin: SupabaseClient, userId: string, project: 
     photos: (photos.data ?? []) as SheetInput['photos'],
     expenses: (expenses.data ?? []) as SheetInput['expenses'],
     lists: parseCloseoutLists(lists.data),
+    lates: (lates ?? []) as NonNullable<SheetInput['lates']>,
   });
 }
 

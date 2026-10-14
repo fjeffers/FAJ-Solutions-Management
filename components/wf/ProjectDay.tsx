@@ -196,10 +196,35 @@ function DayLines({ log }: { log: DayLog }) {
 export function OffSiteDialog({ missing, onClose, onBack, onFinished }: {
   missing: string[];
   onClose: () => void;
-  onBack: () => void;
+  /** Coming back: what got done today and what's still left (Fred, 2026-10-14). */
+  onBack: (report: { done: string; left: string }) => void;
   onFinished: () => void;
 }) {
   const [finish, setFinish] = useState(false);
+  const [back, setBack] = useState(false);
+  const [done, setDone] = useState('');
+  const [left, setLeft] = useState('');
+  if (back) {
+    return (
+      <Dialog title="Before you go: today's report" onClose={onClose}
+        footer={<>
+          <button className="wf-btn wf-btn-ghost" onClick={() => setBack(false)}>Back</button>
+          <button className="wf-btn wf-btn-navy" disabled={!done.trim()} onClick={() => onBack({ done: done.trim(), left: left.trim() })}>
+            <LogOut size={17} /> Send and go off site
+          </button>
+        </>}>
+        <label className="wf-label" htmlFor="eod-done">What got done today?</label>
+        <textarea id="eod-done" className="wf-input" rows={3} autoFocus value={done} maxLength={900} onChange={(e) => setDone(e.target.value)}
+          style={{ fontSize: 16, marginBottom: 10 }} placeholder="e.g. Ran 12 drops on the 2nd floor, mounted the rack, tested 8 lines" />
+        <label className="wf-label" htmlFor="eod-left">What's still left?</label>
+        <textarea id="eod-left" className="wf-input" rows={3} value={left} maxLength={900} onChange={(e) => setLeft(e.target.value)}
+          style={{ fontSize: 16 }} placeholder="e.g. Terminate and test the last 4 drops, label the patch panel" />
+        <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 6 }}>
+          This goes on the project sheet for the project manager. Next, pick where you&apos;re heading and the drive is timed.
+        </div>
+      </Dialog>
+    );
+  }
   return (
     <Dialog title="Leaving the site" onClose={onClose}
       footer={finish ? <>
@@ -210,7 +235,7 @@ export function OffSiteDialog({ missing, onClose, onBack, onFinished }: {
       </> : <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>}>
       {!finish ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button style={plain} onClick={onBack}><LogOut size={19} /> Coming back to this site</button>
+          <button style={plain} onClick={() => setBack(true)}><LogOut size={19} /> Coming back to this site</button>
           <button style={navy} onClick={() => setFinish(true)}><CheckCircle2 size={19} /> This site is finished</button>
           <div className="wf-subtle" style={{ fontSize: 12.5 }}>
             Finished sends the job to the office. Every photo, the checklist and the signature need to be done first.

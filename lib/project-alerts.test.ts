@@ -89,6 +89,22 @@ describe('sheet messages (migration 121)', () => {
   it('a message to everyone goes to the whole list', () => {
     expect(recipientsForAlert(people, 'owner', { kind: 'message', detail: {} })).toHaveLength(4);
   });
+  it('missing materials: what is missing, and back to work', () => {
+    expect(alertMessage({ ...base, detail: { body: 'Missing materials', reason: '2 boxes of Cat6' } }, null))
+      .toMatchObject({ title: 'Mike: Missing materials', lines: ['2 boxes of Cat6', "Stopped until they're back to work. Reply on the live sheet."] });
+    expect(alertMessage({ ...base, kind: 'resolved', detail: { body: 'Back to work', waited_min: 25 } }, null))
+      .toMatchObject({ title: 'Mike is back to work', lines: ['Waited 25 min stopped'] });
+  });
+  it('end of day, stepped off, late', () => {
+    expect(alertMessage({ ...base, kind: 'report', detail: { body: 'Done today: racks 1-3\nStill to do: patching' } }, null))
+      .toMatchObject({ title: "Mike's end-of-day report", lines: ['Done today: racks 1-3', 'Still to do: patching'] });
+    expect(alertMessage({ ...base, kind: 'away', detail: { reason: 'Lunch', body: 'Stepped off site' } }, null))
+      .toMatchObject({ title: 'Mike stepped off site: Lunch', lines: [] });
+    expect(alertMessage({ ...base, kind: 'late', detail: { start: '8:00 AM' } }, null))
+      .toMatchObject({ title: 'Mike is not on site yet', lines: ["30 minutes past the 8:00 AM start. They've been asked why."] });
+    expect(alertMessage({ ...base, kind: 'late', detail: { reason: 'Traffic', body: 'Running late · there in about 20 min' } }, null).title)
+      .toBe('Mike is running late: Traffic');
+  });
   it('a message from the sheet goes to the office only (the PM wrote it)', () => {
     const to = recipientsForAlert(people, 'owner', { kind: 'client_message', detail: { to: 'Mike' } }).map((p) => p.name);
     expect(to.sort()).toEqual(['Ann', 'You']);

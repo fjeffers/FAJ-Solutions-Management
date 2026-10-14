@@ -8,7 +8,8 @@
 // remembers the site picked in the address so a copied link opens it.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { fmtSheetDay, money2, pageRows, type Sheet, type SheetRow } from '@/lib/project-sheet';
+import { fmtSheetDay, money2, openIssues, pageRows, type Sheet, type SheetMessage, type SheetRow } from '@/lib/project-sheet';
+import { Bubble, Composer, useSheetMessages } from './SheetMessages';
 
 const NAVY = '#0E1B2E';
 const GOLD = '#C9A24B';
@@ -18,8 +19,8 @@ const REFRESH_MS = 30_000;
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
 
-export default function ProjectSheetView({ sheet, token, initialSite, initialTech, updatedAt }: {
-  sheet: Sheet; token: string; initialSite: string | null; initialTech: string | null; updatedAt: string;
+export default function ProjectSheetView({ sheet, messages: initialMessages, token, initialSite, initialTech, updatedAt }: {
+  sheet: Sheet; messages: SheetMessage[]; token: string; initialSite: string | null; initialTech: string | null; updatedAt: string;
 }) {
   const router = useRouter();
   // Open sites first, then the busiest.
@@ -31,6 +32,21 @@ export default function ProjectSheetView({ sheet, token, initialSite, initialTec
   const shownTech = tech && site?.techs.includes(tech) ? tech : null;
   const rows = useMemo(() => (site ? pageRows(sheet, site.id, shownTech) : []), [sheet, site, shownTech]);
   const [photo, setPhoto] = useState<SheetRow | null>(null);
+  // Messages: notes under lines, questions for the tech, "No access" (migration 121).
+  const { messages, now, send } = useSheetMessages(token, initialMessages);
+  const siteMsgs = useMemo(() => (site ? messages.filter((m) => m.wo === site.wo) : []), [messages, site]);
+  const issues = site ? openIssues(messages, site.wo) : [];
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [composing, setComposing] = useState(false);
+  const crew = site ? [...new Set([...site.crew, ...site.techs])] : [];
+  // The grid: the techs' lines and the site's own messages, in time order.
+  type Item = { at: string; day: string; row?: SheetRow; msg?: SheetMessage };
+  const items: Item[] = useMemo(() => {
+    const msgs = siteMsgs.filter((m) => !m.rowRef && !m.parentId && (!shownTech || m.from === shownTech || m.to === shownTech));
+    const dayOf = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+    return [...rows.map((r) => ({ at: r.at, day: r.day, row: r })), ...msgs.map((m) => ({ at: m.at, day: dayOf(m.at), msg: m }))]
+      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  }, [rows, siteMsgs, shownTech]);
 
   // Keep the address in step with the page, so a copied link opens it.
   useEffect(() => {
@@ -119,6 +135,18 @@ export default function ProjectSheetView({ sheet, token, initialSite, initialTec
                 </div>
               </div>
 
+              {issues.map((m) => (
+                <div key={m.id} className="ps-issue">
+                  <Bubble m={m} all={siteMsgs} now={now} site={site.wo} techs={crew} send={send} />
+                </div>
+              ))}
+
+              <div className="ps-noprint" style={{ marginTop: 12 }}>
+                {composing
+                  ? <Composer site={site.wo} techs={crew} send={send} onDone={() => setComposing(false)} label="Message the site" />
+                  : <button className="ps-btn ps-btn-dark" onClick={() => setComposing(true)}>Message or ask the tech</button>}
+              </div>
+
               <div className="ps-tools ps-noprint">
                 {site.techs.length > 1 && (
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
@@ -140,12 +168,23 @@ export default function ProjectSheetView({ sheet, token, initialSite, initialTec
                   <tr><th>Time</th><th>Technician</th><th>Activity</th><th>Location</th><th>Miles</th><th>Details</th><th>Photo</th></tr>
                 </thead>
                 <tbody>
-                  {rows.length === 0 && <tr><td colSpan={7} style={{ color: SUBTLE }}>Nothing recorded on this site yet.</td></tr>}
-                  {rows.map((r, n) => {
-                    const newDay = n === 0 || rows[n - 1].day !== r.day;
+                  {items.length === 0 && <tr><td colSpan={7} style={{ color: SUBTLE }}>Nothing recorded on this site yet.</td></tr>}
+                  {items.map((it, n) => {
+                    const newDay = n === 0 || items[n - 1].day !== it.day;
+                    const dayRow = newDay ? <tr key={`d${it.day}`} className="ps-day"><td colSpan={7}>{fmtSheetDay(it.day)}</td></tr> : null;
+                    if (it.msg) {
+                      const m = it.msg;
+                      return [dayRow, (
+                        <tr key={m.id} className="ps-msgrow">
+                          <td colSpan={7}><Bubble m={m} all={siteMsgs} now={now} site={site.wo} techs={crew} send={send} /></td>
+                        </tr>
+                      )];
+                    }
+                    const r = it.row!;
+                    const notes = siteMsgs.filter((m) => m.rowRef === r.id && !m.parentId);
                     const extra = [r.details, r.amount != null ? money2(r.amount) : ''].filter(Boolean).join(' · ');
                     return [
-                      newDay ? <tr key={`d${r.day}`} className="ps-day"><td colSpan={7}>{fmtSheetDay(r.day)}</td></tr> : null,
+                      dayRow,
                       <tr key={r.id} className={fresh.has(r.id) ? 'ps-fresh' : undefined}>
                         <td data-k="Time" className="ps-time">{r.time}</td>
                         <td data-k="Technician">{r.tech || '—'}</td>
@@ -155,6 +194,9 @@ export default function ProjectSheetView({ sheet, token, initialSite, initialTec
                         <td data-k="Details">
                           {extra}
                           {r.receiptId && <> {extra ? '· ' : ''}<a href={`/sheet/${token}/receipt/${r.receiptId}`} target="_blank" rel="noopener noreferrer">Receipt</a></>}
+                          <button className="ps-link ps-noprint" onClick={() => setNoteFor(noteFor === r.id ? null : r.id)}>
+                            {r.kind === 'photo' ? 'Note or ask about this photo' : 'Note / ask'}
+                          </button>
                         </td>
                         <td data-k="Photo">
                           {r.photo && (
@@ -165,6 +207,17 @@ export default function ProjectSheetView({ sheet, token, initialSite, initialTec
                           )}
                         </td>
                       </tr>,
+                      notes.length > 0 || noteFor === r.id ? (
+                        <tr key={`n${r.id}`} className="ps-notesrow">
+                          <td colSpan={7}>
+                            {notes.map((m) => <Bubble key={m.id} m={m} all={siteMsgs} now={now} site={site.wo} techs={crew} send={send} />)}
+                            {noteFor === r.id && (
+                              <Composer site={site.wo} techs={crew} kind={r.kind === 'photo' ? 'question' : 'note'} to={r.tech && crew.includes(r.tech) ? r.tech : ''}
+                                rowRef={r.id} send={send} onDone={() => setNoteFor(null)} />
+                            )}
+                          </td>
+                        </tr>
+                      ) : null,
                     ];
                   })}
                 </tbody>
@@ -243,6 +296,18 @@ const CSS = `
 .ps-notes{background:#fff;border:1px solid ${LINE};border-radius:12px;padding:12px 16px;margin-top:12px;font-size:13.5px}
 .ps-notes h3{margin:0 0 6px;font-size:14px;color:${NAVY};border-bottom:2px solid ${GOLD};padding-bottom:4px}
 .ps-notes p{margin:4px 0}
+.ps-input{font:inherit;font-size:16px;padding:6px 8px;border:1px solid ${LINE};border-radius:8px;background:#fff;min-width:0}
+.ps-btn-dark{background:${NAVY};color:#fff}
+.ps-btn:disabled{opacity:.5;cursor:default}
+.ps-link{border:none;background:none;color:#1D4ED8;cursor:pointer;font:inherit;font-size:12px;padding:2px 0;display:block;text-align:left}
+.ps-compose{background:#fff;border:1px solid ${LINE};border-radius:10px;padding:8px;margin-top:6px}
+.ps-bubble{border-radius:10px;padding:8px 10px;font-size:13px;border:1px solid ${LINE};background:#fff;margin-top:4px}
+.ps-bubble.tech{background:#EEF4FF;border-color:#C7D7FE}
+.ps-bubble.client{background:#FFFBEB;border-color:#FDE68A}
+.ps-bubble.waiting{background:#FEF3F2;border-color:#FDA29B}
+.ps-issue{margin-top:12px}
+.ps-msgrow td,.ps-notesrow td{background:#FCFBF8}
+.ps-notesrow td{padding-left:24px}
 .ps-lightbox{position:fixed;inset:0;background:rgba(14,27,46,.8);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
 .ps-lightbox-in{background:#fff;border-radius:12px;padding:12px;max-width:min(900px,100%);max-height:100%;overflow:auto}
 .ps-lightbox-in img{max-width:100%;max-height:70vh;display:block;margin:0 auto;border-radius:8px}

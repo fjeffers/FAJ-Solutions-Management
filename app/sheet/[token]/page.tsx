@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { loadSheet, projectForToken } from '@/lib/project-sheet-load';
+import { loadSheet, loadSheetMessages, projectForToken } from '@/lib/project-sheet-load';
 import ProjectSheetView from '@/components/ProjectSheetView';
 
 // The live project sheet (migration 120), reached by the project's unguessable
@@ -20,8 +20,8 @@ export default async function SheetPage({ params, searchParams }: {
   const admin = createAdminClient();
   const p = await projectForToken(admin, token);
   if (!p) return notFound();
-  const sheet = await loadSheet(admin, p.userId, p.project, 1);
+  const [sheet, messages] = await Promise.all([loadSheet(admin, p.userId, p.project, 1), loadSheetMessages(admin, p.userId, p.project)]);
   return (
-    <ProjectSheetView sheet={sheet} token={token} initialSite={one(sp.site)} initialTech={one(sp.tech)} updatedAt={new Date().toISOString()} />
+    <ProjectSheetView sheet={sheet} messages={messages} token={token} initialSite={one(sp.site)} initialTech={one(sp.tech)} updatedAt={new Date().toISOString()} />
   );
 }

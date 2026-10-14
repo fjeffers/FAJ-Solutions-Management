@@ -5,7 +5,8 @@ import { vapidKeys } from '@/lib/push-keys';
 
 // Phone pop-ups for project alerts (migration 119).
 //   GET    → the public key the browser needs to sign up for pop-ups
-//   POST   → this device's pop-up sign-up, for the signed-in office login
+//   POST   → this device's pop-up sign-up, for the signed-in office login,
+//            or a tech's (the project sheet's questions and replies, migration 121)
 //   DELETE → stop pop-ups on this device ({ endpoint })
 export const dynamic = 'force-dynamic';
 
@@ -15,9 +16,10 @@ export async function GET() {
 }
 
 async function signedIn() {
-  const supabase = await createClient('admin');
-  const { data: { user } } = await supabase.auth.getUser();
-  return user;
+  const office = await (await createClient('admin')).auth.getUser();
+  if (office.data.user) return office.data.user;
+  const tech = await (await createClient('field')).auth.getUser();
+  return tech.data.user;
 }
 
 export async function POST(req: Request) {

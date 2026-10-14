@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { alertMessage, recipientsFor, toE164, canOpenApp, alertEmailHtml, OWNER_ALERT_EMAIL, type AlertRow } from './project-alerts';
+import { alertMessage, recipientsFor, recipientsForAlert, toE164, canOpenApp, alertEmailHtml, OWNER_ALERT_EMAIL, type AlertRow, type AlertPerson } from './project-alerts';
 
 const base: AlertRow = {
   id: 'a1', user_id: 'owner', wo_id: 'w1', wo_number: 'TEST-PRJ-1', project_name: 'TEST Mock Project',
@@ -64,5 +64,36 @@ describe('email', () => {
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
     expect(html).toContain('a &amp; b');
     expect(html).not.toContain('Open the job');
+  });
+});
+
+describe('sheet messages (migration 121)', () => {
+  const base: AlertRow = { id: 'a', user_id: 'owner', wo_id: 'w', wo_number: '4454', project_name: 'P', kind: 'issue', tech: 'Mike', at: '2026-10-14T11:52:00Z', detail: {} };
+  const person = (name: string, role: AlertPerson['role']): AlertPerson => ({ name, role, email: `${name}@x.com`, phone: null, auth_user_id: null, by_email: true, by_push: false, by_text: false });
+  const people = [person('You', 'owner'), person('Dana', 'pm'), person('Lee', 'pm'), person('Ann', 'assistant')];
+
+  it('No access: says why and that the clock is running', () => {
+    const m = alertMessage({ ...base, detail: { body: 'No access to the building', reason: 'Box code not working', to: 'Dana' } }, null);
+    expect(m.title).toBe('Mike: No access to the building');
+    expect(m.lines[0]).toBe('Why: Box code not working');
+  });
+  it('access granted: how long they waited', () => {
+    const m = alertMessage({ ...base, kind: 'resolved', detail: { waited_min: 38 } }, null);
+    expect(m.title).toBe('Mike has access now');
+    expect(m.lines).toEqual(['Waited 38 min without access']);
+  });
+  it("a tech's message to Dana goes to Dana and the office, not Lee", () => {
+    const to = recipientsForAlert(people, 'owner', { kind: 'issue', detail: { to: 'Dana' } }).map((p) => p.name);
+    expect(to.sort()).toEqual(['Ann', 'Dana', 'You']);
+  });
+  it('a message to everyone goes to the whole list', () => {
+    expect(recipientsForAlert(people, 'owner', { kind: 'message', detail: {} })).toHaveLength(4);
+  });
+  it('a message from the sheet goes to the office only (the PM wrote it)', () => {
+    const to = recipientsForAlert(people, 'owner', { kind: 'client_message', detail: { to: 'Mike' } }).map((p) => p.name);
+    expect(to.sort()).toEqual(['Ann', 'You']);
+    expect(recipientsForAlert([person('Dana', 'pm')], 'owner', { kind: 'client_message', detail: {} })[0].email).toBe(OWNER_ALERT_EMAIL);
+    expect(alertMessage({ ...base, kind: 'client_message', tech: 'Dana', detail: { kind: 'question', body: 'Different angle?', to: 'Mike' } }, null).title)
+      .toBe('Dana asked a question on the live sheet (to Mike)');
   });
 });

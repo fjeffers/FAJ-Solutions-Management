@@ -3,7 +3,7 @@
 // sheet shows are selected — no price, no tech pay, no contacts — and the page
 // hands the browser the finished lines, never these rows.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildSheet, type Sheet, type SheetInput } from './project-sheet';
+import { buildSheet, parseSheetMessages, type Sheet, type SheetInput, type SheetMessage } from './project-sheet';
 import { parseCloseoutLists } from './closeout';
 import { fillPlaces } from './places';
 
@@ -39,7 +39,7 @@ export async function projectJobIds(admin: SupabaseClient, userId: string, proje
  */
 export async function loadSheet(admin: SupabaseClient, userId: string, project: string, lookups = 2): Promise<Sheet> {
   const { data: jobs } = await admin.from('work_orders')
-    .select('id, wo_number, external_wo_id, title, description, site_name, site_address, site_city, site_state, site_zip, closeout_notes, custom_qa, closeout, wo_status')
+    .select('id, wo_number, external_wo_id, title, description, site_name, site_address, site_city, site_state, site_zip, closeout_notes, custom_qa, closeout, wo_status, lead_contractor_name, contractor_name, contractor_names')
     .eq('user_id', userId).eq('project_name', project).eq('is_project', true);
   const list = (jobs ?? []) as SheetInput['jobs'];
   const ids = list.map((j) => j.id);
@@ -63,4 +63,19 @@ export async function loadSheet(admin: SupabaseClient, userId: string, project: 
     expenses: (expenses.data ?? []) as SheetInput['expenses'],
     lists: parseCloseoutLists(lists.data),
   });
+}
+
+/**
+ * The project's messages meant for the sheet (migration 121). Never the
+ * private tech <-> FAJ ones: on_sheet is the gate.
+ */
+export async function loadSheetMessages(admin: SupabaseClient, userId: string, project: string): Promise<SheetMessage[]> {
+  const { data: jobs } = await admin.from('work_orders').select('wo_number').eq('user_id', userId).eq('project_name', project).eq('is_project', true);
+  const numbers = ((jobs ?? []) as { wo_number: string }[]).map((j) => j.wo_number).filter(Boolean);
+  if (numbers.length === 0) return [];
+  const { data } = await admin.from('work_order_messages')
+    .select('id, work_order_id, created_at, sender_name, sender_role, kind, to_name, content, reason, row_ref, parent_id, resolved_at')
+    .eq('user_id', userId).eq('on_sheet', true).in('work_order_id', numbers)
+    .order('created_at', { ascending: false }).limit(500);
+  return parseSheetMessages(data);
 }

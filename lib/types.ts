@@ -599,6 +599,18 @@ export type TechMessage = {
   sender_role: string;
   content: string;
   created_at: string;
+  // The live sheet's messages (migration 121).
+  kind?: 'message' | 'question' | 'answer' | 'note' | 'issue' | 'resolved';
+  to_name?: string | null;
+  on_sheet?: boolean;
+  reason?: string | null;
+  parent_id?: string | null;
+  resolved_at?: string | null;
+  row_ref?: string | null;
+  /** This tech sent it (with two techs on a job, the role alone can't say). */
+  mine?: boolean;
+  /** Meant for this tech (to them, or to everyone). */
+  for_me?: boolean;
 };
 
 /** A tech in the roster, for the message dropdown. Names only, by design. */
@@ -979,7 +991,7 @@ export type InvoicePayment = {
 
 // ─── Work Order Messages (pre-existing table, built outside this repo) ───────
 
-export type MessageSenderRole = 'admin' | 'contractor';
+export type MessageSenderRole = 'admin' | 'contractor' | 'client'; // client: a PM or client on the live project sheet (migration 121)
 
 export type WorkOrderMessage = {
   id: string;

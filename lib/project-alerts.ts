@@ -7,7 +7,9 @@
 
 export type AlertKind =
   | 'day_start' | 'travel_start' | 'travel_end' | 'sign_out' | 'start_job' | 'off_site'
-  | 'site_finished' | 'photos' | 'receipt' | 'notes' | 'answers' | 'test';
+  | 'site_finished' | 'photos' | 'receipt' | 'notes' | 'answers' | 'test'
+  // Messages on the live sheet (migration 121).
+  | 'message' | 'issue' | 'resolved' | 'answer' | 'client_message';
 
 export type AlertRow = {
   id: string; user_id: string; wo_id: string | null; wo_number: string; project_name: string;
@@ -107,6 +109,34 @@ export function alertMessage(a: AlertRow, job: AlertJob | null, timeZone = 'Amer
       break;
     }
     case 'test': title = 'Test alert: project alerts are working'; break;
+    // Messages on the live sheet (migration 121).
+    case 'message': {
+      const to = str(d.to);
+      title = `${who} sent a message${to ? ` to ${to}` : ''}`;
+      if (str(d.body)) lines.push(str(d.body));
+      break;
+    }
+    case 'issue':
+      title = `${who}: ${str(d.body) || 'No access to the building'}`;
+      if (str(d.reason)) lines.push(`Why: ${str(d.reason)}`);
+      lines.push('Waiting without access until they say they are in. Reply on the live sheet.');
+      break;
+    case 'resolved': {
+      const m = Number(d.waited_min);
+      title = `${who} has access now`;
+      if (Number.isFinite(m)) lines.push(`Waited ${m} min without access`);
+      break;
+    }
+    case 'answer':
+      title = `${who} answered${str(d.to) ? ` ${str(d.to)}` : ''}`;
+      if (str(d.body)) lines.push(str(d.body));
+      break;
+    case 'client_message': {
+      const what = str(d.kind) === 'question' ? 'asked a question' : str(d.kind) === 'note' ? 'added a note' : 'sent a message';
+      title = `${who} ${what} on the live sheet${str(d.to) ? ` (to ${str(d.to)})` : ''}`;
+      if (str(d.body)) lines.push(str(d.body));
+      break;
+    }
     default: title = `${who}: update on the job`;
   }
   const photos = a.kind === 'photos' && Array.isArray(d.urls) ? (d.urls as unknown[]).map(str).filter((u) => /^https:\/\//.test(u)) : [];
@@ -120,6 +150,25 @@ export function recipientsFor(people: AlertPerson[], ownerId: string): AlertPers
     name: 'You', role: 'owner', email: OWNER_ALERT_EMAIL, phone: null, auth_user_id: ownerId,
     by_email: true, by_push: true, by_text: false,
   }];
+}
+
+/**
+ * Who gets this alert. A message from the sheet goes to the office logins only
+ * (the PM wrote it). A tech's message to one person goes to that person and
+ * the office; to everyone, to the whole list.
+ */
+export function recipientsForAlert(people: AlertPerson[], ownerId: string, a: Pick<AlertRow, 'kind' | 'detail'>): AlertPerson[] {
+  const all = recipientsFor(people, ownerId);
+  const office = all.filter((p) => p.role === 'owner' || p.role === 'assistant');
+  if (a.kind === 'client_message') {
+    return office.length > 0 ? office : recipientsFor([], ownerId);
+  }
+  const to = str(a.detail?.to).toLowerCase();
+  if (to && ['message', 'issue', 'resolved', 'answer'].includes(a.kind)) {
+    const named = all.filter((p) => p.name.trim().toLowerCase() === to);
+    if (named.length > 0) return [...new Map([...named, ...office].map((p) => [`${p.name}|${p.email}|${p.auth_user_id}`, p])).values()];
+  }
+  return all;
 }
 
 /** Only the office's own logins get a link into the app; a client's PM does not. */

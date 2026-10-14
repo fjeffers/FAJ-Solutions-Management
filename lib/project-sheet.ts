@@ -32,6 +32,7 @@ export type SheetJob = {
   id: string; wo_number: string; external_wo_id?: string | null; title?: string | null; description?: string | null;
   site_name?: string | null; site_address?: string | null; site_city?: string | null; site_state?: string | null; site_zip?: string | null;
   closeout_notes?: string | null; custom_qa?: unknown; closeout?: unknown; wo_status?: string | null;
+  lead_contractor_name?: string | null; contractor_name?: string | null; contractor_names?: string[] | null;
 };
 
 export type SheetInput = {
@@ -69,6 +70,8 @@ export type SheetSite = {
   status: string; closed: boolean;
   /** The techs with lines on this site, in the order they first showed up. */
   techs: string[];
+  /** Everyone assigned to the work order, for "who is it for". */
+  crew: string[];
   /** This site's own totals. */
   onSiteHours: number; miles: number; photos: number; receiptTotal: number;
   /** The newest line's time, to put the busiest site first. */
@@ -239,6 +242,7 @@ export function buildSheet(i: SheetInput, now: Date = new Date(), timeZone = 'Am
       id: j.id, name: siteLabel(j), wo: str(j.wo_number), clientWo: str(j.external_wo_id), address: addressOf(j),
       status, closed: CLOSED.includes(status),
       techs: [...new Set(mine.filter((r) => r.tech && r.tech !== 'FAJ office').map((r) => r.tech))],
+      crew: [...new Set([j.lead_contractor_name, j.contractor_name, ...(j.contractor_names ?? [])].map((n) => str(n)).filter(Boolean))],
       onSiteHours: jt ? hoursOf(jt.onSiteMs) : 0, miles: jt?.miles ?? 0,
       photos: mine.filter((r) => r.kind === 'photo').length,
       receiptTotal: Math.round(mine.reduce((sum, r) => sum + (r.kind === 'receipt' ? r.amount ?? 0 : 0), 0) * 100) / 100,
@@ -346,3 +350,65 @@ export function sheetEmailHtml(s: Sheet, o: {
   </div>
 </div>`;
 }
+
+// ── Messages on the sheet (migration 121) ────────────────────────────────────
+// Fred, 2026-10-14: the client adds notes under a photo and asks the tech a
+// question; the tech messages the PM ("No access to the building", with why);
+// the clock runs "without access" until the tech says they're in. Only
+// messages meant for the sheet (on_sheet) ever get here: a tech's messages to
+// FAJ stay private.
+
+export type SheetMessageKind = 'message' | 'question' | 'answer' | 'note' | 'issue' | 'resolved';
+export type SheetMessage = {
+  id: string; wo: string; at: string; from: string;
+  /** client = someone on the sheet (the PM or the client); tech; office. */
+  role: 'client' | 'tech' | 'office';
+  kind: SheetMessageKind; to: string; body: string; reason: string;
+  rowRef: string; parentId: string; resolvedAt: string;
+};
+
+const MESSAGE_KINDS: SheetMessageKind[] = ['message', 'question', 'answer', 'note', 'issue', 'resolved'];
+
+/** work_order_messages rows → clean sheet messages, oldest first. */
+export function parseSheetMessages(raw: unknown): SheetMessage[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as Raw[])
+    .filter((r) => r && typeof r === 'object' && str(r.id) && Number.isFinite(Date.parse(str(r.created_at))))
+    .map((r) => {
+      const kind = str(r.kind) as SheetMessageKind;
+      const role = str(r.sender_role);
+      return {
+        id: str(r.id), wo: str(r.work_order_id), at: str(r.created_at), from: str(r.sender_name) || 'Someone',
+        role: role === 'contractor' ? 'tech' as const : role === 'client' ? 'client' as const : 'office' as const,
+        kind: MESSAGE_KINDS.includes(kind) ? kind : 'message', to: str(r.to_name), body: str(r.content), reason: str(r.reason),
+        rowRef: str(r.row_ref), parentId: str(r.parent_id), resolvedAt: str(r.resolved_at),
+      };
+    })
+    .sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** Minutes without access: from the tech saying so until they got in (or now). */
+export function waitMinutes(issue: Pick<SheetMessage, 'at' | 'resolvedAt'>, now: Date = new Date()): number {
+  const end = issue.resolvedAt && Number.isFinite(Date.parse(issue.resolvedAt)) ? Date.parse(issue.resolvedAt) : now.getTime();
+  return Math.max(0, Math.round((end - Date.parse(issue.at)) / 60000));
+}
+
+/** What a message line says: "No access to the building", "Asked a question"... */
+export function messageTitle(m: SheetMessage, all: SheetMessage[] = []): string {
+  const to = m.to && m.to !== 'FAJ' ? ` · to ${m.to}` : m.to === 'FAJ' ? ' · to FAJ' : '';
+  switch (m.kind) {
+    case 'issue': return `${m.body || 'No access to the building'}${to}`;
+    case 'resolved': {
+      const issue = all.find((x) => x.id === m.parentId);
+      return issue ? `Has access now · waited ${waitMinutes({ at: issue.at, resolvedAt: m.at })} min without access` : 'Has access now';
+    }
+    case 'question': return `Asked a question${to}`;
+    case 'note': return `Added a note${to}`;
+    case 'answer': return `Answered${to}`;
+    default: return `Message${to}`;
+  }
+}
+
+/** Issues still waiting (no access yet), on a site. */
+export const openIssues = (all: SheetMessage[], wo: string): SheetMessage[] =>
+  all.filter((m) => m.wo === wo && m.kind === 'issue' && !m.resolvedAt);

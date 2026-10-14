@@ -110,7 +110,8 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
       <Empty icon={<MessageSquare size={28} />} title="No messages yet"
         message="When a tech writes about a job, it shows here. To start one, press New message." />
     ) : threads.map((t) => {
-      const who = fromTech(t.last) ? t.last.sender_name : 'You';
+      // A PM or client writing on the live project sheet shows by name too (migration 121).
+      const who = fromTech(t.last) || t.last.sender_role === 'client' ? t.last.sender_name : 'You';
       return (
         <button key={t.woNumber} style={rowStyle(t.woNumber === openWo)} onClick={() => { setOpenWo(t.woNumber); setPicking(false); }}>
           <span style={{ flex: 1, minWidth: 0 }}>

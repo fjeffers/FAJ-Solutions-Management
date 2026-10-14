@@ -31,6 +31,8 @@ import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type Closeou
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
+import { SiteAccessBar, sendSiteMessage, useSiteTalk } from '@/components/wf/SiteTalk';
+import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
@@ -639,6 +641,8 @@ function ProjectsTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => 
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <PushSwitch onText="On. Questions and replies from the project manager pop up here right away."
+        offText="Turn on so the project manager's questions and replies pop up on this phone right away." />
       {[...groups.entries()].map(([name, list]) => {
         const open = list.filter((j) => !isFinished(j));
         return (
@@ -838,6 +842,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   // A project site always needs the signature, or the reason there isn't one.
   const project = !!job.isProject;
   const jobForCloseout = project ? { ...job, signatureRequired: true } : job;
+  // The live sheet's messages: No access, the PM's questions (migration 121).
+  const talk = useSiteTalk(job.number, project && job.status !== 'offered' && job.status !== 'declined');
   const [offOpen, setOffOpen] = useState(false);
   // A project site shows only its date, time, description and the day card
   // until Start job; the whole job opens while they're on site.
@@ -1019,7 +1025,10 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           )}
         </>}
         clock={project && (working || job.status === 'workDone')
-          ? <ProjectDayCard job={job} busy={locating} enabled={working} on={dayOn} onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
+          ? <>
+            <SiteAccessBar number={job.number} talk={talk} working={working} />
+            <ProjectDayCard job={job} busy={locating} enabled={working} on={dayOn} onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
+          </>
           : showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
         onToggleTask={working ? toggleTask : undefined}
         below={<>
@@ -1038,7 +1047,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           )}
           <JobPhotos canAdd={canReport} ph={ph} />
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
-          {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} /></div>}
+          {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} talk={project ? talk : undefined} /></div>}
         </>}
         bottom={simple && job.status !== 'offered' ? undefined : bottom}
       />
@@ -1751,18 +1760,28 @@ function JobPhotos({ canAdd, ph }: { canAdd: boolean; ph: ReturnType<typeof useJ
 }
 
 /** The job's thread with the office — the same one Fred sees on the job in WorkFlow. */
-function JobMessages({ number }: { number: string }) {
-  const [messages, setMessages] = useState<TechMessage[] | null>(null);
+function JobMessages({ number, talk }: { number: string; talk?: ReturnType<typeof useSiteTalk> }) {
+  const [own, setOwn] = useState<TechMessage[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // On a project: to FAJ (private, as before), a project manager, or everyone
+  // on the project sheet (Fred, 2026-10-14: "open message, select the PM").
+  const [to, setTo] = useState('FAJ');
+  const contacts = talk?.contacts ?? [];
+  useEffect(() => {
+    const pm = contacts.find((c) => c.role === 'pm');
+    if (pm) setTo((t) => (t === 'FAJ' ? pm.name : t));
+  }, [contacts]);
   const bottom = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
-    try { setMessages(await fetchTechMessages(number)); setFailed(false); }
+    if (talk) { await talk.load(); return; }
+    try { setOwn(await fetchTechMessages(number)); setFailed(false); }
     catch { setFailed(true); }
-  }, [number]);
+  }, [number, talk]);
   useEffect(() => { void load(); }, [load]);
+  const messages = talk ? talk.msgs : own;
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages?.length]);
 
   const send = async () => {
@@ -1770,13 +1789,18 @@ function JobMessages({ number }: { number: string }) {
     if (!body) return;
     setSending(true);
     try {
-      if (await sendTechMessage(number, body)) { setDraft(''); await load(); }
+      if (talk && to !== 'FAJ') {
+        const err = await sendSiteMessage(number, { body, to });
+        if (err) toastError(err); else { setDraft(''); await load(); }
+      } else if (await sendTechMessage(number, body)) { setDraft(''); await load(); }
       else toastError("Couldn't send that message.");
     } catch (e) {
       toastError(isNoSignal(e) ? 'No signal — messages need signal to send. Your text is still in the box.' : "Couldn't send that message.");
     }
     setSending(false);
   };
+  const kindLine = (m: TechMessage) => m.kind === 'issue' ? `No access${m.reason ? `: ${m.reason}` : ''}`
+    : m.kind === 'resolved' ? 'Got access' : m.kind === 'question' ? 'Question' : m.kind === 'answer' ? 'Answer' : m.kind === 'note' ? 'Note on the sheet' : '';
 
   return (
     <Section title="Messages" subtitle="With FAJ, about this job">
@@ -1785,14 +1809,17 @@ function JobMessages({ number }: { number: string }) {
           : messages === null ? <div className="wf-subtle">Loading…</div>
           : messages.length === 0 ? <div className="wf-subtle">No messages yet. Ask us anything about this job.</div>
           : messages.map((m) => {
-            const mine = m.sender_role === 'contractor';
+            const mine = m.mine ?? m.sender_role === 'contractor';
+            const what = kindLine(m);
+            const toLine = mine && m.on_sheet ? (m.to_name ? `to ${m.to_name}` : 'to everyone on the sheet') : '';
             return (
               <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                 <div style={{
                   maxWidth: '84%', padding: '9px 13px', borderRadius: 14,
                   background: mine ? 'var(--wf-navy)' : '#F1EEE6', color: mine ? '#fff' : 'var(--wf-text)',
                 }}>
-                  {!mine && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--wf-gold-dark)' }}>{m.sender_name}</div>}
+                  {!mine && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--wf-gold-dark)' }}>{m.sender_name}{m.sender_role === 'client' ? ' · project sheet' : ''}</div>}
+                  {(what || toLine) && <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>{[what, toLine].filter(Boolean).join(' · ')}</div>}
                   <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
                   <div style={{ fontSize: 10.5, opacity: 0.65, marginTop: 3, textAlign: 'right' }}>
                     {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -1803,6 +1830,13 @@ function JobMessages({ number }: { number: string }) {
           })}
         <div ref={bottom} />
       </div>
+      {talk && (
+        <select className="wf-input" style={{ fontSize: 16, marginBottom: 8 }} value={to} onChange={(e) => setTo(e.target.value)} aria-label="Send to">
+          {contacts.map((c) => <option key={c.name} value={c.name}>To {c.name}{c.role === 'pm' ? ' (project manager)' : ''}</option>)}
+          <option value="Everyone">To everyone on the project sheet</option>
+          <option value="FAJ">To FAJ only</option>
+        </select>
+      )}
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
         <textarea className="wf-input" rows={2} value={draft} placeholder="Write a message…" style={{ flex: 1, resize: 'none' }}
           onChange={(e) => setDraft(e.target.value)}

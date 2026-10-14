@@ -88,8 +88,10 @@ export default function WorkOrderChatPanel({ woNumber }: { woNumber: string | un
               padding: '8px 12px',
             }}
           >
-            {m.sender_role === 'contractor' && (
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#0E1B2E', marginBottom: 2 }}>{m.sender_name}</div>
+            {(m.sender_role === 'contractor' || m.sender_role === 'client') && (
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#0E1B2E', marginBottom: 2 }}>
+                {m.sender_name}{m.sender_role === 'client' ? ' · on the project sheet' : ''}
+              </div>
             )}
             <div style={{ fontSize: 13, lineHeight: 1.4, whiteSpace: 'pre-line' }}>{m.content}</div>
             <div style={{ fontSize: 9, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>{fmtTime(m.created_at)}</div>

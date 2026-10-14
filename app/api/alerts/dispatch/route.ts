@@ -4,7 +4,7 @@ import webpush from 'web-push';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { vapidKeys } from '@/lib/push-keys';
 import {
-  alertEmailHtml, alertMessage, canOpenApp, recipientsFor, toE164,
+  alertEmailHtml, alertMessage, canOpenApp, recipientsForAlert, toE164,
   type AlertJob, type AlertPerson, type AlertRow,
 } from '@/lib/project-alerts';
 import { loadSheet, sheetTokenFor } from '@/lib/project-sheet-load';
@@ -71,7 +71,7 @@ async function run() {
       const { data: people } = await admin.from('project_alert_people')
         .select('name, role, email, phone, auth_user_id, by_email, by_push, by_text')
         .eq('user_id', a.user_id).eq('project_name', a.project_name);
-      const to = recipientsFor((people ?? []) as AlertPerson[], a.user_id);
+      const to = recipientsForAlert((people ?? []) as AlertPerson[], a.user_id, a);
       const m = alertMessage(a, job);
       const link = `${base}/admin?view=workorders&wo=${encodeURIComponent(a.wo_number)}`;
       const subject = `[${a.project_name}] ${m.title}`;

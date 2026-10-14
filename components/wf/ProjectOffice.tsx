@@ -550,6 +550,7 @@ export function ProjectsView({ workOrders, onOpen }: { workOrders: EnrichedWorkO
         <h1 className="wf-h1" style={{ margin: 0 }}>Projects</h1>
         <div className="wf-subtle">Multi-day sites: travel, time on site, miles and receipts from the techs&apos; phones, and the report for the client.</div>
       </div>
+      <PushSwitch />
       {groups.length === 0 ? (
         <Section title="No projects yet">
           <div style={{ fontSize: 14, lineHeight: 1.6 }}>
@@ -589,10 +590,234 @@ export function ProjectsView({ workOrders, onOpen }: { workOrders: EnrichedWorkO
                 );
               })}
             </div>
+            {name !== 'No project name' && <AlertPeople project={name} />}
           </Section>
         );
       })}
       {report && <ProjectReport projectName={report.name} startWoId={report.id} lists={lists} onClose={() => setReport(null)} />}
     </div>
+  );
+}
+
+// ── Live alerts (migration 119) ─────────────────────────────────────────────
+
+type AlertPersonRow = {
+  id: string; name: string; role: 'owner' | 'assistant' | 'pm' | 'other';
+  email: string | null; phone: string | null; auth_user_id: string | null;
+  by_email: boolean; by_push: boolean; by_text: boolean;
+};
+
+const ROLE_WORD: Record<AlertPersonRow['role'], string> = { owner: 'You', assistant: 'Assistant', pm: 'Project manager', other: 'Other' };
+
+function base64ToBytes(b64: string): Uint8Array {
+  const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+/** "Phone pop-ups on this device": sign this phone or computer up for project alerts. */
+export function PushSwitch() {
+  const [state, setState] = useState<'checking' | 'off' | 'on' | 'unsupported' | 'blocked'>('checking');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      setState('unsupported'); return;
+    }
+    if (Notification.permission === 'denied') { setState('blocked'); return; }
+    void navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((s) => setState(s ? 'on' : 'off'));
+  }, []);
+  const turnOn = async () => {
+    setBusy(true);
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setState(perm === 'denied' ? 'blocked' : 'off'); toastError('Pop-ups were not allowed on this device.'); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const { publicKey } = (await fetch('/api/alerts/push').then((r) => r.json())) as { publicKey: string };
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64ToBytes(publicKey) as BufferSource });
+      const res = await fetch('/api/alerts/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub) });
+      if (!res.ok) { toastError('Could not turn on pop-ups. Try again.'); return; }
+      setState('on');
+      toastSuccess('Pop-ups are on for this device.');
+    } catch {
+      toastError('Could not turn on pop-ups on this device.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const turnOff = async () => {
+    setBusy(true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch('/api/alerts/push', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+        await sub.unsubscribe();
+      }
+      setState('off');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="wf-card" style={{ padding: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ flex: '1 1 220px' }}>
+        <div style={{ fontWeight: 700 }}>Phone pop-ups on this device</div>
+        <div className="wf-subtle" style={{ fontSize: 12.5 }}>
+          {state === 'on' ? 'On. Project alerts pop up here the moment they happen.'
+            : state === 'unsupported' ? 'This browser cannot show pop-ups. On an iPhone, add the app to your Home Screen (Share, then Add to Home Screen), open it from there, then turn this on.'
+              : state === 'blocked' ? 'Pop-ups are blocked for this site. Allow notifications for app.fajsolutions.com in your phone or browser settings.'
+                : 'Off. Turn on to get project alerts on this phone or computer.'}
+        </div>
+      </div>
+      {state === 'off' && <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={busy} onClick={() => void turnOn()}>Turn on pop-ups</button>}
+      {state === 'on' && <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={busy} onClick={() => void turnOff()}>Turn off</button>}
+    </div>
+  );
+}
+
+/** Who gets one project's alerts, and how. Empty: the owner, by email and pop-up. */
+export function AlertPeople({ project }: { project: string }) {
+  const [rows, setRows] = useState<AlertPersonRow[] | null>(null);
+  const [staff, setStaff] = useState<{ name: string; email: string; auth_user_id: string | null }[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const db = useMemo(() => createClient(), []);
+  const load = useCallback(async () => {
+    const { data } = await db.from('project_alert_people')
+      .select('id, name, role, email, phone, auth_user_id, by_email, by_push, by_text').eq('project_name', project).order('created_at');
+    setRows((data as AlertPersonRow[] | null) ?? []);
+  }, [db, project]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void db.from('staff_members').select('name, email, auth_user_id, enabled').eq('enabled', true)
+      .then(({ data }) => setStaff(((data as { name: string; email: string; auth_user_id: string | null }[] | null) ?? [])));
+  }, [db]);
+
+  const add = async (p: Partial<AlertPersonRow> & { name: string; role: AlertPersonRow['role'] }) => {
+    const { data: { user } } = await db.auth.getUser();
+    if (!user) return;
+    const { error } = await db.from('project_alert_people').insert({
+      user_id: user.id, project_name: project, name: p.name, role: p.role, email: p.email ?? null, phone: p.phone ?? null,
+      auth_user_id: p.auth_user_id ?? null, by_email: p.by_email ?? true, by_push: p.by_push ?? !!p.auth_user_id, by_text: p.by_text ?? false,
+    });
+    if (error) { toastError('Could not add them.'); return; }
+    await load();
+  };
+  const addMe = async () => {
+    const { data: { user } } = await db.auth.getUser();
+    if (user) await add({ name: 'You', role: 'owner', email: 'fajsolutions@gmail.com', auth_user_id: user.id, by_push: true });
+  };
+  const save = async (id: string, patch: Partial<AlertPersonRow>) => {
+    setRows((r) => r?.map((x) => (x.id === id ? { ...x, ...patch } : x)) ?? r);
+    const { error } = await db.from('project_alert_people').update(patch).eq('id', id);
+    if (error) { toastError('Could not save that.'); void load(); }
+  };
+  const remove = async (r: AlertPersonRow) => {
+    if (!confirm(`Stop sending ${project} alerts to ${r.name}?`)) return;
+    await db.from('project_alert_people').delete().eq('id', r.id);
+    await load();
+  };
+  const test = async () => {
+    setTesting(true);
+    try {
+      const res = await fetch('/api/alerts/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project_name: project }) });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) toastError(j.error ?? 'Could not send the test.');
+      else toastSuccess('Test alert sent. It should arrive in a few seconds.');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const hasMe = rows?.some((r) => r.role === 'owner');
+  const chip = (on: boolean, label: string, onClick: () => void, title?: string) => (
+    <button className="wf-chip" onClick={onClick} title={title} aria-pressed={on}
+      style={{ border: '1px solid var(--wf-line)', cursor: 'pointer', font: 'inherit', fontSize: 12,
+        background: on ? 'var(--wf-navy)' : 'var(--wf-card)', color: on ? '#fff' : 'var(--wf-subtle)' }}>{label}</button>
+  );
+
+  return (
+    <div style={{ borderTop: '1px solid var(--wf-line)', marginTop: 8, paddingTop: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+        <b style={{ flex: 1 }}>Live alerts go to</b>
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={testing} onClick={() => void test()}>Send a test alert</button>
+      </div>
+      <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 8 }}>
+        Clock in and sign out, travel, start job, off site, site finished, photos, notes, answers and receipts on this project, as they happen.
+      </div>
+      {rows === null ? <div className="wf-subtle">Loading…</div> : rows.length === 0 && (
+        <div style={{ fontSize: 13, marginBottom: 8 }}>Nobody added yet, so they go to <b>you</b> by email and pop-up.</div>
+      )}
+      {(rows ?? []).map((r) => (
+        <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '6px 0', borderTop: '1px solid var(--wf-line)' }}>
+          <span style={{ flex: '1 1 150px', minWidth: 0 }}>
+            <b>{r.name}</b> <span className="wf-subtle" style={{ fontSize: 12 }}>{ROLE_WORD[r.role]}</span>
+            <span style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+              <input className="wf-input" defaultValue={r.email ?? ''} placeholder="Email" aria-label={`${r.name} email`}
+                style={{ minHeight: 32, padding: '2px 8px', fontSize: 16, flex: '1 1 160px' }}
+                onBlur={(e) => { const v = e.target.value.trim(); if (v !== (r.email ?? '')) void save(r.id, { email: v || null }); }} />
+              <input className="wf-input" defaultValue={r.phone ?? ''} placeholder="Cell for texts" aria-label={`${r.name} phone`} inputMode="tel"
+                style={{ minHeight: 32, padding: '2px 8px', fontSize: 16, flex: '1 1 120px' }}
+                onBlur={(e) => { const v = e.target.value.trim(); if (v !== (r.phone ?? '')) void save(r.id, { phone: v || null }); }} />
+            </span>
+          </span>
+          <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {chip(r.by_email, 'Email', () => void save(r.id, { by_email: !r.by_email }))}
+            {r.auth_user_id && chip(r.by_push, 'Pop-up', () => void save(r.id, { by_push: !r.by_push }), 'On phones where they turned pop-ups on')}
+            {chip(r.by_text, 'Text', () => void save(r.id, { by_text: !r.by_text }), 'Texts start once text messaging is set up')}
+            <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void remove(r)} aria-label={`Remove ${r.name}`}>Remove</button>
+          </span>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+        {!hasMe && <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void addMe()}><Plus size={14} /> Me</button>}
+        {staff.filter((s) => !(rows ?? []).some((r) => r.auth_user_id && r.auth_user_id === s.auth_user_id)).map((s) => (
+          <button key={s.email} className="wf-btn wf-btn-outline wf-btn-sm"
+            onClick={() => void add({ name: s.name, role: 'assistant', email: s.email, auth_user_id: s.auth_user_id })}>
+            <Plus size={14} /> {s.name} (assistant)
+          </button>
+        ))}
+        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAdding(true)}><Plus size={14} /> Project manager or someone else</button>
+      </div>
+      {adding && <AddPersonDialog project={project} onClose={() => setAdding(false)} onAdd={async (p) => { await add(p); setAdding(false); }} />}
+    </div>
+  );
+}
+
+function AddPersonDialog({ project, onClose, onAdd }: {
+  project: string; onClose: () => void;
+  onAdd: (p: { name: string; role: 'pm' | 'other'; email: string | null; phone: string | null; by_email: boolean; by_text: boolean }) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<'pm' | 'other'>('pm');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const ok = name.trim() && (email.includes('@') || phone.replace(/\D/g, '').length >= 10);
+  const label = (t: string) => <span className="wf-label" style={{ display: 'block', marginBottom: 4 }}>{t}</span>;
+  return (
+    <Dialog title={`Add to ${project} alerts`} onClose={onClose}
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="wf-btn wf-btn-navy" disabled={!ok} onClick={() => void onAdd({
+          name: name.trim(), role, email: email.trim() || null, phone: phone.trim() || null,
+          by_email: email.includes('@'), by_text: false,
+        })}>Add</button>
+      </>}>
+      <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 10 }}>
+        They get this project&apos;s alerts by email (and text once texts are set up): times, photos, notes and receipts. If they work for the client,
+        they see your techs&apos; day live. No prices or pay are ever in an alert.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <label>{label('Name')}<input className="wf-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></label>
+        <label>{label('Who they are')}
+          <select className="wf-input" value={role} onChange={(e) => setRole(e.target.value as 'pm' | 'other')}>
+            <option value="pm">Project manager</option>
+            <option value="other">Someone else</option>
+          </select>
+        </label>
+        <label>{label('Email')}<input className="wf-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+        <label>{label('Cell (for texts)')}<input className="wf-input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></label>
+      </div>
+    </Dialog>
   );
 }

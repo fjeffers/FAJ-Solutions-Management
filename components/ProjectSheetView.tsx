@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fmtSheetDay, money2, openIssues, pageRows, type Sheet, type SheetMessage, type SheetRow } from '@/lib/project-sheet';
 import { Bubble, Composer, useSheetMessages } from './SheetMessages';
+import ProjectSheetReport, { REPORT_CSS } from './ProjectSheetReport';
 
 const NAVY = '#0E1B2E';
 const GOLD = '#C9A24B';
@@ -32,6 +33,16 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
   const shownTech = tech && site?.techs.includes(tech) ? tech : null;
   const rows = useMemo(() => (site ? pageRows(sheet, site.id, shownTech) : []), [sheet, site, shownTech]);
   const [photo, setPhoto] = useState<SheetRow | null>(null);
+  // Print report (Fred, 2026-10-14: "can print a completed, comprehensive
+  // report" ... "then no pdf"): this site, or every site on the project.
+  const [printing, setPrinting] = useState<{ all: boolean; at: Date } | null>(null);
+  useEffect(() => {
+    if (!printing) return;
+    const t = window.setTimeout(() => window.print(), 300);
+    const done = () => setPrinting(null);
+    window.addEventListener('afterprint', done);
+    return () => { window.clearTimeout(t); window.removeEventListener('afterprint', done); };
+  }, [printing]);
   // Messages: notes under lines, questions for the tech, "No access" (migration 121).
   const { messages, now, send } = useSheetMessages(token, initialMessages);
   const siteMsgs = useMemo(() => (site ? messages.filter((m) => m.wo === site.wo) : []), [messages, site]);
@@ -83,8 +94,8 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
 
   return (
     <div className="ps-page">
-      <style>{CSS}</style>
-      <div className="ps-wrap">
+      <style>{CSS + REPORT_CSS}</style>
+      <div className="ps-wrap ps-screen">
         <div className="ps-brand ps-noprint">
           <div style={{ fontSize: 17, fontWeight: 800, color: NAVY, letterSpacing: 3 }}>FAJ SOLUTIONS</div>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#8a6d2f', letterSpacing: 2 }}>LIVE PROJECT SHEET</div>
@@ -159,7 +170,8 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
                 )}
                 <span style={{ flex: 1 }} />
                 <a className="ps-btn" href={csv}>Download for Excel</a>
-                <button className="ps-btn" onClick={() => window.print()}>Print / PDF</button>
+                <button className="ps-btn" onClick={() => setPrinting({ all: false, at: new Date() })}>Print report</button>
+                {sites.length > 1 && <button className="ps-btn" onClick={() => setPrinting({ all: true, at: new Date() })}>Print the whole project</button>}
                 <button className="ps-btn" onClick={() => document.getElementById('ps-end')?.scrollIntoView({ behavior: 'smooth' })}>Latest ↓</button>
               </div>
 
@@ -244,6 +256,9 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
           </div>
         </div>
       </div>
+
+      <ProjectSheetReport sheet={sheet} messages={messages}
+        sites={printing?.all ? sites : site ? [site] : []} printedAt={printing?.at ?? new Date(updatedAt)} />
 
       {photo?.photo && (
         <div className="ps-lightbox" role="dialog" aria-modal="true" aria-label="Photo" onClick={(e) => { if (e.target === e.currentTarget) setPhoto(null); }}>

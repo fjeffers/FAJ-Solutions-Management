@@ -16,7 +16,7 @@ const NAME_KEY = 'faj-sheet-name';
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
 
 export function useSheetMessages(token: string, initial: SheetMessage[]) {
-  const [messages, setMessages] = useState<SheetMessage[]>(initial);
+  const [messages, setMessages] = useState<SheetMessage[]>(Array.isArray(initial) ? initial : []);
   const [now, setNow] = useState(() => new Date());
   const load = useCallback(async () => {
     try {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseDayEvents, dayState, onSiteMs, buildDayLogs, totalsOf, legLabel, sortEvents, type DayEvent,
+  parseDayEvents, dayState, onSiteMs, buildDayLogs, totalsOf, legLabel, sortEvents, lastPlace, tripLeg, type DayEvent,
 } from './project-day';
 
 const TZ = 'America/New_York';
@@ -117,5 +117,29 @@ describe('buildDayLogs — the office log and the client report', () => {
     const [d] = buildDayLogs([ev('travel_start', '07:00', { dest: 'site' }), ev('in', '07:45')], new Date(at('08:00')), TZ);
     expect(d.legs).toHaveLength(1);
     expect(d.legs[0]).toMatchObject({ end: at('07:45'), miles: null, ms: 45 * 60_000 });
+  });
+});
+
+describe('Start travel dropdown: Hotel / Home / Site / Between sites', () => {
+  const now = new Date(at('18:00'));
+  it('works out where the drive starts from', () => {
+    expect(lastPlace([], now, TZ)).toBeNull();
+    // Off site: leaving the site.
+    expect(lastPlace([ev('in', '08:00'), ev('out', '16:00')], now, TZ)).toBe('site');
+    // The next morning after driving to the hotel: leaving the hotel.
+    const night = [ev('in', '08:00'), ev('out', '16:00'), ev('travel_start', '16:05', { origin: 'site', dest: 'hotel' }), ev('travel_end', '16:40')];
+    expect(lastPlace(night, new Date(at('07:00', '2026-10-14')), TZ)).toBe('hotel');
+    expect(tripLeg('site', night, new Date(at('07:00', '2026-10-14')), TZ)).toEqual({ origin: 'hotel', dest: 'site' });
+  });
+  it('between sites is site to the next site', () => {
+    expect(tripLeg('between', [], now, TZ)).toEqual({ origin: 'site', dest: 'next_site' });
+    expect(legLabel({ origin: 'site', dest: 'next_site' })).toBe('Between sites');
+    expect(legLabel({ origin: 'hotel', dest: 'site' })).toBe('Hotel → Site');
+    expect(legLabel({ origin: null, dest: 'site' })).toBe('Travel to site');
+  });
+  it('hotel and home after a day on site', () => {
+    const day = [ev('in', '08:00'), ev('out', '16:00')];
+    expect(tripLeg('hotel', day, now, TZ)).toEqual({ origin: 'site', dest: 'hotel' });
+    expect(tripLeg('home', day, now, TZ)).toEqual({ origin: 'site', dest: 'home' });
   });
 });

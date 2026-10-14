@@ -30,7 +30,7 @@ import {
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
-import { dayState } from '@/lib/project-day';
+import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
@@ -890,7 +890,10 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     await act(makeAction('day', { number: job.number, kind, ...g, ...extra }, `${label} — WO ${job.number}`, at), sent);
   };
   const dayOn: DayActions = {
-    startTravel: (origin) => void dayTap('travel_start', { origin, dest: 'site' }, 'Start travel', 'Travel started. Drive safe.'),
+    startTrip: (trip) => {
+      const leg = tripLeg(trip, job.myDay ?? []);
+      void dayTap('travel_start', { origin: leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.');
+    },
     startJob: async () => {
       const at = new Date();
       const g = await where();
@@ -903,7 +906,6 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     lunch: (start) => void dayTap(start ? 'lunch_start' : 'lunch_end', {}, start ? 'Lunch' : 'Back from lunch',
       start ? 'Lunch started.' : 'Back on site.'),
     offSite: () => setOffOpen(true),
-    travelAfter: (dest) => void dayTap('travel_start', { origin: 'site', dest }, 'Start travel', 'Travel started. Drive safe.'),
     arrived: () => void dayTap('travel_end', {}, 'Arrived', 'Signed out for the day.'),
   };
   const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, true)];

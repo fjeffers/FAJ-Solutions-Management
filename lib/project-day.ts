@@ -227,10 +227,46 @@ export function totalsOf(logs: DayLog[]): DayTotals {
   return t;
 }
 
-/** "Home → Site", "Site → Hotel". */
+/** "Home → Site", "Site → Hotel", "Between sites". */
 export function legLabel(l: Pick<Leg, 'origin' | 'dest'>): string {
-  const from = l.origin ? ORIGIN_LABEL[l.origin] : 'Start';
-  return `${from} → ${DEST_LABEL[l.dest]}`;
+  if (l.dest === 'next_site') return 'Between sites';
+  if (!l.origin) return `Travel to ${DEST_LABEL[l.dest].toLowerCase()}`;
+  return `${ORIGIN_LABEL[l.origin]} → ${DEST_LABEL[l.dest]}`;
+}
+
+// ── Start travel: one dropdown (Fred, 2026-10-13: "hotel home site between
+// site ... make it a drop down") ─────────────────────────────────────────────
+
+export type Trip = 'hotel' | 'home' | 'site' | 'between';
+export const TRIPS: { key: Trip; label: string }[] = [
+  { key: 'hotel', label: 'Hotel' },
+  { key: 'home', label: 'Home' },
+  { key: 'site', label: 'Site' },
+  { key: 'between', label: 'Between sites' },
+];
+
+/**
+ * Where the tech is leaving from, from their own taps: the site they just
+ * left, else wherever their last drive ended (the hotel, home), else unknown.
+ */
+export function lastPlace(events: DayEvent[], now: Date = new Date(), timeZone?: string): Origin | null {
+  if (dayState(events, now, timeZone).stage === 'offsite') return 'site';
+  const evs = sortEvents(events);
+  for (let i = evs.length - 1; i >= 0; i--) {
+    const e = evs[i];
+    if (e.kind === 'out' || e.kind === 'in') return 'site';
+    if (e.kind === 'travel_start') {
+      const d = e.dest ?? 'site';
+      return d === 'hotel' ? 'hotel' : d === 'home' ? 'home' : 'site';
+    }
+  }
+  return null;
+}
+
+/** The trip picked in the dropdown → what the drive is recorded as. */
+export function tripLeg(trip: Trip, events: DayEvent[], now: Date = new Date(), timeZone?: string): { origin: Origin | null; dest: Dest } {
+  if (trip === 'between') return { origin: 'site', dest: 'next_site' };
+  return { origin: lastPlace(events, now, timeZone), dest: trip };
 }
 
 /** 5400000 → "1.5 h" (for reports, where whole decimals read easier than 1h 30m). */

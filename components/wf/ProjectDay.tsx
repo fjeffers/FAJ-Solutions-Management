@@ -5,10 +5,10 @@
 // (lunch taken out) with Off site beside it. Every tap carries GPS; the miles
 // for each drive are worked out from it. No money on this screen.
 import { useEffect, useMemo, useState } from 'react';
-import { BedDouble, Car, CheckCircle2, Home, LogIn, LogOut, MapPin, Navigation, PlayCircle, Receipt, Utensils } from 'lucide-react';
+import { Car, CheckCircle2, LogIn, LogOut, MapPin, PlayCircle, Receipt, Utensils } from 'lucide-react';
 import {
-  buildDayLogs, dayOf, dayState, legLabel, onSiteMs, DEST_LABEL,
-  type DayLog, type DayState, type Dest, type Origin,
+  buildDayLogs, dayOf, dayState, legLabel, onSiteMs, DEST_LABEL, TRIPS,
+  type DayLog, type DayState, type Trip,
 } from '@/lib/project-day';
 import { formatDuration, type WfJob } from '@/lib/wf';
 import { Dialog } from './WfUi';
@@ -36,11 +36,11 @@ const red: React.CSSProperties = { ...big, background: 'var(--wf-danger)', color
 const plain: React.CSSProperties = { ...big, background: 'var(--wf-card)', color: 'var(--wf-text)', border: '1px solid var(--wf-line)' };
 
 export type DayActions = {
-  startTravel: (origin: Origin) => void;
+  /** Start travel, for the trip picked in the dropdown. */
+  startTrip: (trip: Trip) => void;
   startJob: () => void;
   lunch: (start: boolean) => void;
   offSite: () => void;
-  travelAfter: (dest: Dest) => void;
   arrived: () => void;
 };
 
@@ -55,7 +55,9 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
   const now = useTick();
   const events = job.myDay ?? [];
   const st = dayState(events, now, TZ);
-  const [picking, setPicking] = useState(false);
+  // The dropdown starts on Site in the morning and on Hotel once off site.
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const picked: Trip = trip ?? (st.stage === 'offsite' ? 'hotel' : 'site');
   const today = dayOf(now.toISOString(), TZ);
   const todayLog = useMemo(
     () => buildDayLogs(events, now, TZ).find((d) => d.day === today) ?? null,
@@ -67,29 +69,33 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
     <div className="wf-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(201,162,39,0.45)' }}>
       <Header st={st} now={now} onSite={onSiteMs(st, now)} />
 
-      {st.stage === 'ready' && (
-        picking ? (
-          <>
-            <div className="wf-subtle" style={{ fontSize: 13 }}>Where are you leaving from?</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <button style={gold} disabled={off} onClick={() => { setPicking(false); on.startTravel('home'); }}><Home size={19} /> Home</button>
-              <button style={gold} disabled={off} onClick={() => { setPicking(false); on.startTravel('hotel'); }}><BedDouble size={19} /> Hotel</button>
-            </div>
-            <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setPicking(false)}>Cancel</button>
-          </>
-        ) : (
-          <>
-            <button style={gold} disabled={off} onClick={() => setPicking(true)}><Car size={20} /> Start travel</button>
+      {(st.stage === 'ready' || st.stage === 'offsite') && (
+        <>
+          {/* Fred, 2026-10-13: "hotel home site between site ... make it a drop down". */}
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="wf-label">Travel to</span>
+            <select className="wf-input" value={picked} onChange={(e) => setTrip(e.target.value as Trip)}
+              disabled={st.stage === 'ready' ? off : busy} style={{ fontSize: 16, minHeight: 48 }}>
+              {TRIPS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          </label>
+          <button style={gold} disabled={st.stage === 'ready' ? off : busy}
+            onClick={() => { setTrip(null); on.startTrip(picked); }}><Car size={20} /> Start travel</button>
+          {st.stage === 'ready' && (
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={off} onClick={on.startJob}>Already on site? Start job</button>
-          </>
-        )
+          )}
+        </>
       )}
 
       {st.stage === 'travel' && st.dest === 'site' && (
         <button style={gold} disabled={off} onClick={on.startJob}><PlayCircle size={21} /> Start job</button>
       )}
 
-      {st.stage === 'travel' && st.dest !== 'site' && (
+      {st.stage === 'travel' && st.dest === 'next_site' && (
+        <button style={navy} disabled={busy} onClick={on.arrived}><LogIn size={20} /> Arrived at the next site</button>
+      )}
+
+      {st.stage === 'travel' && (st.dest === 'hotel' || st.dest === 'home') && (
         <button style={navy} disabled={busy} onClick={on.arrived}><LogIn size={20} /> Arrived — sign out</button>
       )}
 
@@ -100,17 +106,6 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
             : <button style={gold} disabled={busy} onClick={() => on.lunch(false)}><Utensils size={19} /> Back from lunch</button>}
           <button style={red} disabled={busy} onClick={on.offSite}><LogOut size={19} /> Off site</button>
         </div>
-      )}
-
-      {st.stage === 'offsite' && (
-        <>
-          <div className="wf-subtle" style={{ fontSize: 13 }}>Off site. Where are you heading?</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-            <button style={{ ...navy, fontSize: 14.5, flexDirection: 'column', gap: 4, minHeight: 70 }} disabled={busy} onClick={() => on.travelAfter('hotel')}><BedDouble size={20} /> Hotel</button>
-            <button style={{ ...navy, fontSize: 14.5, flexDirection: 'column', gap: 4, minHeight: 70 }} disabled={busy} onClick={() => on.travelAfter('home')}><Home size={20} /> Home</button>
-            <button style={{ ...navy, fontSize: 14.5, flexDirection: 'column', gap: 4, minHeight: 70 }} disabled={busy} onClick={() => on.travelAfter('next_site')}><Navigation size={20} /> Next site</button>
-          </div>
-        </>
       )}
 
       {busy && <div className="wf-subtle" style={{ fontSize: 12.5, textAlign: 'center' }}>Getting your location…</div>}
@@ -125,10 +120,11 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
 function Header({ st, now, onSite }: { st: DayState; now: Date; onSite: number }) {
   const since = (iso: string) => formatDuration(Math.max(0, now.getTime() - Date.parse(iso)));
   let title = 'Ready to go';
-  let line = 'Tap Start travel when you leave.';
+  let line = 'Pick where you are going, then Start travel.';
   let timer: string | null = null;
   if (st.stage === 'travel') {
-    title = st.dest === 'site' ? 'Travelling to the site' : `Travelling to ${DEST_LABEL[st.dest].toLowerCase()}`;
+    title = st.dest === 'site' ? 'Travelling to the site' : st.dest === 'next_site' ? 'Travelling between sites'
+      : `Travelling to ${DEST_LABEL[st.dest].toLowerCase()}`;
     line = `Left at ${timeOf(st.since)}`;
     timer = since(st.since);
   } else if (st.stage === 'onsite') {
@@ -141,7 +137,7 @@ function Header({ st, now, onSite }: { st: DayState; now: Date; onSite: number }
     timer = since(st.since);
   } else if (st.stage === 'offsite') {
     title = 'Off site';
-    line = `Left the site at ${timeOf(st.since)}`;
+    line = `Left the site at ${timeOf(st.since)}. Where to now?`;
   }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

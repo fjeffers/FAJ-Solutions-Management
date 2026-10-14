@@ -26,6 +26,7 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder } from '@/lib/types';
 import { Dialog, Section } from './WfUi';
 import { PushSwitch } from './PushSwitch';
+import { mailtoHref, sheetInvite, smsHref } from '@/lib/send-sheet';
 
 const TZ = 'America/New_York';
 const timeOf = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
@@ -684,6 +685,8 @@ export function AlertPeople({ project }: { project: string }) {
     else toastError('Could not make a new link.');
   };
 
+  const [sending, setSending] = useState(false);
+
   const hasMe = rows?.some((r) => r.role === 'owner');
   const chip = (on: boolean, label: string, onClick: () => void, title?: string) => (
     <button className="wf-chip" onClick={onClick} title={title} aria-pressed={on}
@@ -701,11 +704,15 @@ export function AlertPeople({ project }: { project: string }) {
           </span>
         </span>
         {sheetUrl ? <>
-          <a className="wf-btn wf-btn-navy wf-btn-sm" href={sheetUrl} target="_blank" rel="noopener noreferrer">Open</a>
-          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void copySheet()}>Copy link</button>
+          <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => setSending(true)}>Send the sheet</button>
+          <a className="wf-btn wf-btn-outline wf-btn-sm" href={sheetUrl} target="_blank" rel="noopener noreferrer">Open</a>
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void copySheet()}>Copy link</button>
           <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void newSheetLink()}>New link</button>
         </> : <span className="wf-subtle">Loading…</span>}
       </div>
+      {sending && sheetUrl && (
+        <SendSheetDialog project={project} url={sheetUrl} people={(rows ?? []).filter((r) => r.role !== 'owner')} onClose={() => setSending(false)} />
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
         <b style={{ flex: 1 }}>Live alerts go to</b>
         <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={testing} onClick={() => void test()}>Send a test alert</button>
@@ -785,6 +792,42 @@ function AddPersonDialog({ project, onClose, onAdd }: {
         </label>
         <label>{label('Email')}<input className="wf-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
         <label>{label('Cell (for texts)')}<input className="wf-input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></label>
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * Send the sheet (Fred, 2026-10-14: "need to send the sheet, not log into any
+ * app"). Opens this phone's Messages or email with the link and a short note
+ * filled in; Fred presses send. Nothing goes out on its own.
+ */
+export function SendSheetDialog({ project, url, people, onClose }: {
+  project: string; url: string; people: { id: string; name: string; email: string | null; phone: string | null }[]; onClose: () => void;
+}) {
+  const reachable = people.filter((p) => p.email || p.phone);
+  const row = (name: string | null, phone: string | null, email: string | null, key: string) => {
+    const note = sheetInvite(project, url, name);
+    return (
+      <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--wf-line)' }}>
+        <span style={{ flex: 1, minWidth: 0 }}><b>{name ?? 'Someone else'}</b>
+          {name && <span className="wf-subtle" style={{ display: 'block', fontSize: 12 }}>{[phone, email].filter(Boolean).join(' · ')}</span>}
+        </span>
+        {(phone || !name) && <a className="wf-btn wf-btn-navy wf-btn-sm" href={smsHref(phone, note)}>Text</a>}
+        {(email || !name) && <a className="wf-btn wf-btn-outline wf-btn-sm" href={mailtoHref(email, project, note)}>Email</a>}
+      </div>
+    );
+  };
+  return (
+    <Dialog title="Send the live sheet" onClose={onClose}>
+      <p className="wf-subtle" style={{ marginTop: 0, fontSize: 13 }}>
+        Opens your phone&apos;s messages or email with the link and a short note filled in. You press send. They don&apos;t need to log in to anything.
+      </p>
+      {reachable.map((p) => row(p.name, p.phone, p.email, p.id))}
+      {row(null, null, null, 'other')}
+      <div className="wf-label" style={{ marginTop: 12 }}>The note</div>
+      <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, background: 'var(--wf-bg, #F6F4EF)', borderRadius: 8, padding: '8px 10px', marginTop: 4 }}>
+        {sheetInvite(project, url, reachable[0]?.name ?? null)}
       </div>
     </Dialog>
   );

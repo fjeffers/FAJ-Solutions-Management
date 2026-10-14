@@ -430,3 +430,44 @@ export function messageTitle(m: SheetMessage, all: SheetMessage[] = []): string 
 /** Issues still waiting (no access yet), on a site. */
 export const openIssues = (all: SheetMessage[], wo: string): SheetMessage[] =>
   all.filter((m) => m.wo === wo && m.kind === 'issue' && !m.resolvedAt);
+
+// ── Status pills, Smartsheet-style (Fred, 2026-10-14: "can we use the same
+// setup as Smartsheet") ──────────────────────────────────────────────────────
+
+export type Tone = 'green' | 'blue' | 'navy' | 'amber' | 'gray' | 'red' | 'orange' | 'purple' | 'teal';
+export type Status = { label: string; tone: Tone };
+
+const ROW_STATUS: Record<RowKind, Status> = {
+  clock: { label: 'Clocked in', tone: 'navy' },
+  drive: { label: 'Traveling', tone: 'blue' },
+  arrive: { label: 'On site', tone: 'green' },
+  start: { label: 'On site', tone: 'green' },
+  lunch: { label: 'Lunch', tone: 'amber' },
+  back: { label: 'On site', tone: 'green' },
+  off: { label: 'Left site', tone: 'gray' },
+  signout: { label: 'Signed out', tone: 'gray' },
+  photo: { label: 'Photo', tone: 'purple' },
+  receipt: { label: 'Receipt', tone: 'teal' },
+  signoff: { label: 'Signed off', tone: 'green' },
+  late: { label: 'Late', tone: 'orange' },
+};
+
+export const rowStatus = (r: Pick<SheetRow, 'kind'>): Status => ROW_STATUS[r.kind] ?? { label: 'Update', tone: 'gray' };
+
+export function messageStatus(m: Pick<SheetMessage, 'kind' | 'resolvedAt'>): Status {
+  switch (m.kind) {
+    case 'issue': return m.resolvedAt ? { label: 'Resolved', tone: 'gray' } : { label: 'Stopped', tone: 'red' };
+    case 'resolved': return { label: 'Back to work', tone: 'green' };
+    case 'question': return m.resolvedAt ? { label: 'Answered', tone: 'green' } : { label: 'Question', tone: 'amber' };
+    case 'answer': return { label: 'Answer', tone: 'green' };
+    case 'note': return { label: 'Note', tone: 'amber' };
+    case 'report': return { label: 'Day report', tone: 'navy' };
+    case 'away': return { label: 'Off site', tone: 'amber' };
+    case 'late': return { label: 'Late', tone: 'orange' };
+    default: return { label: 'Message', tone: 'blue' };
+  }
+}
+
+/** "MJ" from "Mike Jones" — the contact bubble. */
+export const initials = (name: string): string =>
+  name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || '?';

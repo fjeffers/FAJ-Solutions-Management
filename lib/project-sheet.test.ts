@@ -198,3 +198,17 @@ describe('places', () => {
     expect(needsPlace({ kind: 'travel_start', lat: 40.7, lng: -74.2, place: '' })).toBe(false);
   });
 });
+
+describe('status pills (Smartsheet-style)', () => {
+  it('each line and message gets a colored status', async () => {
+    const { rowStatus, messageStatus, initials } = await import('./project-sheet');
+    expect(rowStatus({ kind: 'drive' })).toEqual({ label: 'Traveling', tone: 'blue' });
+    expect(rowStatus({ kind: 'start' })).toEqual({ label: 'On site', tone: 'green' });
+    expect(rowStatus({ kind: 'late' })).toEqual({ label: 'Late', tone: 'orange' });
+    expect(messageStatus({ kind: 'issue', resolvedAt: '' })).toEqual({ label: 'Stopped', tone: 'red' });
+    expect(messageStatus({ kind: 'issue', resolvedAt: '2026-10-14T12:00:00Z' }).label).toBe('Resolved');
+    expect(messageStatus({ kind: 'question', resolvedAt: '' }).label).toBe('Question');
+    expect(initials('Frederick Jeffers')).toBe('FJ');
+    expect(initials('  ')).toBe('?');
+  });
+});

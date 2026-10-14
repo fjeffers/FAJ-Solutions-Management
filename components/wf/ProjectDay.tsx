@@ -5,7 +5,7 @@
 // (lunch taken out) with Off site beside it. Every tap carries GPS; the miles
 // for each drive are worked out from it. No money on this screen.
 import { useEffect, useMemo, useState } from 'react';
-import { BedDouble, Car, CheckCircle2, Home, LogIn, LogOut, MapPin, Navigation, PlayCircle, Utensils } from 'lucide-react';
+import { BedDouble, Car, CheckCircle2, Home, LogIn, LogOut, MapPin, Navigation, PlayCircle, Receipt, Utensils } from 'lucide-react';
 import {
   buildDayLogs, dayOf, dayState, legLabel, onSiteMs, DEST_LABEL,
   type DayLog, type DayState, type Dest, type Origin,
@@ -44,11 +44,13 @@ export type DayActions = {
   arrived: () => void;
 };
 
-export default function ProjectDayCard({ job, busy, enabled, on }: {
+export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
   job: WfJob; busy: boolean;
   /** The job is accepted and still open (or Work done, to drive home after). */
   enabled: boolean;
   on: DayActions;
+  /** Gas, a meal or the hotel on the road (shown when not on site). */
+  onReceipt?: () => void;
 }) {
   const now = useTick();
   const events = job.myDay ?? [];
@@ -112,6 +114,9 @@ export default function ProjectDayCard({ job, busy, enabled, on }: {
       )}
 
       {busy && <div className="wf-subtle" style={{ fontSize: 12.5, textAlign: 'center' }}>Getting your location…</div>}
+      {onReceipt && st.stage !== 'onsite' && st.stage !== 'lunch' && (
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onReceipt}><Receipt size={15} /> Add a receipt (gas, meal, hotel)</button>
+      )}
       {todayLog && <DayLines log={todayLog} />}
     </div>
   );

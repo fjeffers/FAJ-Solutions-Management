@@ -838,6 +838,10 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const project = !!job.isProject;
   const jobForCloseout = project ? { ...job, signatureRequired: true } : job;
   const [offOpen, setOffOpen] = useState(false);
+  // A project site shows only its date, time, description and the day card
+  // until Start job; the whole job opens while they're on site.
+  const dayStage = project ? dayState(job.myDay ?? []).stage : null;
+  const simple = project && dayStage !== 'onsite' && dayStage !== 'lunch';
 
   /** One closeout change — sent now, or kept on the phone with no signal. */
   const closeoutOp = (op: CloseoutOp) => {
@@ -988,6 +992,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
         onBack={onBack}
         onRefresh={onRefresh}
         refreshing={refreshing}
+        simple={simple}
         actions={canReport ? (
           <QuickActions
             job={job}
@@ -1010,7 +1015,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           )}
         </>}
         clock={project && (working || job.status === 'workDone')
-          ? <ProjectDayCard job={job} busy={locating} enabled={working} on={dayOn} />
+          ? <ProjectDayCard job={job} busy={locating} enabled={working} on={dayOn} onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
           : showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
         onToggleTask={working ? toggleTask : undefined}
         below={<>
@@ -1031,7 +1036,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} /></div>}
         </>}
-        bottom={bottom}
+        bottom={simple && job.status !== 'offered' ? undefined : bottom}
       />
       {offOpen && (
         <OffSiteDialog missing={offSiteMissing} onClose={() => setOffOpen(false)}

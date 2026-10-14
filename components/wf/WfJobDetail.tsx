@@ -248,7 +248,7 @@ export function LocationCard({ job }: { job: WfJob }) {
  * techs / money on the right. On a phone: one column, clock first.
  */
 export default function WfJobDetail({
-  job, ownerView, hideBar, onBack, onRefresh, refreshing, actions, clock, side, onToggleTask, bottom, below,
+  job, ownerView, hideBar, onBack, onRefresh, refreshing, actions, clock, side, onToggleTask, bottom, below, simple = false,
 }: {
   job: WfJob;
   ownerView: boolean;
@@ -268,7 +268,32 @@ export default function WfJobDetail({
   bottom?: ReactNode;
   /** Anything else under the main column (messages, photos…). */
   below?: ReactNode;
+  /**
+   * A project site before Start job and after Off site (Fred, 2026-10-13: "all
+   * i want to see is the date time and description and start travel"): the
+   * header, the project day card and the description — nothing else.
+   */
+  simple?: boolean;
 }) {
+  if (simple) {
+    return (
+      <div className="wf-rise">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
+          <DetailHeader job={job} ownerView={ownerView} />
+          {clock}
+          <DescriptionCard job={job} />
+        </div>
+        {bottom && (
+          <div style={{
+            position: 'sticky', bottom: 0, marginTop: 16, padding: '12px 0 calc(12px + env(safe-area-inset-bottom))',
+            background: 'linear-gradient(180deg, rgba(246,244,239,0) 0%, var(--wf-surface) 30%)',
+          }}>
+            {bottom}
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="wf-rise">
       {!hideBar && <div style={{ marginBottom: 12 }}>

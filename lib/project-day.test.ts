@@ -143,3 +143,25 @@ describe('Start travel dropdown: Hotel / Home / Site / Between sites', () => {
     expect(tripLeg('home', day, now, TZ)).toEqual({ origin: 'site', dest: 'home' });
   });
 });
+
+describe('Clock in first (migration 118)', () => {
+  it('clock in, then travel; arriving at the site keeps the day going; the hotel ends it', () => {
+    const day: DayEvent[] = [ev('day_start', '06:45')];
+    expect(dayState(day, new Date(at('06:50')), TZ)).toEqual({ stage: 'clocked', since: at('06:45') });
+    day.push(ev('travel_start', '07:00', { origin: 'hotel', dest: 'site' }), ev('travel_end', '07:40'));
+    expect(dayState(day, new Date(at('07:41')), TZ)).toEqual({ stage: 'clocked', since: at('06:45') });
+    day.push(ev('in', '07:40'), ev('out', '16:00'), ev('travel_start', '16:05', { origin: 'site', dest: 'hotel' }), ev('travel_end', '16:40'));
+    expect(dayState(day, new Date(at('17:00')), TZ)).toEqual({ stage: 'ready' });
+    const [d] = buildDayLogs(day, new Date(at('17:00')), TZ);
+    expect(d.clockIn).toBe(at('06:45'));
+    expect(d.signOut).toBe(at('16:40'));
+    expect(lastPlace([ev('travel_start', '16:05', { dest: 'hotel' }), ev('travel_end', '16:40'), ev('day_start', '06:45', {}, '2026-10-14')],
+      new Date(at('06:50', '2026-10-14')), TZ)).toBe('hotel');
+  });
+  it('a clock-in left open starts fresh the next day', () => {
+    expect(dayState([ev('day_start', '06:45')], new Date(at('07:00', '2026-10-14')), TZ)).toEqual({ stage: 'ready' });
+  });
+  it('a clock-in while already on site changes nothing', () => {
+    expect(dayState([ev('in', '08:00'), ev('day_start', '09:00')], new Date(at('09:30')), TZ).stage).toBe('onsite');
+  });
+});

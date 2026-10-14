@@ -5,7 +5,7 @@
 // (lunch taken out) with Off site beside it. Every tap carries GPS; the miles
 // for each drive are worked out from it. No money on this screen.
 import { useEffect, useMemo, useState } from 'react';
-import { Car, CheckCircle2, LogIn, LogOut, MapPin, PlayCircle, Receipt, Utensils } from 'lucide-react';
+import { Car, CheckCircle2, Clock, LogIn, LogOut, MapPin, PlayCircle, Receipt, Utensils } from 'lucide-react';
 import {
   buildDayLogs, dayOf, dayState, legLabel, onSiteMs, DEST_LABEL, TRIPS,
   type DayLog, type DayState, type Trip,
@@ -36,6 +36,8 @@ const red: React.CSSProperties = { ...big, background: 'var(--wf-danger)', color
 const plain: React.CSSProperties = { ...big, background: 'var(--wf-card)', color: 'var(--wf-text)', border: '1px solid var(--wf-line)' };
 
 export type DayActions = {
+  /** Clock in: the start of the day (Fred, 2026-10-13: "it should start with clock-in"). */
+  clockIn: () => void;
   /** Start travel, for the trip picked in the dropdown. */
   startTrip: (trip: Trip) => void;
   startJob: () => void;
@@ -69,19 +71,23 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
     <div className="wf-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(201,162,39,0.45)' }}>
       <Header st={st} now={now} onSite={onSiteMs(st, now)} />
 
-      {(st.stage === 'ready' || st.stage === 'offsite') && (
+      {st.stage === 'ready' && (
+        <button style={gold} disabled={off} onClick={on.clockIn}><Clock size={20} /> Clock in</button>
+      )}
+
+      {(st.stage === 'clocked' || st.stage === 'offsite') && (
         <>
           {/* Fred, 2026-10-13: "hotel home site between site ... make it a drop down". */}
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span className="wf-label">Travel to</span>
             <select className="wf-input" value={picked} onChange={(e) => setTrip(e.target.value as Trip)}
-              disabled={st.stage === 'ready' ? off : busy} style={{ fontSize: 16, minHeight: 48 }}>
+              disabled={st.stage === 'clocked' ? off : busy} style={{ fontSize: 16, minHeight: 48 }}>
               {TRIPS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
           </label>
-          <button style={gold} disabled={st.stage === 'ready' ? off : busy}
+          <button style={gold} disabled={st.stage === 'clocked' ? off : busy}
             onClick={() => { setTrip(null); on.startTrip(picked); }}><Car size={20} /> Start travel</button>
-          {st.stage === 'ready' && (
+          {st.stage === 'clocked' && (
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={off} onClick={on.startJob}>Already on site? Start job</button>
           )}
         </>
@@ -120,9 +126,13 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
 function Header({ st, now, onSite }: { st: DayState; now: Date; onSite: number }) {
   const since = (iso: string) => formatDuration(Math.max(0, now.getTime() - Date.parse(iso)));
   let title = 'Ready to go';
-  let line = 'Pick where you are going, then Start travel.';
+  let line = 'Clock in to start your day.';
   let timer: string | null = null;
-  if (st.stage === 'travel') {
+  if (st.stage === 'clocked') {
+    title = 'Clocked in';
+    line = `Since ${timeOf(st.since)}. Where are you going?`;
+    timer = since(st.since);
+  } else if (st.stage === 'travel') {
     title = st.dest === 'site' ? 'Travelling to the site' : st.dest === 'next_site' ? 'Travelling between sites'
       : `Travelling to ${DEST_LABEL[st.dest].toLowerCase()}`;
     line = `Left at ${timeOf(st.since)}`;
@@ -154,6 +164,7 @@ function Header({ st, now, onSite }: { st: DayState; now: Date; onSite: number }
 /** Today's drives and time on site, under the buttons. */
 function DayLines({ log }: { log: DayLog }) {
   const rows: { at: string; icon: React.ReactNode; text: string }[] = [
+    ...(log.clockIn ? [{ at: log.clockIn, icon: <Clock size={14} />, text: `Clocked in · ${timeOf(log.clockIn)}` }] : []),
     ...log.legs.map((l) => ({
       at: l.start, icon: <Car size={14} />,
       text: `${legLabel(l)} · ${timeOf(l.start)}–${l.end ? timeOf(l.end) : 'now'} · ${formatDuration(l.ms)}${l.miles != null ? ` · ${l.miles} mi` : ''}`,

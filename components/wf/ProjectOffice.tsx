@@ -109,6 +109,13 @@ function DayBlock({ d, onChanged }: { d: DayLog; onChanged: () => void }) {
           On site {formatDuration(d.onSiteMs)} · travel {formatDuration(d.travelMs)} · {d.miles} mi
         </span>
       </div>
+      {(d.clockIn || d.signOut) && (
+        <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 2 }}>
+          {d.clockIn ? `Clocked in ${timeOf(d.clockIn)}` : 'No clock-in'}
+          {d.signOut ? ` · signed out ${timeOf(d.signOut)}` : ''}
+          {d.clockIn && d.signOut ? ` (${formatDuration(Date.parse(d.signOut) - Date.parse(d.clockIn))} day)` : ''}
+        </div>
+      )}
       {[
         ...d.legs.map((l) => ({ at: l.start, el: (
           <div key={`l${l.start}`} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, flexWrap: 'wrap' }}>
@@ -379,6 +386,14 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
                         <thead><tr style={{ background: '#F6F4EF' }}>{['Date', 'Technician', 'What', 'From', 'To', 'Hours', 'Miles'].map(th)}</tr></thead>
                         <tbody>
                           {logs.flatMap((d) => [
+                            ...(d.clockIn ? [{ at: d.clockIn, row: (
+                              <tr key={`c${d.tech}${d.clockIn}`} className="jl-avoid">
+                                <td style={cell}>{fmtDay(d.day)}</td><td style={cell}>{d.tech}</td>
+                                <td style={cell}>Clocked in</td>
+                                <td style={cell}>{timeOf(d.clockIn)}</td><td style={cell}>{d.signOut ? `Signed out ${timeOf(d.signOut)}` : ''}</td>
+                                <td style={cell}>{d.signOut ? hoursOf(Date.parse(d.signOut) - Date.parse(d.clockIn)) : ''}</td><td style={cell}></td>
+                              </tr>
+                            ) }] : []),
                             ...d.legs.map((l) => ({ at: l.start, row: (
                               <tr key={`l${d.tech}${l.start}`} className="jl-avoid">
                                 <td style={cell}>{fmtDay(d.day)}</td><td style={cell}>{d.tech}</td>

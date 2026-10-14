@@ -14,7 +14,7 @@
 //
 // Pure and unit-tested (lib/project-day.test.ts).
 
-export type DayKind = 'travel_start' | 'travel_end' | 'lunch_start' | 'lunch_end' | 'in' | 'out';
+export type DayKind = 'day_start' | 'travel_start' | 'travel_end' | 'lunch_start' | 'lunch_end' | 'in' | 'out';
 export type Origin = 'home' | 'hotel' | 'site' | 'other';
 export type Dest = 'site' | 'hotel' | 'home' | 'next_site';
 
@@ -31,7 +31,7 @@ export type DayEvent = {
   id?: string;
 };
 
-const KINDS: DayKind[] = ['travel_start', 'travel_end', 'lunch_start', 'lunch_end', 'in', 'out'];
+const KINDS: DayKind[] = ['day_start', 'travel_start', 'travel_end', 'lunch_start', 'lunch_end', 'in', 'out'];
 const ORIGINS: Origin[] = ['home', 'hotel', 'site', 'other'];
 const DESTS: Dest[] = ['site', 'hotel', 'home', 'next_site'];
 
@@ -65,7 +65,7 @@ export function parseDayEvents(raw: unknown): DayEvent[] {
   return sortEvents(out);
 }
 
-const ORDER: Record<DayKind, number> = { travel_end: 0, in: 1, lunch_start: 2, lunch_end: 3, out: 4, travel_start: 5 };
+const ORDER: Record<DayKind, number> = { travel_end: 0, in: 1, lunch_start: 2, lunch_end: 3, out: 4, day_start: 5, travel_start: 6 };
 
 /** Oldest first; taps at the same moment in the order they happen (arrive before start job). */
 export function sortEvents(events: DayEvent[]): DayEvent[] {
@@ -81,6 +81,8 @@ export function dayOf(iso: string, timeZone?: string): string {
 
 export type DayState =
   | { stage: 'ready' }
+  /** Clocked in for the day (migration 118), not driving and not on site. */
+  | { stage: 'clocked'; since: string }
   | { stage: 'travel'; since: string; dest: Dest; origin: Origin | null }
   | { stage: 'onsite'; since: string; lunchMs: number }
   | { stage: 'lunch'; since: string; onSiteSince: string; lunchMs: number }
@@ -93,14 +95,23 @@ export type DayState =
  */
 export function dayState(events: DayEvent[], now: Date = new Date(), timeZone?: string): DayState {
   let st: DayState = { stage: 'ready' };
+  // Fred, 2026-10-13: "it should start with clock-in then it should ask for
+  // travel". The day starts at Clock in and ends on arriving at the hotel or home.
+  let clockIn: string | null = null;
   for (const e of sortEvents(events)) {
     const t = Date.parse(e.at);
     switch (e.kind) {
+      case 'day_start':
+        if (st.stage === 'ready') { clockIn = e.at; st = { stage: 'clocked', since: e.at }; }
+        break;
       case 'travel_start':
         st = { stage: 'travel', since: e.at, dest: e.dest ?? 'site', origin: e.origin ?? null };
         break;
       case 'travel_end':
-        if (st.stage === 'travel') st = { stage: 'ready' };
+        if (st.stage === 'travel') {
+          if (st.dest === 'hotel' || st.dest === 'home') { clockIn = null; st = { stage: 'ready' }; }
+          else st = { stage: 'clocked', since: clockIn ?? e.at };
+        }
         break;
       case 'in':
         st = { stage: 'onsite', since: e.at, lunchMs: 0 };
@@ -116,7 +127,9 @@ export function dayState(events: DayEvent[], now: Date = new Date(), timeZone?: 
         break;
     }
   }
-  if (st.stage === 'offsite' && dayOf(st.since, timeZone) !== dayOf(now.toISOString(), timeZone)) return { stage: 'ready' };
+  // A day left open (off site with no drive, or clocked in and never signed
+  // out) starts fresh the next morning.
+  if ((st.stage === 'offsite' || st.stage === 'clocked') && dayOf(st.since, timeZone) !== dayOf(now.toISOString(), timeZone)) return { stage: 'ready' };
   return st;
 }
 
@@ -141,6 +154,8 @@ export type SiteSpan = { tech: string; day: string; in: string; out: string | nu
 export type DayLog = {
   tech: string; day: string; legs: Leg[]; spans: SiteSpan[];
   travelMs: number; onSiteMs: number; lunchMs: number; miles: number;
+  /** Clock in (the first that day) and signing out on arriving at the hotel or home. */
+  clockIn: string | null; signOut: string | null;
 };
 
 /** Every tech's taps on a job → one log per tech per day, oldest first. */
@@ -152,6 +167,7 @@ export function buildDayLogs(events: DayEvent[], now: Date = new Date(), timeZon
   }
   const legs: Leg[] = [];
   const spans: SiteSpan[] = [];
+  const clockIns: { tech: string; at: string }[] = [];
   const nowMs = now.getTime();
   for (const [tech, list] of byTech) {
     const evs = sortEvents(list);
@@ -181,6 +197,7 @@ export function buildDayLogs(events: DayEvent[], now: Date = new Date(), timeZon
     };
     for (const e of evs) {
       switch (e.kind) {
+        case 'day_start': clockIns.push({ tech, at: e.at }); break;
         case 'travel_start': closeLeg(e); leg = { start: e }; break;
         case 'travel_end': closeLeg(e); break;
         case 'in': closeLeg(e); closeSpan(e); span = { in: e, lunchMs: 0, lunchFrom: null }; break;
@@ -201,10 +218,17 @@ export function buildDayLogs(events: DayEvent[], now: Date = new Date(), timeZon
   const get = (tech: string, day: string) => {
     const k = keyOf(tech, day);
     let d = keys.get(k);
-    if (!d) { d = { tech, day, legs: [], spans: [], travelMs: 0, onSiteMs: 0, lunchMs: 0, miles: 0 }; keys.set(k, d); }
+    if (!d) { d = { tech, day, legs: [], spans: [], travelMs: 0, onSiteMs: 0, lunchMs: 0, miles: 0, clockIn: null, signOut: null }; keys.set(k, d); }
     return d;
   };
-  for (const l of legs) { const d = get(l.tech, l.day); d.legs.push(l); d.travelMs += l.ms; d.miles += l.miles ?? 0; }
+  for (const c of clockIns) {
+    const d = get(c.tech, dayOf(c.at, timeZone));
+    if (!d.clockIn || c.at < d.clockIn) d.clockIn = c.at;
+  }
+  for (const l of legs) {
+    const d = get(l.tech, l.day); d.legs.push(l); d.travelMs += l.ms; d.miles += l.miles ?? 0;
+    if ((l.dest === 'hotel' || l.dest === 'home') && l.end && (!d.signOut || l.end > d.signOut)) d.signOut = l.end;
+  }
   for (const s of spans) { const d = get(s.tech, s.day); d.spans.push(s); d.onSiteMs += s.ms; d.lunchMs += s.lunchMs; }
   const out = [...keys.values()];
   for (const d of out) {
@@ -254,6 +278,7 @@ export function lastPlace(events: DayEvent[], now: Date = new Date(), timeZone?:
   const evs = sortEvents(events);
   for (let i = evs.length - 1; i >= 0; i--) {
     const e = evs[i];
+    if (e.kind === 'day_start') continue;
     if (e.kind === 'out' || e.kind === 'in') return 'site';
     if (e.kind === 'travel_start') {
       const d = e.dest ?? 'site';

@@ -890,6 +890,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     await act(makeAction('day', { number: job.number, kind, ...g, ...extra }, `${label} — WO ${job.number}`, at), sent);
   };
   const dayOn: DayActions = {
+    clockIn: () => void dayTap('day_start', {}, 'Clock in', 'Clocked in. Pick where you are going.'),
     startTrip: (trip) => {
       const leg = tripLeg(trip, job.myDay ?? []);
       void dayTap('travel_start', { origin: leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.');

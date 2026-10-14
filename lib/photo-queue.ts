@@ -14,6 +14,8 @@ export type QueuedPhoto = {
   lng: number | null;
   accuracy: number | null;
   source: 'camera' | 'library';
+  /** What the photo is ("Inventory"), asked on project jobs (migration 120). */
+  label?: string | null;
 };
 
 const DB = 'faj-tech';

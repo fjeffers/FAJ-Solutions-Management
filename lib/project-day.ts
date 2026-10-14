@@ -29,6 +29,8 @@ export type DayEvent = {
   tech?: string;
   /** The job_day_events row, so the office can correct the miles. */
   id?: string;
+  /** Street address of the tap's GPS position (migration 120, lib/places.ts). */
+  place?: string;
 };
 
 const KINDS: DayKind[] = ['day_start', 'travel_start', 'travel_end', 'lunch_start', 'lunch_end', 'in', 'out'];
@@ -60,6 +62,7 @@ export function parseDayEvents(raw: unknown): DayEvent[] {
     if (typeof r.contractor_name === 'string' && r.contractor_name) ev.tech = r.contractor_name;
     else if (typeof r.tech === 'string' && r.tech) ev.tech = r.tech;
     if (typeof r.id === 'string' && r.id) ev.id = r.id;
+    if (typeof r.place === 'string' && r.place.trim()) ev.place = r.place.trim();
     out.push(ev);
   }
   return sortEvents(out);

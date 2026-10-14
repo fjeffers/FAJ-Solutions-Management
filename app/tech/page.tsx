@@ -30,6 +30,7 @@ import {
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
+import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
 import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
@@ -1004,7 +1005,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
             locating={locating}
             photoBusy={!!ph.busy}
             onClock={() => void toggleClock()}
-            onPhoto={(f) => void ph.add(f, 'camera')}
+            onPhoto={(f) => ph.ask(f, 'camera')}
             onNote={() => setNoteOpen(true)}
             onExpense={() => setExpenseOpen(true)}
             onMessages={openMessages}
@@ -1047,6 +1048,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
       )}
       {expenseOpen && <ExpenseDialog job={job} onClose={() => setExpenseOpen(false)} onSaved={() => { setExpenseOpen(false); void loadExpenses(); }} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
+      {ph.pending && <PhotoLabelDialog preview={ph.pending.preview} choices={photoLabelChoices(deliverables)} onPick={ph.answer} onCancel={ph.cancel} />}
       {doneOpen && (
         <WorkDoneDialog
           job={job}
@@ -1462,6 +1464,7 @@ async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<{ url: str
     if (p.accuracy != null) fd.append('accuracy', String(p.accuracy));
   }
   fd.append('source', p.source);
+  if (p.label) fd.append('label', p.label);
   try {
     const res = await fetch('/api/tech/photo', { method: 'POST', body: fd });
     const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; url?: string };
@@ -1520,9 +1523,9 @@ function useJobPhotos(job: WfJob, uid: string) {
     return () => window.removeEventListener('online', back);
   }, [loadSent, loadWaiting, flush]);
 
-  const add = async (file: File | undefined, source: 'camera' | 'library') => {
+  const add = async (file: File | undefined, source: 'camera' | 'library', label: string | null = null, when?: Date) => {
     if (!file) return;
-    const at = new Date();
+    const at = when ?? new Date();
     setBusy('Getting your location…');
     const pos = await getPosition(8000);
     setBusy('Stamping the photo…');
@@ -1536,7 +1539,7 @@ function useJobPhotos(job: WfJob, uid: string) {
       toastError(e instanceof Error ? e.message : "Couldn't prepare that photo.");
       return;
     }
-    const meta = { woNumber: job.number, blob, takenAt: at.toISOString(), lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source };
+    const meta = { woNumber: job.number, blob, takenAt: at.toISOString(), lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source, label };
     setBusy('Sending…');
     const r = await sendPhoto(meta);
     setBusy(null);
@@ -1552,7 +1555,26 @@ function useJobPhotos(job: WfJob, uid: string) {
     }
   };
 
-  return { sent, waiting, busy, add, flush };
+  // On a project the app asks what the photo is first (Fred, 2026-10-14:
+  // "the app asked Mike 'inventory'"); every other job sends it straight away.
+  const [pending, setPending] = useState<{ file: File; source: 'camera' | 'library'; preview: string; at: Date } | null>(null);
+  const ask = (file: File | undefined, source: 'camera' | 'library') => {
+    if (!file) return;
+    if (!job.isProject) { void add(file, source); return; }
+    setPending({ file, source, preview: URL.createObjectURL(file), at: new Date() });
+  };
+  const answer = (label: string | null) => {
+    if (!pending) return;
+    URL.revokeObjectURL(pending.preview);
+    setPending(null);
+    void add(pending.file, pending.source, label, pending.at);
+  };
+  const cancel = () => {
+    if (pending) URL.revokeObjectURL(pending.preview);
+    setPending(null);
+  };
+
+  return { sent, waiting, busy, add, flush, pending, ask, answer, cancel };
 }
 
 // ── Tools — iScanner's, for techs (Fred, 2026-10-07: "all the above for my
@@ -1648,7 +1670,7 @@ function JobTools({ job, canAdd, ph, onNote }: {
       {tool === 'read' && <ReadTool onClose={() => setTool(null)} onNote={onNote} />}
       {(tool === 'count' || tool === 'measure') && (
         <PhotoMarkup mode={tool} onClose={() => setTool(null)}
-          onSave={async (file, source) => { setTool(null); await ph.add(file, source); }} />
+          onSave={async (file, source) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what); }} />
       )}
       {editing && (
         <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}
@@ -1667,14 +1689,14 @@ function JobTools({ job, canAdd, ph, onNote }: {
 }
 
 function JobPhotos({ canAdd, ph }: { canAdd: boolean; ph: ReturnType<typeof useJobPhotos> }) {
-  const { sent, waiting, busy, add, flush } = ph;
+  const { sent, waiting, busy, ask, flush } = ph;
   const pick = (source: 'camera' | 'library', icon: React.ReactNode, label: string, primary: boolean) => (
     <label className={`wf-btn ${primary ? 'wf-btn-gold' : 'wf-btn-outline'}`} style={{ flex: '1 1 150px', opacity: busy ? 0.6 : 1, pointerEvents: busy ? 'none' : 'auto' }}>
       {icon} {label}
       <input
         type="file" accept="image/*" {...(source === 'camera' ? { capture: 'environment' as const } : {})}
         style={{ display: 'none' }}
-        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void add(f, source); }}
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; ask(f, source); }}
       />
     </label>
   );

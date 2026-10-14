@@ -729,6 +729,26 @@ export function AlertPeople({ project }: { project: string }) {
     }
   };
 
+  // The live project sheet (migration 120): one link per project, no login.
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null);
+  const sheetLink = useCallback(async (fresh: boolean) => {
+    const { data, error } = await db.rpc('project_sheet_token', { p_project: project, p_new: fresh });
+    if (error || typeof data !== 'string') return false;
+    setSheetUrl(`${window.location.origin}/sheet/${data}`);
+    return true;
+  }, [db, project]);
+  useEffect(() => { void sheetLink(false); }, [sheetLink]);
+  const copySheet = async () => {
+    if (!sheetUrl) return;
+    try { await navigator.clipboard.writeText(sheetUrl); toastSuccess('Link copied. Paste it into an email or text.'); }
+    catch { window.prompt('Copy the link:', sheetUrl); }
+  };
+  const newSheetLink = async () => {
+    if (!confirm(`Give ${project} a new live sheet link? The old link stops working for everyone who has it.`)) return;
+    if (await sheetLink(true)) toastSuccess('New link made. Alert emails use it from now on.');
+    else toastError('Could not make a new link.');
+  };
+
   const hasMe = rows?.some((r) => r.role === 'owner');
   const chip = (on: boolean, label: string, onClick: () => void, title?: string) => (
     <button className="wf-chip" onClick={onClick} title={title} aria-pressed={on}
@@ -738,6 +758,19 @@ export function AlertPeople({ project }: { project: string }) {
 
   return (
     <div style={{ borderTop: '1px solid var(--wf-line)', marginTop: 8, paddingTop: 10 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12, padding: '8px 10px', border: '1px solid var(--wf-line)', borderRadius: 10 }}>
+        <span style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <b>Live sheet</b>
+          <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5 }}>
+            One page per site, a line for every clock-in, drive, photo and receipt as it happens. Anyone with the link can watch, no login. Every alert email carries it.
+          </span>
+        </span>
+        {sheetUrl ? <>
+          <a className="wf-btn wf-btn-navy wf-btn-sm" href={sheetUrl} target="_blank" rel="noopener noreferrer">Open</a>
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void copySheet()}>Copy link</button>
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void newSheetLink()}>New link</button>
+        </> : <span className="wf-subtle">Loading…</span>}
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
         <b style={{ flex: 1 }}>Live alerts go to</b>
         <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={testing} onClick={() => void test()}>Send a test alert</button>

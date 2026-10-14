@@ -48,6 +48,7 @@ export async function proxy(request: NextRequest) {
     '/billing/',       // billing helper
     '/quote/',         // client quote
     '/site-report/',   // client site activity report
+    '/sheet/',         // live project sheet (migration 120)
     '/tech/login',     // tech portal sign-in / first-time signup
     '/assistant/login',// assistant sign-in / first-time signup
     '/accountant/login',// accountant sign-in / first-time signup

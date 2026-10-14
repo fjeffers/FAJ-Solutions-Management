@@ -30,6 +30,8 @@ export async function POST(req: Request) {
   };
   const takenAt = String(form.get('taken_at') ?? '');
   const source = form.get('source') === 'library' ? 'library' : 'camera';
+  // What the photo is ("Inventory"), for the live project sheet (migration 120).
+  const label = String(form.get('label') ?? '').trim().slice(0, 80) || null;
 
   const supabase = await createClient('field');
   const { data: target, error: tErr } = await supabase.rpc('wf_tech_photo_target', { p_wo_number: woNumber });
@@ -47,7 +49,7 @@ export async function POST(req: Request) {
   const { data: rec, error: rErr } = await supabase.rpc('wf_tech_add_photo', {
     p_wo_number: woNumber, p_path: path, p_url: publicUrl,
     p_taken_at: takenAt || new Date().toISOString(),
-    p_lat: num('lat'), p_lng: num('lng'), p_accuracy: num('accuracy'), p_source: source,
+    p_lat: num('lat'), p_lng: num('lng'), p_accuracy: num('accuracy'), p_source: source, p_label: label,
   });
   if (rErr || !(rec as { ok?: boolean } | null)?.ok) {
     await admin.storage.from('portal-uploads').remove([path]);

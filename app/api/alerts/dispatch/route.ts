@@ -7,6 +7,8 @@ import {
   alertEmailHtml, alertMessage, canOpenApp, recipientsFor, toE164,
   type AlertJob, type AlertPerson, type AlertRow,
 } from '@/lib/project-alerts';
+import { loadSheet, sheetTokenFor } from '@/lib/project-sheet-load';
+import { sheetEmailHtml, type Sheet } from '@/lib/project-sheet';
 
 // POST/GET /api/alerts/dispatch — sends the project alerts that are due
 // (migration 119). The database calls it the moment an alert is added
@@ -17,6 +19,9 @@ import {
 // Phone pop-ups go to the office logins on the project's list that turned
 // them on; email to everyone with an email; texts only once Twilio is set up
 // (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER in Vercel).
+//
+// Every email carries the live project sheet (migration 120): the latest lines
+// on that site's page and a link anyone on the list can open without a login.
 export const dynamic = 'force-dynamic';
 
 export async function POST() { return run(); }
@@ -38,6 +43,21 @@ async function run() {
     ? { sid: process.env.TWILIO_ACCOUNT_SID, token: process.env.TWILIO_AUTH_TOKEN, from: process.env.TWILIO_FROM_NUMBER } : null;
   let vapid: { publicKey: string; privateKey: string } | null = null;
 
+  // One sheet per project per run (several alerts often come together).
+  const sheets = new Map<string, { sheet: Sheet; token: string | null } | null>();
+  const sheetFor = async (a: AlertRow) => {
+    const key = `${a.user_id}|${a.project_name}`;
+    if (!sheets.has(key)) {
+      try {
+        const token = await sheetTokenFor(admin, a.user_id, a.project_name);
+        sheets.set(key, { sheet: await loadSheet(admin, a.user_id, a.project_name, 3), token });
+      } catch {
+        sheets.set(key, null);
+      }
+    }
+    return sheets.get(key) ?? null;
+  };
+
   let sent = 0;
   for (const a of alerts) {
     const result: Record<string, number | string> = { email: 0, push: 0, text: 0 };
@@ -55,12 +75,24 @@ async function run() {
       const m = alertMessage(a, job);
       const link = `${base}/admin?view=workorders&wo=${encodeURIComponent(a.wo_number)}`;
       const subject = `[${a.project_name}] ${m.title}`;
+      const sh = await sheetFor(a);
+      const sheetLink = sh?.token ? `${base}/sheet/${sh.token}${a.wo_number ? `?site=${encodeURIComponent(a.wo_number)}` : ''}` : null;
+      // Where it happened, from the sheet's own line: "From 123 Main St, Orange, NJ".
+      const line = sh?.sheet.rows.find((r) => r.siteId === a.wo_id && r.tech === (a.tech ?? '') && Date.parse(r.at) === Date.parse(a.at)
+        && (r.kind === 'clock' || r.kind === 'drive' || r.kind === 'signout' || r.kind === 'start' || r.kind === 'arrive'));
+      if (line?.where && !m.lines.includes(line.where)) m.lines.unshift(line.where);
+      const emailHtml = (p: AlertPerson) => (sh
+        ? sheetEmailHtml(sh.sheet, {
+          title: m.title, where: m.where, lines: m.lines, siteId: a.wo_id, sheetLink,
+          appLink: canOpenApp(p) ? link : null, receiptLink: (id) => `${base}/sheet/${sh.token}/receipt/${id}`,
+        })
+        : alertEmailHtml(a.project_name, m, canOpenApp(p) ? link : null));
 
       for (const p of to) {
         if (p.by_email && p.email && resend) {
           const r = await resend.emails.send({
             from, to: p.email, subject,
-            html: alertEmailHtml(a.project_name, m, canOpenApp(p) ? link : null),
+            html: emailHtml(p),
           });
           if (!r.error) result.email = Number(result.email) + 1;
         }
@@ -91,7 +123,7 @@ async function run() {
         const phone = toE164(p.phone);
         if (p.by_text && phone) {
           if (!twilio) { result.text_note = 'texts not set up yet'; continue; }
-          const body = new URLSearchParams({ To: phone, From: twilio.from, Body: `${subject}\n${m.where}${m.lines[0] ? `\n${m.lines[0]}` : ''}`.slice(0, 600) });
+          const body = new URLSearchParams({ To: phone, From: twilio.from, Body: `${subject}\n${m.where}${m.lines[0] ? `\n${m.lines[0]}` : ''}`.slice(0, 480) + (sheetLink ? `\nLive sheet: ${sheetLink}` : '') });
           const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilio.sid}/Messages.json`, {
             method: 'POST', body,
             headers: { Authorization: `Basic ${Buffer.from(`${twilio.sid}:${twilio.token}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },

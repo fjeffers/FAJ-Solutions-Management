@@ -510,3 +510,31 @@ export function LeftSiteDialog({ onPick, onStillHere }: { onPick: (reason: strin
     </Dialog>
   );
 }
+
+// ── The tech app and the sheet, linked (migration 124) ──────────────────────
+// Fred, 2026-10-14: "I want the tech app and the web URL to be linked". The
+// tech opens the same live sheet the project manager has, at their site.
+
+export function SheetLinkButton({ number }: { number: string }) {
+  const [busy, setBusy] = useState(false);
+  const open = async () => {
+    setBusy(true);
+    // Open the tab first (phones block a pop-up opened after a wait), then point it at the sheet.
+    const w = window.open('', '_blank');
+    try {
+      const { data } = await createClient().rpc('wf_tech_sheet_link', { p_wo_number: number });
+      const r = data as { ok?: boolean; token?: string; site?: string } | null;
+      if (!r?.ok || !r.token) { w?.close(); toastError("Couldn't open the project sheet."); return; }
+      const url = `/sheet/${r.token}?site=${encodeURIComponent(r.site ?? number)}`;
+      if (w) w.location.href = url; else window.location.href = url;
+    } catch {
+      w?.close();
+      toastError('No signal — try again when you have it.');
+    } finally { setBusy(false); }
+  };
+  return (
+    <button className="wf-btn wf-btn-ghost wf-btn-sm" style={{ alignSelf: 'flex-start' }} disabled={busy} onClick={() => void open()}>
+      Open the project sheet
+    </button>
+  );
+}

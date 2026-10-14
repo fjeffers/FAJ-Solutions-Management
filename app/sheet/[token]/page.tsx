@@ -8,7 +8,16 @@ import ProjectSheetView from '@/components/ProjectSheetView';
 // the service key and hands the page finished lines only (lib/project-sheet.ts):
 // no price, no tech pay. A wrong link 404s rather than hinting a sheet exists.
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Live project sheet', robots: { index: false, follow: false } };
+// The sheet's own home-screen app, so phone alerts open the sheet (migration 124).
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  return {
+    title: 'Live project sheet',
+    robots: { index: false, follow: false },
+    manifest: `/sheet/${token}/manifest.webmanifest`,
+    appleWebApp: { capable: true, title: 'Live sheet', statusBarStyle: 'default' as const },
+  };
+}
 
 export default async function SheetPage({ params, searchParams }: {
   params: Promise<{ token: string }>;

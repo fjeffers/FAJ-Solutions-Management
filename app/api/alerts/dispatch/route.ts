@@ -22,12 +22,21 @@ import { sheetEmailHtml, type Sheet } from '@/lib/project-sheet';
 //
 // Every email carries the live project sheet (migration 120): the latest lines
 // on that site's page and a link anyone on the list can open without a login.
+//
+// Fred, 2026-10-14: "I want the alert to be within that sheet, not getting an
+// email every time ... after a while the email chain will be too much." Email
+// now goes only when someone is stopped or late (EMAIL_KINDS); everything else
+// is on the sheet, which chimes when it's open, and as phone alerts to every
+// phone that turned them on from the sheet (migration 124) or the office app.
 export const dynamic = 'force-dynamic';
 
 export async function POST() { return run(); }
 export async function GET() { return run(); }
 
 type Sub = { id: string; endpoint: string; p256dh: string; auth: string };
+
+/** The only alerts that also come by email: someone is stopped, or late. */
+const EMAIL_KINDS = new Set(['issue', 'late', 'test']);
 
 async function run() {
   const admin = createAdminClient();
@@ -89,7 +98,7 @@ async function run() {
         : alertEmailHtml(a.project_name, m, canOpenApp(p) ? link : null));
 
       for (const p of to) {
-        if (p.by_email && p.email && resend) {
+        if (p.by_email && p.email && resend && EMAIL_KINDS.has(a.kind)) {
           const r = await resend.emails.send({
             from, to: p.email, subject,
             html: emailHtml(p),
@@ -129,6 +138,34 @@ async function run() {
             headers: { Authorization: `Basic ${Buffer.from(`${twilio.sid}:${twilio.token}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
           });
           if (r.ok) result.text = Number(result.text) + 1;
+        }
+      }
+      // Phones that turned on alerts right on the sheet (no login). Not the
+      // sheet's own posts: whoever wrote it doesn't need telling.
+      if (sh?.token && a.kind !== 'client_message') {
+        const { data: sheetSubs } = await admin.from('sheet_push_subscriptions')
+          .select('id, endpoint, p256dh, auth').eq('user_id', a.user_id).eq('project_name', a.project_name).eq('token', sh.token);
+        if (sheetSubs && sheetSubs.length > 0) {
+          vapid ??= await vapidKeys(admin);
+          const payload = JSON.stringify({
+            title: m.title, body: `${a.project_name} · ${m.where}${m.lines[0] ? `\n${m.lines[0]}` : ''}`,
+            url: sheetLink ?? base, tag: a.id,
+          });
+          let sheetPush = 0;
+          for (const s2 of sheetSubs as Sub[]) {
+            try {
+              await webpush.sendNotification({ endpoint: s2.endpoint, keys: { p256dh: s2.p256dh, auth: s2.auth } }, payload, {
+                vapidDetails: { subject: 'mailto:support@fajsolutions.com', publicKey: vapid.publicKey, privateKey: vapid.privateKey },
+                TTL: 60 * 60,
+              });
+              sheetPush += 1;
+              await admin.from('sheet_push_subscriptions').update({ last_ok_at: new Date().toISOString() }).eq('id', s2.id);
+            } catch (e) {
+              const code = (e as { statusCode?: number }).statusCode;
+              if (code === 404 || code === 410) await admin.from('sheet_push_subscriptions').delete().eq('id', s2.id);
+            }
+          }
+          result.sheet_push = sheetPush;
         }
       }
       await admin.from('project_alerts').update({ status: 'sent', sent_at: new Date().toISOString(), result }).eq('id', a.id);

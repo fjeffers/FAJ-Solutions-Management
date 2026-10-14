@@ -8,9 +8,10 @@
 // remembers the site picked in the address so a copied link opens it.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { fmtSheetDay, money2, openIssues, pageRows, type Sheet, type SheetMessage, type SheetRow } from '@/lib/project-sheet';
-import { Bubble, Composer, useSheetMessages } from './SheetMessages';
+import { fmtSheetDay, messageTitle, money2, openIssues, pageRows, type Sheet, type SheetMessage, type SheetRow } from '@/lib/project-sheet';
+import { Bubble, Composer, savedName, useSheetMessages } from './SheetMessages';
 import ProjectSheetReport, { REPORT_CSS } from './ProjectSheetReport';
+import { ALERTS_CSS, AlertsButton, LiveToasts, chime, type Toast } from './SheetAlerts';
 
 const NAVY = '#0E1B2E';
 const GOLD = '#C9A24B';
@@ -45,6 +46,19 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
   }, [printing]);
   // Messages: notes under lines, questions for the tech, "No access" (migration 121).
   const { messages, now, send } = useSheetMessages(token, initialMessages);
+  const seenMsgs = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const ids = messages.map((m) => m.id);
+    if (seenMsgs.current) {
+      const me = savedName();
+      const added = messages.filter((m) => !seenMsgs.current!.has(m.id) && !(me && m.from === me && m.role === 'client'));
+      announce(added.slice(-4).map((m) => ({
+        id: `msg-${m.id}`, text: `${m.from}: ${messageTitle(m, messages)}`,
+        sub: m.kind === 'issue' ? m.reason : m.body && m.kind !== 'resolved' ? m.body.slice(0, 120) : undefined,
+      })));
+    }
+    seenMsgs.current = new Set(ids);
+  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
   const siteMsgs = useMemo(() => (site ? messages.filter((m) => m.wo === site.wo) : []), [messages, site]);
   const issues = site ? openIssues(messages, site.wo) : [];
   const [noteFor, setNoteFor] = useState<string | null>(null);
@@ -77,25 +91,49 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
   }, [router]);
   const seen = useRef<Set<string> | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
+  // Alerts inside the sheet (Fred, 2026-10-14: "I want the alert to be within
+  // that sheet, not getting an email every time"): a pop-up and a chime for
+  // each new line or message while the sheet is open.
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [unseen, setUnseen] = useState(0);
+  const announce = (items: Toast[]) => {
+    if (items.length === 0) return;
+    setToasts((t) => [...t, ...items].slice(-6));
+    items.forEach((it) => window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== it.id)), 12_000));
+    if (document.visibilityState !== 'visible') setUnseen((n) => n + items.length);
+    chime();
+  };
+  useEffect(() => {
+    const clear = () => { if (document.visibilityState === 'visible') setUnseen(0); };
+    document.addEventListener('visibilitychange', clear);
+    return () => document.removeEventListener('visibilitychange', clear);
+  }, []);
+  useEffect(() => {
+    document.title = unseen > 0 ? `(${unseen}) Live project sheet` : 'Live project sheet';
+  }, [unseen]);
   useEffect(() => {
     const ids = sheet.rows.map((r) => r.id);
     if (seen.current) {
       const added = new Set(ids.filter((id) => !seen.current!.has(id)));
       if (added.size > 0) {
         setFresh(added);
+        announce(sheet.rows.filter((r) => added.has(r.id)).slice(-4).map((r) => ({
+          id: `row-${r.id}`, text: `${r.tech ? `${r.tech} · ` : ''}${r.activity}`, sub: [r.site, r.time].filter(Boolean).join(' · '),
+        })));
         const t = window.setTimeout(() => setFresh(new Set()), 8000);
         seen.current = new Set(ids);
         return () => window.clearTimeout(t);
       }
     }
     seen.current = new Set(ids);
-  }, [sheet.rows]);
+  }, [sheet.rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const csv = `/sheet/${token}/csv${site ? `?site=${encodeURIComponent(site.wo)}` : ''}`;
 
   return (
     <div className="ps-page">
-      <style>{CSS + REPORT_CSS}</style>
+      <style>{CSS + REPORT_CSS + ALERTS_CSS}</style>
+      <LiveToasts toasts={toasts} onClose={(id) => setToasts((t) => t.filter((x) => x.id !== id))} />
       <div className="ps-wrap ps-screen">
         <div className="ps-brand ps-noprint">
           <div style={{ fontSize: 17, fontWeight: 800, color: NAVY, letterSpacing: 3 }}>FAJ SOLUTIONS</div>
@@ -103,7 +141,10 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
         </div>
 
         <div className="ps-head">
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{sheet.project}</div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, flex: 1, minWidth: 0 }}>{sheet.project}</div>
+            <AlertsButton token={token} />
+          </div>
           <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span className="ps-dot" /> Live · updated {time(updatedAt)} · new lines appear as the technicians work
           </div>

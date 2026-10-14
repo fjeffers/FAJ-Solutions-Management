@@ -40,7 +40,7 @@ export function useSheetMessages(token: string, initial: SheetMessage[]) {
   return { messages, now, send };
 }
 
-function savedName(): string {
+export function savedName(): string {
   try { return window.localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; }
 }
 function saveName(n: string) {

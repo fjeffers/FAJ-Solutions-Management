@@ -31,7 +31,7 @@ import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type Closeou
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
-import { LeftSiteDialog, SiteAccessBar, buzz, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
+import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate } from '@/lib/utils';
@@ -1061,6 +1061,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
             <SiteAccessBar number={job.number} talk={talk} late={late}
               showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
             <ProjectDayCard job={job} busy={locating} enabled={working} on={dayOn} onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
+            <div style={{ marginTop: 6 }}><SheetLinkButton number={job.number} /></div>
           </>
           : showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
         onToggleTask={working ? toggleTask : undefined}

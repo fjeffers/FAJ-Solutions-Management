@@ -17,7 +17,8 @@ import {
   fetchTechProfile, fetchTechPayments, fetchTechSummary, fetchTechUnread, fetchTechDmUnread,
   fetchTechPortalToken, saveTechProfile, saveTechEmergency, paymentsByYear, fetchTechMessages, sendTechMessage, claimTechAccount,
 } from '@/lib/tech-portal';
-import { fetchWfTechJobs, fetchCloseoutLists, registerTechHandlers, applyPending, toChatJob } from '@/lib/tech-wf';
+import { fetchWfTechJobs, fetchCloseoutLists, fetchTechFilesStamp, registerTechHandlers, applyPending, toChatJob } from '@/lib/tech-wf';
+import { jobChanges } from '@/lib/tech-live';
 import {
   Outbox, browserStorage, saveCopy, loadCopy, lastUid, clearCopies, isNoSignal, makeAction, outcomeMessage,
   type PendingAction,
@@ -68,7 +69,12 @@ import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 // right under my jobs ... projects"); it is not one of the bottom tabs.
 type Tab = 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'pay' | 'profile';
 const TABS: Tab[] = ['jobs', 'available', 'schedule', 'chat', 'pay', 'profile'];
-const ALL_TABS: Tab[] = [...TABS, 'projects'];
+// Projects is hidden in the tech app for now (Fred, 2026-10-14: "hide project
+// for now on the tech portal"). While it is off, project sites are ordinary
+// jobs here: listed under My jobs, with the normal clock. Set to true to bring
+// back the Projects list and the travel / lunch / day-report flow.
+const SHOW_PROJECTS = false;
+const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, 'projects'] : TABS;
 const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
 const TAB_TITLE: Record<Tab, string> = {
   jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My schedule', chat: 'Messages', pay: 'Pay history', profile: 'Profile',
@@ -133,9 +139,52 @@ export default function TechPortalPage() {
     const t = window.setInterval(() => { void check(); }, 20_000);
     return () => window.clearInterval(t);
   }, [uid]);
+  // Live updates (Fred, 2026-10-14: "implement live update between admin and
+  // tech portal"): while the app is open, re-read the jobs every 30 seconds
+  // and whenever the tech comes back to it, and say what changed: a new
+  // time, date, address, scope, document or job.
+  const liveJobs = useRef<WfJob[] | null>(null);
+  const liveFiles = useRef<Record<string, number> | null>(null);
+  useEffect(() => {
+    if (!uid || phase !== 'ready') return;
+    let busy = false;
+    const check = async () => {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      try {
+        const [j, files] = await Promise.all([fetchWfTechJobs(), fetchTechFilesStamp()]);
+        const prevJobs = liveJobs.current;
+        const prevFiles = liveFiles.current;
+        liveJobs.current = j;
+        liveFiles.current = files;
+        if (!prevJobs || !prevFiles) return;
+        const changes = jobChanges(prevJobs, j, prevFiles, files);
+        if (changes.length > 0) {
+          buzz();
+          for (const c of changes.slice(0, 3)) toastInfo(c.text);
+          if (changes.length > 3) toastInfo(`${changes.length - 3} more updates on your jobs.`);
+        }
+        for (const n of Object.keys(files)) {
+          if (files[n] !== prevFiles[n]) window.dispatchEvent(new CustomEvent('wf-job-files', { detail: n }));
+        }
+        if (JSON.stringify(prevJobs) !== JSON.stringify(j)) {
+          setOfficeJobs(j);
+          saveCopy(kv, uid, 'jobs', j);
+        }
+      } catch { /* no signal: try again shortly */ } finally { busy = false; }
+    };
+    void check();
+    const t = window.setInterval(() => { void check(); }, 30_000);
+    const back = () => { if (document.visibilityState === 'visible') void check(); };
+    document.addEventListener('visibilitychange', back);
+    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', back); };
+  }, [uid, phase, kv]);
   const box = boxRef.current;
   const pending = box?.pending ?? [];
-  const jobs = useMemo(() => applyPending(officeJobs, pending), [officeJobs, pending]);
+  const jobs = useMemo(() => {
+    const all = applyPending(officeJobs, pending);
+    return SHOW_PROJECTS ? all : all.map((j) => (j.isProject ? { ...j, isProject: false } : j));
+  }, [officeJobs, pending]);
 
   const loadLive = useCallback(async (u: string, quiet: boolean) => {
     setRefreshing(true);
@@ -359,11 +408,13 @@ export default function TechPortalPage() {
         </div>
         {railItem('jobs', <Briefcase size={18} />)}
         {/* Always under My jobs (Fred, 2026-10-13: "right under my jobs ... projects"). */}
-        <button className="wf-rail-item" aria-current={tab === 'projects' ? 'page' : undefined} onClick={() => go('projects')}
-          style={{ paddingLeft: 34, fontSize: 14 }}>
-          <FolderKanban size={16} /> Projects
-          {projectJobs.length > 0 && <span className="wf-rail-badge" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}>{projectJobs.length}</span>}
-        </button>
+        {SHOW_PROJECTS && (
+          <button className="wf-rail-item" aria-current={tab === 'projects' ? 'page' : undefined} onClick={() => go('projects')}
+            style={{ paddingLeft: 34, fontSize: 14 }}>
+            <FolderKanban size={16} /> Projects
+            {projectJobs.length > 0 && <span className="wf-rail-badge" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}>{projectJobs.length}</span>}
+          </button>
+        )}
         {railItem('available', <Inbox size={18} />, offers.length)}
         {railItem('schedule', <CalendarDays size={18} />)}
         {railItem('chat', <MessageSquare size={18} />, unread)}
@@ -1658,13 +1709,20 @@ function JobTools({ job, canAdd, ph, onNote }: {
   }, [job.number]);
   useEffect(() => { void loadDocs(); }, [loadDocs]);
   const [files, setFiles] = useState<JobFile[]>([]);
+  // Bumped by the live check when this job's documents change.
+  const [filesRev, setFilesRev] = useState(0);
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === job.number) setFilesRev((n) => n + 1); };
+    window.addEventListener('wf-job-files', on);
+    return () => window.removeEventListener('wf-job-files', on);
+  }, [job.number]);
   useEffect(() => {
     let live = true;
     void createClient().rpc('wf_tech_job_files', { p_wo_number: job.number }).then(({ data, error }) => {
       if (live && !error && Array.isArray(data)) setFiles(data as JobFile[]);
     });
     return () => { live = false; };
-  }, [job.number]);
+  }, [job.number, filesRev]);
   if (!canAdd && docs.length === 0 && files.length === 0) return null;
   const jobLabel = `WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`;
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });

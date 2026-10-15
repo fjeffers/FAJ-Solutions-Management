@@ -19,6 +19,13 @@ export async function fetchWfTechJobs(): Promise<WfJob[]> {
   return Array.isArray(data) ? (data as Record<string, unknown>[]).map(wfJobFromTech) : [];
 }
 
+/** How many office documents each of the tech's live jobs has (migration 126). */
+export async function fetchTechFilesStamp(): Promise<Record<string, number>> {
+  const { data, error } = await createClient().rpc('wf_tech_files_stamp');
+  if (error) throw new Error(error.message);
+  return (data && typeof data === 'object' && !Array.isArray(data) ? data : {}) as Record<string, number>;
+}
+
 /** The office's closeout checklists (migration-106). Empty when none or unreachable. */
 export async function fetchCloseoutLists(): Promise<CloseoutList[]> {
   const { data, error } = await createClient().rpc('wf_tech_closeout_lists');

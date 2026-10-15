@@ -14,6 +14,7 @@ import {
   FilePlus2, Pencil, Plus, Receipt, Search, Send, Signature, Sparkles, Trash2, UserCog, Users, Wallet,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { useLiveRows } from '@/components/wf/useLive';
 import {
   wfJobFromOwner, matchesWf, sortWf, ownerCounts, bucketOf, bucketCounts, withTask, withCloseout, fullAddress, wfReasonText,
   parseClockTime, fmtClock12, requestWhen, whenText, type WfBucket, type WfJob, type WfTask,
@@ -168,6 +169,7 @@ export default function WorkFlowView({
     setWaitingExp((data as ExpenseRow[] | null) ?? []);
   };
   useEffect(() => { void loadWaiting(); }, [workOrders]);
+  useLiveRows('job_expenses', null, () => void loadWaiting());
 
   const [lists, setLists] = useState<CloseoutList[]>([]);
   useEffect(() => {
@@ -292,6 +294,7 @@ export function OwnerAlerts({ workOrders, onOpenJob, onRefresh }: {
     setWaitingExp((data as ExpenseRow[] | null) ?? []);
   };
   useEffect(() => { void loadWaiting(); }, [workOrders]);
+  useLiveRows('job_expenses', null, () => void loadWaiting());
   const timeAsks = workOrders.map((w) => ({ w, job: wfJobFromOwner(w) }))
     .filter((r) => !r.job.archived && r.job.status === 'offered' && waitingRequests(r.job.timeRequests, r.job.techs).length > 0);
   if (waitingExp.length === 0 && timeAsks.length === 0 && !inboxOpen) return null;
@@ -547,6 +550,7 @@ function JobDocsCard({ woId, jobLabel, archived }: { woId: string; jobLabel: str
     setDocs((data as JobDoc[] | null) ?? []);
   };
   useEffect(() => { void load(); }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLiveRows('job_docs', woId, () => void load());
   if (!docs || (docs.length === 0 && archived)) return null;
   const open = async (d: JobDoc) => {
     const { data, error } = await createClient().storage.from('job-docs').createSignedUrl(d.path, 600);
@@ -656,6 +660,7 @@ function JobNotesCard({ woId, author }: { woId: string; author: string }) {
     setNotes((data as JobNote[] | null) ?? []);
   };
   useEffect(() => { void load(); }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLiveRows('job_notes', woId, () => void load());
   const add = async () => {
     const text = body.trim();
     if (!text) return;

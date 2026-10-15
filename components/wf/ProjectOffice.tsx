@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Car, FileText, MapPin, Plus, Printer, Receipt, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { useLiveRows } from '@/components/wf/useLive';
 import {
   buildDayLogs, dayOf, hoursOf, legLabel, parseDayEvents, totalsOf, type DayEvent, type DayLog,
 } from '@/lib/project-day';
@@ -63,6 +64,8 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
   const [reportOpen, setReportOpen] = useState(false);
   const load = useCallback(async () => { setEvents(await loadEvents([w.id])); }, [w.id]);
   useEffect(() => { void load(); }, [load]);
+  useLiveRows('job_day_events', w.id, () => void load());
+  useLiveRows('job_punches', w.id, () => void load());
   const logs = useMemo(() => buildDayLogs(events ?? [], new Date(), TZ), [events]);
   const t = totalsOf(logs);
 

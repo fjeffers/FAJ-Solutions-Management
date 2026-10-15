@@ -1640,6 +1640,8 @@ function useJobPhotos(job: WfJob, uid: string) {
 //   Count / Measure   marked-up photos, sent with the job's photos
 
 type JobDoc = { id: string; name: string; kind: string; pages: number | null; created_at: string; mine?: boolean; shared?: boolean };
+// Files the office attached on the job (work_orders.doc_urls, migration 125).
+type JobFile = { url: string; name: string };
 type ToolKey = 'scan' | 'edit' | 'read' | 'count' | 'measure';
 
 function JobTools({ job, canAdd, ph, onNote }: {
@@ -1655,7 +1657,15 @@ function JobTools({ job, canAdd, ph, onNote }: {
     if (!error && Array.isArray(data)) setDocs(data as JobDoc[]);
   }, [job.number]);
   useEffect(() => { void loadDocs(); }, [loadDocs]);
-  if (!canAdd && docs.length === 0) return null;
+  const [files, setFiles] = useState<JobFile[]>([]);
+  useEffect(() => {
+    let live = true;
+    void createClient().rpc('wf_tech_job_files', { p_wo_number: job.number }).then(({ data, error }) => {
+      if (live && !error && Array.isArray(data)) setFiles(data as JobFile[]);
+    });
+    return () => { live = false; };
+  }, [job.number]);
+  if (!canAdd && docs.length === 0 && files.length === 0) return null;
   const jobLabel = `WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`;
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const btn = (key: ToolKey, icon: React.ReactNode, label: string) => (
@@ -1676,6 +1686,16 @@ function JobTools({ job, canAdd, ph, onNote }: {
       toastError('No signal. Try again when you have signal.');
     } finally { setOpening(null); }
   };
+  const signFile = async (f: JobFile) => {
+    setOpening(f.url);
+    try {
+      const res = await fetch(f.url);
+      if (!res.ok) { toastError("Couldn't open the document."); return; }
+      setEditing({ file: await res.blob(), name: signedName(f.name.replace(/\.pdf$/i, '')), kind: 'Signed document' });
+    } catch {
+      toastError('No signal. Try again when you have signal.');
+    } finally { setOpening(null); }
+  };
   const shared = docs.filter((d) => d.shared);
   const sent = docs.filter((d) => !d.shared);
   const row = (d: JobDoc) => (
@@ -1691,7 +1711,27 @@ function JobTools({ job, canAdd, ph, onNote }: {
       )}
     </div>
   );
-  return (
+  return (<>
+    {files.length > 0 && (
+      <Section title="Job documents" subtitle="Guides and forms for this job">
+        {files.map((f) => {
+          const pdf = /\.pdf$/i.test(f.url);
+          return (
+            <div key={f.url} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--wf-line)', fontSize: 13.5 }}>
+              <FileText size={15} color="var(--wf-subtle)" />
+              <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{f.name}</span>
+              <a className="wf-btn wf-btn-outline wf-btn-sm" href={f.url} target="_blank" rel="noopener noreferrer">Open</a>
+              {pdf && canAdd && (
+                <button type="button" className="wf-btn wf-btn-gold wf-btn-sm" disabled={opening === f.url} onClick={() => void signFile(f)}>
+                  {opening === f.url ? 'Opening…' : <><Signature size={14} /> Sign</>}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </Section>
+    )}
+    {(canAdd || docs.length > 0) && (
     <Section title="Tools" subtitle="Scan, fill in and sign PDFs, read codes, count and measure">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {canAdd && (
@@ -1739,7 +1779,8 @@ function JobTools({ job, canAdd, ph, onNote }: {
           onClose={() => setEditing(null)} />
       )}
     </Section>
-  );
+    )}
+  </>);
 }
 
 function JobPhotos({ canAdd, ph }: { canAdd: boolean; ph: ReturnType<typeof useJobPhotos> }) {

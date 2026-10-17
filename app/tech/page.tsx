@@ -25,7 +25,7 @@ import {
 } from '@/lib/wf-outbox';
 import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
-  fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf,
+  fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
@@ -35,7 +35,7 @@ import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel'
 import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
-import { fmtMoney, fmtDate } from '@/lib/utils';
+import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { getPosition, stampLines, mapLink, milesBetween, type Position } from '@/lib/geo';
@@ -53,7 +53,7 @@ import SignaturePad from '@/components/wf/SignaturePad';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  ArrowLeft, Briefcase, FolderKanban, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, Menu, MessageSquare, Navigation,
+  ArrowLeft, Briefcase, FolderKanban, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
   RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
@@ -67,20 +67,26 @@ import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 // whatever Primio has", keeping those three).
 // Projects sits under My jobs in the menu (Fred, 2026-10-13: "my jobs, and
 // right under my jobs ... projects"); it is not one of the bottom tabs.
-type Tab = 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'pay' | 'profile';
-const TABS: Tab[] = ['jobs', 'available', 'schedule', 'chat', 'pay', 'profile'];
+// Since 2026-10-17 the portal is Field Service's tech app (Fred: "add Field
+// Service's tech portal to FAJ Tech Portal", then "replace the tech portal"):
+// four tabs — Project, Messenger, My Schedule, Profile. My jobs, Available
+// jobs and Pay history open from Profile, so nothing a tech had is gone.
+type Tab = 'project' | 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'pay' | 'profile';
+const TABS: Tab[] = ['project', 'chat', 'schedule', 'profile'];
+const UNDER_PROFILE: Tab[] = ['jobs', 'available', 'pay'];
 // Projects is hidden in the tech app for now (Fred, 2026-10-14: "hide project
 // for now on the tech portal"). While it is off, project sites are ordinary
 // jobs here: listed under My jobs, with the normal clock. Set to true to bring
 // back the Projects list and the travel / lunch / day-report flow.
 const SHOW_PROJECTS = false;
-const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, 'projects'] : TABS;
+const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, ...UNDER_PROFILE, 'projects'] : [...TABS, ...UNDER_PROFILE];
 const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
+const TAB_ICON: Partial<Record<Tab, typeof User>> = { project: FolderKanban, chat: MessageSquare, schedule: CalendarDays, profile: User };
 const TAB_TITLE: Record<Tab, string> = {
-  jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My schedule', chat: 'Messages', pay: 'Pay history', profile: 'Profile',
+  project: 'Project', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay history', profile: 'Profile',
 };
 const TAB_SHORT: Record<Tab, string> = {
-  jobs: 'Jobs', projects: 'Projects', available: 'Available', schedule: 'Schedule', chat: 'Messages', pay: 'Pay', profile: 'Profile',
+  project: 'Project', jobs: 'Jobs', projects: 'Projects', available: 'Available', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay', profile: 'Profile',
 };
 
 export default function TechPortalPage() {
@@ -93,15 +99,14 @@ export default function TechPortalPage() {
   const [uid, setUid] = useState<string | null>(null);
   // The installed app's "My pay" shortcut opens straight on that tab.
   const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window === 'undefined') return 'jobs';
+    if (typeof window === 'undefined') return 'project';
     const t = new URLSearchParams(window.location.search).get('tab');
     // Old links still land in the right place.
     if (t === 'open' || t === 'offers') return 'available';
     if (t === 'paperwork') return 'profile';
-    return ALL_TABS.includes(t as Tab) ? (t as Tab) : 'jobs';
+    return ALL_TABS.includes(t as Tab) ? (t as Tab) : 'project';
   });
   const [openId, setOpenId] = useState<string | null>(null);
-  const [railOpen, setRailOpen] = useState(false);
 
   const [profile, setProfile] = useState<TechProfile | null>(null);
   const [officeJobs, setOfficeJobs] = useState<WfJob[]>([]);
@@ -306,7 +311,7 @@ export default function TechPortalPage() {
     router.replace('/tech/login');
   };
 
-  const go = (t: Tab) => { setTab(t); setOpenId(null); setRailOpen(false); window.scrollTo({ top: 0 }); };
+  const go = (t: Tab) => { setTab(t); setOpenId(null); window.scrollTo({ top: 0 }); };
 
   const counts = techCounts(jobs);
   const offers = jobs.filter((j) => j.status === 'offered');
@@ -316,7 +321,7 @@ export default function TechPortalPage() {
 
   if (phase === 'loading') {
     return (
-      <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="wf wf-page fs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <RefreshCw size={26} color="var(--wf-gold)" className="spin" />
           <div className="wf-h1" style={{ marginTop: 10, fontSize: 21 }}>Loading your jobs…</div>
@@ -327,7 +332,7 @@ export default function TechPortalPage() {
 
   if (phase === 'denied') {
     return (
-      <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="wf wf-page fs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div className="wf-card" style={{ maxWidth: 420, padding: 28, textAlign: 'center' }}>
           {/* Fred, 2026-10-06: the tech side says nothing about any other login. */}
           {deniedAs === 'owner' ? (
@@ -359,7 +364,7 @@ export default function TechPortalPage() {
 
   if (phase === 'nodata') {
     return (
-      <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="wf wf-page fs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <Empty
           icon={<CloudOff size={34} />}
           title="No signal"
@@ -386,65 +391,35 @@ export default function TechPortalPage() {
     );
   }
 
-  const railItem = (t: Tab, icon: React.ReactNode, badge?: number) => (
-    <button className="wf-rail-item" aria-current={tab === t ? 'page' : undefined} onClick={() => go(t)}>
-      {icon} {TAB_TITLE[t]}
-      {badge != null && badge > 0 && <span className="wf-rail-badge">{badge}</span>}
-    </button>
-  );
+  const underProfile = UNDER_PROFILE.includes(tab);
 
   return (
-    <div className="wf wf-shell">
+    <div className={`wf fs fs-shell${openJob ? '' : ' fs-has-tabs'}`}>
       <Toaster />
-      {railOpen && <div className="wf-drawer-backdrop" onClick={() => setRailOpen(false)} />}
-      <nav className={`wf-rail${railOpen ? ' open' : ''}`} aria-label="Tech portal">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 10 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/wf/logo-mark.png" alt="" width={38} height={38} style={{ flexShrink: 0 }} />
-          <div style={{ minWidth: 0 }}>
-            <div className="wf-display" style={{ fontSize: 11, letterSpacing: 1.4, color: 'var(--wf-gold)', fontWeight: 700 }}>FAJ SOLUTIONS</div>
-            <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile?.name}</div>
-          </div>
-        </div>
-        {railItem('jobs', <Briefcase size={18} />)}
-        {/* Always under My jobs (Fred, 2026-10-13: "right under my jobs ... projects"). */}
-        {SHOW_PROJECTS && (
-          <button className="wf-rail-item" aria-current={tab === 'projects' ? 'page' : undefined} onClick={() => go('projects')}
-            style={{ paddingLeft: 34, fontSize: 14 }}>
-            <FolderKanban size={16} /> Projects
-            {projectJobs.length > 0 && <span className="wf-rail-badge" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff' }}>{projectJobs.length}</span>}
-          </button>
-        )}
-        {railItem('available', <Inbox size={18} />, offers.length)}
-        {railItem('schedule', <CalendarDays size={18} />)}
-        {railItem('chat', <MessageSquare size={18} />, unread)}
-        {railItem('pay', <Wallet size={18} />)}
-        {railItem('profile', <User size={18} />, paperworkDue)}
-        <div style={{ flex: 1 }} />
-        <button className="wf-rail-item" onClick={signOut}><LogOut size={18} /> Sign out</button>
-      </nav>
-
-      <div className={`wf-main${openJob ? '' : ' wf-has-tabbar'}`}>
-        <header className="wf-topbar">
-          {openJob ? (
-            <button className="wf-back-round" onClick={() => setOpenId(null)} aria-label="Back to the list" title="Back"
-              style={{ width: 36, height: 36 }}><ArrowLeft size={18} /></button>
+      <header className="fs-top">
+        <div className="fs-top-row">
+          {openJob || underProfile ? (
+            <>
+              <button className="fs-back" onClick={() => (openJob ? setOpenId(null) : go('profile'))}
+                aria-label={openJob ? 'Back' : 'Back to Profile'} title="Back"><ArrowLeft size={18} /></button>
+              <div className="fs-top-title">{openJob ? `WO ${openJob.number}` : TAB_TITLE[tab]}</div>
+            </>
           ) : (
-            <button className="wf-btn wf-btn-ghost wf-btn-sm wf-menu-btn" onClick={() => setRailOpen(true)} aria-label="Open the menu">
-              <Menu size={20} />
-            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="fs-brand"><span className="fs-mark" />Field Service <span className="fs-live">LIVE</span></div>
+              <div className="fs-sub">FAJ Solutions · {profile?.name}</div>
+            </div>
           )}
-          <div className="wf-title" style={{ flex: 1, fontSize: 17, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {openJob ? `WO ${openJob.number}` : TAB_TITLE[tab]}
-          </div>
           <SyncStatus box={box} savedAt={savedAt} />
           <button className="wf-btn wf-btn-ghost wf-btn-sm" aria-label="Refresh" disabled={refreshing}
             onClick={() => { if (uid) { void box?.flush(); void loadLive(uid, false); } }}>
             <RefreshCw size={17} className={refreshing ? 'spin' : undefined} />
           </button>
-        </header>
+        </div>
+        <div className="fs-tape" />
+      </header>
 
-        <main className="wf-content">
+      <main className="wf-content">
           {box && box.problems.length > 0 && (
             <div className="wf-card" style={{ padding: 14, marginBottom: 14, borderColor: 'rgba(198,40,40,0.35)', background: 'rgba(198,40,40,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -458,6 +433,14 @@ export default function TechPortalPage() {
           {openJob ? (
             <TechJobScreen key={openJob.id} job={openJob} uid={uid ?? ''} lists={lists} onBack={() => setOpenId(null)} act={act}
               onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
+          ) : tab === 'project' ? (
+            <ProjectTab
+              jobs={jobs} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} goJobs={() => go('jobs')}
+              renderJob={(j) => (
+                <TechJobScreen key={j.id} job={j} uid={uid ?? ''} lists={lists} onBack={() => {}} act={act}
+                  onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
+              )}
+            />
           ) : tab === 'jobs' ? (
             <JobsHome
               name={profile?.name ?? ''} jobs={jobs} counts={counts} offers={offers.length}
@@ -486,32 +469,96 @@ export default function TechPortalPage() {
               }}
             />
           ) : tab === 'profile' && profile ? (
-            <ProfileTab
-              profile={profile} portalToken={portalToken} onSignOut={signOut}
-              onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }}
-              onFiled={() => { if (uid) void loadLive(uid, true); }}
-            />
+            <>
+              <ProfileMenu offers={offers.length} go={go} />
+              <ProfileTab
+                profile={profile} portalToken={portalToken} onSignOut={signOut}
+                onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }}
+                onFiled={() => { if (uid) void loadLive(uid, true); }}
+              />
+            </>
           ) : null}
-        </main>
-        {/* Primio's bottom tabs on a phone (a left rail on a wide screen). */}
-        {!openJob && (
-          <nav className="wf-tabbar" aria-label="Tech portal tabs">
+      </main>
+      {!openJob && (
+        <nav className="fs-tabs" aria-label="Tech portal tabs">
+          <div className="fs-tabs-row">
             {TABS.map((t) => {
-              const badge = t === 'available' ? offers.length : t === 'chat' ? unread : t === 'profile' ? paperworkDue : 0;
-              const Icon = { jobs: Briefcase, projects: FolderKanban, available: Inbox, schedule: CalendarDays, chat: MessageSquare, pay: Wallet, profile: User }[t];
+              const badge = t === 'chat' ? unread : t === 'profile' ? offers.length + paperworkDue : 0;
+              const Icon = TAB_ICON[t] ?? User;
+              const on = tab === t || (t === 'profile' && underProfile);
               return (
-                <button key={t} className="wf-tab" aria-current={tab === t ? 'page' : undefined} onClick={() => go(t)}>
-                  <span style={{ position: 'relative', display: 'inline-flex' }}>
-                    <Icon size={21} />
-                    {badge > 0 && <span className="wf-tab-badge">{badge}</span>}
-                  </span>
-                  {TAB_SHORT[t]}
+                <button key={t} className="fs-tab" aria-current={on ? 'page' : undefined} onClick={() => go(t)}>
+                  <Icon size={22} />
+                  <span>{TAB_SHORT[t]}</span>
+                  {badge > 0 && <span className="fs-tab-badge">{badge}</span>}
                 </button>
               );
             })}
-          </nav>
+          </div>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+// ── Project: the Field Service tech app's first tab ─────────────────────────
+// Today's job, already open: the one the tech is clocked in on, else the ones
+// scheduled for today (chips switch between them). Nothing today: say so, and
+// show what's next.
+function ProjectTab({ jobs, onOpen, goJobs, renderJob }: {
+  jobs: WfJob[]; onOpen: (id: string) => void; goJobs: () => void;
+  renderJob: (j: WfJob) => React.ReactNode;
+}) {
+  const [pick, setPick] = useState<string | null>(null);
+  const today = todayISO();
+  const live = jobs.filter(canWork);
+  const todays = sortTechJobs(live.filter((j) => isClockedIn(j) || j.date === today), today);
+  const current = todays.find((j) => j.id === pick) ?? todays[0] ?? null;
+  if (!current) {
+    const next = sortTechJobs(live.filter((j) => !!j.date && j.date > today), today)[0] ?? null;
+    return (
+      <div className="fs-blank">
+        <div className="fs-ring" />
+        <h2 className="fs-h">No project right now</h2>
+        <div className="wf-subtle" style={{ maxWidth: 360 }}>You&apos;re not on a job today. When you&apos;re assigned one, it shows up here.</div>
+        {next && (
+          <button className="wf-card wf-card-click" style={{ padding: 14, maxWidth: 420, display: 'grid', gap: 4, marginTop: 6 }} onClick={() => onOpen(next.id)}>
+            <span className="fs-wo">Next · WO {next.number} · {whenText(next, today)}</span>
+            <span style={{ font: '800 20px var(--fs-display)', textTransform: 'uppercase' }}>{next.client || next.title}</span>
+            <span className="wf-subtle">{fullAddress(next)}</span>
+          </button>
         )}
+        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={goJobs}>All my jobs</button>
       </div>
+    );
+  }
+  const starts = parseClockTime(current.startTime);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {todays.length > 1 && (
+        <div className="fs-pick" role="group" aria-label="Today's jobs">
+          {todays.map((j) => (
+            <button key={j.id} aria-pressed={j.id === current.id} onClick={() => setPick(j.id)}>WO {j.number}</button>
+          ))}
+        </div>
+      )}
+      <div className="fs-wo">
+        WO {current.number} · {current.date === today ? 'Today' : 'In progress'}{starts ? ` · Starts ${fmtClock12(starts)}` : ''}
+      </div>
+      {renderJob(current)}
+    </div>
+  );
+}
+
+/** Profile's menu: the lists that used to be tabs. */
+function ProfileMenu({ offers, go }: { offers: number; go: (t: Tab) => void }) {
+  return (
+    <div className="wf-card fs-menu" style={{ marginBottom: 16 }}>
+      <button onClick={() => go('jobs')}><Briefcase size={18} /> My jobs</button>
+      <button onClick={() => go('available')}>
+        <Inbox size={18} /> Available jobs{offers > 0 && <span className="fs-count">{offers}</span>}
+      </button>
+      <button onClick={() => go('pay')}><Wallet size={18} /> Pay history</button>
     </div>
   );
 }
@@ -537,7 +584,7 @@ function PaperworkGate({ profile, portalToken, onFiled, onRetry, onSignOut }: {
     </div>
   );
   return (
-    <div className="wf wf-page">
+    <div className="wf wf-page fs">
       <Toaster />
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 16px 48px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="wf-hero">

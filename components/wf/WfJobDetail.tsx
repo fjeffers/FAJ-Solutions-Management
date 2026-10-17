@@ -284,7 +284,7 @@ export default function WfJobDetail({
           <DescriptionCard job={job} />
         </div>
         {bottom && (
-          <div style={{
+          <div className="wf-sticky-bottom" style={{
             position: 'sticky', bottom: 0, marginTop: 16, padding: '12px 0 calc(12px + env(safe-area-inset-bottom))',
             background: 'linear-gradient(180deg, rgba(246,244,239,0) 0%, var(--wf-surface) 30%)',
           }}>
@@ -342,7 +342,7 @@ export default function WfJobDetail({
       </div>
 
       {bottom && (
-        <div style={{
+        <div className="wf-sticky-bottom" style={{
           position: 'sticky', bottom: 0, marginTop: 16, padding: '12px 0 calc(12px + env(safe-area-inset-bottom))',
           background: 'linear-gradient(180deg, rgba(246,244,239,0) 0%, var(--wf-surface) 30%)',
         }}>

@@ -126,7 +126,7 @@ export default function TechLoginPage() {
 
   return (
     // WorkFlow's look (Fred, 2026-10-02): the night-photo header over a white card.
-    <div className="wf wf-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="wf wf-page fs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div className="wf-card" style={{ maxWidth: 440, width: '100%', overflow: 'hidden' }}>
         <div className="wf-hero" style={{ borderRadius: 0, textAlign: 'center', padding: '26px 24px' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}

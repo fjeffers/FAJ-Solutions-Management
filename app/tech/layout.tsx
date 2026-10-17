@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { Barlow, Barlow_Condensed, JetBrains_Mono } from 'next/font/google';
+import './fs.css';
 
 // The tech portal installs as its OWN app, separate from the owner's.
 // Without this the root layout's manifest wins and a tech who taps "Add to
@@ -22,6 +24,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// The Field Service look's type (app/tech/fs.css), for the tech portal only.
+const body = Barlow({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-fs-body', display: 'swap' });
+const display = Barlow_Condensed({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-fs-display', display: 'swap' });
+const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '700'], variable: '--font-fs-mono', display: 'swap' });
+
 export default function TechLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <div className={`${body.variable} ${display.variable} ${mono.variable}`}>{children}</div>;
 }

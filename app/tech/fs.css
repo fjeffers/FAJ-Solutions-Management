@@ -1,0 +1,131 @@
+/* Field Service look for the tech portal (Fred, 2026-10-17: "add Field
+   Service's tech portal to FAJ tech portal" → replace the tech portal).
+   Graphite and hi-vis orange, condensed display type, four bottom tabs.
+   Everything is scoped to .fs so the office's WorkFlow screens, which share
+   the .wf building blocks, keep their navy and gold. Nested .wf elements
+   (dialogs) are matched too, or they would reset to the office colours. */
+
+.fs, .fs .wf {
+  --wf-navy: #1B1F25;
+  --wf-navy-2: #2B3442;
+  --wf-night: #0A0C0F;
+  --wf-gold: #FF5F1F;
+  --wf-gold-dark: #E04E12;
+  --wf-gold-ink: #FFFFFF;
+  --wf-surface: #ECEEF1;
+  --wf-card: #FFFFFF;
+  --wf-line: #D9DDE3;
+  --wf-text: #15181D;
+  --wf-subtle: #5D6672;
+  --wf-success: #1E9E61;
+  --wf-warning: #A86F00;
+  --wf-danger: #D2362C;
+  --fs-display: var(--font-fs-display), 'Arial Narrow', Arial, sans-serif;
+  --fs-mono: var(--font-fs-mono), Consolas, monospace;
+  font-family: var(--font-fs-body), 'Segoe UI', Arial, sans-serif;
+  font-size: 15px;
+}
+
+/* Type: condensed, upper-case headings like the client sheet. */
+.fs .wf-title, .fs .wf-display, .fs .wf-h1, .fs .wf-hero-greet, .fs .wf-stat-value, .fs .wf-section-title {
+  font-family: var(--fs-display); letter-spacing: 0.01em;
+}
+.fs .wf-h1, .fs .wf-hero-greet { font-weight: 800; text-transform: uppercase; }
+.fs .wf-title { font-weight: 800; text-transform: uppercase; font-size: 20px; }
+.fs .wf-section-title { font-weight: 800; text-transform: uppercase; font-size: 17px; }
+.fs .wf-label { font-family: var(--fs-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* Shapes: squarer cards and buttons. */
+.fs .wf-card { border-radius: 12px; }
+.fs .wf-btn { border-radius: 10px; font-weight: 700; }
+.fs .wf-btn-sm { border-radius: 8px; }
+.fs .wf-btn-outline { border-color: #C3C9D2; }
+.fs .wf-btn-outline:hover { background: #F6F7F9; }
+.fs .wf-btn-ghost:hover { background: rgba(27, 31, 37, 0.06); }
+.fs .wf-filter[aria-pressed="true"] { background: var(--wf-navy); border-color: var(--wf-navy); }
+.fs .wf-back-round { background: var(--wf-navy); }
+.fs .wf-progress { background: #E1E5EA; }
+
+/* The greeting panel: plain graphite with the hazard stripe, no photo. */
+.fs .wf-hero {
+  background: var(--wf-navy); border-radius: 14px; padding-bottom: 30px;
+}
+.fs .wf-hero::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 6px;
+  background: repeating-linear-gradient(135deg, var(--wf-gold) 0 12px, var(--wf-navy) 12px 24px);
+}
+.fs .wf-hero-date { font-family: var(--fs-mono); letter-spacing: 0.08em; }
+.fs .wf-stat { border-color: rgba(255, 95, 31, 0.45); }
+
+/* One column everywhere, phone style: the clock sits in the flow. */
+.fs .wf-detail-grid { grid-template-columns: minmax(0, 1fr); }
+.fs .wf-only-wide { display: none; }
+.fs .wf-only-narrow { display: block; }
+
+/* ── The shell: top bar, hazard tape, page, four tabs ─────────────────── */
+.fs-shell { min-height: 100vh; background: var(--wf-surface); display: flex; flex-direction: column; }
+.fs-top {
+  position: sticky; top: 0; z-index: 30; background: var(--wf-navy); color: #E9ECF0;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 0;
+}
+.fs-top-row { display: flex; align-items: center; gap: 10px; max-width: 880px; margin: 0 auto; }
+.fs-brand {
+  display: flex; align-items: center; gap: 8px; white-space: nowrap;
+  font: 800 18px var(--fs-display); letter-spacing: 0.02em; text-transform: uppercase;
+}
+.fs-mark { width: 20px; height: 20px; border-radius: 5px; background: repeating-linear-gradient(135deg, var(--wf-gold) 0 5px, #fff 5px 8px); flex-shrink: 0; }
+.fs-live { font: 700 10.5px var(--fs-mono); background: var(--wf-gold); color: #fff; border-radius: 4px; padding: 1px 6px; letter-spacing: 0.08em; }
+.fs-sub { color: #AEB6C1; font-size: 13px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-top .wf-btn-ghost { color: #E9ECF0; }
+.fs-top .wf-btn-ghost:hover { background: rgba(255, 255, 255, 0.08); }
+.fs-top-title { font: 800 19px var(--fs-display); text-transform: uppercase; letter-spacing: 0.02em; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-back {
+  width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.12); color: #fff;
+}
+.fs-tape { height: 6px; margin: 10px -16px 0; background: repeating-linear-gradient(135deg, var(--wf-gold) 0 12px, #0A0C0F 12px 24px); }
+.fs .wf-content { max-width: 880px; padding: 16px 16px 48px; }
+.fs-has-tabs .wf-content { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
+
+.fs-tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  background: var(--wf-card); border-top: 1px solid var(--wf-line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.fs-tabs-row { display: grid; grid-template-columns: repeat(4, 1fr); max-width: 880px; margin: 0 auto; }
+.fs-tab {
+  border: none; background: none; cursor: pointer; position: relative;
+  display: grid; justify-items: center; gap: 2px; padding: 8px 2px 9px;
+  font: inherit; font-size: 11.5px; font-weight: 700; color: var(--wf-subtle);
+}
+.fs-tab[aria-current="page"] { color: var(--wf-gold); }
+.fs-tab-badge {
+  position: absolute; top: 4px; left: 56%; background: var(--wf-danger); color: #fff;
+  border-radius: 999px; font-size: 10.5px; padding: 0 5px; line-height: 16px;
+}
+/* Floating Save rows and the job's pinned buttons sit above the tabs. */
+.fs-has-tabs .save-bar { bottom: calc(62px + env(safe-area-inset-bottom)); }
+.fs-has-tabs .wf-sticky-bottom { bottom: calc(60px + env(safe-area-inset-bottom)) !important; }
+
+/* ── Project tab ──────────────────────────────────────────────────────── */
+.fs-wo { font: 500 12px var(--fs-mono); color: var(--wf-gold); letter-spacing: 0.06em; text-transform: uppercase; }
+.fs-blank { display: grid; justify-items: center; gap: 10px; text-align: center; padding: 48px 16px 24px; }
+.fs-ring { width: 64px; height: 64px; border-radius: 50%; border: 6px solid var(--wf-line); border-top-color: var(--wf-gold); }
+.fs-h { font: 800 24px var(--fs-display); text-transform: uppercase; letter-spacing: 0.01em; margin: 0; }
+.fs-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.fs-pick button {
+  border: 1px solid var(--wf-line); background: var(--wf-card); border-radius: 999px; padding: 7px 14px;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--wf-text);
+}
+.fs-pick button[aria-pressed="true"] { background: var(--wf-navy); border-color: var(--wf-navy); color: #fff; }
+
+/* ── Profile menu ─────────────────────────────────────────────────────── */
+.fs-menu { display: grid; }
+.fs-menu button {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: none;
+  border-top: 1px solid var(--wf-line); background: none; cursor: pointer; text-align: left;
+  font: inherit; font-weight: 600; color: var(--wf-text);
+}
+.fs-menu button:first-child { border-top: none; }
+.fs-menu button:hover { background: #F6F7F9; }
+.fs-menu .fs-count { margin-left: auto; background: var(--wf-gold); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 800; padding: 1px 8px; }

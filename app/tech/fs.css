@@ -20,9 +20,9 @@
   --wf-success: #1E9E61;
   --wf-warning: #A86F00;
   --wf-danger: #D2362C;
-  --fs-display: var(--font-fs-display), 'Arial Narrow', Arial, sans-serif;
-  --fs-mono: var(--font-fs-mono), Consolas, monospace;
-  font-family: var(--font-fs-body), 'Segoe UI', Arial, sans-serif;
+  --fs-display: 'Barlow Condensed', 'Arial Narrow', Arial, sans-serif;
+  --fs-mono: 'JetBrains Mono', Consolas, monospace;
+  font-family: 'Barlow', 'Segoe UI', Arial, sans-serif;
   font-size: 15px;
 }
 

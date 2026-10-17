@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { Barlow, Barlow_Condensed, JetBrains_Mono } from 'next/font/google';
 import './fs.css';
 
 // The tech portal installs as its OWN app, separate from the owner's.
@@ -24,11 +23,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-// The Field Service look's type (app/tech/fs.css), for the tech portal only.
-const body = Barlow({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-fs-body', display: 'swap' });
-const display = Barlow_Condensed({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-fs-display', display: 'swap' });
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '700'], variable: '--font-fs-mono', display: 'swap' });
-
+// The Field Service look (app/tech/fs.css). Its fonts (Barlow, Barlow
+// Condensed, JetBrains Mono) come from the root layout's Google Fonts link:
+// next/font fetched them at build time and a failed fetch broke the deploy.
 export default function TechLayout({ children }: { children: React.ReactNode }) {
-  return <div className={`${body.variable} ${display.variable} ${mono.variable}`}>{children}</div>;
+  return children;
 }

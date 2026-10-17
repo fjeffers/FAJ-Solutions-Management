@@ -26,6 +26,7 @@ import {
 import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
   fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
+  projectTabJobs,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
@@ -511,11 +512,9 @@ function ProjectTab({ jobs, onOpen, goJobs, renderJob }: {
 }) {
   const [pick, setPick] = useState<string | null>(null);
   const today = todayISO();
-  const live = jobs.filter(canWork);
-  const todays = sortTechJobs(live.filter((j) => isClockedIn(j) || j.date === today), today);
+  const { now: todays, next } = projectTabJobs(jobs, today);
   const current = todays.find((j) => j.id === pick) ?? todays[0] ?? null;
   if (!current) {
-    const next = sortTechJobs(live.filter((j) => !!j.date && j.date > today), today)[0] ?? null;
     return (
       <div className="fs-blank">
         <div className="fs-ring" />
@@ -538,12 +537,14 @@ function ProjectTab({ jobs, onOpen, goJobs, renderJob }: {
       {todays.length > 1 && (
         <div className="fs-pick" role="group" aria-label="Today's jobs">
           {todays.map((j) => (
-            <button key={j.id} aria-pressed={j.id === current.id} onClick={() => setPick(j.id)}>WO {j.number}</button>
+            <button key={j.id} aria-pressed={j.id === current.id} onClick={() => setPick(j.id)}>
+              WO {j.number}{j.client || j.siteName ? ` · ${j.client || j.siteName}` : ''}
+            </button>
           ))}
         </div>
       )}
       <div className="fs-wo">
-        WO {current.number} · {current.date === today ? 'Today' : 'In progress'}{starts ? ` · Starts ${fmtClock12(starts)}` : ''}
+        WO {current.number} · {current.date === today ? 'Today' : current.status === 'inProgress' ? 'In progress' : 'On the clock'}{starts ? ` · Starts ${fmtClock12(starts)}` : ''}
       </div>
       {renderJob(current)}
     </div>

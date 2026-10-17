@@ -23,9 +23,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-// The Field Service look (app/tech/fs.css). Its fonts (Barlow, Barlow
-// Condensed, JetBrains Mono) come from the root layout's Google Fonts link:
-// next/font fetched them at build time and a failed fetch broke the deploy.
+// The Field Service LIVE look (app/tech/fs.css): Inter, which the root
+// layout's Google Fonts link already loads.
 export default function TechLayout({ children }: { children: React.ReactNode }) {
   return children;
 }

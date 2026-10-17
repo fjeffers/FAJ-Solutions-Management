@@ -26,7 +26,6 @@ import {
 import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
   fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
-  projectTabJobs,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
@@ -49,13 +48,14 @@ import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
+import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
-  ArrowLeft, Briefcase, FolderKanban, CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, User, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature,
+  CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -82,12 +82,8 @@ const UNDER_PROFILE: Tab[] = ['jobs', 'available', 'pay'];
 const SHOW_PROJECTS = false;
 const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, ...UNDER_PROFILE, 'projects'] : [...TABS, ...UNDER_PROFILE];
 const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
-const TAB_ICON: Partial<Record<Tab, typeof User>> = { project: FolderKanban, chat: MessageSquare, schedule: CalendarDays, profile: User };
 const TAB_TITLE: Record<Tab, string> = {
   project: 'Project', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay history', profile: 'Profile',
-};
-const TAB_SHORT: Record<Tab, string> = {
-  project: 'Project', jobs: 'Jobs', projects: 'Projects', available: 'Available', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay', profile: 'Profile',
 };
 
 export default function TechPortalPage() {
@@ -312,7 +308,9 @@ export default function TechPortalPage() {
     router.replace('/tech/login');
   };
 
-  const go = (t: Tab) => { setTab(t); setOpenId(null); window.scrollTo({ top: 0 }); };
+  const [collapsed, setCollapsed] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  const go = (t: Tab) => { setTab(t); setOpenId(null); setDrawer(false); window.scrollTo({ top: 0 }); };
 
   const counts = techCounts(jobs);
   const offers = jobs.filter((j) => j.status === 'offered');
@@ -393,34 +391,75 @@ export default function TechPortalPage() {
   }
 
   const underProfile = UNDER_PROFILE.includes(tab);
+  const openFromList = (id: string) => { setOpenId(id); window.scrollTo({ top: 0 }); };
+  const waiting = pending.length;
+  const small = collapsed && !drawer;
+  const navItems: { key: Tab; label: string; icon: string; count: number }[] = [
+    { key: 'project', label: 'Project', icon: 'clipboard', count: jobs.filter(canWork).length },
+    { key: 'chat', label: 'Messenger', icon: 'chat', count: unread },
+    { key: 'schedule', label: 'My Schedule', icon: 'calendar', count: 0 },
+    { key: 'profile', label: 'Profile', icon: 'person', count: offers.length + paperworkDue },
+  ];
+  const navKey: Tab = underProfile ? 'profile' : tab;
+  const toggleMenu = () => {
+    if (window.matchMedia('(max-width: 900px)').matches) setDrawer((v) => !v);
+    else setCollapsed((v) => !v);
+  };
 
   return (
-    <div className={`wf fs fs-shell${openJob ? '' : ' fs-has-tabs'}`}>
+    <div className="wf fs fs-app">
       <Toaster />
-      <header className="fs-top">
-        <div className="fs-top-row">
-          {openJob || underProfile ? (
-            <>
-              <button className="fs-back" onClick={() => (openJob ? setOpenId(null) : go('profile'))}
-                aria-label={openJob ? 'Back' : 'Back to Profile'} title="Back"><ArrowLeft size={18} /></button>
-              <div className="fs-top-title">{openJob ? `WO ${openJob.number}` : TAB_TITLE[tab]}</div>
-            </>
-          ) : (
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="fs-brand"><span className="fs-mark" />Field Service <span className="fs-live">LIVE</span></div>
-              <div className="fs-sub">FAJ Solutions · {profile?.name}</div>
-            </div>
-          )}
-          <SyncStatus box={box} savedAt={savedAt} />
-          <button className="wf-btn wf-btn-ghost wf-btn-sm" aria-label="Refresh" disabled={refreshing}
-            onClick={() => { if (uid) { void box?.flush(); void loadLive(uid, false); } }}>
-            <RefreshCw size={17} className={refreshing ? 'spin' : undefined} />
-          </button>
+      <header className="fs-topbar">
+        <FsBrand />
+        <button type="button" className={`fs-menu-button${collapsed || drawer ? ' pressed' : ''}`} onClick={toggleMenu}
+          aria-label="Menu" aria-expanded={drawer || !collapsed}>
+          <FsIcon name="menu" size={20} /><span>Menu</span>
+        </button>
+        <nav className="fs-crumbs" aria-label="Breadcrumb">
+          <span>Workspace</span><FsIcon name="arrow" size={13} /><b>{openJob ? `WO ${openJob.number}` : TAB_TITLE[tab]}</b>
+        </nav>
+        {waiting > 0 || box?.offline
+          ? <span style={{ marginLeft: 'auto' }}><SyncStatus box={box} savedAt={savedAt} /></span>
+          : <span className="fs-live-pill"><i />Live workspace</span>}
+        <button type="button" className="fs-icon-button fs-refresh" aria-label="Refresh" disabled={refreshing}
+          onClick={() => { if (uid) { void box?.flush(); void loadLive(uid, false); } }}>
+          <FsIcon name="refresh" size={18} className={refreshing ? 'spin' : undefined} />
+        </button>
+        <div className="fs-who">
+          <span className="fs-avatar" aria-hidden="true">{fsInitials(profile?.name)}</span>
+          <span><b>{profile?.name}</b><small>Technician</small></span>
         </div>
-        <div className="fs-tape" />
+        <button type="button" className="fs-signout" onClick={signOut} aria-label="Sign out">
+          <FsIcon name="logout" size={18} /><span>Sign out</span>
+        </button>
       </header>
 
-      <main className="wf-content">
+      <div className={`fs-layout${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}`}>
+        <aside className={`fs-sidebar${small ? ' collapsed' : ''}`} aria-label="Workspace">
+          <button type="button" className="fs-side-close" onClick={() => setDrawer(false)}>Close menu <FsIcon name="close" size={16} /></button>
+          {!small && <p className="fs-side-label">YOUR WORKSPACE</p>}
+          <nav className="fs-side-nav" aria-label="Main">
+            {navItems.map((it) => (
+              <button type="button" key={it.key} className={navKey === it.key ? 'active' : ''}
+                aria-current={navKey === it.key ? 'page' : undefined} aria-label={small ? it.label : undefined}
+                title={small ? it.label : undefined} onClick={() => go(it.key)}>
+                <FsIcon name={it.icon} size={20} />
+                {!small && <span>{it.label}</span>}
+                {!small && it.count > 0 && <em>{it.count}</em>}
+              </button>
+            ))}
+          </nav>
+          {!small && (
+            <div className="fs-side-foot">
+              <div className="fs-side-card"><FsIcon name="pin" size={22} /><b>Wherever work takes you.</b><p>Keep your team and your sites moving together.</p></div>
+              <p className={`fs-side-status${waiting ? ' off' : ''}`}><i />{waiting ? 'Saved on this phone' : 'Workspace connected'}</p>
+              <p className="fs-side-mark">FIELD SERVICE <b>LIVE</b></p>
+            </div>
+          )}
+        </aside>
+        {drawer && <button type="button" className="fs-scrim" aria-label="Close menu" onClick={() => setDrawer(false)} />}
+
+        <main className="fs-content" id="main">
           {box && box.problems.length > 0 && (
             <div className="wf-card" style={{ padding: 14, marginBottom: 14, borderColor: 'rgba(198,40,40,0.35)', background: 'rgba(198,40,40,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -432,45 +471,55 @@ export default function TechPortalPage() {
           )}
 
           {openJob ? (
-            <TechJobScreen key={openJob.id} job={openJob} uid={uid ?? ''} lists={lists} onBack={() => setOpenId(null)} act={act}
-              onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
+            <>
+              <button type="button" className="fs-back-link" onClick={() => setOpenId(null)}><FsIcon name="back" size={16} />{TAB_TITLE[navKey]}</button>
+              <TechJobScreen key={openJob.id} job={openJob} uid={uid ?? ''} lists={lists} onBack={() => setOpenId(null)} act={act}
+                onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
+            </>
           ) : tab === 'project' ? (
-            <ProjectTab
-              jobs={jobs} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} goJobs={() => go('jobs')}
-              renderJob={(j) => (
-                <TechJobScreen key={j.id} job={j} uid={uid ?? ''} lists={lists} onBack={() => {}} act={act}
-                  onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
+            <ProjectTab jobs={jobs} onOpen={openFromList} />
+          ) : underProfile ? (
+            <>
+              <button type="button" className="fs-back-link" onClick={() => go('profile')}><FsIcon name="back" size={16} />Profile</button>
+              {tab === 'jobs' ? (
+                <JobsHome
+                  name={profile?.name ?? ''} jobs={jobs} counts={counts} offers={offers.length}
+                  paperworkDue={paperworkDue} profile={profile} projects={projectJobs.length}
+                  onOpen={openFromList} go={go}
+                />
+              ) : tab === 'available' ? (
+                <>
+                  <FsPageHeader title="Available jobs" subtitle="Jobs offered to you. Accept or decline." />
+                  <AvailableTab offers={offers} act={act} onOpen={openFromList} />
+                </>
+              ) : (
+                <>
+                  <FsPageHeader title="Pay history" subtitle="What you've been paid, job by job." />
+                  <PayTab payments={payments} summary={summary} />
+                </>
               )}
-            />
-          ) : tab === 'jobs' ? (
-            <JobsHome
-              name={profile?.name ?? ''} jobs={jobs} counts={counts} offers={offers.length}
-              paperworkDue={paperworkDue} profile={profile} projects={projectJobs.length}
-              onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} go={go}
-            />
+            </>
           ) : tab === 'projects' ? (
-            <ProjectsTab jobs={projectJobs} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} />
-          ) : tab === 'available' ? (
-            <AvailableTab offers={offers} act={act} onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }} />
+            <ProjectsTab jobs={projectJobs} onOpen={openFromList} />
           ) : tab === 'schedule' ? (
-            <TechSchedule
-              jobs={jobs}
-              crewWeeks={[]}
-              onOpen={(id) => { setOpenId(id); window.scrollTo({ top: 0 }); }}
-              onOpenCrew={() => {}}
-            />
-          ) : tab === 'pay' ? (
-            <PayTab payments={payments} summary={summary} />
+            <>
+              <FsPageHeader title="My Schedule" subtitle="Every day you are booked, in order." />
+              <TechSchedule jobs={jobs} crewWeeks={[]} onOpen={openFromList} onOpenCrew={() => {}} />
+            </>
           ) : tab === 'chat' ? (
-            <TechChat
-              jobs={jobs.filter((j) => !isFinished(j) && j.status !== 'declined').map(toChatJob)}
-              onRead={async () => {
-                const [u1, u2] = await Promise.all([fetchTechUnread(), fetchTechDmUnread()]);
-                setUnread(u1 + u2);
-              }}
-            />
+            <>
+              <FsPageHeader title="Messenger" subtitle="Talk about your work orders." />
+              <TechChat
+                jobs={jobs.filter((j) => !isFinished(j) && j.status !== 'declined').map(toChatJob)}
+                onRead={async () => {
+                  const [u1, u2] = await Promise.all([fetchTechUnread(), fetchTechDmUnread()]);
+                  setUnread(u1 + u2);
+                }}
+              />
+            </>
           ) : tab === 'profile' && profile ? (
             <>
+              <FsPageHeader title="Profile" subtitle={`${profile.name} · Technician`} />
               <ProfileMenu offers={offers.length} go={go} />
               <ProfileTab
                 profile={profile} portalToken={portalToken} onSignOut={signOut}
@@ -479,87 +528,82 @@ export default function TechPortalPage() {
               />
             </>
           ) : null}
-      </main>
-      {!openJob && (
-        <nav className="fs-tabs" aria-label="Tech portal tabs">
-          <div className="fs-tabs-row">
-            {TABS.map((t) => {
-              const badge = t === 'chat' ? unread : t === 'profile' ? offers.length + paperworkDue : 0;
-              const Icon = TAB_ICON[t] ?? User;
-              const on = tab === t || (t === 'profile' && underProfile);
-              return (
-                <button key={t} className="fs-tab" aria-current={on ? 'page' : undefined} onClick={() => go(t)}>
-                  <Icon size={22} />
-                  <span>{TAB_SHORT[t]}</span>
-                  {badge > 0 && <span className="fs-tab-badge">{badge}</span>}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-      )}
+        </main>
+      </div>
     </div>
   );
 }
 
-// ── Project: the Field Service tech app's first tab ─────────────────────────
-// Today's job, already open: the one the tech is clocked in on, else the ones
-// scheduled for today (chips switch between them). Nothing today: say so, and
-// show what's next.
-function ProjectTab({ jobs, onOpen, goJobs, renderJob }: {
-  jobs: WfJob[]; onOpen: (id: string) => void; goJobs: () => void;
-  renderJob: (j: WfJob) => React.ReactNode;
-}) {
-  const [pick, setPick] = useState<string | null>(null);
+// ── Project: Field Service's "My work orders" ───────────────────────────────
+// Every open work order as a card (today's outlined), with the counts on top
+// and finished work folded away underneath — as in Field Service LIVE.
+function ProjectTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => void }) {
   const today = todayISO();
-  const { now: todays, next } = projectTabJobs(jobs, today);
-  const current = todays.find((j) => j.id === pick) ?? todays[0] ?? null;
-  if (!current) {
+  const live = sortTechJobs(jobs.filter(canWork), today);
+  const todayCount = live.filter((j) => j.date === today || isClockedIn(j)).length;
+  const past = sortTechJobs(jobs.filter(isFinished), today);
+  const card = (j: WfJob) => {
+    const isToday = j.date === today;
+    const start = parseClockTime(j.startTime);
+    const end = parseClockTime(j.endTime);
+    const day = !j.date ? 'Not scheduled yet' : isToday ? 'Today'
+      : new Date(`${j.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const time = start ? ` · ${fmtClock12(start)}${end ? ` – ${fmtClock12(end)}` : ''}` : '';
+    const [label, tone, dot]: [string, 'green' | 'amber' | 'grey', boolean] =
+      isClockedIn(j) ? ['Clocked in', 'green', true]
+        : j.status === 'inProgress' ? ['In progress', 'green', true]
+          : j.status === 'workDone' ? ['Work done', 'amber', false]
+            : j.status === 'closed' ? ['Accepted', 'green', false]
+              : ['Not started', 'grey', false];
+    const where = fullAddress(j);
     return (
-      <div className="fs-blank">
-        <div className="fs-ring" />
-        <h2 className="fs-h">No project right now</h2>
-        <div className="wf-subtle" style={{ maxWidth: 360 }}>You&apos;re not on a job today. When you&apos;re assigned one, it shows up here.</div>
-        {next && (
-          <button className="wf-card wf-card-click" style={{ padding: 14, maxWidth: 420, display: 'grid', gap: 4, marginTop: 6 }} onClick={() => onOpen(next.id)}>
-            <span className="fs-wo">Next · WO {next.number} · {whenText(next, today)}</span>
-            <span style={{ font: '800 20px var(--fs-display)', textTransform: 'uppercase' }}>{next.client || next.title}</span>
-            <span className="wf-subtle">{fullAddress(next)}</span>
-          </button>
-        )}
-        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={goJobs}>All my jobs</button>
-      </div>
+      <button type="button" key={j.id} className={`fs-card fs-wo-card${isToday ? ' today' : ''}`} onClick={() => onOpen(j.id)}>
+        <div className="fs-card-top"><h3>{j.siteName || j.title}</h3><FsChip tone={tone} dot={dot}>{label}</FsChip></div>
+        <p className="fs-meta">{[j.client, j.siteName ? j.title : '', `WO ${j.number}`].filter(Boolean).join(' · ')}</p>
+        <p className="fs-when"><FsIcon name="clock" size={16} />{day}{time}</p>
+        {where && where !== j.siteName && <p className="fs-meta"><FsIcon name="pin" size={14} />{where}</p>}
+        <span className="fs-go">Open work order<FsIcon name="arrow" size={16} /></span>
+      </button>
     );
-  }
-  const starts = parseClockTime(current.startTime);
+  };
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {todays.length > 1 && (
-        <div className="fs-pick" role="group" aria-label="Today's jobs">
-          {todays.map((j) => (
-            <button key={j.id} aria-pressed={j.id === current.id} onClick={() => setPick(j.id)}>
-              WO {j.number}{j.client || j.siteName ? ` · ${j.client || j.siteName}` : ''}
-            </button>
-          ))}
+    <>
+      <FsPageHeader title="Project" subtitle="Your assigned work, one tap away." />
+      <div className="fs-stat-grid">
+        <div className="fs-card fs-stat-card">
+          <div>Open work orders<FsIcon name="sheet" size={18} /></div>
+          <strong>{live.length}</strong><small>Assigned to you</small>
         </div>
-      )}
-      <div className="fs-wo">
-        WO {current.number} · {current.date === today ? 'Today' : current.status === 'inProgress' ? 'In progress' : 'On the clock'}{starts ? ` · Starts ${fmtClock12(starts)}` : ''}
+        <div className="fs-card fs-stat-card">
+          <div>Today<FsIcon name="clock" size={18} /></div>
+          <strong>{todayCount}</strong><small>On your schedule today</small>
+        </div>
       </div>
-      {renderJob(current)}
-    </div>
+      <div className="fs-wo-grid">
+        {live.map(card)}
+        {live.length === 0 && (
+          <p className="fs-card fs-empty">No work assigned right now. New work orders appear here as soon as they&apos;re assigned to you.</p>
+        )}
+      </div>
+      {past.length > 0 && (
+        <details className="fs-past">
+          <summary>Earlier work ({past.length})</summary>
+          <div className="fs-wo-grid">{past.map(card)}</div>
+        </details>
+      )}
+    </>
   );
 }
 
 /** Profile's menu: the lists that used to be tabs. */
 function ProfileMenu({ offers, go }: { offers: number; go: (t: Tab) => void }) {
   return (
-    <div className="wf-card fs-menu" style={{ marginBottom: 16 }}>
-      <button onClick={() => go('jobs')}><Briefcase size={18} /> My jobs</button>
-      <button onClick={() => go('available')}>
-        <Inbox size={18} /> Available jobs{offers > 0 && <span className="fs-count">{offers}</span>}
+    <div className="fs-card fs-menu-card">
+      <button type="button" onClick={() => go('jobs')}><FsIcon name="sheet" size={18} /> My jobs</button>
+      <button type="button" onClick={() => go('available')}>
+        <FsIcon name="inbox" size={18} /> Available jobs{offers > 0 && <em>{offers}</em>}
       </button>
-      <button onClick={() => go('pay')}><Wallet size={18} /> Pay history</button>
+      <button type="button" onClick={() => go('pay')}><FsIcon name="money" size={18} /> Pay history</button>
     </div>
   );
 }

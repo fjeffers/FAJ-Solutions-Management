@@ -453,20 +453,6 @@ export function sortTechJobs(jobs: WfJob[], today: string = todayISO()): WfJob[]
   return [...sorted.filter(isClockedIn), ...sorted.filter((j) => !isClockedIn(j))];
 }
 
-/**
- * The tech app's Project tab (Field Service look, 2026-10-17): the work that's
- * open right now — the job on the clock, anything In Progress whatever its
- * date, and today's jobs — clocked-in first. When there's none, `next` is the
- * soonest scheduled job still ahead (or one with no date yet).
- */
-export function projectTabJobs(jobs: WfJob[], today: string = todayISO()): { now: WfJob[]; next: WfJob | null } {
-  const live = jobs.filter(canWork);
-  const now = sortTechJobs(live.filter((j) => isClockedIn(j) || j.status === 'inProgress' || j.date === today), today);
-  if (now.length > 0) return { now, next: null };
-  const ahead = sortTechJobs(live.filter((j) => !j.date || j.date > today), today);
-  return { now, next: ahead.find((j) => !!j.date) ?? ahead[0] ?? null };
-}
-
 /** The stages that actually have jobs in them, for the filter chips. */
 export function statusesPresent(jobs: WfJob[]): WfStatus[] {
   const have = new Set(jobs.map((j) => j.status));

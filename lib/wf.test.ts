@@ -3,7 +3,7 @@ import {
   wfStatusFor, wfJobFromTech, wfJobFromOwner, parseClockTime, whenText, fullAddress, place,
   tasksDone, isClockedIn, canWork, withTask, clockedIn, clockedOut, markedWorkDone, workedMs,
   formatDuration, formatClock, matchesWf, sortWf, ownerCounts, techCounts, statusesPresent, jobImage,
-  wfStatusLabel, reportMissing, sortTechJobs, techFilterOf, TECH_FILTERS, projectTabJobs,
+  wfStatusLabel, reportMissing, sortTechJobs, techFilterOf, TECH_FILTERS,
 } from './wf';
 import {
   Outbox, RefusedError, isNoSignal, makeAction, saveCopy, loadCopy, lastUid, clearCopies, type KeyValue,
@@ -392,22 +392,3 @@ describe('crew sites in the four lists', () => {
   });
 });
 
-describe('projectTabJobs', () => {
-  const j = (id: string, wo_status: string, date: string | null, over: Record<string, unknown> = {}) =>
-    wfJobFromTech({ id, wo_number: id, wo_status, my_response: 'accepted', start_date: date, scheduled_date: date, ...over });
-
-  it('keeps In Progress jobs whatever their date, plus the ones dated today', () => {
-    const r = projectTabJobs([
-      j('392', 'In Progress', '2026-10-15'), j('398', 'In Progress', '2026-10-13'),
-      j('500', 'Assigned', '2026-10-17'), j('501', 'Assigned', '2026-10-20'), j('389', 'Work Done', '2026-10-08'),
-    ], '2026-10-17');
-    expect(r.now.map((x) => x.number).sort()).toEqual(['392', '398', '500']);
-    expect(r.next).toBeNull();
-  });
-
-  it('with nothing open, offers the next dated job, then an undated one', () => {
-    expect(projectTabJobs([j('9', 'Assigned', null), j('10', 'Assigned', '2026-10-22')], '2026-10-17').next?.number).toBe('10');
-    expect(projectTabJobs([j('9', 'Assigned', null)], '2026-10-17').next?.number).toBe('9');
-    expect(projectTabJobs([j('389', 'Work Done', '2026-10-08')], '2026-10-17')).toEqual({ now: [], next: null });
-  });
-});

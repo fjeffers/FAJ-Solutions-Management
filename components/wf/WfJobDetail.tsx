@@ -6,15 +6,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowLeft, CalendarDays, CheckCircle2, Circle, FileCheck2, Info, KeyRound,
-  Mail, MapPin, Navigation, ParkingSquare, Phone, PlayCircle, RefreshCw, StopCircle, Timer, TriangleAlert, Wrench,
+  Mail, MapPin, ParkingSquare, Phone, PlayCircle, RefreshCw, StopCircle, Timer, TriangleAlert, Wrench,
 } from 'lucide-react';
 import {
-  WF_WORK_TYPE_LABEL, workTypeFor, whenText, place, fullAddress, tasksDone, isClockedIn, workedMs, wfStatusLabel,
+  WF_WORK_TYPE_LABEL, workTypeFor, whenDay, place, fullAddress, tasksDone, isClockedIn, workedMs, wfStatusLabel,
   formatClock, formatDuration, parseClockTime, fmtClock12, type WfJob, type WfTask,
 } from '@/lib/wf';
 import { Section } from './WfUi';
 import { PrimioBar } from './PrimioScreens';
-import { fmtMoney } from '@/lib/utils';
 
 export const mapsSearch = (j: WfJob) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress(j))}`;
 export const mapsDirections = (j: WfJob) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fullAddress(j))}`;
@@ -64,11 +63,10 @@ export function DetailHeader({ job, ownerView, loggedMs }: {
       <hr style={{ border: 'none', borderTop: '1px solid var(--wf-line)', margin: '12px 0' }} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 16px' }}>
         <InfoItem icon={<Info size={16} />} title={`Status: ${wfStatusLabel(job.status, ownerView)}`}
-          lines={[`Time logged: ${logged ? formatDuration(logged) : '0m'}`, whenText(job)]} />
+          lines={[`Time logged: ${logged ? formatDuration(logged) : '0m'}`]} />
         <InfoItem icon={<MapPin size={16} />} title={`Location: ${(ownerView ? city || job.siteName : job.siteName || city) || 'not set'}`} lines={[fullAddress(job)]} />
         <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], `${job.priorityLabel} priority`]} />
-        <InfoItem icon={<CalendarDays size={16} />} title="Schedule"
-          lines={[times || 'No set time', ownerView && (job.clientPrice ?? 0) > 0 ? `Client pays: ${fmtMoney(job.clientPrice)}` : '']} />
+        <InfoItem icon={<CalendarDays size={16} />} title="Schedule" lines={[whenDay(job), times || 'No set time']} />
       </div>
     </div>
   );
@@ -212,41 +210,6 @@ export function DescriptionCard({ job }: { job: WfJob }) {
   );
 }
 
-export function ScheduleCard({ job }: { job: WfJob }) {
-  const day = job.date
-    ? new Date(`${job.date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
-    : 'Not scheduled yet';
-  const times = [job.startTime, job.endTime].filter(Boolean).map(fmtTime).join(' – ');
-  return (
-    <Section title="Schedule">
-      <div style={{ display: 'flex', gap: 8 }}>
-        <CalendarDays size={16} color="var(--wf-navy)" style={{ marginTop: 2, flexShrink: 0 }} />
-        <div>
-          <div style={{ fontWeight: 600 }}>{day}</div>
-          <div>{times || 'No set time'}</div>
-          {!job.date && <div className="wf-subtle" style={{ fontSize: 12 }}>The date will be set soon.</div>}
-        </div>
-      </div>
-    </Section>
-  );
-}
-
-export function LocationCard({ job }: { job: WfJob }) {
-  const address = fullAddress(job);
-  return (
-    <Section title="Location">
-      <div style={{ fontWeight: 600 }}>{job.siteName || job.client || 'Work order site'}</div>
-      <div style={{ color: 'var(--wf-navy)' }}>{address || 'Address not on file'}</div>
-      {address && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-          <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsSearch(job)} target="_blank" rel="noopener noreferrer"><MapPin size={15} /> Map</a>
-          <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={15} /> Directions</a>
-        </div>
-      )}
-    </Section>
-  );
-}
-
 /**
  * The whole job screen. On a wide screen: the work on the left, the clock /
  * techs / money on the right. On a phone: one column, clock first.
@@ -320,28 +283,18 @@ export default function WfJobDetail({
         <div className="wf-detail-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
             {clock && <div className="wf-only-narrow">{clock}</div>}
-            {ownerView ? (
-              <>
-                <InfoListCard title="Overview" rows={[
-                  ['Company', job.client], ['Work order ID', job.number], ['Site', job.siteName], ['Priority', job.priorityLabel],
-                ]} />
-                <InfoListCard title="Work Experience" rows={[
-                  ['Type of work', job.serviceType || WF_WORK_TYPE_LABEL[workTypeFor(job.serviceType, job.title)]],
-                  ['Skills needed', job.skills], ['Tools to bring', job.tools],
-                ]} />
-              </>
-            ) : (
-              <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
-            )}
+            {/* No Overview or Work Experience box: the company, WO number, priority and
+                type of work are all in the card at the top (Fred, 2026-10-18: "Work
+                experience is already on the top", "Job description and overview is the
+                same thing"). Skills and tools show only when filled in. */}
+            <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
             <DescriptionCard job={job} />
             <SiteInfoCard job={job} />
             <ChecklistCard job={job} onToggle={onToggleTask} />
             {below}
-            {ownerView && <LocationCard job={job} />}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
             {side}
-            {ownerView && <ScheduleCard job={job} />}
             {clock && <div className="wf-only-wide">{clock}</div>}
           </div>
         </div>

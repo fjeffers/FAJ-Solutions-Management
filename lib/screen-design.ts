@@ -34,7 +34,8 @@ export type ScreenDesign = {
 export const DASH_PART_KEYS = ['dash.attention', 'dash.field', 'dash.coming', 'dash.kpis', 'dash.status', 'dash.outstanding', 'dash.payments'];
 // No "Quick changes" card: it repeated the date, time and price already at the top
 // of the job (Fred, 2026-10-18: "Why do we need this"). Edit job changes them.
-const STANDARD_SIDE = ['job.timeRequests', 'job.techs', 'job.money', 'job.fields'];
+// No Money card either: Fred, the same day, "Still seeing money". Prices live under Pay in Edit job.
+const STANDARD_SIDE = ['job.timeRequests', 'job.techs', 'job.fields'];
 const STANDARD_BELOW = ['job.closeout', 'job.project', 'job.notes', 'job.report', 'job.expenses', 'job.photos', 'job.docs', 'job.sketches', 'job.timegps'];
 export const JOB_PART_KEYS = [...STANDARD_SIDE, ...STANDARD_BELOW];
 

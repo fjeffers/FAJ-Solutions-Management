@@ -419,6 +419,15 @@ export function whenText(j: WfJob, today: string = todayISO()): string {
   return t ? `${rel} · ${day}, ${fmtClock12(t)}` : `${rel} · ${day}`;
 }
 
+/** "Tomorrow · Mon Oct 19": the day only, for when the time has its own line. */
+export function whenDay(j: WfJob, today: string = todayISO()): string {
+  if (!j.date) return 'Not scheduled yet';
+  const d = new Date(`${j.date}T12:00:00Z`);
+  const n = daysBetween(today, j.date);
+  const rel = n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n === -1 ? 'Yesterday' : n > 0 ? `In ${n} days` : `${-n} days ago`;
+  return `${rel} · ${DOW[d.getUTCDay()]} ${MON[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+
 /** "Thu Oct 9, 6:00 PM" — the date and time a tech asked for. */
 export function requestWhen(r: { date: string; time: string }): string {
   const d = new Date(`${r.date}T12:00:00Z`);

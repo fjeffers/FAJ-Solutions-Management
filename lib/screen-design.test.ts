@@ -30,8 +30,9 @@ describe('screen designer', () => {
   });
 
   it('every job card sits in exactly one column', () => {
-    const d = normalizeDesign({ jobSide: ['job.photos', 'job.money', 'job.money', 'nope'], jobBelow: ['job.photos', 'job.techs'] });
-    expect(d.jobSide.slice(0, 2)).toEqual(['job.photos', 'job.money']);
+    // job.money and job.quickEdit are gone (Fred, 2026-10-18), so a saved layout drops them.
+    const d = normalizeDesign({ jobSide: ['job.photos', 'job.fields', 'job.fields', 'job.money', 'nope'], jobBelow: ['job.photos', 'job.techs'] });
+    expect(d.jobSide.slice(0, 2)).toEqual(['job.photos', 'job.fields']);
     expect(d.jobBelow[0]).toBe('job.techs');
     expect([...d.jobSide, ...d.jobBelow].sort()).toEqual([...JOB_PART_KEYS].sort());
   });
@@ -78,12 +79,12 @@ describe('screen designer', () => {
   });
 
   it('job cards move up, down and between the columns', () => {
-    // Standard side: time requests, techs, money, your fields. Money moves up one, above Techs.
-    let d = shiftJob(std(), 'job.money', -1);
-    expect(d.jobSide.indexOf('job.money')).toBe(1);
-    d = moveJob(d, 'job.money', 'below', 'job.report');
-    expect(d.jobSide).not.toContain('job.money');
-    expect(d.jobBelow.indexOf('job.money')).toBe(d.jobBelow.indexOf('job.report') - 1);
+    // Standard side: time requests, techs, your fields. Your fields moves up one, above Techs.
+    let d = shiftJob(std(), 'job.fields', -1);
+    expect(d.jobSide.indexOf('job.fields')).toBe(1);
+    d = moveJob(d, 'job.fields', 'below', 'job.report');
+    expect(d.jobSide).not.toContain('job.fields');
+    expect(d.jobBelow.indexOf('job.fields')).toBe(d.jobBelow.indexOf('job.report') - 1);
     d = moveJob(d, 'job.photos', 'side');
     expect(d.jobSide.at(-1)).toBe('job.photos');
     expect(moveJob(d, 'not.a.card', 'side')).toBe(d);

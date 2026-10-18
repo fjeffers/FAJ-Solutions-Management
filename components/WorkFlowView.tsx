@@ -11,7 +11,7 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Archive, ArchiveRestore, CalendarClock, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
-  FilePlus2, Plus, Receipt, Search, Send, Signature, Sparkles, Trash2, UserCog, Users, Wallet,
+  FilePlus2, Plus, Receipt, Search, Send, Signature, Sparkles, Trash2, UserCog, Users,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useLiveRows } from '@/components/wf/useLive';
@@ -24,7 +24,7 @@ import {
   type CloseoutList, type CloseoutOp,
 } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
-import { fmtMoney, hasPaySplit, techPayToShow, woProfitOrNull } from '@/lib/utils';
+import { fmtMoney, techPayToShow } from '@/lib/utils';
 import { sendNewJobNotice } from '@/lib/notify';
 import { logAudit } from '@/lib/audit';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
@@ -377,6 +377,14 @@ function OwnerJob({
   // The app's own "are you sure" for Delete: the browser's confirm box is
   // blocked in some browsers and installed apps, and then nothing happened.
   const [askDelete, setAskDelete] = useState(false);
+  const [sketchCount, setSketchCount] = useState(0);
+  const [addSketch, setAddSketch] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void createClient().from('sketches').select('id', { count: 'exact', head: true }).eq('wo_id', w.id)
+      .then(({ count }) => { if (live) setSketchCount(count ?? 0); });
+    return () => { live = false; };
+  }, [w.id]);
 
   // Closeout changes Fred makes himself show at once (each is safe to repeat).
   const [coOps, setCoOps] = useState<CloseoutOp[]>([]);
@@ -509,6 +517,7 @@ function OwnerJob({
           onClick: async () => { setPortalBusy(true); try { await onSendPortal(w); } finally { setPortalBusy(false); } },
         } : null,
         { label: 'Duplicate', icon: <Copy size={15} />, onClick: () => onDuplicate(w) },
+        sketchCount === 0 && !addSketch ? { label: 'Add a sketch', icon: <FilePlus2 size={15} />, onClick: () => setAddSketch(true) } : null,
         archived
           ? { label: 'Restore from Closed', icon: <ArchiveRestore size={15} />, onClick: () => onUnarchive(w.id) }
           : { label: 'Archive', icon: <Archive size={15} />, onClick: () => onArchive(w.id) },
@@ -523,7 +532,6 @@ function OwnerJob({
     'job.techs': <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)}
       onSendAgain={archived ? undefined : (t) => void sendAgain(t)}
       onToolsChange={archived ? undefined : (on) => void setTechTools(on)} />,
-    'job.money': <MoneyCard w={w} />,
     'job.fields': <YourFieldsCard w={w} />,
     'job.closeout': showCloseout(job) && (
       <CloseoutCard job={job} items={checklist.items} listName={checklist.name} canEdit={!archived} ownerView
@@ -537,7 +545,9 @@ function OwnerJob({
     'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,
     'job.expenses': <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />,
     'job.photos': <OwnerPhotos w={w} />,
-    'job.sketches': (
+    // Only when the job has a sketch, or Fred adds one from More (Fred, 2026-10-18:
+    // "Sketches can go too, I'll add it if I need it").
+    'job.sketches': (sketchCount > 0 || addSketch) && (
       <Section title="Sketches" subtitle="Floor plan, cable runs, cameras, APs and drops — drawn to scale">
         <SketchesPanel woId={w.id} compact defaultTitle={`WO ${w.wo_number}${w.site_name ? ` · ${w.site_name}` : w.title ? ` · ${w.title}` : ''}`} />
       </Section>
@@ -943,29 +953,6 @@ function YourFieldsCard({ w }: { w: EnrichedWorkOrder }) {
   return (
     <Section title="Your fields" subtitle="Your own details on this job — techs don't see these">
       <CustomFieldList target="jobs" values={w.custom} />
-    </Section>
-  );
-}
-
-function MoneyCard({ w }: { w: EnrichedWorkOrder }) {
-  const paySet = hasPaySplit(w);
-  const profit = woProfitOrNull(w);
-  const line = (label: string, value: string, tone?: string, strong = false) => (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0' }}>
-      <span style={{ flex: 1 }}>{label}</span>
-      <span className="wf-display" style={{ fontWeight: strong ? 700 : 600, color: tone, fontSize: strong ? 17 : 15 }}>{value}</span>
-    </div>
-  );
-  return (
-    <Section title="Money" subtitle="Only you see this" right={<Wallet size={18} color="var(--wf-subtle)" />}>
-      {line('Client pays', Number(w.total_amount) > 0 ? fmtMoney(w.total_amount) : 'No price yet')}
-      {paySet ? line('Techs get', fmtMoney(w.payout_total)) : line('Techs get', 'Not set', 'var(--wf-warning)')}
-      {line('Paid to techs', fmtMoney(w.paid))}
-      {paySet && line('Still owed to techs', fmtMoney(w.remaining), w.remaining > 0 ? 'var(--wf-danger)' : 'var(--wf-success)')}
-      <hr style={{ border: 'none', borderTop: '1px solid var(--wf-line)', margin: '8px 0' }} />
-      {profit == null
-        ? <div className="wf-subtle" style={{ fontSize: 12.5 }}>Set what the techs get to see what FAJ keeps.</div>
-        : line('FAJ keeps', fmtMoney(profit), profit >= 0 ? 'var(--wf-success)' : 'var(--wf-danger)', true)}
     </Section>
   );
 }

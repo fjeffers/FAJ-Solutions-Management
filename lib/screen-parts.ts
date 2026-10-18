@@ -43,7 +43,6 @@ export const SCREEN_PARTS: ScreenParts[] = [
     parts: [
       { key: 'job.timeRequests', label: 'Time requests', hint: 'A tech asking for another day or time' },
       { key: 'job.techs', label: 'Techs', hint: 'Who is on the job' },
-      { key: 'job.money', label: 'Money', hint: 'Price, tech pay and profit' },
       { key: 'job.fields', label: 'Your fields', hint: 'Your custom fields, when filled in' },
       { key: 'job.closeout', label: 'Closeout', hint: 'Deliverables, delays and sign-off' },
       { key: 'job.project', label: 'Project day', hint: 'Travel, time on site, lunch, miles, receipts and the weekly bill' },

@@ -425,3 +425,13 @@ describe('crew sites in the four lists', () => {
   });
 });
 
+
+describe('the day of a job, without its time', () => {
+  const at = (date: string | null, startTime = '') => ({ ...wfJobFromTech({ id: 'x', wo_number: '1', title: 't', scheduled_date: date }), startTime });
+  it('says when, and leaves the time to its own line', async () => {
+    const { whenDay } = await import('./wf');
+    expect(whenDay(at('2026-10-19', '08:00'), '2026-10-18')).toBe('Tomorrow · Mon Oct 19');
+    expect(whenDay(at('2026-10-18'), '2026-10-18')).toBe('Today · Sun Oct 18');
+    expect(whenDay(at(null), '2026-10-18')).toBe('Not scheduled yet');
+  });
+});

@@ -158,14 +158,29 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
       )}
     </form>
   );
+  // Check in (components/wf/CheckIn.tsx) asks the drive, the starting mileage and the office's items in one go.
+  const checkIn = on.checkIn && (
+    <div className="fs-card fs-form">
+      <h3>{stage === 'offsite' ? 'Where to now?' : stage === 'clocked' ? 'Where are you driving?' : 'Check in'}</h3>
+      <p className="fs-muted">Pick the drive (Home → Hotel, Hotel → Site…), then take the photo of the starting mileage.</p>
+      <button type="button" className="fs-btn fs-btn-primary" disabled={offTrip} onClick={on.checkIn}>
+        <FsIcon name="travel" size={18} /> {stage === 'offsite' || stage === 'clocked' ? 'Check in for the next drive' : 'Check in'}
+      </button>
+      {stage === 'clocked' && !homeward && (
+        <button type="button" className="fs-text-button" disabled={off} onClick={on.startJob}>Already on site? Confirm arrival</button>
+      )}
+    </div>
+  );
   let action: ReactNode = null;
   switch (stage) {
     case 'ready':
-      action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={offTrip} onClick={on.clockIn}><FsIcon name="clock" /> Clock in</button>;
+      action = on.checkIn
+        ? <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={offTrip} onClick={on.checkIn}><FsIcon name="clock" /> Check in</button>
+        : <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={offTrip} onClick={on.clockIn}><FsIcon name="clock" /> Clock in</button>;
       break;
     case 'clocked':
     case 'offsite':
-      action = asksTravel ? travel : (
+      action = asksTravel ? (checkIn || travel) : (
         <div className="fs-card fs-form">
           <h3>{stage === 'offsite' ? 'Off site' : 'Arrive on site'}</h3>
           <p className="fs-muted">
@@ -227,8 +242,10 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
       action = (
         <div className="fs-card fs-form">
           <h3>Signed out for the day</h3>
-          <p className="fs-muted">Heading out again today? Clock in, then start the drive.</p>
-          <button type="button" className="fs-btn fs-btn-secondary" disabled={offTrip} onClick={on.clockIn}><FsIcon name="clock" size={18} /> Clock in again</button>
+          <p className="fs-muted">Heading out again? {on.checkIn ? 'Check in for the drive.' : 'Clock in, then start the drive.'}</p>
+          <button type="button" className="fs-btn fs-btn-secondary" disabled={offTrip} onClick={on.checkIn ?? on.clockIn}>
+            <FsIcon name="clock" size={18} /> {on.checkIn ? 'Check in again' : 'Clock in again'}
+          </button>
         </div>
       );
       break;

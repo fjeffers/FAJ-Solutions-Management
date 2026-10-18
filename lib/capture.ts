@@ -7,6 +7,8 @@
 //
 // Pure and unit-tested (lib/capture.test.ts).
 
+import { parseStartAsks, type StartAsk } from './checkin';
+
 export type CaptureItem =
   | 'travel' | 'lunch' | 'odometer' | 'receipts' | 'photos'
   | 'checklist' | 'questions' | 'deliverables' | 'signature' | 'notes';
@@ -38,7 +40,11 @@ export function parseCapture(raw: unknown): CaptureItem[] | null {
   return ALL_CAPTURE.filter((k) => set.has(k) && KNOWN.has(k));
 }
 
-export type JobTemplate = { id: string; name: string; items: CaptureItem[] };
+export type JobTemplate = {
+  id: string; name: string; items: CaptureItem[];
+  /** What else to ask at check-in (lib/checkin.ts). */
+  startAsks?: StartAsk[];
+};
 
 /** Offered until Fred saves his own. */
 export const STARTER_TEMPLATES: JobTemplate[] = [
@@ -61,7 +67,8 @@ export function parseTemplates(raw: unknown): JobTemplate[] {
     const items = parseCapture(o.items) ?? [];
     if (!id || !name || ids.has(id) || items.length === 0) continue;
     ids.add(id);
-    out.push({ id, name, items });
+    const startAsks = parseStartAsks(o.startAsks);
+    out.push(startAsks.length ? { id, name, items, startAsks } : { id, name, items });
     if (out.length >= TEMPLATE_MAX) break;
   }
   return out.length ? out : STARTER_TEMPLATES;
@@ -110,3 +117,7 @@ export function setTemplateItems(list: JobTemplate[], id: string, items: Capture
 }
 
 export const removeTemplate = (list: JobTemplate[], id: string): JobTemplate[] => list.filter((t) => t.id !== id);
+
+/** Change one's check-in items. */
+export const setTemplateStartAsks = (list: JobTemplate[], id: string, startAsks: StartAsk[]): JobTemplate[] =>
+  list.map((t) => (t.id === id ? (startAsks.length ? { ...t, startAsks } : { id: t.id, name: t.name, items: t.items }) : t));

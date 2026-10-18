@@ -5,7 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // POST /api/tech/odometer — a tech records the odometer at the start or end of
 // a drive on their own job (migration 128). FormData: wo_number, at (ISO time
 // of the photo), reading (what the tech confirmed), ai_reading (what the AI
-// read, optional), file (JPEG, optional).
+// read, optional), lat, lng, accuracy (where the photo was taken, optional),
+// file (JPEG, optional).
 //
 // The same steps as a receipt (/api/tech/expense): the tech's own session asks
 // whether this is their live job, the photo goes to the private job-receipts
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
   const aiRaw = String(form.get('ai_reading') ?? '').trim();
   const aiReading = aiRaw ? Number(aiRaw) : null;
   const at = String(form.get('at') ?? '');
+  const coord = (k: string) => { const v = String(form.get(k) ?? '').trim(); const n = v ? Number(v) : NaN; return Number.isFinite(n) ? n : null; };
+  const lat = coord('lat'), lng = coord('lng'), accuracy = coord('accuracy');
   const file = form.get('file');
   if (!woNumber) return NextResponse.json({ ok: false, error: 'Missing the job.' }, { status: 400 });
   if (!Number.isFinite(reading) || reading < 0 || reading >= 10_000_000) return NextResponse.json({ ok: false, error: REASONS.bad_reading }, { status: 400 });
@@ -52,13 +55,16 @@ export async function POST(req: Request) {
   const { data, error } = await supabase.rpc('wf_tech_add_odometer', {
     p_wo_number: woNumber, p_at: at, p_reading: reading,
     p_ai_reading: aiReading != null && Number.isFinite(aiReading) ? aiReading : null, p_photo_path: path,
+    p_lat: lat, p_lng: lng, p_accuracy: accuracy,
   });
   const r = (data ?? {}) as { ok?: boolean; reason?: string };
   if (error || !r.ok) {
     if (path) await admin.storage.from('job-receipts').remove([path]);
     // Before migration 128 the function isn't there.
     if (error?.code === 'PGRST202') return NextResponse.json({ ok: false, error: "Odometer photos aren't switched on yet. Ask the office." }, { status: 501 });
-    return NextResponse.json({ ok: false, error: REASONS[r.reason ?? ''] ?? "Couldn't save the odometer. Try again." }, { status: 400 });
+    // Only a bad number is the tech's to fix (400); the phone keeps the photo for anything else.
+    const status = r.reason === 'bad_reading' ? 400 : r.reason === 'closed_or_not_yours' ? 403 : 500;
+    return NextResponse.json({ ok: false, error: REASONS[r.reason ?? ''] ?? "Couldn't save the odometer. Try again." }, { status });
   }
   return NextResponse.json({ ok: true });
 }

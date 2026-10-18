@@ -47,7 +47,7 @@ export const SCREEN_PARTS: ScreenParts[] = [
       { key: 'job.money', label: 'Money', hint: 'Price, tech pay and profit' },
       { key: 'job.fields', label: 'Your fields', hint: 'Your custom fields, when filled in' },
       { key: 'job.closeout', label: 'Closeout', hint: 'Deliverables, delays and sign-off' },
-      { key: 'job.project', label: 'Project day', hint: 'On a project site: travel, time on site, lunch, miles, receipts and the client report' },
+      { key: 'job.project', label: 'Project day', hint: 'Travel, time on site, lunch, miles, receipts and the weekly bill' },
       { key: 'job.notes', label: 'Notes', hint: 'Office notes with a date and kind — techs never see them' },
       { key: 'job.report', label: "Tech's report", hint: 'Answers and notes the tech saved' },
       { key: 'job.expenses', label: 'Expenses', hint: 'Receipts techs sent on this job' },

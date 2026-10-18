@@ -36,7 +36,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     title: 'Every day',
     items: [
       // Fred, 2026-10-13: projects — travel, time on site, miles, receipts, the client report.
-      { view: 'projects', label: 'Projects', hint: 'Multi-day sites: travel, time on site, miles, receipts and the client report' },
+      { view: 'projects', label: 'Projects', hint: 'Multi-day sites: travel, time on site, miles, receipts and the weekly bill' },
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
       { view: 'payables', label: 'Pay Techs', hint: 'What each tech is owed, and paying them' },
       { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },

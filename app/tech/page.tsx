@@ -38,9 +38,11 @@ import { FS_STAGE_NAME, fsNextStep, fsStage, type FsStage } from '@/lib/fs-stage
 import { addNotes, clearNotes, loadNotes, markRead, messageNote, notesFromChanges, saveNotes, type TechNote } from '@/lib/tech-inbox';
 import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
-import { dayState, tripLeg } from '@/lib/project-day';
+import { dayState, lastPlace, tripLeg, DEST_LABEL } from '@/lib/project-day';
 import { asks, type CaptureItem } from '@/lib/capture';
-import OdometerDialog, { readPhoto, type OdometerMoment } from '@/components/wf/Odometer';
+import OdometerDialog, { readPhoto, type OdometerMoment, type SavePhoto } from '@/components/wf/Odometer';
+import CheckInDialog, { type CheckInSend } from '@/components/wf/CheckIn';
+import type { Drive } from '@/lib/checkin';
 import type { ReceiptRead } from '@/lib/photo-read';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
@@ -327,11 +329,37 @@ export default function TechPortalPage() {
 
   const signOut = async () => {
     const waiting = boxRef.current?.pending.length ?? 0;
-    if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} been sent yet. They stay on this phone and go out the next time you sign in. Sign out anyway?`)) return;
+    if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} been sent yet. They stay on this phone and go out the next time you sign in. Log out anyway?`)) return;
     if (uid) { clearCopies(kv, uid, COPIES); clearNotes(kv, uid); }
     await supabase.auth.signOut();
     router.replace('/tech/login');
   };
+
+  // Check in and the ending mileage, from the first screen, the job, or the bar at the top
+  // (Fred, 2026-10-18: "when they log in it should ask"; "once they get home or hotel there
+  // should be a sign out button somewhere on the top of the app").
+  const [checkIn, setCheckIn] = useState<WfJob | null>(null);
+  const [odoEnd, setOdoEnd] = useState<WfJob | null>(null);
+  const [dayBusy, setDayBusy] = useState(false);
+  // Built when tapped, not while drawing the screen.
+  const dayFor = (job: WfJob) => techDay(job, act, uid ?? '', setDayBusy);
+  const keepFor = (job: WfJob): SavePhoto => (...a) => dayFor(job).keep(...a);
+  const sendFor = (job: WfJob): CheckInSend => ({
+    startDrive: (d, startDay) => dayFor(job).send.startDrive(d, startDay),
+    arriveOnSite: () => dayFor(job).send.arriveOnSite(),
+    keep: keepFor(job),
+    note: (text) => dayFor(job).send.note(text),
+  });
+  /** Arrive at the end of a drive: on site (the time on site starts) or at the hotel or home (signed out for the day). */
+  const arriveFrom = async (job: WfJob) => {
+    const driving = dayState(job.myDay ?? []).stage === 'travel';
+    await dayFor(job).arrive();
+    // The ending mileage, when there was a drive to end.
+    if (driving && asks(job.capture, 'travel') && asks(job.capture, 'odometer')) setOdoEnd(job);
+  };
+  // On the way to the hotel or home: the Sign out bar at the top.
+  const homeward = jobs.find((j) => j.dayFlow && (canWork(j) || j.status === 'workDone')
+    && (() => { const st = dayState(j.myDay ?? []); return st.stage === 'travel' && (st.dest === 'hotel' || st.dest === 'home'); })()) ?? null;
 
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -461,11 +489,20 @@ export default function TechPortalPage() {
           <span className="fs-avatar" aria-hidden="true">{fsInitials(profile?.name)}</span>
           <span><b>{profile?.name}</b><small>Technician</small></span>
         </div>
-        <button type="button" className="fs-signout" onClick={signOut} aria-label="Sign out">
-          <FsIcon name="logout" size={18} /><span>Sign out</span>
+        <button type="button" className="fs-signout" onClick={signOut} aria-label="Log out">
+          <FsIcon name="logout" size={18} /><span>Log out</span>
         </button>
       </header>
+      {homeward && <DayStrip job={homeward} busy={dayBusy} onSignOut={() => void arriveFrom(homeward)} />}
 
+      {checkIn && (() => {
+        const st = fsStage(checkIn.myDay ?? [], {}, undefined, 'America/New_York');
+        return (
+          <CheckInDialog job={checkIn} startOfDay={st === 'ready' || st === 'done'} afterWork={checkIn.status === 'workDone'}
+            from={lastPlace(checkIn.myDay ?? [])} send={sendFor(checkIn)} onClose={() => setCheckIn(null)} />
+        );
+      })()}
+      {odoEnd && <OdometerDialog woNumber={odoEnd.number} moment="end" keep={keepFor(odoEnd)} onClose={() => setOdoEnd(null)} />}
       <div className={`fs-layout${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}`}>
         <aside className={`fs-sidebar${small ? ' collapsed' : ''}`} aria-label="Workspace">
           <button type="button" className="fs-side-close" onClick={() => setDrawer(false)}>Close menu <FsIcon name="close" size={16} /></button>
@@ -506,10 +543,11 @@ export default function TechPortalPage() {
             <>
               <button type="button" className="fs-back-link" onClick={() => setOpenId(null)}><FsIcon name="back" size={16} />{TAB_TITLE[navKey]}</button>
               <TechJobScreen key={openJob.id} job={openJob} uid={uid ?? ''} lists={lists} onBack={() => setOpenId(null)} act={act}
-                onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing} />
+                onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing}
+                onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} keepPhoto={keepFor(openJob)} />
             </>
           ) : tab === 'project' ? (
-            <ProjectTab jobs={jobs} onOpen={openFromList} />
+            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} />
           ) : underProfile ? (
             <>
               <button type="button" className="fs-back-link" onClick={() => go('profile')}><FsIcon name="back" size={16} />Profile</button>
@@ -569,7 +607,88 @@ export default function TechPortalPage() {
 // ── Project: Field Service's "My work orders" ───────────────────────────────
 // Every open work order as a card (today's outlined), with the counts on top
 // and finished work folded away underneath — as in Field Service LIVE.
-function ProjectTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => void }) {
+/** On the way to the hotel or home: Sign out for the day, at the top of every screen. */
+function DayStrip({ job, busy, onSignOut }: { job: WfJob; busy: boolean; onSignOut: () => void }) {
+  const st = dayState(job.myDay ?? []);
+  const dest = st.stage === 'travel' ? DEST_LABEL[st.dest].toLowerCase() : 'hotel';
+  const since = st.stage === 'travel' ? ` · since ${new Date(st.since).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : '';
+  return (
+    <div className="fs-day-strip" role="region" aria-label="Your day">
+      <span><b>On the way to the {dest}</b><small>WO {job.number}{since}</small></span>
+      <button type="button" disabled={busy} onClick={onSignOut}>{busy ? 'One moment…' : 'Sign out for the day'}</button>
+    </div>
+  );
+}
+
+/**
+ * The first thing after logging in (Fred, 2026-10-18: "when they log in it should ask"):
+ * Check in for today's job, or the one step that's next on the job they're in the middle of.
+ */
+function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
+  jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
+}) {
+  const today = todayISO();
+  const now = new Date();
+  const lastAt = (j: WfJob) => (j.myDay ?? []).reduce((m, e) => (e.at > m ? e.at : m), '');
+  // The job they're in the middle of today: on the road, on site, at lunch, or off site.
+  const inProgress = jobs
+    .filter((j) => j.dayFlow && (canWork(j) || j.status === 'workDone'))
+    .map((j) => ({ j, st: fsStage(j.myDay ?? [], {}, now, 'America/New_York') }))
+    .filter((x) => x.st !== 'ready' && x.st !== 'done')
+    .sort((a, b) => lastAt(b.j).localeCompare(lastAt(a.j)))[0] ?? null;
+  const choices = sortTechJobs(jobs.filter((j) => canWork(j) && j.dayFlow), today);
+  const [pick, setPick] = useState<string>('');
+  if (!inProgress && choices.length === 0) return null;
+  const job = inProgress?.j ?? choices.find((j) => j.id === pick) ?? choices[0];
+  const stage = inProgress?.st ?? fsStage(job.myDay ?? [], {}, now, 'America/New_York');
+  const st = dayState(job.myDay ?? [], now);
+  const since = 'since' in st ? new Date(st.since).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+  const name = job.siteName || job.title || `WO ${job.number}`;
+  let line: string;
+  let action: React.ReactNode;
+  if (stage === 'outbound' || stage === 'returning') {
+    const dest = st.stage === 'travel' ? st.dest : 'site';
+    line = `On the way to the ${dest === 'next_site' ? 'next site' : dest}${since ? ` since ${since}` : ''}.`;
+    action = (
+      <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy} onClick={() => onArrive(job)}>
+        {dest === 'hotel' || dest === 'home' ? 'Sign out for the day' : 'I have arrived'}
+      </button>
+    );
+  } else if (stage === 'onsite' || stage === 'lunch' || stage === 'stopped') {
+    line = `${stage === 'lunch' ? 'At lunch' : 'On site'} at ${name}${since ? ` since ${since}` : ''}.`;
+    action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" onClick={() => onOpen(job.id)}>Open the job</button>;
+  } else {
+    // Ready for the day, off site, or signed out at the hotel: the next check-in.
+    line = stage === 'offsite' ? `Off site at ${name}. Where to now?`
+      : stage === 'clocked' ? 'Checked in. Where are you driving?' : 'Ready to go? Check in before you drive off.';
+    action = (
+      <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy || job.status === 'offered'} onClick={() => onCheckIn(job)}>
+        <FsIcon name="clock" /> {stage === 'offsite' || stage === 'clocked' ? 'Check in for the next drive' : 'Check in'}
+      </button>
+    );
+  }
+  return (
+    <section className="fs-card fs-form fs-today" aria-label="Today">
+      <h3>Today</h3>
+      {!inProgress && choices.length > 1 ? (
+        <label>
+          Job
+          <select value={job.id} onChange={(e) => setPick(e.target.value)}>
+            {choices.map((j) => <option key={j.id} value={j.id}>{[j.siteName || j.title, `WO ${j.number}`, j.date === today ? 'today' : ''].filter(Boolean).join(' · ')}</option>)}
+          </select>
+        </label>
+      ) : (
+        <p className="fs-meta">{[name, `WO ${job.number}`].join(' · ')}</p>
+      )}
+      <p>{line}</p>
+      {action}
+    </section>
+  );
+}
+
+function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
+  jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
+}) {
   const today = todayISO();
   const live = sortTechJobs(jobs.filter(canWork), today);
   const todayCount = live.filter((j) => j.date === today || isClockedIn(j)).length;
@@ -604,6 +723,7 @@ function ProjectTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => v
   return (
     <>
       <FsPageHeader title="Project" subtitle="Your assigned work, one tap away." />
+      <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">
           <div>Open work orders<FsIcon name="sheet" size={18} /></div>
@@ -1015,9 +1135,11 @@ function TimeRequestDialog({ job, act, onClose }: {
 
 // ── One job ─────────────────────────────────────────────────────────────────
 
-function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: {
+function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, onCheckIn, onArrive, keepPhoto }: {
   job: WfJob; uid: string; lists: CloseoutList[]; onBack: () => void; act: (a: PendingAction, sent?: string) => Promise<void>;
   onRefresh: () => void; refreshing: boolean;
+  /** Check in (components/wf/CheckIn.tsx), and arriving with the ending mileage: shared with the first screen. */
+  onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; keepPhoto: SavePhoto;
 }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [doneOpen, setDoneOpen] = useState(false);
@@ -1111,27 +1233,19 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   };
   const dayOn: DayActions = {
     clockIn: () => void dayTap('day_start', {}, 'Clock in', 'Clocked in. Pick where you are going.'),
-    // The odometer photo comes right after the tap, so the tap keeps its own time and place.
+    // Check in: the drive from the drop-down, the starting mileage, then the office's items (CheckIn.tsx).
+    checkIn: () => onCheckIn(job),
     startTrip: (trip, from) => {
       const leg = tripLeg(trip, job.myDay ?? []);
       void dayTap('travel_start', { origin: from ?? leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.')
         .then(() => { if (ask('odometer')) setOdometer('start'); });
     },
-    startJob: async () => {
-      const at = new Date();
-      const g = await where();
-      if (dayState(job.myDay ?? []).stage === 'travel') {
-        await act(makeAction('day', { number: job.number, kind: 'travel_end', ...g }, `Arrived — WO ${job.number}`, at));
-        if (ask('odometer')) setOdometer('end');
-      }
-      await act(makeAction('clock', { number: job.number, action: 'in', ...g }, `Start job on WO ${job.number}`, at),
-        'Job started. Your time on site is running.');
-    },
+    // Arriving asks for the ending mileage right after, so the tap keeps its own time and place.
+    startJob: () => onArrive(job),
     lunch: (start) => void dayTap(start ? 'lunch_start' : 'lunch_end', {}, start ? 'Lunch' : 'Back from lunch',
       start ? 'Lunch started.' : 'Back on site.'),
     offSite: () => setOffOpen(true),
-    arrived: () => void dayTap('travel_end', {}, 'Arrived', 'Signed out for the day.')
-      .then(() => { if (ask('odometer')) setOdometer('end'); }),
+    arrived: () => onArrive(job),
   };
   // A project site always needs the sign-off; an ordinary job only when the office asked for one.
   const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, jobForCloseout.signatureRequired)];
@@ -1284,7 +1398,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
       )}
       {expenseOpen && <ExpenseDialog job={job} onClose={() => setExpenseOpen(false)} onSaved={() => { setExpenseOpen(false); void loadExpenses(); }} />}
-      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} onClose={() => setOdometer(null)} />}
+      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} keep={keepPhoto} onClose={() => setOdometer(null)} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {left.away && project && working && (
         <LeftSiteDialog onStillHere={() => left.dismiss(30)} onPick={(reason, note) => {
@@ -1820,6 +1934,65 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
 type SentPhoto = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; by: string | null };
 
 /** Send one stamped photo. 'offline' when there is no signal (keep it). */
+/**
+ * One job's day taps, from any screen: Check in, arriving, a photo kept with the
+ * job, a line to the office. Each tap takes its own time and the GPS position
+ * when the phone gives it, and goes through the outbox, so it works with no signal.
+ */
+function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<void>, uid: string, setBusy: (b: boolean) => void) {
+  const where = async () => {
+    setBusy(true);
+    const pos = await getPosition(6000);
+    setBusy(false);
+    return { lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null };
+  };
+  const day = (kind: string, extra: Record<string, unknown>, label: string, at: Date, g: Record<string, unknown>, sent?: string) =>
+    act(makeAction('day', { number: job.number, kind, ...g, ...extra }, `${label} — WO ${job.number}`, at), sent);
+  const keep: SavePhoto = async (blob, label, takenAt, pos) => {
+    const meta = { woNumber: job.number, blob, takenAt, lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source: 'camera' as const, label };
+    const r = await sendPhoto(meta);
+    if (r === 'offline') {
+      await queuePhoto({ ...meta, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, uid });
+      return 'queued';
+    }
+    return 'error' in r ? { error: r.error } : 'sent';
+  };
+  /** Arrive on site: the drive ends (when there was one) and the time on site starts. */
+  const onSite = async () => {
+    const at = new Date();
+    const g = await where();
+    if (dayState(job.myDay ?? []).stage === 'travel') await day('travel_end', {}, 'Arrived', at, g);
+    await act(makeAction('clock', { number: job.number, action: 'in', ...g }, `Start job on WO ${job.number}`, at),
+      'On site. Your time on site is running.');
+  };
+  const send: CheckInSend = {
+    startDrive: async (drive: Drive, startDay: boolean) => {
+      const at = new Date();
+      const g = await where();
+      // The day starts a second before the drive, so the two stay in order.
+      if (startDay) await day('day_start', {}, 'Check in', new Date(at.getTime() - 1000), g);
+      await day('travel_start', { origin: drive.origin, dest: drive.dest }, 'Start travel', at, g);
+    },
+    arriveOnSite: onSite,
+    keep,
+    note: (text: string) => {
+      void act(makeAction('sitemsg', { number: job.number, kind: 'report', body: text, to: 'Everyone' }, `Check-in for WO ${job.number}`));
+    },
+  };
+  /** The end of a drive: on site, or at the hotel or home (signed out for the day). */
+  const arrive = async () => {
+    const st = dayState(job.myDay ?? []);
+    if (st.stage === 'travel' && st.dest !== 'site') {
+      const g = await where();
+      await day('travel_end', {}, 'Arrived', new Date(), g,
+        st.dest === 'hotel' || st.dest === 'home' ? `At the ${st.dest}. Signed out for the day.` : 'Arrived.');
+      return;
+    }
+    await onSite();
+  };
+  return { send, keep, arrive };
+}
+
 async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<{ url: string } | 'offline' | { error: string }> {
   const fd = new FormData();
   fd.append('wo_number', p.woNumber);

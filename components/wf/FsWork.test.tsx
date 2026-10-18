@@ -156,6 +156,21 @@ describe('FsStageAction', () => {
     expect(screen.getByRole('button', { name: /Clock in/ })).toHaveProperty('disabled', true);
   });
 
+  it('Check in replaces Clock in and the travel form when given', async () => {
+    const on = { ...actions(), checkIn: vi.fn() };
+    const { rerender } = render(<FsStageAction stage="ready" events={[]} busy={false} enabled on={on} />);
+    await userEvent.click(screen.getByRole('button', { name: /Check in/ }));
+    expect(on.checkIn).toHaveBeenCalledOnce();
+    expect(on.clockIn).not.toHaveBeenCalled();
+    rerender(<FsStageAction stage="offsite" events={[{ kind: 'in', at: iso(60) }, { kind: 'out', at: iso(5) }]} busy={false} enabled on={on} />);
+    expect(screen.queryByRole('combobox')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Check in for the next drive' }));
+    expect(on.checkIn).toHaveBeenCalledTimes(2);
+    rerender(<FsStageAction stage="done" events={[]} busy={false} enabled on={on} />);
+    await userEvent.click(screen.getByRole('button', { name: /Check in again/ }));
+    expect(on.checkIn).toHaveBeenCalledTimes(3);
+  });
+
   it('holds the buttons while the location is being read', () => {
     render(<FsStageAction stage="ready" events={[]} busy enabled on={actions()} />);
     expect(screen.getByRole('button', { name: /Clock in/ })).toHaveProperty('disabled', true);

@@ -6,9 +6,10 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import {
-  CAPTURE_ITEMS, TEMPLATE_MAX, addTemplate, removeTemplate, renameTemplate, setTemplateItems, toggleItem,
+  CAPTURE_ITEMS, TEMPLATE_MAX, addTemplate, removeTemplate, renameTemplate, setTemplateItems, setTemplateStartAsks, toggleItem,
   type CaptureItem,
 } from '@/lib/capture';
+import { START_ASK_MAX, addStartAsk, type StartAsk } from '@/lib/checkin';
 import { SaveLine } from '@/components/LayoutEditor';
 import { useJobTemplates } from '@/components/useJobTemplates';
 
@@ -30,6 +31,53 @@ export function CaptureTicks({ items, onChange, idPrefix }: {
           </label>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * What else to ask for at check-in (Fred, 2026-10-18: "I want to be able to add
+ * what I'm looking for when starting"): a photo or a short answer each, asked
+ * after the drive and the starting mileage (components/wf/CheckIn.tsx).
+ */
+export function StartAsksEditor({ asks, onChange, idPrefix }: {
+  asks: StartAsk[]; onChange: (next: StartAsk[]) => void; idPrefix: string;
+}) {
+  const [label, setLabel] = useState('');
+  const [kind, setKind] = useState<StartAsk['kind']>('photo');
+  const add = () => {
+    const next = addStartAsk(asks, label, kind, Math.random().toString(36).slice(2));
+    if (!next) return;
+    onChange(next);
+    setLabel('');
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ fontWeight: 600, fontSize: 13.5 }}>At check-in, also ask for</div>
+      <div style={{ fontSize: 12, color: 'var(--wf-subtle)' }}>
+        After the tech picks the drive and takes the starting mileage photo. A photo gets the time and GPS printed on it.
+      </div>
+      {asks.map((a) => (
+        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px', border: '1px solid var(--wf-line)', borderRadius: 9 }}>
+          <span className="wf-chip" style={{ fontSize: 11.5 }}>{a.kind === 'photo' ? 'Photo' : 'Answer'}</span>
+          <span style={{ flex: 1, fontSize: 13.5 }}>{a.label}</span>
+          <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" aria-label={`Remove ${a.label}`} onClick={() => onChange(asks.filter((x) => x.id !== a.id))}>
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ))}
+      {asks.length < START_ASK_MAX && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input id={`${idPrefix}-ask`} className="wf-input" style={{ flex: '1 1 220px' }} value={label} maxLength={80}
+            placeholder={kind === 'photo' ? 'e.g. Photo of the truck' : 'e.g. Truck number'} aria-label="New check-in item"
+            onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
+          <select className="wf-input" style={{ width: 120 }} value={kind} aria-label="Kind" onChange={(e) => setKind(e.target.value as StartAsk['kind'])}>
+            <option value="photo">Photo</option>
+            <option value="answer">Answer</option>
+          </select>
+          <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={!label.trim()} onClick={add}><Plus size={14} /> Add</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -85,6 +133,7 @@ export default function JobTemplatesEditor() {
             update(setTemplateItems(templates, t.id, items));
             setError(null);
           }} />
+          <StartAsksEditor idPrefix={`tpl-${t.id}`} asks={t.startAsks ?? []} onChange={(asks) => update(setTemplateStartAsks(templates, t.id, asks))} />
         </section>
       ))}
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>

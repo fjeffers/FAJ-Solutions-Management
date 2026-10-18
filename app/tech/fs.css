@@ -81,6 +81,20 @@
   display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border: 1px solid var(--line-2);
   border-radius: 6px; background: #fff; font: inherit; font-size: 11.5px; font-weight: 700; color: var(--ink); cursor: pointer;
 }
+/* On the way to the hotel or home: Sign out for the day, under the top bar on every screen. */
+.fs-day-strip {
+  position: sticky; top: 76px; z-index: 29; display: flex; align-items: center; gap: 14px;
+  padding: 10px 28px; background: var(--forest); color: #fff;
+}
+.fs-day-strip span { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.fs-day-strip small { opacity: 0.8; font-size: 12px; }
+.fs-day-strip button {
+  height: 40px; padding: 0 16px; border: 0; border-radius: 8px; background: var(--mint); color: var(--forest);
+  font: inherit; font-weight: 750; font-size: 14px; cursor: pointer; white-space: nowrap;
+}
+.fs-day-strip button:disabled { opacity: 0.6; cursor: default; }
+.fs-today { margin-bottom: 18px; border-color: var(--forest-3); }
+.fs-today p { margin: 0; }
 .fs-layout {
   display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: calc(100vh - 76px);
   background: linear-gradient(to right, var(--forest) 236px, transparent 236px);
@@ -286,6 +300,7 @@
 }
 @media (max-width: 900px) {
   .fs-topbar { gap: 10px; padding-right: 14px; height: 68px; }
+  .fs-day-strip { top: 68px; padding: 10px 14px; }
   .fs-brand { width: auto; padding-left: 16px; }
   .fs-menu-button { margin-left: 0; height: 44px; width: 40px; padding: 0; justify-content: center; }
   .fs-menu-button span, .fs-crumbs, .fs-who, .fs-live-pill, .fs-refresh { display: none; }

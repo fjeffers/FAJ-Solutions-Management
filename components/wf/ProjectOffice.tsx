@@ -85,8 +85,8 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
       subtitle={w.project_name ? `${w.project_name} · from the techs' phones` : "From the techs' phones"}
       right={<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Plus size={15} /> Add receipt</button>
-        {/* A project, or a job with its own list (a client portal job: time, miles, receipts) gets the weekly bill. */}
-        {(w.is_project || !!w.capture) && <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Client report</button>}
+        {/* The weekly bill for the client, on every job (Fred, 2026-10-18: "printed and exportable to send to clients"). */}
+        <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Weekly bill</button>
       </div>}
     >
       {events === null ? <div className="wf-subtle">Loading…</div>
@@ -439,7 +439,7 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   return createPortal(
     <div id="job-log-root" className="wf" style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(2,4,9,0.55)', overflowY: 'auto', padding: '16px 12px 40px' }}>
       <div className="no-print" style={{ maxWidth: 850, margin: '0 auto 12px', background: '#F6F4EF', borderRadius: 14, padding: 14, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-        <div style={{ fontWeight: 700, fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 16, flex: '1 1 160px' }}>Client report · {projectName || 'this site'}</div>
+        <div style={{ fontWeight: 700, fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 16, flex: '1 1 160px' }}>Weekly bill · {projectName || 'this site'}</div>
         <label style={{ fontSize: 13 }}>From <input type="date" className="wf-input" style={{ width: 150, minHeight: 36, padding: '4px 8px' }} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label style={{ fontSize: 13 }}>To <input type="date" className="wf-input" style={{ width: 150, minHeight: 36, padding: '4px 8px' }} value={to} onChange={(e) => setTo(e.target.value)} /></label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
@@ -463,7 +463,7 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ height: 54, width: 'auto' }} />
           <div style={{ textAlign: 'right', color: '#fff' }}>
-            <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 1.5, color: '#E3C987' }}>PROJECT REPORT</div>
+            <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 1.5, color: '#E3C987' }}>WEEKLY BILL</div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>{range}</div>
           </div>
         </div>
@@ -783,7 +783,7 @@ function ProjectSheetPanel({ name, list, onBack, onOpen, onReport }: {
         <h1 className="wf-h1" style={{ margin: 0, flex: 1, minWidth: 160, fontSize: 20 }}>{name}</h1>
         {url && <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => setSending(true)}>Send the sheet</button>}
         {url && <a className="wf-btn wf-btn-outline wf-btn-sm" href={url} target="_blank" rel="noopener noreferrer">Open as the client sees it</a>}
-        <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onReport}><FileText size={15} /> Client report</button>
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onReport}><FileText size={15} /> Weekly bill</button>
         {!noName && <button className="wf-btn wf-btn-ghost wf-btn-sm" aria-expanded={setup} onClick={() => setSetup((s) => !s)}>{setup ? 'Hide setup' : 'Setup'}</button>}
       </div>
 

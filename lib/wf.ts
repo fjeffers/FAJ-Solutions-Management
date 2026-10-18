@@ -12,6 +12,7 @@
 import { isUrgent, labelOf, stageName } from './app-lists';
 import type { EnrichedWorkOrder } from './types';
 import { asks, parseCapture, type CaptureItem } from './capture';
+import { parseStartAsks, type StartAsk } from './checkin';
 import { todayISO } from './utils';
 import { parseDayEvents, sortEvents, type DayEvent } from './project-day';
 import {
@@ -151,6 +152,8 @@ export type WfJob = {
   dayFlow?: boolean;
   /** What the office asks the tech for on this job (migration 128); null = everything. */
   capture: CaptureItem[] | null;
+  /** What else the office wants at check-in: a photo or a short answer each (migration 128, lib/checkin.ts). */
+  startAsks: StartAsk[];
   /** Tech only: their own odometer readings on this job (migration 128). */
   myOdometer?: OdometerReading[];
 };
@@ -296,6 +299,7 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     myDay: owner ? [] : parseDayEvents(r.my_day),
     dayFlow: !owner && r.day_flow === true,
     capture: parseCapture(r.capture),
+    startAsks: parseStartAsks(r.start_asks),
     myOdometer: owner ? [] : parseOdometer(r.my_odometer),
   };
 }

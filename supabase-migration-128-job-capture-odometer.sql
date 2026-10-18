@@ -12,7 +12,9 @@
 --   user_settings.job_templates Fred's saved sets of items ("Client portal job:
 --                              travel, odometer, receipts"). Office only.
 --   job_odometer               One odometer reading: when, the number, what the
---                              AI read from the photo, and the photo.
+--                              AI read from the photo, the photo, and where (GPS).
+--   work_orders.start_asks     What else the office wants at check-in on this job:
+--                              a photo or a short answer each (lib/checkin.ts).
 --   wf_tech_add_odometer()     A tech records a reading on their own live job.
 --   job_expenses.gallons, .ai  Fuel gallons, and what the AI read off the
 --                              receipt photo (to flag a mismatch).
@@ -31,6 +33,12 @@ ALTER TABLE public.work_orders ADD CONSTRAINT work_orders_capture_known CHECK (
   capture IS NULL OR capture <@ ARRAY['travel', 'lunch', 'odometer', 'receipts', 'photos', 'checklist',
                                       'questions', 'deliverables', 'signature', 'notes']::text[]);
 
+-- Fred, 2026-10-18: "I want to be able to add what I'm looking for when starting".
+ALTER TABLE public.work_orders ADD COLUMN IF NOT EXISTS start_asks jsonb;
+ALTER TABLE public.work_orders DROP CONSTRAINT IF EXISTS work_orders_start_asks_shape;
+ALTER TABLE public.work_orders ADD CONSTRAINT work_orders_start_asks_shape CHECK (
+  start_asks IS NULL OR (jsonb_typeof(start_asks) = 'array' AND pg_column_size(start_asks) < 8192));
+
 ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS job_templates jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE public.user_settings DROP CONSTRAINT IF EXISTS user_settings_job_templates_size;
 ALTER TABLE public.user_settings ADD CONSTRAINT user_settings_job_templates_size CHECK (pg_column_size(job_templates) < 32768);
@@ -46,6 +54,9 @@ CREATE TABLE IF NOT EXISTS public.job_odometer (
   reading         numeric(9, 1) NOT NULL CHECK (reading >= 0 AND reading < 10000000),
   ai_reading      numeric(9, 1) CHECK (ai_reading >= 0 AND ai_reading < 10000000),
   photo_path      text,
+  lat             double precision CHECK (lat BETWEEN -90 AND 90),
+  lng             double precision CHECK (lng BETWEEN -180 AND 180),
+  accuracy        double precision CHECK (accuracy >= 0),
   created_at      timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS job_odometer_wo_idx ON public.job_odometer (wo_id, at);
@@ -61,7 +72,8 @@ REVOKE ALL ON public.job_odometer FROM anon;
 REVOKE INSERT, DELETE ON public.job_odometer FROM authenticated;
 
 CREATE OR REPLACE FUNCTION public.wf_tech_add_odometer(
-  p_wo_number text, p_at timestamptz, p_reading numeric, p_ai_reading numeric, p_photo_path text)
+  p_wo_number text, p_at timestamptz, p_reading numeric, p_ai_reading numeric, p_photo_path text,
+  p_lat double precision, p_lng double precision, p_accuracy double precision)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
 AS $$
 DECLARE
@@ -79,15 +91,19 @@ BEGIN
   IF p_photo_path IS NOT NULL AND p_photo_path !~ ('^' || v_wo::text || '/odo_[0-9a-z_-]+\.jpg$') THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'bad_file');
   END IF;
-  INSERT INTO job_odometer (user_id, wo_id, wo_number, contractor_name, at, reading, ai_reading, photo_path)
+  INSERT INTO job_odometer (user_id, wo_id, wo_number, contractor_name, at, reading, ai_reading, photo_path, lat, lng, accuracy)
   VALUES ((v_ctx ->> 'owner_id')::uuid, v_wo, p_wo_number, v_ctx ->> 'contractor_name', wf_trusted_time(p_at),
-          round(p_reading, 1), round(p_ai_reading, 1), p_photo_path)
+          round(p_reading, 1), round(p_ai_reading, 1), p_photo_path,
+          -- A position outside the world is dropped, not refused: the reading still counts.
+          CASE WHEN p_lat BETWEEN -90 AND 90 AND p_lng BETWEEN -180 AND 180 THEN p_lat END,
+          CASE WHEN p_lat BETWEEN -90 AND 90 AND p_lng BETWEEN -180 AND 180 THEN p_lng END,
+          CASE WHEN p_accuracy >= 0 THEN p_accuracy END)
   RETURNING id INTO v_id;
   RETURN jsonb_build_object('ok', true, 'id', v_id);
 END;
 $$;
-REVOKE ALL ON FUNCTION public.wf_tech_add_odometer(text, timestamptz, numeric, numeric, text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.wf_tech_add_odometer(text, timestamptz, numeric, numeric, text) TO authenticated;
+REVOKE ALL ON FUNCTION public.wf_tech_add_odometer(text, timestamptz, numeric, numeric, text, double precision, double precision, double precision) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.wf_tech_add_odometer(text, timestamptz, numeric, numeric, text, double precision, double precision, double precision) TO authenticated;
 
 -- ── Fuel gallons and the AI's reading on receipts ──────────────────────────
 ALTER TABLE public.job_expenses ADD COLUMN IF NOT EXISTS gallons numeric(7, 3);
@@ -165,8 +181,11 @@ BEGIN
         'checked_in_at', COALESCE(ctl.checked_in_at, w.checked_in_at),
         'checked_out_at', COALESCE(ctl.checked_out_at, w.checked_out_at),
         'closeout_notes', w.closeout_notes,
-        'day_flow', true,
+        'day_flow', true
+      ) || jsonb_build_object(
+        -- A second object: jsonb_build_object takes at most 100 arguments.
         'capture', to_jsonb(w.capture),
+        'start_asks', COALESCE(w.start_asks, '[]'::jsonb),
         'my_odometer', COALESCE((
           SELECT jsonb_agg(jsonb_build_object('at', o.at, 'reading', o.reading) ORDER BY o.at)
             FROM job_odometer o

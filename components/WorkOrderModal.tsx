@@ -27,7 +27,8 @@ import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { choicesFor } from '@/lib/app-lists';
 import { asValues } from '@/lib/custom-fields';
 import CustomFieldInputs from '@/components/CustomFieldInputs';
-import { CaptureTicks } from '@/components/CaptureEditor';
+import { CaptureTicks, StartAsksEditor } from '@/components/CaptureEditor';
+import { parseStartAsks, type StartAsk } from '@/lib/checkin';
 import { useJobTemplates } from '@/components/useJobTemplates';
 import { ALL_CAPTURE, parseCapture, templateOf, type CaptureItem } from '@/lib/capture';
 import { createClient } from '@/lib/supabase/client';
@@ -182,6 +183,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const photoFileRef = useRef<HTMLInputElement>(null);
   // What the tech records (lib/capture.ts): null asks for everything, as every job did before.
   const [capture, setCapture] = useState<CaptureItem[] | null>(() => parseCapture(item?.capture));
+  // What else to ask at check-in (lib/checkin.ts).
+  const [startAsks, setStartAsks] = useState<StartAsk[]>(() => parseStartAsks(item?.start_asks));
   const { templates: jobTemplates } = useJobTemplates();
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
@@ -689,6 +692,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       wo_tasks:        tasks.filter((t) => t.label.trim()),
       // Sent only once a job has a list, so saving works before migration 128.
       ...(capture || item?.capture ? { capture } : {}),
+      ...(startAsks.length || item?.start_asks ? { start_asks: startAsks } : {}),
     };
     onSave({ ...item, ...payload });
   };
@@ -1008,7 +1012,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               </div>
             </button>
             <CustomFieldInputs target="jobs" values={asValues(form.custom)} onChange={(v) => setForm((f) => ({ ...f, custom: v }))} />
-            <WhatTheTechRecords capture={capture} onChange={setCapture} templates={jobTemplates} />
+            <WhatTheTechRecords capture={capture} onChange={setCapture} templates={jobTemplates}
+              startAsks={startAsks} onStartAsks={setStartAsks} />
           </div>
         )}
 
@@ -2546,8 +2551,9 @@ function MoneyInput({ value, onChange }: { value: number | null | undefined; onC
  * blank items it not needed"): a saved template (Settings -> Job templates) or
  * the items ticked here. "Everything" keeps the job as jobs have always been.
  */
-function WhatTheTechRecords({ capture, onChange, templates }: {
+function WhatTheTechRecords({ capture, onChange, templates, startAsks, onStartAsks }: {
   capture: CaptureItem[] | null; onChange: (next: CaptureItem[] | null) => void; templates: ReturnType<typeof useJobTemplates>['templates'];
+  startAsks: StartAsk[]; onStartAsks: (next: StartAsk[]) => void;
 }) {
   const used = templateOf(capture, templates);
   const value = capture === null ? 'all' : used ? used.id : 'custom';
@@ -2560,7 +2566,12 @@ function WhatTheTechRecords({ capture, onChange, templates }: {
             const v = e.target.value;
             if (v === 'all') onChange(null);
             else if (v === 'custom') onChange(capture ?? ALL_CAPTURE);
-            else onChange(templates.find((t) => t.id === v)?.items ?? null);
+            else {
+              const t = templates.find((x) => x.id === v);
+              onChange(t?.items ?? null);
+              // A template brings its check-in items too.
+              if (t) onStartAsks(t.startAsks ?? []);
+            }
           }}>
             <option value="all">Everything (photos, checklist, questions, sign-off, travel, receipts)</option>
             {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -2577,6 +2588,7 @@ function WhatTheTechRecords({ capture, onChange, templates }: {
           </div>
         </>
       )}
+      <StartAsksEditor idPrefix="wo-capture" asks={startAsks} onChange={onStartAsks} />
     </div>
   );
 }

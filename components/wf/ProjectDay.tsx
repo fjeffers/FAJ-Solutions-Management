@@ -38,6 +38,8 @@ const plain: React.CSSProperties = { ...big, background: 'var(--wf-card)', color
 export type DayActions = {
   /** Clock in: the start of the day (Fred, 2026-10-13: "it should start with clock-in"). */
   clockIn: () => void;
+  /** Check in: pick the drive, the starting mileage, the office's items (components/wf/CheckIn.tsx). Replaces Clock in and Start travel where given. */
+  checkIn?: () => void;
   /** Start travel, for the trip picked in the dropdown; `from` when the tech said where they're leaving from. */
   startTrip: (trip: Trip, from?: Origin) => void;
   startJob: () => void;

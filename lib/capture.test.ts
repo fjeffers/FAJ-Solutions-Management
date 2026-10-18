@@ -59,3 +59,13 @@ describe('editing templates', () => {
     expect(removeTemplate(list, 'survey-q1')).toEqual(STARTER_TEMPLATES);
   });
 });
+
+describe('check-in items on templates', () => {
+  it('keeps them with the template, and drops them when emptied', async () => {
+    const { setTemplateStartAsks } = await import('./capture');
+    const ask = { id: 'ask-1', label: 'Photo of the truck', kind: 'photo' as const };
+    const list = setTemplateStartAsks(STARTER_TEMPLATES, 'portal', [ask]);
+    expect(parseTemplates(JSON.parse(JSON.stringify(list)))[0]).toEqual({ ...STARTER_TEMPLATES[0], startAsks: [ask] });
+    expect(setTemplateStartAsks(list, 'portal', [])[0]).toEqual(STARTER_TEMPLATES[0]);
+  });
+});

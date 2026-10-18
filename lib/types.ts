@@ -232,6 +232,8 @@ export type WorkOrder = {
   photo_required: boolean;
   /** What the job asks the tech for (migration 128, lib/capture.ts); null or missing = everything. */
   capture?: string[] | null;
+  /** What else the office wants at check-in (migration 128, lib/checkin.ts). */
+  start_asks?: unknown;
 
   // Multi-contractor (migration-014)
   contractor_names: string[] | null;

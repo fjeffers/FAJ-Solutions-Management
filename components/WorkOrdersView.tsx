@@ -19,6 +19,8 @@ import { activeFields } from '@/lib/custom-fields';
 import { shown } from '@/lib/screen-parts';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { aiFailureText } from '@/lib/wo-ai';
+import { useJobTemplates } from '@/components/useJobTemplates';
+import { templateForText } from '@/lib/capture';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -661,6 +663,8 @@ function AIGenerateModal({
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Fred's templates: the AI picks the one that fits, and the job starts with its items.
+  const { templates } = useJobTemplates();
 
   const generate = async () => {
     if (!prompt.trim() || loading) return;
@@ -674,11 +678,16 @@ function AIGenerateModal({
         body: JSON.stringify({
           job_description: prompt,
           custom_fields: activeFields('jobs').map(({ id, label, kind, options }) => ({ id, label, kind, options })),
+          templates: templates.map((t) => ({ id: t.id, name: t.name })),
         }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Generation failed'); return; }
-      const fields = (data.result ?? {}) as Partial<WorkOrder>;
+      const { template: picked, ...fields } = (data.result ?? {}) as Partial<WorkOrder> & { template?: string };
+      // The job takes the chosen template's items, like picking it on the form
+      // (Fred, 2026-10-18: "the generator should do the same thing").
+      const tpl = templates.find((t) => t.id === picked) ?? templateForText(prompt, templates);
+      if (tpl) { fields.capture = tpl.items; fields.start_asks = tpl.startAsks ?? []; }
       if (Object.keys(fields).length === 0) {
         setError("Couldn't find any job details in that text. Paste the whole email or work order and try again.");
         return;

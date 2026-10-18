@@ -23,3 +23,19 @@ describe('client links on a work order', () => {
     expect(linkLabel('https://survey.example.com/')).toBe('survey.example.com');
   });
 });
+
+describe('links in a pasted email (Generate with AI)', async () => {
+  const { linksInText, mergeLinks } = await import('./client-links');
+  const email = `All deliverable will be sent to this link: https://drive.google.com/drive/folders/1WcqYoBmnTB3e_Xis4t7r66w7YQO7A1bP
+
+After each day you are required to check out on this link: https://app.smartsheet.com/b/form/01a13c4a09bf7ac8bb9c6fdd595e1a82.`;
+  it('finds every link, without the full stop that ends the sentence', () => {
+    expect(linksInText(email)).toEqual([
+      'https://drive.google.com/drive/folders/1WcqYoBmnTB3e_Xis4t7r66w7YQO7A1bP',
+      'https://app.smartsheet.com/b/form/01a13c4a09bf7ac8bb9c6fdd595e1a82',
+    ]);
+  });
+  it('merges two lists without repeats', () => {
+    expect(mergeLinks(['https://a.example.com/x'], ['https://a.example.com/x', 'https://b.example.com'])).toEqual(['https://a.example.com/x', 'https://b.example.com/']);
+  });
+});

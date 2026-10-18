@@ -91,3 +91,12 @@ describe('check-in items on templates', () => {
     expect(setTemplateStartAsks(list, 'portal', [])[0]).toEqual(PORTAL);
   });
 });
+
+describe('the template a pasted job names (Generate with AI)', async () => {
+  const { templateForText } = await import('./capture');
+  it('picks the one template whose name is in the text as a word', () => {
+    expect(templateForText('NetView LDS-1110 (Site ID 5011876) at 701 West Buford Street', [PORTAL, LDS])?.id).toBe('lds');
+    expect(templateForText('A survey in Golden, CO', [{ id: 'old', name: 'Old', items: [] }])).toBeNull();
+    expect(templateForText('Nothing to see', [PORTAL, LDS])).toBeNull();
+  });
+});

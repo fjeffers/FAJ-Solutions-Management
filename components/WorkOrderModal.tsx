@@ -190,11 +190,12 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // office ticks what it needs (Fred, 2026-10-18: "All work order need to start
   // the same way blank"). null (a job made before) still asks for everything.
   const [capture, setCapture] = useState<CaptureItem[] | null>(() =>
-    item?.id ? parseCapture(item?.capture) : (parseCapture(item?.capture) ?? []));
+    item?.id ? parseCapture(item?.capture) : (parseCapture(item?.capture ?? prefill?.capture) ?? []));
   // What else to ask at check-in (lib/checkin.ts).
-  const [startAsks, setStartAsks] = useState<StartAsk[]>(() => parseStartAsks(item?.start_asks));
+  const [startAsks, setStartAsks] = useState<StartAsk[]>(() => parseStartAsks(item?.start_asks ?? (!item ? prefill?.start_asks : undefined)));
   // The client's links, one per line (lib/client-links.ts, migration 130).
-  const [linksText, setLinksText] = useState(() => (item?.client_links ?? []).join('\n'));
+  // A job made with Generate with AI starts with the links it found.
+  const [linksText, setLinksText] = useState(() => (item?.client_links ?? (!item ? prefill?.client_links : null) ?? []).join('\n'));
   const { templates: jobTemplates } = useJobTemplates();
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',

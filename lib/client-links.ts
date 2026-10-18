@@ -33,3 +33,18 @@ export function linkLabel(link: string): string {
     return link;
   }
 }
+
+/**
+ * Every web link in a pasted email or ticket, cleaned the same way (Fred,
+ * 2026-10-18: "the generator should do the same thing": Generate with AI puts
+ * the client's links in Client links). Works with or without the AI.
+ */
+export function linksInText(text: string): string[] {
+  const found = text.match(/https?:\/\/[^\s<>"'()\[\]{}]+/gi) ?? [];
+  // A sentence often ends right after a link: drop the trailing punctuation.
+  return parseClientLinks(found.map((u) => u.replace(/[.,;:!?]+$/, '')).join('\n'));
+}
+
+/** Two lists of links as one, the first list's order first, no repeats. */
+export const mergeLinks = (a: string[], b: string[]): string[] => parseClientLinks([...a, ...b].join('\n'));
+

@@ -132,3 +132,22 @@ describe('Generate with AI failure reasons', () => {
     for (const w of ['no_key', 'ai_401', 'ai_credit', 'ai_busy', undefined]) expect(aiFailureText(w)).toMatch(/then Save\.$/);
   });
 });
+
+describe('Generate with AI: client links and the template', async () => {
+  const { sanitizeWoAi, buildWoPrompt, woAiSchema } = await import('./wo-ai');
+  const templates = [{ id: 'lds-1', name: 'LDS' }];
+  it('keeps the links and a template that exists', () => {
+    const out = sanitizeWoAi({ client_links: ['https://drive.google.com/x', 'not a link'], template: 'lds-1' }, [], templates);
+    expect(out.client_links).toEqual(['https://drive.google.com/x']);
+    expect(out.template).toBe('lds-1');
+    expect(sanitizeWoAi({ template: 'made-up' }, [], templates).template).toBeUndefined();
+  });
+  it('asks for the links and offers only Fred’s templates', () => {
+    expect(buildWoPrompt('job', '2026-10-18', [], templates)).toContain('"client_links"');
+    expect(buildWoPrompt('job', '2026-10-18', [], templates)).toContain('"name":"LDS"');
+    const schema = woAiSchema([], templates) as { properties: Record<string, { anyOf?: { enum?: string[] }[] }> };
+    expect(schema.properties.client_links).toBeTruthy();
+    expect(schema.properties.template.anyOf?.[0].enum).toEqual(['lds-1']);
+    expect((woAiSchema() as { properties: Record<string, unknown> }).properties.template).toBeUndefined();
+  });
+});

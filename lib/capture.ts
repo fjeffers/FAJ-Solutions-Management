@@ -124,3 +124,18 @@ export const removeTemplate = (list: JobTemplate[], id: string): JobTemplate[] =
 /** Change one's check-in items. */
 export const setTemplateStartAsks = (list: JobTemplate[], id: string, startAsks: StartAsk[]): JobTemplate[] =>
   list.map((t) => (t.id === id ? (startAsks.length ? { ...t, startAsks } : { id: t.id, name: t.name, items: t.items }) : t));
+
+/**
+ * The one saved template whose name appears in a pasted job as a whole word
+ * (e.g. "LDS" in "NetView LDS-1110"), or null when none or more than one does.
+ * Generate with AI falls back on this when the AI doesn't pick one.
+ */
+export function templateForText(text: string, templates: JobTemplate[]): JobTemplate | null {
+  const hits = templates.filter((t) => {
+    const name = t.name.trim();
+    if (name.length < 2) return false;
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^A-Za-z0-9])${esc}([^A-Za-z0-9]|$)`, 'i').test(text);
+  });
+  return hits.length === 1 ? hits[0] : null;
+}

@@ -2,7 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
-import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, woAiSchema, aiFailureReason, type AiCustomField } from '@/lib/wo-ai';
+import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, woAiSchema, aiFailureReason, type AiCustomField, type AiTemplate } from '@/lib/wo-ai';
+import { linksInText, mergeLinks } from '@/lib/client-links';
 import { normalizeFields } from '@/lib/custom-fields';
 import { todayISO } from '@/lib/utils';
 import type { WorkOrder } from '@/lib/types';
@@ -34,10 +35,16 @@ export async function POST(req: Request) {
     const custom: AiCustomField[] = normalizeFields({ jobs: body?.custom_fields }).jobs
       .filter((d) => !d.hidden).slice(0, 30)
       .map(({ id, label, kind, options }) => ({ id, label, kind, options }));
+    // Fred's job templates (Settings -> Job templates): the AI picks the one that fits.
+    const templates: AiTemplate[] = (Array.isArray(body?.templates) ? body.templates : [])
+      .filter((t: unknown): t is AiTemplate => !!t && typeof (t as AiTemplate).id === 'string' && typeof (t as AiTemplate).name === 'string')
+      .slice(0, 20).map((t: AiTemplate) => ({ id: t.id.slice(0, 40), name: t.name.slice(0, 60) }));
 
     // The text parser always runs — it's the floor. With a working key the
     // model's answer is laid on top.
-    const regexFields = extractWorkOrderFields(jobDescription);
+    // Every link in the paste goes to Client links, with or without the AI (Fred, 2026-10-18).
+    const pastedLinks = linksInText(jobDescription);
+    const regexFields = { ...extractWorkOrderFields(jobDescription), ...(pastedLinks.length ? { client_links: pastedLinks } : {}) };
     const floor = (why: string) =>
       NextResponse.json({ result: regexFields, source: 'text-parser', why, filled: filledCount(regexFields) });
 
@@ -53,8 +60,8 @@ export async function POST(req: Request) {
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        output_config: { format: { type: 'json_schema', schema: woAiSchema(custom) } },
-        messages: [{ role: 'user', content: buildWoPrompt(jobDescription, todayISO(), custom) }],
+        output_config: { format: { type: 'json_schema', schema: woAiSchema(custom, templates) } },
+        messages: [{ role: 'user', content: buildWoPrompt(jobDescription, todayISO(), custom, templates) }],
       });
       if (message.stop_reason === 'refusal') return floor('ai_refused');
       if (message.stop_reason === 'max_tokens') return floor('ai_cut_off');
@@ -67,11 +74,11 @@ export async function POST(req: Request) {
       throw err;
     }
 
-    const aiFields: Partial<WorkOrder> = sanitizeWoAi(parseModelJson(text), custom);
+    const aiFields: Partial<WorkOrder> & { template?: string } = sanitizeWoAi(parseModelJson(text), custom, templates);
     if (Object.keys(aiFields).length === 0) return floor('ai_unreadable');
 
     // The model wins where it answered; the parser fills whatever it left out.
-    const result = { ...regexFields, ...aiFields };
+    const result = { ...regexFields, ...aiFields, client_links: mergeLinks(aiFields.client_links ?? [], pastedLinks) };
     return NextResponse.json({ result, source: 'ai', filled: filledCount(result), tasks: aiFields.wo_tasks?.length ?? 0 });
   } catch (err) {
     console.error('AI route error:', err);

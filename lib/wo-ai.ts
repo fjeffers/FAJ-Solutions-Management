@@ -17,6 +17,10 @@
 import type { CustomQAItem, QuestionFieldType, SiteContact, WoTask, WorkOrder } from './types';
 import { ASSIGNMENT_TYPES, PAY_TYPES, SERVICE_TYPES, WORK_ORDER_PRIORITIES, WORK_ORDER_SOURCES, SCHEDULE_TYPES } from './types';
 import type { CustomValues, FieldDef } from './custom-fields';
+import { parseClientLinks } from './client-links';
+
+/** One of Fred's job templates, as the AI is shown it (Settings -> Job templates). */
+export type AiTemplate = { id: string; name: string };
 
 export const WO_AI_MODEL = 'claude-opus-5-5';
 
@@ -49,7 +53,7 @@ function customLines(defs: AiCustomField[]): string {
   }).join(',\n');
 }
 
-export function buildWoPrompt(text: string, today: string, custom: AiCustomField[] = []): string {
+export function buildWoPrompt(text: string, today: string, custom: AiCustomField[] = [], templates: AiTemplate[] = []): string {
   return `You fill in work orders for FAJ Solutions, an IT and low-voltage field services company in Easton, PA (network installs, cabling, cameras, POS, Starlink, site surveys). Work comes from clients (Wendy's, State Farm, Trulieve, …) and from work marketplaces (Field Nation, NetView, WorkMarket, Insight, …).
 
 Read the job below and fill in EVERY field of the work order the text supports — read it all, including signatures, footers and fine print. Return one JSON object with these keys. Use null (or an empty list) for anything the text does not say. NEVER invent names, phone numbers, addresses, prices or dates. Today is ${today}; resolve words like "next Tuesday".
@@ -102,6 +106,8 @@ Read the job below and fill in EVERY field of the work order the text supports �
   "bonus_amount": dollars of bonus or incentive pay, if stated,
   "contacts": EVERY person or line named for the job — site contact, manager, help desk, NOC, project manager, security — each {"label": their role, "name": "...", "phone": "...", "email": "..."} (empty string for what's not given),
   "custom_qa": questions the tech must answer on site or at closeout — serial or MAC numbers to record, readings, counts, yes/no confirmations, photos or documents to attach, a sign-off — each {"label": the question, "type": one of ${JSON.stringify(QUESTION_TYPES)}},
+  "client_links": EVERY web link in the text the tech or the office needs — upload / deliverable folders, check-in or check-out forms, portals — exactly as written, each starting with http,${templates.length ? `
+  "template": the id of the ONE of FAJ's job templates below that fits this job, or null if none clearly does: ${JSON.stringify(templates.map((t) => ({ id: t.id, name: t.name })))},` : ''}
   "wo_tasks": the tech's checklist, 3-15 short steps in order, each {"category": "Pre Visit" | "On Site" | "Post Site", "label": "..."} — taken from the scope, the deliverables and the closeout rules (e.g. call the contact before arrival, check in with the manager, the work itself, test, photos, check out)${custom.length ? `,
   "custom": FAJ's own fields, keyed by id; null when the text doesn't say: {
 ${customLines(custom)}
@@ -122,7 +128,7 @@ const strict = (properties: Record<string, unknown>) => ({
 });
 
 /** The shape the model must answer in (structured outputs). Every key is present; null when unknown. */
-export function woAiSchema(custom: AiCustomField[] = []): Record<string, unknown> {
+export function woAiSchema(custom: AiCustomField[] = [], templates: AiTemplate[] = []): Record<string, unknown> {
   const p: Record<string, unknown> = {};
   for (const k of TEXT_FIELDS) p[k] = nullable({ type: 'string' });
   for (const k of ['site_state', 'time_zone', 'start_date', 'start_time', 'end_date', 'end_time']) p[k] = nullable({ type: 'string' });
@@ -132,6 +138,8 @@ export function woAiSchema(custom: AiCustomField[] = []): Record<string, unknown
   p.contacts = { type: 'array', items: strict({ label: { type: 'string' }, name: { type: 'string' }, phone: { type: 'string' }, email: { type: 'string' } }) };
   p.custom_qa = { type: 'array', items: strict({ label: { type: 'string' }, type: { type: 'string', enum: QUESTION_TYPES } }) };
   p.wo_tasks = { type: 'array', items: strict({ category: { type: 'string', enum: TASK_CATEGORIES }, label: { type: 'string' } }) };
+  p.client_links = { type: 'array', items: { type: 'string' } };
+  if (templates.length) p.template = nullable({ type: 'string', enum: templates.map((t) => t.id) });
   if (custom.length) {
     const c: Record<string, unknown> = {};
     for (const d of custom) {
@@ -162,7 +170,7 @@ function newId(): string {
 }
 
 /** Only what the form understands, in the shapes it expects. */
-export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = []): Partial<WorkOrder> {
+export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = [], templates: AiTemplate[] = []): Partial<WorkOrder> & { template?: string } {
   if (!raw || typeof raw !== 'object') return {};
   const r = raw as Record<string, unknown>;
   const out: Record<string, unknown> = {};
@@ -200,6 +208,13 @@ export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = []): Partia
     if (typeof r[k] === 'boolean') out[k] = r[k];
   }
   if (out.poc_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(out.poc_email))) delete out.poc_email;
+
+  // The client's links (migration 130), and which of Fred's templates fits.
+  if (Array.isArray(r.client_links)) {
+    const links = parseClientLinks(r.client_links.filter((l): l is string => typeof l === 'string').join('\n'));
+    if (links.length) out.client_links = links;
+  }
+  if (typeof r.template === 'string' && templates.some((t) => t.id === r.template)) out.template = r.template;
 
   if (Array.isArray(r.wo_tasks)) {
     const tasks: WoTask[] = [];

@@ -74,9 +74,10 @@ export default function TechInstall() {
         <div style={{ fontWeight: 700, fontSize: 13 }}>Put this on your phone</div>
         <div style={{ fontSize: 11.5, color: '#777', marginTop: 2, lineHeight: 1.45 }}>
           {isIOS ? (
-            <>Tap <Share size={11} style={{ verticalAlign: -1 }} /> Share, then <strong>Add to Home Screen</strong>.</>
+            <>Tap <Share size={11} style={{ verticalAlign: -1 }} /> Share, then <strong>Add to Home Screen</strong>.
+              Then open FAJ Tech from your home screen and sign in there.</>
           ) : (
-            'Opens like an app — no browser tab, no app store.'
+            'Tap Install. It opens like an app, with no browser tab and no app store.'
           )}
         </div>
       </div>

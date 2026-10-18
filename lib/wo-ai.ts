@@ -47,7 +47,7 @@ export type AiCustomField = Pick<FieldDef, 'id' | 'label' | 'kind' | 'options'>;
 
 function customLines(defs: AiCustomField[]): string {
   return defs.map((d) => {
-    const what = d.kind === 'number' ? 'a number' : d.kind === 'date' ? '"YYYY-MM-DD"' : d.kind === 'yesno' ? 'true | false'
+    const what = d.kind === 'number' ? 'a number, as text' : d.kind === 'date' ? '"YYYY-MM-DD"' : d.kind === 'yesno' ? '"yes" | "no"'
       : d.kind === 'choice' ? `one of ${JSON.stringify(d.options)}` : d.kind === 'longtext' ? 'text (can be long)' : 'short text';
     return `    "${d.id}": ${d.label} — ${what}`;
   }).join(',\n');
@@ -56,7 +56,7 @@ function customLines(defs: AiCustomField[]): string {
 export function buildWoPrompt(text: string, today: string, custom: AiCustomField[] = [], templates: AiTemplate[] = []): string {
   return `You fill in work orders for FAJ Solutions, an IT and low-voltage field services company in Easton, PA (network installs, cabling, cameras, POS, Starlink, site surveys). Work comes from clients (Wendy's, State Farm, Trulieve, …) and from work marketplaces (Field Nation, NetView, WorkMarket, Insight, …).
 
-Read the job below and fill in EVERY field of the work order the text supports — read it all, including signatures, footers and fine print. Return one JSON object with these keys. Use null (or an empty list) for anything the text does not say. NEVER invent names, phone numbers, addresses, prices or dates. Today is ${today}; resolve words like "next Tuesday".
+Read the job below and fill in EVERY field of the work order the text supports — read it all, including signatures, footers and fine print. Return one JSON object with these keys. For anything the text does not say, use "" for text, dates, times and choices, null for numbers and true/false answers, and an empty list for lists. NEVER invent names, phone numbers, addresses, prices or dates. Today is ${today}; resolve words like "next Tuesday".
 
 {
   "title": short summary, max 70 chars, lead with the brand/site, e.g. "Wendy's #5798 — POS network refresh",
@@ -107,7 +107,7 @@ Read the job below and fill in EVERY field of the work order the text supports �
   "contacts": EVERY person or line named for the job — site contact, manager, help desk, NOC, project manager, security — each {"label": their role, "name": "...", "phone": "...", "email": "..."} (empty string for what's not given),
   "custom_qa": questions the tech must answer on site or at closeout — serial or MAC numbers to record, readings, counts, yes/no confirmations, photos or documents to attach, a sign-off — each {"label": the question, "type": one of ${JSON.stringify(QUESTION_TYPES)}},
   "client_links": EVERY web link in the text the tech or the office needs — upload / deliverable folders, check-in or check-out forms, portals — exactly as written, each starting with http,${templates.length ? `
-  "template": the id of the ONE of FAJ's job templates below that fits this job, or null if none clearly does: ${JSON.stringify(templates.map((t) => ({ id: t.id, name: t.name })))},` : ''}
+  "template": the id of the ONE of FAJ's job templates below that fits this job, or "" if none clearly does: ${JSON.stringify(templates.map((t) => ({ id: t.id, name: t.name })))},` : ''}
   "wo_tasks": the tech's checklist, 3-15 short steps in order, each {"category": "Pre Visit" | "On Site" | "Post Site", "label": "..."} — taken from the scope, the deliverables and the closeout rules (e.g. call the contact before arrival, check in with the manager, the work itself, test, photos, check out)${custom.length ? `,
   "custom": FAJ's own fields, keyed by id; null when the text doesn't say: {
 ${customLines(custom)}
@@ -127,24 +127,34 @@ const strict = (properties: Record<string, unknown>) => ({
   type: 'object', properties, required: Object.keys(properties), additionalProperties: false,
 });
 
-/** The shape the model must answer in (structured outputs). Every key is present; null when unknown. */
+/** The most "may be empty" (union-typed) fields the AI service accepts in one schema. */
+export const SCHEMA_UNION_LIMIT = 16;
+
+/**
+ * The shape the model must answer in (structured outputs). Every key is present.
+ * Text, dates, times and choices come back as "" when unknown; only the numbers
+ * and the true/false answers may be null. The service refuses a schema with more
+ * than 16 "may be empty" fields (it had 46, so every Generate with AI fell back
+ * to the text parser, 2026-10-18).
+ */
 export function woAiSchema(custom: AiCustomField[] = [], templates: AiTemplate[] = []): Record<string, unknown> {
   const p: Record<string, unknown> = {};
-  for (const k of TEXT_FIELDS) p[k] = nullable({ type: 'string' });
-  for (const k of ['site_state', 'time_zone', 'start_date', 'start_time', 'end_date', 'end_time']) p[k] = nullable({ type: 'string' });
+  for (const k of TEXT_FIELDS) p[k] = { type: 'string' };
+  for (const k of ['site_state', 'time_zone', 'start_date', 'start_time', 'end_date', 'end_time']) p[k] = { type: 'string' };
   for (const k of NUMBER_FIELDS) p[k] = nullable({ type: 'number' });
-  for (const [k, options] of Object.entries(CHOICE_FIELDS)) p[k] = nullable({ type: 'string', enum: [...options] });
+  for (const [k, options] of Object.entries(CHOICE_FIELDS)) p[k] = { type: 'string', enum: ['', ...options] };
   for (const k of BOOL_FIELDS) p[k] = nullable({ type: 'boolean' });
   p.contacts = { type: 'array', items: strict({ label: { type: 'string' }, name: { type: 'string' }, phone: { type: 'string' }, email: { type: 'string' } }) };
   p.custom_qa = { type: 'array', items: strict({ label: { type: 'string' }, type: { type: 'string', enum: QUESTION_TYPES } }) };
   p.wo_tasks = { type: 'array', items: strict({ category: { type: 'string', enum: TASK_CATEGORIES }, label: { type: 'string' } }) };
   p.client_links = { type: 'array', items: { type: 'string' } };
-  if (templates.length) p.template = nullable({ type: 'string', enum: templates.map((t) => t.id) });
+  if (templates.length) p.template = { type: 'string', enum: ['', ...templates.map((t) => t.id)] };
   if (custom.length) {
     const c: Record<string, unknown> = {};
     for (const d of custom) {
-      c[d.id] = nullable(d.kind === 'number' ? { type: 'number' } : d.kind === 'yesno' ? { type: 'boolean' }
-        : d.kind === 'choice' && d.options.length ? { type: 'string', enum: d.options } : { type: 'string' });
+      // Text only ("" when unknown), so Fred's own fields never count against the limit.
+      c[d.id] = d.kind === 'yesno' ? { type: 'string', enum: ['', 'yes', 'no'] }
+        : d.kind === 'choice' && d.options.length ? { type: 'string', enum: ['', ...d.options] } : { type: 'string' };
     }
     p.custom = strict(c);
   }
@@ -260,7 +270,11 @@ export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = [], templat
   for (const d of custom) {
     const v = rc[d.id];
     if (v === null || v === undefined || v === '') continue;
-    if (d.kind === 'yesno') { if (typeof v === 'boolean') values[d.id] = v; continue; }
+    if (d.kind === 'yesno') {
+      if (typeof v === 'boolean') values[d.id] = v;
+      else if (v === 'yes' || v === 'no') values[d.id] = v === 'yes';
+      continue;
+    }
     if (d.kind === 'number') {
       const n = Number(String(v).replace(/[$,\s]/g, ''));
       if (Number.isFinite(n)) values[d.id] = n;

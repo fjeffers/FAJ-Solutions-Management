@@ -81,10 +81,10 @@ describe('Generate with AI', () => {
     expect(plain.required).not.toContain('custom');
     // Never asked for: techs, tech pay, status.
     for (const k of ['contractor_name', 'contractor_pay', 'contractor_names', 'wo_status']) expect(plain.required).not.toContain(k);
-    const withOwn = woAiSchema(own) as { properties: { custom: { required: string[]; properties: Record<string, { anyOf: { type: string; enum?: string[] }[] }> } } };
+    const withOwn = woAiSchema(own) as { properties: { custom: { required: string[]; properties: Record<string, { type: string; enum?: string[] }> } } };
     expect(withOwn.properties.custom.required).toEqual(['f1', 'f2', 'f3', 'f4', 'f5']);
-    expect(withOwn.properties.custom.properties.f2.anyOf[0].type).toBe('boolean');
-    expect(withOwn.properties.custom.properties.f4.anyOf[0].enum).toEqual(['North', 'South']);
+    expect(withOwn.properties.custom.properties.f2.enum).toEqual(['', 'yes', 'no']);
+    expect(withOwn.properties.custom.properties.f4.enum).toEqual(['', 'North', 'South']);
     expect(buildWoPrompt('x', '2026-10-18', own)).toContain('"f4": Region — one of ["North","South"]');
   });
 
@@ -145,9 +145,36 @@ describe('Generate with AI: client links and the template', async () => {
   it('asks for the links and offers only Fred’s templates', () => {
     expect(buildWoPrompt('job', '2026-10-18', [], templates)).toContain('"client_links"');
     expect(buildWoPrompt('job', '2026-10-18', [], templates)).toContain('"name":"LDS"');
-    const schema = woAiSchema([], templates) as { properties: Record<string, { anyOf?: { enum?: string[] }[] }> };
+    const schema = woAiSchema([], templates) as { properties: Record<string, { enum?: string[] }> };
     expect(schema.properties.client_links).toBeTruthy();
-    expect(schema.properties.template.anyOf?.[0].enum).toEqual(['lds-1']);
+    expect(schema.properties.template.enum).toEqual(['', 'lds-1']);
     expect((woAiSchema() as { properties: Record<string, unknown> }).properties.template).toBeUndefined();
   });
 });
+
+describe('the AI service accepts the schema (Fred, 2026-10-18: Generate with AI fell back to the text parser)', async () => {
+  const { woAiSchema, SCHEMA_UNION_LIMIT, sanitizeWoAi } = await import('./wo-ai');
+  // Count every "may be empty" field the way the service does: anyOf or a list of types.
+  const unions = (node: unknown): number => {
+    if (!node || typeof node !== 'object') return 0;
+    const o = node as Record<string, unknown>;
+    let n = Array.isArray(o.anyOf) || Array.isArray(o.type) ? 1 : 0;
+    for (const v of Object.values(o)) n += Array.isArray(v) ? v.reduce((t: number, x) => t + unions(x), 0) : unions(v);
+    return n;
+  };
+  it('stays within the limit, even with 30 of Fred\'s own fields and his templates', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ id: `f${i}`, label: `Field ${i}`, kind: (['text', 'number', 'yesno', 'choice', 'date'] as const)[i % 5], options: i % 5 === 3 ? ['A', 'B'] : [] }));
+    expect(unions(woAiSchema())).toBeLessThanOrEqual(SCHEMA_UNION_LIMIT);
+    expect(unions(woAiSchema(many, [{ id: 'lds-1', name: 'LDS' }]))).toBeLessThanOrEqual(SCHEMA_UNION_LIMIT);
+  });
+  it('reads "" as not said, and "yes"/"no" for Fred\'s yes/no fields', () => {
+    const f = sanitizeWoAi({ title: '', service_type: '', template: '', custom: { f2: 'yes', f9: 'no' } }, [
+      { id: 'f2', label: 'Permit', kind: 'yesno', options: [] }, { id: 'f9', label: 'Lift', kind: 'yesno', options: [] },
+    ], [{ id: 'lds-1', name: 'LDS' }]);
+    expect(f.title).toBeUndefined();
+    expect(f.service_type).toBeUndefined();
+    expect(f.template).toBeUndefined();
+    expect(f.custom).toEqual({ f2: true, f9: false });
+  });
+});
+

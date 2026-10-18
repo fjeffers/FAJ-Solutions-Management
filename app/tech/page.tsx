@@ -1457,6 +1457,12 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     <>
       {offOpen && (
         <OffSiteDialog missing={offSiteMissing} signature={jobForCloseout.signatureRequired} onClose={() => setOffOpen(false)}
+          needs={[
+            ...(asks(shown.capture, 'notes') ? ['your notes'] : []),
+            ...(shown.questions.length ? ['the questions'] : []),
+            ...(shown.photoRequired || deliverables.length ? ['the photos'] : []),
+            ...(jobForCloseout.signatureRequired ? ['the signature'] : []),
+          ]}
           clientCheckout={!!siteLinks.checkout}
           onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
       )}

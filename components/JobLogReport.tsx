@@ -98,7 +98,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
-          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Time & GPS')}{toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
+          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Time & GPS')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
           {toggle('notes', "Tech's notes")}{toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}
         </div>
       </div>

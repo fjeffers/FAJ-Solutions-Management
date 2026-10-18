@@ -199,8 +199,14 @@ function DayLines({ log }: { log: DayLog }) {
  * finished site needs everything the job asks for first — each photo taken or
  * a reason why not, the signature or a reason why not.
  */
-export function OffSiteDialog({ missing, signature = true, clientCheckout = false, onClose, onBack, onFinished }: {
+export function OffSiteDialog({ missing, needs, signature = true, clientCheckout = false, onClose, onBack, onFinished }: {
   missing: string[];
+  /**
+   * What this job needs before it can be finished, in words ("the photos", "the
+   * signature"). Nothing listed says nothing (Fred, 2026-10-18: "Check list not
+   * needed"). Left out, the old wording stays.
+   */
+  needs?: string[];
   /** Whether finishing needs the customer's sign-off (always on a project site). */
   signature?: boolean;
   /**
@@ -252,7 +258,10 @@ export function OffSiteDialog({ missing, signature = true, clientCheckout = fals
           <button style={plain} onClick={() => (clientCheckout ? onBack({ done: '', left: '' }) : setBack(true))}><LogOut size={19} /> Coming back to this site</button>
           <button style={navy} onClick={() => setFinish(true)}><CheckCircle2 size={19} /> This site is finished</button>
           <div className="wf-subtle" style={{ fontSize: 12.5 }}>
-            Finished sends the job to the office. Every photo{signature ? ', the checklist and the signature need' : ' and the checklist need'} to be done first.
+            Finished sends the job to the office.
+            {needs
+              ? (needs.length ? ` First finish ${needs.length > 1 ? `${needs.slice(0, -1).join(', ')} and ${needs.at(-1)}` : needs[0]}.` : '')
+              : ` Every photo${signature ? ', the checklist and the signature need' : ' and the checklist need'} to be done first.`}
           </div>
         </div>
       ) : missing.length > 0 ? (

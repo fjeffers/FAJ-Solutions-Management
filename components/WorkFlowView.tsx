@@ -407,6 +407,17 @@ function OwnerJob({
     await refresh();
   };
 
+  /** The tech's Tools on this job (Fred, 2026-10-18: "Tools should only apply
+   *  if admin adds it"; migration 129). Off unless turned on here. */
+  const setTechTools = async (on: boolean) => {
+    const { error } = await createClient().from('work_orders')
+      .update({ tech_tools: on, updated_at: new Date().toISOString() }).eq('id', w.id);
+    if (error) { toastError(`Couldn't change Tools: ${error.message}`); return; }
+    logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number} tech Tools ${on ? 'on' : 'off'}` });
+    toastSuccess(on ? `Tools are on for the tech on WO ${w.wo_number}` : `Tools are off for the tech on WO ${w.wo_number}`);
+    await refresh();
+  };
+
   /** The same closeout steps a tech takes (wf_tech_closeout lets the owner in too, migration-106). */
   const closeoutOp = async (op: CloseoutOp) => {
     setCoOps((l) => [...l, op]);
@@ -495,7 +506,8 @@ function OwnerJob({
     'job.timeRequests': !archived && <TimeRequestsCard w={w} job={job} onSaved={refresh} />,
     'job.quickEdit': !archived && <QuickEditCard w={w} onSaved={refresh} />,
     'job.techs': <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)}
-      onSendAgain={archived ? undefined : (t) => void sendAgain(t)} />,
+      onSendAgain={archived ? undefined : (t) => void sendAgain(t)}
+      onToolsChange={archived ? undefined : (on) => void setTechTools(on)} />,
     'job.money': <MoneyCard w={w} />,
     'job.fields': <YourFieldsCard w={w} />,
     'job.closeout': showCloseout(job) && (
@@ -936,8 +948,9 @@ const ANSWER: Record<string, { label: string; color: string }> = {
 };
 
 /** Who is on the job, how each answered, what each gets — and a button to change it. */
-function TechsCard({ w, job, onChange, onSendAgain }: {
+function TechsCard({ w, job, onChange, onSendAgain, onToolsChange }: {
   w: EnrichedWorkOrder; job: WfJob; onChange?: () => void; onSendAgain?: (tech: string) => void;
+  onToolsChange?: (on: boolean) => void;
 }) {
   const pay = w.contractor_pay ?? {};
   return (
@@ -966,6 +979,19 @@ function TechsCard({ w, job, onChange, onSendAgain }: {
               </div>
             );
           })}
+        </div>
+      )}
+      {onToolsChange && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--wf-line)' }}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontWeight: 600 }}>Tools for the tech</span>
+            <span style={{ display: 'block', fontSize: 12, color: 'var(--wf-subtle)' }}>
+              {w.tech_tools ? 'On: scan, sign a PDF, read codes, count and measure.' : 'Off. Turn on if this job needs scanning, signing a PDF, reading codes, counting or measuring.'}
+            </span>
+          </span>
+          <button className={`wf-btn wf-btn-sm ${w.tech_tools ? 'wf-btn-outline' : 'wf-btn-gold'}`} onClick={() => onToolsChange(!w.tech_tools)}>
+            {w.tech_tools ? 'Turn off' : 'Turn on'}
+          </button>
         </div>
       )}
       {/* One button for every tech change (Fred, 2026-10-07: "assign and reassign

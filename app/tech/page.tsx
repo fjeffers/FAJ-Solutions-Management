@@ -1844,7 +1844,18 @@ function JobTools({ job, canAdd, ph, onNote }: {
     });
     return () => { live = false; };
   }, [job.number, filesRev]);
-  if (!canAdd && docs.length === 0 && files.length === 0) return null;
+  // Tools only on jobs the office turned them on for (Fred, 2026-10-18:
+  // "Tools should only apply if admin adds it"; migration 129).
+  const [toolsOn, setToolsOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void createClient().rpc('wf_tech_tools_on', { p_wo_number: job.number }).then(({ data, error }) => {
+      if (live && !error) setToolsOn(data === true);
+    });
+    return () => { live = false; };
+  }, [job.number, filesRev]);
+  const showTools = canAdd && toolsOn;
+  if (!showTools && docs.length === 0 && files.length === 0) return null;
   const jobLabel = `WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`;
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const btn = (key: ToolKey, icon: React.ReactNode, label: string) => (
@@ -1910,10 +1921,11 @@ function JobTools({ job, canAdd, ph, onNote }: {
         })}
       </Section>
     )}
-    {(canAdd || docs.length > 0) && (
-    <Section title="Tools" subtitle="Scan, fill in and sign PDFs, read codes, count and measure">
+    {(showTools || docs.length > 0) && (
+    <Section title={showTools ? 'Tools' : 'Documents to sign'}
+      subtitle={showTools ? 'Scan, fill in and sign PDFs, read codes, count and measure' : undefined}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {canAdd && (
+        {showTools && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
             {btn('scan', <ScanLine size={17} />, 'Scan')}
             {btn('edit', <Signature size={17} />, 'Sign a PDF')}
@@ -1935,29 +1947,29 @@ function JobTools({ job, canAdd, ph, onNote }: {
           </div>
         )}
       </div>
-      {tool === 'scan' && (
-        <DocScanner woNumber={job.number} jobLabel={jobLabel}
-          onClose={() => setTool(null)} onSent={() => void loadDocs()}
-          onEdit={(file, name, kind) => { setTool(null); setEditing({ file, name, kind }); }} />
-      )}
-      {tool === 'read' && <ReadTool onClose={() => setTool(null)} onNote={onNote} />}
-      {(tool === 'count' || tool === 'measure') && (
-        <PhotoMarkup mode={tool} onClose={() => setTool(null)}
-          onSave={async (file, source) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what); }} />
-      )}
-      {editing && (
-        <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}
-          send={{ label: 'Send to the job', kinds: [...DOC_KINDS], defaultKind: editing.kind }}
-          onSend={async (r) => {
-            const out = await sendTechDoc(job.number, r.blob, r.name, r.kind, r.pages);
-            if (!out.ok) { toastError(out.error); return false; }
-            toastSuccess(`${r.name} sent.`);
-            void loadDocs();
-            return true;
-          }}
-          onClose={() => setEditing(null)} />
-      )}
     </Section>
+    )}
+    {tool === 'scan' && (
+      <DocScanner woNumber={job.number} jobLabel={jobLabel}
+        onClose={() => setTool(null)} onSent={() => void loadDocs()}
+        onEdit={(file, name, kind) => { setTool(null); setEditing({ file, name, kind }); }} />
+    )}
+    {tool === 'read' && <ReadTool onClose={() => setTool(null)} onNote={onNote} />}
+    {(tool === 'count' || tool === 'measure') && (
+      <PhotoMarkup mode={tool} onClose={() => setTool(null)}
+        onSave={async (file, source) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what); }} />
+    )}
+    {editing && (
+      <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}
+        send={{ label: 'Send to the job', kinds: [...DOC_KINDS], defaultKind: editing.kind }}
+        onSend={async (r) => {
+          const out = await sendTechDoc(job.number, r.blob, r.name, r.kind, r.pages);
+          if (!out.ok) { toastError(out.error); return false; }
+          toastSuccess(`${r.name} sent.`);
+          void loadDocs();
+          return true;
+        }}
+        onClose={() => setEditing(null)} />
     )}
   </>);
 }

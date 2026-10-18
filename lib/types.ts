@@ -201,6 +201,8 @@ export type WorkOrder = {
 
   // Admin documents & photos (migration-008)
   doc_urls: string[] | null;
+  /** The tech's Tools (scan, sign a PDF, read codes, count, measure) on this job; off unless the office turns them on (migration 129). */
+  tech_tools?: boolean;
 
   // Contractor portal (migration-011)
   acknowledged_at: string | null;

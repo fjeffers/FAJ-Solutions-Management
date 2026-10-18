@@ -6,7 +6,9 @@ import {
   Phone, Mail, HelpCircle, Plus, Paperclip,
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
   CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package, Layers,
+  Link2,
 } from 'lucide-react';
+import { parseClientLinks } from '@/lib/client-links';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
 import { kitToMaterialsUsed, materialsUsedToKitItems, kitCost } from '@/lib/material-kits';
@@ -30,7 +32,7 @@ import CustomFieldInputs from '@/components/CustomFieldInputs';
 import { CaptureTicks, StartAsksEditor } from '@/components/CaptureEditor';
 import { parseStartAsks, type StartAsk } from '@/lib/checkin';
 import { useJobTemplates } from '@/components/useJobTemplates';
-import { ALL_CAPTURE, parseCapture, templateOf, type CaptureItem } from '@/lib/capture';
+import { parseCapture, templateOf, type CaptureItem } from '@/lib/capture';
 import { createClient } from '@/lib/supabase/client';
 
 type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents' | 'chat' | 'closeout';
@@ -181,10 +183,15 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
   const docFileRef = useRef<HTMLInputElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
-  // What the tech records (lib/capture.ts): null asks for everything, as every job did before.
-  const [capture, setCapture] = useState<CaptureItem[] | null>(() => parseCapture(item?.capture));
+  // What the tech records (lib/capture.ts). A new job starts blank and the
+  // office ticks what it needs (Fred, 2026-10-18: "All work order need to start
+  // the same way blank"). null (a job made before) still asks for everything.
+  const [capture, setCapture] = useState<CaptureItem[] | null>(() =>
+    item?.id ? parseCapture(item?.capture) : (parseCapture(item?.capture) ?? []));
   // What else to ask at check-in (lib/checkin.ts).
   const [startAsks, setStartAsks] = useState<StartAsk[]>(() => parseStartAsks(item?.start_asks));
+  // The client's links, one per line (lib/client-links.ts, migration 130).
+  const [linksText, setLinksText] = useState(() => (item?.client_links ?? []).join('\n'));
   const { templates: jobTemplates } = useJobTemplates();
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
@@ -693,6 +700,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       // Sent only once a job has a list, so saving works before migration 128.
       ...(capture || item?.capture ? { capture } : {}),
       ...(startAsks.length || item?.start_asks ? { start_asks: startAsks } : {}),
+      ...(linksText.trim() || item?.client_links ? { client_links: parseClientLinks(linksText) } : {}),
     };
     onSave({ ...item, ...payload });
   };
@@ -1391,6 +1399,11 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             {/* Service Description / SOW */}
             <PF label="Service Description / Scope of Work" icon={<FileText size={13} />}>
               <textarea className="input" rows={4} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Describe the work to be performed..." />
+            </PF>
+            {/* The client's links (Fred, 2026-10-18): the tech gets each one as a button. */}
+            <PF label="Client links (one per line)" icon={<Link2 size={13} />}>
+              <textarea className="input" rows={3} value={linksText} onChange={(e) => setLinksText(e.target.value)}
+                placeholder="Paste the client's links here, one per line" />
             </PF>
 
             {/* Deliverables + Closeout in one card */}
@@ -2556,7 +2569,7 @@ function WhatTheTechRecords({ capture, onChange, templates, startAsks, onStartAs
   startAsks: StartAsk[]; onStartAsks: (next: StartAsk[]) => void;
 }) {
   const used = templateOf(capture, templates, startAsks);
-  const value = capture === null ? 'all' : used ? used.id : 'custom';
+  const value = capture === null ? 'old' : used ? used.id : 'blank';
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -2564,8 +2577,8 @@ function WhatTheTechRecords({ capture, onChange, templates, startAsks, onStartAs
         <div style={{ position: 'relative', flex: '1 1 240px' }}>
           <select id="wo-capture" className="select input" value={value} onChange={(e) => {
             const v = e.target.value;
-            if (v === 'all') onChange(null);
-            else if (v === 'custom') onChange(capture ?? ALL_CAPTURE);
+            if (v === 'old') onChange(null);
+            else if (v === 'blank') { onChange([]); onStartAsks([]); }
             else {
               const t = templates.find((x) => x.id === v);
               onChange(t?.items ?? null);
@@ -2573,9 +2586,10 @@ function WhatTheTechRecords({ capture, onChange, templates, startAsks, onStartAs
               if (t) onStartAsks(t.startAsks ?? []);
             }
           }}>
-            <option value="all">Everything (photos, checklist, questions, sign-off, travel, receipts)</option>
+            {/* Only a job made before has no list; it keeps asking for everything. */}
+            {capture === null && <option value="old">Everything (a job made before)</option>}
+            <option value="blank">{used || capture === null || capture.length === 0 ? 'Blank: tick what this job needs' : 'My own ticks'}</option>
             {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            <option value="custom">Pick the items myself</option>
           </select>
           <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
         </div>

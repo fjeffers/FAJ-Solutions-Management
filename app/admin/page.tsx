@@ -422,10 +422,10 @@ export default function HomePage() {
 
   // ── Work Orders ────────────────────────────────────────────────────────────
 
-  // Before migration 128 the database has no capture / start_asks columns.
+  // Before migrations 128/130 the database has no capture / start_asks / client_links columns.
   const notYet128 = (e: { code?: string; message: string }) =>
-    e.code === 'PGRST204' && /capture|start_asks/.test(e.message)
-      ? "what the tech records and the check-in items aren't switched on yet. Set it back to Everything and remove the check-in items, or ask to switch them on."
+    e.code === 'PGRST204' && /capture|start_asks|client_links/.test(e.message)
+      ? "what the tech records, the check-in items and the client links aren't switched on yet. Ask to switch them on."
       : e.message;
 
   const saveWorkOrder = async (w: Partial<WorkOrder>) => {
@@ -511,6 +511,8 @@ export default function HomePage() {
       attachment_url:  w.attachment_url  ?? null,
       // Admin documents (migration-008)
       doc_urls:        w.doc_urls        ?? [],
+      // The client's links (migration 130); only when the form sends them.
+      ...(w.client_links !== undefined ? { client_links: w.client_links ?? [] } : {}),
       // Multi-contractor (migration-014)
       contractor_names: w.contractor_names ?? null,
       // Lead / Assistant tech (migration-017)

@@ -91,7 +91,8 @@ export default function JobTemplatesEditor() {
   const [names, setNames] = useState<Record<string, string>>({});
 
   const add = () => {
-    const next = addTemplate(templates, newName, ['travel', 'receipts', 'notes'], Math.random().toString(36).slice(2));
+    // A new template starts blank; tick what it needs (Fred, 2026-10-18).
+    const next = addTemplate(templates, newName, [], Math.random().toString(36).slice(2));
     if (!next) {
       setError(!newName.trim() ? 'Type a name for the template first.'
         : templates.length >= TEMPLATE_MAX ? `That's the most templates you can keep (${TEMPLATE_MAX}).`
@@ -129,7 +130,6 @@ export default function JobTemplatesEditor() {
             </button>
           </div>
           <CaptureTicks idPrefix={`tpl-${t.id}`} items={t.items} onChange={(items) => {
-            if (items.length === 0) { setError('A template asks for at least one thing.'); return; }
             update(setTemplateItems(templates, t.id, items));
             setError(null);
           }} />

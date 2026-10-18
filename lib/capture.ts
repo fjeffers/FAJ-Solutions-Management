@@ -2,8 +2,10 @@
 // customizable. No one want to look at blank items if not needed. The work
 // order needs to be flexible"). The office ticks the items on each job, or
 // picks one of its saved templates; the tech sees only those, and the reports
-// show only those. A job with no list (every job before migration 128) asks
-// for everything, as before.
+// show only those. Every new job starts blank (Fred, 2026-10-18: "All work
+// order need to start the same way blank, I'll add what's needed, remove the
+// old style"). A job with no list at all (every job made before) still asks
+// for everything, so jobs already out keep working.
 //
 // Pure and unit-tested (lib/capture.test.ts).
 
@@ -46,15 +48,12 @@ export type JobTemplate = {
   startAsks?: StartAsk[];
 };
 
-/** Offered until Fred saves his own. */
-export const STARTER_TEMPLATES: JobTemplate[] = [
-  { id: 'portal', name: 'Client portal job: time, miles and receipts', items: ['travel', 'odometer', 'receipts', 'notes'] },
-  { id: 'full', name: 'Full job', items: ALL_CAPTURE },
-];
+/** None: Fred builds his own from blank ("remove the old style"). */
+export const STARTER_TEMPLATES: JobTemplate[] = [];
 
 export const TEMPLATE_MAX = 20;
 
-/** user_settings.job_templates (or anything else) → safe templates; the starters when none are saved. */
+/** user_settings.job_templates (or anything else) → safe templates. A template may be blank (no items yet). */
 export function parseTemplates(raw: unknown): JobTemplate[] {
   if (!Array.isArray(raw) || raw.length === 0) return STARTER_TEMPLATES;
   const out: JobTemplate[] = [];
@@ -65,7 +64,7 @@ export function parseTemplates(raw: unknown): JobTemplate[] {
     const id = typeof o.id === 'string' && /^[a-z0-9-]{1,40}$/.test(o.id) ? o.id : '';
     const name = typeof o.name === 'string' ? o.name.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
     const items = parseCapture(o.items) ?? [];
-    if (!id || !name || ids.has(id) || items.length === 0) continue;
+    if (!id || !name || ids.has(id)) continue;
     ids.add(id);
     const startAsks = parseStartAsks(o.startAsks);
     out.push(startAsks.length ? { id, name, items, startAsks } : { id, name, items });
@@ -105,7 +104,7 @@ export function addTemplate(list: JobTemplate[], name: string, items: CaptureIte
   const base = n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'template';
   const id = `${base}-${idSeed.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || '1'}`;
   if (list.some((t) => t.id === id)) return null;
-  return [...list, { id, name: n, items: items.length ? ALL_CAPTURE.filter((k) => items.includes(k)) : ['notes'] }];
+  return [...list, { id, name: n, items: ALL_CAPTURE.filter((k) => items.includes(k)) }];
 }
 
 /** Rename one; null when the new name is empty or another template has it. */
@@ -115,9 +114,8 @@ export function renameTemplate(list: JobTemplate[], id: string, name: string): J
   return list.map((t) => (t.id === id ? { ...t, name: n } : t));
 }
 
-/** Change one's items; a template always asks for at least one thing. */
+/** Change one's items (none is fine: a blank template). */
 export function setTemplateItems(list: JobTemplate[], id: string, items: CaptureItem[]): JobTemplate[] {
-  if (items.length === 0) return list;
   return list.map((t) => (t.id === id ? { ...t, items: ALL_CAPTURE.filter((k) => items.includes(k)) } : t));
 }
 

@@ -58,6 +58,7 @@ import TechInstall from '@/components/TechInstall';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
+import { linkLabel } from '@/lib/client-links';
 import WfJobDetail, { ChecklistCard, InfoListCard, SiteInfoCard, TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
@@ -1516,6 +1517,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             <p>{whenText(job)}{until ? ` – ${fmtClock12(until)}` : ''}</p>
             {job.description && <p className="fs-scope">{job.description}</p>}
           </section>
+          <ClientLinksCard number={job.number} />
           <SiteInfoCard job={job} />
           <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
         </div>
@@ -2337,6 +2339,34 @@ function JobTools({ job, canAdd, ph, onNote }: {
         onClose={() => setEditing(null)} />
     )}
   </>);
+}
+
+/** The client's links for this job (migration 130; Fred, 2026-10-18: "I just
+ *  want to link that link into the work order"). Nothing shows without any. */
+function ClientLinksCard({ number }: { number: string }) {
+  const [links, setLinks] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    void createClient().rpc('wf_tech_job_links', { p_wo_number: number }).then(({ data, error }) => {
+      if (live && !error && Array.isArray(data)) setLinks(data.filter((l): l is string => typeof l === 'string'));
+    });
+    return () => { live = false; };
+  }, [number]);
+  if (links.length === 0) return null;
+  return (
+    <section className="fs-card fs-form">
+      <h3>Client links</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {links.map((l) => (
+          <a key={l} className="wf-btn wf-btn-outline" href={l} target="_blank" rel="noopener noreferrer"
+            style={{ justifyContent: 'space-between', minWidth: 0 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
+            <FsIcon name="arrow" size={16} />
+          </a>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function JobPhotos({ canAdd, ph }: { canAdd: boolean; ph: ReturnType<typeof useJobPhotos> }) {

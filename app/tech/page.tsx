@@ -453,7 +453,7 @@ export default function TechPortalPage() {
             <div className="fs-side-foot">
               <div className="fs-side-card"><FsIcon name="pin" size={22} /><b>Wherever work takes you.</b><p>Keep your team and your sites moving together.</p></div>
               <p className={`fs-side-status${waiting ? ' off' : ''}`}><i />{waiting ? 'Saved on this phone' : 'Workspace connected'}</p>
-              <p className="fs-side-mark">FIELD SERVICE <b>LIVE</b></p>
+              <p className="fs-side-mark">FAJ SOLUTIONS <b>TECH PORTAL</b></p>
             </div>
           )}
         </aside>

@@ -60,3 +60,42 @@ describe('check in: what the office asks for', () => {
     expect(checkInMissing({ ...base, needsDrive: false, needsMileage: false, asks: [] })).toEqual([]);
   });
 });
+
+describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
+  const { activityOf, checkInChoices, ON_SITE_KEY, DRIVES, ACTIVITY_LABEL } = await import('./checkin');
+  const { buildDayLogs } = await import('./project-day');
+
+  it('names every drive by its activity', () => {
+    expect(Object.fromEntries(DRIVES.map((d) => [d.label, ACTIVITY_LABEL[activityOf(d.origin, d.dest)]]))).toEqual({
+      'Home → Hotel': 'Travel to site', 'Hotel → Site': 'Travel to site', 'Home → Site': 'Travel to site',
+      'Site → Next site': 'Site-to-site travel',
+      'Site → Hotel': 'Travel from site', 'Site → Home': 'Travel from site', 'Hotel → Home': 'Travel from site',
+    });
+  });
+
+  it('offers all four, each drive under its own, and only the drives back after Work done', () => {
+    const groups = checkInChoices(null);
+    expect(groups.map((g) => g.label)).toEqual(['Travel to site', 'Site-to-site travel', 'Travel from site', 'Work on site']);
+    expect(groups.at(-1)!.options).toEqual([{ key: ON_SITE_KEY, label: 'Already on site: start work' }]);
+    const after = checkInChoices('site', true);
+    expect(after.some((g) => g.activity === 'on_site' || g.activity === 'between_sites')).toBe(false);
+  });
+
+  it('saves all four: each drive with where it went, and work on site as the clock', () => {
+    const ev = (kind: string, hhmm: string, extra: Record<string, unknown> = {}) =>
+      ({ kind, at: new Date(`2026-10-19T${hhmm}:00-04:00`).toISOString(), tech: 'Dana', ...extra }) as never;
+    // What Check in records for each choice: travel_start with origin and destination, or the clock-in.
+    const day = buildDayLogs([
+      ev('day_start', '06:59'),
+      ev('travel_start', '07:00', { origin: 'hotel', dest: 'site' }), ev('travel_end', '07:30', { miles: 12 }),
+      ev('in', '07:31'), ev('out', '11:00'),
+      ev('travel_start', '11:01', { origin: 'site', dest: 'next_site' }), ev('travel_end', '11:40', { miles: 20 }),
+      ev('in', '11:41'), ev('out', '16:00'),
+      ev('travel_start', '16:01', { origin: 'site', dest: 'hotel' }), ev('travel_end', '16:45', { miles: 30 }),
+    ], new Date('2026-10-20T12:00:00Z'), 'America/New_York');
+    expect(day).toHaveLength(1);
+    expect(day[0].legs.map((l) => activityOf(l.origin, l.dest))).toEqual(['to_site', 'between_sites', 'from_site']);
+    expect(day[0].spans).toHaveLength(2); // work on site, twice
+    expect(day[0].legs.map((l) => l.miles)).toEqual([12, 20, 30]);
+  });
+});

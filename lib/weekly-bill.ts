@@ -19,6 +19,7 @@ import { asks, type CaptureItem } from './capture';
 import { expenseCategoryLabel, EXPENSE_CATEGORIES } from './expenses';
 import { hoursOf, legLabel, type DayLog, type Leg, type Origin } from './project-day';
 import { amountDiffers, odometerDiffers } from './photo-read';
+import { ACTIVITY_LABEL, activityOf } from './checkin';
 
 export type OdoRow = {
   id?: string; wo_id: string; contractor_name: string; at: string;
@@ -253,11 +254,11 @@ export function siteSheetRows(site: BillSite, range: string): (string | number)[
       ...(s.odometer ? [bill.totals.odoMiles ?? ''] : []), ...(s.receipts ? [bill.totals.receipts] : [])],
   ];
   if (s.travel && bill.legs.length) {
-    rows.push([], ['Drives'], ['Date', 'Technician', 'Drive', 'Started', 'Ended', 'Hours', 'GPS miles',
+    rows.push([], ['Drives'], ['Date', 'Technician', 'Activity', 'Drive', 'Started', 'Ended', 'Hours', 'GPS miles',
       ...(s.odometer ? ['Odometer at start', 'Odometer at end', 'Odometer miles'] : [])]);
     for (const l of bill.legs) {
       // A drive with no arrival has no hours of its own, as on the printed bill.
-      rows.push([l.day, l.tech, legLabel(l), clock(l.start), clock(l.end), l.end ? hoursOf(l.ms) : '', l.miles ?? '',
+      rows.push([l.day, l.tech, ACTIVITY_LABEL[activityOf(l.origin, l.dest)], legLabel(l), clock(l.start), clock(l.end), l.end ? hoursOf(l.ms) : '', l.miles ?? '',
         ...(s.odometer ? [l.odoStart?.reading ?? '', l.odoEnd?.reading ?? '', l.odoMiles ?? ''] : [])]);
     }
   }

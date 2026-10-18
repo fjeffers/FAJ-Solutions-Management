@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { Camera, CheckCircle2, MapPin } from 'lucide-react';
 import { asks } from '@/lib/capture';
-import { checkInMissing, checkInNotes, drivesFor, driveOf, type Drive } from '@/lib/checkin';
+import { ON_SITE_KEY, checkInChoices, checkInMissing, checkInNotes, driveOf, type Drive } from '@/lib/checkin';
 import { getPosition, stampLines } from '@/lib/geo';
 import { stampPhoto } from '@/lib/photo-stamp';
 import type { Origin } from '@/lib/project-day';
@@ -50,10 +50,12 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
   const travel = asks(job.capture, 'travel');
   const mileageAsked = travel && asks(job.capture, 'odometer');
   const items = startOfDay && !afterWork ? job.startAsks : [];
-  // The first step records the drive, or the arrival on a job with no drive.
-  const steps: Step[] = ['drive', mileageAsked ? 'mileage' : null, items.length ? 'asks' : null].filter((s): s is Step => !!s);
   const [step, setStep] = useState<Step>('drive');
   const [driveKey, setDriveKey] = useState('');
+  // "Already on site: start work" on a travel job: no drive, so no starting mileage either.
+  const onSiteChosen = driveKey === ON_SITE_KEY;
+  // The first step records the drive, or the arrival on a job with no drive.
+  const steps: Step[] = ['drive', mileageAsked && !onSiteChosen ? 'mileage' : null, items.length ? 'asks' : null].filter((s): s is Step => !!s);
   const [busy, setBusy] = useState(false);
   const m = useMileage(job.number, 'start');
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -64,7 +66,7 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
   const next = () => { const n = steps[at + 1]; if (n) setStep(n); else finish(); };
   const finish = () => {
     for (const line of checkInNotes(drive, items, answers)) send.note(line);
-    toastSuccess(travel ? 'Checked in. Drive safe.' : 'Checked in on site.');
+    toastSuccess(travel && !onSiteChosen ? 'Checked in. Drive safe.' : 'Checked in on site.');
     onClose();
   };
 
@@ -116,7 +118,7 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
       onClose={onClose}
       footer={step === 'drive' ? <>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        {travel
+        {travel && !onSiteChosen
           ? <button className="wf-btn wf-btn-navy" disabled={busy || !drive} onClick={() => void startDrive()}>{busy ? 'One moment…' : 'Start the drive'}</button>
           : <button className="wf-btn wf-btn-navy" disabled={busy} onClick={() => void arrive()}><MapPin size={16} /> {busy ? 'One moment…' : "I'm on site"}</button>}
       </> : step === 'mileage' ? <>
@@ -132,15 +134,20 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {travel && (
             <label style={{ display: 'block' }}>
-              <span className="wf-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--wf-text)', fontSize: 13 }}>From → to</span>
-              <select className="wf-input" value={driveKey} onChange={(e) => setDriveKey(e.target.value)} aria-label="Where are you driving?">
-                <option value="" disabled>Pick your drive</option>
-                {drivesFor(from, afterWork).map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+              <span className="wf-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--wf-text)', fontSize: 13 }}>What are you doing?</span>
+              {/* Required: the four activities (Fred, 2026-10-18), each drive under its own. */}
+              <select className="wf-input" value={driveKey} onChange={(e) => setDriveKey(e.target.value)} aria-label="What are you doing?">
+                <option value="" disabled>Pick one</option>
+                {checkInChoices(from, afterWork).map((g) => (
+                  <optgroup key={g.activity} label={g.label}>
+                    {g.options.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+                  </optgroup>
+                ))}
               </select>
             </label>
           )}
           <p className="wf-subtle" style={{ margin: 0, fontSize: 13 }}>
-            {startOfDay ? 'This checks you in for the day. ' : ''}The time and your location are saved when you tap {travel ? 'Start the drive' : "I'm on site"}.
+            {startOfDay ? 'This checks you in for the day. ' : ''}The time and your location are saved when you tap {travel && !onSiteChosen ? 'Start the drive' : "I'm on site"}.
           </p>
         </div>
       )}

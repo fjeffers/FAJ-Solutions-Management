@@ -92,8 +92,8 @@ describe('the weekly bill for one site', () => {
     expect(road.flags.map((f) => f.text)).toEqual(["Dana, Mon, Oct 12, Site → Hotel: no arrival tap, so that drive isn't counted. Check it."]);
     expect(road.totals.travelHours).toBe(0);
     // The download leaves that drive's hours blank too.
-    const drive = siteSheetRows({ name: 'Maple St', wo: '101', address: '', bill: road }, '').find((r) => r[2] === 'Site → Hotel');
-    expect(drive?.slice(3, 6)).toEqual(['5:00 PM', '', '']);
+    const drive = siteSheetRows({ name: 'Maple St', wo: '101', address: '', bill: road }, '').find((r) => r[3] === 'Site → Hotel');
+    expect(drive?.slice(4, 7)).toEqual(['5:00 PM', '', '']);
     // Still today: nothing to flag yet, and the time so far counts.
     const now = buildDayLogs([ev('in', '07:30')], new Date('2026-10-12T15:30:00Z'), TZ);
     const live = siteBill({ woId: 'wo-1', capture: null, logs: now, readings: [], receipts: [], today: '2026-10-12' });
@@ -132,7 +132,7 @@ describe('the download', () => {
     expect(rows[1]).toEqual(['WO 101 · Client # C-77']);
     expect(rows[5]).toEqual(['Date', 'Technician', 'Left from', 'Left at', 'Arrived on site', 'Left site', 'Back at', 'Hours on site', 'Travel hours', 'GPS miles', 'Odometer miles', 'Receipts']);
     expect(rows[6]).toEqual(['2026-10-12', 'Dana', 'Hotel', '6:50 AM', '7:30 AM', '4:00 PM', '4:35 PM', 8, 1.18, 42.4, 43.5, 41.24]);
-    expect(rows.find((r) => r[2] === 'Hotel → Site')).toEqual(['2026-10-12', 'Dana', 'Hotel → Site', '6:50 AM', '7:28 AM', 0.63, 21.4, 48200, 48222, 22]);
+    expect(rows.find((r) => r[3] === 'Hotel → Site')).toEqual(['2026-10-12', 'Dana', 'Travel to site', 'Hotel → Site', '6:50 AM', '7:28 AM', 0.63, 21.4, 48200, 48222, 22]);
     expect(rows.at(-1)).toEqual(['', 'Total', '', '', 11.2, 41.24]);
   });
 
@@ -198,8 +198,9 @@ describe('weekly bill review fixes', () => {
     const { billImageTables } = await import('./bill-image');
     const bill = siteBill({ woId: 'wo-1', capture: [...portal], logs, readings, receipts: [receipt({})], today: '2026-10-18' });
     const drives = billImageTables({ name: 'Maple St', wo: '101', address: '', bill }).tables.find((t) => t.heading === 'Drives');
-    expect(drives?.columns).toEqual(['Date', 'Technician', 'Drive', 'Started', 'Ended', 'Hours', 'GPS mi', 'Odo start', 'Odo end', 'Odo mi']);
-    expect(drives?.rows[0]).toEqual(['Mon, Oct 12', 'Dana', 'Hotel → Site', '6:50 AM', '7:28 AM', '0.63', '21.4', '48,200', '48,222', '22']);
+    expect(drives?.columns).toEqual(['Date', 'Technician', 'Activity', 'Drive', 'Started', 'Ended', 'Hours', 'GPS mi', 'Odo start', 'Odo end', 'Odo mi']);
+    expect(drives?.rows[0]).toEqual(['Mon, Oct 12', 'Dana', 'Travel to site', 'Hotel → Site', '6:50 AM', '7:28 AM', '0.63', '21.4', '48,200', '48,222', '22']);
+    expect(drives?.rows[1][2]).toBe('Travel from site');
     expect(drives?.rows).toHaveLength(2);
   });
 });

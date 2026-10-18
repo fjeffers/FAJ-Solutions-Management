@@ -100,3 +100,15 @@ describe('the template a pasted job names (Generate with AI)', async () => {
     expect(templateForText('Nothing to see', [PORTAL, LDS])).toBeNull();
   });
 });
+
+describe('adding items as the job develops', () => {
+  it('a second item keeps the first, and a third keeps both', () => {
+    let items = toggleItem([], 'travel');
+    items = toggleItem(items, 'receipts');
+    expect(items).toEqual(['travel', 'receipts']);
+    items = toggleItem(items, 'odometer');
+    expect(items).toEqual(['travel', 'odometer', 'receipts']);
+    // Read back from the database the same way.
+    expect(parseCapture(items)).toEqual(['travel', 'odometer', 'receipts']);
+  });
+});

@@ -37,6 +37,38 @@ export function drivesFor(from: Origin | null, afterWork = false): Drive[] {
 
 export const driveOf = (key: string): Drive | null => DRIVES.find((l) => l.key === key) ?? null;
 
+// ── The four activities (Fred, 2026-10-18) ──────────────────────────────────
+// Check in asks which one, and the choice is saved: a drive as FAJ's
+// travel_start with its origin and destination, work on site as the clock-in.
+// Reports read the activity back from those (activityOf), so there is one
+// record, not two that could disagree.
+
+export type Activity = 'to_site' | 'between_sites' | 'from_site' | 'on_site';
+export const ACTIVITY_LABEL: Record<Activity, string> = {
+  to_site: 'Travel to site', between_sites: 'Site-to-site travel', from_site: 'Travel from site', on_site: 'Work on site',
+};
+
+/** Which activity a drive is, by where it starts and ends. Home → Hotel is the trip out; Hotel → Home the trip back. */
+export function activityOf(origin: Origin | null | undefined, dest: Dest | null | undefined): Activity {
+  if (dest === 'next_site') return 'between_sites';
+  if (dest === 'site') return 'to_site';
+  if (origin === 'site' || dest === 'home') return 'from_site';
+  return 'to_site';
+}
+
+/** The check-in choice for starting work where the tech already is: no drive, the clock-in. */
+export const ON_SITE_KEY = 'on-site';
+
+/** Check in's choices, grouped under the four activities in Fred's order. After Work done only the drives back. */
+export function checkInChoices(from: Origin | null, afterWork = false): { activity: Activity; label: string; options: { key: string; label: string }[] }[] {
+  const drives = drivesFor(from, afterWork);
+  const groups = (['to_site', 'between_sites', 'from_site'] as const)
+    .map((a) => ({ activity: a as Activity, label: ACTIVITY_LABEL[a], options: drives.filter((d) => activityOf(d.origin, d.dest) === a).map((d) => ({ key: d.key, label: d.label })) }))
+    .filter((g) => g.options.length > 0);
+  if (!afterWork) groups.push({ activity: 'on_site', label: ACTIVITY_LABEL.on_site, options: [{ key: ON_SITE_KEY, label: 'Already on site: start work' }] });
+  return groups;
+}
+
 /** The drive as FAJ's Start travel takes it (DayActions.startTrip). */
 export function tripOf(drive: Drive): { trip: Trip; from: Origin } {
   const trip: Trip = drive.dest === 'next_site' ? 'between' : drive.dest;

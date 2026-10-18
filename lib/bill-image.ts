@@ -6,6 +6,7 @@
 import { expenseCategoryLabel } from './expenses';
 import { hoursOf, legLabel } from './project-day';
 import { billDay, type BillSite } from './weekly-bill';
+import { ACTIVITY_LABEL, activityOf } from './checkin';
 
 const TZ = 'America/New_York';
 const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ }) : '—');
@@ -41,9 +42,9 @@ export function billImageTables(site: BillSite): { tiles: [string, string][]; ta
     const odo = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString('en-US'));
     tables.push({
       heading: 'Drives',
-      columns: ['Date', 'Technician', 'Drive', 'Started', 'Ended', 'Hours', 'GPS mi', ...(s.odometer ? ['Odo start', 'Odo end', 'Odo mi'] : [])],
+      columns: ['Date', 'Technician', 'Activity', 'Drive', 'Started', 'Ended', 'Hours', 'GPS mi', ...(s.odometer ? ['Odo start', 'Odo end', 'Odo mi'] : [])],
       rows: bill.legs.map((l) => [
-        billDay(l.day), l.tech, legLabel(l), clock(l.start), clock(l.end),
+        billDay(l.day), l.tech, ACTIVITY_LABEL[activityOf(l.origin, l.dest)], legLabel(l), clock(l.start), clock(l.end),
         // A drive with no arrival has no hours of its own, as on the sheet.
         l.end ? String(hoursOf(l.ms)) : '—', l.miles == null ? '—' : String(l.miles),
         ...(s.odometer ? [odo(l.odoStart?.reading), odo(l.odoEnd?.reading), l.odoMiles == null ? '—' : String(l.odoMiles)] : []),

@@ -350,13 +350,18 @@ export default function ProjectSheetView({ sheet, messages: initialMessages, tok
                   onOpen={(key) => setPanel({ mode: 'row', key })} />
               )}
 
-              {(site.notes || site.answers.length > 0 || site.checklist.total > 0) && (
+              {(site.notes || site.answers.length > 0 || site.checklist.total > 0 || site.missing.length > 0) && (
                 <div className="sg-sheetsum">
                   <h3>Sheet summary</h3>
                   {site.checklist.total > 0 && (
-                    <p><b>{site.checklist.name}:</b> {site.checklist.done} of {site.checklist.total} done · {site.checklist.sign}</p>
+                    <p><b>{site.checklist.name}:</b> {site.checklist.done} of {site.checklist.total} done{site.checklist.sign ? ` · ${site.checklist.sign}` : ''}</p>
                   )}
-                  {site.checklist.cant.map(([item, why]) => <p key={item}>Could not do <b>{item}</b>: {why}</p>)}
+                  {site.missing.length > 0 ? (
+                    <>
+                      <div className="k" style={{ color: '#B42318' }}>Not completed</div>
+                      {site.missing.map((m) => <p key={m}>✗ {m}</p>)}
+                    </>
+                  ) : site.checklist.cant.map(([item, why]) => <p key={item}>Could not do <b>{item}</b>: {why}</p>)}
                   {site.notes && <><div className="k">Notes</div><p style={{ whiteSpace: 'pre-wrap' }}>{site.notes}</p></>}
                   {site.answers.length > 0 && <div className="k">Answers</div>}
                   {site.answers.map((a) => <p key={a.q}><b>{a.q}</b><br />{a.a}</p>)}

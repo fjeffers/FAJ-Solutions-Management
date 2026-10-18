@@ -5,29 +5,44 @@
 // stamped photos — printed, or saved as a PDF from the print window, to send a
 // client or marketplace as proof of work. No money anywhere on it. The scope
 // of work starts switched off, because Fred sometimes notes pay in it.
+//
+// Fred, 2026-10-18: on a finished job, anything the tech didn't fill in is
+// listed under "Not completed" (lib/job-gaps.ts), and empty parts are left out.
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { buildVisits, inRange, logTotals, hoursText, dayOf, type Punch } from '@/lib/job-log';
 import { mapLink } from '@/lib/geo';
+import { jobGaps } from '@/lib/job-gaps';
+import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
 type PhotoRow = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; contractor_name: string | null };
-type Include = { time: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; scope: boolean };
+type Include = { gaps: boolean; time: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; scope: boolean };
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
 const fmtStamp = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ });
 
-export default function JobLogReport({ w, onClose }: { w: EnrichedWorkOrder; onClose: () => void }) {
+/** A section heading on the printed page. */
+const H = ({ children }: { children: React.ReactNode }) => (
+  <h3 style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 15, fontWeight: 700, color: '#0E1B2E', margin: '22px 0 8px', paddingBottom: 6, borderBottom: '2px solid #C9A24B' }}>{children}</h3>
+);
+
+export default function JobLogReport({ w, deliverables, onClose }: {
+  w: EnrichedWorkOrder;
+  /** The job's closeout deliverables (listFor), so a finished job can say which weren't done. */
+  deliverables: string[];
+  onClose: () => void;
+}) {
   const [punches, setPunches] = useState<Punch[] | null>(null);
   const [logs, setLogs] = useState<TimeLog[]>([]);
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [inc, setInc] = useState<Include>({ time: true, checklist: true, answers: true, notes: true, photos: true, scope: false });
+  const [inc, setInc] = useState<Include>({ gaps: true, time: true, checklist: true, answers: true, notes: true, photos: true, scope: false });
 
   useEffect(() => {
     const db = createClient();
@@ -51,6 +66,11 @@ export default function JobLogReport({ w, onClose }: { w: EnrichedWorkOrder; onC
   const visits = useMemo(() => buildVisits(punches ?? [], logs, new Date(), TZ).filter((v) => inRange(v.day, from, to)), [punches, logs, from, to]);
   const shownPhotos = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to));
   const totals = logTotals(visits);
+  // Only a finished job has a "Not completed": on a job still going, it's just work still to do.
+  const job = useMemo(() => wfJobFromOwner(w), [w]);
+  // Waits for the photos to load, so it never says "No photos" too soon.
+  const loaded = punches !== null;
+  const gaps = useMemo(() => (loaded && isFinished(job) ? jobGaps(job, deliverables, photos.length) : []), [loaded, job, deliverables, photos.length]);
   const tasks = w.wo_tasks ?? [];
   const qa = w.custom_qa ?? [];
   const techs = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean);
@@ -65,9 +85,6 @@ export default function JobLogReport({ w, onClose }: { w: EnrichedWorkOrder; onC
     </label>
   );
 
-  const H = ({ children }: { children: React.ReactNode }) => (
-    <h3 style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 15, fontWeight: 700, color: '#0E1B2E', margin: '22px 0 8px', paddingBottom: 6, borderBottom: '2px solid #C9A24B' }}>{children}</h3>
-  );
   const cell: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #ECE8DF', textAlign: 'left', verticalAlign: 'top' };
 
   return createPortal(
@@ -81,7 +98,7 @@ export default function JobLogReport({ w, onClose }: { w: EnrichedWorkOrder; onC
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
-          {toggle('time', 'Time & GPS')}{toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
+          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Time & GPS')}{toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
           {toggle('notes', "Tech's notes")}{toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}
         </div>
       </div>
@@ -110,9 +127,9 @@ export default function JobLogReport({ w, onClose }: { w: EnrichedWorkOrder; onC
 
           <div className="jl-avoid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginTop: 16 }}>
             {[
-              ['Time on site', hoursText(totals.ms)],
-              ['Days', String(totals.days)],
-              ['Photos', String(shownPhotos.length)],
+              ...(totals.ms > 0 ? [['Time on site', hoursText(totals.ms)]] : []),
+              ...(totals.days > 0 ? [['Days', String(totals.days)]] : []),
+              ...(shownPhotos.length > 0 ? [['Photos', String(shownPhotos.length)]] : []),
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
             ].map(([label, value]) => (
@@ -123,13 +140,26 @@ export default function JobLogReport({ w, onClose }: { w: EnrichedWorkOrder; onC
             ))}
           </div>
 
+          {inc.gaps && gaps.length > 0 && (
+            <>
+              <H>Not completed</H>
+              <div className="jl-avoid" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {gaps.map((g) => (
+                  <div key={g.text} style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ color: '#B42318', fontWeight: 700, width: 16 }}>✗</span>
+                    <span style={{ flex: 1 }}>{g.text}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           {inc.scope && w.description && (<><H>Scope of work</H><div style={{ whiteSpace: 'pre-wrap' }}>{w.description}</div></>)}
 
-          {inc.time && (
+          {inc.time && (punches === null || visits.length > 0) && (
             <>
               <H>Time on site</H>
               {punches === null ? <div style={{ color: '#5E6470' }}>Loading…</div>
-                : visits.length === 0 ? <div style={{ color: '#5E6470' }}>No time recorded{from || to ? ' in these dates' : ''}.</div>
                 : (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead><tr style={{ background: '#F6F4EF' }}>

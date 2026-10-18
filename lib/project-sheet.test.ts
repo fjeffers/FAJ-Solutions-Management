@@ -86,8 +86,14 @@ describe('buildSheet', () => {
     const site = s.sites[0];
     expect(site).toMatchObject({ name: '#4454 – Orange, NJ', wo: 'P-100', clientWo: 'CL-9', status: 'In Progress', closed: false, notes: 'Racked the switch.' });
     expect(site.answers).toEqual([{ q: 'Ceiling height', a: '12 ft' }]);
-    expect(site.checklist).toMatchObject({ done: 1, total: 5, sign: 'Not signed off yet' });
-    expect(buildSheet(input({ jobs: [{ ...job, wo_status: 'Work Done' }] }), NOW).sites[0].closed).toBe(true);
+    // No signature asked for, so nothing is said about one; asked for, it's still owed.
+    expect(site.checklist).toMatchObject({ done: 1, total: 5, sign: '' });
+    expect(buildSheet(input({ jobs: [{ ...job, signature_required: true }] }), NOW).sites[0].checklist.sign).toBe('Not signed off yet');
+    expect(site.missing).toEqual([]);
+    const closed = buildSheet(input({ jobs: [{ ...job, wo_status: 'Work Done' }] }), NOW).sites[0];
+    expect(closed.closed).toBe(true);
+    // Closed: what the tech left undone is listed (four deliverables were never ticked).
+    expect(closed.missing.filter((m) => m.startsWith('Deliverable not done:'))).toHaveLength(4);
   });
 
   it('totals: hours on site, miles, receipts', () => {

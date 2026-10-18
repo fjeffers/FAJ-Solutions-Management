@@ -65,8 +65,8 @@ function SiteReport({ sheet, site, messages, now }: { sheet: Sheet; site: SheetS
             ['Work order', site.wo],
             ['Client work order', site.clientWo],
             ['Status', site.closed ? `Site closed (${site.status})` : site.status || 'Open'],
-            ['Dates', days.length ? `${fmtSheetDay(days[0])}${days.length > 1 ? ` – ${fmtSheetDay(days[days.length - 1])}` : ''}` : '—'],
-            ['Technicians', site.techs.join(', ') || '—'],
+            ['Dates', days.length ? `${fmtSheetDay(days[0])}${days.length > 1 ? ` – ${fmtSheetDay(days[days.length - 1])}` : ''}` : ''],
+            ['Technicians', site.techs.join(', ')],
           ].filter(([, v]) => v).map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}
         </tbody>
       </table>
@@ -93,13 +93,18 @@ function SiteReport({ sheet, site, messages, now }: { sheet: Sheet; site: SheetS
         </tbody>
       </table>
 
-      {(site.notes || site.answers.length > 0 || site.checklist.total > 0) && (
+      {(site.notes || site.answers.length > 0 || site.checklist.total > 0 || site.missing.length > 0) && (
         <>
           <h3 className="pr-h3">Site report</h3>
           {site.checklist.total > 0 && (
-            <p><b>{site.checklist.name}:</b> {site.checklist.done} of {site.checklist.total} done · {site.checklist.sign}</p>
+            <p><b>{site.checklist.name}:</b> {site.checklist.done} of {site.checklist.total} done{site.checklist.sign ? ` · ${site.checklist.sign}` : ''}</p>
           )}
-          {site.checklist.cant.map(([item, why]) => <p key={item}>Could not do <b>{item}</b>: {why}</p>)}
+          {site.missing.length > 0 ? (
+            <>
+              <p style={{ fontWeight: 700, marginBottom: 2, color: '#B42318' }}>Not completed</p>
+              {site.missing.map((m) => <p key={m} style={{ margin: '2px 0' }}>✗ {m}</p>)}
+            </>
+          ) : site.checklist.cant.map(([item, why]) => <p key={item}>Could not do <b>{item}</b>: {why}</p>)}
           {site.notes && <><p style={{ fontWeight: 700, marginBottom: 2 }}>Notes</p><p style={{ whiteSpace: 'pre-wrap', marginTop: 0 }}>{site.notes}</p></>}
           {site.answers.map((a) => <p key={a.q}><b>{a.q}:</b> {a.a}</p>)}
         </>

@@ -22,6 +22,8 @@
 // Pure and unit-tested (lib/project-sheet.test.ts).
 import { buildDayLogs, dayOf, parseDayEvents, totalsOf, hoursOf, type DayEvent } from './project-day';
 import { listFor, parseCloseout, skipReason, type CloseoutList } from './closeout';
+import { jobGaps } from './job-gaps';
+import { wfJobFromOwner } from './wf';
 import { townOf } from './places';
 import { toCSV } from './csv';
 
@@ -33,6 +35,7 @@ export type SheetJob = {
   site_name?: string | null; site_address?: string | null; site_city?: string | null; site_state?: string | null; site_zip?: string | null;
   closeout_notes?: string | null; custom_qa?: unknown; closeout?: unknown; wo_status?: string | null;
   lead_contractor_name?: string | null; contractor_name?: string | null; contractor_names?: string[] | null;
+  wo_tasks?: unknown; signature_required?: boolean | null; photo_required?: boolean | null;
 };
 
 export type SheetInput = {
@@ -79,7 +82,10 @@ export type SheetSite = {
   /** The newest line's time, to put the busiest site first. */
   lastAt: string;
   notes: string; answers: { q: string; a: string }[];
+  /** The sign-off, why there isn't one, or '' when none was asked for. */
   checklist: { name: string; done: number; total: number; cant: [string, string][]; sign: string };
+  /** A closed site: what the tech left undone (lib/job-gaps.ts). Empty while the work goes on. */
+  missing: string[];
 };
 
 export type SheetSummary = {
@@ -250,10 +256,11 @@ export function buildSheet(i: SheetInput, now: Date = new Date(), timeZone = 'Am
       : [];
     const status = str(j.wo_status);
     const mine = rows.filter((r) => r.siteId === j.id);
+    const closed = CLOSED.includes(status);
     const jt = jobTotals.get(j.id);
     return {
       id: j.id, name: siteLabel(j), wo: str(j.wo_number), clientWo: str(j.external_wo_id), address: addressOf(j),
-      status, closed: CLOSED.includes(status),
+      status, closed,
       techs: [...new Set(mine.filter((r) => r.tech && r.tech !== 'FAJ office').map((r) => r.tech))],
       crew: [...new Set([j.lead_contractor_name, j.contractor_name, ...(j.contractor_names ?? [])].map((n) => str(n)).filter(Boolean))],
       onSiteHours: jt ? hoursOf(jt.onSiteMs) : 0, miles: jt?.miles ?? 0,
@@ -264,8 +271,10 @@ export function buildSheet(i: SheetInput, now: Date = new Date(), timeZone = 'Am
       checklist: {
         name: list.name, done: list.items.filter((x) => c.done.includes(x)).length, total: list.items.length,
         cant: list.items.filter((x) => skipReason(c, x)).map((x) => [x, skipReason(c, x)] as [string, string]),
-        sign: c.signoff ? `Signed off by ${c.signoff.name}` : c.signSkip ? `No signature: ${c.signSkip.reason}` : 'Not signed off yet',
+        sign: c.signoff ? `Signed off by ${c.signoff.name}` : c.signSkip ? `No signature: ${c.signSkip.reason}`
+          : j.signature_required ? 'Not signed off yet' : '',
       },
+      missing: closed ? jobGaps(wfJobFromOwner(j), list.items, mine.filter((r) => r.kind === 'photo').length).map((g) => g.text) : [],
     };
   });
 

@@ -21,7 +21,8 @@ import {
 import { parseCloseout, parseCloseoutLists, listFor, skipReason, type CloseoutList } from '@/lib/closeout';
 import { EXPENSE_CATEGORIES, expenseCategoryLabel, expenseReasonText, parseExpenseAmount } from '@/lib/expenses';
 import { inRange } from '@/lib/job-log';
-import { formatDuration } from '@/lib/wf';
+import { formatDuration, isFinished, wfJobFromOwner } from '@/lib/wf';
+import { jobGaps } from '@/lib/job-gaps';
 import { fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder } from '@/lib/types';
@@ -239,7 +240,8 @@ function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; onClose
 
 type ReportWo = Pick<EnrichedWorkOrder,
   'id' | 'wo_number' | 'title' | 'description' | 'site_name' | 'site_address' | 'site_city' | 'site_state' | 'site_zip'
-  | 'customer_name' | 'external_wo_id' | 'closeout_notes' | 'scheduled_date' | 'start_date' | 'signature_required'> & { closeout: unknown };
+  | 'customer_name' | 'external_wo_id' | 'closeout_notes' | 'scheduled_date' | 'start_date' | 'signature_required'
+  | 'wo_status' | 'archived_at' | 'wo_tasks' | 'custom_qa' | 'photo_required'> & { closeout: unknown };
 type ReportExpense = { id: string; wo_id: string; category: string; vendor: string | null; amount: number; expense_date: string; note: string | null; receipt_path: string | null; status: string };
 type ReportPhoto = { id: string; wo_id: string; url: string; taken_at: string; contractor_name: string | null };
 
@@ -266,7 +268,7 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   useEffect(() => {
     const db = createClient();
     void (async () => {
-      const cols = 'id, wo_number, title, description, site_name, site_address, site_city, site_state, site_zip, customer_name, external_wo_id, closeout_notes, scheduled_date, start_date, signature_required, closeout';
+      const cols = 'id, wo_number, title, description, site_name, site_address, site_city, site_state, site_zip, customer_name, external_wo_id, closeout_notes, scheduled_date, start_date, signature_required, closeout, wo_status, archived_at, wo_tasks, custom_qa, photo_required';
       // The whole project: every project site with this name. A job with no
       // project name reports on its own.
       const q = projectName.trim()
@@ -382,6 +384,9 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
                 const c = parseCloseout(wo.closeout);
                 const items = listFor(lists, wo.title ?? '', wo.description ?? '').items;
                 const cant = items.filter((i) => skipReason(c, i));
+                // A finished site lists everything the tech left undone (lib/job-gaps.ts).
+                const job = wfJobFromOwner(wo);
+                const gaps = isFinished(job) ? jobGaps(job, items, photos.filter((p) => p.wo_id === wo.id).length) : null;
                 return (
                   <div key={wo.id}>
                     <H>{wo.site_name || wo.title || 'Site'} · WO {wo.wo_number}{wo.external_wo_id ? ` · Client # ${wo.external_wo_id}` : ''}</H>
@@ -426,13 +431,21 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
 
                     {(items.length > 0 || c.signoff || c.signSkip) && (
                       <div className="jl-avoid" style={{ marginTop: 10 }}>
-                        <div style={{ fontWeight: 600 }}>Deliverables: {items.filter((i) => c.done.includes(i)).length} of {items.length} done{cant.length ? `, ${cant.length} could not be done` : ''}</div>
-                        {cant.map((i) => <div key={i} style={{ fontSize: 12.5 }}>• {i}: <i>{skipReason(c, i)}</i></div>)}
-                        <div style={{ fontSize: 12.5, marginTop: 4 }}>
-                          {c.signoff ? <>Signed off by <b>{c.signoff.name}</b>{c.signoff.signedAt ? ` on ${new Date(c.signoff.signedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ })}` : ''}</>
-                            : c.signSkip ? <>No customer signature: <i>{c.signSkip.reason}</i></>
-                              : 'Not signed off yet.'}
-                        </div>
+                        {items.length > 0 && <div style={{ fontWeight: 600 }}>Deliverables: {items.filter((i) => c.done.includes(i)).length} of {items.length} done{cant.length ? `, ${cant.length} could not be done` : ''}</div>}
+                        {!gaps && cant.map((i) => <div key={i} style={{ fontSize: 12.5 }}>• {i}: <i>{skipReason(c, i)}</i></div>)}
+                        {(c.signoff || (!gaps && (c.signSkip || wo.signature_required))) && (
+                          <div style={{ fontSize: 12.5, marginTop: 4 }}>
+                            {c.signoff ? <>Signed off by <b>{c.signoff.name}</b>{c.signoff.signedAt ? ` on ${new Date(c.signoff.signedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ })}` : ''}</>
+                              : c.signSkip ? <>No customer signature: <i>{c.signSkip.reason}</i></>
+                                : 'Not signed off yet.'}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {gaps && gaps.length > 0 && (
+                      <div className="jl-avoid" style={{ marginTop: 10 }}>
+                        <div style={{ fontWeight: 600, color: '#B42318' }}>Not completed</div>
+                        {gaps.map((g) => <div key={g.text} style={{ fontSize: 12.5 }}>✗ {g.text}</div>)}
                       </div>
                     )}
                     {(wo.closeout_notes ?? '').trim() && (

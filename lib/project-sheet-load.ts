@@ -39,7 +39,7 @@ export async function projectJobIds(admin: SupabaseClient, userId: string, proje
  */
 export async function loadSheet(admin: SupabaseClient, userId: string, project: string, lookups = 2): Promise<Sheet> {
   const { data: jobs } = await admin.from('work_orders')
-    .select('id, wo_number, external_wo_id, title, description, site_name, site_address, site_city, site_state, site_zip, closeout_notes, custom_qa, closeout, wo_status, lead_contractor_name, contractor_name, contractor_names')
+    .select('id, wo_number, external_wo_id, title, description, site_name, site_address, site_city, site_state, site_zip, closeout_notes, custom_qa, closeout, wo_status, lead_contractor_name, contractor_name, contractor_names, wo_tasks, signature_required, photo_required')
     .eq('user_id', userId).eq('project_name', project).eq('is_project', true);
   const list = (jobs ?? []) as SheetInput['jobs'];
   const ids = list.map((j) => j.id);

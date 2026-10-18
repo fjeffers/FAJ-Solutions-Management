@@ -17,7 +17,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useLiveRows } from '@/components/wf/useLive';
 import {
   wfJobFromOwner, matchesWf, sortWf, ownerCounts, bucketOf, bucketCounts, withTask, withCloseout, fullAddress, wfReasonText,
-  parseClockTime, fmtClock12, requestWhen, whenText, type WfBucket, type WfJob, type WfTask,
+  parseClockTime, fmtClock12, requestWhen, whenText, isFinished, type WfBucket, type WfJob, type WfTask,
 } from '@/lib/wf';
 import {
   acceptTimePatch, closeoutArgs, keepTimePatch, listFor, parseCloseoutLists, waitingRequests,
@@ -31,6 +31,7 @@ import { WO_STATUSES, type Contractor, type EnrichedWorkOrder, type WorkOrder } 
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import JobLogReport from '@/components/JobLogReport';
+import { jobGaps } from '@/lib/job-gaps';
 import { mapLink } from '@/lib/geo';
 import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseStatus } from '@/lib/expenses';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
@@ -513,6 +514,7 @@ function OwnerJob({
         // and moved between the two columns in Settings -> Screen designer.
         side={<>{jobDesign.jobSide.filter(partShown).map((k) => <Fragment key={k}>{jobCards[k]}</Fragment>)}</>}
         below={<>
+          <JobGapsCard job={job} woId={w.id} deliverables={checklist.items} />
           {chatOpen && (
             <Section title="Messages" subtitle="The same thread the tech sees in their portal">
               <WorkOrderChatPanel woNumber={w.wo_number} />
@@ -521,7 +523,7 @@ function OwnerJob({
           {jobDesign.jobBelow.filter(partShown).map((k) => <Fragment key={k}>{jobCards[k]}</Fragment>)}
         </>}
       />
-      {logOpen && <JobLogReport w={w} onClose={() => setLogOpen(false)} />}
+      {logOpen && <JobLogReport w={w} deliverables={checklist.items} onClose={() => setLogOpen(false)} />}
       {picking && (
         <TechPicker
           w={w} job={job} contractors={contractors}
@@ -710,6 +712,40 @@ function JobNotesCard({ woId, author }: { woId: string; author: string }) {
             </div>
           ))}
       </div>
+    </Section>
+  );
+}
+
+/**
+ * A finished job: what the tech left undone (Fred, 2026-10-18: "if certain
+ * items were not inputted then it should be in the final work order").
+ * Nothing shows while the job is still going, or when everything was done.
+ */
+function JobGapsCard({ job, woId, deliverables }: { job: WfJob; woId: string; deliverables: string[] }) {
+  const finished = isFinished(job);
+  const [photoCount, setPhotoCount] = useState<number | null>(null);
+  const load = async () => {
+    const { count } = await createClient().from('wo_photos').select('id', { count: 'exact', head: true }).eq('wo_id', woId);
+    setPhotoCount(count ?? 0);
+  };
+  useEffect(() => {
+    if (!finished) return;
+    const t = setTimeout(() => void load(), 0);
+    return () => clearTimeout(t);
+  }, [finished, woId]); // eslint-disable-line react-hooks/exhaustive-deps -- load reads only woId
+  useLiveRows('wo_photos', woId, () => { if (finished) void load(); });
+  if (!finished || photoCount === null) return null;
+  const gaps = jobGaps(job, deliverables, photoCount);
+  if (gaps.length === 0) return null;
+  return (
+    <Section title="Not completed" subtitle="What the tech left undone on this job">
+      <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {gaps.map((g) => (
+          <li key={g.text} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+            <span style={{ color: '#B42318', fontWeight: 700 }}>✗</span><span>{g.text}</span>
+          </li>
+        ))}
+      </ul>
     </Section>
   );
 }

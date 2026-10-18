@@ -9,7 +9,7 @@
 //
 // The start is part of Check in (components/wf/CheckIn.tsx); the end is asked
 // right after arriving (OdometerDialog), so the tap keeps its own time.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera, Gauge } from 'lucide-react';
 import { getPosition, stampLines, type Position } from '@/lib/geo';
 import { stampPhoto } from '@/lib/photo-stamp';
@@ -137,10 +137,16 @@ export function MileagePhoto({ m, moment }: { m: Mileage; moment: OdometerMoment
 }
 
 /** The ending mileage, asked right after arriving. */
-export default function OdometerDialog({ woNumber, moment, keep, onClose }: {
+export default function OdometerDialog({ woNumber, moment, keep, onClose, initialFile }: {
   woNumber: string; moment: OdometerMoment; keep: SavePhoto; onClose: () => void;
+  /** A photo already taken (the job's Photo icon, marked as mileage): stamped and read at once. */
+  initialFile?: File | null;
 }) {
   const m = useMileage(woNumber, moment);
+  const started = useRef(false);
+  useEffect(() => {
+    if (initialFile && !started.current) { started.current = true; void m.take(initialFile); }
+  }, [initialFile]); // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
   const send = async () => {
     if (!m.ok) { toastError('Enter the mileage on the odometer.'); return; }

@@ -25,7 +25,7 @@ import {
 } from '@/lib/wf-outbox';
 import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
-  fullAddress, reportMissing, askedOnly, askedDeliverables, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, WF_STATUS_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
+  fullAddress, reportMissing, askedOnly, askedDeliverables, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
@@ -33,8 +33,8 @@ import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
 import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, openIssue, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
-import { FsDayLog, FsNextAction, FsStageAction, FsWorkSections, type FsSection } from '@/components/wf/FsWork';
-import { FS_STAGE_NAME, fsNextStep, fsStage, type FsStage } from '@/lib/fs-stage';
+import { FsDayLog, FsStageAction } from '@/components/wf/FsWork';
+import { FS_STAGE_NAME, fsStage, type FsStage } from '@/lib/fs-stage';
 import { addNotes, clearNotes, loadNotes, markRead, messageNote, notesFromChanges, saveNotes, type TechNote } from '@/lib/tech-inbox';
 import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
@@ -59,7 +59,7 @@ import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
-import WfJobDetail, { ChecklistCard, InfoListCard, SiteInfoCard, TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
+import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
@@ -1193,8 +1193,12 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const photoCount = ph.sent.length + ph.waiting.length;
   const [noteOpen, setNoteOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  // One page (Fred, 2026-10-18): Messages in a pop-up, and a photo that asks what it's for.
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [expenseFile, setExpenseFile] = useState<File | null>(null);
+  const [odoFile, setOdoFile] = useState<File | null>(null);
   const [expenses, setExpenses] = useState<TechExpense[]>([]);
-  const [section, setSection] = useState<FsSection>('overview');
   const loadExpenses = useCallback(async () => {
     const { data, error } = await createClient().rpc('wf_tech_job_expenses', { p_wo_number: job.number });
     if (!error && Array.isArray(data)) setExpenses(data as TechExpense[]);
@@ -1437,8 +1441,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         <OffSiteDialog missing={offSiteMissing} signature={jobForCloseout.signatureRequired} onClose={() => setOffOpen(false)}
           onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
       )}
-      {expenseOpen && <ExpenseDialog job={job} onClose={() => setExpenseOpen(false)} onSaved={() => { setExpenseOpen(false); void loadExpenses(); }} />}
-      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} keep={keepPhoto} onClose={() => setOdometer(null)} />}
+      {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }} onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); }} />}
+      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} keep={keepPhoto} initialFile={odoFile} onClose={() => { setOdometer(null); setOdoFile(null); }} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {left.away && project && working && (
         <LeftSiteDialog onStillHere={() => left.dismiss(30)} onPick={(reason, note) => {
@@ -1486,88 +1490,141 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     ? fsStage(job.myDay ?? [], { openIssue: !!openIssue(talk.msgs) }, undefined, 'America/New_York')
     : isClockedIn(job) ? 'onsite' : 'ready';
   const live = job.status !== 'offered' && job.status !== 'declined';
-  const until = parseClockTime(job.endTime);
-  // Photos & questions shows only what the job asks for; with none of it, the tab goes.
-  const evidenceAsked = ask('photos') || ask('checklist') || ask('questions') || ask('notes') || deliverables.length > 0 || jobForCloseout.signatureRequired;
-  const panels: Record<FsSection, React.ReactNode | null> = {
-    overview: (
-      <div className="fs-split">
-        <div className="fs-stack">
-          {dayFlow && (working || job.status === 'workDone') ? (
-            <>
-              <SiteAccessBar number={job.number} talk={talk} late={late}
-                showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
-              <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating || dayBusy} enabled={working} afterWork={job.status === 'workDone'} on={dayOn}
-                travel={ask('travel')} lunch={ask('lunch')}
-                onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
-              {project && <SheetLinkButton number={job.number} />}
-            </>
-          ) : showClock ? (
-            <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating || dayBusy} onToggle={() => void toggleClock()} />
-          ) : null}
-          {bottom}
-        </div>
-        <div className="fs-stack">
-          <section className="fs-card fs-form">
-            <h3>Work order</h3>
-            <p className="fs-meta">{[job.title, job.serviceType, `WO ${job.number}`].filter(Boolean).join(' · ')}</p>
-            {fullAddress(job) && (
-              <p><a href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><FsIcon name="pin" size={16} />{fullAddress(job)}</a></p>
-            )}
-            <p>{whenText(job)}{until ? ` – ${fmtClock12(until)}` : ''}</p>
-            {job.description && <p className="fs-scope">{job.description}</p>}
-          </section>
-          <ClientLinksCard number={job.number} />
-          <SiteInfoCard job={job} />
-          <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
-        </div>
-      </div>
-    ),
-    documents: <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />,
-    evidence: evidenceAsked ? (
-      <div className="fs-split">
-        <div className="fs-stack">
-          {ask('photos') && <JobPhotos canAdd={canReport} ph={ph} />}
-          {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
-            <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
-          )}
-        </div>
-        <div className="fs-stack">
-          {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
-          {live && (ask('notes') || shown.questions.length > 0) && (
-            <JobReport
-              job={shown} uid={uid} canEdit={canReport}
-              notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
-              dirty={dirty} onSave={(extra) => saveReport(extra)}
-            />
-          )}
-        </div>
-      </div>
-    ) : null,
-    time: (
-      <section className="fs-card fs-form">
-        <h3>My time and travel</h3>
-        {dayFlow
-          ? <FsDayLog events={job.myDay ?? []} />
-          : <TimeClockCard job={job} enabled={false} onToggle={() => undefined} showButton={false} />}
-      </section>
-    ),
-    expenses: !ask('receipts') && expenses.length === 0 ? null
-      : canReport || expenses.length > 0
-        ? <JobExpenses expenses={expenses} canAdd={canReport && ask('receipts')} onAdd={() => setExpenseOpen(true)} />
-        : <p className="fs-card fs-empty">Expenses open once the job is accepted.</p>,
-    messages: <JobMessages number={job.number} talk={dayFlow ? talk : undefined} keep={msgDraft} />,
-  };
-  const tone = job.status === 'declined' ? 'red' : job.status === 'offered' || job.status === 'workDone' ? 'amber' : 'green';
-  return (
+  // One page, no tabs (Fred, 2026-10-18: "I don't like the tabs ... can we have
+  // it all in one continuous page"). The job at the top the way the office sees
+  // it (name, location, schedule), a row of icons (Photo, Messages, Directions),
+  // the day, the job's details, and the documents at the bottom. Only what the
+  // job asks for shows.
+  const dayCard = dayFlow && (working || job.status === 'workDone') ? (
     <>
-      <FsPageHeader title={job.siteName || job.title} subtitle={[job.client, `WO ${job.number}`].filter(Boolean).join(' · ')}>
-        <FsChip tone={tone}>{WF_STATUS_LABEL[job.status]}</FsChip>
-      </FsPageHeader>
-      <FsNextAction text={fsNextStep(stage, job.status)} onContinue={() => setSection('overview')} />
-      <FsWorkSections active={section} onChange={setSection} panels={panels} />
-      {dialogs}
+      <SiteAccessBar number={job.number} talk={talk} late={late}
+        showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
+      <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating || dayBusy} enabled={working} afterWork={job.status === 'workDone'} on={dayOn}
+        travel={ask('travel')} lunch={ask('lunch')}
+        onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
+      {project && <SheetLinkButton number={job.number} />}
     </>
+  ) : showClock ? (
+    <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating || dayBusy} onToggle={() => void toggleClock()} />
+  ) : null;
+  /** A photo the tech just took goes where they say (Fred: "the photo and then they ask what type of photo it is"). */
+  const pickPhoto = (kind: PhotoKind) => {
+    const f = photoFile;
+    setPhotoFile(null);
+    if (!f) return;
+    if (kind === 'job') { ph.ask(f, 'camera'); return; }
+    if (kind === 'receipt') { setExpenseFile(f); setExpenseOpen(true); return; }
+    setOdoFile(f);
+    setOdometer(kind === 'odo_start' ? 'start' : 'end');
+  };
+  return (
+    <div className="fs-stack">
+      <DetailHeader job={job} ownerView={false} />
+      <JobIcons job={job} canPhoto={canReport} photoBusy={!!ph.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)} />
+      {job.status === 'offered' && bottom}
+      {dayCard}
+      {job.description && (
+        <section className="fs-card fs-form">
+          <h3>Job description</h3>
+          <p className="fs-scope">{job.description}</p>
+        </section>
+      )}
+      <ClientLinksCard number={job.number} />
+      <SiteInfoCard job={job} />
+      <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
+      {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
+      {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
+        <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
+      )}
+      {ask('photos') && <JobPhotos canAdd={canReport} ph={ph} />}
+      {live && (ask('notes') || shown.questions.length > 0) && (
+        <JobReport
+          job={shown} uid={uid} canEdit={canReport}
+          notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
+          dirty={dirty} onSave={(extra) => saveReport(extra)}
+        />
+      )}
+      {(ask('receipts') || expenses.length > 0) && (canReport || expenses.length > 0) && (
+        <JobExpenses expenses={expenses} canAdd={canReport && ask('receipts')} onAdd={() => setExpenseOpen(true)} />
+      )}
+      {dayFlow && live && (
+        <section className="fs-card fs-form">
+          <h3>My time and travel</h3>
+          <FsDayLog events={job.myDay ?? []} />
+        </section>
+      )}
+      <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
+      {job.status !== 'offered' && bottom}
+      {msgOpen && (
+        <Dialog title="Messages" wide onClose={() => setMsgOpen(false)}>
+          <JobMessages number={job.number} talk={dayFlow ? talk : undefined} keep={msgDraft} />
+        </Dialog>
+      )}
+      {photoFile && (
+        <PhotoKindDialog odometer={ask('travel') && ask('odometer')} receipts={canReport && ask('receipts')}
+          onPick={pickPhoto} onCancel={() => setPhotoFile(null)} />
+      )}
+      {dialogs}
+    </div>
+  );
+}
+
+type PhotoKind = 'odo_start' | 'odo_end' | 'receipt' | 'job';
+
+/** "What's this photo for?" after the tech takes one: mileage, a receipt, or a job photo. */
+function PhotoKindDialog({ odometer, receipts, onPick, onCancel }: {
+  odometer: boolean; receipts: boolean; onPick: (k: PhotoKind) => void; onCancel: () => void;
+}) {
+  const kinds: { key: PhotoKind; label: string; hint: string }[] = [
+    ...(odometer ? [
+      { key: 'odo_start' as const, label: 'Starting mileage', hint: 'The odometer when you set off' },
+      { key: 'odo_end' as const, label: 'Ending mileage', hint: 'The odometer when you got there' },
+    ] : []),
+    ...(receipts ? [{ key: 'receipt' as const, label: 'Receipt', hint: 'Fuel, food, hotel, parking or materials' }] : []),
+    { key: 'job', label: 'Job photo', hint: 'The work, the site or the equipment' },
+  ];
+  return (
+    <Dialog title="What's this photo for?" onClose={onCancel}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {kinds.map((k) => (
+          <button key={k.key} type="button" className="wf-btn wf-btn-outline" style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '12px 14px' }}
+            onClick={() => onPick(k.key)}>
+            <span>
+              <span style={{ display: 'block', fontWeight: 700 }}>{k.label}</span>
+              <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5, fontWeight: 400 }}>{k.hint}</span>
+            </span>
+          </button>
+        ))}
+        <p className="wf-subtle" style={{ margin: '4px 0 0', fontSize: 12.5 }}>The time and where you are are stamped on the photo.</p>
+      </div>
+    </Dialog>
+  );
+}
+
+/** The icons under the job: Photo, Messages and Directions, one tap each. */
+function JobIcons({ job, canPhoto, photoBusy, onPhoto, onMessages }: {
+  job: WfJob; canPhoto: boolean; photoBusy: boolean; onPhoto: (f: File | undefined) => void; onMessages: () => void;
+}) {
+  const tile: React.CSSProperties = {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minHeight: 72, padding: '10px 6px', borderRadius: 14, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
+    font: 'inherit', fontWeight: 600, fontSize: 13.5, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
+  };
+  const address = fullAddress(job);
+  return (
+    <div role="toolbar" aria-label="Job icons" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: 8 }}>
+      {canPhoto && (
+        <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
+          <Camera size={22} /> Photo
+          <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onPhoto(f); }} />
+        </label>
+      )}
+      <button type="button" style={tile} onClick={onMessages}><MessageSquare size={22} /> Messages</button>
+      {address && (
+        <a style={tile} href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={22} /> Directions</a>
+      )}
+    </div>
   );
 }
 
@@ -1664,7 +1721,7 @@ function JobExpenses({ expenses, canAdd, onAdd }: { expenses: TechExpense[]; can
 }
 
 /** Snap the receipt, say what it was for, and send it to Fred. Needs signal. */
-function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => void; onSaved: () => void }) {
+function ExpenseDialog({ job, initialFile, onClose, onSaved }: { job: WfJob; initialFile?: File | null; onClose: () => void; onSaved: () => void }) {
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
@@ -1700,6 +1757,12 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
       toastError(e instanceof Error ? e.message : "Couldn't use that photo.");
     }
   };
+
+  // A photo taken from the job's Photo icon and marked Receipt: read it at once.
+  const started = useRef(false);
+  useEffect(() => {
+    if (initialFile && !started.current) { started.current = true; void takePhoto(initialFile); }
+  }, [initialFile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = async () => {
     const amt = parseExpenseAmount(amount);

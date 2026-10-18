@@ -1,3 +1,6 @@
+import { scheduleLine } from './email-templates';
+import type { Contractor, WorkOrder } from './types';
+
 export async function notifyContractor(params: {
   type: 'wo_assigned' | 'status_change' | 'payment_recorded';
   contractor_email: string;
@@ -104,4 +107,33 @@ export async function sendPortalLink(params: {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Unknown error' };
   }
+}
+
+/**
+ * The new-job notice for one tech on a job that already exists — a tech added
+ * in WorkFlow's "Change techs", or a job sent again to a tech who declined it
+ * (Fred, 2026-10-18: "I am sending it back to me to see it in the app ...
+ * nothing"). /api/notify picks the channel: email the first time, the tech's
+ * phone after that. Pay only when it is the tech's own real pay.
+ */
+export function sendNewJobNotice(
+  w: Pick<WorkOrder, 'id' | 'wo_number' | 'title' | 'external_wo_id' | 'client_reference' | 'source_platform'
+    | 'site_name' | 'site_address' | 'site_city' | 'site_state' | 'start_date' | 'start_time' | 'end_date' | 'end_time'>,
+  c: Pick<Contractor, 'name' | 'email' | 'portal_token'>,
+  pay?: number | null,
+) {
+  const refId = w.external_wo_id || w.client_reference || null;
+  return notifyContractor({
+    type: 'wo_assigned',
+    contractor_email: c.email ?? '',
+    contractor_name: c.name,
+    wo_number: w.wo_number,
+    title: w.title ?? undefined,
+    wo_id: w.id,
+    portal_token: c.portal_token ?? null,
+    pay: pay != null && pay > 0 ? pay : undefined,
+    reference: refId ? `${w.source_platform && w.source_platform !== 'Internal' ? `${w.source_platform} ` : ''}#${refId}` : null,
+    site: [w.site_name, w.site_address, w.site_city, w.site_state].filter(Boolean).join(', ') || null,
+    schedule: scheduleLine(w) || null,
+  });
 }

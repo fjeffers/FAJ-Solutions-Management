@@ -24,9 +24,10 @@ import {
   type CloseoutList, type CloseoutOp,
 } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
-import { fmtMoney, hasPaySplit, woProfitOrNull, withClientPrice } from '@/lib/utils';
+import { fmtMoney, hasPaySplit, techPayToShow, woProfitOrNull, withClientPrice } from '@/lib/utils';
+import { sendNewJobNotice } from '@/lib/notify';
 import { logAudit } from '@/lib/audit';
-import { toastError, toastSuccess } from '@/lib/toast';
+import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { WO_STATUSES, type Contractor, type EnrichedWorkOrder, type WorkOrder } from '@/lib/types';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import WOTimeLogs from '@/components/WOTimeLogs';
@@ -385,6 +386,27 @@ function OwnerJob({
     try { await onRefresh(); setTicked({}); setCoOps([]); } finally { setRefreshing(false); }
   };
 
+  /** A tech declined, and the office sends it to them again (Fred, 2026-10-18:
+   *  "I am sending it back to me to see it in the app ... nothing"). Their old
+   *  "declined" is cleared, so the job is waiting for their answer again, and
+   *  the new-job notice goes out. */
+  const sendAgain = async (name: string) => {
+    const c = contractors.find((x) => x.name === name);
+    if (c?.on_hold) { toastInfo(`${name} is on hold. Release them in Team first.`); return; }
+    const sb = createClient();
+    const { data, error: readErr } = await sb.from('work_orders').select('assignment_responses').eq('id', w.id).single();
+    if (readErr) { toastError("Couldn't send it again. Check your connection."); return; }
+    const answers = { ...((data?.assignment_responses ?? {}) as Record<string, unknown>) };
+    delete answers[name];
+    const { error } = await sb.from('work_orders')
+      .update({ assignment_responses: answers, updated_at: new Date().toISOString() }).eq('id', w.id);
+    if (error) { toastError(`Couldn't send it again: ${error.message}`); return; }
+    logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number} sent again to ${name}` });
+    if (c?.email) void sendNewJobNotice(w, c, techPayToShow(w as unknown as WorkOrder, name));
+    toastSuccess(c?.email ? `WO ${w.wo_number} sent to ${name} again` : `WO ${w.wo_number} is waiting for ${name}'s answer again (no email on file)`);
+    await refresh();
+  };
+
   /** The same closeout steps a tech takes (wf_tech_closeout lets the owner in too, migration-106). */
   const closeoutOp = async (op: CloseoutOp) => {
     setCoOps((l) => [...l, op]);
@@ -472,7 +494,8 @@ function OwnerJob({
   const jobCards: Record<string, ReactNode> = {
     'job.timeRequests': !archived && <TimeRequestsCard w={w} job={job} onSaved={refresh} />,
     'job.quickEdit': !archived && <QuickEditCard w={w} onSaved={refresh} />,
-    'job.techs': <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)} />,
+    'job.techs': <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)}
+      onSendAgain={archived ? undefined : (t) => void sendAgain(t)} />,
     'job.money': <MoneyCard w={w} />,
     'job.fields': <YourFieldsCard w={w} />,
     'job.closeout': showCloseout(job) && (
@@ -913,8 +936,8 @@ const ANSWER: Record<string, { label: string; color: string }> = {
 };
 
 /** Who is on the job, how each answered, what each gets — and a button to change it. */
-function TechsCard({ w, job, onChange }: {
-  w: EnrichedWorkOrder; job: WfJob; onChange?: () => void;
+function TechsCard({ w, job, onChange, onSendAgain }: {
+  w: EnrichedWorkOrder; job: WfJob; onChange?: () => void; onSendAgain?: (tech: string) => void;
 }) {
   const pay = w.contractor_pay ?? {};
   return (
@@ -934,6 +957,9 @@ function TechsCard({ w, job, onChange }: {
                     {a?.label ?? (job.status === 'open' || job.status === 'offered' ? 'Has not answered yet' : 'On the job')}
                   </span>
                 </span>
+                {onSendAgain && job.answers[t] === 'declined' && (
+                  <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onSendAgain(t)}>Send it again</button>
+                )}
                 {amount != null
                   ? <span className="wf-display" style={{ fontWeight: 600 }}>{fmtMoney(amount)}</span>
                   : <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)' }}>Pay not set</span>}
@@ -1028,7 +1054,16 @@ function TechPicker({ w, job, contractors, onClose, onSaved, onReassign }: {
       toastError(wfReasonText(r.reason ?? '', r.name));
       return;
     }
-    toastSuccess(techs.length ? `Techs saved on WO ${w.wo_number}` : `WO ${w.wo_number} now needs a tech`);
+    // New techs get the new-job notice, the same as a brand-new job (Fred,
+    // 2026-10-18). Pay only when it was typed in for them here.
+    const added = Array.isArray((r as { added?: unknown }).added) ? (r as { added: string[] }).added : [];
+    for (const n of added) {
+      const c = contractors.find((x) => x.name === n);
+      if (!c?.email || c.on_hold) continue;
+      const typed = Number((picked[n] ?? '').replace(/[$,\s]/g, ''));
+      void sendNewJobNotice(w, c, picked[n]?.trim() && typed > 0 ? typed : null);
+    }
+    toastSuccess(techs.length ? `Techs saved on WO ${w.wo_number}${added.length ? `. Sent to ${added.join(', ')}` : ''}` : `WO ${w.wo_number} now needs a tech`);
     onSaved();
   };
 
@@ -1070,7 +1105,7 @@ function TechPicker({ w, job, contractors, onClose, onSaved, onReassign }: {
         </div>
       )}
       <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 14 }}>
-        Tap names to add or take techs off. New techs get the job as an offer to accept in their portal. Pay left blank shows as &ldquo;Pay not set&rdquo; until you fill it in.
+        Tap names to add or take techs off. New techs are sent the job to accept: by email the first time, on their phone once they use the tech app. Pay left blank shows as &ldquo;Pay not set&rdquo; until you fill it in.
       </div>
       {job.techs.length > 0 && !paidBlock && (
         <div style={{ marginTop: 14, padding: 12, borderRadius: 12, border: '1px solid var(--wf-line)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

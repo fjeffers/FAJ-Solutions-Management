@@ -73,7 +73,7 @@ type MovingJob = Pick<WfJob, 'status' | 'date' | 'techs' | 'officeStatus' | 'num
 export function moveTo(job: MovingJob, target: BoardColumn, today: string, holdKeys: Set<string>): Move {
   if (columnOf(job, today, holdKeys) === target.key) return { kind: 'none' };
   if (job.status === 'closed') return { kind: 'blocked', reason: `WO ${job.number} is closed. Open it and use Restore to bring it back.` };
-  if (job.status === 'declined') return { kind: 'blocked', reason: `WO ${job.number} was declined. Open it and pick a new tech.` };
+  if (job.status === 'declined') return { kind: 'blocked', reason: `WO ${job.number} was declined. Open it to send it again or pick a new tech.` };
   if (target.stage === 'declined') return { kind: 'blocked', reason: 'Declined is set by the tech’s answer, not moved by hand.' };
 
   if (target.kind === 'hold') {

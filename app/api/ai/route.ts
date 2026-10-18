@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
-import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, woAiSchema, aiFailureReason, type AiCustomField, type AiTemplate } from '@/lib/wo-ai';
+import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, aiFailureReason, type AiCustomField, type AiTemplate } from '@/lib/wo-ai';
 import { linksInText, mergeLinks } from '@/lib/client-links';
 import { normalizeFields } from '@/lib/custom-fields';
 import { todayISO } from '@/lib/utils';
@@ -19,9 +19,14 @@ import { workspaceHeader } from '@/lib/anthropic-headers';
 // every field on the form plus the tech's checklist.
 //
 // 2026-10-18 (Fred: "fill in every field on the work order"): the official SDK,
-// the answer held to woAiSchema() (structured outputs) so it always parses, the
-// contacts, questions and Fred's own fields included, and a refusal retried on
-// the fallback model the API picks.
+// the contacts, questions and Fred's own fields included, and a refusal retried
+// on the fallback model the API picks.
+//
+// Later the same day: no strict answer layout (structured outputs). The service
+// refused it, first for too many "may be empty" fields, then with "the compiled
+// grammar is too large", so every Generate with AI fell back to the text parser.
+// The prompt lists every key; parseModelJson finds the JSON and sanitizeWoAi
+// keeps only what the form understands, as before.
 export async function POST(req: Request) {
   try {
     const supabase = await createClient('admin');
@@ -60,7 +65,6 @@ export async function POST(req: Request) {
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        output_config: { format: { type: 'json_schema', schema: woAiSchema(custom, templates) } },
         messages: [{ role: 'user', content: buildWoPrompt(jobDescription, todayISO(), custom, templates) }],
       });
       if (message.stop_reason === 'refusal') return floor('ai_refused');

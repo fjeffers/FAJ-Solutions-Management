@@ -12,8 +12,8 @@
 // Fred, 2026-10-18: "fix the Generate with AI ... fill in every field on the
 // work order". It now also fills check-in / check-out, assignment type, the
 // expense budget, travel and bonus amounts, every site contact, the questions
-// the tech answers, and Fred's own custom fields; the model's answer is held
-// to woAiSchema() (structured outputs), so a stray word can't lose the lot.
+// the tech answers, and Fred's own custom fields. The answer is plain JSON the
+// prompt describes (a strict schema was refused by the service as too large).
 import type { CustomQAItem, QuestionFieldType, SiteContact, WoTask, WorkOrder } from './types';
 import { ASSIGNMENT_TYPES, PAY_TYPES, SERVICE_TYPES, WORK_ORDER_PRIORITIES, WORK_ORDER_SOURCES, SCHEDULE_TYPES } from './types';
 import type { CustomValues, FieldDef } from './custom-fields';
@@ -120,45 +120,6 @@ ${text}
 """
 
 Return only the JSON object.`;
-}
-
-const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: 'null' }] });
-const strict = (properties: Record<string, unknown>) => ({
-  type: 'object', properties, required: Object.keys(properties), additionalProperties: false,
-});
-
-/** The most "may be empty" (union-typed) fields the AI service accepts in one schema. */
-export const SCHEMA_UNION_LIMIT = 16;
-
-/**
- * The shape the model must answer in (structured outputs). Every key is present.
- * Text, dates, times and choices come back as "" when unknown; only the numbers
- * and the true/false answers may be null. The service refuses a schema with more
- * than 16 "may be empty" fields (it had 46, so every Generate with AI fell back
- * to the text parser, 2026-10-18).
- */
-export function woAiSchema(custom: AiCustomField[] = [], templates: AiTemplate[] = []): Record<string, unknown> {
-  const p: Record<string, unknown> = {};
-  for (const k of TEXT_FIELDS) p[k] = { type: 'string' };
-  for (const k of ['site_state', 'time_zone', 'start_date', 'start_time', 'end_date', 'end_time']) p[k] = { type: 'string' };
-  for (const k of NUMBER_FIELDS) p[k] = nullable({ type: 'number' });
-  for (const [k, options] of Object.entries(CHOICE_FIELDS)) p[k] = { type: 'string', enum: ['', ...options] };
-  for (const k of BOOL_FIELDS) p[k] = nullable({ type: 'boolean' });
-  p.contacts = { type: 'array', items: strict({ label: { type: 'string' }, name: { type: 'string' }, phone: { type: 'string' }, email: { type: 'string' } }) };
-  p.custom_qa = { type: 'array', items: strict({ label: { type: 'string' }, type: { type: 'string', enum: QUESTION_TYPES } }) };
-  p.wo_tasks = { type: 'array', items: strict({ category: { type: 'string', enum: TASK_CATEGORIES }, label: { type: 'string' } }) };
-  p.client_links = { type: 'array', items: { type: 'string' } };
-  if (templates.length) p.template = { type: 'string', enum: ['', ...templates.map((t) => t.id)] };
-  if (custom.length) {
-    const c: Record<string, unknown> = {};
-    for (const d of custom) {
-      // Text only ("" when unknown), so Fred's own fields never count against the limit.
-      c[d.id] = d.kind === 'yesno' ? { type: 'string', enum: ['', 'yes', 'no'] }
-        : d.kind === 'choice' && d.options.length ? { type: 'string', enum: ['', ...d.options] } : { type: 'string' };
-    }
-    p.custom = strict(c);
-  }
-  return strict(p);
 }
 
 /** The JSON object in a model's answer, even with fences or words around it. */

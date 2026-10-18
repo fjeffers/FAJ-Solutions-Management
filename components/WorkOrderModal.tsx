@@ -9,6 +9,7 @@ import {
   Link2,
 } from 'lucide-react';
 import { parseClientLinks } from '@/lib/client-links';
+import { tabsInUse, type WoTab } from '@/lib/wo-tabs';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
 import { kitToMaterialsUsed, materialsUsedToKitItems, kitCost } from '@/lib/material-kits';
@@ -35,7 +36,7 @@ import { useJobTemplates } from '@/components/useJobTemplates';
 import { parseCapture, templateOf, type CaptureItem } from '@/lib/capture';
 import { createClient } from '@/lib/supabase/client';
 
-type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents' | 'chat' | 'closeout';
+type Tab = WoTab;
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'details',    label: 'Details',    icon: <Hash size={13} /> },
   { key: 'documents',  label: 'Documents',  icon: <FolderOpen size={13} /> },
@@ -628,6 +629,24 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // Derived payment totals for this WO (must come after `computed`).
   // Match by WO number only so payments to every tech on a multi-tech job count.
   const woPayments = payments.filter((p) => p.wo_number === item?.wo_number);
+
+  // Which tabs show (Fred, 2026-10-18: start blank, add what's needed).
+  const [addedTabs, setAddedTabs] = useState<Tab[]>([]);
+  const inUse = tabsInUse({
+    saved: !!item?.id, status: form.wo_status, checkedIn: !!item?.checked_in_at,
+    techs: contractorNames.length, docs: docUrls.length, attachment: form.attachment_url,
+    client: { customer: form.customer_name, buyer: form.buyer_company, externalId: form.external_wo_id, reference: form.client_reference,
+      project: form.project_name, isProject: form.is_project, platform: form.source_platform },
+    pay: contractorPay, payLines: payAddons.filter((l) => Number(l.amount) > 0).length, payments: woPayments.length,
+    site: [form.site_name, form.site_address, form.site_city, form.site_state, form.site_zip],
+    schedule: [form.start_date, form.end_date, form.start_time, form.end_time],
+    scope: [form.access_instructions, form.parking_instructions, form.deliverable_instructions, form.deliverables, form.parts_materials,
+      form.required_skills, form.tools_required],
+    tasks: tasks.length, contacts: contacts.length, poc: [form.poc_name, form.poc_phone, form.poc_email],
+    questions: customQA.length, materials: materialsUsed.length, closeout: item?.closeout,
+  });
+  const shownTabs = TABS.filter((t) => inUse.includes(t.key) || addedTabs.includes(t.key) || t.key === tab);
+  const hiddenTabs = TABS.filter((t) => !shownTabs.includes(t));
   const totalPaid   = woPayments.reduce((s, p) => s + Number(p.amount), 0);
   // What actually goes out: tech pay when set (client price otherwise) plus mileage
   const assignedTechPay = contractorNames.reduce((s, n) => s + (Number(contractorPay[n]) || 0), 0);
@@ -735,9 +754,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
           </div>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid #eee', overflowX: 'auto', flexWrap: 'nowrap' }}>
-          {TABS.map((t) => (
+        {/* Tabs: Details, plus only what this job uses or Fred adds (lib/wo-tabs.ts). */}
+        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid #eee', overflowX: 'auto', flexWrap: 'nowrap', alignItems: 'center' }}>
+          {shownTabs.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)} style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '9px 12px', border: 'none', background: 'none', cursor: 'pointer',
@@ -756,6 +775,18 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               )}
             </button>
           ))}
+          {hiddenTabs.length > 0 && (
+            <select aria-label="Add a tab" value="" onChange={(e) => {
+              const k = e.target.value as Tab;
+              if (!k) return;
+              setAddedTabs((a) => (a.includes(k) ? a : [...a, k]));
+              setTab(k);
+            }} style={{ marginLeft: 6, flexShrink: 0, border: '1px dashed #c9c9c9', borderRadius: 8, background: 'none', color: '#555',
+              fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 11, padding: '6px 8px', cursor: 'pointer' }}>
+              <option value="">+ Add</option>
+              {hiddenTabs.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          )}
         </div>
 
         {/* ── DETAILS TAB ── */}
@@ -1019,6 +1050,15 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 View Documents
               </div>
             </button>
+            {/* The description and the client's links sit on Details, the one tab
+                every job has (Fred, 2026-10-18). */}
+            <PF label="Description" icon={<FileText size={13} />}>
+              <textarea className="input" rows={4} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Describe the work to be performed..." />
+            </PF>
+            <PF label="Client links (one per line)" icon={<Link2 size={13} />}>
+              <textarea className="input" rows={3} value={linksText} onChange={(e) => setLinksText(e.target.value)}
+                placeholder="Paste the client's links here, one per line" />
+            </PF>
             <CustomFieldInputs target="jobs" values={asValues(form.custom)} onChange={(v) => setForm((f) => ({ ...f, custom: v }))} />
             <WhatTheTechRecords capture={capture} onChange={setCapture} templates={jobTemplates}
               startAsks={startAsks} onStartAsks={setStartAsks} />
@@ -1396,15 +1436,6 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {tab === 'scope' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Service Description / SOW */}
-            <PF label="Service Description / Scope of Work" icon={<FileText size={13} />}>
-              <textarea className="input" rows={4} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Describe the work to be performed..." />
-            </PF>
-            {/* The client's links (Fred, 2026-10-18): the tech gets each one as a button. */}
-            <PF label="Client links (one per line)" icon={<Link2 size={13} />}>
-              <textarea className="input" rows={3} value={linksText} onChange={(e) => setLinksText(e.target.value)}
-                placeholder="Paste the client's links here, one per line" />
-            </PF>
 
             {/* Deliverables + Closeout in one card */}
             <div style={{ border: '1.5px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>

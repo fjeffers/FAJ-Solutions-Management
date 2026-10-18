@@ -8,7 +8,7 @@ import {
   CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package, Layers,
   Link2,
 } from 'lucide-react';
-import { parseClientLinks } from '@/lib/client-links';
+import { linkLabel, parseClientLinks } from '@/lib/client-links';
 import { tabsInUse, type WoTab } from '@/lib/wo-tabs';
 import './work-order-editor.css';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
@@ -196,6 +196,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // The client's links, one per line (lib/client-links.ts, migration 130).
   // A job made with Generate with AI starts with the links it found.
   const [linksText, setLinksText] = useState(() => (item?.client_links ?? (!item ? prefill?.client_links : null) ?? []).join('\n'));
+  // Which link opens on site (the client's Teams meeting) and which at check-out
+  // (the client's checkout form). Migration 133; Fred, 2026-10-18.
+  const [checkinLink, setCheckinLink] = useState(() => item?.checkin_link ?? (!item ? prefill?.checkin_link : null) ?? '');
+  const [checkoutLink, setCheckoutLink] = useState(() => item?.checkout_link ?? (!item ? prefill?.checkout_link : null) ?? '');
   const { templates: jobTemplates } = useJobTemplates();
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
@@ -719,6 +723,11 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       ...(capture || item?.capture ? { capture } : {}),
       ...(startAsks.length || item?.start_asks ? { start_asks: startAsks } : {}),
       ...(linksText.trim() || item?.client_links ? { client_links: parseClientLinks(linksText) } : {}),
+      // Only a link that is still on the list; sent once either has been used, so saving works before migration 133.
+      ...(checkinLink || checkoutLink || item?.checkin_link || item?.checkout_link ? {
+        checkin_link: parseClientLinks(linksText).includes(checkinLink) ? checkinLink : null,
+        checkout_link: parseClientLinks(linksText).includes(checkoutLink) ? checkoutLink : null,
+      } : {}),
     };
     onSave({ ...item, ...payload });
   };
@@ -856,6 +865,22 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               <h3><Link2 size={15} /> Client links</h3>
               <p className="woe-hint">One per line. The tech sees each one as a button.</p>
               <textarea className="input" rows={3} value={linksText} onChange={(e) => setLinksText(e.target.value)} placeholder="Paste the client's links here" />
+              {parseClientLinks(linksText).length > 0 && (
+                <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                  {([
+                    ['When the tech checks in on site, open', checkinLink, setCheckinLink, 'e.g. the Teams meeting'],
+                    ['When the tech checks out for the day, open', checkoutLink, setCheckoutLink, 'e.g. the checkout form'],
+                  ] as const).map(([label, value, setValue, hint]) => (
+                    <label key={label} style={{ display: 'grid', gap: 4, fontSize: 13, fontWeight: 600 }}>
+                      {label}
+                      <select className="select input" value={parseClientLinks(linksText).includes(value) ? value : ''} onChange={(e) => setValue(e.target.value)}>
+                        <option value="">Nothing ({hint})</option>
+                        {parseClientLinks(linksText).map((l) => <option key={l} value={l}>{linkLabel(l)}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              )}
             </section>
 
             <CustomFieldInputs target="jobs" values={asValues(form.custom)} onChange={(v) => setForm((f) => ({ ...f, custom: v }))} />

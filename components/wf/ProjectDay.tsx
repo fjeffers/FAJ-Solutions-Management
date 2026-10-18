@@ -199,10 +199,16 @@ function DayLines({ log }: { log: DayLog }) {
  * finished site needs everything the job asks for first — each photo taken or
  * a reason why not, the signature or a reason why not.
  */
-export function OffSiteDialog({ missing, signature = true, onClose, onBack, onFinished }: {
+export function OffSiteDialog({ missing, signature = true, clientCheckout = false, onClose, onBack, onFinished }: {
   missing: string[];
   /** Whether finishing needs the customer's sign-off (always on a project site). */
   signature?: boolean;
+  /**
+   * The job has the client's own checkout form (migration 133): no report of
+   * ours for the day; their form opens next (Fred, 2026-10-18: "when they're
+   * checking out, it's supposed to go to the LDS checkout form, not to our form").
+   */
+  clientCheckout?: boolean;
   onClose: () => void;
   /** Coming back: what got done today and what's still left (Fred, 2026-10-14). */
   onBack: (report: { done: string; left: string }) => void;
@@ -243,7 +249,7 @@ export function OffSiteDialog({ missing, signature = true, onClose, onBack, onFi
       </> : <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>}>
       {!finish ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button style={plain} onClick={() => setBack(true)}><LogOut size={19} /> Coming back to this site</button>
+          <button style={plain} onClick={() => (clientCheckout ? onBack({ done: '', left: '' }) : setBack(true))}><LogOut size={19} /> Coming back to this site</button>
           <button style={navy} onClick={() => setFinish(true)}><CheckCircle2 size={19} /> This site is finished</button>
           <div className="wf-subtle" style={{ fontSize: 12.5 }}>
             Finished sends the job to the office. Every photo{signature ? ', the checklist and the signature need' : ' and the checklist need'} to be done first.

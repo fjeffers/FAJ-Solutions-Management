@@ -424,7 +424,7 @@ export default function HomePage() {
 
   // Before migrations 128/130 the database has no capture / start_asks / client_links columns.
   const notYet128 = (e: { code?: string; message: string }) =>
-    e.code === 'PGRST204' && /capture|start_asks|client_links/.test(e.message)
+    e.code === 'PGRST204' && /capture|start_asks|client_links|checkin_link|checkout_link/.test(e.message)
       ? "what the tech records, the check-in items and the client links aren't switched on yet. Ask to switch them on."
       : e.message;
 
@@ -513,6 +513,9 @@ export default function HomePage() {
       doc_urls:        w.doc_urls        ?? [],
       // The client's links (migration 130); only when the form sends them.
       ...(w.client_links !== undefined ? { client_links: w.client_links ?? [] } : {}),
+      // The links opened on site and at check-out (migration 133); only when the form sends them.
+      ...(w.checkin_link !== undefined ? { checkin_link: w.checkin_link ?? null } : {}),
+      ...(w.checkout_link !== undefined ? { checkout_link: w.checkout_link ?? null } : {}),
       // Multi-contractor (migration-014)
       contractor_names: w.contractor_names ?? null,
       // Lead / Assistant tech (migration-017)

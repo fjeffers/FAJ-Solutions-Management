@@ -59,6 +59,7 @@ import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
+import { checkoutFormUrl, clock24, lastOffOrNow, onSiteSince, parseSiteLinks, siteIdOf, type SiteLinks } from '@/lib/site-links';
 import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
@@ -344,8 +345,10 @@ export default function TechPortalPage() {
   const [checkIn, setCheckIn] = useState<WfJob | null>(null);
   const [odoEnd, setOdoEnd] = useState<WfJob | null>(null);
   const [dayBusy, setDayBusy] = useState(false);
+  // On site: the client's link for the day, e.g. their Teams meeting (migration 133).
+  const [onSiteLink, setOnSiteLink] = useState<WfJob | null>(null);
   // Built when tapped, not while drawing the screen.
-  const dayFor = (job: WfJob) => techDay(job, act, uid ?? '', setDayBusy);
+  const dayFor = (job: WfJob) => techDay(job, act, uid ?? '', setDayBusy, () => setOnSiteLink(job));
   const keepFor = (job: WfJob): SavePhoto => (...a) => dayFor(job).keep(...a);
   const sendFor = (job: WfJob): CheckInSend => ({
     startDrive: (d, startDay) => dayFor(job).send.startDrive(d, startDay),
@@ -514,6 +517,8 @@ export default function TechPortalPage() {
         );
       })()}
       {odoEnd && <OdometerDialog woNumber={odoEnd.number} moment="end" keep={keepFor(odoEnd)} onClose={() => setOdoEnd(null)} />}
+      {/* After the ending mileage and Check in's own steps, so one window at a time. */}
+      {onSiteLink && !odoEnd && !checkIn && <OnSiteLinkDialog number={onSiteLink.number} onClose={() => setOnSiteLink(null)} />}
       <div className={`fs-layout${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}`}>
         <aside className={`fs-sidebar${small ? ' collapsed' : ''}`} aria-label="Workspace">
           <button type="button" className="fs-side-close" onClick={() => setDrawer(false)}>Close menu <FsIcon name="close" size={16} /></button>
@@ -555,7 +560,8 @@ export default function TechPortalPage() {
               <button type="button" className="fs-back-link" onClick={() => setOpenId(null)}><FsIcon name="back" size={16} />{TAB_TITLE[navKey]}</button>
               <TechJobScreen key={openJob.id} job={openJob} uid={uid ?? ''} lists={lists} onBack={() => setOpenId(null)} act={act}
                 onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing}
-                onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} keepPhoto={keepFor(openJob)} dayBusy={dayBusy} />
+                onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} keepPhoto={keepFor(openJob)} dayBusy={dayBusy}
+                techName={profile?.name ?? ''} />
             </>
           ) : tab === 'project' ? (
             <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} />
@@ -1173,14 +1179,24 @@ function TimeRequestDialog({ job, act, onClose }: {
 
 // ── One job ─────────────────────────────────────────────────────────────────
 
-function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, onCheckIn, onArrive, keepPhoto, dayBusy }: {
+function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, onCheckIn, onArrive, keepPhoto, dayBusy, techName }: {
   job: WfJob; uid: string; lists: CloseoutList[]; onBack: () => void; act: (a: PendingAction, sent?: string) => Promise<void>;
   onRefresh: () => void; refreshing: boolean;
   /** Check in (components/wf/CheckIn.tsx), and arriving with the ending mileage: shared with the first screen. */
   onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; keepPhoto: SavePhoto;
   /** Arriving is finding the GPS position (shared with the first screen). */
   dayBusy: boolean;
+  /** The tech's own name, for the client's checkout form. */
+  techName: string;
 }) {
+  // The client's links for the day (migration 133): the checkout form opens when they go off site.
+  const siteLinks = useSiteLinks(job.number);
+  const [checkoutAt, setCheckoutAt] = useState<string | null>(null);
+  /** The client's checkout form, filled in with this job and today's times (lib/site-links.ts). */
+  const checkoutHref = (off: string) => siteLinks.checkout ? checkoutFormUrl(siteLinks.checkout, {
+    siteId: siteIdOf(job.title), wo: job.number, name: techName,
+    on: onSiteSince(job.myDay ?? [], off, 'America/New_York'), off, timeZone: 'America/New_York',
+  }) : null;
   const [chatOpen, setChatOpen] = useState(false);
   const [doneOpen, setDoneOpen] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -1300,6 +1316,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     if (dayState(job.myDay ?? []).stage === 'lunch') {
       await act(makeAction('day', { number: job.number, kind: 'lunch_end', ...g }, `Back from lunch — WO ${job.number}`, at));
     }
+    // Then the client's own checkout form, when the job has one (migration 133).
+    if (siteLinks.checkout) setCheckoutAt(at.toISOString());
     if (finished) {
       await act(makeAction('report', { number: job.number, notes, answers }, `Job report for WO ${job.number}`));
       setAnswers({});
@@ -1439,7 +1457,12 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     <>
       {offOpen && (
         <OffSiteDialog missing={offSiteMissing} signature={jobForCloseout.signatureRequired} onClose={() => setOffOpen(false)}
+          clientCheckout={!!siteLinks.checkout}
           onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
+      )}
+      {checkoutAt && !offOpen && (
+        <CheckoutLinkDialog href={checkoutHref(checkoutAt)} on={onSiteSince(job.myDay ?? [], checkoutAt, 'America/New_York')} off={checkoutAt}
+          onClose={() => setCheckoutAt(null)} />
       )}
       {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }} onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); }} />}
       {odometer && <OdometerDialog woNumber={job.number} moment={odometer} keep={keepPhoto} initialFile={odoFile} onClose={() => { setOdometer(null); setOdoFile(null); }} />}
@@ -1529,7 +1552,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           <p className="fs-scope">{job.description}</p>
         </section>
       )}
-      <ClientLinksCard number={job.number} />
+      <ClientLinksCard number={job.number} siteLinks={siteLinks} checkoutHref={() => checkoutHref(lastOffOrNow(job.myDay ?? [], new Date().toISOString(), 'America/New_York'))} />
       <SiteInfoCard job={job} />
       <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
       {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
@@ -2043,7 +2066,8 @@ type SentPhoto = { id: string; url: string; taken_at: string; lat: number | null
  * job, a line to the office. Each tap takes its own time and the GPS position
  * when the phone gives it, and goes through the outbox, so it works with no signal.
  */
-function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<void>, uid: string, setBusy: (b: boolean) => void) {
+function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<void>, uid: string, setBusy: (b: boolean) => void,
+  onOnSite?: () => void) {
   const where = async () => {
     setBusy(true);
     const pos = await getPosition(6000);
@@ -2068,6 +2092,7 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     if (dayState(job.myDay ?? []).stage === 'travel') await day('travel_end', {}, 'Arrived', at, g);
     await act(makeAction('clock', { number: job.number, action: 'in', ...g }, `Start job on WO ${job.number}`, at),
       'On site. Your time on site is running.');
+    onOnSite?.();
   };
   const send: CheckInSend = {
     startDrive: async (drive: Drive, startDay: boolean) => {
@@ -2407,7 +2432,11 @@ function JobTools({ job, canAdd, ph, onNote }: {
 
 /** The client's links for this job (migration 130; Fred, 2026-10-18: "I just
  *  want to link that link into the work order"). Nothing shows without any. */
-function ClientLinksCard({ number }: { number: string }) {
+function ClientLinksCard({ number, siteLinks, checkoutHref }: {
+  number: string; siteLinks: SiteLinks;
+  /** The checkout form filled in with today's times. */
+  checkoutHref: () => string | null;
+}) {
   const [links, setLinks] = useState<string[]>([]);
   useEffect(() => {
     let live = true;
@@ -2422,14 +2451,75 @@ function ClientLinksCard({ number }: { number: string }) {
       <h3>Client links</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {links.map((l) => (
-          <a key={l} className="wf-btn wf-btn-outline" href={l} target="_blank" rel="noopener noreferrer"
+          <a key={l} className="wf-btn wf-btn-outline" href={l === siteLinks.checkout ? checkoutHref() ?? l : l} target="_blank" rel="noopener noreferrer"
             style={{ justifyContent: 'space-between', minWidth: 0 }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
+            <span style={{ minWidth: 0, textAlign: 'left' }}>
+              <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
+              {(l === siteLinks.checkin || l === siteLinks.checkout) && (
+                <span className="fs-muted" style={{ display: 'block', fontSize: 12, fontWeight: 400 }}>
+                  {l === siteLinks.checkin ? 'Join when you check in on site' : 'Fill in when you check out each day'}
+                </span>
+              )}
+            </span>
             <FsIcon name="arrow" size={16} />
           </a>
         ))}
       </div>
     </section>
+  );
+}
+
+/** The job's link for on site and for check-out (migration 133). Nothing until it has loaded. */
+function useSiteLinks(number: string): SiteLinks {
+  const [links, setLinks] = useState<SiteLinks>({});
+  useEffect(() => {
+    let live = true;
+    void createClient().rpc('wf_tech_site_links', { p_wo_number: number }).then(({ data, error }) => {
+      if (live && !error) setLinks(parseSiteLinks(data));
+    });
+    return () => { live = false; };
+  }, [number]);
+  return links;
+}
+
+const isTeams = (l: string) => /^https:\/\/([a-z0-9-]+\.)*teams\.(microsoft|live)\.com\//i.test(l);
+
+/** On site: open the client's link for the day, e.g. their Teams meeting. Nothing shows when the job has none. */
+function OnSiteLinkDialog({ number, onClose }: { number: string; onClose: () => void }) {
+  const links = useSiteLinks(number);
+  if (!links.checkin) return null;
+  const teams = isTeams(links.checkin);
+  return (
+    <Dialog title="You're on site" onClose={onClose}
+      footer={<button className="wf-btn wf-btn-ghost" onClick={onClose}>Done</button>}>
+      <p style={{ marginTop: 0 }}>
+        {teams ? 'Join the client\u2019s Teams meeting now and stay on it until you leave the site.' : 'Open the client\u2019s link for today.'}
+      </p>
+      <a className="wf-btn wf-btn-navy" href={links.checkin} target="_blank" rel="noopener noreferrer" onClick={onClose}
+        style={{ width: '100%', justifyContent: 'center' }}>
+        {teams ? 'Join the Teams meeting' : 'Open the link'}
+      </a>
+    </Dialog>
+  );
+}
+
+/** Off site: the client's checkout form, filled in with this job and today's times. */
+function CheckoutLinkDialog({ href, on, off, onClose }: { href: string | null; on: string | null; off: string; onClose: () => void }) {
+  if (!href) return null;
+  const tz = 'America/New_York';
+  return (
+    <Dialog title="Check out with the client" onClose={onClose}
+      footer={<button className="wf-btn wf-btn-ghost" onClick={onClose}>Done</button>}>
+      <p style={{ marginTop: 0 }}>
+        Fill in the client&apos;s checkout form for today. The job and your times are already in it
+        {on ? `: on site ${clock24(on, tz)}, off site ${clock24(off, tz)}` : `: off site ${clock24(off, tz)}`}.
+        Pick your role, add any issues, and submit it.
+      </p>
+      <a className="wf-btn wf-btn-navy" href={href} target="_blank" rel="noopener noreferrer" onClick={onClose}
+        style={{ width: '100%', justifyContent: 'center' }}>
+        Open the checkout form
+      </a>
+    </Dialog>
   );
 }
 

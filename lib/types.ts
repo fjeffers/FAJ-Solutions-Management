@@ -205,6 +205,10 @@ export type WorkOrder = {
   tech_tools?: boolean;
   /** The client's links for this job, shown to the tech as buttons (migration 130). */
   client_links?: string[] | null;
+  /** Opened when the tech checks in on site, e.g. the client's Teams meeting (migration 133). */
+  checkin_link?: string | null;
+  /** Opened when the tech goes off site for the day: the client's checkout form (migration 133). */
+  checkout_link?: string | null;
 
   // Contractor portal (migration-011)
   acknowledged_at: string | null;

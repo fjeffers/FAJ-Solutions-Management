@@ -299,6 +299,12 @@ export default function WfJobDetail({
                     <a key={l} className="wf-btn wf-btn-outline" href={l} target="_blank" rel="noopener noreferrer"
                       style={{ justifyContent: 'flex-start', minWidth: 0 }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
+                      {/* Which one opens on site and which at check-out (migration 133). */}
+                      {(l === job.checkinLink || l === job.checkoutLink) && (
+                        <span className="wf-chip" style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 11.5 }}>
+                          {l === job.checkinLink ? 'Opens on check-in' : 'Opens on check-out'}
+                        </span>
+                      )}
                     </a>
                   ))}
                 </div>

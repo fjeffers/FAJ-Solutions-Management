@@ -31,7 +31,7 @@ export type ScreenDesign = {
   jobBelow: string[];
 };
 
-export const DASH_PART_KEYS = ['dash.attention', 'dash.kpis', 'dash.status', 'dash.outstanding', 'dash.payments'];
+export const DASH_PART_KEYS = ['dash.attention', 'dash.field', 'dash.coming', 'dash.kpis', 'dash.status', 'dash.outstanding', 'dash.payments'];
 const STANDARD_SIDE = ['job.timeRequests', 'job.quickEdit', 'job.techs', 'job.money', 'job.fields'];
 const STANDARD_BELOW = ['job.closeout', 'job.project', 'job.notes', 'job.report', 'job.expenses', 'job.photos', 'job.docs', 'job.sketches', 'job.timegps'];
 export const JOB_PART_KEYS = [...STANDARD_SIDE, ...STANDARD_BELOW];
@@ -39,6 +39,8 @@ export const JOB_PART_KEYS = [...STANDARD_SIDE, ...STANDARD_BELOW];
 export const STANDARD_DESIGN: ScreenDesign = {
   dash: [
     { kind: 'part', key: 'dash.attention', width: 'full' },
+    { kind: 'part', key: 'dash.field', width: 'full' },
+    { kind: 'part', key: 'dash.coming', width: 'full' },
     { kind: 'part', key: 'dash.kpis', width: 'full' },
     { kind: 'part', key: 'dash.status', width: 'full' },
     { kind: 'part', key: 'dash.outstanding', width: 'half' },

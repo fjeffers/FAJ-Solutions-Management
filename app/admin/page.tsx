@@ -24,6 +24,7 @@ import QuotesView, { nextQuoteNumber } from '@/components/QuotesView';
 import SurveysView from '@/components/SurveysView';
 import ContractsView from '@/components/ContractsView';
 import AttentionPanel from '@/components/AttentionPanel';
+import { FieldAttention, ComingUp } from '@/components/FieldToday';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
 import TeamView from '@/components/TeamView';
@@ -1432,6 +1433,8 @@ Go ahead?`)) return;
     const job = wfJobFromOwner(w);
     return { job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed' };
   }), [enrichedWOs, appLists.lists]); // eslint-disable-line react-hooks/exhaustive-deps -- lists changes the names inside each job
+  // The Dashboard's field blocks read the same jobs Dispatch does.
+  const dashJobs = useMemo(() => scheduleRows.map((r) => r.job), [scheduleRows]);
 
   /** The number shown beside a screen in the menu: things waiting there. */
   const badgeFor = (v: string | null): number =>
@@ -1675,6 +1678,10 @@ Go ahead?`)) return;
                 onGo={(v) => setView(v as typeof view)}
               />
             ) : undefined}
+            field={shown('dash.field') ? (
+              <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'dashboard')} onGo={(v) => setView(v as typeof view)} />
+            ) : undefined}
+            coming={shown('dash.coming') ? <ComingUp jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'dashboard')} /> : undefined}
             screenName={(k) => screenLabel(appLayout.layout, k)}
           />
         )}

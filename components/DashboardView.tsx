@@ -25,10 +25,13 @@ export const NOTE_STYLE: Record<string, { bg: string; edge: string }> = {
   red: { bg: '#FDEEEE', edge: '#C62828' },
 };
 
-export default function DashboardView({ stats, workOrders, payments, onView, attention, screenName }: {
+export default function DashboardView({ stats, workOrders, payments, onView, attention, field, coming, screenName }: {
   stats: Stats; workOrders: EnrichedWorkOrder[]; payments: Payment[]; onView: (v: string) => void;
   /** "Needs your attention" — built by the owner app, placed here like any other block. */
   attention?: ReactNode;
+  /** "In the field" and "Coming up" (components/FieldToday.tsx), placed the same way. */
+  field?: ReactNode;
+  coming?: ReactNode;
   /** A screen's name in Fred's menu, for shortcut buttons. */
   screenName?: (view: string) => string;
 }) {
@@ -81,6 +84,8 @@ export default function DashboardView({ stats, workOrders, payments, onView, att
     }
     switch (b.key) {
       case 'dash.attention': return attention;
+      case 'dash.field': return field;
+      case 'dash.coming': return coming;
       case 'dash.kpis': return (
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
         {[
@@ -175,7 +180,7 @@ export default function DashboardView({ stats, workOrders, payments, onView, att
       {/* Arranged in Settings -> Screen designer (lib/screen-design.ts); parts
           switched off in "What each screen shows" are left out. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        {dashRows(designNow().dash.filter((b) => b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.attention' || attention)))).map((row) => (
+        {dashRows(designNow().dash.filter((b) => b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.attention' || attention) && (b.key !== 'dash.field' || field) && (b.key !== 'dash.coming' || coming)))).map((row) => (
           <div key={row.map((b) => b.key).join('|')} className={row.length === 2 ? 'dash-row dash-row-2' : 'dash-row'}
             style={{ display: 'grid', gridTemplateColumns: row.length === 2 ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
             {row.map((b) => <div key={b.key} style={{ minWidth: 0 }}>{block(b)}</div>)}

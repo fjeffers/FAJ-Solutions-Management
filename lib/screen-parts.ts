@@ -13,6 +13,8 @@ export const SCREEN_PARTS: ScreenParts[] = [
     hint: 'The first screen after you sign in',
     parts: [
       { key: 'dash.attention', label: 'Needs your attention', hint: 'Quotes, invoices and visits waiting on you' },
+      { key: 'dash.field', label: 'In the field', hint: 'Stopped work, late techs, jobs starting soon with no tech, and receipts and time requests waiting' },
+      { key: 'dash.coming', label: 'Coming up', hint: 'Jobs starting in the next 7 days, and who is going' },
       { key: 'dash.kpis', label: 'Money tiles', hint: 'Revenue, owed to techs, profit and paid out' },
       { key: 'dash.status', label: 'Job counts', hint: 'How many jobs are open, done and paid' },
       { key: 'dash.outstanding', label: 'Outstanding jobs', hint: 'Jobs with tech pay still owed' },

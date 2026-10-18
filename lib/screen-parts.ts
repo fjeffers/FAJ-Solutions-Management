@@ -42,7 +42,6 @@ export const SCREEN_PARTS: ScreenParts[] = [
     hint: 'What you see when you open a job',
     parts: [
       { key: 'job.timeRequests', label: 'Time requests', hint: 'A tech asking for another day or time' },
-      { key: 'job.quickEdit', label: 'Quick changes', hint: 'Change the date, time or price without the full form' },
       { key: 'job.techs', label: 'Techs', hint: 'Who is on the job' },
       { key: 'job.money', label: 'Money', hint: 'Price, tech pay and profit' },
       { key: 'job.fields', label: 'Your fields', hint: 'Your custom fields, when filled in' },

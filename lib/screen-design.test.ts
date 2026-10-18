@@ -78,8 +78,9 @@ describe('screen designer', () => {
   });
 
   it('job cards move up, down and between the columns', () => {
+    // Standard side: time requests, techs, money, your fields. Money moves up one, above Techs.
     let d = shiftJob(std(), 'job.money', -1);
-    expect(d.jobSide.indexOf('job.money')).toBe(2);
+    expect(d.jobSide.indexOf('job.money')).toBe(1);
     d = moveJob(d, 'job.money', 'below', 'job.report');
     expect(d.jobSide).not.toContain('job.money');
     expect(d.jobBelow.indexOf('job.money')).toBe(d.jobBelow.indexOf('job.report') - 1);

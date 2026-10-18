@@ -537,11 +537,28 @@ export default function TechPortalPage() {
 // ── Project: Field Service's "My work orders" ───────────────────────────────
 // Every open work order as a card (today's outlined), with the counts on top
 // and finished work folded away underneath — as in Field Service LIVE.
+// Fred, 2026-10-18: "Under work order should have assigned and available and
+// pending" — Assigned (yours: upcoming and in progress), Available (offered to
+// you, waiting for Accept or Decline) and Pending (Work done, waiting for the
+// office to close it).
+type WoList = 'assigned' | 'available' | 'pending';
+
 function ProjectTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => void }) {
   const today = todayISO();
   const live = sortTechJobs(jobs.filter(canWork), today);
   const todayCount = live.filter((j) => j.date === today || isClockedIn(j)).length;
-  const past = sortTechJobs(jobs.filter(isFinished), today);
+  const lists: Record<WoList, WfJob[]> = {
+    assigned: live,
+    available: sortTechJobs(jobs.filter((j) => j.status === 'offered'), today),
+    pending: sortTechJobs(jobs.filter((j) => j.status === 'workDone'), today),
+  };
+  const past = sortTechJobs(jobs.filter((j) => j.status === 'closed'), today);
+  const [list, setList] = useState<WoList>(() => (lists.assigned.length === 0 && lists.available.length > 0 ? 'available' : 'assigned'));
+  const EMPTY: Record<WoList, string> = {
+    assigned: "No work assigned right now. New work orders appear here as soon as they're assigned to you.",
+    available: 'Nothing waiting for your answer. Jobs offered to you show here to accept or decline.',
+    pending: 'Nothing waiting for approval. Jobs you mark Work done wait here until they are closed.',
+  };
   const card = (j: WfJob) => {
     const isToday = j.date === today;
     const start = parseClockTime(j.startTime);
@@ -554,7 +571,8 @@ function ProjectTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => v
         : j.status === 'inProgress' ? ['In progress', 'green', true]
           : j.status === 'workDone' ? ['Work done', 'amber', false]
             : j.status === 'closed' ? ['Accepted', 'green', false]
-              : ['Not started', 'grey', false];
+              : j.status === 'offered' ? ['Waiting for your answer', 'amber', false]
+                : ['Not started', 'grey', false];
     const where = fullAddress(j);
     return (
       <button type="button" key={j.id} className={`fs-card fs-wo-card${isToday ? ' today' : ''}`} onClick={() => onOpen(j.id)}>
@@ -579,11 +597,16 @@ function ProjectTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => v
           <strong>{todayCount}</strong><small>On your schedule today</small>
         </div>
       </div>
+      <div className="fs-segmented" role="group" aria-label="Work orders" style={{ marginBottom: 18 }}>
+        {([['assigned', 'Assigned'], ['available', 'Available'], ['pending', 'Pending']] as [WoList, string][]).map(([k, label]) => (
+          <button key={k} type="button" aria-pressed={list === k} onClick={() => setList(k)}>
+            {label} ({lists[k].length})
+          </button>
+        ))}
+      </div>
       <div className="fs-wo-grid">
-        {live.map(card)}
-        {live.length === 0 && (
-          <p className="fs-card fs-empty">No work assigned right now. New work orders appear here as soon as they&apos;re assigned to you.</p>
-        )}
+        {lists[list].map(card)}
+        {lists[list].length === 0 && <p className="fs-card fs-empty">{EMPTY[list]}</p>}
       </div>
       {past.length > 0 && (
         <details className="fs-past">

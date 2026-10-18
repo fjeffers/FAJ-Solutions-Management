@@ -374,6 +374,9 @@ function OwnerJob({
   const [picking, setPicking] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  // The app's own "are you sure" for Delete: the browser's confirm box is
+  // blocked in some browsers and installed apps, and then nothing happened.
+  const [askDelete, setAskDelete] = useState(false);
 
   // Closeout changes Fred makes himself show at once (each is safe to repeat).
   const [coOps, setCoOps] = useState<CloseoutOp[]>([]);
@@ -509,7 +512,7 @@ function OwnerJob({
         archived
           ? { label: 'Restore from Closed', icon: <ArchiveRestore size={15} />, onClick: () => onUnarchive(w.id) }
           : { label: 'Archive', icon: <Archive size={15} />, onClick: () => onArchive(w.id) },
-        { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => { if (confirm(`Delete WO ${w.wo_number}? This cannot be undone.`)) onDelete(w.id); } },
+        { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => setAskDelete(true) },
       ]} />
     </>
   );
@@ -572,6 +575,17 @@ function OwnerJob({
         </>}
       />
       {logOpen && <JobLogReport w={w} deliverables={checklist.items} onClose={() => setLogOpen(false)} />}
+      {askDelete && (
+        <Dialog title={`Delete WO ${w.wo_number}?`} onClose={() => setAskDelete(false)}
+          footer={<>
+            <button className="wf-btn wf-btn-ghost" onClick={() => setAskDelete(false)}>Keep it</button>
+            <button className="wf-btn" style={{ background: 'var(--wf-danger)', color: '#fff' }}
+              onClick={() => { setAskDelete(false); onDelete(w.id); }}>Yes, delete</button>
+          </>}>
+          <p style={{ margin: 0 }}>{w.title || 'This job'} is removed for good, with its time, photos and receipts. This can&apos;t be undone.</p>
+          <p className="wf-subtle" style={{ marginTop: 8, fontSize: 13 }}>To take it off the board but keep it, use Archive instead.</p>
+        </Dialog>
+      )}
       {picking && (
         <TechPicker
           w={w} job={job} contractors={contractors}

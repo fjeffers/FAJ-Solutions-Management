@@ -757,6 +757,7 @@ It goes to ${c.email}.`)) return;
     const { error } = await supabase.from('work_orders').delete().eq('id', id);
     if (error) { toastError(`Couldn't delete WO#${wo?.wo_number ?? ''}: ${error.message}`); return; }
     logAudit({ action: 'delete', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
+    toastSuccess(`WO#${wo?.wo_number ?? ''} deleted`);
     loadAll();
   };
 
@@ -1973,6 +1974,9 @@ Go ahead?`)) return;
           payments={payments}
           onSave={(w) => { saveWorkOrder(w); setModal(null); }}
           onClose={() => { ticketForNextJob.current = null; setModal(null); }}
+          // Delete from the edit window too (Fred, 2026-10-18: "that's something I
+          // have to be able to do without you").
+          onDelete={modal.item?.id ? () => { const id = modal.item!.id; setModal(null); void deleteWorkOrder(id); } : undefined}
           onSaveTemplate={async (name, qaItems) => {
             await saveTemplate(null, {
               name,

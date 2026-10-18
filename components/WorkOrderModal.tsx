@@ -168,6 +168,8 @@ type Props = {
   payments?: Payment[];
   onSave: (w: Partial<WorkOrder>) => void;
   onClose: () => void;
+  /** Delete this saved job (asks first, inside the window). */
+  onDelete?: () => void;
   onSaveTemplate?: (name: string, questions: CustomQAItem[]) => Promise<void>;
   onUploadDoc?: (file: File) => Promise<string | null>;
   onSavePayment?: (p: Partial<Payment>) => Promise<void>;
@@ -178,8 +180,9 @@ type Props = {
   onSaveKit?: (k: Partial<MaterialKit>) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, materials = [], kits = [], onSaveKit }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onDelete, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, materials = [], kits = [], onSaveKit }: Props) {
   const [tab, setTab] = useState<Tab>('details');
+  const [askDelete, setAskDelete] = useState(false);
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
   const docFileRef = useRef<HTMLInputElement>(null);
@@ -2448,6 +2451,20 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
         {/* ── FOOTER ── */}
         <div className="save-bar">
+          {askDelete && onDelete ? (
+            <>
+              <span role="alert" style={{ marginRight: 'auto', fontSize: 13, color: '#b91c1c', fontWeight: 700 }}>
+                Delete WO {item?.wo_number} for good? Its time, photos and receipts go too. This can&apos;t be undone.
+              </span>
+              <button className="btn btn-ghost" onClick={() => setAskDelete(false)}>Keep it</button>
+              <button className="btn" style={{ background: '#b91c1c', color: '#fff' }} onClick={onDelete}>Yes, delete</button>
+            </>
+          ) : <>
+          {onDelete && item?.id && (
+            <button className="btn btn-ghost" style={{ marginRight: 'auto', color: '#b91c1c' }} onClick={() => setAskDelete(true)}>
+              <Trash2 size={14} /> Delete work order
+            </button>
+          )}
           {!canSave && (
             <span role="status" style={{ marginRight: 'auto', fontSize: 13, color: '#b45309', fontWeight: 600 }}>
               Add a work order number to save.
@@ -2462,6 +2479,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
           >
             {item ? 'Save Changes' : 'Create Work Order'}
           </button>
+          </>}
         </div>
       </div>
     </div>

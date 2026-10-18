@@ -36,3 +36,19 @@ export function techAppEmail(p: { name: string; email: string; appUrl: string; h
     `;
   return { subject, html };
 }
+
+/** The "get the app" part of a tech's first new-job email (Fred, 2026-10-18:
+ *  "the first time they get the portal in an email and they download the app,
+ *  then when I have new jobs they get a notification on their phone"). */
+export function techAppInviteBlock(appUrl: string): string {
+  const url = esc(appUrl);
+  return `
+        <div style="background:#f6f4ef;padding:16px;border-radius:8px;margin:20px 0;">
+          <p style="margin:0 0 8px;font-weight:700;color:#0E1B2E;">Get the FAJ Solutions tech app</p>
+          <p style="margin:4px 0;"><strong>1.</strong> On your phone, open <a href="${url}" style="color:#0E1B2E;font-weight:600;">${esc(appUrl.replace(/^https?:\/\//, ''))}</a>
+            and tap <em>"First time? Create your login"</em>.</p>
+          <p style="margin:4px 0;"><strong>2.</strong> Put it on your home screen: iPhone — tap Share, then <em>Add to Home Screen</em>. Android — tap the ⋮ menu, then <em>Install app</em>.</p>
+          <p style="margin:4px 0;"><strong>3.</strong> Open it from your home screen, go to Profile and tap <em>Turn on pop-ups</em>.</p>
+          <p style="margin:10px 0 0;">After that, new jobs come straight to your phone.</p>
+        </div>`;
+}

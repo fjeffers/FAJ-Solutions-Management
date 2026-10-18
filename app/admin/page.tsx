@@ -799,7 +799,10 @@ Go ahead?`)) return;
         title: w.title ?? undefined,
         wo_id: w.id,
         portal_token: c.portal_token ?? null,
-        pay: plan.movedToIncoming,
+        // Only real tech pay. With none set, the share is the client's price
+        // (legacy rule) and a tech must never see that (Fred, 2026-10-18).
+        pay: techPayToShow(w as unknown as WorkOrder, from) != null && plan.movedToIncoming > 0 ? plan.movedToIncoming : undefined,
+        schedule: woScheduleLine(w) || null,
       });
     }
     toastSuccess(`WO#${w.wo_number} is ${to}'s now`);

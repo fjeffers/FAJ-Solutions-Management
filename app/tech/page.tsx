@@ -1022,6 +1022,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   // The job report (Fred, 2026-10-02: "add info to the work orders, save,
   // close, answer questions"). Edits live here until Save or Work done.
   const [notes, setNotes] = useState(job.closeoutNotes);
+  const msgDraft = useState('');
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const ph = useJobPhotos(job, uid);
   const photoCount = ph.sent.length + ph.waiting.length;
@@ -1121,7 +1122,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     offSite: () => setOffOpen(true),
     arrived: () => void dayTap('travel_end', {}, 'Arrived', 'Signed out for the day.'),
   };
-  const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, true)];
+  // A project site always needs the sign-off; an ordinary job only when the office asked for one.
+  const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, jobForCloseout.signatureRequired)];
   const leaveSite = async (finished: boolean, report?: { done: string; left: string }) => {
     setOffOpen(false);
     const at = new Date();
@@ -1259,7 +1261,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           )}
           <JobPhotos canAdd={canReport} ph={ph} />
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
-          {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} talk={project ? talk : undefined} /></div>}
+          {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} talk={project ? talk : undefined} keep={msgDraft} /></div>}
         </>}
         bottom={simple && job.status !== 'offered' ? undefined : bottom}
       />
@@ -1267,7 +1269,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const dialogs = (
     <>
       {offOpen && (
-        <OffSiteDialog missing={offSiteMissing} onClose={() => setOffOpen(false)}
+        <OffSiteDialog missing={offSiteMissing} signature={jobForCloseout.signatureRequired} onClose={() => setOffOpen(false)}
           onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
       )}
       {expenseOpen && <ExpenseDialog job={job} onClose={() => setExpenseOpen(false)} onSaved={() => { setExpenseOpen(false); void loadExpenses(); }} />}
@@ -1381,7 +1383,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     expenses: canReport || expenses.length > 0
       ? <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
       : <p className="fs-card fs-empty">Expenses open once the job is accepted.</p>,
-    messages: <JobMessages number={job.number} talk={dayFlow ? talk : undefined} />,
+    messages: <JobMessages number={job.number} talk={dayFlow ? talk : undefined} keep={msgDraft} />,
   };
   const tone = job.status === 'declined' ? 'red' : job.status === 'offered' || job.status === 'workDone' ? 'amber' : 'green';
   return (
@@ -2132,10 +2134,15 @@ function JobPhotos({ canAdd, ph }: { canAdd: boolean; ph: ReturnType<typeof useJ
 }
 
 /** The job's thread with the office — the same one Fred sees on the job in WorkFlow. */
-function JobMessages({ number, talk }: { number: string; talk?: ReturnType<typeof useSiteTalk> }) {
+function JobMessages({ number, talk, keep }: {
+  number: string; talk?: ReturnType<typeof useSiteTalk>;
+  /** The unsent message, kept by the job screen so switching tabs doesn't lose it. */
+  keep?: [string, (v: string) => void];
+}) {
   const [own, setOwn] = useState<TechMessage[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [draft, setDraft] = useState('');
+  const local = useState('');
+  const [draft, setDraft] = keep ?? local;
   const [sending, setSending] = useState(false);
   // On a project: to FAJ (private, as before), a project manager, or everyone
   // on the project sheet (Fred, 2026-10-14: "open message, select the PM").

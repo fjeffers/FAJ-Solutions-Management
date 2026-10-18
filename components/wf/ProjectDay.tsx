@@ -193,8 +193,10 @@ function DayLines({ log }: { log: DayLog }) {
  * finished site needs everything the job asks for first — each photo taken or
  * a reason why not, the signature or a reason why not.
  */
-export function OffSiteDialog({ missing, onClose, onBack, onFinished }: {
+export function OffSiteDialog({ missing, signature = true, onClose, onBack, onFinished }: {
   missing: string[];
+  /** Whether finishing needs the customer's sign-off (always on a project site). */
+  signature?: boolean;
   onClose: () => void;
   /** Coming back: what got done today and what's still left (Fred, 2026-10-14). */
   onBack: (report: { done: string; left: string }) => void;
@@ -238,7 +240,7 @@ export function OffSiteDialog({ missing, onClose, onBack, onFinished }: {
           <button style={plain} onClick={() => setBack(true)}><LogOut size={19} /> Coming back to this site</button>
           <button style={navy} onClick={() => setFinish(true)}><CheckCircle2 size={19} /> This site is finished</button>
           <div className="wf-subtle" style={{ fontSize: 12.5 }}>
-            Finished sends the job to the office. Every photo, the checklist and the signature need to be done first.
+            Finished sends the job to the office. Every photo{signature ? ', the checklist and the signature need' : ' and the checklist need'} to be done first.
           </div>
         </div>
       ) : missing.length > 0 ? (

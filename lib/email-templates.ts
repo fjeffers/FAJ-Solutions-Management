@@ -178,6 +178,8 @@ export function workOrderEmail(wo: WorkOrder, note?: string, opts: WorkOrderEmai
 
 // ─── Payment Confirmation ─────────────────────────────────────────────────────
 
+// Goes to the tech who was paid, so it never shows the job's price (WO Total
+// was here until 2026-10-18: Fred, "why I as a tech see the money").
 export function paymentConfirmationEmail(payment: Payment, wo?: WorkOrder): string {
   const body = `
     <div style="text-align:center;padding:28px 0 24px;border-bottom:1px solid #eee;margin-bottom:28px;">
@@ -208,7 +210,6 @@ export function paymentConfirmationEmail(payment: Payment, wo?: WorkOrder): stri
         <table width="100%" cellpadding="0" cellspacing="0">
           ${wo.title        ? infoRow('Title',         wo.title)                       : ''}
           ${wo.service_type ? infoRow('Service',       wo.service_type)                : ''}
-          ${infoRow('WO Total',  fmtMoney(Number(wo.total_amount)))}
         </table>
       </div>
     `) : ''}

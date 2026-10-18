@@ -174,6 +174,20 @@ export function contractorOwedOnWO(wo: WorkOrder, name: string): number {
   ) * 100) / 100;
 }
 
+/**
+ * The pay a tech may be TOLD about in an email (Fred, 2026-10-18, looking at a
+ * job email as a tech: "why I as a tech see the money"). Only a pay the office
+ * actually entered for this tech counts. With no tech pay set,
+ * contractorOwedOnWO falls back to the client's price for payouts (legacy
+ * rule) — and that price must never reach a tech. null = say nothing about pay.
+ */
+export function techPayToShow(wo: WorkOrder, name: string): number | null {
+  const pay = wo.contractor_pay;
+  if (!pay || Object.keys(pay).length === 0 || pay[name] == null) return null;
+  const owed = contractorOwedOnWO(wo, name);
+  return owed > 0 ? owed : null;
+}
+
 export const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
   Open:        { bg: 'rgba(156,163,175,0.2)',  color: '#4B5563' },
   Assigned:    { bg: 'rgba(59,130,246,0.15)',  color: '#1D4ED8' },

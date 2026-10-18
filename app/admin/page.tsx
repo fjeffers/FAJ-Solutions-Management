@@ -3,7 +3,7 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { enrichWorkOrders, contractorOwedOnWO, woPayoutTotal, fmtMoney } from '@/lib/utils';
+import { enrichWorkOrders, woPayoutTotal, fmtMoney, techPayToShow } from '@/lib/utils';
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
@@ -575,7 +575,7 @@ export default function HomePage() {
           title: w.title ?? undefined,
           wo_id: created?.id,
           portal_token: c.portal_token ?? null,
-          pay: contractorOwedOnWO({ ...(payload as unknown as WorkOrder) }, name),
+          pay: techPayToShow({ ...(payload as unknown as WorkOrder) }, name) ?? undefined,
           reference: refId ? `${w.source_platform && w.source_platform !== 'Internal' ? `${w.source_platform} ` : ''}#${refId}` : null,
           site: siteLine,
           schedule: scheduleLine,

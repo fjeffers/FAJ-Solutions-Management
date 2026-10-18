@@ -7,7 +7,7 @@ import {
   accountantSummaryEmail,
   invoiceEmail,
 } from '@/lib/email-templates';
-import { contractorOwedOnWO } from '@/lib/utils';
+import { techPayToShow } from '@/lib/utils';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import type { WorkOrder, Payment, Contractor, Invoice } from '@/lib/types';
 
@@ -20,7 +20,7 @@ function woEmailFor(wo: WorkOrder, note: string | undefined, recipient: WORecipi
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com';
   const respond = `${base}/api/portal/respond?token=${recipient.portal_token}&wo=${wo.id}`;
   return workOrderEmail(wo, note, {
-    techPay: contractorOwedOnWO(wo, recipient.name),
+    techPay: techPayToShow(wo, recipient.name),
     portalUrl: `${base}/portal/${recipient.portal_token}`,
     acceptUrl: `${respond}&action=accept`,
     declineUrl: `${respond}&action=decline`,

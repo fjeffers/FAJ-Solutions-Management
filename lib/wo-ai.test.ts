@@ -69,6 +69,7 @@ describe('Generate with AI failure reasons', () => {
     expect(aiFailureReason(404, 'model: not found')).toBe('ai_404');
     expect(aiFailureReason(529, 'Overloaded')).toBe('ai_busy');
     expect(aiFailureReason(400, 'messages: field required')).toBe('ai_400');
+    expect(aiFailureReason(400, 'This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header')).toBe('ai_workspace');
   });
   it('says it in plain words, and never blames the person', () => {
     expect(aiFailureText('ai_credit')).toMatch(/out of credit/);

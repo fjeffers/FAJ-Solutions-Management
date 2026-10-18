@@ -83,7 +83,7 @@ const SHOW_PROJECTS = false;
 const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, ...UNDER_PROFILE, 'projects'] : [...TABS, ...UNDER_PROFILE];
 const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
 const TAB_TITLE: Record<Tab, string> = {
-  project: 'Project', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay history', profile: 'Profile',
+  project: 'Work orders', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay history', profile: 'Profile',
 };
 
 export default function TechPortalPage() {
@@ -395,7 +395,7 @@ export default function TechPortalPage() {
   const waiting = pending.length;
   const small = collapsed && !drawer;
   const navItems: { key: Tab; label: string; icon: string; count: number }[] = [
-    { key: 'project', label: 'Project', icon: 'clipboard', count: jobs.filter(canWork).length },
+    { key: 'project', label: 'Work orders', icon: 'clipboard', count: jobs.filter(canWork).length },
     { key: 'chat', label: 'Messenger', icon: 'chat', count: unread },
     { key: 'schedule', label: 'My Schedule', icon: 'calendar', count: 0 },
     { key: 'profile', label: 'Profile', icon: 'person', count: offers.length + paperworkDue },
@@ -568,7 +568,7 @@ function ProjectTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => v
   };
   return (
     <>
-      <FsPageHeader title="Project" subtitle="Your assigned work, one tap away." />
+      <FsPageHeader title="Work orders" subtitle="Your assigned work, one tap away." />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">
           <div>Open work orders<FsIcon name="sheet" size={18} /></div>

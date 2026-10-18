@@ -330,3 +330,16 @@
   /* Same iOS rule as the rest of the app: 16px or the page zooms on every tap. */
   .fs input, .fs select, .fs textarea { font-size: 16px; }
 }
+
+/* FAJ's blue across the top too (Fred, 2026-10-18: "Give me back my blue on
+   my portal"): a navy top bar with white type, the logo tile blending in. */
+.fs-topbar { background: var(--forest); border-bottom-color: var(--forest-3); color: #fff; }
+.fs-menu-button { background: transparent; border-color: rgba(255, 255, 255, 0.28); color: #fff; }
+.fs-menu-button.pressed { background: var(--forest-3); border-color: rgba(255, 255, 255, 0.35); }
+.fs-crumbs { color: rgba(255, 255, 255, 0.7); }
+.fs-crumbs b, .fs-who b { color: #fff; }
+.fs-who small { color: rgba(255, 255, 255, 0.7); }
+.fs-live-pill { color: #A7F3D0; }
+.fs-icon-button { color: rgba(255, 255, 255, 0.8); }
+.fs-icon-button:hover { background: rgba(255, 255, 255, 0.1); }
+.fs-signout { background: transparent; border-color: rgba(255, 255, 255, 0.28); color: #fff; }

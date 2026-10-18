@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { WO_AI_MODEL, aiFailureReason, aiFailureText } from '@/lib/wo-ai';
+import { anthropicHeaders } from '@/lib/anthropic-headers';
 
 // GET /api/ai/health — does the live site's Claude key work? (Fred,
 // 2026-10-17: "Generate with AI needs fixing".) One tiny request with the same
@@ -13,7 +14,7 @@ export async function GET() {
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      headers: anthropicHeaders(key),
       body: JSON.stringify({ model: WO_AI_MODEL, max_tokens: 1, messages: [{ role: 'user', content: 'Say OK' }] }),
     });
     if (r.ok) return NextResponse.json({ ok: true, model: WO_AI_MODEL });

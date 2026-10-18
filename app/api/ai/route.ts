@@ -4,6 +4,7 @@ import { extractWorkOrderFields } from '@/lib/wo-extract';
 import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, aiFailureReason } from '@/lib/wo-ai';
 import { todayISO } from '@/lib/utils';
 import type { WorkOrder } from '@/lib/types';
+import { anthropicHeaders } from '@/lib/anthropic-headers';
 
 // POST /api/ai — "Generate with AI" on a new work order. Admin-only tool, not
 // portal-token gated.
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      headers: anthropicHeaders(apiKey),
       body: JSON.stringify({
         model: WO_AI_MODEL,
         max_tokens: 4000,

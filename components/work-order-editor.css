@@ -1,0 +1,84 @@
+/* The office's work order window, in the Field Service look (Fred, 2026-10-18:
+   "how is it you created field services so clean and nice but my work order
+   looks like this, come on give me something nice"). FAJ navy and gold, white
+   cards, quiet labels. Scoped to .woe so nothing else changes. */
+
+.woe-head { margin-bottom: 18px; }
+.woe-head-top { display: flex; align-items: center; gap: 10px; }
+.woe-eyebrow {
+  flex: 1; min-width: 0; font-size: 11px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase;
+  color: var(--wf-gold-dark, #9a7a2c);
+}
+.woe-status { padding: 5px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.woe-title {
+  margin: 6px 0 14px; font-family: Inter, system-ui, sans-serif; font-size: 24px; line-height: 1.2;
+  font-weight: 800; color: #0E1B2E; letter-spacing: -0.3px; overflow-wrap: anywhere;
+}
+
+/* When: the date and time, once, at the top. */
+.woe-when {
+  display: grid; grid-template-columns: 1fr 130px 1fr; gap: 10px;
+  padding: 12px; border-radius: 14px; background: #f6f4ef; border: 1px solid #e8e3d6;
+}
+.woe-when label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.woe-when label > span {
+  display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; color: #6b7280;
+}
+.woe-when .input { background: #fff; }
+
+/* Sections: pills, plus "+ Add". */
+.woe-tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+.woe-tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px;
+  border: 1px solid #e5e7eb; background: #fff; color: #4b5563; font: 600 13px Inter, system-ui, sans-serif; cursor: pointer;
+}
+.woe-tab[aria-pressed="true"] { background: #0E1B2E; border-color: #0E1B2E; color: #fff; }
+.woe-tab .woe-count { background: #c9a227; color: #0E1B2E; border-radius: 999px; font-size: 10.5px; font-weight: 800; padding: 1px 6px; }
+.woe-add {
+  appearance: none; -webkit-appearance: none; padding: 8px 14px; border-radius: 999px; border: 1px dashed #c3b48a;
+  background: #fffdf6; color: #7a5f1d; font: 700 13px Inter, system-ui, sans-serif; cursor: pointer;
+}
+
+/* Cards. */
+.woe-stack { display: flex; flex-direction: column; gap: 14px; }
+.woe-card {
+  background: #fff; border: 1px solid #ebe7dc; border-radius: 16px; padding: 16px;
+  box-shadow: 0 1px 2px rgba(14, 27, 46, 0.04);
+}
+.woe-card > h3 {
+  margin: 0 0 12px; font: 700 14px Inter, system-ui, sans-serif; color: #0E1B2E; display: flex; align-items: center; gap: 7px;
+}
+.woe-card > h3 svg { color: #b08d2e; }
+.woe-hint { margin: -6px 0 10px; font-size: 12.5px; color: #6b7280; }
+.woe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.woe-grid + .woe-grid { margin-top: 12px; }
+.woe-grid-job { grid-template-columns: 130px 1fr; }
+.woe-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.woe-field > span { font-size: 12px; font-weight: 600; color: #4b5563; }
+
+/* Techs on the job: name, role, their answer. No money here (that's under Pay). */
+.woe-tech {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 12px;
+  background: #f8f9fb; border: 1px solid #eceef2;
+}
+.woe-tech + .woe-tech { margin-top: 6px; }
+.woe-tech-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; color: #0E1B2E; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.woe-badge { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.woe-tech-add { display: flex; gap: 8px; margin-top: 10px; }
+
+/* What the tech records: one tap per item. */
+.woe-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.woe-pill {
+  padding: 7px 12px; border-radius: 999px; border: 1px solid #e5e7eb; background: #fff; color: #374151;
+  font: 600 12.5px Inter, system-ui, sans-serif; cursor: pointer;
+}
+.woe-pill[aria-pressed="true"] { background: rgba(201, 162, 39, 0.16); border-color: #c9a227; color: #5c4510; }
+.woe-more { margin-top: 10px; font-size: 13px; }
+.woe-more > summary { cursor: pointer; font-weight: 600; color: #4b5563; }
+
+@media (max-width: 560px) {
+  .woe-when { grid-template-columns: 1fr 1fr; }
+  .woe-when label:last-child { grid-column: 1 / -1; }
+  .woe-grid, .woe-grid-job { grid-template-columns: 1fr; }
+  .woe-title { font-size: 21px; }
+}

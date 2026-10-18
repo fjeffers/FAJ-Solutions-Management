@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { parseClientLinks } from '@/lib/client-links';
 import { tabsInUse, type WoTab } from '@/lib/wo-tabs';
+import './work-order-editor.css';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
 import { kitToMaterialsUsed, materialsUsedToKitItems, kitCost } from '@/lib/material-kits';
@@ -21,7 +22,6 @@ import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import {
   PAY_TYPES,
   PAYMENT_METHODS,
-  SCHEDULE_TYPES,
   WO_STATUSES,
 } from '@/lib/types';
 import { fmtMoney, fmtDate, billableExtras, clientPaidMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, PAY_ADDON_KINDS, payAddonAmount, billableAddons, seedPayLines } from '@/lib/utils';
@@ -30,10 +30,10 @@ import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { choicesFor } from '@/lib/app-lists';
 import { asValues } from '@/lib/custom-fields';
 import CustomFieldInputs from '@/components/CustomFieldInputs';
-import { CaptureTicks, StartAsksEditor } from '@/components/CaptureEditor';
+import { StartAsksEditor } from '@/components/CaptureEditor';
 import { parseStartAsks, type StartAsk } from '@/lib/checkin';
 import { useJobTemplates } from '@/components/useJobTemplates';
-import { parseCapture, templateOf, type CaptureItem } from '@/lib/capture';
+import { CAPTURE_ITEMS, parseCapture, templateOf, toggleItem, type CaptureItem } from '@/lib/capture';
 import { createClient } from '@/lib/supabase/client';
 
 type Tab = WoTab;
@@ -45,8 +45,7 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'pay',        label: 'Pay',        icon: <DollarSign size={13} /> },
   { key: 'payments',   label: 'Payments',   icon: <CreditCard size={13} /> },
   { key: 'timelog',    label: 'Time Logs',  icon: <Timer size={13} /> },
-  { key: 'site',       label: 'Site',       icon: <MapPin size={13} /> },
-  { key: 'schedule',   label: 'Schedule',   icon: <Clock size={13} /> },
+  { key: 'site',       label: 'Location',   icon: <MapPin size={13} /> },
   { key: 'scope',      label: 'Scope',      icon: <ClipboardList size={13} /> },
   { key: 'contacts',   label: 'Contacts',   icon: <Phone size={13} /> },
   { key: 'questions',  label: 'Questions',  icon: <HelpCircle size={13} /> },
@@ -284,9 +283,6 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const updateContact = (id: string, field: keyof SiteContact, value: string) =>
     setContacts((cs) => cs.map((c) => c.id === id ? { ...c, [field]: value } : c));
   const [docUrls, setDocUrls] = useState<string[]>(() => item?.doc_urls ?? []);
-  const docImgCount = docUrls.filter(u => /\.(png|jpe?g|gif|webp)/i.test(u)).length;
-  const docFileCount = docUrls.length - docImgCount;
-  const hasDocFiles = docUrls.length > 0;
 
   // ── Multi-contractor ───────────────────────────────────────────────────────
   const [contractorNames, setContractorNames] = useState<string[]>(() => {
@@ -642,7 +638,6 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       project: form.project_name, isProject: form.is_project, platform: form.source_platform },
     pay: contractorPay, payLines: payAddons.filter((l) => Number(l.amount) > 0).length, payments: woPayments.length,
     site: [form.site_name, form.site_address, form.site_city, form.site_state, form.site_zip],
-    schedule: [form.start_date, form.end_date, form.start_time, form.end_time],
     scope: [form.access_instructions, form.parking_instructions, form.deliverable_instructions, form.deliverables, form.parts_materials,
       form.required_skills, form.tools_required],
     tasks: tasks.length, contacts: contacts.length, poc: [form.poc_name, form.poc_phone, form.poc_email],
@@ -732,60 +727,43 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   return (
     <div className="modal-overlay">
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-          <div>
-            <div className="display" style={{ fontSize: 10, color: 'var(--teal)', letterSpacing: 2, marginBottom: 4 }}>
-              {item ? 'EDIT' : 'NEW'} WORK ORDER
-            </div>
-            <h2 className="serif" style={{ fontSize: 24, margin: 0, fontWeight: 600 }}>
-              {form.title || (item ? `WO #${item.wo_number}` : 'New Work Order')}
-            </h2>
-            {form.wo_number && (
-              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>WO #{form.wo_number}</div>
-            )}
+        {/* Header: what it is, its status, and when, once (Fred, 2026-10-18:
+            "just need the date and time at the top once"). */}
+        <div className="woe-head">
+          <div className="woe-head-top">
+            <span className="woe-eyebrow">{item ? 'Work order' : 'New work order'}{form.wo_number ? ` · #${form.wo_number}` : ''}</span>
+            <span className="woe-status" style={{ background: statusStyle.bg, color: statusStyle.color }}>{form.wo_status || 'Open'}</span>
+            <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* Live status badge */}
-            <span style={{
-              padding: '5px 12px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-              background: statusStyle.bg, color: statusStyle.color,
-            }}>
-              {form.wo_status || 'Open'}
-            </span>
-            <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+          <h2 className="woe-title">{form.title || (item ? `WO #${item.wo_number}` : 'New work order')}</h2>
+          <div className="woe-when">
+            <label><span><Calendar size={13} /> Date</span>
+              <input className="input" type="date" value={form.start_date ?? ''} onChange={(e) => set('start_date', e.target.value)} />
+            </label>
+            <label><span><Clock size={13} /> Time</span>
+              <input className="input" type="time" value={form.start_time ?? ''} onChange={(e) => set('start_time', e.target.value)} />
+            </label>
+            <label><span><Calendar size={13} /> Last day (if more than one)</span>
+              <input className="input" type="date" value={form.end_date ?? ''} onChange={(e) => set('end_date', e.target.value)} />
+            </label>
           </div>
         </div>
 
-        {/* Tabs: Details, plus only what this job uses or Fred adds (lib/wo-tabs.ts). */}
-        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid #eee', overflowX: 'auto', flexWrap: 'nowrap', alignItems: 'center' }}>
+        {/* Sections: Details, plus only what this job uses or Fred adds (lib/wo-tabs.ts). */}
+        <div className="woe-tabs" role="group" aria-label="Sections">
           {shownTabs.map((t) => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '9px 12px', border: 'none', background: 'none', cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 11,
-              color: tab === t.key ? 'var(--teal)' : '#999',
-              borderBottom: tab === t.key ? '2px solid var(--teal)' : '2px solid transparent',
-              marginBottom: -1, transition: 'all 0.2s', whiteSpace: 'nowrap', flexShrink: 0,
-            }}>
+            <button key={t.key} type="button" className="woe-tab" aria-pressed={tab === t.key} onClick={() => setTab(t.key)}>
               {t.icon} {t.label}
-              {t.key === 'documents' && docUrls.length > 0 && (
-                <span style={{
-                  background: 'var(--teal)', color: 'white', borderRadius: 999,
-                  fontSize: 9, fontWeight: 800, padding: '1px 5px', lineHeight: 1.6,
-                  marginLeft: 2,
-                }}>{docUrls.length}</span>
-              )}
+              {t.key === 'documents' && docUrls.length > 0 && <span className="woe-count">{docUrls.length}</span>}
             </button>
           ))}
           {hiddenTabs.length > 0 && (
-            <select aria-label="Add a tab" value="" onChange={(e) => {
+            <select className="woe-add" aria-label="Add a section" value="" onChange={(e) => {
               const k = e.target.value as Tab;
               if (!k) return;
               setAddedTabs((a) => (a.includes(k) ? a : [...a, k]));
               setTab(k);
-            }} style={{ marginLeft: 6, flexShrink: 0, border: '1px dashed #c9c9c9', borderRadius: 8, background: 'none', color: '#555',
-              fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 11, padding: '6px 8px', cursor: 'pointer' }}>
+            }}>
               <option value="">+ Add</option>
               {hiddenTabs.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
@@ -794,277 +772,97 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
         {/* ── DETAILS TAB ── */}
         {tab === 'details' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 16 }}>
-              <PF label="WO # *" icon={<Hash size={13} />}>
-                <input className="input" value={form.wo_number ?? ''} onChange={(e) => set('wo_number', e.target.value)} placeholder="e.g. 1001" autoFocus />
-                {!item && nextWoNumber && (
-                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3 }}>Auto-suggested: #{nextWoNumber}</div>
-                )}
-              </PF>
-              <PF label="Job Title" icon={<FileText size={13} />}>
-                <input className="input" value={form.title ?? ''} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Network cable installation" />
-              </PF>
-            </div>
-            <PF label="Contractors *" icon={<User size={13} />}>
-              {/* Chip list */}
-              {contractorNames.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                  {contractorNames.map((name) => {
-                    const isLead = name === resolvedLead;
-                    const isMulti = contractorNames.length >= 2;
-                    return (
-                      <div key={name} style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '6px 10px', borderRadius: 10,
-                        background: isLead ? 'rgba(14,27,46,0.08)' : 'rgba(0,0,0,0.04)',
-                        border: isLead ? '1px solid rgba(14,27,46,0.25)' : '1px solid rgba(0,0,0,0.1)',
-                      }}>
-                        {/* Lead radio — only show when 2+ contractors */}
-                        {isMulti && (
-                          <button
-                            onClick={() => setLeadContractorName(name)}
-                            title={isLead ? 'Lead tech' : 'Set as lead tech'}
-                            style={{
-                              width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-                              border: isLead ? '2px solid var(--teal)' : '2px solid #ccc',
-                              background: isLead ? 'var(--teal)' : 'white',
-                              cursor: 'pointer', padding: 0, display: 'flex',
-                              alignItems: 'center', justifyContent: 'center',
-                            }}
-                          >
-                            {isLead && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'white', display: 'block' }} />}
-                          </button>
-                        )}
-
-                        {/* Name */}
-                        <span style={{
-                          flex: 1, fontSize: 13, fontWeight: 700,
-                          color: isLead ? 'var(--teal)' : '#555',
-                        }}>
-                          {name}
-                        </span>
-
-                        {/* Role badge */}
-                        {isMulti ? (
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
-                            padding: '2px 7px', borderRadius: 999,
-                            background: isLead ? 'rgba(14,27,46,0.15)' : 'rgba(0,0,0,0.08)',
-                            color: isLead ? 'var(--teal)' : '#888',
-                          }}>
-                            {isLead ? 'LEAD' : 'ASSISTANT'}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 10, color: '#aaa', fontWeight: 600 }}>PRIMARY</span>
-                        )}
-
-                        {/* Accept/decline state from the assignment email (existing WOs only) */}
-                        {item && (() => {
-                          const resp = item.assignment_responses?.[name];
-                          if (!resp) {
-                            return <span title="No response yet" style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>⏳ AWAITING</span>;
-                          }
-                          return resp.status === 'accepted'
-                            ? <span title={`Accepted ${new Date(resp.at).toLocaleString()}`} style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(4,120,87,0.12)', color: '#047857' }}>✓ ACCEPTED</span>
-                            : <span title={`Declined ${new Date(resp.at).toLocaleString()}`} style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'rgba(185,28,28,0.12)', color: '#b91c1c' }}>✗ DECLINED</span>;
-                        })()}
-
-                        {/* Per-tech pay — what THIS tech gets (client price stays separate) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                          <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
-                          <input
-                            className="input"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={contractorPay[name] ?? ''}
-                            onChange={(e) => setTechPay(name, e.target.value === '' ? 0 : Number(e.target.value))}
-                            placeholder="0.00"
-                            title={`${name}'s labour on this WO. Mileage and materials they are owed are added on top.`}
-                            style={{ width: 90, fontSize: 12, padding: '5px 8px', textAlign: 'right' }}
-                          />
-                          {/* What this tech is actually owed once what they laid
-                              out is added back. */}
-                          {(() => {
-                            const extra = mileageForTech(mileageLogs, name)
-                              + materialsForTech(materialsUsed, name, contractorNames[0] ?? null);
-                            if (!extra) return null;
-                            return (
-                              <span
-                                title="Mileage and materials this tech is owed back, on top of their labour"
-                                style={{ fontSize: 10, fontWeight: 700, color: '#047857', whiteSpace: 'nowrap' }}
-                              >
-                                +{fmtMoney(extra)} back
-                              </span>
-                            );
-                          })()}
-                        </div>
-
-                        {/* Remove */}
-                        <button onClick={() => removeContractor(name)} style={{
-                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                          display: 'flex', alignItems: 'center', color: '#aaa', opacity: 0.7,
-                          flexShrink: 0,
-                        }}>
-                          <X size={12} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {/* Tech pay vs client price summary — profit at a glance */}
-                  {contractorNames.length >= 1 && (() => {
-                    // The whole payout, not just the labour. Mileage and
-                    // materials are money out of the door too; leaving them out
-                    // made the profit on screen better than the real one.
-                    const assigned = contractorNames.reduce((s, n) => s + (Number(contractorPay[n]) || 0), 0);
-                    const mileagePay = mileageReimbursement(mileageLogs);
-                    const materialsPay = materialsReimbursement(materialsUsed);
-                    const addonsPay = payAddonsTotal(payAddons);
-                    const woAmount = calcTotal(form, payAddons);
-                    const payout = Math.round((assigned + mileagePay + materialsPay + addonsPay) * 100) / 100;
-                    const profit = Math.round((woAmount - payout) * 100) / 100;
-                    return (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 2, flexWrap: 'wrap' }}>
-                          <span style={{
-                            fontSize: 11, fontWeight: 700,
-                            color: assigned === 0 ? '#9ca3af' : profit >= 0 ? '#047857' : '#b45309',
-                          }}>
-                            {assigned === 0 && payout === 0
-                              ? 'No tech pay set — tech gets the full client labour'
-                              : [
-                                  `Labour ${fmtMoney(assigned)}`,
-                                  mileagePay ? `Mileage ${fmtMoney(mileagePay)}` : null,
-                                  materialsPay ? `Materials ${fmtMoney(materialsPay)}` : null,
-                                  addonsPay ? `Add-ons ${fmtMoney(addonsPay)}` : null,
-                                ].filter(Boolean).join(' + ')
-                                + ` = ${fmtMoney(payout)} out`
-                                + ` · Client ${fmtMoney(woAmount)}`
-                                + ` · Your profit ${fmtMoney(profit)}${profit < 0 ? ' (paying out more than the client pays!)' : ''}`}
-                          </span>
-                          {contractorNames.length >= 2 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const even = Math.floor((woAmount / contractorNames.length) * 100) / 100;
-                                const next: Record<string, number> = {};
-                                contractorNames.forEach((n, i) => {
-                                  // First tech absorbs the rounding remainder so the split always sums to the total
-                                  next[n] = i === 0 ? Math.round((woAmount - even * (contractorNames.length - 1)) * 100) / 100 : even;
-                                });
-                                setContractorPay(next);
-                              }}
-                              style={{
-                                fontSize: 11, fontWeight: 700, color: 'var(--teal)', background: 'rgba(14,27,46,0.08)',
-                                border: '1px solid rgba(14,27,46,0.2)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
-                              }}
-                            >
-                              Split evenly
-                            </button>
-                          )}
-                        </div>
-                        {contractorNames.length >= 2 && (
-                          <div style={{ fontSize: 11, color: '#9ca3af', paddingLeft: 2 }}>
-                            🔵 Lead tech handles deliverables, photos & closeout. Assistant tech checks in/out only.
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-              {/* Add dropdown */}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <select className="select input" value={contractorToAdd}
-                    onChange={(e) => setContractorToAdd(e.target.value)}
-                    style={{ paddingRight: 32 }}>
-                    <option value="">
-                      {contractorNames.length === 0 ? 'Select contractor' : 'Add another tech…'}
-                    </option>
-                    {contractors
-                      .filter((c) => !contractorNames.includes(c.name))
-                      .map((c) => (
-                        <option key={c.id} value={c.name} disabled={!!c.on_hold}>
-                          {c.name}{c.on_hold ? ' — on hold' : ''}
-                        </option>
-                      ))}
-                  </select>
-                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
-                </div>
-                <button onClick={addContractor} disabled={!contractorToAdd} style={{
-                  padding: '0 14px', borderRadius: 8, border: 'none', cursor: contractorToAdd ? 'pointer' : 'not-allowed',
-                  background: contractorToAdd ? 'var(--teal)' : '#ddd', color: '#fff',
-                  fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4,
-                  opacity: contractorToAdd ? 1 : 0.5,
-                }}>
-                  <Plus size={13} /> Add
-                </button>
+          <div className="woe-stack">
+            <section className="woe-card">
+              <h3><FileText size={15} /> Job</h3>
+              <div className="woe-grid woe-grid-job">
+                <label className="woe-field"><span>WO #</span>
+                  <input className="input" value={form.wo_number ?? ''} onChange={(e) => set('wo_number', e.target.value)} placeholder="e.g. 1001" autoFocus />
+                </label>
+                <label className="woe-field"><span>Job title</span>
+                  <input className="input" value={form.title ?? ''} onChange={(e) => set('title', e.target.value)} placeholder="e.g. LDS-1110 — Site 5011876, Gaffney, SC" />
+                </label>
               </div>
-            </PF>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <PF label="Service Type" icon={<Wrench size={13} />}>
-                <div style={{ position: 'relative' }}>
+              <div className="woe-grid">
+                <label className="woe-field"><span>Type of work</span>
                   <select className="select input" value={form.service_type ?? ''} onChange={(e) => set('service_type', e.target.value)}>
                     <option value="">Select type</option>
                     {choicesFor('serviceTypes', form.service_type).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
-                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
-                </div>
-              </PF>
-              <PF label="Status" icon={<ClipboardList size={13} />}>
-                <div style={{ position: 'relative' }}>
+                </label>
+                <label className="woe-field"><span>Status</span>
                   <select className="select input" value={form.wo_status ?? 'Open'} onChange={(e) => set('wo_status', e.target.value as WorkOrderStatus)}
                     style={{ color: statusStyle.color, fontWeight: 700 }}>
-                    {WO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {WO_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
                   </select>
-                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
-                </div>
-              </PF>
-            </div>
+                </label>
+              </div>
+            </section>
 
-            {/* ── Documents quick-access banner ── */}
-            <button
-              type="button"
-              onClick={() => setTab('documents')}
-              style={{
-                width: '100%', padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
-                background: hasDocFiles ? 'rgba(14,27,46,0.07)' : 'rgba(0,0,0,0.03)',
-                border: hasDocFiles ? '1.5px solid rgba(14,27,46,0.25)' : '1.5px solid rgba(0,0,0,0.08)',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                fontFamily: 'Inter, sans-serif', transition: 'background 0.15s',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <FolderOpen size={16} color={hasDocFiles ? 'var(--teal)' : '#bbb'} />
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: hasDocFiles ? 'var(--teal)' : '#aaa' }}>
-                    {hasDocFiles ? `${docUrls.length} document${docUrls.length === 1 ? '' : 's'} attached` : 'No documents attached'}
+            {/* Who's on it. No money on this page (Fred: "remove money"); tech pay is under Pay. */}
+            <section className="woe-card">
+              <h3><User size={15} /> Tech</h3>
+              {contractorNames.map((name) => {
+                const isLead = name === resolvedLead;
+                const isMulti = contractorNames.length >= 2;
+                const resp = item?.assignment_responses?.[name];
+                return (
+                  <div key={name} className="woe-tech">
+                    {isMulti && (
+                      <button type="button" onClick={() => setLeadContractorName(name)} title={isLead ? 'Lead tech' : 'Make lead tech'}
+                        aria-label={isLead ? `${name} is the lead tech` : `Make ${name} the lead tech`}
+                        style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, padding: 0, cursor: 'pointer',
+                          border: isLead ? '2px solid #0E1B2E' : '2px solid #ccc', background: isLead ? '#0E1B2E' : '#fff' }} />
+                    )}
+                    <span className="woe-tech-name">{name}</span>
+                    {isMulti && (
+                      <span className="woe-badge" style={{ background: isLead ? 'rgba(14,27,46,0.1)' : 'rgba(0,0,0,0.06)', color: isLead ? '#0E1B2E' : '#6b7280' }}>
+                        {isLead ? 'Lead' : 'Helper'}
+                      </span>
+                    )}
+                    {item && (!resp
+                      ? <span className="woe-badge" style={{ background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>Waiting</span>
+                      : resp.status === 'accepted'
+                        ? <span className="woe-badge" title={`Accepted ${new Date(resp.at).toLocaleString()}`} style={{ background: 'rgba(4,120,87,0.12)', color: '#047857' }}>Accepted</span>
+                        : <span className="woe-badge" title={`Declined ${new Date(resp.at).toLocaleString()}`} style={{ background: 'rgba(185,28,28,0.12)', color: '#b91c1c' }}>Declined</span>)}
+                    <button type="button" onClick={() => removeContractor(name)} aria-label={`Take ${name} off this job`}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#9ca3af', display: 'flex' }}>
+                      <X size={14} />
+                    </button>
                   </div>
-                  {hasDocFiles && (
-                    <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
-                      {docImgCount} photo{docImgCount !== 1 ? 's' : ''}, {docFileCount} file{docFileCount !== 1 ? 's' : ''}
-                    </div>
-                  )}
-                </div>
+                );
+              })}
+              <div className="woe-tech-add">
+                <select className="select input" style={{ flex: 1 }} value={contractorToAdd} onChange={(e) => setContractorToAdd(e.target.value)}
+                  aria-label="Add a tech">
+                  <option value="">{contractorNames.length === 0 ? 'Pick a tech' : 'Add another tech'}</option>
+                  {contractors.filter((c) => !contractorNames.includes(c.name)).map((c) => (
+                    <option key={c.id} value={c.name} disabled={!!c.on_hold}>{c.name}{c.on_hold ? ' — on hold' : ''}</option>
+                  ))}
+                </select>
+                <button type="button" className="btn btn-primary" onClick={addContractor} disabled={!contractorToAdd} style={{ opacity: contractorToAdd ? 1 : 0.5 }}>
+                  <Plus size={14} /> Add
+                </button>
               </div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)' }}>
-                View Documents
-              </div>
-            </button>
-            {/* The description and the client's links sit on Details, the one tab
-                every job has (Fred, 2026-10-18). */}
-            <PF label="Description" icon={<FileText size={13} />}>
-              <textarea className="input" rows={4} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="Describe the work to be performed..." />
-            </PF>
-            <PF label="Client links (one per line)" icon={<Link2 size={13} />}>
-              <textarea className="input" rows={3} value={linksText} onChange={(e) => setLinksText(e.target.value)}
-                placeholder="Paste the client's links here, one per line" />
-            </PF>
+            </section>
+
+            <section className="woe-card">
+              <h3><ClipboardList size={15} /> Description</h3>
+              <textarea className="input" rows={4} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="What the job is" />
+            </section>
+
+            <section className="woe-card">
+              <h3><Link2 size={15} /> Client links</h3>
+              <p className="woe-hint">One per line. The tech sees each one as a button.</p>
+              <textarea className="input" rows={3} value={linksText} onChange={(e) => setLinksText(e.target.value)} placeholder="Paste the client's links here" />
+            </section>
+
             <CustomFieldInputs target="jobs" values={asValues(form.custom)} onChange={(v) => setForm((f) => ({ ...f, custom: v }))} />
-            <WhatTheTechRecords capture={capture} onChange={setCapture} templates={jobTemplates}
-              startAsks={startAsks} onStartAsks={setStartAsks} />
+
+            <section className="woe-card">
+              <WhatTheTechRecords capture={capture} onChange={setCapture} templates={jobTemplates}
+                startAsks={startAsks} onStartAsks={setStartAsks} />
+            </section>
           </div>
         )}
 
@@ -1140,6 +938,60 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* ── PAY TAB ── */}
         {tab === 'pay' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* What each tech gets on this job. It used to sit on Details; Fred
+                wanted no money there (2026-10-18), so it lives here now. */}
+            {contractorNames.length > 0 && (
+              <section className="woe-card">
+                <h3><User size={15} /> Tech pay</h3>
+                {contractorNames.map((name) => {
+                  const extra = mileageForTech(mileageLogs, name) + materialsForTech(materialsUsed, name, contractorNames[0] ?? null);
+                  return (
+                    <div key={name} className="woe-tech">
+                      <span className="woe-tech-name">{name}</span>
+                      {extra > 0 && <span className="woe-badge" title="Mileage and materials this tech is owed back, on top of their labour" style={{ background: 'rgba(4,120,87,0.12)', color: '#047857' }}>+{fmtMoney(extra)} back</span>}
+                      <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>$</span>
+                      <input className="input" type="number" min="0" step="0.01" value={contractorPay[name] ?? ''}
+                        onChange={(e) => setTechPay(name, e.target.value === '' ? 0 : Number(e.target.value))}
+                        placeholder="0.00" aria-label={`${name}'s pay`} style={{ width: 100, textAlign: 'right' }} />
+                    </div>
+                  );
+                })}
+                {(() => {
+                  // The whole payout, not just the labour: mileage, materials and add-ons are money out too.
+                  const assigned = contractorNames.reduce((sum, n) => sum + (Number(contractorPay[n]) || 0), 0);
+                  const mileagePay = mileageReimbursement(mileageLogs);
+                  const materialsPay = materialsReimbursement(materialsUsed);
+                  const addonsPay = payAddonsTotal(payAddons);
+                  const woAmount = calcTotal(form, payAddons);
+                  const payout = Math.round((assigned + mileagePay + materialsPay + addonsPay) * 100) / 100;
+                  const profit = Math.round((woAmount - payout) * 100) / 100;
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: assigned === 0 ? '#9ca3af' : profit >= 0 ? '#047857' : '#b45309' }}>
+                        {assigned === 0 && payout === 0
+                          ? 'No tech pay set: the tech gets the full client labour'
+                          : [
+                              `Labour ${fmtMoney(assigned)}`,
+                              mileagePay ? `Mileage ${fmtMoney(mileagePay)}` : null,
+                              materialsPay ? `Materials ${fmtMoney(materialsPay)}` : null,
+                              addonsPay ? `Add-ons ${fmtMoney(addonsPay)}` : null,
+                            ].filter(Boolean).join(' + ')
+                            + ` = ${fmtMoney(payout)} out · Client ${fmtMoney(woAmount)} · Your profit ${fmtMoney(profit)}${profit < 0 ? ' (paying out more than the client pays!)' : ''}`}
+                      </span>
+                      {contractorNames.length >= 2 && (
+                        <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => {
+                          const even = Math.floor((woAmount / contractorNames.length) * 100) / 100;
+                          const next: Record<string, number> = {};
+                          // The first tech takes the rounding so the split always adds up to the total.
+                          contractorNames.forEach((n, i) => { next[n] = i === 0 ? Math.round((woAmount - even * (contractorNames.length - 1)) * 100) / 100 : even; });
+                          setContractorPay(next);
+                        }}>Split evenly</button>
+                      )}
+                    </div>
+                  );
+                })()}
+              </section>
+            )}
             {/* Pay type selector */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 10, letterSpacing: 0.5, textTransform: 'uppercase' }}>Pay Type</div>
@@ -1388,50 +1240,6 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 </a>
               </div>
             )}
-          </div>
-        )}
-
-        {/* ── SCHEDULE TAB ── */}
-        {tab === 'schedule' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ padding: '12px 16px', background: 'rgba(14,27,46,0.05)', borderRadius: 10, fontSize: 12, color: '#666' }}>
-              Set the date and time window for when the work should be performed.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <PF label="Schedule Type">
-                <div style={{ position: 'relative' }}>
-                  <select className="select input" value={form.schedule_type ?? 'Exact Time'} onChange={(e) => set('schedule_type', e.target.value)}>
-                    {SCHEDULE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
-                </div>
-              </PF>
-              <PF label="Time Zone">
-                <input className="input" value={form.time_zone ?? ''} onChange={(e) => set('time_zone', e.target.value)} placeholder="e.g. America/New_York" />
-              </PF>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>Start</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 16 }}>
-                <PF label="Date" icon={<Calendar size={13} />}>
-                  <input className="input" type="date" value={form.start_date ?? ''} onChange={(e) => set('start_date', e.target.value)} />
-                </PF>
-                <PF label="Time" icon={<Clock size={13} />}>
-                  <input className="input" type="time" value={form.start_time ?? ''} onChange={(e) => set('start_time', e.target.value)} />
-                </PF>
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#b45309', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>End / Deadline</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 16 }}>
-                <PF label="Date" icon={<Calendar size={13} />}>
-                  <input className="input" type="date" value={form.end_date ?? ''} onChange={(e) => set('end_date', e.target.value)} />
-                </PF>
-                <PF label="Time" icon={<Clock size={13} />}>
-                  <input className="input" type="time" value={form.end_time ?? ''} onChange={(e) => set('end_time', e.target.value)} />
-                </PF>
-              </div>
-            </div>
           </div>
         )}
 
@@ -2647,13 +2455,21 @@ function WhatTheTechRecords({ capture, onChange, templates, startAsks, onStartAs
       </div>
       {capture !== null && (
         <>
-          <CaptureTicks idPrefix="wo-capture" items={capture} onChange={(next) => onChange(next)} />
-          <div style={{ fontSize: 12, color: '#666' }}>
-            The tech sees only these. Time on site is always kept. The job log and the weekly bill leave out the rest.
+          <div className="woe-pills" role="group" aria-label="What the tech records">
+            {CAPTURE_ITEMS.map((c) => (
+              <button key={c.key} type="button" className="woe-pill" aria-pressed={capture.includes(c.key)} title={c.hint}
+                onClick={() => onChange(toggleItem(capture, c.key))}>{c.label}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: '#6b7280' }}>
+            The tech sees only what you pick. Time on site is always kept.
           </div>
         </>
       )}
-      <StartAsksEditor idPrefix="wo-capture" asks={startAsks} onChange={onStartAsks} />
+      <details className="woe-more" open={startAsks.length > 0}>
+        <summary>At check-in, also ask for{startAsks.length ? ` (${startAsks.length})` : ''}</summary>
+        <div style={{ marginTop: 8 }}><StartAsksEditor idPrefix="wo-capture" asks={startAsks} onChange={onStartAsks} /></div>
+      </details>
     </div>
   );
 }

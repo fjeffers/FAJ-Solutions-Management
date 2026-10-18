@@ -2,9 +2,10 @@
 // 2026-10-18: "All work order need to start the same way blank, I'll add
 // what's needed, remove the old style" and "Why are the tabs still there").
 // Details is always there; any other tab shows once it has something in it,
-// or once Fred adds it with "+ Add". Pure and unit-tested (lib/wo-tabs.test.ts).
+// or once Fred adds it with "+ Add". The date and time sit at the top of the
+// window, so there is no Schedule section. Pure and unit-tested (lib/wo-tabs.test.ts).
 
-export type WoTab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope'
+export type WoTab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'scope'
   | 'contacts' | 'questions' | 'documents' | 'chat' | 'closeout';
 
 const filled = (v: unknown) => (typeof v === 'string' ? v.trim() !== '' : v != null && v !== false);
@@ -23,7 +24,6 @@ export type TabFacts = {
   payLines: number;
   payments: number;
   site: (string | null | undefined)[];
-  schedule: (string | null | undefined)[];
   scope: (string | null | undefined)[];
   tasks: number;
   contacts: number;
@@ -46,7 +46,6 @@ export function tabsInUse(f: TabFacts): WoTab[] {
   if (f.payments > 0) out.push('payments');
   if (f.saved && (WORKED.has(f.status ?? '') || f.checkedIn)) out.push('timelog');
   if (any(...f.site)) out.push('site');
-  if (any(...f.schedule)) out.push('schedule');
   if (any(...f.scope) || f.tasks > 0) out.push('scope');
   if (f.contacts > 0 || any(...f.poc)) out.push('contacts');
   if (f.questions > 0) out.push('questions');

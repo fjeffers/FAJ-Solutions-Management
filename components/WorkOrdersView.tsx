@@ -688,6 +688,8 @@ function AIGenerateModal({
       // (Fred, 2026-10-18: "the generator should do the same thing").
       const tpl = templates.find((t) => t.id === picked) ?? templateForText(prompt, templates);
       if (tpl) { fields.capture = tpl.items; fields.start_asks = tpl.startAsks ?? []; }
+      // No checklist unless the job asks for one (Fred, 2026-10-18: "checklist not needed").
+      if (!(fields.capture ?? []).includes('checklist')) delete fields.wo_tasks;
       if (Object.keys(fields).length === 0) {
         setError("Couldn't find any job details in that text. Paste the whole email or work order and try again.");
         return;

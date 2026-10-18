@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import {
   WF_WORK_TYPE_LABEL, workTypeFor, whenDay, place, fullAddress, tasksDone, isClockedIn, workedMs, wfStatusLabel,
-  formatClock, formatDuration, parseClockTime, fmtClock12, type WfJob, type WfTask,
+  formatClock, formatDuration, parseClockTime, fmtClock12, askedOnly, type WfJob, type WfTask,
 } from '@/lib/wf';
 import { Section } from './WfUi';
 import { linkLabel } from '@/lib/client-links';
@@ -311,7 +311,9 @@ export default function WfJobDetail({
               </Section>
             )}
             <SiteInfoCard job={job} />
-            <ChecklistCard job={job} onToggle={onToggleTask} />
+            {/* Only when the job asks for a checklist, the same as the tech's screen
+                (Fred, 2026-10-18: "checklist not needed, I should be able to remove it"). */}
+            <ChecklistCard job={askedOnly(job)} onToggle={onToggleTask} />
             {below}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>

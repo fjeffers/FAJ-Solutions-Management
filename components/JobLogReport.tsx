@@ -16,6 +16,7 @@ import { buildVisits, inRange, logTotals, hoursText, dayOf, type Punch } from '@
 import { mapLink } from '@/lib/geo';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
+import { asks, parseCapture } from '@/lib/capture';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
 type PhotoRow = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; contractor_name: string | null };
@@ -71,7 +72,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Waits for the photos to load, so it never says "No photos" too soon.
   const loaded = punches !== null;
   const gaps = useMemo(() => (loaded && isFinished(job) ? jobGaps(job, deliverables, photos.length) : []), [loaded, job, deliverables, photos.length]);
-  const tasks = w.wo_tasks ?? [];
+  // The checklist only when the job asks for one (askedOnly, as on the job page).
+  const tasks = asks(parseCapture(w.capture), 'checklist') ? w.wo_tasks ?? [] : [];
   const qa = w.custom_qa ?? [];
   const techs = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean);
   const where = [w.site_address, [w.site_city, [w.site_state, w.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');

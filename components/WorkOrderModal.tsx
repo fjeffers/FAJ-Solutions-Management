@@ -1318,6 +1318,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 <ClipboardList size={13} style={{ color: 'var(--teal, #0E1B2E)' }} />
                 <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4, flex: 1 }}>Tech checklist</span>
                 <span style={{ fontSize: 11, color: '#6b7280' }}>{tasks.length ? `${tasks.filter((t) => t.completed).length} of ${tasks.length} done` : 'Techs tick these off in their portal'}</span>
+                {tasks.length > 0 && (
+                  <button type="button" className="btn btn-ghost" style={{ padding: '2px 8px', fontSize: 11, color: '#b91c1c' }}
+                    onClick={() => setTasks([])} title="Takes every step off. Save to keep it.">Remove all</button>
+                )}
               </div>
               <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {tasks.map((t, i) => (

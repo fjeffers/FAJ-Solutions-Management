@@ -2454,7 +2454,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
           {askDelete && onDelete ? (
             <>
               <span role="alert" style={{ marginRight: 'auto', fontSize: 13, color: '#b91c1c', fontWeight: 700 }}>
-                Delete WO {item?.wo_number} for good? Its time, photos and receipts go too. This can&apos;t be undone.
+                {`Delete WO ${item?.wo_number ?? ''} for good? Its time, photos and receipts go too. This can't be undone.`}
               </span>
               <button className="btn btn-ghost" onClick={() => setAskDelete(false)}>Keep it</button>
               <button className="btn" style={{ background: '#b91c1c', color: '#fff' }} onClick={onDelete}>Yes, delete</button>

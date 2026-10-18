@@ -1,3 +1,4 @@
+import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { WO_AI_MODEL, aiFailureReason, aiFailureText } from '@/lib/wo-ai';
 import { anthropicHeaders } from '@/lib/anthropic-headers';
@@ -5,10 +6,14 @@ import { anthropicHeaders } from '@/lib/anthropic-headers';
 // GET /api/ai/health — does the live site's Claude key work? (Fred,
 // 2026-10-17: "Generate with AI needs fixing".) One tiny request with the same
 // model Generate with AI uses; the answer is only "ok" or the reason code —
-// never the key or Anthropic's raw reply.
+// never the key or Anthropic's raw reply. Admin login only: once the key
+// works each check is a (tiny) paid call.
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const supabase = await createClient('admin');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ ok: false, why: 'no_key', says: aiFailureText('no_key') });
   try {

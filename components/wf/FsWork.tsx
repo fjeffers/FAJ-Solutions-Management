@@ -89,7 +89,7 @@ const FROM: { key: Origin; label: string }[] = [
 ];
 const ARRIVE: Record<string, string> = {
   site: 'Arrive on site', next_site: 'Arrive at the next site', hotel: 'Arrive at the hotel', home: 'Arrive home',
-  fuel: 'Arrive at the fuel stop',
+  fuel: 'Arrive at the fuel stop', materials: 'Arrive at the materials pickup',
 };
 
 /**

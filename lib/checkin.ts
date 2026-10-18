@@ -66,6 +66,7 @@ export const TRAVEL_TO: { dest: Dest; label: string }[] = [
   { dest: 'site', label: 'Site' },
   { dest: 'home', label: 'Home' },
   { dest: 'fuel', label: 'Fuel' },
+  { dest: 'materials', label: 'Materials' },
   { dest: 'next_site', label: 'Next site' },
 ];
 
@@ -93,7 +94,7 @@ export function checkInDrive(key: string, from: Origin | null): Drive | null {
   const origin: Origin = t.dest === 'next_site' ? 'site' : from ?? 'other';
   return { key, origin, dest: t.dest, label: `${ORIGIN_LABEL_FOR[origin]} → ${t.dest === 'next_site' ? 'Next site' : t.label}` };
 }
-const ORIGIN_LABEL_FOR: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Here', fuel: 'Fuel stop' };
+const ORIGIN_LABEL_FOR: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Here', fuel: 'Fuel stop', materials: 'Materials pickup' };
 
 /** The drive as FAJ's Start travel takes it (DayActions.startTrip). */
 export function tripOf(drive: Drive): { trip: Trip; from: Origin } {

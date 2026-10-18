@@ -77,7 +77,7 @@ describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
     const { checkInDrive } = await import('./checkin');
     const groups = checkInChoices('hotel');
     expect(groups.map((g) => g.label)).toEqual(['Traveling to', 'On site']);
-    expect(groups[0].options.map((o) => o.label)).toEqual(['Hotel', 'Site', 'Home', 'Fuel']);
+    expect(groups[0].options.map((o) => o.label)).toEqual(['Hotel', 'Site', 'Home', 'Fuel', 'Materials']);
     expect(groups[1].options).toEqual([{ key: ON_SITE_KEY, label: 'Log in on site: start work' }]);
     // The next site only when leaving a site; after Work done only the drive back.
     expect(checkInChoices('site')[0].options.map((o) => o.label)).toContain('Next site');
@@ -85,6 +85,7 @@ describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
     // Leaving from where the tech is now.
     expect(checkInDrive('to-site', 'hotel')).toMatchObject({ origin: 'hotel', dest: 'site', label: 'Hotel → Site' });
     expect(checkInDrive('to-fuel', 'site')).toMatchObject({ origin: 'site', dest: 'fuel', label: 'Site → Fuel' });
+    expect(checkInDrive('to-materials', 'hotel')).toMatchObject({ origin: 'hotel', dest: 'materials', label: 'Hotel → Materials' });
     expect(checkInDrive('to-next_site', 'site')).toMatchObject({ origin: 'site', dest: 'next_site' });
     expect(checkInDrive('to-site', null)).toMatchObject({ origin: 'other', label: 'Here → Site' });
     expect(checkInDrive(ON_SITE_KEY, 'site')).toBeNull();

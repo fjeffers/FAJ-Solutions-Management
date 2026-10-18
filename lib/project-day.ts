@@ -15,9 +15,9 @@
 // Pure and unit-tested (lib/project-day.test.ts).
 
 export type DayKind = 'day_start' | 'travel_start' | 'travel_end' | 'lunch_start' | 'lunch_end' | 'in' | 'out';
-// 'fuel': a stop for fuel on the way (Fred, 2026-10-18; migration 131).
-export type Origin = 'home' | 'hotel' | 'site' | 'other' | 'fuel';
-export type Dest = 'site' | 'hotel' | 'home' | 'next_site' | 'fuel';
+// 'fuel' and 'materials': stops on the way (Fred, 2026-10-18; migrations 131, 132).
+export type Origin = 'home' | 'hotel' | 'site' | 'other' | 'fuel' | 'materials';
+export type Dest = 'site' | 'hotel' | 'home' | 'next_site' | 'fuel' | 'materials';
 
 export type DayEvent = {
   kind: DayKind;
@@ -35,11 +35,11 @@ export type DayEvent = {
 };
 
 const KINDS: DayKind[] = ['day_start', 'travel_start', 'travel_end', 'lunch_start', 'lunch_end', 'in', 'out'];
-const ORIGINS: Origin[] = ['home', 'hotel', 'site', 'other', 'fuel'];
-const DESTS: Dest[] = ['site', 'hotel', 'home', 'next_site', 'fuel'];
+const ORIGINS: Origin[] = ['home', 'hotel', 'site', 'other', 'fuel', 'materials'];
+const DESTS: Dest[] = ['site', 'hotel', 'home', 'next_site', 'fuel', 'materials'];
 
-export const ORIGIN_LABEL: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Other', fuel: 'Fuel stop' };
-export const DEST_LABEL: Record<Dest, string> = { site: 'Site', hotel: 'Hotel', home: 'Home', next_site: 'Next site', fuel: 'Fuel stop' };
+export const ORIGIN_LABEL: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Other', fuel: 'Fuel stop', materials: 'Materials pickup' };
+export const DEST_LABEL: Record<Dest, string> = { site: 'Site', hotel: 'Hotel', home: 'Home', next_site: 'Next site', fuel: 'Fuel stop', materials: 'Materials pickup' };
 
 type Raw = Record<string, unknown>;
 const isObj = (v: unknown): v is Raw => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -272,13 +272,14 @@ export function legLabel(l: Pick<Leg, 'origin' | 'dest'>): string {
 // ── Start travel: one dropdown (Fred, 2026-10-13: "hotel home site between
 // site ... make it a drop down") ─────────────────────────────────────────────
 
-export type Trip = 'hotel' | 'home' | 'site' | 'between' | 'fuel';
+export type Trip = 'hotel' | 'home' | 'site' | 'between' | 'fuel' | 'materials';
 export const TRIPS: { key: Trip; label: string }[] = [
   { key: 'hotel', label: 'Hotel' },
   { key: 'home', label: 'Home' },
   { key: 'site', label: 'Site' },
   { key: 'between', label: 'Between sites' },
   { key: 'fuel', label: 'Fuel' },
+  { key: 'materials', label: 'Materials' },
 ];
 
 /**
@@ -294,7 +295,7 @@ export function lastPlace(events: DayEvent[], now: Date = new Date(), timeZone?:
     if (e.kind === 'out' || e.kind === 'in') return 'site';
     if (e.kind === 'travel_start') {
       const d = e.dest ?? 'site';
-      return d === 'hotel' ? 'hotel' : d === 'home' ? 'home' : d === 'fuel' ? 'fuel' : 'site';
+      return d === 'hotel' ? 'hotel' : d === 'home' ? 'home' : d === 'fuel' ? 'fuel' : d === 'materials' ? 'materials' : 'site';
     }
   }
   return null;

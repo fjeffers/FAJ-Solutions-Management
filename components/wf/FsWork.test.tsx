@@ -133,7 +133,27 @@ describe('FsStageAction', () => {
     expect(on.arrived).toHaveBeenCalledOnce();
     rerender(<FsStageAction stage="stopped" events={[]} busy={false} enabled on={on} />);
     expect(screen.getAllByText('Work stopped').length).toBeGreaterThan(0);
-    expect(screen.queryByRole('button')).toBeNull();
+    // Sent home with the problem still open: Off site is there, without saying it's fixed.
+    await userEvent.click(screen.getByRole('button', { name: 'Off site' }));
+    expect(on.offSite).toHaveBeenCalledOnce();
+  });
+
+  it('after Work done: clock in again and drive to the hotel or home, nothing else', async () => {
+    const on = actions();
+    const atHotel: DayEvent[] = [{ kind: 'day_start', at: iso(600) }, { kind: 'travel_start', at: iso(500), origin: 'site', dest: 'hotel' }, { kind: 'travel_end', at: iso(470), miles: 12 }];
+    const { rerender } = render(<FsStageAction stage="done" events={atHotel} busy={false} enabled={false} afterWork on={on} />);
+    await userEvent.click(screen.getByRole('button', { name: /Clock in again/ }));
+    expect(on.clockIn).toHaveBeenCalledOnce();
+    rerender(<FsStageAction stage="clocked" events={[...atHotel, { kind: 'day_start', at: iso(5) }]} busy={false} enabled={false} afterWork on={on} />);
+    const to = screen.getByRole('combobox', { name: 'Travel to' });
+    expect(within(to).getAllByRole('option').map((o) => o.getAttribute('value'))).toEqual(['hotel', 'home']);
+    expect((to as HTMLSelectElement).value).toBe('home');
+    expect(screen.queryByRole('button', { name: /Already on site/ })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /Start travel/ }));
+    expect(on.startTrip).toHaveBeenCalledWith('home', undefined);
+    // A closed job (not Work done) stays shut.
+    rerender(<FsStageAction stage="ready" events={[]} busy={false} enabled={false} on={on} />);
+    expect(screen.getByRole('button', { name: /Clock in/ })).toHaveProperty('disabled', true);
   });
 
   it('holds the buttons while the location is being read', () => {

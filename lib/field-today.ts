@@ -10,7 +10,7 @@
 // loads the rows and draws them.
 
 import { waitingRequests } from './closeout';
-import { requestWhen, whenText, type WfJob } from './wf';
+import { isFinished, requestWhen, whenText, type WfJob } from './wf';
 import { todayISO } from './utils';
 
 /** project_late (migration 122): not on site 30 minutes after the start. */
@@ -88,7 +88,8 @@ export function fieldItems({ jobs, late, issues, punchesIn, expenses, today = to
   // Work stopped: the tech reported a problem and hasn't said they're back to work.
   for (const i of issues) {
     const j = byNumber.get(i.work_order_id);
-    if (!j || j.archived) continue;
+    // However old: it stays until resolved, or until the job is finished or archived.
+    if (!j || j.archived || isFinished(j)) continue;
     items.push({
       key: `issue:${i.id}`, tone: 'red', woId: j.id,
       title: `Work stopped · ${label(j)}`,

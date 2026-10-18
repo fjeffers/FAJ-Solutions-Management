@@ -22,8 +22,9 @@ export function useFieldRows(jobs: WfJob[]): Rows {
     const since = new Date(Date.now() - 2 * 86_400_000).toISOString();
     const [late, issues, punches, expenses] = await Promise.all([
       db.from('project_late').select('id, wo_id, tech, day, start_label, reason, eta_min').gte('day', addDays(today, -1)),
+      // An open problem stays until it's resolved or the job is finished, however old (lib/field-today.ts).
       db.from('work_order_messages').select('id, work_order_id, sender_name, reason, content, created_at')
-        .eq('kind', 'issue').eq('sender_role', 'contractor').is('resolved_at', null).gte('created_at', since),
+        .eq('kind', 'issue').eq('sender_role', 'contractor').is('resolved_at', null).order('created_at', { ascending: false }).limit(200),
       db.from('job_punches').select('wo_id, contractor_name, at').eq('kind', 'in').gte('at', since),
       db.from('job_expenses').select('amount').eq('status', 'submitted'),
     ]);

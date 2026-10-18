@@ -97,13 +97,18 @@ const ARRIVE: Record<string, string> = {
  * site → hotel, and the hotel → home on the last day (Fred, 2026-10-18).
  * Stopped work is resolved from the problem bar above it (SiteAccessBar).
  */
-export function FsStageAction({ stage, events, busy, enabled, on, onReceipt, travel: asksTravel = true, lunch: asksLunch = true }: {
+export function FsStageAction({ stage, events, busy, enabled, afterWork = false, on, onReceipt, travel: asksTravel = true, lunch: asksLunch = true }: {
   stage: FsStage;
   /** The tech's own taps on this job (job.myDay). */
   events: DayEvent[];
   busy: boolean;
   /** The job is accepted and still open. Driving home and lunch still work after Work done. */
   enabled: boolean;
+  /**
+   * The site is finished (Work done) but the trip isn't: the tech can still clock in and
+   * drive to the hotel or home, another day too, without reopening the work.
+   */
+  afterWork?: boolean;
   on: DayActions;
   /** Gas, a meal or the hotel on the road (shown when not on site). */
   onReceipt?: () => void;
@@ -116,10 +121,15 @@ export function FsStageAction({ stage, events, busy, enabled, on, onReceipt, tra
   const [trip, setTrip] = useState<Trip | null>(null);
   const [from, setFrom] = useState<Origin>('home');
   const st = dayState(events, now, TZ);
-  const picked: Trip = trip ?? (stage === 'offsite' ? 'hotel' : 'site');
+  // After Work done only the drive back is left: to the hotel or home.
+  const homeward = !enabled && afterWork;
+  const trips = homeward ? TRIPS.filter((t) => t.key === 'hotel' || t.key === 'home') : TRIPS;
+  const picked: Trip = trip && trips.some((t) => t.key === trip) ? trip : homeward ? 'home' : stage === 'offsite' ? 'hotel' : 'site';
   // The first drive on a job: nothing says where they're leaving from, so ask.
   const askFrom = stage === 'clocked' && picked !== 'between' && lastPlace(events, now, TZ) === null;
   const off = !enabled || busy;
+  // Clocking in and the drive back stay open after Work done.
+  const offTrip = (!enabled && !afterWork) || busy;
   const since = 'since' in st ? st.since : null;
   const line = stage === 'onsite' || stage === 'lunch' ? `On site ${formatDuration(onSiteMs(st, now))}${'lunchMs' in st && st.lunchMs ? ` · lunch ${formatDuration(st.lunchMs)}` : ''}`
     : since && stage !== 'done' ? `Since ${timeOf(since)}` : null;
@@ -129,21 +139,21 @@ export function FsStageAction({ stage, events, busy, enabled, on, onReceipt, tra
       {askFrom && (
         <label>
           Leaving from
-          <select value={from} onChange={(e) => setFrom(e.target.value as Origin)} disabled={off}>
+          <select value={from} onChange={(e) => setFrom(e.target.value as Origin)} disabled={offTrip}>
             {FROM.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
           </select>
         </label>
       )}
       <label>
         Travel to
-        <select value={picked} onChange={(e) => setTrip(e.target.value as Trip)} disabled={stage === 'clocked' ? off : busy}>
-          {TRIPS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        <select value={picked} onChange={(e) => setTrip(e.target.value as Trip)} disabled={stage === 'clocked' ? offTrip : busy}>
+          {trips.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
       </label>
-      <button className="fs-btn fs-btn-primary" disabled={stage === 'clocked' ? off : busy}>
+      <button className="fs-btn fs-btn-primary" disabled={stage === 'clocked' ? offTrip : busy}>
         <FsIcon name="travel" size={18} /> {picked === 'site' ? 'Start travel to site' : 'Start travel'}
       </button>
-      {stage === 'clocked' && (
+      {stage === 'clocked' && !homeward && (
         <button type="button" className="fs-text-button" disabled={off} onClick={on.startJob}>Already on site? Confirm arrival</button>
       )}
     </form>
@@ -151,7 +161,7 @@ export function FsStageAction({ stage, events, busy, enabled, on, onReceipt, tra
   let action: ReactNode = null;
   switch (stage) {
     case 'ready':
-      action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={off} onClick={on.clockIn}><FsIcon name="clock" /> Clock in</button>;
+      action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={offTrip} onClick={on.clockIn}><FsIcon name="clock" /> Clock in</button>;
       break;
     case 'clocked':
     case 'offsite':
@@ -201,10 +211,14 @@ export function FsStageAction({ stage, events, busy, enabled, on, onReceipt, tra
       action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy} onClick={() => on.lunch(false)}>Back from lunch</button>;
       break;
     case 'stopped':
+      // Sent home with the problem still open: Off site is still there, without saying it's fixed.
       action = (
-        <div className="fs-card fs-stop">
-          <b>Work stopped</b>
-          <p>Your project manager has been told. Tap the button above when you&apos;re back to work.</p>
+        <div className="fs-stack">
+          <div className="fs-card fs-stop">
+            <b>Work stopped</b>
+            <p>Your project manager has been told. Tap the button above when you&apos;re back to work, or Off site if you have to leave.</p>
+          </div>
+          <button type="button" className="fs-btn fs-btn-secondary" disabled={busy} onClick={on.offSite}>Off site</button>
         </div>
       );
       break;
@@ -214,7 +228,7 @@ export function FsStageAction({ stage, events, busy, enabled, on, onReceipt, tra
         <div className="fs-card fs-form">
           <h3>Signed out for the day</h3>
           <p className="fs-muted">Heading out again today? Clock in, then start the drive.</p>
-          <button type="button" className="fs-btn fs-btn-secondary" disabled={off} onClick={on.clockIn}><FsIcon name="clock" size={18} /> Clock in again</button>
+          <button type="button" className="fs-btn fs-btn-secondary" disabled={offTrip} onClick={on.clockIn}><FsIcon name="clock" size={18} /> Clock in again</button>
         </div>
       );
       break;

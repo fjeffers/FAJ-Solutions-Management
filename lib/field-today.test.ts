@@ -42,6 +42,14 @@ describe('in the field', () => {
     expect(items[4]).toMatchObject({ view: 'workorders', detail: '$61 from techs · approve or decline on Dispatch' });
   });
 
+  it('keeps stopped work however old, until the job is finished', () => {
+    const old = { id: 'i9', work_order_id: '101', sender_name: 'Sam', reason: 'No access', content: '', created_at: '2026-10-16T21:00:00Z' };
+    const base = { today, now, late: [], punchesIn: [], expenses: [] };
+    expect(fieldItems({ ...base, jobs, issues: [old] }).map((i) => i.title)).toContain('Work stopped · WO 101 · Store 101');
+    const done = jobs.map((j) => (j.number === '101' ? { ...j, status: 'workDone' as const } : j));
+    expect(fieldItems({ ...base, jobs: done, issues: [old] }).map((i) => i.title)).not.toContain('Work stopped · WO 101 · Store 101');
+  });
+
   it('drops a late tech once they clock in here or on the same project', () => {
     const base = { jobs, today, now, issues: [], expenses: [] };
     expect(fieldItems({ ...base, late: [late({})], punchesIn: [] }).find((i) => i.key === 'late:l1')?.detail).toBe('Started at 8:00 AM · No answer yet');

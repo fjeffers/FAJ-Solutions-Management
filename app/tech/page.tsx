@@ -1343,7 +1343,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
             <>
               <SiteAccessBar number={job.number} talk={talk} late={late}
                 showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
-              <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating} enabled={working} on={dayOn}
+              <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating} enabled={working} afterWork={job.status === 'workDone'} on={dayOn}
                 travel={ask('travel')} lunch={ask('lunch')}
                 onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
               {project && <SheetLinkButton number={job.number} />}

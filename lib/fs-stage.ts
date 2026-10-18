@@ -44,6 +44,8 @@ export function fsStage(events: DayEvent[], opts: { openIssue?: boolean } = {}, 
 
 /** "Your next step" on the work order, in Field Service's words. */
 export function fsNextStep(stage: FsStage, status: WfStatus): string {
+  if (status === 'offered') return 'Accept or decline this job';
+  if (status === 'declined') return 'You declined this job';
   if (status === 'closed') return 'Work accepted';
   if (status === 'workDone') return 'Waiting for the office to approve';
   switch (stage) {

@@ -25,6 +25,11 @@ const PATHS: Record<string, string> = {
   inbox: 'M4 13l2.5-8h11L20 13v6H4z M4 13h5l1 2h4l1-2h5',
   refresh: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3 M19.5 4.5v4.5H15',
   file: 'M7 3h7l5 5v13H7z M14 3v5h5',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  camera: 'M4 8h3l1.5-2h7L17 8h3v11H4z M12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
+  receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6',
+  alert: 'M12 4l9 16H3z M12 10v4 M12 17v.5',
+  travel: 'M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M17 19a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z',
 };
 
 export function FsIcon({ name, size = 20, className }: { name: string; size?: number; className?: string }) {

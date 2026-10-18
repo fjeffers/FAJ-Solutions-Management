@@ -167,9 +167,66 @@
   font-size: 10.5px; font-style: normal; font-weight: 700; display: grid; place-items: center;
 }
 
+/* The work order (Field Service's app/components/operations.js and field.js).
+   Tailwind's reset leaves headings, buttons and fields bare, so the base
+   Field Service gives them comes along, scoped to these classes. */
+.fs-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px;
+  border-radius: 7px; font: inherit; font-weight: 650; white-space: nowrap; cursor: pointer; text-decoration: none;
+}
+.fs-btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.fs-btn-primary { background: var(--green); color: #fff; border: 1px solid var(--green); }
+.fs-btn-primary:hover:not(:disabled) { background: var(--green-hover); }
+.fs-btn-secondary { background: #fff; color: var(--ink); border: 1px solid var(--line-2); }
+.fs-btn-secondary:hover:not(:disabled) { background: #f7f9f6; }
+.fs-btn-big { min-height: 52px; font-size: 16px; width: 100%; }
+.fs-text-button { justify-self: start; padding: 0; border: 0; background: none; font: inherit; font-weight: 650; color: var(--green); cursor: pointer; }
+.fs-text-button:disabled { cursor: not-allowed; opacity: 0.55; }
+.fs-muted { margin: 0; color: var(--muted); }
+.fs-stack { display: grid; gap: 18px; align-content: start; }
+.fs-stack > .fs-btn-secondary { justify-self: start; }
+.fs-split { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.fs-form { display: grid; gap: 14px; padding: 22px 24px; }
+.fs-form h3, .fs-day-title { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.2; color: var(--ink); }
+.fs-form p { margin: 0; }
+.fs-form label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+.fs-form select, .fs-form input, .fs-form textarea {
+  min-height: 40px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 7px; background: #fff; font: inherit; color: var(--ink);
+}
+.fs-form a { display: inline-flex; align-items: center; gap: 6px; color: var(--green); }
+.fs-scope { margin: 0; white-space: pre-wrap; padding: 12px; border-radius: 8px; background: #f6f8f4; }
+.fs-stop { display: grid; gap: 6px; padding: 18px 20px; border-color: #efc9bf; background: #fdf3f0; color: var(--red-text); }
+.fs-stop p { margin: 0; }
+.fs-stage-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.fs-work-sections { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+.fs-work-section-tabs {
+  display: flex; gap: 4px; overflow-x: auto; padding: 4px; border: 1px solid var(--line); border-radius: 9px;
+  background: #eceeea; width: max-content; max-width: 100%;
+}
+.fs-work-section-tabs button {
+  flex: none; height: 34px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer;
+}
+.fs-work-section-tabs button[aria-selected='true'] { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+.fs-work-sections section[role='tabpanel']:focus { outline: none; }
+.fs-next-action {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px;
+  border: 1px solid #cfdcc8; border-radius: 10px; background: #e8eee3;
+}
+.fs-next-action span { display: grid; gap: 4px; }
+.fs-next-action small { font-size: 9px; font-weight: 700; letter-spacing: 0.16em; color: #4c5e55; }
+.fs-next-action b { font-size: 18px; color: var(--ink); }
+.fs-timeline { list-style: none; margin: 8px 0; padding: 0; display: grid; }
+.fs-timeline li { display: grid; grid-template-columns: 14px 1fr; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.fs-timeline li:first-child { border-top: 0; }
+.fs-timeline li i { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--green); }
+.fs-timeline li div { display: grid; gap: 3px; }
+.fs-timeline small { color: var(--muted); }
+
 /* Smaller screens */
 @media (max-width: 1180px) {
   .fs-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fs-split { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .fs-topbar { gap: 10px; padding-right: 14px; height: 68px; }
@@ -197,6 +254,8 @@
 @media (max-width: 640px) {
   .fs-stat-grid { grid-template-columns: 1fr; }
   .fs-wo-grid { grid-template-columns: 1fr; }
+  .fs-next-action { flex-direction: column; align-items: flex-start; }
+  .fs-form { padding: 18px 16px; }
 }
 @media (max-width: 768px) {
   /* Same iOS rule as the rest of the app: 16px or the page zooms on every tap. */

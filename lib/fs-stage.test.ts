@@ -58,6 +58,11 @@ describe('fsNextStep', () => {
     expect(fsNextStep('stopped', 'inProgress')).toBe('Resolve the reported issue');
   });
 
+  it('asks for an answer on a job offered to the tech', () => {
+    expect(fsNextStep('ready', 'offered')).toBe('Accept or decline this job');
+    expect(fsNextStep('ready', 'declined')).toBe('You declined this job');
+  });
+
   it("follows FAJ's own review once the work is done", () => {
     expect(fsNextStep('done', 'workDone')).toBe('Waiting for the office to approve');
     expect(fsNextStep('ready', 'closed')).toBe('Work accepted');

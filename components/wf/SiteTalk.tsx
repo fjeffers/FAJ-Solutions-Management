@@ -104,6 +104,9 @@ export function buzz() {
 
 const mins = (fromIso: string, to = Date.now()) => Math.max(0, Math.round((to - Date.parse(fromIso)) / 60000));
 const isMine = (m: TechMessage) => m.mine ?? m.sender_role === 'contractor';
+/** The problem this tech reported on site and hasn't marked resolved (work is stopped). */
+export const openIssue = (msgs: TechMessage[]): TechMessage | null =>
+  [...msgs].reverse().find((m) => m.kind === 'issue' && isMine(m) && !m.resolved_at) ?? null;
 const ASKED_KEY = 'faj-access-asked';
 function askedBefore(id: string): boolean {
   try { return (window.localStorage.getItem(ASKED_KEY) ?? '').split(',').includes(id); } catch { return false; }
@@ -153,7 +156,7 @@ export function SiteAccessBar({ number, talk, showProblem, late }: {
     return () => window.clearInterval(t);
   }, []);
 
-  const issue = [...msgs].reverse().find((m) => m.kind === 'issue' && isMine(m) && !m.resolved_at) ?? null;
+  const issue = openIssue(msgs);
   const p = PROBLEMS[problemOf(issue?.content ?? '')];
   // Someone got back to them after they reported it.
   const reply = issue ? [...msgs].reverse().find((m) => !isMine(m) && m.sender_role !== 'contractor' && m.created_at > issue.created_at

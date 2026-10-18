@@ -25,14 +25,16 @@ import {
 } from '@/lib/wf-outbox';
 import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
-  fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
+  fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, WF_STATUS_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
-import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
+import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, openIssue, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
+import { FsDayLog, FsNextAction, FsStageAction, FsWorkSections, type FsSection } from '@/components/wf/FsWork';
+import { fsNextStep, fsStage, type FsStage } from '@/lib/fs-stage';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
@@ -49,7 +51,7 @@ import TechInstall from '@/components/TechInstall';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
-import WfJobDetail, { TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
+import WfJobDetail, { ChecklistCard, InfoListCard, SiteInfoCard, TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
@@ -80,6 +82,10 @@ const UNDER_PROFILE: Tab[] = ['jobs', 'available', 'pay'];
 // jobs here: listed under My jobs, with the normal clock. Set to true to bring
 // back the Projects list and the travel / lunch / day-report flow.
 const SHOW_PROJECTS = false;
+// The job opens as Field Service's work order (Fred, 2026-10-18): the next
+// step, then tabs for Overview, Documents, Photos & questions, Time & travel,
+// Expenses and Messages. Set to false to bring back the one-page job screen.
+const FS_JOB_SCREEN = true;
 const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, ...UNDER_PROFILE, 'projects'] : [...TABS, ...UNDER_PROFILE];
 const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
 const TAB_TITLE: Record<Tab, string> = {
@@ -996,6 +1002,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const [noteOpen, setNoteOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [expenses, setExpenses] = useState<TechExpense[]>([]);
+  const [section, setSection] = useState<FsSection>('overview');
   const loadExpenses = useCallback(async () => {
     const { data, error } = await createClient().rpc('wf_tech_job_expenses', { p_wo_number: job.number });
     if (!error && Array.isArray(data)) setExpenses(data as TechExpense[]);
@@ -1168,8 +1175,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     );
   }
 
-  return (
-    <>
+  const detail = (
       <WfJobDetail
         job={job}
         ownerView={false}
@@ -1228,6 +1234,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
         </>}
         bottom={simple && job.status !== 'offered' ? undefined : bottom}
       />
+  );
+  const dialogs = (
+    <>
       {offOpen && (
         <OffSiteDialog missing={offSiteMissing} onClose={() => setOffOpen(false)}
           onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
@@ -1269,6 +1278,90 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           }}
         />
       )}
+    </>
+  );
+  if (!FS_JOB_SCREEN) return <>{detail}{dialogs}</>;
+
+  // Field Service's work order (Fred, 2026-10-18). A job with the day of travel,
+  // lunch and time on site shows where the tech is in it; any other job keeps
+  // FAJ's plain clock. Every tap still goes through the outbox.
+  const stage: FsStage = project
+    ? fsStage(job.myDay ?? [], { openIssue: !!openIssue(talk.msgs) }, undefined, 'America/New_York')
+    : isClockedIn(job) ? 'onsite' : 'ready';
+  const live = job.status !== 'offered' && job.status !== 'declined';
+  const until = parseClockTime(job.endTime);
+  const panels: Record<FsSection, React.ReactNode> = {
+    overview: (
+      <div className="fs-split">
+        <div className="fs-stack">
+          {project && (working || job.status === 'workDone') ? (
+            <>
+              <SiteAccessBar number={job.number} talk={talk} late={late}
+                showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
+              <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating} enabled={working} on={dayOn} />
+              <SheetLinkButton number={job.number} />
+            </>
+          ) : showClock ? (
+            <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} />
+          ) : null}
+          {bottom}
+        </div>
+        <div className="fs-stack">
+          <section className="fs-card fs-form">
+            <h3>Work order</h3>
+            <p className="fs-meta">{[job.title, job.serviceType, `WO ${job.number}`].filter(Boolean).join(' · ')}</p>
+            {fullAddress(job) && (
+              <p><a href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><FsIcon name="pin" size={16} />{fullAddress(job)}</a></p>
+            )}
+            <p>{whenText(job)}{until ? ` – ${fmtClock12(until)}` : ''}</p>
+            {job.description && <p className="fs-scope">{job.description}</p>}
+          </section>
+          <SiteInfoCard job={job} />
+          <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
+        </div>
+      </div>
+    ),
+    documents: <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />,
+    evidence: (
+      <div className="fs-split">
+        <div className="fs-stack">
+          <JobPhotos canAdd={canReport} ph={ph} />
+          {live && <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />}
+        </div>
+        <div className="fs-stack">
+          <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />
+          {live && (
+            <JobReport
+              job={job} uid={uid} canEdit={canReport}
+              notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
+              dirty={dirty} onSave={(extra) => saveReport(extra)}
+            />
+          )}
+        </div>
+      </div>
+    ),
+    time: (
+      <section className="fs-card fs-form">
+        <h3>My time and travel</h3>
+        {project
+          ? <FsDayLog events={job.myDay ?? []} />
+          : <TimeClockCard job={job} enabled={false} onToggle={() => undefined} showButton={false} />}
+      </section>
+    ),
+    expenses: canReport || expenses.length > 0
+      ? <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
+      : <p className="fs-card fs-empty">Expenses open once the job is accepted.</p>,
+    messages: <JobMessages number={job.number} talk={project ? talk : undefined} />,
+  };
+  const tone = job.status === 'declined' ? 'red' : job.status === 'offered' || job.status === 'workDone' ? 'amber' : 'green';
+  return (
+    <>
+      <FsPageHeader title={job.siteName || job.title} subtitle={[job.client, `WO ${job.number}`].filter(Boolean).join(' · ')}>
+        <FsChip tone={tone}>{WF_STATUS_LABEL[job.status]}</FsChip>
+      </FsPageHeader>
+      <FsNextAction text={fsNextStep(stage, job.status)} onContinue={() => setSection('overview')} />
+      <FsWorkSections active={section} onChange={setSection} panels={panels} />
+      {dialogs}
     </>
   );
 }

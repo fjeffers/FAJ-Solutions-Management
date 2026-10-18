@@ -36,8 +36,12 @@ function InfoItem({ icon, title, lines }: { icon: ReactNode; title: string; line
  * and #number, "City - title", the company, then four key facts. The office
  * also sees who is on it and what the client pays; a tech sees no money.
  */
-export function DetailHeader({ job, ownerView }: { job: WfJob; ownerView: boolean }) {
-  const logged = workedMs(job);
+export function DetailHeader({ job, ownerView, loggedMs }: {
+  job: WfJob; ownerView: boolean;
+  /** The office: every clock-in and clock-out on the job added up (job_punches). */
+  loggedMs?: number;
+}) {
+  const logged = loggedMs ?? workedMs(job);
   const type = workTypeFor(job.serviceType, job.title);
   const city = place(job);
   const times = [job.startTime, job.endTime].filter(Boolean).map(fmtTime).join(' – ');
@@ -248,10 +252,12 @@ export function LocationCard({ job }: { job: WfJob }) {
  * techs / money on the right. On a phone: one column, clock first.
  */
 export default function WfJobDetail({
-  job, ownerView, hideBar, onBack, onRefresh, refreshing, actions, clock, side, onToggleTask, bottom, below, simple = false,
+  job, ownerView, loggedMs, hideBar, onBack, onRefresh, refreshing, actions, clock, side, onToggleTask, bottom, below, simple = false,
 }: {
   job: WfJob;
   ownerView: boolean;
+  /** Time logged in the header, when the page has every clock-in (the office). */
+  loggedMs?: number;
   /** The page's own top bar already has Back and Refresh (the tech portal). */
   hideBar?: boolean;
   onBack: () => void;
@@ -279,7 +285,7 @@ export default function WfJobDetail({
     return (
       <div className="wf-rise">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
-          <DetailHeader job={job} ownerView={ownerView} />
+          <DetailHeader job={job} ownerView={ownerView} loggedMs={loggedMs} />
           {clock}
           <DescriptionCard job={job} />
         </div>
@@ -309,7 +315,7 @@ export default function WfJobDetail({
       </div>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <DetailHeader job={job} ownerView={ownerView} />
+        <DetailHeader job={job} ownerView={ownerView} loggedMs={loggedMs} />
         {actions && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{actions}</div>}
         <div className="wf-detail-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>

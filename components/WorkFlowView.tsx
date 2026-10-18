@@ -32,6 +32,7 @@ import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import JobLogReport from '@/components/JobLogReport';
 import { jobGaps } from '@/lib/job-gaps';
+import { buildVisits, logTotals, type Punch } from '@/lib/job-log';
 import { mapLink } from '@/lib/geo';
 import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseStatus } from '@/lib/expenses';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
@@ -376,6 +377,17 @@ function OwnerJob({
   // Closeout changes Fred makes himself show at once (each is safe to repeat).
   const [coOps, setCoOps] = useState<CloseoutOp[]>([]);
 
+  // Time logged: every clock-in and clock-out on the job (job_punches), not
+  // only the latest one the time log keeps.
+  const [clockMs, setClockMs] = useState<number | null>(null);
+  useEffect(() => {
+    void createClient().from('job_punches').select('contractor_name, kind, at, lat, lng, accuracy').eq('wo_id', w.id).order('at')
+      .then(({ data }) => {
+        const punches = (data as Punch[] | null) ?? [];
+        setClockMs(punches.length ? logTotals(buildVisits(punches, [])).ms : null);
+      });
+  }, [w.id, w.updated_at]);
+
   let job = row.job;
   for (const [id, done] of Object.entries(ticked)) job = withTask(job, id, done);
   for (const o of coOps) job = withCloseout(job, o);
@@ -505,6 +517,7 @@ function OwnerJob({
       <WfJobDetail
         job={job}
         ownerView
+        loggedMs={clockMs ?? undefined}
         onBack={onBack}
         onRefresh={refresh}
         refreshing={refreshing}

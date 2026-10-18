@@ -1,7 +1,17 @@
 'use client';
+// The job's time, per tech. Every clock-in and clock-out is kept in
+// job_punches (migration-102); contractor_time_logs keeps only the latest one
+// per tech, so each visit and the total come from the punches (lib/job-log.ts),
+// and the drive to the site from the time log.
 import { useEffect, useState } from 'react';
 import type { TimeLog } from '@/lib/types';
 import { mapLink } from '@/lib/geo';
+import { createClient } from '@/lib/supabase/client';
+import { buildVisits, type Punch, type Visit } from '@/lib/job-log';
+// The same minutes as the job's header and its Travel and time card.
+import { formatDuration } from '@/lib/wf';
+
+const TZ = 'America/New_York';
 
 interface Props {
   woId: string | undefined;
@@ -14,6 +24,10 @@ function fmtTime(iso: string | null | undefined): string {
     minute: '2-digit',
     hour12: true,
   });
+}
+
+function fmtDay(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: TZ });
 }
 
 function fmtDateTime(iso: string | null | undefined): string {
@@ -60,13 +74,17 @@ function Row({ label, value, sub }: { label: string; value: string; sub?: React.
   );
 }
 
-function ContractorCard({ log }: { log: TimeLog }) {
+const msBetween = (a: string | null | undefined, b: string | null | undefined) =>
+  (a && b ? Math.max(0, Date.parse(b) - Date.parse(a)) : 0);
+
+function ContractorCard({ log, visits }: { log: TimeLog; visits: Visit[] }) {
   const travelDur  = fmtDuration(log.travel_start_at, log.arrived_at);
-  const onsiteDur  = fmtDuration(log.checked_in_at, log.checked_out_at);
-  const totalDur   = fmtDuration(log.travel_start_at, log.checked_out_at);
+  const onsiteMs   = visits.reduce((t, v) => t + v.ms, 0);
+  const onsiteDur  = visits.length ? formatDuration(onsiteMs) : '—';
+  const totalDur   = visits.length || log.arrived_at ? formatDuration(msBetween(log.travel_start_at, log.arrived_at) + onsiteMs) : '—';
 
   const hasAnyData =
-    log.travel_start_at || log.arrived_at || log.checked_in_at || log.checked_out_at;
+    log.travel_start_at || log.arrived_at || visits.length > 0;
 
   return (
     <div style={{
@@ -123,16 +141,21 @@ function ContractorCard({ log }: { log: TimeLog }) {
               label="🚗 Travel Time"
               value={travelDur}
             />
-            <Row
-              label="▶️ Work Started"
-              value={fmtTime(log.checked_in_at)}
-              sub={gpsLink(log.checked_in_lat, log.checked_in_lng, log.checked_in_accuracy)}
-            />
-            <Row
-              label="⏹ Work Ended"
-              value={fmtTime(log.checked_out_at)}
-              sub={gpsLink(log.checked_out_lat, log.checked_out_lng, log.checked_out_accuracy)}
-            />
+            {/* Every clock-in and clock-out, not only the latest. */}
+            {visits.map((v) => (
+              <Row
+                key={v.inAt}
+                label={`▶️ On site ${fmtDay(v.inAt)}`}
+                value={`${fmtTime(v.inAt)} – ${v.open ? 'now' : fmtTime(v.outAt)} · ${formatDuration(v.ms)}`}
+                sub={v.inGps || v.outGps ? (
+                  <>
+                    {v.inGps && <>In {gpsLink(v.inGps.lat, v.inGps.lng, v.inGps.accuracy)}</>}
+                    {v.inGps && v.outGps && <br />}
+                    {v.outGps && <>Out {gpsLink(v.outGps.lat, v.outGps.lng, v.outGps.accuracy)}</>}
+                  </>
+                ) : undefined}
+              />
+            ))}
             <Row
               label="⏱ On-Site Time"
               value={onsiteDur}
@@ -150,6 +173,7 @@ function ContractorCard({ log }: { log: TimeLog }) {
 
 export default function WOTimeLogs({ woId }: Props) {
   const [logs, setLogs]     = useState<TimeLog[]>([]);
+  const [punches, setPunches] = useState<Punch[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
@@ -157,17 +181,21 @@ export default function WOTimeLogs({ woId }: Props) {
     if (!woId) return;
     setLoading(true);
     setError(null);
-    fetch(`/api/wo-time-logs?wo_id=${woId}`)
-      .then((r) => {
+    Promise.all([
+      fetch(`/api/wo-time-logs?wo_id=${woId}`).then((r) => {
         if (!r.ok) throw new Error('Failed to load');
         return r.json();
-      })
-      .then((data) => setLogs(data))
+      }),
+      createClient().from('job_punches').select('contractor_name, kind, at, lat, lng, accuracy').eq('wo_id', woId).order('at'),
+    ])
+      .then(([data, p]) => { setLogs(data); setPunches((p.data as Punch[] | null) ?? []); })
       .catch(() => setError('Could not load time logs.'))
       .finally(() => setLoading(false));
   }, [woId]);
 
   if (!woId) return null;
+  const visits = buildVisits(punches, logs, new Date(), TZ);
+  const visitsOf = (name: string) => visits.filter((v) => v.tech === name);
 
   if (loading) {
     return (
@@ -212,7 +240,8 @@ export default function WOTimeLogs({ woId }: Props) {
               gap: 10,
             }}>
               {logs.map((log) => {
-                const dur = fmtDuration(log.checked_in_at, log.checked_out_at);
+                const mine = visitsOf(log.contractor_name);
+                const dur = mine.length ? formatDuration(mine.reduce((t, v) => t + v.ms, 0)) : '—';
                 return (
                   <div key={log.id} style={{
                     padding: '10px 12px',
@@ -236,7 +265,7 @@ export default function WOTimeLogs({ woId }: Props) {
 
           {/* Individual cards */}
           {logs.map((log) => (
-            <ContractorCard key={log.id} log={log} />
+            <ContractorCard key={log.id} log={log} visits={visitsOf(log.contractor_name)} />
           ))}
         </>
       )}

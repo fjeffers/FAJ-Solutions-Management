@@ -109,7 +109,7 @@ export function techStatusWord(wo: Pick<WorkOrder, 'wo_status' | 'contractor_nam
 }
 
 /** "Oct 19, 2026, 8:00 AM – Oct 24, 2026", or "Oct 19, 2026, 10:00 AM – 5:00 PM" on one day. */
-export function scheduleLine(wo: Pick<WorkOrder, 'start_date' | 'start_time' | 'end_date' | 'end_time'>): string {
+export function scheduleLine(wo: Partial<Pick<WorkOrder, 'start_date' | 'start_time' | 'end_date' | 'end_time'>>): string {
   const start = [wo.start_date ? fmtDate(wo.start_date) : null, wo.start_time ? clock12(wo.start_time) : null].filter(Boolean).join(', ');
   const end = [
     wo.end_date && wo.end_date !== wo.start_date ? fmtDate(wo.end_date) : null,

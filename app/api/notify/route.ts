@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { newWorkOrderPush, pushToTech } from '@/lib/tech-push';
 
 const OWNER_EMAIL = 'fajsolutions@gmail.com';
 
@@ -18,10 +20,12 @@ export async function POST(req: NextRequest) {
   // Fred, and the portal's server actions (no session cookie) rely on them.
   // Everything else emails an arbitrary address, so it requires a signed-in
   // session — otherwise this endpoint is an open relay on a public URL.
+  let signedInId: string | null = null;
   if (!OWNER_TYPES.has(body.type)) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    signedInId = user.id;
   }
   const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders, count,
     wo_id, portal_token, pay, reference, site, schedule } = body;
@@ -174,7 +178,16 @@ export async function POST(req: NextRequest) {
       html,
       replyTo: process.env.REPLY_TO_EMAIL || undefined,
     });
-    return NextResponse.json({ ok: true });
+    // A new job also pops up on the tech's phone, app open or not, when they
+    // turned pop-ups on (Fred, 2026-10-18). Never blocks the email.
+    let pushed = 0;
+    if (type === 'wo_assigned' && wo_id && signedInId && contractor_name) {
+      try {
+        pushed = await pushToTech(createAdminClient(), signedInId, contractor_name,
+          newWorkOrderPush({ woId: wo_id, woNumber: wo_number, title, site, schedule }));
+      } catch { /* pop-up is a bonus; the email went */ }
+    }
+    return NextResponse.json({ ok: true, pushed });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });

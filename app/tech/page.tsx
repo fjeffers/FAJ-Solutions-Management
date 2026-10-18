@@ -103,7 +103,9 @@ export default function TechPortalPage() {
     if (t === 'paperwork') return 'profile';
     return ALL_TABS.includes(t as Tab) ? (t as Tab) : 'project';
   });
-  const [openId, setOpenId] = useState<string | null>(null);
+  // A new-job pop-up opens /tech?wo=<id> straight on that job (lib/tech-push.ts).
+  const [openId, setOpenId] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('wo'));
 
   const [profile, setProfile] = useState<TechProfile | null>(null);
   const [officeJobs, setOfficeJobs] = useState<WfJob[]>([]);
@@ -521,6 +523,10 @@ export default function TechPortalPage() {
             <>
               <FsPageHeader title="Profile" subtitle={`${profile.name} · Technician`} />
               <ProfileMenu offers={offers.length} go={go} />
+              <div style={{ marginBottom: 18, maxWidth: 480 }}>
+                <PushSwitch onText="On. New work orders and messages pop up on this phone, even with the app closed."
+                  offText="Turn on so new work orders and messages pop up on this phone, even with the app closed." />
+              </div>
               <ProfileTab
                 profile={profile} portalToken={portalToken} onSignOut={signOut}
                 onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }}

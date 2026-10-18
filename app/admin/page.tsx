@@ -4,6 +4,7 @@ import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders, woPayoutTotal, fmtMoney, techPayToShow } from '@/lib/utils';
+import { scheduleLine as woScheduleLine } from '@/lib/email-templates';
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
@@ -560,7 +561,7 @@ export default function HomePage() {
         ? payload.contractor_names
         : (payload.contractor_name ? [payload.contractor_name] : []);
       const siteLine = [w.site_name, w.site_address, w.site_city, w.site_state].filter(Boolean).join(', ') || null;
-      const scheduleLine = [w.start_date, w.start_time].filter(Boolean).join(' ') || null;
+      const scheduleLine = woScheduleLine(w) || null;
       const refId = w.external_wo_id || w.client_reference || null;
       for (const name of assignedNames) {
         const c = contractors.find((x) => x.name === name);

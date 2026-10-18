@@ -156,6 +156,8 @@ export type WfJob = {
   startAsks: StartAsk[];
   /** Tech only: their own odometer readings on this job (migration 128). */
   myOdometer?: OdometerReading[];
+  /** Office only: the client's links on the job (migration 130). The tech app reads them with wf_tech_job_links. */
+  clientLinks?: string[];
 };
 
 type Row = Record<string, unknown>;
@@ -301,6 +303,7 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     capture: parseCapture(r.capture),
     startAsks: parseStartAsks(r.start_asks),
     myOdometer: owner ? [] : parseOdometer(r.my_odometer),
+    clientLinks: owner && Array.isArray(r.client_links) ? (r.client_links as unknown[]).filter((l): l is string => typeof l === 'string' && /^https?:\/\//i.test(l)) : [],
   };
 }
 

@@ -13,6 +13,7 @@ import {
   formatClock, formatDuration, parseClockTime, fmtClock12, type WfJob, type WfTask,
 } from '@/lib/wf';
 import { Section } from './WfUi';
+import { linkLabel } from '@/lib/client-links';
 import { PrimioBar } from './PrimioScreens';
 
 export const mapsSearch = (j: WfJob) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress(j))}`;
@@ -289,6 +290,20 @@ export default function WfJobDetail({
                 same thing"). Skills and tools show only when filled in. */}
             <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
             <DescriptionCard job={job} />
+            {/* The client's links, on the office's own job page too (Fred, 2026-10-18:
+                "I just added two links and not seeing it reflect"). */}
+            {ownerView && (job.clientLinks?.length ?? 0) > 0 && (
+              <Section title="Client links" subtitle="The tech sees these as buttons on the job">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {job.clientLinks!.map((l) => (
+                    <a key={l} className="wf-btn wf-btn-outline" href={l} target="_blank" rel="noopener noreferrer"
+                      style={{ justifyContent: 'flex-start', minWidth: 0 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
+                    </a>
+                  ))}
+                </div>
+              </Section>
+            )}
             <SiteInfoCard job={job} />
             <ChecklistCard job={job} onToggle={onToggleTask} />
             {below}

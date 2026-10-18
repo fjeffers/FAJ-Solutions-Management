@@ -461,3 +461,10 @@ describe('an office job reaches the tech with everything it asks for', () => {
     expect([job.startTime, job.endTime]).toEqual(['08:00', '20:00']);
   });
 });
+
+describe("the client's links on the office job page", () => {
+  it('reads the saved links, web addresses only', () => {
+    const job = wfJobFromOwner({ id: 'g', wo_number: '19101399', title: 't', client_links: ['https://drive.google.com/drive/folders/x', 'not a link', 'https://app.smartsheet.com/b/form/y'] } as never);
+    expect(job.clientLinks).toEqual(['https://drive.google.com/drive/folders/x', 'https://app.smartsheet.com/b/form/y']);
+  });
+});

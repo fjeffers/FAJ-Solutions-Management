@@ -35,7 +35,7 @@ import { aiFailureText } from '@/lib/wo-ai';
 import { downloadXLSXBook } from '@/lib/export';
 import { billJpeg } from '@/lib/bill-image';
 import {
-  sheetName, siteBill, siteSheetRows, summaryFacts, totalsSheetRows,
+  billReadings, sheetName, siteBill, siteSheetRows, summaryFacts, totalsSheetRows,
   type BillDay, type BillSite, type OdoRow, type SiteBill,
 } from '@/lib/weekly-bill';
 
@@ -374,7 +374,8 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
     return {
       wo, logs, totals: totalsOf(logs), receipts, readings,
       // The weekly bill for this site (lib/weekly-bill.ts): days, drives, odometer, receipts, what to check.
-      bill: siteBill({ woId: wo.id, capture: parseCapture(wo.capture), logs, readings, receipts, today: todayNY() }),
+      // Every reading on the job goes in, so an overnight drive at the end of the dates keeps its end reading.
+      bill: siteBill({ woId: wo.id, capture: parseCapture(wo.capture), logs, readings: billReadings(odo, wo.id), receipts, today: todayNY() }),
       photos: photos.filter((p) => p.wo_id === wo.id && inRange(dayOf(p.taken_at, TZ), from, to)),
     };
   }), [wos, events, expenses, odo, photos, from, to, now]);

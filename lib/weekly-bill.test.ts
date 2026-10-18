@@ -157,3 +157,49 @@ describe('the download', () => {
     expect(summaryPrompt(facts)).toContain('"site":"Maple St"');
   });
 });
+
+// Fixes from the review Fred pasted from Greptile (2026-10-18).
+describe('weekly bill review fixes', () => {
+  it("never puts the office-only checks in the client's Excel", async () => {
+    // A receipt with no photo makes a flag; it stays on the screen, not in the sheet.
+    const bill = siteBill({ woId: 'wo-1', capture: [...portal], logs, readings, receipts: [receipt({ receipt_path: null })], today: '2026-10-18' });
+    expect(bill.flags.map((f) => f.kind)).toContain('receipt_photo');
+    const cells = siteSheetRows({ name: 'Maple St', wo: '101', address: '', bill }, 'Oct 12 – Oct 18').flat().map(String);
+    expect(cells.some((c) => c.includes('To check before sending'))).toBe(false);
+    expect(cells.some((c) => bill.flags.some((f) => c === f.text))).toBe(false);
+  });
+
+  it('keeps the end reading of a drive that crosses midnight at the end of the dates', async () => {
+    const { billReadings } = await import('./weekly-bill');
+    // Monday 11:30 PM: site to hotel, arriving 12:40 AM Tuesday. The report ends Monday.
+    const night = buildDayLogs([
+      ev('travel_start', '23:30', { origin: 'site', dest: 'hotel' }, '2026-10-12'),
+      ev('travel_end', '00:40', { miles: 58 }, '2026-10-13'),
+    ], new Date('2026-10-14T12:00:00Z'), TZ).filter((d) => d.day <= '2026-10-12');
+    const at = (iso: string, reading: number, moment: 'start' | 'end'): OdoRow =>
+      ({ wo_id: 'wo-1', contractor_name: 'Dana', at: new Date(iso).toISOString(), moment, reading, ai_reading: reading, photo_path: 'wo-1/odo_n.jpg' });
+    const all = [at('2026-10-12T23:31:00-04:00', 50000, 'start'), at('2026-10-13T00:41:00-04:00', 50060, 'end'), { ...at('2026-10-13T00:41:00-04:00', 1, 'end'), wo_id: 'other' }];
+    const bill = siteBill({ woId: 'wo-1', capture: [...portal], logs: night, readings: billReadings(all, 'wo-1'), receipts: [], today: '2026-10-18' });
+    expect(bill.legs.map((l) => [l.odoStart?.reading, l.odoEnd?.reading, l.odoMiles])).toEqual([[50000, 50060, 60]]);
+    expect(bill.flags.filter((f) => f.kind === 'odo_missing')).toEqual([]);
+    expect(billReadings(all, 'wo-1')).toHaveLength(2);
+  });
+
+  it('flags an odometer reading saved with no photo', () => {
+    const noPhoto = [odo('06:51', 48200, 48200, null), odo('07:29', 48222), odo('16:03', 48222), odo('16:37', 48243.5)];
+    const bill = siteBill({ woId: 'wo-1', capture: [...portal], logs, readings: noPhoto, receipts: [], today: '2026-10-18' });
+    expect(bill.flags.filter((f) => f.kind === 'odo_photo').map((f) => f.text))
+      .toEqual(['Dana, Mon, Oct 12, Hotel → Site: the odometer reading at the start (48,200) was saved with no photo.']);
+    // A job made before the lists (it asks for everything, no list) is not flagged for it.
+    expect(siteBill({ woId: 'wo-1', capture: null, logs, readings: noPhoto, receipts: [], today: '2026-10-18' }).flags.filter((f) => f.kind === 'odo_photo')).toEqual([]);
+  });
+
+  it('puts each drive and its odometer readings in the JPEG', async () => {
+    const { billImageTables } = await import('./bill-image');
+    const bill = siteBill({ woId: 'wo-1', capture: [...portal], logs, readings, receipts: [receipt({})], today: '2026-10-18' });
+    const drives = billImageTables({ name: 'Maple St', wo: '101', address: '', bill }).tables.find((t) => t.heading === 'Drives');
+    expect(drives?.columns).toEqual(['Date', 'Technician', 'Drive', 'Started', 'Ended', 'Hours', 'GPS mi', 'Odo start', 'Odo end', 'Odo mi']);
+    expect(drives?.rows[0]).toEqual(['Mon, Oct 12', 'Dana', 'Hotel → Site', '6:50 AM', '7:28 AM', '0.63', '21.4', '48,200', '48,222', '22']);
+    expect(drives?.rows).toHaveLength(2);
+  });
+});

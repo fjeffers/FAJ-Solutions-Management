@@ -40,7 +40,7 @@ export type BillDay = {
   back: string | null;
   onSiteHours: number; travelHours: number; gpsMiles: number; odoMiles: number | null; receipts: number;
 };
-export type BillFlag = { kind: 'odo_gps' | 'odo_missing' | 'odo_typed' | 'odo_backwards' | 'receipt_typed' | 'receipt_photo' | 'fuel' | 'open'; text: string };
+export type BillFlag = { kind: 'odo_gps' | 'odo_missing' | 'odo_photo' | 'odo_typed' | 'odo_backwards' | 'receipt_typed' | 'receipt_photo' | 'fuel' | 'open'; text: string };
 export type SiteBill = {
   woId: string;
   shows: { travel: boolean; odometer: boolean; receipts: boolean; lunch: boolean };
@@ -60,6 +60,14 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export const billDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const miles = (n: number) => `${n.toLocaleString('en-US', { maximumFractionDigits: 1 })} mi`;
+
+/**
+ * The odometer readings a site's bill may use: every reading on the job, not
+ * only those dated inside the report's dates. A drive that starts on the last
+ * evening and ends after midnight keeps its end reading this way; matchOdometer
+ * only attaches readings close to a drive that is on the bill.
+ */
+export const billReadings = (all: OdoRow[], woId: string): OdoRow[] => all.filter((o) => o.wo_id === woId);
 
 /**
  * Each drive's odometer readings: the start photo, taken at Check in once the
@@ -167,6 +175,14 @@ export function siteBill(input: {
           flags.push({ kind: 'odo_typed', text: `${when}: typed ${o.reading.toLocaleString('en-US')}, the photo reads ${o.ai_reading!.toLocaleString('en-US')}.` });
         }
       }
+      // A reading typed in with no photo behind it, on a job that asks for the photos.
+      if (capture !== null) {
+        for (const [o, end] of [[l.odoStart, 'start'], [l.odoEnd, 'end']] as const) {
+          if (o && !o.photo_path) {
+            flags.push({ kind: 'odo_photo', text: `${when}: the odometer reading at the ${end} (${o.reading.toLocaleString('en-US')}) was saved with no photo.` });
+          }
+        }
+      }
     }
   }
 
@@ -212,7 +228,11 @@ const FROM_WORD: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 
 
 export type BillSite = { name: string; wo: string; clientWo?: string | null; address: string; bill: SiteBill };
 
-/** One site's sheet: the header, a line per tech per day, every drive, every receipt, the totals and the flags. */
+/**
+ * One site's sheet: the header, a line per tech per day, every drive, every
+ * receipt and the totals. The Excel goes to the client, so the office-only
+ * "To check before sending" list is never in it (it stays on the screen).
+ */
 export function siteSheetRows(site: BillSite, range: string): (string | number)[][] {
   const { bill } = site;
   const s = bill.shows;
@@ -246,10 +266,6 @@ export function siteSheetRows(site: BillSite, range: string): (string | number)[
     for (const r of bill.receipts) rows.push([r.expense_date, expenseCategoryLabel(r.category), r.vendor ?? '', r.note ?? '', r.gallons ?? '', Number(r.amount)]);
     for (const c of bill.totals.byCategory) rows.push(['', c.label, '', '', '', c.sum]);
     rows.push(['', 'Total', '', '', bill.totals.gallons || '', bill.totals.receipts]);
-  }
-  if (bill.flags.length) {
-    rows.push([], ['To check before sending']);
-    for (const f of bill.flags) rows.push([f.text]);
   }
   return rows;
 }

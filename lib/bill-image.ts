@@ -1,8 +1,10 @@
 // One site's weekly bill as a JPEG (Fred, 2026-10-18: "upload it back to the
 // customers in a JPEG form"), drawn on a canvas in the browser: the header,
-// the totals, each day, each receipt, and where the numbers come from. Uses
+// the totals, each day, each drive with its odometer readings, each receipt,
+// and where the numbers come from. Uses
 // the same lines as the spreadsheet (lib/weekly-bill.ts).
 import { expenseCategoryLabel } from './expenses';
+import { hoursOf, legLabel } from './project-day';
 import { billDay, type BillSite } from './weekly-bill';
 
 const TZ = 'America/New_York';
@@ -35,6 +37,19 @@ export function billImageTables(site: BillSite): { tiles: [string, string][]; ta
       ...(s.receipts ? [d.receipts ? money(d.receipts) : '—'] : []),
     ]),
   }];
+  if (s.travel && bill.legs.length) {
+    const odo = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString('en-US'));
+    tables.push({
+      heading: 'Drives',
+      columns: ['Date', 'Technician', 'Drive', 'Started', 'Ended', 'Hours', 'GPS mi', ...(s.odometer ? ['Odo start', 'Odo end', 'Odo mi'] : [])],
+      rows: bill.legs.map((l) => [
+        billDay(l.day), l.tech, legLabel(l), clock(l.start), clock(l.end),
+        // A drive with no arrival has no hours of its own, as on the sheet.
+        l.end ? String(hoursOf(l.ms)) : '—', l.miles == null ? '—' : String(l.miles),
+        ...(s.odometer ? [odo(l.odoStart?.reading), odo(l.odoEnd?.reading), l.odoMiles == null ? '—' : String(l.odoMiles)] : []),
+      ]),
+    });
+  }
   if (s.receipts && bill.receipts.length) {
     tables.push({
       heading: 'Receipts',

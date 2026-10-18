@@ -541,7 +541,7 @@ function OwnerJob({
     // home → hotel, hotel → site, site → hotel, the hotel → home on the last day).
     'job.project': <ProjectDayCard w={w} lists={lists} />,
     'job.notes': <JobNotesCard woId={w.id} author={author ?? 'Office'} />,
-    'job.docs': <JobDocsCard woId={w.id} jobLabel={`WO ${w.wo_number}${w.site_name || w.customer_name ? ` · ${w.site_name || w.customer_name}` : ''}`} archived={archived} />,
+    'job.docs': <JobDocsCard woId={w.id} files={w.doc_urls} jobLabel={`WO ${w.wo_number}${w.site_name || w.customer_name ? ` · ${w.site_name || w.customer_name}` : ''}`} archived={archived} />,
     'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,
     'job.expenses': <OwnerExpenses woId={w.id} onDecided={() => void onRefresh()} />,
     'job.photos': <OwnerPhotos w={w} />,
@@ -616,7 +616,18 @@ function OwnerJob({
 
 type JobDoc = { id: string; name: string; kind: string; pages: number | null; sent_by: string | null; path: string; created_at: string; for_tech: boolean };
 
-function JobDocsCard({ woId, jobLabel, archived }: { woId: string; jobLabel: string; archived: boolean }) {
+/** A file added in Edit job (Documents): its name without the upload stamp. */
+const officeFileName = (url: string) => {
+  const raw = url.split('/wo-docs/')[1] ?? url;
+  let name = raw;
+  try { name = decodeURIComponent(raw); } catch { /* keep it as it is */ }
+  return name.replace(/^\d{13}-/, '').replace(/_/g, ' ');
+};
+
+function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLabel: string; archived: boolean; files?: string[] | null }) {
+  // Files added in Edit job live in work_orders.doc_urls, not job_docs. Fred
+  // uploaded one and saw "nothing there" (2026-10-18), so they show here too.
+  const officeFiles = (files ?? []).filter((u) => u.includes('/storage/v1/object/public/deliverables/wo-docs/'));
   const [docs, setDocs] = useState<JobDoc[] | null>(null);
   const [editing, setEditing] = useState<{ file: Blob; name: string; kind: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -626,7 +637,7 @@ function JobDocsCard({ woId, jobLabel, archived }: { woId: string; jobLabel: str
   };
   useEffect(() => { void load(); }, [woId]); // eslint-disable-line react-hooks/exhaustive-deps
   useLiveRows('job_docs', woId, () => void load());
-  if (!docs || (docs.length === 0 && archived)) return null;
+  if (!docs || (docs.length === 0 && officeFiles.length === 0 && archived)) return null;
   const open = async (d: JobDoc) => {
     const { data, error } = await createClient().storage.from('job-docs').createSignedUrl(d.path, 600);
     if (error || !data?.signedUrl) { toastError("That document couldn't be opened."); return; }
@@ -683,11 +694,20 @@ function JobDocsCard({ woId, jobLabel, archived }: { woId: string; jobLabel: str
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setEditing({ file: f, name: f.name.replace(/\.pdf$/i, ''), kind: 'Work order' }); }} />
         </label>
       ) : undefined}>
-      {docs.length === 0 ? (
+      {officeFiles.map((u) => (
+        <div key={u} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid var(--wf-line)', flexWrap: 'wrap' }}>
+          <span style={{ flex: '1 1 200px', minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 600, overflowWrap: 'anywhere' }}>{officeFileName(u)}</span>
+            <span className="wf-subtle" style={{ fontSize: 12.5 }}>Added in Edit job · the techs on this job can open it</span>
+          </span>
+          <a className="wf-btn wf-btn-outline wf-btn-sm" href={u} target="_blank" rel="noopener noreferrer">Open</a>
+        </div>
+      ))}
+      {docs.length === 0 ? (officeFiles.length > 0 ? null : (
         <div className="wf-subtle" style={{ fontSize: 13.5 }}>
           Nothing yet. Add a PDF to fill in or sign it here — tick &ldquo;Techs on this job can open it&rdquo; and they can sign it on site.
         </div>
-      ) : (
+      )) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {docs.map((d) => (
             <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid var(--wf-line)', flexWrap: 'wrap' }}>

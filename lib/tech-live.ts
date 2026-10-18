@@ -5,7 +5,9 @@
 // it (see tech-portal-accounts).
 import { fmtClock12, parseClockTime, requestWhen, type WfJob } from './wf';
 
-export type JobChange = { number: string; text: string };
+/** What changed, so the tech's bell can rank it (lib/tech-inbox.ts). */
+export type JobChangeKind = 'new' | 'date' | 'time' | 'address' | 'scope' | 'access' | 'closed' | 'docs' | 'removed';
+export type JobChange = { number: string; text: string; kind: JobChangeKind };
 
 const clock = (raw: string) => {
   const t = parseClockTime(raw);
@@ -35,28 +37,28 @@ export function jobChanges(
     if (!watched(j)) continue;
     const o = before.get(j.number);
     if (!o) {
-      out.push({ number: j.number, text: `New job: WO ${j.number}${j.client || j.title ? ` · ${j.client || j.title}` : ''}` });
+      out.push({ number: j.number, kind: 'new', text: `New job: WO ${j.number}${j.client || j.title ? ` · ${j.client || j.title}` : ''}` });
       continue;
     }
     const wo = `WO ${j.number}`;
     if (o.date !== j.date) {
-      out.push({ number: j.number, text: j.date ? `${wo}: new date ${requestWhen({ date: j.date, time: j.startTime })}` : `${wo}: date taken off the schedule` });
+      out.push({ number: j.number, kind: 'date', text: j.date ? `${wo}: new date ${requestWhen({ date: j.date, time: j.startTime })}` : `${wo}: date taken off the schedule` });
     } else if (o.startTime !== j.startTime || o.endTime !== j.endTime) {
-      out.push({ number: j.number, text: `${wo}: new time ${timeText(j)}` });
+      out.push({ number: j.number, kind: 'time', text: `${wo}: new time ${timeText(j)}` });
     }
     if (o.street !== j.street || o.city !== j.city) {
-      out.push({ number: j.number, text: `${wo}: new address ${[j.street, j.city].filter(Boolean).join(', ')}` });
+      out.push({ number: j.number, kind: 'address', text: `${wo}: new address ${[j.street, j.city].filter(Boolean).join(', ')}` });
     }
-    if (o.description !== j.description) out.push({ number: j.number, text: `${wo}: the scope of work was updated` });
-    if (o.access !== j.access || o.special !== j.special) out.push({ number: j.number, text: `${wo}: site access notes were updated` });
-    if (o.status !== 'closed' && j.status === 'closed') out.push({ number: j.number, text: `${wo} was closed` });
+    if (o.description !== j.description) out.push({ number: j.number, kind: 'scope', text: `${wo}: the scope of work was updated` });
+    if (o.access !== j.access || o.special !== j.special) out.push({ number: j.number, kind: 'access', text: `${wo}: site access notes were updated` });
+    if (o.status !== 'closed' && j.status === 'closed') out.push({ number: j.number, kind: 'closed', text: `${wo} was closed` });
     const had = prevFiles[j.number] ?? 0;
     const has = nextFiles[j.number] ?? 0;
-    if (has > had) out.push({ number: j.number, text: has - had === 1 ? `${wo}: a new document was added` : `${wo}: ${has - had} new documents were added` });
+    if (has > had) out.push({ number: j.number, kind: 'docs', text: has - had === 1 ? `${wo}: a new document was added` : `${wo}: ${has - had} new documents were added` });
   }
   const now = new Set(next.map((j) => j.number));
   for (const o of prev) {
-    if (!now.has(o.number) && watched(o) && o.status !== 'closed') out.push({ number: o.number, text: `WO ${o.number} is no longer on your list` });
+    if (!now.has(o.number) && watched(o) && o.status !== 'closed') out.push({ number: o.number, kind: 'removed', text: `WO ${o.number} is no longer on your list` });
   }
   return out;
 }

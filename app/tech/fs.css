@@ -223,6 +223,50 @@
 .fs-timeline li div { display: grid; gap: 3px; }
 .fs-timeline small { color: var(--muted); }
 
+/* The bell (Field Service's alerts.js): unread count and the notifications. */
+.fs-bell-wrap { position: relative; }
+.fs-bell {
+  position: relative; display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid var(--line-2); background: #fff; color: var(--ink); cursor: pointer;
+}
+.fs-bell:hover { background: #f7f9f6; }
+.fs-bell em {
+  position: absolute; top: -4px; right: -6px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px;
+  background: var(--green); color: #fff; font-size: 10.5px; font-style: normal; font-weight: 700; line-height: 19px; text-align: center;
+}
+.fs-bell.urgent em { background: var(--red-text); }
+.fs-note-center {
+  position: absolute; right: 0; top: calc(100% + 10px); z-index: 50; width: min(400px, calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 110px)); display: grid; grid-template-rows: auto auto 1fr; gap: 12px; padding: 16px;
+  box-shadow: 0 12px 32px rgba(28, 50, 44, 0.16);
+}
+.fs-note-center header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fs-note-center h2 { margin: 0; font-size: 16px; color: var(--ink); }
+.fs-segmented { justify-self: start; display: inline-flex; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: #eceeea; }
+.fs-segmented button {
+  height: 28px; padding: 0 11px; border: 0; border-radius: 5px; background: transparent; font: inherit; font-size: 11.5px; color: var(--muted); cursor: pointer;
+}
+.fs-segmented button[aria-pressed='true'] { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+.fs-note-list { overflow-y: auto; margin: 0 -16px; border-top: 1px solid var(--line); }
+.fs-note-row {
+  display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; align-items: start; width: 100%; padding: 12px 16px;
+  border: 0; border-bottom: 1px solid var(--line); background: #fff; font: inherit; text-align: left; cursor: pointer;
+}
+.fs-note-row:hover { background: #f7f9f6; }
+.fs-note-row.unread { background: #f3f8f0; }
+.fs-note-row.unread b::before {
+  content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--green); vertical-align: 1px;
+}
+.fs-note-row > span { display: grid; gap: 2px; min-width: 0; }
+.fs-note-row b { color: var(--ink); font-size: 13px; }
+.fs-note-row small { color: var(--muted); font-size: 11px; }
+.fs-note-row em { font-style: normal; }
+.fs-note-empty { padding: 16px; }
+.fs-note-icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; font-style: normal; }
+.fs-note-icon.pri-high { background: var(--red-soft); color: var(--red-text); }
+.fs-note-icon.pri-medium { background: var(--amber-soft); color: var(--amber-text); }
+.fs-note-icon.pri-low { background: #eef0ed; color: var(--muted); }
+
 /* The Tools menu on a job's documents (Fred, 2026-10-18: "hide tools in a menu"). */
 .wf-tool-menu { display: grid; border: 1px solid var(--wf-line, #e2e6df); border-radius: 9px; overflow: hidden; }
 .wf-tool-item {
@@ -246,6 +290,9 @@
   .fs-menu-button { margin-left: 0; height: 44px; width: 40px; padding: 0; justify-content: center; }
   .fs-menu-button span, .fs-crumbs, .fs-who, .fs-live-pill, .fs-refresh { display: none; }
   .fs-signout { margin-left: auto; border: 0; padding: 0 4px; }
+  .fs-topbar .fs-bell-wrap { margin-left: auto; }
+  .fs-topbar .fs-bell-wrap ~ .fs-signout { margin-left: 0; }
+  .fs-note-center { position: fixed; top: 76px; left: 12px; right: 12px; width: auto; }
   .fs-layout, .fs-layout.collapsed { grid-template-columns: minmax(0, 1fr); background: none; min-height: calc(100vh - 68px); }
   .fs-sidebar, .fs-sidebar.collapsed {
     position: fixed; top: 68px; left: 0; bottom: 0; z-index: 40; width: min(320px, 82vw); height: auto;

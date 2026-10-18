@@ -15,7 +15,7 @@ describe('jobChanges', () => {
 
   it('reports a new time in plain 12-hour words', () => {
     const out = jobChanges([job()], [job({ start_time: '10:00', end_time: '17:00' })]);
-    expect(out).toEqual([{ number: '19101392', text: 'WO 19101392: new time 10:00 AM – 5:00 PM' }]);
+    expect(out).toEqual([{ number: '19101392', kind: 'time', text: 'WO 19101392: new time 10:00 AM – 5:00 PM' }]);
   });
 
   it('reports a new date once, not a date and a time', () => {

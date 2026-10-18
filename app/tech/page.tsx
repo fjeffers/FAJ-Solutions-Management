@@ -35,6 +35,8 @@ import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel'
 import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, openIssue, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
 import { FsDayLog, FsNextAction, FsStageAction, FsWorkSections, type FsSection } from '@/components/wf/FsWork';
 import { FS_STAGE_NAME, fsNextStep, fsStage, type FsStage } from '@/lib/fs-stage';
+import { addNotes, clearNotes, loadNotes, markRead, messageNote, notesFromChanges, saveNotes, type TechNote } from '@/lib/tech-inbox';
+import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
@@ -125,6 +127,17 @@ export default function TechPortalPage() {
   const boxRef = useRef<Outbox | null>(null);
   const [, bump] = useReducer((n: number) => n + 1, 0);
 
+  // The bell (lib/tech-inbox.ts): what the app notices while it's open, kept on the phone.
+  const [notes, setNotes] = useState<TechNote[]>([]);
+  useEffect(() => { if (uid) setNotes(loadNotes(kv, uid)); }, [kv, uid]);
+  const changeNotes = useCallback((f: (list: TechNote[]) => TechNote[]) => {
+    setNotes((list) => {
+      const next = f(list);
+      if (uid) saveNotes(kv, uid, next);
+      return next;
+    });
+  }, [kv, uid]);
+
   // A new message alerts them anywhere in the app, not only on that job
   // (Fred, 2026-10-14: "needs to alert them, not just come through").
   const lastUnread = useRef<number | null>(null);
@@ -138,6 +151,8 @@ export default function TechPortalPage() {
         if (lastUnread.current !== null && n > lastUnread.current) {
           buzz();
           toastInfo(n - lastUnread.current === 1 ? 'New message. Open the job or Messages to read it.' : `${n - lastUnread.current} new messages.`);
+          const more = n - lastUnread.current;
+          changeNotes((list) => addNotes(list, [messageNote(more, new Date().toISOString())]));
         }
         lastUnread.current = n;
         setUnread(n);
@@ -146,7 +161,7 @@ export default function TechPortalPage() {
     void check();
     const t = window.setInterval(() => { void check(); }, 20_000);
     return () => window.clearInterval(t);
-  }, [uid]);
+  }, [uid, changeNotes]);
   // Live updates (Fred, 2026-10-14: "implement live update between admin and
   // tech portal"): while the app is open, re-read the jobs every 30 seconds
   // and whenever the tech comes back to it, and say what changed: a new
@@ -169,6 +184,7 @@ export default function TechPortalPage() {
         const changes = jobChanges(prevJobs, j, prevFiles, files);
         if (changes.length > 0) {
           buzz();
+          changeNotes((list) => addNotes(list, notesFromChanges(changes, new Date().toISOString())));
           for (const c of changes.slice(0, 3)) toastInfo(c.text);
           if (changes.length > 3) toastInfo(`${changes.length - 3} more updates on your jobs.`);
         }
@@ -309,7 +325,7 @@ export default function TechPortalPage() {
   const signOut = async () => {
     const waiting = boxRef.current?.pending.length ?? 0;
     if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} been sent yet. They stay on this phone and go out the next time you sign in. Sign out anyway?`)) return;
-    if (uid) clearCopies(kv, uid, COPIES);
+    if (uid) { clearCopies(kv, uid, COPIES); clearNotes(kv, uid); }
     await supabase.auth.signOut();
     router.replace('/tech/login');
   };
@@ -427,6 +443,13 @@ export default function TechPortalPage() {
         {waiting > 0 || box?.offline
           ? <span style={{ marginLeft: 'auto' }}><SyncStatus box={box} savedAt={savedAt} /></span>
           : <span className="fs-live-pill"><i />Live workspace</span>}
+        <FsBell notes={notes}
+          onReadAll={() => changeNotes((list) => markRead(list))}
+          onOpen={(n) => {
+            changeNotes((list) => markRead(list, [n.id]));
+            const j = n.number ? jobs.find((x) => x.number === n.number) : null;
+            if (j) { setTab('project'); openFromList(j.id); } else if (n.kind === 'message') go('chat');
+          }} />
         <button type="button" className="fs-icon-button fs-refresh" aria-label="Refresh" disabled={refreshing}
           onClick={() => { if (uid) { void box?.flush(); void loadLive(uid, false); } }}>
           <FsIcon name="refresh" size={18} className={refreshing ? 'spin' : undefined} />

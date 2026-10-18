@@ -156,3 +156,23 @@ describe('reading the answer (Fred, 2026-10-18: Generate with AI fell back to th
   });
 });
 
+
+describe('what the job needs, read by the AI (Fred, 2026-10-18: "asking whats needed and what not")', () => {
+  it('asks for what the tech records, why, and the check-in and check-out links', () => {
+    const prompt = buildWoPrompt('x', '2026-10-18');
+    for (const k of ['capture', 'capture_why', 'checkin_link', 'checkout_link']) expect(prompt).toContain(`"${k}"`);
+    expect(prompt).toContain('never a technician or helper');
+  });
+
+  it('keeps only known items and real links', () => {
+    const f = sanitizeWoAi({
+      capture: ['travel', 'odometer', 'teleport'], capture_why: ' Out of town. ',
+      checkin_link: 'https://teams.microsoft.com/l/meetup-join/x', checkout_link: 'not a link',
+    });
+    expect(f.capture).toEqual(['travel', 'odometer']);
+    expect(f.capture_why).toBe('Out of town.');
+    expect(f.checkin_link).toBe('https://teams.microsoft.com/l/meetup-join/x');
+    expect(f.checkout_link).toBeUndefined();
+    expect(filledCount(f)).toBe(0);
+  });
+});

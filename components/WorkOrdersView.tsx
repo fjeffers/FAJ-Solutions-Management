@@ -21,6 +21,8 @@ import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { aiFailureText } from '@/lib/wo-ai';
 import { useJobTemplates } from '@/components/useJobTemplates';
 import { templateForText } from '@/lib/capture';
+import AiNeedsReview from '@/components/AiNeedsReview';
+import { applyNeeds, defaultNeeds, type Found, type NeedChoices } from '@/lib/ai-needs';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -665,6 +667,11 @@ function AIGenerateModal({
   const [error, setError] = useState<string | null>(null);
   // Fred's templates: the AI picks the one that fits, and the job starts with its items.
   const { templates } = useJobTemplates();
+  // Read, then ask: "Build this job?" with what was found (Fred, 2026-10-18:
+  // "it can read the email then ask me if we should build or not").
+  const [found, setFound] = useState<Found | null>(null);
+  const [choices, setChoices] = useState<NeedChoices | null>(null);
+  const [readBy, setReadBy] = useState<{ source: string; why?: string; filled?: number } | null>(null);
 
   const generate = async () => {
     if (!prompt.trim() || loading) return;
@@ -683,30 +690,48 @@ function AIGenerateModal({
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Generation failed'); return; }
-      const { template: picked, ...fields } = (data.result ?? {}) as Partial<WorkOrder> & { template?: string };
-      // The job takes the chosen template's items, like picking it on the form
-      // (Fred, 2026-10-18: "the generator should do the same thing").
-      const tpl = templates.find((t) => t.id === picked) ?? templateForText(prompt, templates);
-      if (tpl) { fields.capture = tpl.items; fields.start_asks = tpl.startAsks ?? []; }
-      // No checklist unless the job asks for one (Fred, 2026-10-18: "checklist not needed").
-      if (!(fields.capture ?? []).includes('checklist')) delete fields.wo_tasks;
+      const { template: picked, ...fields } = (data.result ?? {}) as Found & { template?: string };
       if (Object.keys(fields).length === 0) {
         setError("Couldn't find any job details in that text. Paste the whole email or work order and try again.");
         return;
       }
-      onGenerated(fields);
-      const tasks = fields.wo_tasks?.length ?? 0;
-      if (data.source === 'ai') {
-        toastSuccess(`Filled ${data.filled ?? 'the'} fields${tasks ? ` and a ${tasks}-step tech checklist` : ''}. Check them, then Save.`);
-      } else {
-        toastInfo(aiFailureText(data.why));
-      }
+      // The chosen template's items start ticked, like picking it on the form; an
+      // empty template starts from what the AI read the job needs.
+      const tpl = templates.find((t) => t.id === picked) ?? templateForText(prompt, templates);
+      if (tpl) fields.start_asks = tpl.startAsks ?? [];
+      setFound(fields);
+      setChoices(defaultNeeds(fields, tpl && tpl.items.length ? tpl.items : null));
+      setReadBy({ source: data.source, why: data.why, filled: data.filled });
     } catch {
       setError('Could not reach the AI service — try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  const build = () => {
+    if (!found || !choices) return;
+    const fields = applyNeeds(found, choices);
+    onGenerated(fields);
+    if (readBy?.source === 'ai') toastSuccess(`Built the job from the email${readBy.filled ? ` (${readBy.filled} fields)` : ''}. Check it, then Save.`);
+    else toastInfo(aiFailureText(readBy?.why));
+  };
+
+  if (found && choices) {
+    return (
+      <Dialog
+        title="Build this job?"
+        onClose={onClose}
+        wide
+        footer={<>
+          <button className="wf-btn wf-btn-ghost" onClick={() => { setFound(null); setChoices(null); }}>Back</button>
+          <button className="wf-btn wf-btn-gold" onClick={build}><Sparkles size={16} /> Build the job</button>
+        </>}
+      >
+        <AiNeedsReview found={found} choices={choices} onChange={setChoices} />
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -716,15 +741,15 @@ function AIGenerateModal({
       footer={<>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
         <button className="wf-btn wf-btn-gold" onClick={generate} disabled={loading || !prompt.trim()}>
-          <Sparkles size={16} /> {loading ? 'Reading the job…' : 'Fill in the job'}
+          <Sparkles size={16} /> {loading ? 'Reading the job…' : 'Read the job'}
         </button>
       </>}
     >
       <p className="wf-subtle" style={{ marginTop: 0 }}>
         Paste the whole email or work order — Field Nation, NetView, a client&apos;s message, or your own notes.
-        The AI fills in every field it can find: site, schedule, every contact, access and parking, scope, tools, parts,
-        deliverables, check-in and check-out, the client&apos;s WO number and price, budgets, the questions the tech
-        answers, your own custom fields, and the tech&apos;s checklist. Nothing is saved until you check it and press Save.
+        The AI reads it, then asks you what this job needs before it builds anything: what the tech records, which
+        contacts and links to keep, access, parts, deliverables, the price and the mileage charge. Nothing is saved
+        until you check the job and press Save.
       </p>
       <textarea
         className="wf-input"

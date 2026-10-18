@@ -509,7 +509,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     if (autoTried.current) return;
     const hasAddress = !!(form.site_address || form.site_zip);
     const noTravelYet = !payAddons.some((a) => a.kind === 'mileage') && !form.billable_travel;
-    if (!hasAddress || !noTravelYet) return;
+    // Left off in Generate with AI's "Build this job?" (lib/ai-needs.ts): 0 billable miles, no charge.
+    const declined = !item && prefill?.billable_miles === 0;
+    if (!hasAddress || !noTravelYet || declined) return;
     autoTried.current = true;
     void autoCalcBillableMiles(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps

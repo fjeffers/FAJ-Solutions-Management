@@ -18,6 +18,7 @@ import type { CustomQAItem, QuestionFieldType, SiteContact, WoTask, WorkOrder } 
 import { ASSIGNMENT_TYPES, PAY_TYPES, SERVICE_TYPES, WORK_ORDER_PRIORITIES, WORK_ORDER_SOURCES, SCHEDULE_TYPES } from './types';
 import type { CustomValues, FieldDef } from './custom-fields';
 import { parseClientLinks } from './client-links';
+import { CAPTURE_ITEMS, parseCapture } from './capture';
 
 /** One of Fred's job templates, as the AI is shown it (Settings -> Job templates). */
 export type AiTemplate = { id: string; name: string };
@@ -80,7 +81,7 @@ Read the job below and fill in EVERY field of the work order the text supports �
   "end_date": "YYYY-MM-DD",
   "end_time": "HH:MM" 24-hour,
   "schedule_type": one of ${JSON.stringify(SCHEDULE_TYPES)},
-  "poc_name": the on-site contact,
+  "poc_name": the on-site contact at the location (a manager or site contact), never a technician or helper sent to do the work,
   "poc_phone": their phone,
   "poc_email": their email,
   "support_contact": the help desk / dispatch line to call during the job,
@@ -106,7 +107,11 @@ Read the job below and fill in EVERY field of the work order the text supports �
   "bonus_amount": dollars of bonus or incentive pay, if stated,
   "contacts": EVERY person or line named for the job — site contact, manager, help desk, NOC, project manager, security — each {"label": their role, "name": "...", "phone": "...", "email": "..."} (empty string for what's not given),
   "custom_qa": questions the tech must answer on site or at closeout — serial or MAC numbers to record, readings, counts, yes/no confirmations, photos or documents to attach, a sign-off — each {"label": the question, "type": one of ${JSON.stringify(QUESTION_TYPES)}},
-  "client_links": EVERY web link in the text the tech or the office needs — upload / deliverable folders, check-in or check-out forms, portals — exactly as written, each starting with http,${templates.length ? `
+  "client_links": EVERY web link in the text the tech or the office needs — upload / deliverable folders, check-in or check-out forms, portals — exactly as written, each starting with http,
+  "checkin_link": the one link from client_links the tech must open on arriving on site (e.g. a Teams meeting to stay on all day), or "",
+  "checkout_link": the one link from client_links the tech must use to check out each day (e.g. a checkout form), or "",
+  "capture": what the tech must record on THIS job, only what the text calls for, from ${JSON.stringify(CAPTURE_ITEMS.map((c) => c.key))}: "travel" (driving to an out-of-town site, hotel stays), "odometer" (mileage photos), "lunch", "receipts" (fuel, hotel, meals, materials), "photos", "checklist" (only if the text lists steps the tech must tick off), "questions", "deliverables", "signature", "notes",
+  "capture_why": one short sentence on why, e.g. "Out-of-town job with a hotel stay, so travel, mileage photos and receipts.",${templates.length ? `
   "template": the id of the ONE of FAJ's job templates below that fits this job, or "" if none clearly does: ${JSON.stringify(templates.map((t) => ({ id: t.id, name: t.name })))},` : ''}
   "wo_tasks": the tech's checklist, 3-15 short steps in order, each {"category": "Pre Visit" | "On Site" | "Post Site", "label": "..."} — taken from the scope, the deliverables and the closeout rules (e.g. call the contact before arrival, check in with the manager, the work itself, test, photos, check out)${custom.length ? `,
   "custom": FAJ's own fields, keyed by id; null when the text doesn't say: {
@@ -141,7 +146,7 @@ function newId(): string {
 }
 
 /** Only what the form understands, in the shapes it expects. */
-export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = [], templates: AiTemplate[] = []): Partial<WorkOrder> & { template?: string } {
+export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = [], templates: AiTemplate[] = []): Partial<WorkOrder> & { template?: string; capture_why?: string } {
   if (!raw || typeof raw !== 'object') return {};
   const r = raw as Record<string, unknown>;
   const out: Record<string, unknown> = {};
@@ -186,6 +191,16 @@ export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = [], templat
     if (links.length) out.client_links = links;
   }
   if (typeof r.template === 'string' && templates.some((t) => t.id === r.template)) out.template = r.template;
+  // What the job needs, as the AI reads it (Fred, 2026-10-18: "include AI around the
+  // generation asking what's needed and what not"). Fred ticks them before they go on the job.
+  const capture = parseCapture(r.capture);
+  if (capture) out.capture = capture;
+  const why = clean(r.capture_why, 240);
+  if (why) out.capture_why = why;
+  for (const k of ['checkin_link', 'checkout_link'] as const) {
+    const v = clean(r[k], 2000);
+    if (v && /^https?:\/\/\S+$/i.test(v)) out[k] = v;
+  }
 
   if (Array.isArray(r.wo_tasks)) {
     const tasks: WoTask[] = [];
@@ -254,7 +269,7 @@ export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = [], templat
 /** How many fields were filled, for the "filled 18 fields" message. Each of Fred's own fields counts once. */
 export function filledCount(f: Partial<WorkOrder>): number {
   const own = f.custom && typeof f.custom === 'object' ? Object.keys(f.custom).length : 0;
-  return Object.keys(f).filter((k) => !['scheduled_date', 'wo_tasks', 'custom'].includes(k)).length + own;
+  return Object.keys(f).filter((k) => !['scheduled_date', 'wo_tasks', 'custom', 'capture', 'capture_why', 'checkin_link', 'checkout_link'].includes(k)).length + own;
 }
 
 /**

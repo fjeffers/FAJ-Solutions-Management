@@ -2555,7 +2555,7 @@ function WhatTheTechRecords({ capture, onChange, templates, startAsks, onStartAs
   capture: CaptureItem[] | null; onChange: (next: CaptureItem[] | null) => void; templates: ReturnType<typeof useJobTemplates>['templates'];
   startAsks: StartAsk[]; onStartAsks: (next: StartAsk[]) => void;
 }) {
-  const used = templateOf(capture, templates);
+  const used = templateOf(capture, templates, startAsks);
   const value = capture === null ? 'all' : used ? used.id : 'custom';
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

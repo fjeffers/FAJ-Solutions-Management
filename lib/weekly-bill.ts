@@ -21,10 +21,13 @@ import { hoursOf, legLabel, type DayLog, type Leg, type Origin } from './project
 import { amountDiffers, odometerDiffers } from './photo-read';
 
 export type OdoRow = {
-  id?: string; wo_id: string; contractor_name: string; at: string; reading: number; ai_reading: number | null; photo_path: string | null;
+  id?: string; wo_id: string; contractor_name: string; at: string;
+  /** Taken at the start of the drive (Check in) or at its end (after arriving). */
+  moment?: 'start' | 'end' | null;
+  reading: number; ai_reading: number | null; photo_path: string | null;
 };
 export type BillReceipt = {
-  id: string; wo_id: string; category: string; vendor: string | null; amount: number; expense_date: string;
+  id: string; wo_id: string; contractor_name?: string | null; category: string; vendor: string | null; amount: number; expense_date: string;
   note: string | null; receipt_path: string | null; gallons?: number | null; ai?: unknown;
 };
 export type BillLeg = Leg & { odoStart: OdoRow | null; odoEnd: OdoRow | null; odoMiles: number | null };
@@ -59,25 +62,33 @@ const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigi
 const miles = (n: number) => `${n.toLocaleString('en-US', { maximumFractionDigits: 1 })} mi`;
 
 /**
- * Each drive's odometer readings: the photo taken just after Start travel and
- * just after arriving (components/wf/Odometer.tsx), by the same tech.
+ * Each drive's odometer readings: the start photo, taken at Check in once the
+ * drive is recorded, and the end photo, taken just after arriving
+ * (components/wf/Odometer.tsx), by the same tech. A reading only goes with its
+ * own end of a drive, and never reaches past the tech's drive before or after,
+ * so a skipped photo leaves a gap instead of moving the next drive's readings.
  */
 export function matchOdometer(legs: Leg[], readings: OdoRow[]): BillLeg[] {
   const used = new Set<OdoRow>();
-  const near = (tech: string, iso: string | null, after?: OdoRow | null) => {
-    if (!iso) return null;
-    const t = Date.parse(iso);
+  const pick = (tech: string, moment: 'start' | 'end', target: number, from: number, to: number) => {
     const hit = readings
-      .filter((o) => !used.has(o) && o.contractor_name === tech)
-      .filter((o) => { const at = Date.parse(o.at); return at >= t - 20 * MIN && at <= t + 45 * MIN; })
-      .filter((o) => !after || Date.parse(o.at) > Date.parse(after.at))
-      .sort((a, b) => Math.abs(Date.parse(a.at) - t) - Math.abs(Date.parse(b.at) - t))[0] ?? null;
+      .filter((o) => !used.has(o) && o.contractor_name === tech && (o.moment ?? moment) === moment)
+      .filter((o) => { const at = Date.parse(o.at); return at >= from && at <= to; })
+      .sort((a, b) => Math.abs(Date.parse(a.at) - target) - Math.abs(Date.parse(b.at) - target))[0] ?? null;
     if (hit) used.add(hit);
     return hit;
   };
-  return [...legs].sort((a, b) => a.start.localeCompare(b.start)).map((l) => {
-    const odoStart = near(l.tech, l.start);
-    const odoEnd = near(l.tech, l.end, odoStart);
+  const sorted = [...legs].sort((a, b) => a.start.localeCompare(b.start));
+  return sorted.map((l, i) => {
+    const start = Date.parse(l.start);
+    const end = l.end ? Date.parse(l.end) : null;
+    const prev = sorted.slice(0, i).filter((x) => x.tech === l.tech).at(-1);
+    const next = sorted.slice(i + 1).find((x) => x.tech === l.tech);
+    const after = prev ? Date.parse(prev.end ?? prev.start) : -Infinity;
+    const before = next ? Date.parse(next.start) : Infinity;
+    const odoStart = pick(l.tech, 'start', start, Math.max(start - 20 * MIN, after), Math.min(end ?? start + 45 * MIN, before));
+    const odoEnd = end == null ? null
+      : pick(l.tech, 'end', end, Math.max(end - 20 * MIN, start, odoStart ? Date.parse(odoStart.at) + 1 : -Infinity), Math.min(end + 45 * MIN, before));
     const odoMiles = odoStart && odoEnd ? r1(odoEnd.reading - odoStart.reading) : null;
     return { ...l, odoStart, odoEnd, odoMiles };
   });
@@ -97,6 +108,11 @@ export function siteBill(input: {
   };
   const legs = matchOdometer(logs.flatMap((d) => d.legs), input.readings);
   const flags: BillFlag[] = [];
+  // Each receipt on one line: its tech's that day, or the day's first line.
+  const lineOf = (r: BillReceipt) => {
+    const that = logs.filter((d) => d.day === r.expense_date);
+    return that.find((d) => d.tech === r.contractor_name) ?? that[0];
+  };
 
   const days: BillDay[] = logs.map((d) => {
     const mine = legs.filter((l) => l.tech === d.tech && l.day === d.day);
@@ -132,7 +148,7 @@ export function siteBill(input: {
       leftSite: spans.length && spans.at(-1)!.out ? spans.at(-1)!.out : null,
       back: d.signOut,
       onSiteHours: hoursOf(onSiteMs), travelHours: hoursOf(travelMs), gpsMiles: gps, odoMiles,
-      receipts: r2(receipts.filter((r) => r.expense_date === d.day).reduce((t, r) => t + Number(r.amount), 0)),
+      receipts: r2(receipts.filter((r) => lineOf(r) === d).reduce((t, r) => t + Number(r.amount), 0)),
     };
   });
 
@@ -220,7 +236,8 @@ export function siteSheetRows(site: BillSite, range: string): (string | number)[
     rows.push([], ['Drives'], ['Date', 'Technician', 'Drive', 'Started', 'Ended', 'Hours', 'GPS miles',
       ...(s.odometer ? ['Odometer at start', 'Odometer at end', 'Odometer miles'] : [])]);
     for (const l of bill.legs) {
-      rows.push([l.day, l.tech, legLabel(l), clock(l.start), clock(l.end), hoursOf(l.ms), l.miles ?? '',
+      // A drive with no arrival has no hours of its own, as on the printed bill.
+      rows.push([l.day, l.tech, legLabel(l), clock(l.start), clock(l.end), l.end ? hoursOf(l.ms) : '', l.miles ?? '',
         ...(s.odometer ? [l.odoStart?.reading ?? '', l.odoEnd?.reading ?? '', l.odoMiles ?? ''] : [])]);
     }
   }

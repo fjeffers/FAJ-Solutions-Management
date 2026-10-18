@@ -74,11 +74,16 @@ export function parseTemplates(raw: unknown): JobTemplate[] {
   return out.length ? out : STARTER_TEMPLATES;
 }
 
-/** The template these exact items match, if any (to show which one a job uses). */
-export function templateOf(items: readonly CaptureItem[] | null, templates: JobTemplate[]): JobTemplate | null {
+/**
+ * The template these exact items match, if any (to show which one a job uses).
+ * Given the job's check-in items too, they must match as well, so two templates
+ * with the same ticks are told apart.
+ */
+export function templateOf(items: readonly CaptureItem[] | null, templates: JobTemplate[], startAsks?: readonly StartAsk[]): JobTemplate | null {
   if (!items) return null;
   const key = [...items].sort().join();
-  return templates.find((t) => [...t.items].sort().join() === key) ?? null;
+  const asksKey = (l: readonly StartAsk[]) => l.map((a) => `${a.kind}:${a.label}`).join('|');
+  return templates.find((t) => [...t.items].sort().join() === key && (!startAsks || asksKey(t.startAsks ?? []) === asksKey(startAsks))) ?? null;
 }
 
 // ── Editing templates (Settings -> Job templates) ───────────────────────────

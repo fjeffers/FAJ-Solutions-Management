@@ -38,9 +38,12 @@ export async function projectJobIds(admin: SupabaseClient, userId: string, proje
  * addresses to look up now (each takes about a second).
  */
 export async function loadSheet(admin: SupabaseClient, userId: string, project: string, lookups = 2): Promise<Sheet> {
-  const { data: jobs } = await admin.from('work_orders')
-    .select('id, wo_number, external_wo_id, title, description, site_name, site_address, site_city, site_state, site_zip, closeout_notes, custom_qa, closeout, wo_status, lead_contractor_name, contractor_name, contractor_names, wo_tasks, signature_required, photo_required')
-    .eq('user_id', userId).eq('project_name', project).eq('is_project', true);
+  const cols = 'id, wo_number, external_wo_id, title, description, site_name, site_address, site_city, site_state, site_zip, closeout_notes, custom_qa, closeout, wo_status, lead_contractor_name, contractor_name, contractor_names, wo_tasks, signature_required, photo_required';
+  const pick = (c: string) => admin.from('work_orders').select(c).eq('user_id', userId).eq('project_name', project).eq('is_project', true);
+  // What each job asks the tech for (migration 128), so Not completed lists only that; before 128, everything.
+  let res = await pick(`${cols}, capture`);
+  if (res.error) res = await pick(cols);
+  const jobs = res.data as unknown;
   const list = (jobs ?? []) as SheetInput['jobs'];
   const ids = list.map((j) => j.id);
   if (ids.length === 0) return buildSheet({ project, jobs: [], taps: [], photos: [], expenses: [], lists: [] });

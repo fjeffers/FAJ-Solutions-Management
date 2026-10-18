@@ -32,6 +32,11 @@ describe('what a job asks the tech for', () => {
     expect(templateOf(['notes', 'receipts', 'odometer', 'travel'], STARTER_TEMPLATES)?.id).toBe('portal');
     expect(templateOf(['travel'], STARTER_TEMPLATES)).toBeNull();
     expect(templateOf(null, STARTER_TEMPLATES)).toBeNull();
+    // Two templates with the same ticks: the check-in items tell them apart.
+    const permit = { id: 'permit', name: 'Permit job', items: STARTER_TEMPLATES[0].items, startAsks: [{ id: 'ask-p', label: 'Permit number', kind: 'answer' as const }] };
+    const both = [STARTER_TEMPLATES[0], permit];
+    expect(templateOf(permit.items, both, permit.startAsks)?.id).toBe('permit');
+    expect(templateOf(permit.items, both, [])?.id).toBe(STARTER_TEMPLATES[0].id);
   });
 });
 

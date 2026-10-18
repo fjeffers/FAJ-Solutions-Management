@@ -32,6 +32,21 @@ describe('the weekly bill for one site', () => {
     expect(legs.map((l) => [l.odoStart?.reading, l.odoEnd?.reading, l.odoMiles])).toEqual([[48200, 48222, 22], [48222, 48243.5, 21.5]]);
   });
 
+  it('keeps a skipped photo from moving the next drive’s readings', () => {
+    // Two short drives; the tech skipped the first drive's start photo.
+    const two = buildDayLogs([
+      ev('travel_start', '09:00', { origin: 'hotel', dest: 'site' }), ev('travel_end', '09:05', { miles: 3 }),
+      ev('travel_start', '09:10', { origin: 'site', dest: 'hotel' }), ev('travel_end', '09:15', { miles: 7 }),
+    ], new Date('2026-10-13T12:00:00Z'), TZ);
+    const at = (o: OdoRow, moment: 'start' | 'end'): OdoRow => ({ ...o, moment });
+    const shots = [at(odo('09:06', 100), 'end'), at(odo('09:11', 100), 'start'), at(odo('09:16', 107), 'end')];
+    const legs = matchOdometer(two.flatMap((d) => d.legs), shots);
+    expect(legs.map((l) => [l.odoStart?.reading ?? null, l.odoEnd?.reading ?? null, l.odoMiles])).toEqual([[null, 100, null], [100, 107, 7]]);
+    const bill = siteBill({ woId: 'wo-1', capture: [...portal], logs: two, readings: shots, receipts: [], today: '2026-10-18' });
+    expect(bill.totals.odoMiles).toBe(7);
+    expect(bill.flags.filter((f) => f.kind === 'odo_missing').map((f) => f.text)).toEqual(['Dana, Mon, Oct 12, Hotel → Site: no odometer photo at the start.']);
+  });
+
   it('gives each day its times, hours, miles and receipts, with nothing to check when it all adds up', () => {
     const bill = siteBill({ woId: 'wo-1', capture: [...portal], logs, readings, receipts: [receipt({})], today: '2026-10-18' });
     expect(bill.days).toHaveLength(1);
@@ -76,11 +91,24 @@ describe('the weekly bill for one site', () => {
     const road = siteBill({ woId: 'wo-1', capture: null, logs: driving, readings: [], receipts: [], today: '2026-10-18' });
     expect(road.flags.map((f) => f.text)).toEqual(["Dana, Mon, Oct 12, Site → Hotel: no arrival tap, so that drive isn't counted. Check it."]);
     expect(road.totals.travelHours).toBe(0);
+    // The download leaves that drive's hours blank too.
+    const drive = siteSheetRows({ name: 'Maple St', wo: '101', address: '', bill: road }, '').find((r) => r[2] === 'Site → Hotel');
+    expect(drive?.slice(3, 6)).toEqual(['5:00 PM', '', '']);
     // Still today: nothing to flag yet, and the time so far counts.
     const now = buildDayLogs([ev('in', '07:30')], new Date('2026-10-12T15:30:00Z'), TZ);
     const live = siteBill({ woId: 'wo-1', capture: null, logs: now, readings: [], receipts: [], today: '2026-10-12' });
     expect(live.flags).toEqual([]);
     expect(live.totals.onSiteHours).toBe(4);
+  });
+
+  it('counts each receipt once, on the line of the tech who sent it', () => {
+    const both = buildDayLogs([...monday, ...monday.map((e) => ({ ...e, tech: 'Lee' }))], new Date('2026-10-13T12:00:00Z'), TZ);
+    const bill = siteBill({
+      woId: 'wo-1', capture: [...portal], logs: both, readings: [], today: '2026-10-18',
+      receipts: [receipt({ contractor_name: 'Lee', amount: 40 }), receipt({ id: 'r2', contractor_name: null, amount: 10 })],
+    });
+    expect(bill.days.map((d) => [d.tech, d.receipts])).toEqual([['Dana', 10], ['Lee', 40]]);
+    expect(bill.totals.receipts).toBe(50);
   });
 
   it('leaves out what the job does not ask for', () => {

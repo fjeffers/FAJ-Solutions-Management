@@ -75,12 +75,26 @@ export function addStartAsk(list: StartAsk[], label: string, kind: StartAsk['kin
   return [...list, { id, label: l, kind }];
 }
 
-/** The answers as one line for the office: "Check-in, Home → Site · Truck: F-150 · Fuel: Full". */
-export function checkInNote(drive: Drive | null, asks: StartAsk[], answers: Record<string, string>): string {
+/** Longest message to the office: wf_tech_site_send keeps 2,000 characters. */
+export const NOTE_MAX = 1900;
+
+/**
+ * The answers as messages for the office: "Check-in, Home → Site · Truck: F-150
+ * · Fuel: Full". Long answers go on as many messages as it takes, so none is cut off.
+ */
+export function checkInNotes(drive: Drive | null, asks: StartAsk[], answers: Record<string, string>): string[] {
   const parts = asks.filter((a) => a.kind === 'answer' && (answers[a.id] ?? '').trim())
-    .map((a) => `${a.label}: ${answers[a.id].replace(/\s+/g, ' ').trim()}`);
-  if (parts.length === 0) return '';
-  return [`Check-in${drive ? `, ${drive.label}` : ''}`, ...parts].join(' · ');
+    .map((a) => `${a.label}: ${answers[a.id].replace(/\s+/g, ' ').trim()}`.slice(0, NOTE_MAX - 40));
+  if (parts.length === 0) return [];
+  const head = `Check-in${drive ? `, ${drive.label}` : ''}`;
+  const out: string[] = [];
+  let line = head;
+  for (const p of parts) {
+    if (line.length + 3 + p.length > NOTE_MAX) { out.push(line); line = `${head} (continued)`; }
+    line += ` · ${p}`;
+  }
+  out.push(line);
+  return out;
 }
 
 /** What's still needed before Done: the drive, the mileage (when asked) and every item. */

@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 // POST /api/tech/odometer — a tech records the odometer at the start or end of
 // a drive on their own job (migration 128). FormData: wo_number, at (ISO time
-// of the photo), reading (what the tech confirmed), ai_reading (what the AI
+// of the photo), moment (start or end of the drive), reading (what the tech confirmed), ai_reading (what the AI
 // read, optional), lat, lng, accuracy (where the photo was taken, optional),
 // file (JPEG, optional).
 //
@@ -28,12 +28,13 @@ export async function POST(req: Request) {
   const aiRaw = String(form.get('ai_reading') ?? '').trim();
   const aiReading = aiRaw ? Number(aiRaw) : null;
   const at = String(form.get('at') ?? '');
+  const moment = String(form.get('moment') ?? '');
   const coord = (k: string) => { const v = String(form.get(k) ?? '').trim(); const n = v ? Number(v) : NaN; return Number.isFinite(n) ? n : null; };
   const lat = coord('lat'), lng = coord('lng'), accuracy = coord('accuracy');
   const file = form.get('file');
   if (!woNumber) return NextResponse.json({ ok: false, error: 'Missing the job.' }, { status: 400 });
   if (!Number.isFinite(reading) || reading < 0 || reading >= 10_000_000) return NextResponse.json({ ok: false, error: REASONS.bad_reading }, { status: 400 });
-  if (!Number.isFinite(Date.parse(at))) return NextResponse.json({ ok: false, error: 'Bad request' }, { status: 400 });
+  if (!Number.isFinite(Date.parse(at)) || (moment !== 'start' && moment !== 'end')) return NextResponse.json({ ok: false, error: 'Bad request' }, { status: 400 });
 
   const supabase = await createClient('field');
   const { data: target } = await supabase.rpc('wf_tech_photo_target', { p_wo_number: woNumber });
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
   }
 
   const { data, error } = await supabase.rpc('wf_tech_add_odometer', {
-    p_wo_number: woNumber, p_at: at, p_reading: reading,
+    p_wo_number: woNumber, p_at: at, p_moment: moment, p_reading: reading,
     p_ai_reading: aiReading != null && Number.isFinite(aiReading) ? aiReading : null, p_photo_path: path,
     p_lat: lat, p_lng: lng, p_accuracy: accuracy,
   });

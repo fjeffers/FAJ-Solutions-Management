@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DRIVES, drivesFor, driveOf, tripOf, parseStartAsks, addStartAsk, checkInNote, checkInMissing, START_ASK_MAX } from './checkin';
+import { DRIVES, drivesFor, driveOf, tripOf, parseStartAsks, addStartAsk, checkInNotes, checkInMissing, START_ASK_MAX } from './checkin';
 
 describe('check in: the drive', () => {
   it('names every drive in one list, the likely ones first, nothing picked', () => {
@@ -39,10 +39,17 @@ describe('check in: what the office asks for', () => {
     expect(addStartAsk(list, 'One more', 'photo', 'zz')).toBeNull();
   });
 
-  it('puts the answers in one line for the office', () => {
+  it('puts the answers in messages for the office, none cut off', () => {
     const asks = [{ id: 'a', label: 'Truck', kind: 'answer' as const }, { id: 'b', label: 'Truck photo', kind: 'photo' as const }, { id: 'c', label: 'Fuel', kind: 'answer' as const }];
-    expect(checkInNote(driveOf('home-site'), asks, { a: ' F-150 ', c: 'Full' })).toBe('Check-in, Home → Site · Truck: F-150 · Fuel: Full');
-    expect(checkInNote(null, asks, {})).toBe('');
+    expect(checkInNotes(driveOf('home-site'), asks, { a: ' F-150 ', c: 'Full' })).toEqual(['Check-in, Home → Site · Truck: F-150 · Fuel: Full']);
+    expect(checkInNotes(null, asks, {})).toEqual([]);
+    // Ten long answers: every one arrives, each message under the 2,000 the office keeps.
+    const ten = Array.from({ length: 10 }, (_, i) => ({ id: `q${i}`, label: `Question ${i + 1}`, kind: 'answer' as const }));
+    const notes = checkInNotes(driveOf('home-site'), ten, Object.fromEntries(ten.map((q) => [q.id, 'x'.repeat(300)])));
+    expect(notes.length).toBeGreaterThan(1);
+    expect(notes.every((n) => n.length <= 2000)).toBe(true);
+    expect(ten.every((q) => notes.some((n) => n.includes(`${q.label}: ${'x'.repeat(300)}`)))).toBe(true);
+    expect(notes[1].startsWith('Check-in, Home → Site (continued) · ')).toBe(true);
   });
 
   it('says what is still needed before Done', () => {

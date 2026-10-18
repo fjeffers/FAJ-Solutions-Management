@@ -78,6 +78,7 @@ export async function sendMileage(woNumber: string, moment: OdometerMoment, m: M
   const fd = new FormData();
   fd.append('wo_number', woNumber);
   fd.append('at', at);
+  fd.append('moment', moment);
   fd.append('reading', String(m.typed));
   if (m.ai != null) fd.append('ai_reading', String(m.ai));
   if (m.pos) {

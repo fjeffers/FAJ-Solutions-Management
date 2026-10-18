@@ -36,6 +36,8 @@ export type SheetJob = {
   closeout_notes?: string | null; custom_qa?: unknown; closeout?: unknown; wo_status?: string | null;
   lead_contractor_name?: string | null; contractor_name?: string | null; contractor_names?: string[] | null;
   wo_tasks?: unknown; signature_required?: boolean | null; photo_required?: boolean | null;
+  /** What the job asks the tech for (migration 128); missing = everything. */
+  capture?: string[] | null;
 };
 
 export type SheetInput = {

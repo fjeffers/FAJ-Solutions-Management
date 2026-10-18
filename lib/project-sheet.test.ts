@@ -94,6 +94,9 @@ describe('buildSheet', () => {
     expect(closed.closed).toBe(true);
     // Closed: what the tech left undone is listed (four deliverables were never ticked).
     expect(closed.missing.filter((m) => m.startsWith('Deliverable not done:'))).toHaveLength(4);
+    // A job that asks only for time and receipts lists nothing else as undone.
+    const timeOnly = buildSheet(input({ jobs: [{ ...job, wo_status: 'Work Done', closeout_notes: '', capture: ['travel', 'receipts'] }] }), NOW).sites[0];
+    expect(timeOnly.missing).toEqual([]);
   });
 
   it('totals: hours on site, miles, receipts', () => {

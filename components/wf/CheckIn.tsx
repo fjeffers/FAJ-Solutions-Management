@@ -9,12 +9,12 @@
 //      when the job asks for odometer photos.
 //   3. At the start of the day, what the office listed for check-in on the job:
 //      a photo (GPS-stamped, kept with the job's photos) or a short answer (sent
-//      to the office as one message).
+//      to the office as messages).
 // A job that doesn't ask for travel skips the drive: Check in is arriving on site.
 import { useState } from 'react';
 import { Camera, CheckCircle2, MapPin } from 'lucide-react';
 import { asks } from '@/lib/capture';
-import { checkInMissing, checkInNote, drivesFor, driveOf, type Drive } from '@/lib/checkin';
+import { checkInMissing, checkInNotes, drivesFor, driveOf, type Drive } from '@/lib/checkin';
 import { getPosition, stampLines } from '@/lib/geo';
 import { stampPhoto } from '@/lib/photo-stamp';
 import type { Origin } from '@/lib/project-day';
@@ -30,7 +30,7 @@ export type CheckInSend = {
   arriveOnSite: () => Promise<void>;
   /** A stamped photo for the job. */
   keep: SavePhoto;
-  /** The answers, as one message to the office. */
+  /** The answers, as messages to the office. */
   note: (text: string) => void;
 };
 
@@ -63,8 +63,7 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
   const at = steps.indexOf(step);
   const next = () => { const n = steps[at + 1]; if (n) setStep(n); else finish(); };
   const finish = () => {
-    const line = checkInNote(drive, items, answers);
-    if (line) send.note(line);
+    for (const line of checkInNotes(drive, items, answers)) send.note(line);
     toastSuccess(travel ? 'Checked in. Drive safe.' : 'Checked in on site.');
     onClose();
   };

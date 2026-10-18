@@ -11,8 +11,9 @@
 --                              everything, exactly as before this migration.
 --   user_settings.job_templates Fred's saved sets of items ("Client portal job:
 --                              travel, odometer, receipts"). Office only.
---   job_odometer               One odometer reading: when, the number, what the
---                              AI read from the photo, the photo, and where (GPS).
+--   job_odometer               One odometer reading: when, the start or the end of
+--                              the drive, the number, what the AI read from the
+--                              photo, the photo, and where (GPS).
 --   work_orders.start_asks     What else the office wants at check-in on this job:
 --                              a photo or a short answer each (lib/checkin.ts).
 --   wf_tech_add_odometer()     A tech records a reading on their own live job.
@@ -51,6 +52,8 @@ CREATE TABLE IF NOT EXISTS public.job_odometer (
   wo_number       text NOT NULL,
   contractor_name text NOT NULL,
   at              timestamptz NOT NULL,
+  -- Taken at the start of a drive (Check in) or at its end (after arriving).
+  moment          text NOT NULL CHECK (moment IN ('start', 'end')),
   reading         numeric(9, 1) NOT NULL CHECK (reading >= 0 AND reading < 10000000),
   ai_reading      numeric(9, 1) CHECK (ai_reading >= 0 AND ai_reading < 10000000),
   photo_path      text,
@@ -72,7 +75,7 @@ REVOKE ALL ON public.job_odometer FROM anon;
 REVOKE INSERT, DELETE ON public.job_odometer FROM authenticated;
 
 CREATE OR REPLACE FUNCTION public.wf_tech_add_odometer(
-  p_wo_number text, p_at timestamptz, p_reading numeric, p_ai_reading numeric, p_photo_path text,
+  p_wo_number text, p_at timestamptz, p_moment text, p_reading numeric, p_ai_reading numeric, p_photo_path text,
   p_lat double precision, p_lng double precision, p_accuracy double precision)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
 AS $$
@@ -84,15 +87,15 @@ DECLARE
 BEGIN
   IF v_ctx IS NULL OR v_target IS NULL THEN RETURN jsonb_build_object('ok', false, 'reason', 'closed_or_not_yours'); END IF;
   v_wo := (v_target ->> 'wo_id')::uuid;
-  IF p_reading IS NULL OR p_reading < 0 OR p_reading >= 10000000
+  IF p_moment IS NULL OR p_moment NOT IN ('start', 'end') OR p_reading IS NULL OR p_reading < 0 OR p_reading >= 10000000
      OR (p_ai_reading IS NOT NULL AND (p_ai_reading < 0 OR p_ai_reading >= 10000000)) THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'bad_reading');
   END IF;
   IF p_photo_path IS NOT NULL AND p_photo_path !~ ('^' || v_wo::text || '/odo_[0-9a-z_-]+\.jpg$') THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'bad_file');
   END IF;
-  INSERT INTO job_odometer (user_id, wo_id, wo_number, contractor_name, at, reading, ai_reading, photo_path, lat, lng, accuracy)
-  VALUES ((v_ctx ->> 'owner_id')::uuid, v_wo, p_wo_number, v_ctx ->> 'contractor_name', wf_trusted_time(p_at),
+  INSERT INTO job_odometer (user_id, wo_id, wo_number, contractor_name, at, moment, reading, ai_reading, photo_path, lat, lng, accuracy)
+  VALUES ((v_ctx ->> 'owner_id')::uuid, v_wo, p_wo_number, v_ctx ->> 'contractor_name', wf_trusted_time(p_at), p_moment,
           round(p_reading, 1), round(p_ai_reading, 1), p_photo_path,
           -- A position outside the world is dropped, not refused: the reading still counts.
           CASE WHEN p_lat BETWEEN -90 AND 90 AND p_lng BETWEEN -180 AND 180 THEN p_lat END,
@@ -102,8 +105,8 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'id', v_id);
 END;
 $$;
-REVOKE ALL ON FUNCTION public.wf_tech_add_odometer(text, timestamptz, numeric, numeric, text, double precision, double precision, double precision) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.wf_tech_add_odometer(text, timestamptz, numeric, numeric, text, double precision, double precision, double precision) TO authenticated;
+REVOKE ALL ON FUNCTION public.wf_tech_add_odometer(text, timestamptz, text, numeric, numeric, text, double precision, double precision, double precision) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.wf_tech_add_odometer(text, timestamptz, text, numeric, numeric, text, double precision, double precision, double precision) TO authenticated;
 
 -- ── Fuel gallons and the AI's reading on receipts ──────────────────────────
 ALTER TABLE public.job_expenses ADD COLUMN IF NOT EXISTS gallons numeric(7, 3);

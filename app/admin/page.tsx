@@ -421,6 +421,12 @@ export default function HomePage() {
 
   // ── Work Orders ────────────────────────────────────────────────────────────
 
+  // Before migration 128 the database has no capture / start_asks columns.
+  const notYet128 = (e: { code?: string; message: string }) =>
+    e.code === 'PGRST204' && /capture|start_asks/.test(e.message)
+      ? "what the tech records and the check-in items aren't switched on yet. Set it back to Everything and remove the check-in items, or ask to switch them on."
+      : e.message;
+
   const saveWorkOrder = async (w: Partial<WorkOrder>) => {
     const fromTicket = w.id ? null : ticketForNextJob.current;
     ticketForNextJob.current = null;
@@ -522,6 +528,10 @@ export default function HomePage() {
       ...(w.billable_miles !== undefined ? { billable_miles: w.billable_miles ?? null } : {}),
       // Fred's own fields (Settings -> Custom fields, migration 110).
       ...(w.custom !== undefined ? { custom: w.custom ?? {} } : {}),
+      // What the tech records and what check-in asks for (migration 128). The
+      // form sends them only when set, so a job saved before 128 still saves.
+      ...(w.capture !== undefined ? { capture: w.capture ?? null } : {}),
+      ...(w.start_asks !== undefined ? { start_asks: w.start_asks ?? [] } : {}),
       // The calendar and the tech's schedule go by scheduled_date. A new job
       // starts on its start date; moving the start date moves it.
       ...(!prevWO
@@ -532,7 +542,7 @@ export default function HomePage() {
     };
     if (w.id) {
       const { error } = await supabase.from('work_orders').update(payload).eq('id', w.id);
-      if (error) { toastError(`Couldn't save WO#${w.wo_number}: ${error.message}`); return; }
+      if (error) { toastError(`Couldn't save WO#${w.wo_number}: ${notYet128(error)}`); return; }
       logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}` });
       // Notify contractor on status change
       const prev = workOrders.find((x) => x.id === w.id);
@@ -548,7 +558,7 @@ export default function HomePage() {
         // real problem, because payments attach to jobs by number.
         toastError(error.code === '23505'
           ? `WO#${w.wo_number} already exists. Give this job a different number — two jobs sharing a number would mix up their payouts.`
-          : `Couldn't save WO#${w.wo_number}: ${error.message}`);
+          : `Couldn't save WO#${w.wo_number}: ${notYet128(error)}`);
         return;
       }
       logAudit({ action: 'create', entityType: 'work_order', entityLabel: `WO#${w.wo_number}` });

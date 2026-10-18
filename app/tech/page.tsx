@@ -351,11 +351,19 @@ export default function TechPortalPage() {
     note: (text) => dayFor(job).send.note(text),
   });
   /** Arrive at the end of a drive: on site (the time on site starts) or at the hotel or home (signed out for the day). */
+  // One arrival at a time: a second tap while the first is still saving does nothing.
+  const arriving = useRef(false);
   const arriveFrom = async (job: WfJob) => {
-    const driving = dayState(job.myDay ?? []).stage === 'travel';
-    await dayFor(job).arrive();
-    // The ending mileage, when there was a drive to end.
-    if (driving && asks(job.capture, 'travel') && asks(job.capture, 'odometer')) setOdoEnd(job);
+    if (arriving.current) return;
+    arriving.current = true;
+    try {
+      const driving = dayState(job.myDay ?? []).stage === 'travel';
+      await dayFor(job).arrive();
+      // The ending mileage, when there was a drive to end.
+      if (driving && asks(job.capture, 'travel') && asks(job.capture, 'odometer')) setOdoEnd(job);
+    } finally {
+      arriving.current = false;
+    }
   };
   // On the way to the hotel or home: the Sign out bar at the top.
   const homeward = jobs.find((j) => j.dayFlow && (canWork(j) || j.status === 'workDone')
@@ -544,7 +552,7 @@ export default function TechPortalPage() {
               <button type="button" className="fs-back-link" onClick={() => setOpenId(null)}><FsIcon name="back" size={16} />{TAB_TITLE[navKey]}</button>
               <TechJobScreen key={openJob.id} job={openJob} uid={uid ?? ''} lists={lists} onBack={() => setOpenId(null)} act={act}
                 onRefresh={() => uid && loadLive(uid, false)} refreshing={refreshing}
-                onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} keepPhoto={keepFor(openJob)} />
+                onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} keepPhoto={keepFor(openJob)} dayBusy={dayBusy} />
             </>
           ) : tab === 'project' ? (
             <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} />
@@ -1135,11 +1143,13 @@ function TimeRequestDialog({ job, act, onClose }: {
 
 // ── One job ─────────────────────────────────────────────────────────────────
 
-function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, onCheckIn, onArrive, keepPhoto }: {
+function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, onCheckIn, onArrive, keepPhoto, dayBusy }: {
   job: WfJob; uid: string; lists: CloseoutList[]; onBack: () => void; act: (a: PendingAction, sent?: string) => Promise<void>;
   onRefresh: () => void; refreshing: boolean;
   /** Check in (components/wf/CheckIn.tsx), and arriving with the ending mileage: shared with the first screen. */
   onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; keepPhoto: SavePhoto;
+  /** Arriving is finding the GPS position (shared with the first screen). */
+  dayBusy: boolean;
 }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [doneOpen, setDoneOpen] = useState(false);
@@ -1345,7 +1355,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             job={job}
             showClock={showClock && !project}
             clockEnabled={working || isClockedIn(job)}
-            locating={locating}
+            locating={locating || dayBusy}
             photoBusy={!!ph.busy}
             onClock={() => void toggleClock()}
             onPhoto={(f) => ph.ask(f, 'camera')}
@@ -1365,10 +1375,10 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           ? <>
             <SiteAccessBar number={job.number} talk={talk} late={late}
               showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
-            <ProjectDayCard job={job} busy={locating} enabled={working} on={dayOn} onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
+            <ProjectDayCard job={job} busy={locating || dayBusy} enabled={working} on={dayOn} onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
             <div style={{ marginTop: 6 }}><SheetLinkButton number={job.number} /></div>
           </>
-          : showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
+          : showClock ? <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating || dayBusy} onToggle={() => void toggleClock()} showButton={!canReport} /> : undefined}
         onToggleTask={working ? toggleTask : undefined}
         below={<>
           {job.status !== 'offered' && job.status !== 'declined' && (
@@ -1457,13 +1467,13 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             <>
               <SiteAccessBar number={job.number} talk={talk} late={late}
                 showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
-              <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating} enabled={working} afterWork={job.status === 'workDone'} on={dayOn}
+              <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating || dayBusy} enabled={working} afterWork={job.status === 'workDone'} on={dayOn}
                 travel={ask('travel')} lunch={ask('lunch')}
                 onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
               {project && <SheetLinkButton number={job.number} />}
             </>
           ) : showClock ? (
-            <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} />
+            <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating || dayBusy} onToggle={() => void toggleClock()} />
           ) : null}
           {bottom}
         </div>
@@ -1952,8 +1962,8 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     const meta = { woNumber: job.number, blob, takenAt, lat: pos?.lat ?? null, lng: pos?.lng ?? null, accuracy: pos?.accuracy ?? null, source: 'camera' as const, label };
     const r = await sendPhoto(meta);
     if (r === 'offline') {
-      await queuePhoto({ ...meta, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, uid });
-      return 'queued';
+      const saved = await queuePhoto({ ...meta, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, uid });
+      return saved ? 'queued' : { error: "No signal, and the phone couldn't keep the photo (storage full or blocked). Try again when you have signal." };
     }
     return 'error' in r ? { error: r.error } : 'sent';
   };

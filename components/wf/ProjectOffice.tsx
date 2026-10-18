@@ -111,7 +111,7 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
         <OfficeReceiptDialog woId={w.id} onClose={() => setReceiptOpen(false)}
           onSaved={() => { setReceiptOpen(false); window.dispatchEvent(new Event(EXPENSES_CHANGED)); }} />
       )}
-      {reportOpen && <ProjectReport projectName={w.project_name ?? ''} startWoId={w.id} lists={lists} onClose={() => setReportOpen(false)} />}
+      {reportOpen && <ProjectReport projectName={w.is_project ? w.project_name ?? '' : ''} startWoId={w.id} lists={lists} onClose={() => setReportOpen(false)} />}
     </Section>
   );
 }
@@ -253,7 +253,7 @@ type ReportWo = Pick<EnrichedWorkOrder,
   | 'customer_name' | 'external_wo_id' | 'closeout_notes' | 'scheduled_date' | 'start_date' | 'signature_required'
   | 'wo_status' | 'archived_at' | 'wo_tasks' | 'custom_qa' | 'photo_required'> & { closeout: unknown; capture?: unknown };
 type ReportExpense = {
-  id: string; wo_id: string; category: string; vendor: string | null; amount: number; expense_date: string; note: string | null; receipt_path: string | null; status: string;
+  id: string; wo_id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; note: string | null; receipt_path: string | null; status: string;
   /** Migration 128. */
   gallons?: number | null; ai?: unknown;
 };
@@ -335,13 +335,13 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
       setWos(list);
       const ids = list.map((x) => x.id);
       if (ids.length === 0) return;
-      const exCols = 'id, wo_id, category, vendor, amount, expense_date, note, receipt_path, status';
+      const exCols = 'id, wo_id, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status';
       const expensesOf = (c: string) => db.from('job_expenses').select(c).in('wo_id', ids).order('expense_date');
       const [ev, ex, ph, od] = await Promise.all([
         loadEvents(ids),
         expensesOf(`${exCols}, gallons, ai`).then((r) => (r.error ? expensesOf(exCols) : r)),
         db.from('wo_photos').select('id, wo_id, url, taken_at, contractor_name').in('wo_id', ids).order('taken_at'),
-        db.from('job_odometer').select('id, wo_id, contractor_name, at, reading, ai_reading, photo_path').in('wo_id', ids).order('at'),
+        db.from('job_odometer').select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').in('wo_id', ids).order('at'),
       ]);
       setEvents(ev);
       const readings = ((od.data as OdoRow[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));

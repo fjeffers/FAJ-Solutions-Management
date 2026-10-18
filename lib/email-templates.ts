@@ -88,15 +88,40 @@ export type WorkOrderEmailOpts = {
   declineUrl?: string | null;
 };
 
+/** "08:00" / "17:30" → "8:00 AM" / "5:30 PM"; anything else as written. */
+export function clock12(raw: string | null | undefined): string {
+  const text = (raw ?? '').trim();
+  const m = /^(\d{1,2}):(\d{2})/.exec(text);
+  if (!m || Number(m[1]) > 23) return text;
+  const h = Number(m[1]);
+  return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/**
+ * The status a tech reads (Fred, 2026-10-18, testing as a tech: the email
+ * said "Open" on a job already assigned to him). An Open job with a tech on
+ * it is that tech's job.
+ */
+export function techStatusWord(wo: Pick<WorkOrder, 'wo_status' | 'contractor_name' | 'contractor_names'>): string {
+  const s = wo.wo_status || 'Open';
+  const hasTech = !!wo.contractor_name || (wo.contractor_names?.length ?? 0) > 0;
+  return (s === 'Open' || s === 'Assigned') && hasTech ? 'Assigned to you' : s;
+}
+
+/** "Oct 19, 2026, 8:00 AM – Oct 24, 2026", or "Oct 19, 2026, 10:00 AM – 5:00 PM" on one day. */
+export function scheduleLine(wo: Pick<WorkOrder, 'start_date' | 'start_time' | 'end_date' | 'end_time'>): string {
+  const start = [wo.start_date ? fmtDate(wo.start_date) : null, wo.start_time ? clock12(wo.start_time) : null].filter(Boolean).join(', ');
+  const end = [
+    wo.end_date && wo.end_date !== wo.start_date ? fmtDate(wo.end_date) : null,
+    wo.end_time ? clock12(wo.end_time) : null,
+  ].filter(Boolean).join(', ');
+  return [start, end].filter(Boolean).join(' – ');
+}
+
 export function workOrderEmail(wo: WorkOrder, note?: string, opts: WorkOrderEmailOpts = {}): string {
   const site = [wo.site_name, wo.site_address, wo.site_city, wo.site_state, wo.site_zip]
     .filter(Boolean).join(', ');
-  const schedule = [
-    wo.start_date ? fmtDate(wo.start_date) : null,
-    wo.start_time ?? null,
-    wo.end_date ? `– ${fmtDate(wo.end_date)}` : null,
-    wo.end_time ? `(end ${wo.end_time})` : null,
-  ].filter(Boolean).join(' ');
+  const schedule = scheduleLine(wo);
 
   const deliverableLines = wo.deliverables
     ? wo.deliverables
@@ -143,7 +168,7 @@ export function workOrderEmail(wo: WorkOrder, note?: string, opts: WorkOrderEmai
     ${section('Work Order Details', `
       <table width="100%" cellpadding="0" cellspacing="0">
         ${infoRow('Contractor', wo.contractor_name, true)}
-        ${infoRow('Status', wo.wo_status)}
+        ${infoRow('Status', techStatusWord(wo))}
         ${refLabel ? infoRow('On-Site Reference', refLabel, true) : ''}
         ${wo.service_type ? infoRow('Service Type', wo.service_type) : ''}
         ${schedule ? infoRow('Schedule', schedule) : ''}

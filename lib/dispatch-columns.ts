@@ -9,7 +9,9 @@
 //     columns; standard: Revisit needed … On hold) — a job parked there
 //     waits on something, whatever its stage (work_orders.board_stage,
 //     migration 113);
-//   Closed and Declined.
+//   Closed. A job every tech declined goes back to Needs a tech (Fred,
+//     2026-10-18: "it should have gone back to Need a tech"), so there is no
+//     Declined column any more.
 //
 // Moving a card (drag on a computer, "Move to" on a phone) only ever changes
 // the board column or the job's office stage, never money. Moves that need
@@ -37,6 +39,7 @@ export function boardColumns(
 ): BoardColumn[] {
   const out: BoardColumn[] = [];
   for (const s of stages) {
+    if (s.key === 'declined') continue;
     if (s.key === 'closed') for (const h of holds) out.push({ key: holdKey(h.key), label: h.label, kind: 'hold', color: HOLD_COLOR });
     out.push({ key: s.key, label: s.label, kind: 'stage', stage: s.key, color: s.color });
     if (s.key === 'scheduled') out.push({ key: TODAY_KEY, label: 'Today', kind: 'today', color: TODAY_COLOR });
@@ -51,7 +54,8 @@ const waitingToStart = (s: WfStatus) => s === 'offered' || s === 'scheduled';
 
 /** The column a job sits in. A hold whose column Fred has since removed is ignored. */
 export function columnOf(job: Pick<WfJob, 'status' | 'date'> & { hold?: string | null }, today: string, holdKeys: Set<string>): string {
-  if (job.status === 'closed' || job.status === 'declined') return job.status;
+  if (job.status === 'closed') return job.status;
+  if (job.status === 'declined') return 'open';
   if (job.hold && holdKeys.has(job.hold)) return holdKey(job.hold);
   if (job.date === today && waitingToStart(job.status)) return TODAY_KEY;
   return job.status;
@@ -69,7 +73,8 @@ type MovingJob = Pick<WfJob, 'status' | 'date' | 'techs' | 'officeStatus' | 'num
 export function moveTo(job: MovingJob, target: BoardColumn, today: string, holdKeys: Set<string>): Move {
   if (columnOf(job, today, holdKeys) === target.key) return { kind: 'none' };
   if (job.status === 'closed') return { kind: 'blocked', reason: `WO ${job.number} is closed. Open it and use Restore to bring it back.` };
-  if (job.status === 'declined' || target.stage === 'declined') return { kind: 'blocked', reason: 'Declined is set by the tech’s answer, not moved by hand.' };
+  if (job.status === 'declined') return { kind: 'blocked', reason: `WO ${job.number} was declined. Open it and pick a new tech.` };
+  if (target.stage === 'declined') return { kind: 'blocked', reason: 'Declined is set by the tech’s answer, not moved by hand.' };
 
   if (target.kind === 'hold') {
     return { kind: 'patch', patch: { board_stage: target.key.slice('hold:'.length) }, note: `WO ${job.number} moved to ${target.label}.` };

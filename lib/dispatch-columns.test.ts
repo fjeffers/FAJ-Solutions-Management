@@ -14,11 +14,13 @@ const job = (over: Partial<J> = {}): J => ({ number: '101', status: 'scheduled',
 
 describe('Dispatch board columns', () => {
   it('Today sits after Scheduled; Fred\'s own columns sit before Closed', () => {
-    expect(cols.map((c) => c.key)).toEqual(['open', 'offered', 'scheduled', TODAY_KEY, 'inProgress', 'workDone', holdKey('Revisit needed'), holdKey('On hold'), 'closed', 'declined']);
+    expect(cols.map((c) => c.key)).toEqual(['open', 'offered', 'scheduled', TODAY_KEY, 'inProgress', 'workDone', holdKey('Revisit needed'), holdKey('On hold'), 'closed']);
   });
 
   it('a job sits in its hold column, Today, or its stage', () => {
     expect(columnOf(job(), TODAY, keys)).toBe('scheduled');
+    // A job every tech declined is back in Needs a tech (Gaffney, 2026-10-18).
+    expect(columnOf(job({ status: 'declined' }), TODAY, keys)).toBe('open');
     expect(columnOf(job({ date: TODAY }), TODAY, keys)).toBe(TODAY_KEY);
     expect(columnOf(job({ date: TODAY, status: 'offered' }), TODAY, keys)).toBe(TODAY_KEY);
     expect(columnOf(job({ date: TODAY, status: 'inProgress' }), TODAY, keys)).toBe('inProgress'); // started: stays In progress
@@ -53,6 +55,8 @@ describe('Dispatch board columns', () => {
     expect(moveTo(job({ date: TODAY, hold: 'On hold' }), col(TODAY_KEY), TODAY, keys)).toMatchObject({ kind: 'patch', patch: { board_stage: null } });
     expect(moveTo(job({ status: 'workDone', officeStatus: 'Work Done' }), col('closed'), TODAY, keys)).toEqual({ kind: 'close' });
     expect(moveTo(job({ status: 'closed' }), col('scheduled'), TODAY, keys).kind).toBe('blocked');
-    expect(moveTo(job(), col('declined'), TODAY, keys).kind).toBe('blocked');
+    const declinedMove = moveTo(job({ status: 'declined' }), col('scheduled'), TODAY, keys);
+    expect(declinedMove.kind).toBe('blocked');
+    expect(declinedMove.kind === 'blocked' && declinedMove.reason).toMatch(/pick a new tech/);
   });
 });

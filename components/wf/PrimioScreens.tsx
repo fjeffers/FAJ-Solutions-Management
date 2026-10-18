@@ -176,10 +176,12 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
         </div>
       )}
       {partShown('card.techs') && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, color: job.techs.length ? undefined : 'var(--wf-danger)', fontWeight: job.techs.length ? undefined : 600 }} className="wf-p-small">
-          <Users size={15} color={job.techs.length ? 'var(--wf-subtle)' : 'var(--wf-danger)'} style={{ flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, color: job.techs.length && job.status !== 'declined' ? undefined : 'var(--wf-danger)', fontWeight: job.techs.length && job.status !== 'declined' ? undefined : 600 }} className="wf-p-small">
+          <Users size={15} color={job.techs.length && job.status !== 'declined' ? 'var(--wf-subtle)' : 'var(--wf-danger)'} style={{ flexShrink: 0 }} />
           <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {job.techs.length === 0 ? 'No tech yet' : job.techs.length === 1 ? job.techs[0] : `${job.techs[0]} +${job.techs.length - 1}`}
+            {/* Every tech said no: it's back in Needs a tech (Fred, 2026-10-18). */}
+            {job.status === 'declined' ? `Declined by ${job.techs.join(', ')}`
+              : job.techs.length === 0 ? 'No tech yet' : job.techs.length === 1 ? job.techs[0] : `${job.techs[0]} +${job.techs.length - 1}`}
           </span>
         </div>
       )}

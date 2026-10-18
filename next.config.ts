@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@supabase/ssr", "@supabase/supabase-js"],
+  // Which build this is, baked in at build time; an open app compares it with
+  // /api/version and offers an update (components/UpdateBar.tsx).
+  env: { NEXT_PUBLIC_APP_VERSION: process.env.VERCEL_GIT_COMMIT_SHA || "dev" },
   // One app (Fred, 2026-10-02: "all one app with a tech portal"). WorkFlow's
   // features and look now live in the FAJ app itself — Work Orders for Fred,
   // /tech for techs. The old separate WorkFlow address sends people to the tech

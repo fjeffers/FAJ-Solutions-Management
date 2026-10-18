@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './fs.css';
+import UpdateBar from '@/components/UpdateBar';
 
 // The tech portal installs as its OWN app, separate from the owner's.
 // Without this the root layout's manifest wins and a tech who taps "Add to
@@ -26,5 +27,5 @@ export const metadata: Metadata = {
 // The Field Service LIVE look (app/tech/fs.css): Inter, which the root
 // layout's Google Fonts link already loads.
 export default function TechLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <>{children}<UpdateBar /></>;
 }

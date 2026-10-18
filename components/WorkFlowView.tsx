@@ -46,6 +46,7 @@ import SketchesPanel from '@/components/sketch/SketchesPanel';
 import PdfEditor, { type SendResult } from '@/components/tools/PdfEditor';
 import { DOC_KINDS, editedName } from '@/lib/job-docs';
 import { ProjectDayCard, EXPENSES_CHANGED } from '@/components/wf/ProjectOffice';
+import { asks } from '@/lib/capture';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
 
@@ -841,10 +842,16 @@ function JobGapsCard({ job, woId, deliverables }: { job: WfJob; woId: string; de
   );
 }
 
-/** Closeout shows once a tech has the job, or as soon as anything is filled in. */
+/**
+ * Closeout shows once a tech has the job, or as soon as anything is filled in,
+ * and only on a job that asks for deliverables or a signature: the tech's
+ * screen shows it on the same jobs (Fred, 2026-10-18: "i dont require signed
+ * this work order").
+ */
 function showCloseout(job: WfJob): boolean {
   const c = job.closeout;
   if (c.done.length || c.delays.length || c.signoff) return true;
+  if (job.capture && !asks(job.capture, 'deliverables') && !asks(job.capture, 'signature')) return false;
   return job.status === 'scheduled' || job.status === 'inProgress' || job.status === 'workDone' || job.status === 'closed';
 }
 
@@ -905,12 +912,14 @@ const ANSWER: Record<string, { label: string; color: string }> = {
   declined: { label: 'Declined', color: 'var(--wf-danger)' },
 };
 
-/** Who is on the job, how each answered, what each gets — and a button to change it. */
+/**
+ * Who is on the job and how each answered. No pay here (Fred, 2026-10-18:
+ * "Still seeing money"): tech pay is set in Edit job, on the Pay tab.
+ */
 function TechsCard({ w, job, onSendAgain, onToolsChange }: {
   w: EnrichedWorkOrder; job: WfJob; onSendAgain?: (tech: string) => void;
   onToolsChange?: (on: boolean) => void;
 }) {
-  const pay = w.contractor_pay ?? {};
   return (
     <Section title="Techs" right={<Users size={18} color="var(--wf-subtle)" />}>
       {job.techs.length === 0 ? (
@@ -919,7 +928,6 @@ function TechsCard({ w, job, onSendAgain, onToolsChange }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {job.techs.map((t) => {
             const a = ANSWER[job.answers[t] ?? ''];
-            const amount = pay[t];
             return (
               <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ flex: 1, minWidth: 0 }}>
@@ -931,9 +939,6 @@ function TechsCard({ w, job, onSendAgain, onToolsChange }: {
                 {onSendAgain && job.answers[t] === 'declined' && (
                   <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onSendAgain(t)}>Send it again</button>
                 )}
-                {amount != null
-                  ? <span className="wf-display" style={{ fontWeight: 600 }}>{fmtMoney(amount)}</span>
-                  : <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)' }}>Pay not set</span>}
               </div>
             );
           })}

@@ -73,13 +73,15 @@ describe('the weekly bill for one site', () => {
       today: '2026-10-18',
     });
     const kinds = bill.flags.map((f) => f.kind);
-    expect(kinds).toEqual(['odo_gps', 'odo_typed', 'odo_missing', 'receipt_typed', 'receipt_photo', 'fuel']);
+    // 122 miles in 38 minutes can't be right either (odo_far, 2026-10-18).
+    expect(kinds).toEqual(['odo_gps', 'odo_far', 'odo_typed', 'odo_missing', 'receipt_typed', 'receipt_photo', 'fuel']);
     expect(bill.flags[0].text).toBe('Dana, Mon, Oct 12: 122 mi by odometer, 21.4 mi by GPS for the same drives.');
-    expect(bill.flags[1].text).toBe('Dana, Mon, Oct 12, Hotel → Site: typed 48,100, the photo reads 48,200.');
-    expect(bill.flags[2].text).toBe('Dana, Mon, Oct 12, Site → Hotel: no odometer photo at the end.');
-    expect(bill.flags[3].text).toBe('Fuel at Shell, Mon, Oct 12: entered as $14.24, the photo reads $41.24.');
-    expect(bill.flags[4].text).toBe('Meals at Deli, Mon, Oct 12, $12.00: no photo of the receipt.');
-    expect(bill.flags[5].text).toBe('40 gal of fuel for 122 mi of driving to this site: more than the miles explain.');
+    expect(bill.flags[1].text).toBe('Dana, Mon, Oct 12, Hotel → Site: 122 mi is more than this drive could cover. A reading is probably mistyped.');
+    expect(bill.flags[2].text).toBe('Dana, Mon, Oct 12, Hotel → Site: typed 48,100, the photo reads 48,200.');
+    expect(bill.flags[3].text).toBe('Dana, Mon, Oct 12, Site → Hotel: no odometer photo at the end.');
+    expect(bill.flags[4].text).toBe('Fuel at Shell, Mon, Oct 12: entered as $14.24, the photo reads $41.24.');
+    expect(bill.flags[5].text).toBe('Meals at Deli, Mon, Oct 12, $12.00: no photo of the receipt.');
+    expect(bill.flags[6].text).toBe('40 gal of fuel for 122 mi of driving to this site: more than the miles explain.');
   });
 
   it('flags a day nobody tapped Off site, or a drive with no arrival, and leaves that time out', () => {
@@ -202,5 +204,42 @@ describe('weekly bill review fixes', () => {
     expect(drives?.rows[0]).toEqual(['Mon, Oct 12', 'Dana', 'Travel to site', 'Hotel → Site', '6:50 AM', '7:28 AM', '0.63', '21.4', '48,200', '48,222', '22']);
     expect(drives?.rows[1][2]).toBe('Travel from site');
     expect(drives?.rows).toHaveLength(2);
+  });
+});
+
+describe('odometer readings that cannot be right (Fred, 2026-10-18 test job)', () => {
+  // Fred's test, Oct 18 (New York): start 122,552, then 1,234,555 two minutes later,
+  // then 123,456 at the site, then 1,234,789 leaving it.
+  const at = (hhmm: string) => new Date(`2026-10-18T${hhmm}-04:00`).toISOString();
+  const fred = buildDayLogs([
+    { kind: 'travel_start', at: at('15:02:53'), tech: 'Fred', origin: 'other', dest: 'hotel' },
+    { kind: 'travel_end', at: at('15:05:10'), tech: 'Fred', miles: 0 },
+    { kind: 'travel_start', at: at('15:05:41'), tech: 'Fred', origin: 'hotel', dest: 'site' },
+    { kind: 'travel_end', at: at('15:06:10'), tech: 'Fred', miles: 0 },
+    { kind: 'travel_start', at: at('15:08:01'), tech: 'Fred', origin: 'site', dest: 'hotel' },
+  ], new Date('2026-10-18T19:20:00Z'), TZ);
+  const r = (hhmm: string, moment: 'start' | 'end', reading: number): OdoRow =>
+    ({ wo_id: 'wo-t', contractor_name: 'Fred', at: at(hhmm), moment, reading, ai_reading: null, photo_path: 'wo-t/odo.jpg' });
+  const fredReadings = [r('15:03:08', 'start', 122552), r('15:05:20', 'end', 1234555), r('15:06:22', 'end', 123456), r('15:08:08', 'start', 1234789)];
+
+  it('marks a drive with more miles than its time allows, and a start that does not follow the last end', async () => {
+    const { odoProblems } = await import('./weekly-bill');
+    const legs = matchOdometer(fred.flatMap((d) => d.legs), fredReadings);
+    expect(legs.map((l) => [l.odoStart?.reading ?? null, l.odoEnd?.reading ?? null])).toEqual([[122552, 1234555], [null, 123456], [1234789, null]]);
+    const p = odoProblems(legs);
+    expect(p.get(legs[0])?.map((x) => x.kind)).toEqual(['far']);
+    expect(p.get(legs[1])).toBeUndefined();
+    expect(p.get(legs[2])?.map((x) => x.kind)).toEqual(['jump']);
+  });
+
+  it('leaves real drives alone', async () => {
+    const { odoProblems } = await import('./weekly-bill');
+    const legs = matchOdometer(logs.flatMap((d) => d.legs), readings);
+    expect(odoProblems(legs).size).toBe(0);
+  });
+
+  it('puts the mistyped reading on the bill as something to check', () => {
+    const bill = siteBill({ woId: 'wo-t', capture: ['travel', 'odometer'], logs: fred, readings: fredReadings, receipts: [], today: '2026-10-18' });
+    expect(bill.flags.filter((f) => f.kind === 'odo_far')).toHaveLength(2);
   });
 });

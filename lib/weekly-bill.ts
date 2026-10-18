@@ -41,7 +41,7 @@ export type BillDay = {
   back: string | null;
   onSiteHours: number; travelHours: number; gpsMiles: number; odoMiles: number | null; receipts: number;
 };
-export type BillFlag = { kind: 'odo_gps' | 'odo_missing' | 'odo_photo' | 'odo_typed' | 'odo_backwards' | 'receipt_typed' | 'receipt_photo' | 'fuel' | 'open'; text: string };
+export type BillFlag = { kind: 'odo_gps' | 'odo_missing' | 'odo_photo' | 'odo_typed' | 'odo_backwards' | 'odo_far' | 'receipt_typed' | 'receipt_photo' | 'fuel' | 'open'; text: string };
 export type SiteBill = {
   woId: string;
   shows: { travel: boolean; odometer: boolean; receipts: boolean; lunch: boolean };
@@ -103,6 +103,39 @@ export function matchOdometer(legs: Leg[], readings: OdoRow[]): BillLeg[] {
   });
 }
 
+/** The most a car covers in a time: 90 mph, with 5 miles to spare. */
+const reachMiles = (ms: number) => 5 + (Math.max(0, ms) / 3_600_000) * 90;
+
+export type OdoProblem = { kind: 'backwards' | 'far' | 'jump'; text: string };
+
+/**
+ * Odometer readings on a drive that can't be right (Fred's test, 2026-10-18:
+ * 1,234,555 typed two minutes after 122,552): lower at the end, more miles
+ * than the drive's time allows, or a start that doesn't follow on from the
+ * tech's last end reading. Keyed by the drive.
+ */
+export function odoProblems(legs: BillLeg[]): Map<BillLeg, OdoProblem[]> {
+  const out = new Map<BillLeg, OdoProblem[]>();
+  const add = (l: BillLeg, p: OdoProblem) => out.set(l, [...(out.get(l) ?? []), p]);
+  const n = (x: number) => x.toLocaleString('en-US');
+  const sorted = [...legs].sort((a, b) => a.start.localeCompare(b.start));
+  sorted.forEach((l, i) => {
+    if (l.odoMiles != null && l.odoMiles < 0) {
+      add(l, { kind: 'backwards', text: 'The odometer reads lower at the end.' });
+    } else if (l.odoMiles != null && l.end && l.odoMiles > reachMiles(l.ms)) {
+      add(l, { kind: 'far', text: `${n(l.odoMiles)} mi is more than this drive could cover. A reading is probably mistyped.` });
+    }
+    const prev = sorted.slice(0, i).filter((x) => x.tech === l.tech).at(-1);
+    if (prev?.odoEnd && l.odoStart) {
+      const gap = l.odoStart.reading - prev.odoEnd.reading;
+      if (gap < -1 || gap > reachMiles(Date.parse(l.odoStart.at) - Date.parse(prev.odoEnd.at))) {
+        add(l, { kind: 'jump', text: `Starts at ${n(l.odoStart.reading)}, but the drive before ended at ${n(prev.odoEnd.reading)}.` });
+      }
+    }
+  });
+  return out;
+}
+
 export function siteBill(input: {
   woId: string; capture: readonly CaptureItem[] | null; logs: DayLog[]; readings: OdoRow[]; receipts: BillReceipt[];
   /** Today (YYYY-MM-DD, New York): a day before it with no Off site is flagged. */
@@ -162,9 +195,13 @@ export function siteBill(input: {
   });
 
   if (shows.odometer) {
+    const problems = odoProblems(legs);
     for (const l of legs) {
       const who = l.tech || 'The tech';
       const when = `${who}, ${billDay(l.day)}, ${legLabel(l)}`;
+      for (const p of problems.get(l) ?? []) {
+        if (p.kind !== 'backwards') flags.push({ kind: 'odo_far', text: `${when}: ${p.text}` });
+      }
       // Missing photos count only on a job that asks for them.
       if (capture !== null && (!l.odoStart || (l.end && !l.odoEnd))) {
         const which = !l.odoStart && l.end && !l.odoEnd ? 'start and end' : !l.odoStart ? 'start' : 'end';

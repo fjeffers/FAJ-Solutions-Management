@@ -29,14 +29,14 @@ import type { EnrichedWorkOrder } from '@/lib/types';
 import { Dialog, Section } from './WfUi';
 import { PushSwitch } from './PushSwitch';
 import { mailtoHref, sheetInvite, smsHref } from '@/lib/send-sheet';
-import { parseCapture } from '@/lib/capture';
+import { asks, parseCapture } from '@/lib/capture';
 import { askedDeliverables } from '@/lib/wf';
 import { aiFailureText } from '@/lib/wo-ai';
 import { downloadXLSXBook } from '@/lib/export';
 import { billJpeg } from '@/lib/bill-image';
 import {
-  billReadings, sheetName, siteBill, siteSheetRows, summaryFacts, totalsSheetRows,
-  type BillDay, type BillSite, type OdoRow, type SiteBill,
+  billReadings, matchOdometer, odoProblems, sheetName, siteBill, siteSheetRows, summaryFacts, totalsSheetRows,
+  type BillDay, type BillLeg, type BillSite, type OdoProblem, type OdoRow, type SiteBill,
 } from '@/lib/weekly-bill';
 
 const TZ = 'America/New_York';
@@ -76,8 +76,19 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
   useEffect(() => { void load(); }, [load]);
   useLiveRows('job_day_events', w.id, () => void load());
   useLiveRows('job_punches', w.id, () => void load());
+  // The tech's odometer photos on each drive (Fred, 2026-10-18: "The milage needs to reflect on the back end").
+  const odo = useOdometer(w.id);
   const logs = useMemo(() => buildDayLogs(events ?? [], new Date(), TZ), [events]);
   const t = totalsOf(logs);
+  const capture = parseCapture(w.capture);
+  const showOdo = odo.readings.length > 0 || (capture !== null && asks(capture, 'odometer'));
+  const legs = useMemo(() => matchOdometer(logs.flatMap((d) => d.legs), odo.readings), [logs, odo.readings]);
+  const problems = useMemo(() => odoProblems(legs), [legs]);
+  // A reading no drive took (a photo with no drive around it) still shows, under its day.
+  const loose = useMemo(() => {
+    const used = new Set(legs.flatMap((l) => [l.odoStart, l.odoEnd]));
+    return odo.readings.filter((o) => !used.has(o));
+  }, [legs, odo.readings]);
 
   return (
     <Section
@@ -104,7 +115,13 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
                 </div>
               ))}
             </div>
-            {logs.map((d) => <DayBlock key={`${d.day}|${d.tech}`} d={d} onChanged={load} />)}
+            {logs.map((d) => (
+              <DayBlock key={`${d.day}|${d.tech}`} d={d} onChanged={load}
+                odo={showOdo ? {
+                  legs: legs.filter((l) => l.tech === d.tech && l.day === d.day), problems, urls: odo.urls,
+                  loose: loose.filter((o) => o.contractor_name === d.tech && dayOf(o.at, TZ) === d.day),
+                } : null} />
+            ))}
           </>
         )}
       {receiptOpen && (
@@ -116,7 +133,71 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
   );
 }
 
-function DayBlock({ d, onChanged }: { d: DayLog; onChanged: () => void }) {
+type DayOdo = { legs: BillLeg[]; problems: Map<BillLeg, OdoProblem[]>; urls: Record<string, string>; loose: OdoRow[] };
+
+/** Every odometer reading on the job, with a link to each photo. Reloads as the tech adds one. */
+function useOdometer(woId: string) {
+  const [readings, setReadings] = useState<OdoRow[]>([]);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const load = useCallback(async () => {
+    const db = createClient();
+    const { data, error } = await db.from('job_odometer')
+      .select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', woId).order('at');
+    if (error) return;
+    const rows = ((data as OdoRow[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
+    setReadings(rows);
+    const paths = rows.map((o) => o.photo_path).filter((x): x is string => !!x);
+    if (paths.length) {
+      const { data: signed } = await db.storage.from('job-receipts').createSignedUrls(paths, 60 * 60);
+      const m: Record<string, string> = {};
+      for (const x of signed ?? []) if (x.path && x.signedUrl) m[x.path] = x.signedUrl;
+      setUrls(m);
+    }
+  }, [woId]);
+  useEffect(() => { void load(); }, [load]);
+  useLiveRows('job_odometer', woId, () => void load());
+  return { readings, urls };
+}
+
+const odoNum = (n: number) => n.toLocaleString('en-US');
+
+/** One odometer reading: the number, and its photo as a small picture that opens full size. */
+function OdoShot({ o, urls, label }: { o: OdoRow | null; urls: Record<string, string>; label: string }) {
+  if (!o) return <span className="wf-subtle">{label}: no photo</span>;
+  const url = o.photo_path ? urls[o.photo_path] : undefined;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {url && (
+        <a href={url} target="_blank" rel="noopener noreferrer" title={`Open the ${label.toLowerCase()} photo`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={`${label} odometer ${odoNum(o.reading)}`} style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--wf-line)', display: 'block' }} />
+        </a>
+      )}
+      <span>
+        {label} <b>{odoNum(o.reading)}</b>
+        {o.ai_reading != null && Math.abs(o.ai_reading - o.reading) > 1 ? <span className="wf-subtle"> (photo reads {odoNum(o.ai_reading)})</span> : null}
+      </span>
+    </span>
+  );
+}
+
+/** Under a drive: the odometer at the start and the end, the miles between, and anything that can't be right. */
+function OdoLine({ l, problems, urls }: { l: BillLeg; problems: OdoProblem[]; urls: Record<string, string> }) {
+  return (
+    <div style={{ margin: '2px 0 6px 22px', fontSize: 12.5 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <OdoShot o={l.odoStart} urls={urls} label="Start" />
+        {(l.end || l.odoEnd) && <OdoShot o={l.odoEnd} urls={urls} label="End" />}
+        {l.odoMiles != null && !problems.length && <span className="wf-chip">{odoNum(l.odoMiles)} mi by odometer</span>}
+      </div>
+      {problems.map((p) => (
+        <div key={p.kind} style={{ color: '#B42318', marginTop: 2 }}>Check: {p.text}</div>
+      ))}
+    </div>
+  );
+}
+
+function DayBlock({ d, onChanged, odo }: { d: DayLog; onChanged: () => void; odo: DayOdo | null }) {
   return (
     <div style={{ borderTop: '1px solid var(--wf-line)', padding: '10px 0' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -133,11 +214,22 @@ function DayBlock({ d, onChanged }: { d: DayLog; onChanged: () => void }) {
         </div>
       )}
       {[
-        ...d.legs.map((l) => ({ at: l.start, el: (
-          <div key={`l${l.start}`} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, flexWrap: 'wrap' }}>
-            <Car size={14} color="var(--wf-subtle)" />
-            <span>{legLabel(l)} · {timeOf(l.start)}–{l.end ? timeOf(l.end) : 'driving now'} · {formatDuration(l.ms)}</span>
-            <MilesEdit id={l.endId} miles={l.miles} onSaved={onChanged} />
+        ...d.legs.map((l) => {
+          const withOdo = odo?.legs.find((x) => x.start === l.start);
+          return { at: l.start, el: (
+            <div key={`l${l.start}`}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, flexWrap: 'wrap' }}>
+                <Car size={14} color="var(--wf-subtle)" />
+                <span>{legLabel(l)} · {timeOf(l.start)}–{l.end ? timeOf(l.end) : 'driving now'} · {formatDuration(l.ms)}</span>
+                <MilesEdit id={l.endId} miles={l.miles} onSaved={onChanged} />
+              </div>
+              {odo && withOdo && <OdoLine l={withOdo} problems={odo.problems.get(withOdo) ?? []} urls={odo.urls} />}
+            </div>
+          ) };
+        }),
+        ...(odo?.loose ?? []).map((o) => ({ at: o.at, el: (
+          <div key={`o${o.id ?? o.at}`} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, flexWrap: 'wrap', marginLeft: 22 }}>
+            <OdoShot o={o} urls={odo?.urls ?? {}} label={`Odometer at ${timeOf(o.at)}, not on a drive:`} />
           </div>
         ) })),
         ...d.spans.map((s) => ({ at: s.in, el: (

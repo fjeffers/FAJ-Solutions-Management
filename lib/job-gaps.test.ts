@@ -41,4 +41,11 @@ describe('what the tech left undone', () => {
     const plain = job({ wo_tasks: [], custom_qa: [], closeout: { done: [] }, signature_required: false, photo_required: false, closeout_notes: 'Done.' });
     expect(jobGaps(plain, [], 0)).toEqual([]);
   });
+
+  it('leaves out what the job did not ask for (a client portal job: time, miles, receipts)', () => {
+    const portal = job({ capture: ['travel', 'odometer', 'receipts'] });
+    expect(jobGaps(portal, items, 0)).toEqual([]);
+    // Notes asked for: only the missing notes show.
+    expect(jobGaps(job({ capture: ['travel', 'notes'] }), items, 0).map((g) => g.kind)).toEqual(['notes']);
+  });
 });

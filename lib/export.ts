@@ -132,3 +132,18 @@ export function export1099CSV(contractors: Contractor[], payments: Payment[], ye
     });
   downloadCSV(`1099-report-${year}.csv`, [header, ...rows]);
 }
+
+/** A workbook with several sheets (the weekly bill: a totals sheet, then one per site). */
+export async function downloadXLSXBook(
+  filename: string,
+  sheets: { name: string; rows: (string | number)[][]; colWidths?: number[] }[],
+) {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.utils.book_new();
+  for (const s of sheets) {
+    const ws = XLSX.utils.aoa_to_sheet(s.rows);
+    if (s.colWidths) ws['!cols'] = s.colWidths.map((wch) => ({ wch }));
+    XLSX.utils.book_append_sheet(wb, ws, s.name);
+  }
+  XLSX.writeFile(wb, filename);
+}

@@ -10,7 +10,8 @@
 // Pure and unit-tested (lib/job-gaps.test.ts).
 
 import { skipReason } from './closeout';
-import type { WfJob } from './wf';
+import { asks } from './capture';
+import { askedDeliverables, askedOnly, type WfJob } from './wf';
 
 export type JobGap = {
   /** 'skipped' = the tech couldn't do it and said why; everything else was just left. */
@@ -20,6 +21,9 @@ export type JobGap = {
 
 export function jobGaps(job: WfJob, deliverables: string[], photoCount: number): JobGap[] {
   const gaps: JobGap[] = [];
+  // Only what the job asked for (lib/capture.ts): nothing else is a gap.
+  deliverables = askedDeliverables(job, deliverables);
+  job = askedOnly(job);
   for (const t of job.tasks) if (!t.done) gaps.push({ kind: 'task', text: `Checklist not done: ${t.label}` });
   for (const q of job.questions) {
     if (q.answer.trim()) continue;
@@ -37,6 +41,6 @@ export function jobGaps(job: WfJob, deliverables: string[], photoCount: number):
     gaps.push({ kind: 'signature', text: c.signSkip ? `No customer signature: ${c.signSkip.reason}` : 'No customer signature' });
   }
   if (job.photoRequired && photoCount === 0) gaps.push({ kind: 'photos', text: 'No photos of the work' });
-  if (!job.closeoutNotes.trim()) gaps.push({ kind: 'notes', text: "No notes from the tech on what was done" });
+  if (asks(job.capture, 'notes') && !job.closeoutNotes.trim()) gaps.push({ kind: 'notes', text: "No notes from the tech on what was done" });
   return gaps;
 }

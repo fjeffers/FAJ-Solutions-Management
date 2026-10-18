@@ -389,6 +389,13 @@ describe('the job report', () => {
     ]);
     expect(reportMissing(job, 'Swapped the switch', { q1: 'SN-1', q3: 'n/a' }, 2)).toEqual([]);
   });
+  it('asks only for what the office ticked on the job (migration 128)', () => {
+    const portal = wfJobFromTech({ ...{ id: 'x', wo_number: '7', wo_status: 'In Progress', my_response: 'accepted', photo_required: true }, capture: ['travel', 'odometer', 'receipts'] });
+    expect(portal.capture).toEqual(['travel', 'odometer', 'receipts']);
+    expect(reportMissing({ ...portal, questions: job.questions }, '', {}, 0)).toEqual([]);
+    const notesOnly = { ...portal, capture: ['notes' as const], questions: job.questions };
+    expect(reportMissing(notesOnly, '', {}, 0)).toEqual(['Write what you did, in your notes']);
+  });
   it('a saved report shows at once', async () => {
     const { applyPending } = await import('./tech-wf');
     const [j] = applyPending([job], [makeAction('report', { number: '7', notes: 'Done', answers: { q1: 'SN-9' } }, 'save')]);

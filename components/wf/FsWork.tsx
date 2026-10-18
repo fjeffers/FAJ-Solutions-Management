@@ -25,30 +25,34 @@ export const FS_SECTIONS: [FsSection, string][] = [
   ['messages', 'Messages'],
 ];
 
-/** The work order's tabs. Only the open tab is rendered, so a closed tab doesn't load or mark anything read. */
+/**
+ * The work order's tabs. Only the open tab is rendered, so a closed tab doesn't load or mark anything read.
+ * A panel left null has no tab: the job didn't ask for it (lib/capture.ts).
+ */
 export function FsWorkSections({ active, onChange, panels }: {
-  active: FsSection; onChange: (s: FsSection) => void; panels: Record<FsSection, ReactNode>;
+  active: FsSection; onChange: (s: FsSection) => void; panels: Record<FsSection, ReactNode | null>;
 }) {
+  const sections = FS_SECTIONS.filter(([id]) => panels[id] != null);
   const move = (e: KeyboardEvent, index: number) => {
-    const n = FS_SECTIONS.length;
+    const n = sections.length;
     const next = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1
       : e.key === 'ArrowRight' ? (index + 1) % n : e.key === 'ArrowLeft' ? (index + n - 1) % n : -1;
     if (next < 0) return;
     e.preventDefault();
-    onChange(FS_SECTIONS[next][0]);
-    document.getElementById(`fs-section-tab-${FS_SECTIONS[next][0]}`)?.focus();
+    onChange(sections[next][0]);
+    document.getElementById(`fs-section-tab-${sections[next][0]}`)?.focus();
   };
   return (
     <div className="fs-work-sections">
       <div className="fs-work-section-tabs" role="tablist" aria-label="Work order sections">
-        {FS_SECTIONS.map(([id, label], index) => (
+        {sections.map(([id, label], index) => (
           <button key={id} id={`fs-section-tab-${id}`} type="button" role="tab" aria-controls={`fs-section-panel-${id}`}
             aria-selected={active === id} tabIndex={active === id ? 0 : -1} onClick={() => onChange(id)} onKeyDown={(e) => move(e, index)}>
             {label}
           </button>
         ))}
       </div>
-      {FS_SECTIONS.map(([id]) => (
+      {sections.map(([id]) => (
         <section key={id} role="tabpanel" id={`fs-section-panel-${id}`} aria-labelledby={`fs-section-tab-${id}`} hidden={active !== id} tabIndex={0}>
           {active === id && panels[id]}
         </section>
@@ -93,7 +97,7 @@ const ARRIVE: Record<string, string> = {
  * site → hotel, and the hotel → home on the last day (Fred, 2026-10-18).
  * Stopped work is resolved from the problem bar above it (SiteAccessBar).
  */
-export function FsStageAction({ stage, events, busy, enabled, on, onReceipt }: {
+export function FsStageAction({ stage, events, busy, enabled, on, onReceipt, travel: asksTravel = true, lunch: asksLunch = true }: {
   stage: FsStage;
   /** The tech's own taps on this job (job.myDay). */
   events: DayEvent[];
@@ -103,6 +107,10 @@ export function FsStageAction({ stage, events, busy, enabled, on, onReceipt }: {
   on: DayActions;
   /** Gas, a meal or the hotel on the road (shown when not on site). */
   onReceipt?: () => void;
+  /** The job asks for each drive (lib/capture.ts). Without it the tech just arrives on site. */
+  travel?: boolean;
+  /** The job asks for lunch breaks. */
+  lunch?: boolean;
 }) {
   const now = useTick();
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -147,7 +155,17 @@ export function FsStageAction({ stage, events, busy, enabled, on, onReceipt }: {
       break;
     case 'clocked':
     case 'offsite':
-      action = travel;
+      action = asksTravel ? travel : (
+        <div className="fs-card fs-form">
+          <h3>{stage === 'offsite' ? 'Off site' : 'Arrive on site'}</h3>
+          <p className="fs-muted">
+            {stage === 'offsite' ? 'Back on site later today? Tap below when you get there.' : 'Tap when you get to the site. Your time on site starts then.'}
+          </p>
+          <button type="button" className="fs-btn fs-btn-primary" disabled={off} onClick={on.startJob}>
+            {stage === 'offsite' ? 'Back on site' : 'Confirm arrival'}
+          </button>
+        </div>
+      );
       break;
     case 'outbound':
     case 'returning': {
@@ -170,7 +188,7 @@ export function FsStageAction({ stage, events, busy, enabled, on, onReceipt }: {
     case 'onsite':
       action = (
         <div className="fs-stack">
-          <button type="button" className="fs-btn fs-btn-secondary" disabled={busy} onClick={() => on.lunch(true)}>Start lunch</button>
+          {asksLunch && <button type="button" className="fs-btn fs-btn-secondary" disabled={busy} onClick={() => on.lunch(true)}>Start lunch</button>}
           <div className="fs-card fs-form">
             <h3>Finish on site</h3>
             <p className="fs-muted">Send today&apos;s report when you&apos;re coming back, or finish the site.</p>

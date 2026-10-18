@@ -285,9 +285,8 @@ export function aiFailureReason(status: number, errorText: string): string {
   return `ai_${status}`;
 }
 
-/** What Fred reads when only the basics were filled, by reason code. */
-export function aiFailureText(why: string | undefined): string {
-  const tail = ' Only the basics were filled (address, price, dates, contact). Check them, then Save.';
+/** What Fred reads when only the basics were filled, by reason code. Other screens pass their own tail. */
+export function aiFailureText(why: string | undefined, tail = ' Only the basics were filled (address, price, dates, contact). Check them, then Save.'): string {
   switch (why) {
     case 'no_key': return "The AI isn't connected on the live site (no AI key is set)." + tail;
     case 'ai_401': return 'The AI key was refused: it is wrong or was turned off. A new key is needed.' + tail;

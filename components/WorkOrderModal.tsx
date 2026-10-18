@@ -27,6 +27,9 @@ import { buildNetviewFormUrl } from '@/lib/netview-payroll';
 import { choicesFor } from '@/lib/app-lists';
 import { asValues } from '@/lib/custom-fields';
 import CustomFieldInputs from '@/components/CustomFieldInputs';
+import { CaptureTicks } from '@/components/CaptureEditor';
+import { useJobTemplates } from '@/components/useJobTemplates';
+import { ALL_CAPTURE, parseCapture, templateOf, type CaptureItem } from '@/lib/capture';
 import { createClient } from '@/lib/supabase/client';
 
 type Tab = 'details' | 'marketplace' | 'pay' | 'payments' | 'timelog' | 'site' | 'schedule' | 'scope' | 'contacts' | 'questions' | 'documents' | 'chat' | 'closeout';
@@ -177,6 +180,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
   const docFileRef = useRef<HTMLInputElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
+  // What the tech records (lib/capture.ts): null asks for everything, as every job did before.
+  const [capture, setCapture] = useState<CaptureItem[] | null>(() => parseCapture(item?.capture));
+  const { templates: jobTemplates } = useJobTemplates();
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
     title:           item?.title           ?? '',
@@ -681,6 +687,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       doc_urls:        docUrls,
       contacts:        contacts.filter((c) => c.name.trim() || c.phone.trim() || c.email.trim()),
       wo_tasks:        tasks.filter((t) => t.label.trim()),
+      // Sent only once a job has a list, so saving works before migration 128.
+      ...(capture || item?.capture ? { capture } : {}),
     };
     onSave({ ...item, ...payload });
   };
@@ -1000,6 +1008,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               </div>
             </button>
             <CustomFieldInputs target="jobs" values={asValues(form.custom)} onChange={(v) => setForm((f) => ({ ...f, custom: v }))} />
+            <WhatTheTechRecords capture={capture} onChange={setCapture} templates={jobTemplates} />
           </div>
         )}
 
@@ -2528,6 +2537,46 @@ function MoneyInput({ value, onChange }: { value: number | null | undefined; onC
         onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
         placeholder="0.00"
       />
+    </div>
+  );
+}
+
+/**
+ * What the tech records on this job (Fred, 2026-10-18: "No one want to look at
+ * blank items it not needed"): a saved template (Settings -> Job templates) or
+ * the items ticked here. "Everything" keeps the job as jobs have always been.
+ */
+function WhatTheTechRecords({ capture, onChange, templates }: {
+  capture: CaptureItem[] | null; onChange: (next: CaptureItem[] | null) => void; templates: ReturnType<typeof useJobTemplates>['templates'];
+}) {
+  const used = templateOf(capture, templates);
+  const value = capture === null ? 'all' : used ? used.id : 'custom';
+  return (
+    <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <label htmlFor="wo-capture" style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase' }}>What the tech records</label>
+        <div style={{ position: 'relative', flex: '1 1 240px' }}>
+          <select id="wo-capture" className="select input" value={value} onChange={(e) => {
+            const v = e.target.value;
+            if (v === 'all') onChange(null);
+            else if (v === 'custom') onChange(capture ?? ALL_CAPTURE);
+            else onChange(templates.find((t) => t.id === v)?.items ?? null);
+          }}>
+            <option value="all">Everything (photos, checklist, questions, sign-off, travel, receipts)</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <option value="custom">Pick the items myself</option>
+          </select>
+          <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+        </div>
+      </div>
+      {capture !== null && (
+        <>
+          <CaptureTicks idPrefix="wo-capture" items={capture} onChange={(next) => onChange(next)} />
+          <div style={{ fontSize: 12, color: '#666' }}>
+            The tech sees only these. Time on site is always kept. The job log and the weekly bill leave out the rest.
+          </div>
+        </>
+      )}
     </div>
   );
 }

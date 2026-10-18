@@ -25,7 +25,7 @@ import {
 } from '@/lib/wf-outbox';
 import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
-  fullAddress, reportMissing, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, WF_STATUS_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
+  fullAddress, reportMissing, askedOnly, askedDeliverables, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, WF_STATUS_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
@@ -39,6 +39,9 @@ import { addNotes, clearNotes, loadNotes, markRead, messageNote, notesFromChange
 import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
+import { asks, type CaptureItem } from '@/lib/capture';
+import OdometerDialog, { readPhoto, type OdometerMoment } from '@/components/wf/Odometer';
+import type { ReceiptRead } from '@/lib/photo-read';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
@@ -1038,13 +1041,17 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const working = canWork(job);
   const canReport = working || job.status === 'workDone';
   const checklist = useMemo(() => listFor(lists, job.title, job.description), [lists, job.title, job.description]);
-  const deliverables = checklist.items;
+  // Only what the office asked for on this job (lib/capture.ts); a job with no list asks for everything.
+  const ask = (k: CaptureItem) => asks(job.capture, k);
+  const shown = askedOnly(job);
+  const deliverables = askedDeliverables(job, checklist.items);
+  const [odometer, setOdometer] = useState<OdometerMoment | null>(null);
   // A project site always needs the signature, or the reason there isn't one.
   const project = !!job.isProject;
   // The day of travel, lunch and time on site: project jobs, and every job once
   // the database sends the day for it (migration 127) on the Field Service screen.
   const dayFlow = project || (FS_JOB_SCREEN && !!job.dayFlow);
-  const jobForCloseout = project ? { ...job, signatureRequired: true } : job;
+  const jobForCloseout = project && ask('signature') ? { ...shown, signatureRequired: true } : shown;
   // The live sheet's messages: No access, the PM's questions (migration 121).
   const talk = useSiteTalk(job.number, dayFlow && job.status !== 'offered' && job.status !== 'declined');
   // Running late, and stepped off site (migration 122).
@@ -1104,15 +1111,18 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   };
   const dayOn: DayActions = {
     clockIn: () => void dayTap('day_start', {}, 'Clock in', 'Clocked in. Pick where you are going.'),
+    // The odometer photo comes right after the tap, so the tap keeps its own time and place.
     startTrip: (trip, from) => {
       const leg = tripLeg(trip, job.myDay ?? []);
-      void dayTap('travel_start', { origin: from ?? leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.');
+      void dayTap('travel_start', { origin: from ?? leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.')
+        .then(() => { if (ask('odometer')) setOdometer('start'); });
     },
     startJob: async () => {
       const at = new Date();
       const g = await where();
       if (dayState(job.myDay ?? []).stage === 'travel') {
         await act(makeAction('day', { number: job.number, kind: 'travel_end', ...g }, `Arrived — WO ${job.number}`, at));
+        if (ask('odometer')) setOdometer('end');
       }
       await act(makeAction('clock', { number: job.number, action: 'in', ...g }, `Start job on WO ${job.number}`, at),
         'Job started. Your time on site is running.');
@@ -1120,7 +1130,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     lunch: (start) => void dayTap(start ? 'lunch_start' : 'lunch_end', {}, start ? 'Lunch' : 'Back from lunch',
       start ? 'Lunch started.' : 'Back on site.'),
     offSite: () => setOffOpen(true),
-    arrived: () => void dayTap('travel_end', {}, 'Arrived', 'Signed out for the day.'),
+    arrived: () => void dayTap('travel_end', {}, 'Arrived', 'Signed out for the day.')
+      .then(() => { if (ask('odometer')) setOdometer('end'); }),
   };
   // A project site always needs the sign-off; an ordinary job only when the office asked for one.
   const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, jobForCloseout.signatureRequired)];
@@ -1273,6 +1284,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
       )}
       {expenseOpen && <ExpenseDialog job={job} onClose={() => setExpenseOpen(false)} onSaved={() => { setExpenseOpen(false); void loadExpenses(); }} />}
+      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} onClose={() => setOdometer(null)} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {left.away && project && working && (
         <LeftSiteDialog onStillHere={() => left.dismiss(30)} onPick={(reason, note) => {
@@ -1289,7 +1301,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
       {doneOpen && (
         <WorkDoneDialog
           job={job}
-          missing={[...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, job.signatureRequired)]}
+          missing={[...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, shown.signatureRequired)]}
           onClose={() => setDoneOpen(false)}
           onSaveDraft={async () => { setDoneOpen(false); await saveReport(); }}
           onConfirm={async () => {
@@ -1321,7 +1333,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     : isClockedIn(job) ? 'onsite' : 'ready';
   const live = job.status !== 'offered' && job.status !== 'declined';
   const until = parseClockTime(job.endTime);
-  const panels: Record<FsSection, React.ReactNode> = {
+  // Photos & questions shows only what the job asks for; with none of it, the tab goes.
+  const evidenceAsked = ask('photos') || ask('checklist') || ask('questions') || ask('notes') || deliverables.length > 0 || jobForCloseout.signatureRequired;
+  const panels: Record<FsSection, React.ReactNode | null> = {
     overview: (
       <div className="fs-split">
         <div className="fs-stack">
@@ -1330,7 +1344,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
               <SiteAccessBar number={job.number} talk={talk} late={late}
                 showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
               <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating} enabled={working} on={dayOn}
-                onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
+                travel={ask('travel')} lunch={ask('lunch')}
+                onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
               {project && <SheetLinkButton number={job.number} />}
             </>
           ) : showClock ? (
@@ -1354,24 +1369,26 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
       </div>
     ),
     documents: <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />,
-    evidence: (
+    evidence: evidenceAsked ? (
       <div className="fs-split">
         <div className="fs-stack">
-          <JobPhotos canAdd={canReport} ph={ph} />
-          {live && <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />}
+          {ask('photos') && <JobPhotos canAdd={canReport} ph={ph} />}
+          {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
+            <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
+          )}
         </div>
         <div className="fs-stack">
-          <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />
-          {live && (
+          {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
+          {live && (ask('notes') || shown.questions.length > 0) && (
             <JobReport
-              job={job} uid={uid} canEdit={canReport}
+              job={shown} uid={uid} canEdit={canReport}
               notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
               dirty={dirty} onSave={(extra) => saveReport(extra)}
             />
           )}
         </div>
       </div>
-    ),
+    ) : null,
     time: (
       <section className="fs-card fs-form">
         <h3>My time and travel</h3>
@@ -1380,9 +1397,10 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
           : <TimeClockCard job={job} enabled={false} onToggle={() => undefined} showButton={false} />}
       </section>
     ),
-    expenses: canReport || expenses.length > 0
-      ? <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
-      : <p className="fs-card fs-empty">Expenses open once the job is accepted.</p>,
+    expenses: !ask('receipts') && expenses.length === 0 ? null
+      : canReport || expenses.length > 0
+        ? <JobExpenses expenses={expenses} canAdd={canReport && ask('receipts')} onAdd={() => setExpenseOpen(true)} />
+        : <p className="fs-card fs-empty">Expenses open once the job is accepted.</p>,
     messages: <JobMessages number={job.number} talk={dayFlow ? talk : undefined} keep={msgDraft} />,
   };
   const tone = job.status === 'declined' ? 'red' : job.status === 'offered' || job.status === 'workDone' ? 'amber' : 'green';
@@ -1499,7 +1517,11 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [note, setNote] = useState('');
+  const [gallons, setGallons] = useState('');
   const [busy, setBusy] = useState(false);
+  // What the AI read off the photo (lib/photo-read.ts): it fills the form, the tech checks it.
+  const [ai, setAi] = useState<ReceiptRead | null>(null);
+  const [reading, setReading] = useState(false);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   const takePhoto = async (f: File | undefined) => {
@@ -1508,7 +1530,18 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
       const small = await shrinkPhoto(f);
       setPhoto(small);
       setPreview(URL.createObjectURL(small));
+      setReading(true);
+      const r = await readPhoto<ReceiptRead>(job.number, 'receipt', small);
+      setReading(false);
+      setAi(r);
+      if (!r) return;
+      if (r.amount != null) setAmount(r.amount.toFixed(2));
+      if (r.vendor) setVendor(r.vendor);
+      if (r.date) setDate(r.date);
+      if (r.category) setCategory(r.category);
+      if (r.gallons != null) setGallons(String(r.gallons));
     } catch (e) {
+      setReading(false);
       toastError(e instanceof Error ? e.message : "Couldn't use that photo.");
     }
   };
@@ -1524,6 +1557,8 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
     fd.append('vendor', vendor);
     fd.append('date', date);
     fd.append('note', note);
+    if (category === 'fuel' && gallons.trim()) fd.append('gallons', gallons.trim());
+    if (ai) fd.append('ai', JSON.stringify(ai));
     if (photo) fd.append('file', new File([photo], 'receipt.jpg', { type: 'image/jpeg' }));
     try {
       const res = await fetch('/api/tech/expense', { method: 'POST', body: fd });
@@ -1545,7 +1580,7 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
       onClose={onClose}
       footer={<>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-navy" disabled={busy || !amount.trim()} onClick={() => void send()}><Receipt size={16} /> {busy ? 'Sending…' : 'Send'}</button>
+        <button className="wf-btn wf-btn-navy" disabled={busy || reading || !amount.trim()} onClick={() => void send()}><Receipt size={16} /> {busy ? 'Sending…' : 'Send'}</button>
       </>}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1568,6 +1603,11 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
             </label>
           </div>
         </div>
+        {(reading || ai) && (
+          <div className="wf-subtle" style={{ fontSize: 12.5 }} aria-live="polite">
+            {reading ? 'Reading the receipt…' : 'Filled in from the photo. Check each one before you send.'}
+          </div>
+        )}
         <label style={{ display: 'block' }}>{label('Amount')}
           <input className="wf-input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </label>
@@ -1579,6 +1619,11 @@ function ExpenseDialog({ job, onClose, onSaved }: { job: WfJob; onClose: () => v
             ))}
           </div>
         </div>
+        {category === 'fuel' && (
+          <label style={{ display: 'block' }}>{label('Gallons')}
+            <input className="wf-input" inputMode="decimal" placeholder="e.g. 11.2" value={gallons} onChange={(e) => setGallons(e.target.value)} />
+          </label>
+        )}
         <label style={{ display: 'block' }}>{label('Store')}
           <input className="wf-input" placeholder="e.g. Home Depot" value={vendor} onChange={(e) => setVendor(e.target.value)} />
         </label>
@@ -1658,7 +1703,7 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
   return (
     <Section
       title="Job report"
-      subtitle={job.questions.length ? `${answeredCount} of ${job.questions.length} questions answered` : 'Your notes'}
+      subtitle={job.questions.length ? `${answeredCount} of ${job.questions.length} questions answered` : asks(job.capture, 'notes') ? 'Your notes' : undefined}
       right={canEdit && dirty ? <span className="wf-chip" style={{ color: 'var(--wf-warning)', background: 'rgba(180,83,9,0.1)' }}>Not saved</span> : undefined}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1718,14 +1763,14 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
           );
         })}
 
-        <div>
+        {asks(job.capture, 'notes') && <div>
           <label className="wf-label" htmlFor={`notes-${job.id}`} style={{ display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--wf-text)', fontSize: 13.5 }}>
             Your notes
           </label>
           <textarea id={`notes-${job.id}`} className="wf-input" rows={4} value={notes} disabled={!canEdit}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="What you did, parts used, anything left to do, anything the client said" />
-        </div>
+        </div>}
       </div>
     </Section>
   );

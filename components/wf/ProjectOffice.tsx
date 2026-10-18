@@ -12,7 +12,7 @@
 //                      job photos. Never any tech pay or margin.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Car, FileText, MapPin, Plus, Printer, Receipt, X } from 'lucide-react';
+import { Car, FileSpreadsheet, FileText, Image as ImageIcon, MapPin, Plus, Printer, Receipt, Sparkles, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useLiveRows } from '@/components/wf/useLive';
 import {
@@ -29,6 +29,15 @@ import type { EnrichedWorkOrder } from '@/lib/types';
 import { Dialog, Section } from './WfUi';
 import { PushSwitch } from './PushSwitch';
 import { mailtoHref, sheetInvite, smsHref } from '@/lib/send-sheet';
+import { parseCapture } from '@/lib/capture';
+import { askedDeliverables } from '@/lib/wf';
+import { aiFailureText } from '@/lib/wo-ai';
+import { downloadXLSXBook } from '@/lib/export';
+import { billJpeg } from '@/lib/bill-image';
+import {
+  sheetName, siteBill, siteSheetRows, summaryFacts, totalsSheetRows,
+  type BillDay, type BillSite, type OdoRow, type SiteBill,
+} from '@/lib/weekly-bill';
 
 const TZ = 'America/New_York';
 const timeOf = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
@@ -76,7 +85,8 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
       subtitle={w.project_name ? `${w.project_name} · from the techs' phones` : "From the techs' phones"}
       right={<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Plus size={15} /> Add receipt</button>
-        {w.is_project && <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Client report</button>}
+        {/* A project, or a job with its own list (a client portal job: time, miles, receipts) gets the weekly bill. */}
+        {(w.is_project || !!w.capture) && <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Client report</button>}
       </div>}
     >
       {events === null ? <div className="wf-subtle">Loading…</div>
@@ -241,8 +251,47 @@ function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; onClose
 type ReportWo = Pick<EnrichedWorkOrder,
   'id' | 'wo_number' | 'title' | 'description' | 'site_name' | 'site_address' | 'site_city' | 'site_state' | 'site_zip'
   | 'customer_name' | 'external_wo_id' | 'closeout_notes' | 'scheduled_date' | 'start_date' | 'signature_required'
-  | 'wo_status' | 'archived_at' | 'wo_tasks' | 'custom_qa' | 'photo_required'> & { closeout: unknown };
-type ReportExpense = { id: string; wo_id: string; category: string; vendor: string | null; amount: number; expense_date: string; note: string | null; receipt_path: string | null; status: string };
+  | 'wo_status' | 'archived_at' | 'wo_tasks' | 'custom_qa' | 'photo_required'> & { closeout: unknown; capture?: unknown };
+type ReportExpense = {
+  id: string; wo_id: string; category: string; vendor: string | null; amount: number; expense_date: string; note: string | null; receipt_path: string | null; status: string;
+  /** Migration 128. */
+  gallons?: number | null; ai?: unknown;
+};
+
+/** The day table's columns: only what the site's jobs ask for (lib/capture.ts). */
+function dayColumns(s: SiteBill['shows'], t: SiteBill['totals']): { h: string; v: (d: BillDay) => React.ReactNode; total: React.ReactNode }[] {
+  const at = (iso: string | null, none = '—') => (iso ? timeOf(iso) : none);
+  return [
+    { h: 'Date', v: (d) => fmtDay(d.day), total: 'Site total' },
+    { h: 'Technician', v: (d) => d.tech, total: '' },
+    ...(s.travel ? [{ h: 'Left', v: (d: BillDay) => (d.left ? `${timeOf(d.left)}${d.from === 'hotel' ? ' (hotel)' : d.from === 'home' ? ' (home)' : ''}` : '—'), total: '' }] : []),
+    { h: 'On site', v: (d) => at(d.arrived), total: '' },
+    { h: 'Off site', v: (d) => at(d.leftSite, d.arrived ? 'still on site' : '—'), total: '' },
+    ...(s.travel ? [{ h: 'Back', v: (d: BillDay) => at(d.back), total: '' }] : []),
+    { h: 'Hours on site', v: (d) => d.onSiteHours, total: t.onSiteHours },
+    ...(s.travel ? [
+      { h: 'Travel hours', v: (d: BillDay) => d.travelHours, total: t.travelHours },
+      { h: 'Miles (GPS)', v: (d: BillDay) => d.gpsMiles, total: t.gpsMiles },
+    ] : []),
+    ...(s.odometer ? [{ h: 'Odometer miles', v: (d: BillDay) => d.odoMiles ?? '—', total: t.odoMiles ?? '—' }] : []),
+    ...(s.receipts ? [{ h: 'Receipts', v: (d: BillDay) => (d.receipts ? fmtMoney(d.receipts) : '—'), total: fmtMoney(t.receipts) }] : []),
+  ];
+}
+
+/** Save a file the browser made. */
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+/** The summary as the client sees it: the AI's "For the office:" line stays on screen. */
+const clientSummary = (text: string) => text.split('\n').map((l) => l.replace(/\s*for the office:.*$/i, '')).filter((l) => l.trim()).join('\n').trim();
+const fileSafe = (s: string) => s.replace(/[\\/:*?"<>|#]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Weekly bill';
 type ReportPhoto = { id: string; wo_id: string; url: string; taken_at: string; contractor_name: string | null };
 
 /** Monday of this week (New York), as YYYY-MM-DD. */
@@ -264,6 +313,11 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   const [from, setFrom] = useState(() => mondayOf(todayNY()));
   const [to, setTo] = useState(todayNY);
   const [showPhotos, setShowPhotos] = useState(true);
+  // Odometer readings (migration 128), and the AI's summary Fred can edit before printing.
+  const [odo, setOdo] = useState<OdoRow[]>([]);
+  // null: no summary box yet.
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summaryBusy, setSummaryBusy] = useState(false);
 
   useEffect(() => {
     const db = createClient();
@@ -271,25 +325,32 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
       const cols = 'id, wo_number, title, description, site_name, site_address, site_city, site_state, site_zip, customer_name, external_wo_id, closeout_notes, scheduled_date, start_date, signature_required, closeout, wo_status, archived_at, wo_tasks, custom_qa, photo_required';
       // The whole project: every project site with this name. A job with no
       // project name reports on its own.
-      const q = projectName.trim()
-        ? db.from('work_orders').select(cols).eq('is_project', true).eq('project_name', projectName)
-        : db.from('work_orders').select(cols).eq('id', startWoId);
-      const { data } = await q.order('scheduled_date', { ascending: true, nullsFirst: false });
-      const list = ((data as ReportWo[] | null) ?? []);
+      const pick = (c: string) => (projectName.trim()
+        ? db.from('work_orders').select(c).eq('is_project', true).eq('project_name', projectName)
+        : db.from('work_orders').select(c).eq('id', startWoId)).order('scheduled_date', { ascending: true, nullsFirst: false });
+      // What each job asks the tech for (migration 128); before it, every job asks for everything.
+      let res = await pick(`${cols}, capture`);
+      if (res.error) res = await pick(cols);
+      const list = ((res.data as unknown as ReportWo[] | null) ?? []);
       setWos(list);
       const ids = list.map((x) => x.id);
       if (ids.length === 0) return;
-      const [ev, ex, ph] = await Promise.all([
+      const exCols = 'id, wo_id, category, vendor, amount, expense_date, note, receipt_path, status';
+      const expensesOf = (c: string) => db.from('job_expenses').select(c).in('wo_id', ids).order('expense_date');
+      const [ev, ex, ph, od] = await Promise.all([
         loadEvents(ids),
-        db.from('job_expenses').select('id, wo_id, category, vendor, amount, expense_date, note, receipt_path, status').in('wo_id', ids).order('expense_date'),
+        expensesOf(`${exCols}, gallons, ai`).then((r) => (r.error ? expensesOf(exCols) : r)),
         db.from('wo_photos').select('id, wo_id, url, taken_at, contractor_name').in('wo_id', ids).order('taken_at'),
+        db.from('job_odometer').select('id, wo_id, contractor_name, at, reading, ai_reading, photo_path').in('wo_id', ids).order('at'),
       ]);
       setEvents(ev);
-      const all = ((ex.data as ReportExpense[] | null) ?? []);
+      const readings = ((od.data as OdoRow[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
+      setOdo(readings);
+      const all = ((ex.data as unknown as ReportExpense[] | null) ?? []);
       setExpenses(all.filter((e) => e.status === 'approved'));
       setWaiting(all.filter((e) => e.status === 'submitted').length);
       setPhotos(((ph.data as ReportPhoto[] | null) ?? []));
-      const paths = all.map((e) => e.receipt_path).filter((p): p is string => !!p);
+      const paths = [...all.map((e) => e.receipt_path), ...readings.map((o) => o.photo_path)].filter((p): p is string => !!p);
       if (paths.length) {
         const { data: signed } = await db.storage.from('job-receipts').createSignedUrls(paths, 60 * 60);
         const m: Record<string, string> = {};
@@ -308,12 +369,15 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   const now = useMemo(() => new Date(), []);
   const perSite = useMemo(() => (wos ?? []).map((wo) => {
     const logs = buildDayLogs(events.filter((e) => e.woId === wo.id), now, TZ).filter((d) => inRange(d.day, from, to));
+    const receipts = expenses.filter((e) => e.wo_id === wo.id && inRange(e.expense_date, from, to));
+    const readings = odo.filter((o) => o.wo_id === wo.id && inRange(dayOf(o.at, TZ), from, to));
     return {
-      wo, logs, totals: totalsOf(logs),
-      receipts: expenses.filter((e) => e.wo_id === wo.id && inRange(e.expense_date, from, to)),
+      wo, logs, totals: totalsOf(logs), receipts, readings,
+      // The weekly bill for this site (lib/weekly-bill.ts): days, drives, odometer, receipts, what to check.
+      bill: siteBill({ woId: wo.id, capture: parseCapture(wo.capture), logs, readings, receipts, today: todayNY() }),
       photos: photos.filter((p) => p.wo_id === wo.id && inRange(dayOf(p.taken_at, TZ), from, to)),
     };
-  }), [wos, events, expenses, photos, from, to, now]);
+  }), [wos, events, expenses, odo, photos, from, to, now]);
   const shown = perSite.filter((s) => s.logs.length > 0 || s.receipts.length > 0 || s.photos.length > 0);
   const all = totalsOf(shown.flatMap((s) => s.logs));
   const receipts = shown.flatMap((s) => s.receipts.map((r) => ({ ...r, wo: s.wo })));
@@ -321,13 +385,56 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   const receiptTotal = receipts.reduce((t, r) => t + Number(r.amount), 0);
   const client = (wos ?? []).find((x) => x.customer_name)?.customer_name ?? '';
   const range = `${fmtDayLong(from)} – ${fmtDayLong(to)}`;
+  const where = (wo: ReportWo) => [wo.site_address, [wo.site_city, [wo.site_state, wo.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+  const anyOdometer = shown.some((s) => s.bill.shows.odometer);
+  // The bill's own hours: a drive or a day left open on a past day isn't counted (lib/weekly-bill.ts).
+  const sumOf = (f: (b: SiteBill) => number) => Math.round(shown.reduce((t, s) => t + f(s.bill), 0) * 100) / 100;
+  const odoTotal = Math.round(shown.reduce((t, s) => t + (s.bill.totals.odoMiles ?? 0), 0) * 10) / 10;
+  const title = projectName || (wos?.[0]?.title ?? 'Project');
+  const billSites: BillSite[] = shown.map(({ wo, bill }) => ({
+    name: wo.site_name || wo.title || 'Site', wo: wo.wo_number, clientWo: wo.external_wo_id, address: where(wo), bill,
+  }));
+  const fileBase = fileSafe(`${title} ${from} to ${to}`);
+
+  // Excel: a totals sheet, then each site on its own sheet (Fred, 2026-10-18: "make sure they two site are separated").
+  const excel = async () => {
+    const taken = new Set<string>(['totals']);
+    await downloadXLSXBook(`${fileBase}.xlsx`, [
+      { name: 'Totals', rows: totalsSheetRows(title, client, range, billSites), colWidths: [32, 10, 8, 14, 13, 11, 15, 12] },
+      ...billSites.map((x) => ({ name: sheetName(`${x.wo} ${x.name}`, taken), rows: siteSheetRows(x, range), colWidths: [12, 18, 12, 11, 14, 11, 11, 13, 12, 11, 15, 12] })),
+    ]);
+  };
+  const jpeg = async (x: BillSite) => {
+    try {
+      saveBlob(await billJpeg(x, { project: title, client, range }), `${fileSafe(`${x.name} WO ${x.wo} ${from} to ${to}`)}.jpg`);
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : "Couldn't make the image.");
+    }
+  };
+  const writeSummary = async () => {
+    setSummaryBusy(true);
+    try {
+      const res = await fetch('/api/ai/weekly-summary', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facts: summaryFacts(title, range, billSites) }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { text?: string; why?: string };
+      if (json.text) setSummary(json.text);
+      else {
+        toastError(aiFailureText(json.why, ' Write the summary yourself in the box.'));
+        setSummary((s) => s ?? '');
+      }
+    } catch {
+      toastError('The AI needs signal. Try again in a moment.');
+      setSummary((s) => s ?? '');
+    }
+    setSummaryBusy(false);
+  };
 
   const H = ({ children }: { children: React.ReactNode }) => (
     <h3 style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 15, fontWeight: 700, color: '#0E1B2E', margin: '22px 0 8px', paddingBottom: 6, borderBottom: '2px solid #C9A24B' }}>{children}</h3>
   );
   const cell: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #ECE8DF', textAlign: 'left', verticalAlign: 'top' };
   const th = (h: string) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>;
-  const where = (wo: ReportWo) => [wo.site_address, [wo.site_city, [wo.site_state, wo.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');
 
   return createPortal(
     <div id="job-log-root" className="wf" style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(2,4,9,0.55)', overflowY: 'auto', padding: '16px 12px 40px' }}>
@@ -339,6 +446,10 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
           <input type="checkbox" checked={showPhotos} onChange={(e) => setShowPhotos(e.target.checked)} /> Job photos
         </label>
         <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={!wos || shown.length === 0} onClick={() => void excel()}><FileSpreadsheet size={16} /> Excel</button>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={!wos || shown.length === 0 || summaryBusy} onClick={() => void writeSummary()}>
+          <Sparkles size={16} /> {summaryBusy ? 'Writing…' : summary ? 'Write the summary again' : 'Write summary with AI'}
+        </button>
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         {waiting > 0 && (
           <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#B45309' }}>
@@ -358,8 +469,18 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
         </div>
 
         <div style={{ padding: '20px 24px 28px' }}>
-          <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{projectName || (wos?.[0]?.title ?? 'Project')}</div>
+          <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{title}</div>
           {client && <div style={{ marginTop: 4 }}><b>Client:</b> {client}</div>}
+          {summary !== null && (
+            <div style={{ marginTop: 12 }}>
+              <label className="no-print" style={{ display: 'block', fontSize: 12, color: '#5E6470', marginBottom: 4 }}>
+                Summary for the client{summary ? ' (written by AI from the numbers below; edit it before you print or send. A line starting “For the office:” is left off the printout.)' : ''}
+                <textarea className="wf-input" rows={Math.min(10, 3 + Math.ceil(summary.length / 110))} value={summary}
+                  onChange={(e) => setSummary(e.target.value)} style={{ marginTop: 4, width: '100%', fontSize: 13 }} />
+              </label>
+              {clientSummary(summary) && <div className="jl-print-only jl-avoid" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{clientSummary(summary)}</div>}
+            </div>
+          )}
 
           {wos === null ? <div style={{ color: '#5E6470', marginTop: 14 }}>Loading…</div> : (
             <>
@@ -367,9 +488,10 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
                 {[
                   ['Sites', String(shown.length)],
                   ['Days', String(all.days)],
-                  ['Hours on site', String(hoursOf(all.onSiteMs))],
-                  ['Travel hours', String(hoursOf(all.travelMs))],
-                  ['Miles', String(all.miles)],
+                  ['Hours on site', String(sumOf((b) => b.totals.onSiteHours))],
+                  ['Travel hours', String(sumOf((b) => b.totals.travelHours))],
+                  ['Miles (GPS)', String(all.miles)],
+                  ...(anyOdometer ? [['Odometer miles', String(odoTotal)]] : []),
                   ['Receipts', fmtMoney(receiptTotal)],
                 ].map(([label, value]) => (
                   <div key={label} style={{ border: '1px solid #E4DFD3', borderRadius: 10, padding: '8px 10px' }}>
@@ -380,53 +502,74 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
               </div>
               {shown.length === 0 && <div style={{ color: '#5E6470', marginTop: 14 }}>Nothing recorded in these dates.</div>}
 
-              {shown.map(({ wo, logs, totals, receipts: siteReceipts, photos: sitePhotos }) => {
+              {shown.map(({ wo, bill, readings, receipts: siteReceipts, photos: sitePhotos }) => {
                 const c = parseCloseout(wo.closeout);
-                const items = listFor(lists, wo.title ?? '', wo.description ?? '').items;
-                const cant = items.filter((i) => skipReason(c, i));
-                // A finished site lists everything the tech left undone (lib/job-gaps.ts).
+                // A finished site lists everything the tech left undone (lib/job-gaps.ts), only what the job asked for.
                 const job = wfJobFromOwner(wo);
+                const items = askedDeliverables(job, listFor(lists, wo.title ?? '', wo.description ?? '').items);
+                const cant = items.filter((i) => skipReason(c, i));
                 const gaps = isFinished(job) ? jobGaps(job, items, photos.filter((p) => p.wo_id === wo.id).length) : null;
+                const site = billSites.find((x) => x.bill.woId === wo.id)!;
+                const cols = dayColumns(bill.shows, bill.totals);
+                const odoShots = readings.filter((o) => o.photo_path && urls[o.photo_path]);
                 return (
                   <div key={wo.id}>
-                    <H>{wo.site_name || wo.title || 'Site'} · WO {wo.wo_number}{wo.external_wo_id ? ` · Client # ${wo.external_wo_id}` : ''}</H>
-                    {where(wo) && <div style={{ color: '#5E6470', marginBottom: 6 }}>{where(wo)}</div>}
-                    {logs.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                      <div style={{ flex: 1 }}><H>{site.name} · WO {wo.wo_number}{wo.external_wo_id ? ` · Client # ${wo.external_wo_id}` : ''}</H></div>
+                      <button className="wf-btn wf-btn-ghost wf-btn-sm no-print" style={{ marginBottom: 8 }} onClick={() => void jpeg(site)}
+                        aria-label={`Save ${site.name} as a JPEG`}><ImageIcon size={15} /> JPEG</button>
+                    </div>
+                    {site.address && <div style={{ color: '#5E6470', marginBottom: 6 }}>{site.address}</div>}
+                    {bill.flags.length > 0 && (
+                      <div className="no-print" role="note" style={{ border: '1px solid #F2C94C', background: '#FFF8E1', borderRadius: 10, padding: '8px 12px', margin: '6px 0 10px' }}>
+                        <div style={{ fontWeight: 700, color: '#8A5A00' }}>To check before sending · only you see this</div>
+                        {bill.flags.map((f) => <div key={f.text} style={{ fontSize: 12.5 }}>• {f.text}</div>)}
+                      </div>
+                    )}
+                    {bill.days.length > 0 && (
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead><tr style={{ background: '#F6F4EF' }}>{['Date', 'Technician', 'What', 'From', 'To', 'Hours', 'Miles'].map(th)}</tr></thead>
+                        <thead><tr style={{ background: '#F6F4EF' }}>{cols.map((k) => th(k.h))}</tr></thead>
                         <tbody>
-                          {logs.flatMap((d) => [
-                            ...(d.clockIn ? [{ at: d.clockIn, row: (
-                              <tr key={`c${d.tech}${d.clockIn}`} className="jl-avoid">
-                                <td style={cell}>{fmtDay(d.day)}</td><td style={cell}>{d.tech}</td>
-                                <td style={cell}>Clocked in</td>
-                                <td style={cell}>{timeOf(d.clockIn)}</td><td style={cell}>{d.signOut ? `Signed out ${timeOf(d.signOut)}` : ''}</td>
-                                <td style={cell}>{d.signOut ? hoursOf(Date.parse(d.signOut) - Date.parse(d.clockIn)) : ''}</td><td style={cell}></td>
-                              </tr>
-                            ) }] : []),
-                            ...d.legs.map((l) => ({ at: l.start, row: (
-                              <tr key={`l${d.tech}${l.start}`} className="jl-avoid">
-                                <td style={cell}>{fmtDay(d.day)}</td><td style={cell}>{d.tech}</td>
-                                <td style={cell}>Travel: {legLabel(l)}</td>
-                                <td style={cell}>{timeOf(l.start)}</td><td style={cell}>{l.end ? timeOf(l.end) : '—'}</td>
-                                <td style={cell}>{hoursOf(l.ms)}</td><td style={cell}>{l.miles ?? '—'}</td>
-                              </tr>
-                            ) })),
-                            ...d.spans.map((s) => ({ at: s.in, row: (
-                              <tr key={`s${d.tech}${s.in}`} className="jl-avoid">
-                                <td style={cell}>{fmtDay(d.day)}</td><td style={cell}>{d.tech}</td>
-                                <td style={cell}>On site{s.lunchMs ? ` (lunch ${formatDuration(s.lunchMs)} not counted)` : ''}</td>
-                                <td style={cell}>{timeOf(s.in)}</td><td style={cell}>{s.out ? timeOf(s.out) : 'still on site'}</td>
-                                <td style={cell}>{hoursOf(s.ms)}</td><td style={cell}></td>
-                              </tr>
-                            ) })),
-                          ].sort((a, b) => a.at.localeCompare(b.at)).map((x) => x.row))}
-                          <tr style={{ fontWeight: 700 }}>
-                            <td style={cell} colSpan={5}>Site total: {hoursOf(totals.onSiteMs)} h on site, {hoursOf(totals.travelMs)} h travel</td>
-                            <td style={cell}>{hoursOf(totals.onSiteMs + totals.travelMs)}</td><td style={cell}>{totals.miles}</td>
-                          </tr>
+                          {bill.days.map((d) => (
+                            <tr key={d.day + d.tech} className="jl-avoid">{cols.map((k) => <td key={k.h} style={cell}>{k.v(d)}</td>)}</tr>
+                          ))}
+                          <tr style={{ fontWeight: 700 }}>{cols.map((k) => <td key={k.h} style={cell}>{k.total}</td>)}</tr>
                         </tbody>
                       </table>
+                    )}
+                    {bill.shows.travel && bill.legs.length > 0 && (
+                      <>
+                        <div style={{ fontWeight: 600, margin: '12px 0 4px' }}>Drives</div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead><tr style={{ background: '#F6F4EF' }}>
+                            {['Date', 'Technician', 'Drive', 'Started', 'Ended', 'Hours', 'Miles (GPS)', ...(bill.shows.odometer ? ['Odometer', 'Odometer miles'] : [])].map(th)}
+                          </tr></thead>
+                          <tbody>
+                            {bill.legs.map((l) => (
+                              <tr key={l.tech + l.start} className="jl-avoid">
+                                <td style={cell}>{fmtDay(l.day)}</td><td style={cell}>{l.tech}</td><td style={cell}>{legLabel(l)}</td>
+                                <td style={cell}>{timeOf(l.start)}</td><td style={cell}>{l.end ? timeOf(l.end) : '—'}</td>
+                                <td style={cell}>{l.end ? hoursOf(l.ms) : '—'}</td><td style={cell}>{l.miles ?? '—'}</td>
+                                {bill.shows.odometer && <>
+                                  <td style={cell}>{l.odoStart ? l.odoStart.reading.toLocaleString('en-US') : '—'} → {l.odoEnd ? l.odoEnd.reading.toLocaleString('en-US') : '—'}</td>
+                                  <td style={cell}>{l.odoMiles ?? '—'}</td>
+                                </>}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </>
+                    )}
+                    {bill.shows.odometer && odoShots.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginTop: 10 }}>
+                        {odoShots.map((o) => (
+                          <figure key={o.id ?? o.at} className="jl-avoid" style={{ margin: 0 }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={urls[o.photo_path!]} alt={`Odometer ${o.reading}`} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 6, border: '1px solid #E4DFD3' }} />
+                            <figcaption style={{ fontSize: 11, color: '#5E6470' }}>{o.contractor_name} · {fmtDay(dayOf(o.at, TZ))} {timeOf(o.at)} · {o.reading.toLocaleString('en-US')}</figcaption>
+                          </figure>
+                        ))}
+                      </div>
                     )}
 
                     {(items.length > 0 || c.signoff || c.signSkip) && (

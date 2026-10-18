@@ -11,6 +11,7 @@
 // the money rules live.
 import { isUrgent, labelOf, stageName } from './app-lists';
 import type { EnrichedWorkOrder } from './types';
+import { asks, parseCapture, type CaptureItem } from './capture';
 import { todayISO } from './utils';
 import { parseDayEvents, sortEvents, type DayEvent } from './project-day';
 import {
@@ -148,9 +149,23 @@ export type WfJob = {
   myDay?: DayEvent[];
   /** Tech only: the database sends myDay for every job (migration 127), so the job can walk through the day. */
   dayFlow?: boolean;
+  /** What the office asks the tech for on this job (migration 128); null = everything. */
+  capture: CaptureItem[] | null;
+  /** Tech only: their own odometer readings on this job (migration 128). */
+  myOdometer?: OdometerReading[];
 };
 
 type Row = Record<string, unknown>;
+
+export type OdometerReading = { at: string; reading: number };
+function parseOdometer(raw: unknown): OdometerReading[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((o): o is Row => !!o && typeof o === 'object')
+    .map((o) => ({ at: String(o.at ?? ''), reading: Number(o.reading) }))
+    .filter((o) => Number.isFinite(Date.parse(o.at)) && Number.isFinite(o.reading))
+    .sort((a, b) => a.at.localeCompare(b.at));
+}
 
 const s = (r: Row, k: string): string => {
   const v = r[k];
@@ -280,6 +295,8 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     projectName: s(r, 'project_name'),
     myDay: owner ? [] : parseDayEvents(r.my_day),
     dayFlow: !owner && r.day_flow === true,
+    capture: parseCapture(r.capture),
+    myOdometer: owner ? [] : parseOdometer(r.my_odometer),
   };
 }
 
@@ -533,9 +550,30 @@ export function withReport(j: WfJob, notes: string | null, answers: Record<strin
  * question answered, and a photo when the job needs photos. A signature, when
  * required, is taken in the Work done window itself.
  */
+/**
+ * The job with only what the office asked for (lib/capture.ts): no checklist,
+ * questions, photo rule or signature it didn't ask for. A job with no list is
+ * returned as it is.
+ */
+export function askedOnly(j: WfJob): WfJob {
+  if (!j.capture) return j;
+  const a = (k: CaptureItem) => asks(j.capture, k);
+  return {
+    ...j,
+    tasks: a('checklist') ? j.tasks : [],
+    questions: a('questions') ? j.questions : [],
+    photoRequired: a('photos') && j.photoRequired,
+    signatureRequired: a('signature') && j.signatureRequired,
+  };
+}
+
+/** The closeout deliverables, when the job asks for them. */
+export const askedDeliverables = (j: WfJob, items: string[]): string[] => (asks(j.capture, 'deliverables') ? items : []);
+
 export function reportMissing(j: WfJob, notes: string, answers: Record<string, string>, photoCount: number): string[] {
   const missing: string[] = [];
-  if (!notes.trim()) missing.push('Write what you did, in your notes');
+  j = askedOnly(j);
+  if (asks(j.capture, 'notes') && !notes.trim()) missing.push('Write what you did, in your notes');
   for (const q of j.questions) {
     if (!(answers[q.id] ?? q.answer).trim()) missing.push(`Answer: ${q.label}`);
   }

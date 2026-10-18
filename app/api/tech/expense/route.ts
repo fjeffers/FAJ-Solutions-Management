@@ -11,6 +11,10 @@ import { expenseReasonText, parseExpenseAmount } from '@/lib/expenses';
 // (wf_tech_photo_target). The receipt photo goes to the private job-receipts
 // bucket under that job's id; the expense is then recorded as the tech
 // (wf_tech_add_expense), which checks everything again.
+//
+// Also (migration 128): gallons on a fuel receipt, and ai — what the AI read
+// off the photo (lib/photo-read.ts) — so the weekly bill can flag a typed
+// amount that differs from the receipt. Before 128 they're left off.
 const MAX_BYTES = 4 * 1024 * 1024;
 
 export async function POST(req: Request) {
@@ -23,6 +27,14 @@ export async function POST(req: Request) {
   const date = String(form.get('date') ?? '').slice(0, 10);
   const note = String(form.get('note') ?? '').trim();
   const file = form.get('file');
+  const gallonsRaw = String(form.get('gallons') ?? '').trim();
+  const gallons = gallonsRaw && category === 'fuel' ? Number(gallonsRaw) : null;
+  let ai: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(String(form.get('ai') ?? 'null'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ai = parsed;
+  } catch { /* none */ }
+  if (gallons != null && !(gallons > 0 && gallons < 1000)) return NextResponse.json({ ok: false, error: 'Enter the gallons on the fuel receipt.' }, { status: 400 });
   if (!woNumber) return NextResponse.json({ ok: false, error: 'Missing the job.' }, { status: 400 });
   if (amount == null) return NextResponse.json({ ok: false, error: expenseReasonText('bad_amount') }, { status: 400 });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ ok: false, error: expenseReasonText('bad_date') }, { status: 400 });
@@ -44,9 +56,12 @@ export async function POST(req: Request) {
     if (upErr) return NextResponse.json({ ok: false, error: "Couldn't store the receipt photo. Try again." }, { status: 500 });
   }
 
-  const { data, error } = await supabase.rpc('wf_tech_add_expense', {
-    p_wo_number: woNumber, p_category: category, p_vendor: vendor, p_amount: amount, p_date: date, p_note: note, p_receipt_path: path,
-  });
+  const args = { p_wo_number: woNumber, p_category: category, p_vendor: vendor, p_amount: amount, p_date: date, p_note: note, p_receipt_path: path };
+  let { data, error } = gallons != null || ai
+    ? await supabase.rpc('wf_tech_add_expense', { ...args, p_gallons: gallons, p_ai: ai })
+    : await supabase.rpc('wf_tech_add_expense', args);
+  // Before migration 128 there's only the 7-argument function.
+  if (error?.code === 'PGRST202') ({ data, error } = await supabase.rpc('wf_tech_add_expense', args));
   const r = (data ?? {}) as { ok?: boolean; reason?: string };
   if (error || !r.ok) {
     if (path) await admin.storage.from('job-receipts').remove([path]);

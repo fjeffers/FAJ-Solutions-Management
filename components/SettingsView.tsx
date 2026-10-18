@@ -1,12 +1,13 @@
 'use client';
 import ChangePasswordForm from './ChangePasswordForm';
-import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered, TextCursorInput, Eye, LayoutDashboard } from 'lucide-react';
+import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered, TextCursorInput, Eye, LayoutDashboard, SlidersHorizontal } from 'lucide-react';
 import CloseoutListsEditor from './CloseoutListsEditor';
 import LayoutEditor from './LayoutEditor';
 import ScreenPartsEditor from './ScreenPartsEditor';
 import ScreenDesigner from './ScreenDesigner';
 import ListsEditor from './ListsEditor';
 import CustomFieldsEditor from './CustomFieldsEditor';
+import JobTemplatesEditor from './CaptureEditor';
 import type { FieldSets } from '@/lib/custom-fields';
 import type { AppLists } from '@/lib/app-lists';
 import type { Layout } from '@/lib/app-layout';
@@ -140,6 +141,23 @@ export default function SettingsView({
         </div>
         <div className="wf">
           <CustomFieldsEditor fields={fields} onChange={onFieldsChange} saveState={fieldsSaveState} saveError={fieldsSaveError} onRetry={onFieldsRetry} />
+        </div>
+      </div>
+
+      {/* ── Job templates (migration 128) ── Fred, 2026-10-18: "I need all work
+          order is customizable. No one want to look at blank items it not needed." */}
+      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 28 }}>
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(14,27,46,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <SlidersHorizontal size={16} color="var(--teal)" />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Job templates</h2>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>What the tech records on each kind of job: travel, odometer photos, receipts, photos and more</div>
+          </div>
+        </div>
+        <div className="wf">
+          <JobTemplatesEditor />
         </div>
       </div>
 

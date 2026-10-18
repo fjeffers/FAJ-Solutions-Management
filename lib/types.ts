@@ -230,6 +230,8 @@ export type WorkOrder = {
   check_out_required: boolean;
   signature_required: boolean;
   photo_required: boolean;
+  /** What the job asks the tech for (migration 128, lib/capture.ts); null or missing = everything. */
+  capture?: string[] | null;
 
   // Multi-contractor (migration-014)
   contractor_names: string[] | null;

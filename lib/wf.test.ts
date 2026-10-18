@@ -435,3 +435,29 @@ describe('the day of a job, without its time', () => {
     expect(whenDay(at(null), '2026-10-18')).toBe('Not scheduled yet');
   });
 });
+
+describe('an office job reaches the tech with everything it asks for', () => {
+  // The shape wf_tech_jobs() returned for the real Gaffney job in a dry run (2026-10-18).
+  const row = {
+    id: 'g', wo_number: '19101399', title: 'LDS-1110-5011876-Gaffney', description: 'Site scheduled to begin Monday',
+    wo_status: 'Assigned', my_response: null, site_address: '701 West Buford Street', site_city: 'Gaffney', site_state: 'SC',
+    start_date: '2026-10-19', end_date: '2026-10-23', scheduled_date: '2026-10-19', start_time: '08:00', end_time: '20:00',
+    capture: ['travel', 'odometer', 'lunch', 'receipts'], start_asks: [], day_flow: true,
+  };
+  const job = wfJobFromTech(row);
+
+  it('keeps every item the office ticked, and only those', async () => {
+    const { asks } = await import('./capture');
+    expect(job.capture).toEqual(['travel', 'odometer', 'lunch', 'receipts']);
+    for (const k of ['travel', 'odometer', 'lunch', 'receipts'] as const) expect(asks(job.capture, k)).toBe(true);
+    for (const k of ['photos', 'checklist', 'questions', 'deliverables', 'signature', 'notes'] as const) expect(asks(job.capture, k)).toBe(false);
+  });
+
+  it('brings the title, description, address, day and times', () => {
+    expect(job.title).toBe('LDS-1110-5011876-Gaffney');
+    expect(job.description).toBe('Site scheduled to begin Monday');
+    expect(fullAddress(job)).toContain('701 West Buford Street');
+    expect(job.date).toBe('2026-10-19');
+    expect([job.startTime, job.endTime]).toEqual(['08:00', '20:00']);
+  });
+});

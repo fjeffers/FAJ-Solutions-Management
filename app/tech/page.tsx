@@ -2026,7 +2026,8 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     if (st.stage === 'travel' && st.dest !== 'site') {
       const g = await where();
       await day('travel_end', {}, 'Arrived', new Date(), g,
-        st.dest === 'hotel' || st.dest === 'home' ? `At the ${st.dest}. Signed out for the day.` : 'Arrived.');
+        st.dest === 'hotel' || st.dest === 'home' ? `At the ${st.dest}. Signed out for the day.`
+          : st.dest === 'fuel' ? 'At the fuel stop. Tap Check in when you head out again.' : 'Arrived.');
       return;
     }
     await onSite();

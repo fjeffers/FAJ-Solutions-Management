@@ -225,7 +225,7 @@ export function siteBill(input: {
 
 const TZ = 'America/New_York';
 const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ }) : '');
-const FROM_WORD: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Elsewhere' };
+const FROM_WORD: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Elsewhere', fuel: 'Fuel stop' };
 
 export type BillSite = { name: string; wo: string; clientWo?: string | null; address: string; bill: SiteBill };
 

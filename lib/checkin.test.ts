@@ -73,12 +73,21 @@ describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
     });
   });
 
-  it('offers all four, each drive under its own, and only the drives back after Work done', () => {
-    const groups = checkInChoices(null);
-    expect(groups.map((g) => g.label)).toEqual(['Travel to site', 'Site-to-site travel', 'Travel from site', 'Work on site']);
-    expect(groups.at(-1)!.options).toEqual([{ key: ON_SITE_KEY, label: 'Already on site: start work' }]);
-    const after = checkInChoices('site', true);
-    expect(after.some((g) => g.activity === 'on_site' || g.activity === 'between_sites')).toBe(false);
+  it('lists Traveling to (hotel, site, home, fuel) and On site at the bottom', async () => {
+    const { checkInDrive } = await import('./checkin');
+    const groups = checkInChoices('hotel');
+    expect(groups.map((g) => g.label)).toEqual(['Traveling to', 'On site']);
+    expect(groups[0].options.map((o) => o.label)).toEqual(['Hotel', 'Site', 'Home', 'Fuel']);
+    expect(groups[1].options).toEqual([{ key: ON_SITE_KEY, label: 'Log in on site: start work' }]);
+    // The next site only when leaving a site; after Work done only the drive back.
+    expect(checkInChoices('site')[0].options.map((o) => o.label)).toContain('Next site');
+    expect(checkInChoices('site', true).map((g) => g.options.map((o) => o.label))).toEqual([['Hotel', 'Home', 'Fuel']]);
+    // Leaving from where the tech is now.
+    expect(checkInDrive('to-site', 'hotel')).toMatchObject({ origin: 'hotel', dest: 'site', label: 'Hotel → Site' });
+    expect(checkInDrive('to-fuel', 'site')).toMatchObject({ origin: 'site', dest: 'fuel', label: 'Site → Fuel' });
+    expect(checkInDrive('to-next_site', 'site')).toMatchObject({ origin: 'site', dest: 'next_site' });
+    expect(checkInDrive('to-site', null)).toMatchObject({ origin: 'other', label: 'Here → Site' });
+    expect(checkInDrive(ON_SITE_KEY, 'site')).toBeNull();
   });
 
   it('saves all four: each drive with where it went, and work on site as the clock', () => {
@@ -99,3 +108,25 @@ describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
     expect(day[0].legs.map((l) => l.miles)).toEqual([12, 20, 30]);
   });
 });
+
+describe('a fuel stop (migration 131)', async () => {
+  const { buildDayLogs, dayState, lastPlace, legLabel } = await import('./project-day');
+  const { activityOf } = await import('./checkin');
+  const ev = (kind: string, hhmm: string, extra: Record<string, unknown> = {}) =>
+    ({ kind, at: new Date(`2026-10-19T${hhmm}:00-04:00`).toISOString(), tech: 'Dana', ...extra }) as never;
+  const taps = [
+    ev('day_start', '06:59'),
+    ev('travel_start', '07:00', { origin: 'hotel', dest: 'fuel' }), ev('travel_end', '07:10', { miles: 3 }),
+    ev('travel_start', '07:20', { origin: 'fuel', dest: 'site' }), ev('travel_end', '07:50', { miles: 18 }),
+  ];
+  it('keeps the day going and the next drive leaves from it', () => {
+    const now = new Date('2026-10-19T12:15:00Z');
+    expect(dayState(taps.slice(0, 3), now, 'America/New_York').stage).toBe('clocked');
+    expect(lastPlace(taps.slice(0, 3), now, 'America/New_York')).toBe('fuel');
+    const legs = buildDayLogs(taps, new Date('2026-10-20T12:00:00Z'), 'America/New_York')[0].legs;
+    expect(legs.map((l) => legLabel(l))).toEqual(['Hotel → Fuel stop', 'Fuel stop → Site']);
+    expect(legs.map((l) => activityOf(l.origin, l.dest))).toEqual(['to_site', 'to_site']);
+    expect(legs.map((l) => l.miles)).toEqual([3, 18]);
+  });
+});
+

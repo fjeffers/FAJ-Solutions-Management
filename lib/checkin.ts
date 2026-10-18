@@ -56,18 +56,44 @@ export function activityOf(origin: Origin | null | undefined, dest: Dest | null 
   return 'to_site';
 }
 
+/**
+ * Where a tech can be traveling to, in the order Fred listed them (2026-10-18:
+ * "traveling where list (hotel, site, home, fuel etc) then I need on site
+ * login bottom"). Where they're leaving from comes from their own taps.
+ */
+export const TRAVEL_TO: { dest: Dest; label: string }[] = [
+  { dest: 'hotel', label: 'Hotel' },
+  { dest: 'site', label: 'Site' },
+  { dest: 'home', label: 'Home' },
+  { dest: 'fuel', label: 'Fuel' },
+  { dest: 'next_site', label: 'Next site' },
+];
+
 /** The check-in choice for starting work where the tech already is: no drive, the clock-in. */
 export const ON_SITE_KEY = 'on-site';
 
-/** Check in's choices, grouped under the four activities in Fred's order. After Work done only the drives back. */
-export function checkInChoices(from: Origin | null, afterWork = false): { activity: Activity; label: string; options: { key: string; label: string }[] }[] {
-  const drives = drivesFor(from, afterWork);
-  const groups = (['to_site', 'between_sites', 'from_site'] as const)
-    .map((a) => ({ activity: a as Activity, label: ACTIVITY_LABEL[a], options: drives.filter((d) => activityOf(d.origin, d.dest) === a).map((d) => ({ key: d.key, label: d.label })) }))
-    .filter((g) => g.options.length > 0);
-  if (!afterWork) groups.push({ activity: 'on_site', label: ACTIVITY_LABEL.on_site, options: [{ key: ON_SITE_KEY, label: 'Already on site: start work' }] });
+/**
+ * Check in's choices: "Traveling to" (hotel, site, home, fuel, the next site),
+ * then "On site" at the bottom. After Work done only the drive back (hotel,
+ * home or fuel). The next site is offered only when leaving a site.
+ */
+export function checkInChoices(from: Origin | null, afterWork = false): { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] {
+  const to = TRAVEL_TO.filter((t) => (afterWork ? ['hotel', 'home', 'fuel'].includes(t.dest) : t.dest !== 'next_site' || from === 'site'));
+  const groups: { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] = [
+    { group: 'travel', label: 'Traveling to', options: to.map((t) => ({ key: `to-${t.dest}`, label: t.label })) },
+  ];
+  if (!afterWork) groups.push({ group: 'on_site', label: 'On site', options: [{ key: ON_SITE_KEY, label: 'Log in on site: start work' }] });
   return groups;
 }
+
+/** The drive a check-in choice means: from where the tech is now (their own taps), to where they picked. */
+export function checkInDrive(key: string, from: Origin | null): Drive | null {
+  const t = TRAVEL_TO.find((x) => `to-${x.dest}` === key);
+  if (!t) return null;
+  const origin: Origin = t.dest === 'next_site' ? 'site' : from ?? 'other';
+  return { key, origin, dest: t.dest, label: `${ORIGIN_LABEL_FOR[origin]} → ${t.dest === 'next_site' ? 'Next site' : t.label}` };
+}
+const ORIGIN_LABEL_FOR: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Here', fuel: 'Fuel stop' };
 
 /** The drive as FAJ's Start travel takes it (DayActions.startTrip). */
 export function tripOf(drive: Drive): { trip: Trip; from: Origin } {

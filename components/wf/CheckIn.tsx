@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { Camera, CheckCircle2, MapPin } from 'lucide-react';
 import { asks } from '@/lib/capture';
-import { ON_SITE_KEY, checkInChoices, checkInMissing, checkInNotes, driveOf, type Drive } from '@/lib/checkin';
+import { ON_SITE_KEY, checkInChoices, checkInDrive, checkInMissing, checkInNotes, type Drive } from '@/lib/checkin';
 import { getPosition, stampLines } from '@/lib/geo';
 import { stampPhoto } from '@/lib/photo-stamp';
 import type { Origin } from '@/lib/project-day';
@@ -61,7 +61,7 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [photos, setPhotos] = useState<Record<string, boolean>>({});
   const [photoBusy, setPhotoBusy] = useState<string | null>(null);
-  const drive = driveOf(driveKey);
+  const drive = checkInDrive(driveKey, from);
   const at = steps.indexOf(step);
   const next = () => { const n = steps[at + 1]; if (n) setStep(n); else finish(); };
   const finish = () => {
@@ -139,7 +139,7 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
               <select className="wf-input" value={driveKey} onChange={(e) => setDriveKey(e.target.value)} aria-label="What are you doing?">
                 <option value="" disabled>Pick one</option>
                 {checkInChoices(from, afterWork).map((g) => (
-                  <optgroup key={g.activity} label={g.label}>
+                  <optgroup key={g.group} label={g.label}>
                     {g.options.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
                   </optgroup>
                 ))}

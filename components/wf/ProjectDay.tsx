@@ -103,6 +103,10 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
         <button style={navy} disabled={busy} onClick={on.arrived}><LogIn size={20} /> Arrived at the next site</button>
       )}
 
+      {st.stage === 'travel' && st.dest === 'fuel' && (
+        <button style={navy} disabled={busy} onClick={on.arrived}><LogIn size={20} /> Arrived at the fuel stop</button>
+      )}
+
       {st.stage === 'travel' && (st.dest === 'hotel' || st.dest === 'home') && (
         <button style={navy} disabled={busy} onClick={on.arrived}><LogIn size={20} /> Arrived — sign out</button>
       )}

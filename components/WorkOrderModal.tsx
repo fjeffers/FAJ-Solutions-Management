@@ -868,13 +868,13 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               {parseClientLinks(linksText).length > 0 && (
                 <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
                   {([
-                    ['When the tech checks in on site, open', checkinLink, setCheckinLink, 'e.g. the Teams meeting'],
-                    ['When the tech checks out for the day, open', checkoutLink, setCheckoutLink, 'e.g. the checkout form'],
-                  ] as const).map(([label, value, setValue, hint]) => (
+                    ['When the tech checks in on site, open (e.g. the Teams meeting)', checkinLink, setCheckinLink],
+                    ['When the tech checks out for the day, open (e.g. the checkout form)', checkoutLink, setCheckoutLink],
+                  ] as const).map(([label, value, setValue]) => (
                     <label key={label} style={{ display: 'grid', gap: 4, fontSize: 13, fontWeight: 600 }}>
                       {label}
                       <select className="select input" value={parseClientLinks(linksText).includes(value) ? value : ''} onChange={(e) => setValue(e.target.value)}>
-                        <option value="">Nothing ({hint})</option>
+                        <option value="">Nothing</option>
                         {parseClientLinks(linksText).map((l) => <option key={l} value={l}>{linkLabel(l)}</option>)}
                       </select>
                     </label>

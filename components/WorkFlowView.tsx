@@ -496,6 +496,12 @@ function OwnerJob({
   const actions = (
     <>
       <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => onEdit(w)}><Edit2 size={15} /> Edit job</button>
+      {/* At the top with the other buttons (Fred, 2026-10-18: "Assign tech can go at the top"). */}
+      {!archived && (
+        <button className={`wf-btn wf-btn-sm ${job.techs.length ? 'wf-btn-outline' : 'wf-btn-gold'}`} onClick={() => setPicking(true)}>
+          <UserCog size={15} /> {job.techs.length ? 'Change techs' : 'Assign techs'}
+        </button>
+      )}
       <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setChatOpen((v) => !v)} aria-pressed={chatOpen}>
         <MessageSquare size={15} /> Messages
       </button>
@@ -529,7 +535,7 @@ function OwnerJob({
   const jobDesign = designNow();
   const jobCards: Record<string, ReactNode> = {
     'job.timeRequests': !archived && <TimeRequestsCard w={w} job={job} onSaved={refresh} />,
-    'job.techs': <TechsCard w={w} job={job} onChange={archived ? undefined : () => setPicking(true)}
+    'job.techs': <TechsCard w={w} job={job}
       onSendAgain={archived ? undefined : (t) => void sendAgain(t)}
       onToolsChange={archived ? undefined : (on) => void setTechTools(on)} />,
     'job.fields': <YourFieldsCard w={w} />,
@@ -906,8 +912,8 @@ const ANSWER: Record<string, { label: string; color: string }> = {
 };
 
 /** Who is on the job, how each answered, what each gets — and a button to change it. */
-function TechsCard({ w, job, onChange, onSendAgain, onToolsChange }: {
-  w: EnrichedWorkOrder; job: WfJob; onChange?: () => void; onSendAgain?: (tech: string) => void;
+function TechsCard({ w, job, onSendAgain, onToolsChange }: {
+  w: EnrichedWorkOrder; job: WfJob; onSendAgain?: (tech: string) => void;
   onToolsChange?: (on: boolean) => void;
 }) {
   const pay = w.contractor_pay ?? {};
@@ -952,16 +958,7 @@ function TechsCard({ w, job, onChange, onSendAgain, onToolsChange }: {
           </button>
         </div>
       )}
-      {/* One button for every tech change (Fred, 2026-10-07: "assign and reassign
-          should be all under changes") — assign, add, remove and reassign live in
-          the window it opens. */}
-      {onChange && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button className="wf-btn wf-btn-outline wf-btn-sm" style={{ flex: 1 }} onClick={onChange}>
-            <UserCog size={15} /> {job.techs.length ? 'Change techs' : 'Assign techs'}
-          </button>
-        </div>
-      )}
+      {/* Assign / Change techs is in the row of buttons at the top of the job now. */}
     </Section>
   );
 }

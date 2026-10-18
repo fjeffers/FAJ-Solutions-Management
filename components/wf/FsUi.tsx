@@ -41,16 +41,12 @@ export function FsIcon({ name, size = 20, className }: { name: string; size?: nu
   );
 }
 
+/** FAJ's own logo: the portal uses Field Service's features, never its name. */
 export function FsBrand() {
   return (
-    <span className="fs-brand" aria-label="Field Service LIVE">
-      <span className="fs-brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 28 28" width="28" height="28">
-          <path d="M6.5 5.5h11M6.5 5.5v17M6.5 13.5h8" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="square" />
-          <path d="M15.5 20l3 3 5.5-6.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </span>
-      <span className="fs-brand-text"><b>fieldservice</b><small>LIVE</small></span>
+    <span className="fs-brand">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/wf/logo-wide.png" alt="FAJ Solutions" />
     </span>
   );
 }

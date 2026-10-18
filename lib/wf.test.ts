@@ -194,6 +194,14 @@ describe('lists', () => {
     expect(ownerCounts(jobs, '2026-10-05')).toEqual({ needTech: 1, waiting: 1, today: 1, workDone: 1 });
     expect(statusesPresent(jobs)).toEqual(['open', 'offered', 'workDone']);
   });
+  it('a job every tech declined goes back to Need a tech (Gaffney, 2026-10-18)', () => {
+    const declined = wfJobFromOwner({
+      id: 'g', wo_number: '19101399', wo_status: 'Open', contractor_name: 'Frederick Jeffers', contractor_names: ['Frederick Jeffers'],
+      assignment_responses: { 'Frederick Jeffers': { status: 'declined', at: '2026-10-18T12:53:39Z' } },
+    } as unknown as Parameters<typeof wfJobFromOwner>[0]);
+    expect(declined.status).toBe('declined');
+    expect(ownerCounts([declined], '2026-10-18').needTech).toBe(1);
+  });
   it("a tech's numbers", () => {
     const mine = [
       clockedIn(wfJobFromTech({ id: 'a', wo_number: '1', wo_status: 'Assigned', my_response: 'accepted', scheduled_date: '2026-10-05' }), new Date('2026-10-05T13:00:00Z')),

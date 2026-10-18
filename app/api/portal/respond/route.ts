@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { Resend } from 'resend';
+import { declinedPush, pushToUser } from '@/lib/tech-push';
 
 // One-click Accept / Decline from assignment emails.
 // GET so it works as a plain email link: /api/portal/respond?token=..&wo=..&action=accept
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
 
   const { data: wo } = await supabase
     .from('work_orders')
-    .select('id, wo_number, title, contractor_name, contractor_names, wo_status, assignment_responses')
+    .select('id, user_id, wo_number, title, contractor_name, contractor_names, wo_status, assignment_responses')
     .eq('id', woId)
     .maybeSingle();
   if (!wo) {
@@ -95,6 +96,12 @@ export async function GET(req: NextRequest) {
     });
   } catch {
     // The response is saved; the owner email is best-effort.
+  }
+  // A decline also pops up on the office's phone (Fred, 2026-10-18).
+  if (action === 'decline' && wo.user_id) {
+    try {
+      await pushToUser(supabase, wo.user_id, declinedPush({ woId: wo.id, woNumber: wo.wo_number, techName: contractor.name, title: wo.title }));
+    } catch { /* the email went */ }
   }
 
   const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com'}/portal/${contractor.portal_token}`;

@@ -96,7 +96,7 @@ const FS_JOB_SCREEN = true;
 const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, ...UNDER_PROFILE, 'projects'] : [...TABS, ...UNDER_PROFILE];
 const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
 const TAB_TITLE: Record<Tab, string> = {
-  project: 'Project', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay history', profile: 'Profile',
+  project: 'Work orders', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay history', profile: 'Profile',
 };
 
 export default function TechPortalPage() {
@@ -116,7 +116,9 @@ export default function TechPortalPage() {
     if (t === 'paperwork') return 'profile';
     return ALL_TABS.includes(t as Tab) ? (t as Tab) : 'project';
   });
-  const [openId, setOpenId] = useState<string | null>(null);
+  // A new-job pop-up opens /tech?wo=<id> straight on that job (lib/tech-push.ts).
+  const [openId, setOpenId] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('wo'));
 
   const [profile, setProfile] = useState<TechProfile | null>(null);
   const [officeJobs, setOfficeJobs] = useState<WfJob[]>([]);
@@ -456,7 +458,7 @@ export default function TechPortalPage() {
   const waiting = pending.length;
   const small = collapsed && !drawer;
   const navItems: { key: Tab; label: string; icon: string; count: number }[] = [
-    { key: 'project', label: 'Project', icon: 'clipboard', count: jobs.filter(canWork).length },
+    { key: 'project', label: 'Work orders', icon: 'clipboard', count: jobs.filter(canWork).length },
     { key: 'chat', label: 'Messenger', icon: 'chat', count: unread },
     { key: 'schedule', label: 'My Schedule', icon: 'calendar', count: 0 },
     { key: 'profile', label: 'Profile', icon: 'person', count: offers.length + paperworkDue },
@@ -599,6 +601,10 @@ export default function TechPortalPage() {
             <>
               <FsPageHeader title="Profile" subtitle={`${profile.name} · Technician`} />
               <ProfileMenu offers={offers.length} go={go} />
+              <div style={{ marginBottom: 18, maxWidth: 480 }}>
+                <PushSwitch onText="On. New work orders and messages pop up on this phone, even with the app closed."
+                  offText="Turn on so new work orders and messages pop up on this phone, even with the app closed." />
+              </div>
               <ProfileTab
                 profile={profile} portalToken={portalToken} onSignOut={signOut}
                 onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }}
@@ -694,13 +700,30 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   );
 }
 
+// Fred, 2026-10-18: "Under work order should have assigned and available and
+// pending" — Assigned (yours: upcoming and in progress), Available (offered to
+// you, waiting for Accept or Decline) and Pending (Work done, waiting for the
+// office to close it).
+type WoList = 'assigned' | 'available' | 'pending';
+
 function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
 }) {
   const today = todayISO();
   const live = sortTechJobs(jobs.filter(canWork), today);
   const todayCount = live.filter((j) => j.date === today || isClockedIn(j)).length;
-  const past = sortTechJobs(jobs.filter(isFinished), today);
+  const lists: Record<WoList, WfJob[]> = {
+    assigned: live,
+    available: sortTechJobs(jobs.filter((j) => j.status === 'offered'), today),
+    pending: sortTechJobs(jobs.filter((j) => j.status === 'workDone'), today),
+  };
+  const past = sortTechJobs(jobs.filter((j) => j.status === 'closed'), today);
+  const [list, setList] = useState<WoList>(() => (lists.assigned.length === 0 && lists.available.length > 0 ? 'available' : 'assigned'));
+  const EMPTY: Record<WoList, string> = {
+    assigned: "No work assigned right now. New work orders appear here as soon as they're assigned to you.",
+    available: 'Nothing waiting for your answer. Jobs offered to you show here to accept or decline.',
+    pending: 'Nothing waiting for approval. Jobs you mark Work done wait here until they are closed.',
+  };
   const card = (j: WfJob) => {
     const isToday = j.date === today;
     const start = parseClockTime(j.startTime);
@@ -716,7 +739,8 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
         : j.status === 'inProgress' ? ['In progress', 'green', true]
           : j.status === 'workDone' ? ['Work done', 'amber', false]
             : j.status === 'closed' ? ['Accepted', 'green', false]
-              : ['Not started', 'grey', false];
+              : j.status === 'offered' ? ['Waiting for your answer', 'amber', false]
+                : ['Not started', 'grey', false];
     const where = fullAddress(j);
     return (
       <button type="button" key={j.id} className={`fs-card fs-wo-card${isToday ? ' today' : ''}`} onClick={() => onOpen(j.id)}>
@@ -730,7 +754,7 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   };
   return (
     <>
-      <FsPageHeader title="Project" subtitle="Your assigned work, one tap away." />
+      <FsPageHeader title="Work orders" subtitle="Your assigned work, one tap away." />
       <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">
@@ -742,11 +766,16 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
           <strong>{todayCount}</strong><small>On your schedule today</small>
         </div>
       </div>
+      <div className="fs-segmented" role="group" aria-label="Work orders" style={{ marginBottom: 18 }}>
+        {([['assigned', 'Assigned'], ['available', 'Available'], ['pending', 'Pending']] as [WoList, string][]).map(([k, label]) => (
+          <button key={k} type="button" aria-pressed={list === k} onClick={() => setList(k)}>
+            {label} ({lists[k].length})
+          </button>
+        ))}
+      </div>
       <div className="fs-wo-grid">
-        {live.map(card)}
-        {live.length === 0 && (
-          <p className="fs-card fs-empty">No work assigned right now. New work orders appear here as soon as they&apos;re assigned to you.</p>
-        )}
+        {lists[list].map(card)}
+        {lists[list].length === 0 && <p className="fs-card fs-empty">{EMPTY[list]}</p>}
       </div>
       {past.length > 0 && (
         <details className="fs-past">
@@ -2170,7 +2199,18 @@ function JobTools({ job, canAdd, ph, onNote }: {
     });
     return () => { live = false; };
   }, [job.number, filesRev]);
-  if (!canAdd && docs.length === 0 && files.length === 0) return null;
+  // Tools only on jobs the office turned them on for (Fred, 2026-10-18:
+  // "Tools should only apply if admin adds it"; migration 129).
+  const [toolsOn, setToolsOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void createClient().rpc('wf_tech_tools_on', { p_wo_number: job.number }).then(({ data, error }) => {
+      if (live && !error) setToolsOn(data === true);
+    });
+    return () => { live = false; };
+  }, [job.number, filesRev]);
+  const showTools = canAdd && toolsOn;
+  if (!showTools && docs.length === 0 && files.length === 0) return null;
   const jobLabel = `WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`;
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const item = (key: ToolKey, icon: React.ReactNode, label: string, hint: string) => (
@@ -2238,16 +2278,16 @@ function JobTools({ job, canAdd, ph, onNote }: {
         })}
       </Section>
     )}
-    {(canAdd || docs.length > 0) && (
-    <Section title="Your documents" subtitle="Scans and signed PDFs for this job"
-      right={canAdd && (
+    {(showTools || docs.length > 0) && (
+    <Section title={showTools ? 'Your documents' : 'Documents to sign'} subtitle={showTools ? 'Scans and signed PDFs for this job' : undefined}
+      right={showTools && (
         <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" aria-expanded={menu} aria-controls={`wf-tools-${job.number}`}
           onClick={() => setMenu((v) => !v)}>
           <Wrench size={15} /> Tools <ChevronDown size={15} style={{ transform: menu ? 'rotate(180deg)' : undefined }} />
         </button>
       )}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {canAdd && menu && (
+        {showTools && menu && (
           <div id={`wf-tools-${job.number}`} className="wf-tool-menu" role="group" aria-label="Tools">
             {item('scan', <ScanLine size={18} />, 'Scan', 'A paper document, as a PDF for the job')}
             {item('edit', <Signature size={18} />, 'Sign a PDF', 'Fill in and sign a PDF from your phone')}
@@ -2256,7 +2296,7 @@ function JobTools({ job, canAdd, ph, onNote }: {
             {item('measure', <Ruler size={18} />, 'Measure', 'Measure something on a photo')}
           </div>
         )}
-        {canAdd && shared.length === 0 && sent.length === 0 && (
+        {showTools && shared.length === 0 && sent.length === 0 && (
           <div className="wf-subtle" style={{ fontSize: 13 }}>Nothing yet. Scan a paper, sign a PDF, read a code, count or measure from Tools.</div>
         )}
         {shared.length > 0 && (
@@ -2272,29 +2312,29 @@ function JobTools({ job, canAdd, ph, onNote }: {
           </div>
         )}
       </div>
-      {tool === 'scan' && (
-        <DocScanner woNumber={job.number} jobLabel={jobLabel}
-          onClose={() => setTool(null)} onSent={() => void loadDocs()}
-          onEdit={(file, name, kind) => { setTool(null); setEditing({ file, name, kind }); }} />
-      )}
-      {tool === 'read' && <ReadTool onClose={() => setTool(null)} onNote={onNote} />}
-      {(tool === 'count' || tool === 'measure') && (
-        <PhotoMarkup mode={tool} onClose={() => setTool(null)}
-          onSave={async (file, source) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what); }} />
-      )}
-      {editing && (
-        <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}
-          send={{ label: 'Send to the job', kinds: [...DOC_KINDS], defaultKind: editing.kind }}
-          onSend={async (r) => {
-            const out = await sendTechDoc(job.number, r.blob, r.name, r.kind, r.pages);
-            if (!out.ok) { toastError(out.error); return false; }
-            toastSuccess(`${r.name} sent.`);
-            void loadDocs();
-            return true;
-          }}
-          onClose={() => setEditing(null)} />
-      )}
     </Section>
+    )}
+    {tool === 'scan' && (
+      <DocScanner woNumber={job.number} jobLabel={jobLabel}
+        onClose={() => setTool(null)} onSent={() => void loadDocs()}
+        onEdit={(file, name, kind) => { setTool(null); setEditing({ file, name, kind }); }} />
+    )}
+    {tool === 'read' && <ReadTool onClose={() => setTool(null)} onNote={onNote} />}
+    {(tool === 'count' || tool === 'measure') && (
+      <PhotoMarkup mode={tool} onClose={() => setTool(null)}
+        onSave={async (file, source) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what); }} />
+    )}
+    {editing && (
+      <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}
+        send={{ label: 'Send to the job', kinds: [...DOC_KINDS], defaultKind: editing.kind }}
+        onSend={async (r) => {
+          const out = await sendTechDoc(job.number, r.blob, r.name, r.kind, r.pages);
+          if (!out.ok) { toastError(out.error); return false; }
+          toastSuccess(`${r.name} sent.`);
+          void loadDocs();
+          return true;
+        }}
+        onClose={() => setEditing(null)} />
     )}
   </>);
 }

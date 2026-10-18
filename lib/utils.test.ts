@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, payAddonsForTech, payBreakdown, PAY_ADDON_KINDS, payAddonLabel, billableExtras, billableAddons, payAddonAmount } from './utils';
+import { enrichWorkOrders, getStatus, fmtMoney, contractorShareOfWO, contractorOwedOnWO, woPayoutTotal, woProfit, todayISO, addDaysISO, workOrderBreakdown, workOrderBreakdownText, woTechPayTotal, clientPaidMaterials, ownStockMaterials, materialsReimbursement, materialsForTech, payAddonsTotal, payAddonsForTech, payBreakdown, PAY_ADDON_KINDS, payAddonLabel, billableExtras, billableAddons, payAddonAmount, techPayToShow } from './utils';
 import type { WorkOrder, Payment, PayAddon } from './types';
 
 // Minimal builders — only the fields the money math actually reads.
@@ -593,5 +593,24 @@ describe('a job with no agreed tech pay', () => {
     expect(e.remaining).toBe(400);
     // and the profit the card shows
     expect(Math.round((1138.25 - e.payout_total) * 100) / 100).toBe(738.25);
+  });
+});
+
+describe('techPayToShow (what a tech email may say about pay)', () => {
+  const base = { contractor_name: 'Frederick Jeffers', contractor_names: ['Frederick Jeffers'], total_amount: 866.46,
+    mileage_logs: [], materials_used: [], pay_addons: [] } as unknown as Parameters<typeof techPayToShow>[0];
+  it('never shows the client price when no tech pay was entered (Gaffney, 2026-10-18)', () => {
+    expect(techPayToShow({ ...base, contractor_pay: null }, 'Frederick Jeffers')).toBeNull();
+    expect(techPayToShow({ ...base, contractor_pay: {} }, 'Frederick Jeffers')).toBeNull();
+  });
+  it('shows the pay the office entered for that tech', () => {
+    const wo = { ...base, contractor_names: ['Paul Gibbs', 'Raja Bennett'], contractor_name: 'Paul Gibbs',
+      contractor_pay: { 'Paul Gibbs': 400, 'Raja Bennett': 250 } };
+    expect(techPayToShow(wo, 'Paul Gibbs')).toBe(400);
+    expect(techPayToShow(wo, 'Raja Bennett')).toBe(250);
+  });
+  it('says nothing for a tech with no entry of their own', () => {
+    const wo = { ...base, contractor_names: ['Paul Gibbs', 'Raja Bennett'], contractor_pay: { 'Paul Gibbs': 400 } };
+    expect(techPayToShow(wo, 'Raja Bennett')).toBeNull();
   });
 });

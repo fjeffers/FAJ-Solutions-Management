@@ -6,6 +6,7 @@ import { claimTechAccount } from '@/lib/tech-portal';
 import { suggestUsername, usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
+import TechInstall from '@/components/TechInstall';
 
 // The tech portal's sign-in (Fred, 2026-10-02: "change log in style so name
 // and email address then user name and password").
@@ -137,6 +138,9 @@ export default function TechLoginPage() {
           </div>
         </div>
         <div style={{ padding: 24 }}>
+          {/* Get the app onto the phone from the first visit (Fred, 2026-10-18:
+              "also need to be downloaded on their phones"). Hidden once installed. */}
+          <TechInstall />
 
           {mode === 'signin' ? (
             <form onSubmit={handleSignIn} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

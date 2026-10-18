@@ -1,9 +1,12 @@
-import { techAppEmail } from '@/lib/tech-app-email';
+import { techAppEmail, techAppInviteBlock } from '@/lib/tech-app-email';
 import { onboardingEmail } from '@/lib/onboarding-email';
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { newWorkOrderPush, pushToTech } from '@/lib/tech-push';
+import { newJobNeedsEmail, newWorkOrderText, textPhone, type TextResult } from '@/lib/tech-text';
 
 const OWNER_EMAIL = 'fajsolutions@gmail.com';
 
@@ -18,10 +21,12 @@ export async function POST(req: NextRequest) {
   // Fred, and the portal's server actions (no session cookie) rely on them.
   // Everything else emails an arbitrary address, so it requires a signed-in
   // session — otherwise this endpoint is an open relay on a public URL.
+  let signedInId: string | null = null;
   if (!OWNER_TYPES.has(body.type)) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    signedInId = user.id;
   }
   const { type, contractor_email, contractor_name, wo_number, title, status, amount, portal_url, work_orders, count,
     wo_id, portal_token, pay, reference, site, schedule } = body;
@@ -63,6 +68,7 @@ export async function POST(req: NextRequest) {
         ${portalUrl
           ? `<p style="text-align:center;"><a href="${portalUrl}" style="color:#0D7377;font-weight:600;">Open your portal for full details ↗</a></p>`
           : `<p>Log in to the contractor portal to view details and get started.</p>`}
+        __APP_INVITE__
         <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
       </div>
     `;
@@ -166,6 +172,36 @@ export async function POST(req: NextRequest) {
   // Owner-facing types go to Fred; all others go to the contractor
   const to = OWNER_TYPES.has(type) ? OWNER_EMAIL : contractor_email;
 
+  // New jobs (Fred, 2026-10-18): the first time, the tech gets this email with
+  // their portal and the app. Once they're in the tech app, new jobs go to the
+  // phone instead — the app's pop-up and, once Twilio is set up, a text to their
+  // number — and the email is skipped. If neither reaches them (pop-ups off, no
+  // texting yet), the email still goes, so a job is never missed.
+  let pushed = 0;
+  let texted: TextResult | 'not_tried' = 'not_tried';
+  if (type === 'wo_assigned') {
+    let inApp = false;
+    if (wo_id && signedInId && contractor_name) {
+      const admin = createAdminClient();
+      const { data: tech } = await admin.from('contractors').select('auth_user_id, phone')
+        .eq('user_id', signedInId).eq('name', contractor_name).maybeSingle();
+      const t = tech as { auth_user_id?: string | null; phone?: string | null } | null;
+      inApp = !!t?.auth_user_id;
+      if (inApp) {
+        try {
+          pushed = await pushToTech(admin, signedInId, contractor_name, newWorkOrderPush({ woId: wo_id, woNumber: wo_number, title, schedule }));
+        } catch { /* falls back below */ }
+        const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com';
+        texted = await textPhone(t?.phone, newWorkOrderText({ woNumber: wo_number, title, schedule, link: `${base}/tech?wo=${wo_id}` }));
+      }
+    }
+    if (!newJobNeedsEmail({ inApp, pushed, texted })) {
+      return NextResponse.json({ ok: true, pushed, texted, emailed: false });
+    }
+    // First time (not in the app yet): the email also shows how to get the app.
+    html = html.replace('__APP_INVITE__', inApp ? '' : techAppInviteBlock(`${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com'}/tech`));
+  }
+
   try {
     await resend.emails.send({
       from,
@@ -174,7 +210,7 @@ export async function POST(req: NextRequest) {
       html,
       replyTo: process.env.REPLY_TO_EMAIL || undefined,
     });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, pushed, texted, emailed: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });

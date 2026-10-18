@@ -30,7 +30,8 @@ describe('Dispatch Board, Grid and List draw the same groups', () => {
   ];
   const g = boardGroups(rows, { today: '2026-10-01', holds: [] });
   it('every Board stage, in the Board order, even when empty', () => {
-    expect(g.map((x) => x.key)).toEqual(['open', 'offered', 'scheduled', 'today', 'inProgress', 'workDone', 'closed', 'declined']);
+    // No Declined column: a job every tech declined is back in Needs a tech (2026-10-18).
+    expect(g.map((x) => x.key)).toEqual(['open', 'offered', 'scheduled', 'today', 'inProgress', 'workDone', 'closed']);
     expect(g.find((x) => x.key === 'offered')!.list).toEqual([]);
   });
   it('soonest first (ties by WO number); Closed newest first', () => {

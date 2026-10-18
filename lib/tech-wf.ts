@@ -98,6 +98,13 @@ export function registerTechHandlers(box: Outbox): void {
   });
   box.register('respond', async (a) => {
     await call('tech_respond_to_job', { p_wo_number: a.number, p_response: a.accept ? 'accepted' : 'declined' });
+    // A decline goes back to the office at once: email and phone pop-up
+    // (app/api/tech/declined). Best effort; the decline itself is saved.
+    if (!a.accept) {
+      void fetch('/api/tech/declined', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wo_number: a.number }),
+      }).catch(() => {});
+    }
   });
   // Work done: the notes, then the clock stops at the moment they tapped, then
   // the job goes back to the office. Each step is safe to repeat if a retry

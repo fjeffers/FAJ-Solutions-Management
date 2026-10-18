@@ -3,7 +3,8 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { enrichWorkOrders, contractorOwedOnWO, woPayoutTotal, fmtMoney } from '@/lib/utils';
+import { enrichWorkOrders, woPayoutTotal, fmtMoney, techPayToShow } from '@/lib/utils';
+import { scheduleLine as woScheduleLine } from '@/lib/email-templates';
 import { geocodeAddress } from '@/lib/geocode';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
@@ -571,7 +572,7 @@ export default function HomePage() {
         ? payload.contractor_names
         : (payload.contractor_name ? [payload.contractor_name] : []);
       const siteLine = [w.site_name, w.site_address, w.site_city, w.site_state].filter(Boolean).join(', ') || null;
-      const scheduleLine = [w.start_date, w.start_time].filter(Boolean).join(' ') || null;
+      const scheduleLine = woScheduleLine(w) || null;
       const refId = w.external_wo_id || w.client_reference || null;
       for (const name of assignedNames) {
         const c = contractors.find((x) => x.name === name);
@@ -586,7 +587,7 @@ export default function HomePage() {
           title: w.title ?? undefined,
           wo_id: created?.id,
           portal_token: c.portal_token ?? null,
-          pay: contractorOwedOnWO({ ...(payload as unknown as WorkOrder) }, name),
+          pay: techPayToShow({ ...(payload as unknown as WorkOrder) }, name) ?? undefined,
           reference: refId ? `${w.source_platform && w.source_platform !== 'Internal' ? `${w.source_platform} ` : ''}#${refId}` : null,
           site: siteLine,
           schedule: scheduleLine,
@@ -809,7 +810,10 @@ Go ahead?`)) return;
         title: w.title ?? undefined,
         wo_id: w.id,
         portal_token: c.portal_token ?? null,
-        pay: plan.movedToIncoming,
+        // Only real tech pay. With none set, the share is the client's price
+        // (legacy rule) and a tech must never see that (Fred, 2026-10-18).
+        pay: techPayToShow(w as unknown as WorkOrder, from) != null && plan.movedToIncoming > 0 ? plan.movedToIncoming : undefined,
+        schedule: woScheduleLine(w) || null,
       });
     }
     toastSuccess(`WO#${w.wo_number} is ${to}'s now`);

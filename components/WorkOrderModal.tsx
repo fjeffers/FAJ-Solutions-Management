@@ -239,7 +239,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     // keeps its normal default.
     ...(!item ? prefill : {}),
   });
-  const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? []);
+  const [customQA, setCustomQA] = useState<CustomQAItem[]>(() => item?.custom_qa ?? (!item ? prefill?.custom_qa : null) ?? []);
 
   // ── Tech checklist (wo_tasks) ───────────────────────────────────────────────
   // What techs tick off in their portal and WorkFlow. Filled by "Generate with
@@ -255,7 +255,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   };
 
   // ── Multi-contacts ─────────────────────────────────────────────────────────
-  const [contacts, setContacts] = useState<SiteContact[]>(() => item?.contacts ?? []);
+  const [contacts, setContacts] = useState<SiteContact[]>(() => item?.contacts ?? (!item ? prefill?.contacts : null) ?? []);
   const addContact = () => setContacts((cs) => [
     ...cs,
     { id: crypto.randomUUID(), label: '', name: '', phone: '', email: '' },

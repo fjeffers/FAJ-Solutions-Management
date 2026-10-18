@@ -1,7 +1,9 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
-import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount } from '@/lib/wo-ai';
+import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, woAiSchema, type AiCustomField } from '@/lib/wo-ai';
+import { normalizeFields } from '@/lib/custom-fields';
 import { todayISO } from '@/lib/utils';
 import type { WorkOrder } from '@/lib/types';
 
@@ -13,6 +15,11 @@ import type { WorkOrder } from '@/lib/types';
 // so every request failed quietly and only the text parser's few fields came
 // back. The prompt and the cleanup now live in lib/wo-ai.ts, tested, and cover
 // every field on the form plus the tech's checklist.
+//
+// 2026-10-18 (Fred: "fill in every field on the work order"): the official SDK,
+// the answer held to woAiSchema() (structured outputs) so it always parses, the
+// contacts, questions and Fred's own fields included, and a refusal retried on
+// the fallback model the API picks.
 export async function POST(req: Request) {
   try {
     const supabase = await createClient('admin');
@@ -22,6 +29,10 @@ export async function POST(req: Request) {
     const body = await req.json();
     const jobDescription: string = String(body?.job_description || '').slice(0, 30_000);
     if (!jobDescription.trim()) return NextResponse.json({ error: 'Paste or describe the job first.' }, { status: 400 });
+    // Fred's own job fields shown on the form (Settings -> Custom fields).
+    const custom: AiCustomField[] = normalizeFields({ jobs: body?.custom_fields }).jobs
+      .filter((d) => !d.hidden).slice(0, 30)
+      .map(({ id, label, kind, options }) => ({ id, label, kind, options }));
 
     // The text parser always runs — it's the floor. With a working key the
     // model's answer is laid on top.
@@ -32,23 +43,29 @@ export async function POST(req: Request) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return floor('no_key');
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
+    let text = '';
+    try {
+      const client = new Anthropic({ apiKey });
+      const message = await client.beta.messages.create({
         model: WO_AI_MODEL,
-        max_tokens: 4000,
-        messages: [{ role: 'user', content: buildWoPrompt(jobDescription, todayISO()) }],
-      }),
-    });
-    if (!response.ok) {
-      console.error('Anthropic error:', response.status, (await response.text()).slice(0, 500));
-      return floor(`ai_${response.status}`);
+        max_tokens: 16000,
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        output_config: { format: { type: 'json_schema', schema: woAiSchema(custom) } },
+        messages: [{ role: 'user', content: buildWoPrompt(jobDescription, todayISO(), custom) }],
+      });
+      if (message.stop_reason === 'refusal') return floor('ai_refused');
+      if (message.stop_reason === 'max_tokens') return floor('ai_cut_off');
+      for (const block of message.content) if (block.type === 'text') text += block.text;
+    } catch (err) {
+      if (err instanceof Anthropic.APIError) {
+        console.error('Anthropic error:', err.status, err.message.slice(0, 500));
+        return floor(`ai_${err.status ?? 'error'}`);
+      }
+      throw err;
     }
 
-    const data = await response.json();
-    const text: string = (data.content ?? []).map((c: { type?: string; text?: string }) => (c.type === 'text' ? c.text ?? '' : '')).join('');
-    const aiFields: Partial<WorkOrder> = sanitizeWoAi(parseModelJson(text));
+    const aiFields: Partial<WorkOrder> = sanitizeWoAi(parseModelJson(text), custom);
     if (Object.keys(aiFields).length === 0) return floor('ai_unreadable');
 
     // The model wins where it answered; the parser fills whatever it left out.

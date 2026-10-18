@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, WO_AI_MODEL } from './wo-ai';
+import { buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, woAiSchema, WO_AI_MODEL, type AiCustomField } from './wo-ai';
 
 describe('Generate with AI', () => {
   it('uses a model that exists', () => {
-    expect(WO_AI_MODEL).toBe('claude-sonnet-5-5');
+    expect(WO_AI_MODEL).toBe('claude-opus-5-5');
   });
 
   it('asks for every field and the checklist, and never to invent', () => {
     const p = buildWoPrompt('Install 4 cameras', '2026-10-02');
-    for (const k of ['external_wo_id', 'access_instructions', 'parking_instructions', 'deliverables', 'wo_tasks', 'time_zone', 'support_contact', 'parts_materials']) {
+    for (const k of ['external_wo_id', 'access_instructions', 'parking_instructions', 'deliverables', 'wo_tasks', 'time_zone', 'support_contact', 'parts_materials',
+      'check_in_required', 'check_out_required', 'assignment_type', 'expense_budget', 'travel_amount', 'bonus_amount', 'contacts', 'custom_qa']) {
       expect(p).toContain(`"${k}"`);
     }
     expect(p).toContain('NEVER invent');
@@ -59,5 +60,57 @@ describe('Generate with AI', () => {
 
   it('counts what it filled', () => {
     expect(filledCount(sanitizeWoAi({ title: 'A', start_date: '2026-10-06', wo_tasks: ['x'] }))).toBe(2);
+  });
+
+  // Fred, 2026-10-18: "fill in every field on the work order".
+  const own: AiCustomField[] = [
+    { id: 'f1', label: 'Store hours', kind: 'text', options: [] },
+    { id: 'f2', label: 'Ladder needed', kind: 'yesno', options: [] },
+    { id: 'f3', label: 'Ceiling height', kind: 'number', options: [] },
+    { id: 'f4', label: 'Region', kind: 'choice', options: ['North', 'South'] },
+    { id: 'f5', label: 'Permit date', kind: 'date', options: [] },
+  ];
+
+  it('holds the answer to a schema with every field, and Fred\'s own fields when he has them', () => {
+    const plain = woAiSchema() as { required: string[]; additionalProperties: boolean; properties: Record<string, unknown> };
+    expect(plain.additionalProperties).toBe(false);
+    expect(plain.required).toEqual(Object.keys(plain.properties));
+    for (const k of ['title', 'site_state', 'time_zone', 'check_in_required', 'assignment_type', 'travel_amount', 'contacts', 'custom_qa', 'wo_tasks']) {
+      expect(plain.required).toContain(k);
+    }
+    expect(plain.required).not.toContain('custom');
+    // Never asked for: techs, tech pay, status.
+    for (const k of ['contractor_name', 'contractor_pay', 'contractor_names', 'wo_status']) expect(plain.required).not.toContain(k);
+    const withOwn = woAiSchema(own) as { properties: { custom: { required: string[]; properties: Record<string, { anyOf: { type: string; enum?: string[] }[] }> } } };
+    expect(withOwn.properties.custom.required).toEqual(['f1', 'f2', 'f3', 'f4', 'f5']);
+    expect(withOwn.properties.custom.properties.f2.anyOf[0].type).toBe('boolean');
+    expect(withOwn.properties.custom.properties.f4.anyOf[0].enum).toEqual(['North', 'South']);
+    expect(buildWoPrompt('x', '2026-10-18', own)).toContain('"f4": Region — one of ["North","South"]');
+  });
+
+  it('fills check-in and out, budgets, every contact, the questions and Fred\'s own fields', () => {
+    const f = sanitizeWoAi({
+      check_in_required: true, check_out_required: false, assignment_type: 'subcontract',
+      expense_budget: '$150', travel_amount: 40, bonus_amount: null,
+      contacts: [
+        { label: 'Site manager', name: 'Dana Lee', phone: '555-0100', email: 'dana@example.test' },
+        { label: 'Help desk', name: '', phone: '555-0199', email: 'not-an-email' },
+        { label: 'Nobody', name: '', phone: '', email: '' },
+      ],
+      custom_qa: [{ label: 'Serial number of the new switch', type: 'text' }, { label: 'Photo of the rack', type: 'photo' }, { label: 'Odd', type: 'video' }, { label: '' }],
+      custom: { f1: '6am-11pm', f2: true, f3: '$12', f4: 'south', f5: '2026-10-20', f9: 'not a field' },
+    }, own);
+    expect(f).toMatchObject({ check_in_required: true, check_out_required: false, assignment_type: 'Subcontract', expense_budget: 150, travel_amount: 40 });
+    expect(f).not.toHaveProperty('bonus_amount');
+    expect(f.contacts?.map((c) => [c.label, c.name, c.phone, c.email])).toEqual([
+      ['Site manager', 'Dana Lee', '555-0100', 'dana@example.test'],
+      ['Help desk', '', '555-0199', ''],
+    ]);
+    expect(f.custom_qa?.map((q) => [q.label, q.type, q.answer])).toEqual([
+      ['Serial number of the new switch', 'text', null], ['Photo of the rack', 'photo', null], ['Odd', 'text', null],
+    ]);
+    expect(f.custom).toEqual({ f1: '6am-11pm', f2: true, f3: 12, f4: 'South', f5: '2026-10-20' });
+    // Fred's own fields count one each.
+    expect(filledCount(f)).toBe(5 + 2 + 5);
   });
 });

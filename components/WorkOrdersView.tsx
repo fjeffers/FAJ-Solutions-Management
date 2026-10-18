@@ -15,6 +15,7 @@ import { wfJobFromOwner, type WfJob } from '@/lib/wf';
 import type { BoardColumn, Move } from '@/lib/dispatch-columns';
 import { createClient } from '@/lib/supabase/client';
 import { listsNow } from '@/lib/app-lists';
+import { activeFields } from '@/lib/custom-fields';
 import { shown } from '@/lib/screen-parts';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 
@@ -668,7 +669,11 @@ function AIGenerateModal({
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job_description: prompt }),
+        // Fred's own job fields go along so the AI can fill those too.
+        body: JSON.stringify({
+          job_description: prompt,
+          custom_fields: activeFields('jobs').map(({ id, label, kind, options }) => ({ id, label, kind, options })),
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Generation failed'); return; }
@@ -682,7 +687,13 @@ function AIGenerateModal({
       if (data.source === 'ai') {
         toastSuccess(`Filled ${data.filled ?? 'the'} fields${tasks ? ` and a ${tasks}-step tech checklist` : ''}. Check them, then Save.`);
       } else {
-        toastInfo("The AI didn't answer, so only the basics were filled (address, price, dates, contact). Check them, then Save.");
+        // Say why, so a missing key isn't mistaken for the AI skipping fields.
+        const why = data.why === 'no_key'
+          ? "The AI isn't set up on the server yet (ANTHROPIC_API_KEY)"
+          : data.why === 'ai_401' || data.why === 'ai_403' ? "The AI key on the server was refused"
+            : data.why === 'ai_refused' ? 'The AI declined this text'
+              : "The AI didn't answer";
+        toastInfo(`${why}, so only the basics were filled (address, price, dates, contact). Check them, then Save.`);
       }
     } catch {
       setError('Could not reach the AI service — try again.');
@@ -705,8 +716,9 @@ function AIGenerateModal({
     >
       <p className="wf-subtle" style={{ marginTop: 0 }}>
         Paste the whole email or work order — Field Nation, NetView, a client&apos;s message, or your own notes.
-        The AI fills in every field it can find (site, schedule, contact, access and parking, scope, tools, parts,
-        deliverables, the client&apos;s WO number and price) and writes the tech&apos;s checklist. Nothing is saved until you check it and press Save.
+        The AI fills in every field it can find: site, schedule, every contact, access and parking, scope, tools, parts,
+        deliverables, check-in and check-out, the client&apos;s WO number and price, budgets, the questions the tech
+        answers, your own custom fields, and the tech&apos;s checklist. Nothing is saved until you check it and press Save.
       </p>
       <textarea
         className="wf-input"

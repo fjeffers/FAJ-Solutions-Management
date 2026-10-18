@@ -2599,7 +2599,9 @@ function WhatTheTechRecords({ capture, onChange, templates, startAsks, onStartAs
   capture: CaptureItem[] | null; onChange: (next: CaptureItem[] | null) => void; templates: ReturnType<typeof useJobTemplates>['templates'];
   startAsks: StartAsk[]; onStartAsks: (next: StartAsk[]) => void;
 }) {
-  const used = templateOf(capture, templates, startAsks);
+  // A blank job reads as Blank, even while one of the templates is still blank too.
+  const blank = !!capture && capture.length === 0 && startAsks.length === 0;
+  const used = blank ? null : templateOf(capture, templates, startAsks);
   const value = capture === null ? 'old' : used ? used.id : 'blank';
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

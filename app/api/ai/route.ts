@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
-import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount } from '@/lib/wo-ai';
+import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, aiFailureReason } from '@/lib/wo-ai';
 import { todayISO } from '@/lib/utils';
 import type { WorkOrder } from '@/lib/types';
 
@@ -42,8 +42,9 @@ export async function POST(req: Request) {
       }),
     });
     if (!response.ok) {
-      console.error('Anthropic error:', response.status, (await response.text()).slice(0, 500));
-      return floor(`ai_${response.status}`);
+      const detail = (await response.text()).slice(0, 500);
+      console.error('Anthropic error:', response.status, detail);
+      return floor(aiFailureReason(response.status, detail));
     }
 
     const data = await response.json();

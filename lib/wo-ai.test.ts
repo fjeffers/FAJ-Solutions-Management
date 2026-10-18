@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, WO_AI_MODEL } from './wo-ai';
+import { buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, WO_AI_MODEL, aiFailureReason, aiFailureText } from './wo-ai';
 
 describe('Generate with AI', () => {
   it('uses a model that exists', () => {
@@ -59,5 +59,22 @@ describe('Generate with AI', () => {
 
   it('counts what it filled', () => {
     expect(filledCount(sanitizeWoAi({ title: 'A', start_date: '2026-10-06', wo_tasks: ['x'] }))).toBe(2);
+  });
+});
+
+describe('Generate with AI failure reasons', () => {
+  it('names the real problem', () => {
+    expect(aiFailureReason(400, '{"error":{"message":"Your credit balance is too low to access the Anthropic API."}}')).toBe('ai_credit');
+    expect(aiFailureReason(401, 'invalid x-api-key')).toBe('ai_401');
+    expect(aiFailureReason(404, 'model: not found')).toBe('ai_404');
+    expect(aiFailureReason(529, 'Overloaded')).toBe('ai_busy');
+    expect(aiFailureReason(400, 'messages: field required')).toBe('ai_400');
+  });
+  it('says it in plain words, and never blames the person', () => {
+    expect(aiFailureText('ai_credit')).toMatch(/out of credit/);
+    expect(aiFailureText('no_key')).toMatch(/no AI key/);
+    expect(aiFailureText('ai_401')).toMatch(/refused/);
+    expect(aiFailureText(undefined)).toMatch(/didn't answer/);
+    for (const w of ['no_key', 'ai_401', 'ai_credit', 'ai_busy', undefined]) expect(aiFailureText(w)).toMatch(/then Save\.$/);
   });
 });

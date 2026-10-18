@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/client';
 import { listsNow } from '@/lib/app-lists';
 import { shown } from '@/lib/screen-parts';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
+import { aiFailureText } from '@/lib/wo-ai';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -682,7 +683,7 @@ function AIGenerateModal({
       if (data.source === 'ai') {
         toastSuccess(`Filled ${data.filled ?? 'the'} fields${tasks ? ` and a ${tasks}-step tech checklist` : ''}. Check them, then Save.`);
       } else {
-        toastInfo("The AI didn't answer, so only the basics were filled (address, price, dates, contact). Check them, then Save.");
+        toastInfo(aiFailureText(data.why));
       }
     } catch {
       setError('Could not reach the AI service — try again.');

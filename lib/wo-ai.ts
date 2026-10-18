@@ -161,3 +161,36 @@ export function sanitizeWoAi(raw: unknown): Partial<WorkOrder> {
 export function filledCount(f: Partial<WorkOrder>): number {
   return Object.keys(f).filter((k) => k !== 'scheduled_date' && k !== 'wo_tasks').length;
 }
+
+/**
+ * Why the AI part didn't run, as a reason code the route returns
+ * (Fred, 2026-10-17: "Generate with AI needs fixing" — every failure used to
+ * show the same "The AI didn't answer"). Reads the status and the start of
+ * Anthropic's error text; never sees or returns the key.
+ */
+export function aiFailureReason(status: number, errorText: string): string {
+  const t = errorText.toLowerCase();
+  if (status === 400 && /credit balance|billing|purchase credits/.test(t)) return 'ai_credit';
+  if (status === 401) return 'ai_401';
+  if (status === 403) return 'ai_403';
+  if (status === 404) return 'ai_404';
+  if (status === 429) return 'ai_429';
+  if (status === 529 || status >= 500) return 'ai_busy';
+  return `ai_${status}`;
+}
+
+/** What Fred reads when only the basics were filled, by reason code. */
+export function aiFailureText(why: string | undefined): string {
+  const tail = ' Only the basics were filled (address, price, dates, contact). Check them, then Save.';
+  switch (why) {
+    case 'no_key': return "The AI isn't connected on the live site (no AI key is set)." + tail;
+    case 'ai_401': return 'The AI key was refused: it is wrong or was turned off. A new key is needed.' + tail;
+    case 'ai_403': return "The AI key isn't allowed to do this. A new key is needed." + tail;
+    case 'ai_credit': return 'The AI account is out of credit. Add credit at console.anthropic.com.' + tail;
+    case 'ai_404': return "The AI model the app asks for isn't available." + tail;
+    case 'ai_429': return 'The AI is getting too many requests right now. Try again in a minute.' + tail;
+    case 'ai_busy': return 'The AI service is overloaded right now. Try again in a minute.' + tail;
+    case 'ai_unreadable': return "The AI answered, but its reply couldn't be read. Try again." + tail;
+    default: return "The AI didn't answer." + tail;
+  }
+}

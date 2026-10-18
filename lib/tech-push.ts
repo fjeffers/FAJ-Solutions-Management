@@ -9,11 +9,16 @@ import { vapidKeys } from './push-keys';
 
 export type TechPush = { title: string; body: string; url: string; tag?: string };
 
-/** What a new work order pop-up says: the job, where and when — no pay. */
-export function newWorkOrderPush(o: { woId: string; woNumber: string; title?: string | null; site?: string | null; schedule?: string | null }): TechPush {
-  const lines = [o.title || null, o.site || null, o.schedule || null].filter(Boolean);
+/**
+ * What a new work order pop-up says, like Field Nation's (Fred, 2026-10-18:
+ * "notifications that there is an assignment available to me and a brief
+ * overview of it — not the address — the date and time and what the job is
+ * for"). No address and no pay; the job opens with the rest.
+ */
+export function newWorkOrderPush(o: { woId: string; woNumber: string; title?: string | null; schedule?: string | null }): TechPush {
+  const lines = [o.title || null, o.schedule || null].filter(Boolean);
   return {
-    title: `New work order WO ${o.woNumber}`,
+    title: `New assignment available · WO ${o.woNumber}`,
     body: lines.join('\n') || 'Tap to open it.',
     url: `/tech?wo=${encodeURIComponent(o.woId)}`,
     tag: `wo-${o.woId}`,

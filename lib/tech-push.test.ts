@@ -4,13 +4,16 @@ import { newWorkOrderPush, declinedPush } from './tech-push';
 describe('new work order pop-up', () => {
   const msg = newWorkOrderPush({
     woId: 'aa-11', woNumber: '19101399', title: 'NetView LDS-1110 — Gaffney SC site 5011876',
-    site: '701 West Buford Street, Gaffney, SC', schedule: 'Oct 19, 2026, 8:00 AM – Oct 24, 2026',
+    schedule: 'Oct 19, 2026, 8:00 AM – Oct 24, 2026',
   });
 
-  it('says which job, where and when', () => {
-    expect(msg.title).toBe('New work order WO 19101399');
-    expect(msg.body).toContain('Gaffney, SC');
-    expect(msg.body).toContain('8:00 AM');
+  it('says an assignment is available, what it is for and when (like Field Nation)', () => {
+    expect(msg.title).toBe('New assignment available · WO 19101399');
+    expect(msg.body).toBe('NetView LDS-1110 — Gaffney SC site 5011876\nOct 19, 2026, 8:00 AM – Oct 24, 2026');
+  });
+
+  it('never carries the street address', () => {
+    expect(msg.body).not.toMatch(/Buford|Street/);
   });
 
   it('opens that job in the tech app', () => {

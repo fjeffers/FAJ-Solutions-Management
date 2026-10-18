@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
     if (type === 'wo_assigned' && wo_id && signedInId && contractor_name) {
       try {
         pushed = await pushToTech(createAdminClient(), signedInId, contractor_name,
-          newWorkOrderPush({ woId: wo_id, woNumber: wo_number, title, site, schedule }));
+          newWorkOrderPush({ woId: wo_id, woNumber: wo_number, title, schedule }));
       } catch { /* pop-up is a bonus; the email went */ }
     }
     return NextResponse.json({ ok: true, pushed });

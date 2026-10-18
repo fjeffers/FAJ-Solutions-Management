@@ -18,6 +18,7 @@ import { listsNow } from '@/lib/app-lists';
 import { activeFields } from '@/lib/custom-fields';
 import { shown } from '@/lib/screen-parts';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
+import { aiFailureText } from '@/lib/wo-ai';
 
 type Stats = {
   total: number; paid: number; remaining: number;
@@ -687,13 +688,7 @@ function AIGenerateModal({
       if (data.source === 'ai') {
         toastSuccess(`Filled ${data.filled ?? 'the'} fields${tasks ? ` and a ${tasks}-step tech checklist` : ''}. Check them, then Save.`);
       } else {
-        // Say why, so a missing key isn't mistaken for the AI skipping fields.
-        const why = data.why === 'no_key'
-          ? "The AI isn't set up on the server yet (ANTHROPIC_API_KEY)"
-          : data.why === 'ai_401' || data.why === 'ai_403' ? "The AI key on the server was refused"
-            : data.why === 'ai_refused' ? 'The AI declined this text'
-              : "The AI didn't answer";
-        toastInfo(`${why}, so only the basics were filled (address, price, dates, contact). Check them, then Save.`);
+        toastInfo(aiFailureText(data.why));
       }
     } catch {
       setError('Could not reach the AI service — try again.');

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { sanitizeVision } from '@/lib/survey-vision';
 import { CAMERA_TYPES, CAMERA_MOUNTS } from '@/lib/types';
+import { anthropicHeaders } from '@/lib/anthropic-headers';
 
 // POST /api/survey-vision — read a walk-through photo and SUGGEST the row.
 //
@@ -76,11 +77,7 @@ Return only the JSON object.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: anthropicHeaders(apiKey),
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 700,

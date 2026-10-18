@@ -12,6 +12,7 @@ import Anthropic from '@anthropic-ai/sdk';
 export const SUPPORT_MODEL = 'claude-opus-5-5';
 
 import { SUPPORT_QUEUES, isSupportQueue, type SupportQueue } from './support-queues';
+import { workspaceHeader } from './anthropic-headers';
 
 export { SUPPORT_QUEUES, isSupportQueue, queueLabel, type SupportQueue } from './support-queues';
 const QUEUE_KEYS = SUPPORT_QUEUES.map((q) => q.key) as SupportQueue[];
@@ -143,7 +144,7 @@ type MessagesCreate = Pick<Anthropic['beta']['messages'], 'create'>;
  * recorded, so no email is lost. Network/API errors do throw (the caller
  * retries on the next scan).
  */
-export async function triageEmail(email: SupportEmail, messages: MessagesCreate = new Anthropic().beta.messages): Promise<TriageOutcome> {
+export async function triageEmail(email: SupportEmail, messages: MessagesCreate = new Anthropic({ defaultHeaders: workspaceHeader() }).beta.messages): Promise<TriageOutcome> {
   const response = await messages.create({
     model: SUPPORT_MODEL,
     max_tokens: 4000,

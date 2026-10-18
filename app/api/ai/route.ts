@@ -2,10 +2,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
-import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, woAiSchema, type AiCustomField } from '@/lib/wo-ai';
+import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, woAiSchema, aiFailureReason, type AiCustomField } from '@/lib/wo-ai';
 import { normalizeFields } from '@/lib/custom-fields';
 import { todayISO } from '@/lib/utils';
 import type { WorkOrder } from '@/lib/types';
+import { workspaceHeader } from '@/lib/anthropic-headers';
 
 // POST /api/ai — "Generate with AI" on a new work order. Admin-only tool, not
 // portal-token gated.
@@ -45,7 +46,8 @@ export async function POST(req: Request) {
 
     let text = '';
     try {
-      const client = new Anthropic({ apiKey });
+      // An organization-wide key names its workspace (lib/anthropic-headers.ts).
+      const client = new Anthropic({ apiKey, defaultHeaders: workspaceHeader() });
       const message = await client.beta.messages.create({
         model: WO_AI_MODEL,
         max_tokens: 16000,
@@ -60,7 +62,7 @@ export async function POST(req: Request) {
     } catch (err) {
       if (err instanceof Anthropic.APIError) {
         console.error('Anthropic error:', err.status, err.message.slice(0, 500));
-        return floor(`ai_${err.status ?? 'error'}`);
+        return floor(aiFailureReason(err.status ?? 0, err.message));
       }
       throw err;
     }

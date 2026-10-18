@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { parseReceiptText, type ReceiptItem } from '@/lib/receipt';
+import { anthropicHeaders } from '@/lib/anthropic-headers';
 
 // Receipt → line items. Two doors:
 //   JSON  { text }  — regex parser, works with no AI key (emailed receipts)
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    headers: anthropicHeaders(apiKey),
     body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: 'user', content }] }),
   });
   if (!res.ok) {

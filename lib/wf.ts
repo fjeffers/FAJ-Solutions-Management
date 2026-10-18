@@ -463,7 +463,9 @@ export function statusesPresent(jobs: WfJob[]): WfStatus[] {
 export function ownerCounts(jobs: WfJob[], today: string = todayISO()) {
   const live = jobs.filter((j) => !j.archived);
   return {
-    needTech: live.filter((j) => j.status === 'open').length,
+    // Nobody on it, or every tech on it declined (Fred, 2026-10-18: a declined
+    // job "should have gone back to Need a tech").
+    needTech: live.filter((j) => j.status === 'open' || j.status === 'declined').length,
     waiting: live.filter((j) => j.status === 'offered').length,
     today: live.filter((j) => j.date === today && j.status !== 'closed').length,
     workDone: live.filter((j) => j.status === 'workDone').length,

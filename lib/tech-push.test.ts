@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { newWorkOrderPush } from './tech-push';
+import { newWorkOrderPush, declinedPush } from './tech-push';
 
 describe('new work order pop-up', () => {
   const msg = newWorkOrderPush({
@@ -24,5 +24,14 @@ describe('new work order pop-up', () => {
 
   it('still says something when the job has few details', () => {
     expect(newWorkOrderPush({ woId: 'b', woNumber: '5' }).body).toBe('Tap to open it.');
+  });
+});
+
+describe('declined pop-up for the office', () => {
+  it('names the tech and the job, and opens the office', () => {
+    const m = declinedPush({ woId: 'g', woNumber: '19101399', techName: 'Frederick Jeffers', title: 'NetView LDS-1110 — Gaffney SC' });
+    expect(m.title).toBe('Frederick Jeffers declined WO 19101399');
+    expect(m.body).toBe('NetView LDS-1110 — Gaffney SC\nIt needs a tech again.');
+    expect(m.url).toBe('/admin');
   });
 });

@@ -22,12 +22,28 @@ export function newWorkOrderPush(o: { woId: string; woNumber: string; title?: st
 
 type Sub = { id: string; endpoint: string; p256dh: string; auth: string };
 
+/** What the office's pop-up says when a tech turns a job down (Fred, 2026-10-18:
+ *  "I declined the job, it needs to go back to admin ... back to Need a tech"). */
+export function declinedPush(o: { woId: string; woNumber: string; techName: string; title?: string | null }): TechPush {
+  return {
+    title: `${o.techName} declined WO ${o.woNumber}`,
+    body: [o.title || null, 'It needs a tech again.'].filter(Boolean).join('\n'),
+    url: '/admin',
+    tag: `declined-${o.woId}`,
+  };
+}
+
 /** Sends to the tech's phones; returns how many got it. 0 when pop-ups are off. */
 export async function pushToTech(admin: SupabaseClient, ownerId: string, contractorName: string, msg: TechPush): Promise<number> {
   const { data: c } = await admin.from('contractors').select('auth_user_id')
     .eq('user_id', ownerId).eq('name', contractorName).maybeSingle();
   const uid = (c as { auth_user_id?: string | null } | null)?.auth_user_id;
   if (!uid) return 0;
+  return pushToUser(admin, uid, msg);
+}
+
+/** Sends to every phone or computer a login turned pop-ups on for (office or tech). */
+export async function pushToUser(admin: SupabaseClient, uid: string, msg: TechPush): Promise<number> {
   const { data: subs } = await admin.from('push_subscriptions').select('id, endpoint, p256dh, auth').eq('auth_user_id', uid);
   if (!subs || subs.length === 0) return 0;
   const vapid = await vapidKeys(admin);

@@ -245,7 +245,7 @@ export default function WorkFlowView({
         <Banner
           tone="red"
           title="Needs a tech"
-          subtitle={`${counts.needTech} ${counts.needTech === 1 ? 'job has' : 'jobs have'} nobody on it`}
+          subtitle={`${counts.needTech} ${counts.needTech === 1 ? 'job has' : 'jobs have'} nobody on it, or the tech declined`}
           onClick={() => setBucket('available')}
         />
       )}

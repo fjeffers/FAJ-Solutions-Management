@@ -36,7 +36,9 @@ export const DASH_PART_KEYS = ['dash.attention', 'dash.field', 'dash.coming', 'd
 // of the job (Fred, 2026-10-18: "Why do we need this"). Edit job changes them.
 // No Money card either: Fred, the same day, "Still seeing money". Prices live under Pay in Edit job.
 const STANDARD_SIDE = ['job.timeRequests', 'job.techs', 'job.fields'];
-const STANDARD_BELOW = ['job.closeout', 'job.project', 'job.notes', 'job.report', 'job.expenses', 'job.photos', 'job.docs', 'job.sketches', 'job.timegps'];
+// No separate Time & GPS box: it showed the same clock-ins as Travel and time (job.project).
+// Fred, 2026-10-18: "time and GPS and travel and time, are they not doing the same thing".
+const STANDARD_BELOW = ['job.closeout', 'job.project', 'job.notes', 'job.report', 'job.expenses', 'job.photos', 'job.docs', 'job.sketches'];
 export const JOB_PART_KEYS = [...STANDARD_SIDE, ...STANDARD_BELOW];
 
 export const STANDARD_DESIGN: ScreenDesign = {

@@ -30,7 +30,6 @@ import { logAudit } from '@/lib/audit';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { type Contractor, type EnrichedWorkOrder, type WorkOrder } from '@/lib/types';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
-import WOTimeLogs from '@/components/WOTimeLogs';
 import JobLogReport from '@/components/JobLogReport';
 import { jobGaps } from '@/lib/job-gaps';
 import { buildVisits, logTotals, type Punch } from '@/lib/job-log';
@@ -556,11 +555,6 @@ function OwnerJob({
     'job.sketches': (sketchCount > 0 || addSketch) && (
       <Section title="Sketches" subtitle="Floor plan, cable runs, cameras, APs and drops — drawn to scale">
         <SketchesPanel woId={w.id} compact defaultTitle={`WO ${w.wo_number}${w.site_name ? ` · ${w.site_name}` : w.title ? ` · ${w.title}` : ''}`} />
-      </Section>
-    ),
-    'job.timegps': (
-      <Section title="Time & GPS" subtitle="When each tech clocked in and out, and where they were">
-        <WOTimeLogs woId={w.id} />
       </Section>
     ),
   };

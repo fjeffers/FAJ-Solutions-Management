@@ -133,7 +133,7 @@ export function applyPending(jobs: WfJob[], pending: PendingAction[]): WfJob[] {
       switch (p.kind) {
         case 'clock': {
           const k = p.args.action === 'in' ? clockedIn(j, at) : clockedOut(j, at);
-          return j.isProject ? withDayEvent(k, { kind: p.args.action === 'in' ? 'in' : 'out', at: p.at }) : k;
+          return j.isProject || j.dayFlow ? withDayEvent(k, { kind: p.args.action === 'in' ? 'in' : 'out', at: p.at }) : k;
         }
         case 'day': {
           const ev: DayEvent = { kind: String(p.args.kind) as DayKind, at: p.at };
@@ -143,7 +143,7 @@ export function applyPending(jobs: WfJob[], pending: PendingAction[]): WfJob[] {
         }
         case 'workdone': {
           const done = markedWorkDone(j, String(p.args.notes ?? ''), at);
-          return j.isProject && p.args.clockOut ? withDayEvent(done, { kind: 'out', at: p.at }) : done;
+          return (j.isProject || j.dayFlow) && p.args.clockOut ? withDayEvent(done, { kind: 'out', at: p.at }) : done;
         }
         case 'task': return withTask(j, String(p.args.task), !!p.args.done);
         case 'respond': return answered(j, !!p.args.accept);

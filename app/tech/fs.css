@@ -180,7 +180,7 @@
 .fs-btn-secondary { background: #fff; color: var(--ink); border: 1px solid var(--line-2); }
 .fs-btn-secondary:hover:not(:disabled) { background: #f7f9f6; }
 .fs-btn-big { min-height: 52px; font-size: 16px; width: 100%; }
-.fs-text-button { justify-self: start; padding: 0; border: 0; background: none; font: inherit; font-weight: 650; color: var(--green); cursor: pointer; }
+.fs-text-button { display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 0; border: 0; background: none; font: inherit; font-weight: 650; color: var(--green); cursor: pointer; }
 .fs-text-button:disabled { cursor: not-allowed; opacity: 0.55; }
 .fs-muted { margin: 0; color: var(--muted); }
 .fs-stack { display: grid; gap: 18px; align-content: start; }
@@ -222,6 +222,18 @@
 .fs-timeline li i { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--green); }
 .fs-timeline li div { display: grid; gap: 3px; }
 .fs-timeline small { color: var(--muted); }
+
+/* The Tools menu on a job's documents (Fred, 2026-10-18: "hide tools in a menu"). */
+.wf-tool-menu { display: grid; border: 1px solid var(--wf-line, #e2e6df); border-radius: 9px; overflow: hidden; }
+.wf-tool-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 14px; border: 0; border-top: 1px solid var(--wf-line, #e2e6df);
+  background: var(--wf-card, #fff); font: inherit; color: var(--wf-text, inherit); text-align: left; cursor: pointer;
+}
+.wf-tool-item:first-child { border-top: 0; }
+.wf-tool-item:hover { background: #f7f9f6; }
+.wf-tool-item > svg { flex: none; color: var(--wf-gold, currentColor); }
+.wf-tool-item span { display: grid; gap: 2px; min-width: 0; }
+.wf-tool-item small { font-size: 12px; color: var(--wf-subtle, #6c7973); }
 
 /* Smaller screens */
 @media (max-width: 1180px) {

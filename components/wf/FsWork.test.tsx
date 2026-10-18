@@ -55,8 +55,10 @@ describe('FsStageAction', () => {
     expect(on.clockIn).toHaveBeenCalledOnce();
     rerender(<FsStageAction stage="clocked" events={[{ kind: 'day_start', at: iso(5) }]} busy={false} enabled on={on} />);
     expect(screen.getByText('Clocked in')).toBeTruthy();
+    // The first drive on the job asks where they're leaving from.
+    expect(screen.getByRole('combobox', { name: 'Leaving from' })).toHaveProperty('value', 'home');
     await userEvent.click(screen.getByRole('button', { name: /Start travel to site/ }));
-    expect(on.startTrip).toHaveBeenCalledWith('site');
+    expect(on.startTrip).toHaveBeenCalledWith('site', 'home');
     await userEvent.click(screen.getByRole('button', { name: 'Already on site? Confirm arrival' }));
     expect(on.startJob).toHaveBeenCalledOnce();
   });
@@ -87,8 +89,36 @@ describe('FsStageAction', () => {
     // After Work done the tech can still drive home.
     const form = screen.getByRole('heading', { name: 'Where to now?' }).closest('form')!;
     expect(within(form).getByRole('combobox')).toHaveProperty('value', 'hotel');
+    // Leaving the site, the drive starts from the site: no need to ask.
+    expect(within(form).queryByRole('combobox', { name: 'Leaving from' })).toBeNull();
     await userEvent.click(within(form).getByRole('button', { name: /Start travel/ }));
-    expect(on.startTrip).toHaveBeenCalledWith('hotel');
+    expect(on.startTrip).toHaveBeenCalledWith('hotel', undefined);
+  });
+
+  it('a trip away: home to the hotel, signed out there, then clock in again for the site', async () => {
+    const on = actions();
+    const { rerender } = render(<FsStageAction stage="clocked" events={[{ kind: 'day_start', at: iso(300) }]} busy={false} enabled on={on} onReceipt={vi.fn()} />);
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Travel to' }), 'hotel');
+    await userEvent.click(screen.getByRole('button', { name: /Start travel/ }));
+    expect(on.startTrip).toHaveBeenCalledWith('hotel', 'home');
+    const driving: DayEvent[] = [{ kind: 'day_start', at: iso(300) }, { kind: 'travel_start', at: iso(290), origin: 'home', dest: 'hotel' }];
+    rerender(<FsStageAction stage="outbound" events={driving} busy={false} enabled on={on} />);
+    expect(screen.getByText('Arrive at the hotel')).toBeTruthy();
+    expect(screen.getByText(/This signs you out for the day/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm arrival' }));
+    expect(on.arrived).toHaveBeenCalledOnce();
+    rerender(<FsStageAction stage="done" events={[...driving, { kind: 'travel_end', at: iso(60), miles: 210 }]} busy={false} enabled on={on} />);
+    await userEvent.click(screen.getByRole('button', { name: /Clock in again/ }));
+    expect(on.clockIn).toHaveBeenCalledOnce();
+  });
+
+  it('offers a receipt on the road, not while on site', async () => {
+    const onReceipt = vi.fn();
+    const { rerender } = render(<FsStageAction stage="clocked" events={[]} busy={false} enabled on={actions()} onReceipt={onReceipt} />);
+    await userEvent.click(screen.getByRole('button', { name: /Add a receipt/ }));
+    expect(onReceipt).toHaveBeenCalledOnce();
+    rerender(<FsStageAction stage="onsite" events={[]} busy={false} enabled on={actions()} onReceipt={onReceipt} />);
+    expect(screen.queryByRole('button', { name: /Add a receipt/ })).toBeNull();
   });
 
   it('back from lunch, confirm return, and stopped work', async () => {
@@ -96,8 +126,10 @@ describe('FsStageAction', () => {
     const { rerender } = render(<FsStageAction stage="lunch" events={[]} busy={false} enabled on={on} />);
     await userEvent.click(screen.getByRole('button', { name: 'Back from lunch' }));
     expect(on.lunch).toHaveBeenCalledWith(false);
-    rerender(<FsStageAction stage="returning" events={[]} busy={false} enabled on={on} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm return' }));
+    const home: DayEvent[] = [{ kind: 'day_start', at: iso(60) }, { kind: 'travel_start', at: iso(30), origin: 'hotel', dest: 'home' }];
+    rerender(<FsStageAction stage="returning" events={home} busy={false} enabled on={on} />);
+    expect(screen.getByText('Arrive home')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm arrival' }));
     expect(on.arrived).toHaveBeenCalledOnce();
     rerender(<FsStageAction stage="stopped" events={[]} busy={false} enabled on={on} />);
     expect(screen.getAllByText('Work stopped').length).toBeGreaterThan(0);

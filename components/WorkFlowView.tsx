@@ -479,7 +479,9 @@ function OwnerJob({
       <CloseoutCard job={job} items={checklist.items} listName={checklist.name} canEdit={!archived} ownerView
         onOp={(op) => void closeoutOp(op)} onSign={ownerSign} />
     ),
-    'job.project': w.is_project ? <ProjectDayCard w={w} lists={lists} /> : null,
+    // Every job's drives and time on site with the miles (Fred, 2026-10-18:
+    // home → hotel, hotel → site, site → hotel, the hotel → home on the last day).
+    'job.project': <ProjectDayCard w={w} lists={lists} />,
     'job.notes': <JobNotesCard woId={w.id} author={author ?? 'Office'} />,
     'job.docs': <JobDocsCard woId={w.id} jobLabel={`WO ${w.wo_number}${w.site_name || w.customer_name ? ` · ${w.site_name || w.customer_name}` : ''}`} archived={archived} />,
     'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,

@@ -27,13 +27,16 @@ export const FS_STAGE_NAME: Record<FsStage, string> = {
 /**
  * Where the tech is today. A problem reported on site and not yet resolved is
  * "Work stopped"; a day that ended at the hotel or home is "Done" until the
- * next morning.
+ * next morning. Driving home, or back to the hotel from the site, is
+ * "Returning"; the drive out (home to the hotel, the hotel to the site) is
+ * "Traveling" (Fred, 2026-10-18: home → hotel, hotel → site, site → hotel,
+ * and the hotel → home on the last day).
  */
 export function fsStage(events: DayEvent[], opts: { openIssue?: boolean } = {}, now: Date = new Date(), timeZone?: string): FsStage {
   const st = dayState(events, now, timeZone);
   switch (st.stage) {
     case 'clocked': return 'clocked';
-    case 'travel': return st.dest === 'hotel' || st.dest === 'home' ? 'returning' : 'outbound';
+    case 'travel': return st.dest === 'home' || (st.dest === 'hotel' && st.origin === 'site') ? 'returning' : 'outbound';
     case 'onsite': return opts.openIssue ? 'stopped' : 'onsite';
     case 'lunch': return 'lunch';
     case 'offsite': return 'offsite';

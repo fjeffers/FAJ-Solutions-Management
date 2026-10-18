@@ -34,7 +34,7 @@ import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
 import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, openIssue, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
 import { FsDayLog, FsNextAction, FsStageAction, FsWorkSections, type FsSection } from '@/components/wf/FsWork';
-import { fsNextStep, fsStage, type FsStage } from '@/lib/fs-stage';
+import { FS_STAGE_NAME, fsNextStep, fsStage, type FsStage } from '@/lib/fs-stage';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, tripLeg } from '@/lib/project-day';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
@@ -57,7 +57,7 @@ import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
   CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -555,8 +555,11 @@ function ProjectTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => v
     const day = !j.date ? 'Not scheduled yet' : isToday ? 'Today'
       : new Date(`${j.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     const time = start ? ` · ${fmtClock12(start)}${end ? ` – ${fmtClock12(end)}` : ''}` : '';
+    // A job with the day says where the tech is in it, as Field Service does.
+    const stage = j.dayFlow && canWork(j) ? fsStage(j.myDay ?? [], {}, undefined, 'America/New_York') : 'ready';
     const [label, tone, dot]: [string, 'green' | 'amber' | 'grey', boolean] =
-      isClockedIn(j) ? ['Clocked in', 'green', true]
+      stage !== 'ready' ? [FS_STAGE_NAME[stage], 'green', true]
+      : isClockedIn(j) ? ['Clocked in', 'green', true]
         : j.status === 'inProgress' ? ['In progress', 'green', true]
           : j.status === 'workDone' ? ['Work done', 'amber', false]
             : j.status === 'closed' ? ['Accepted', 'green', false]
@@ -1014,15 +1017,18 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const deliverables = checklist.items;
   // A project site always needs the signature, or the reason there isn't one.
   const project = !!job.isProject;
+  // The day of travel, lunch and time on site: project jobs, and every job once
+  // the database sends the day for it (migration 127) on the Field Service screen.
+  const dayFlow = project || (FS_JOB_SCREEN && !!job.dayFlow);
   const jobForCloseout = project ? { ...job, signatureRequired: true } : job;
   // The live sheet's messages: No access, the PM's questions (migration 121).
-  const talk = useSiteTalk(job.number, project && job.status !== 'offered' && job.status !== 'declined');
+  const talk = useSiteTalk(job.number, dayFlow && job.status !== 'offered' && job.status !== 'declined');
   // Running late, and stepped off site (migration 122).
   const late = useLateMarks(job.number, project && working);
   const [offOpen, setOffOpen] = useState(false);
   // A project site shows only its date, time, description and the day card
   // until Start job; the whole job opens while they're on site.
-  const dayStage = project ? dayState(job.myDay ?? []).stage : null;
+  const dayStage = dayFlow ? dayState(job.myDay ?? []).stage : null;
   const left = useLeftSite(job.siteLat, job.siteLng, project && working && dayStage === 'onsite');
   const simple = project && dayStage !== 'onsite' && dayStage !== 'lunch';
 
@@ -1074,9 +1080,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   };
   const dayOn: DayActions = {
     clockIn: () => void dayTap('day_start', {}, 'Clock in', 'Clocked in. Pick where you are going.'),
-    startTrip: (trip) => {
+    startTrip: (trip, from) => {
       const leg = tripLeg(trip, job.myDay ?? []);
-      void dayTap('travel_start', { origin: leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.');
+      void dayTap('travel_start', { origin: from ?? leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.');
     },
     startJob: async () => {
       const at = new Date();
@@ -1146,7 +1152,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   const showClock = !isFinished(job) && job.status !== 'declined' && job.status !== 'offered';
   let bottom: React.ReactNode = null;
   if (job.status === 'offered') bottom = <OfferButtons job={job} act={act} />;
-  else if (working && project) {
+  else if (working && dayFlow) {
     bottom = (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <button className="wf-btn wf-btn-outline" disabled={!dirty} onClick={() => void saveReport()}>
@@ -1285,7 +1291,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
   // Field Service's work order (Fred, 2026-10-18). A job with the day of travel,
   // lunch and time on site shows where the tech is in it; any other job keeps
   // FAJ's plain clock. Every tap still goes through the outbox.
-  const stage: FsStage = project
+  const stage: FsStage = dayFlow
     ? fsStage(job.myDay ?? [], { openIssue: !!openIssue(talk.msgs) }, undefined, 'America/New_York')
     : isClockedIn(job) ? 'onsite' : 'ready';
   const live = job.status !== 'offered' && job.status !== 'declined';
@@ -1294,12 +1300,13 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     overview: (
       <div className="fs-split">
         <div className="fs-stack">
-          {project && (working || job.status === 'workDone') ? (
+          {dayFlow && (working || job.status === 'workDone') ? (
             <>
               <SiteAccessBar number={job.number} talk={talk} late={late}
                 showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
-              <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating} enabled={working} on={dayOn} />
-              <SheetLinkButton number={job.number} />
+              <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating} enabled={working} on={dayOn}
+                onReceipt={canReport ? () => setExpenseOpen(true) : undefined} />
+              {project && <SheetLinkButton number={job.number} />}
             </>
           ) : showClock ? (
             <TimeClockCard job={job} enabled={working || isClockedIn(job)} busy={locating} onToggle={() => void toggleClock()} />
@@ -1343,7 +1350,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     time: (
       <section className="fs-card fs-form">
         <h3>My time and travel</h3>
-        {project
+        {dayFlow
           ? <FsDayLog events={job.myDay ?? []} />
           : <TimeClockCard job={job} enabled={false} onToggle={() => undefined} showButton={false} />}
       </section>
@@ -1351,7 +1358,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing }: 
     expenses: canReport || expenses.length > 0
       ? <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
       : <p className="fs-card fs-empty">Expenses open once the job is accepted.</p>,
-    messages: <JobMessages number={job.number} talk={project ? talk : undefined} />,
+    messages: <JobMessages number={job.number} talk={dayFlow ? talk : undefined} />,
   };
   const tone = job.status === 'declined' ? 'red' : job.status === 'offered' || job.status === 'workDone' ? 'amber' : 'green';
   return (
@@ -1885,6 +1892,8 @@ function JobTools({ job, canAdd, ph, onNote }: {
   onNote?: (text: string) => Promise<void>;
 }) {
   const [tool, setTool] = useState<null | ToolKey>(null);
+  // The tools sit in one Tools menu (Fred, 2026-10-18: "hide tools in a menu").
+  const [menu, setMenu] = useState(false);
   const [docs, setDocs] = useState<JobDoc[]>([]);
   const [editing, setEditing] = useState<{ file: Blob | null; name: string; kind: string } | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
@@ -1911,9 +1920,11 @@ function JobTools({ job, canAdd, ph, onNote }: {
   if (!canAdd && docs.length === 0 && files.length === 0) return null;
   const jobLabel = `WO ${job.number}${job.client || job.title ? ` · ${job.client || job.title}` : ''}`;
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const btn = (key: ToolKey, icon: React.ReactNode, label: string) => (
-    <button type="button" className="wf-btn wf-btn-outline" style={{ justifyContent: 'center', minWidth: 0 }}
-      onClick={() => { if (key === 'edit') setEditing({ file: null, name: '', kind: DOC_KINDS[1] }); else setTool(key); }}>{icon} {label}</button>
+  const item = (key: ToolKey, icon: React.ReactNode, label: string, hint: string) => (
+    <button type="button" className="wf-tool-item"
+      onClick={() => { setMenu(false); if (key === 'edit') setEditing({ file: null, name: '', kind: DOC_KINDS[1] }); else setTool(key); }}>
+      {icon}<span><b>{label}</b><small>{hint}</small></span>
+    </button>
   );
   const openDoc = async (d: JobDoc) => {
     setOpening(d.id);
@@ -1975,16 +1986,25 @@ function JobTools({ job, canAdd, ph, onNote }: {
       </Section>
     )}
     {(canAdd || docs.length > 0) && (
-    <Section title="Tools" subtitle="Scan, fill in and sign PDFs, read codes, count and measure">
+    <Section title="Your documents" subtitle="Scans and signed PDFs for this job"
+      right={canAdd && (
+        <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" aria-expanded={menu} aria-controls={`wf-tools-${job.number}`}
+          onClick={() => setMenu((v) => !v)}>
+          <Wrench size={15} /> Tools <ChevronDown size={15} style={{ transform: menu ? 'rotate(180deg)' : undefined }} />
+        </button>
+      )}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {canAdd && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-            {btn('scan', <ScanLine size={17} />, 'Scan')}
-            {btn('edit', <Signature size={17} />, 'Sign a PDF')}
-            {btn('read', <ScanBarcode size={17} />, 'Read a code')}
-            {btn('count', <Hash size={17} />, 'Count')}
-            {btn('measure', <Ruler size={17} />, 'Measure')}
+        {canAdd && menu && (
+          <div id={`wf-tools-${job.number}`} className="wf-tool-menu" role="group" aria-label="Tools">
+            {item('scan', <ScanLine size={18} />, 'Scan', 'A paper document, as a PDF for the job')}
+            {item('edit', <Signature size={18} />, 'Sign a PDF', 'Fill in and sign a PDF from your phone')}
+            {item('read', <ScanBarcode size={18} />, 'Read a code', 'A code, serial number or label, into your report')}
+            {item('count', <Hash size={18} />, 'Count', 'Tap each port, camera or drop on a photo')}
+            {item('measure', <Ruler size={18} />, 'Measure', 'Measure something on a photo')}
           </div>
+        )}
+        {canAdd && shared.length === 0 && sent.length === 0 && (
+          <div className="wf-subtle" style={{ fontSize: 13 }}>Nothing yet. Scan a paper, sign a PDF, read a code, count or measure from Tools.</div>
         )}
         {shared.length > 0 && (
           <div>

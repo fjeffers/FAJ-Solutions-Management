@@ -146,6 +146,8 @@ export type WfJob = {
   projectName?: string;
   /** Tech only, on a project job: their own travel, lunch and clock taps. */
   myDay?: DayEvent[];
+  /** Tech only: the database sends myDay for every job (migration 127), so the job can walk through the day. */
+  dayFlow?: boolean;
 };
 
 type Row = Record<string, unknown>;
@@ -277,6 +279,7 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     isProject: r.is_project === true,
     projectName: s(r, 'project_name'),
     myDay: owner ? [] : parseDayEvents(r.my_day),
+    dayFlow: !owner && r.day_flow === true,
   };
 }
 

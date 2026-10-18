@@ -43,6 +43,19 @@ describe('fsStage — Field Service names for the FAJ day', () => {
     expect(stage([...base, ev('travel_start', '11:05', { dest: 'home' })], '11:10')).toBe('returning');
   });
 
+  it('a trip away: home → hotel and hotel → site go out, site → hotel and hotel → home come back', () => {
+    const day1 = [ev('day_start', '09:00', {}, '2026-10-12'), ev('travel_start', '09:05', { origin: 'home', dest: 'hotel' }, '2026-10-12')];
+    expect(fsStage(day1, {}, new Date(at('10:00', '2026-10-12')), TZ)).toBe('outbound');
+    const arrived = [...day1, ev('travel_end', '13:00', { miles: 210 }, '2026-10-12')];
+    expect(fsStage(arrived, {}, new Date(at('13:05', '2026-10-12')), TZ)).toBe('done');
+    const day2 = [...arrived, ev('day_start', '07:00'), ev('travel_start', '07:05', { origin: 'hotel', dest: 'site' })];
+    expect(stage(day2, '07:10')).toBe('outbound');
+    const back = [...day2, ev('travel_end', '07:30'), ev('in', '07:30'), ev('out', '16:00'), ev('travel_start', '16:05', { origin: 'site', dest: 'hotel' })];
+    expect(stage(back, '16:10')).toBe('returning');
+    const last = [ev('day_start', '08:00', {}, '2026-10-14'), ev('travel_start', '08:05', { origin: 'hotel', dest: 'home' }, '2026-10-14')];
+    expect(fsStage(last, {}, new Date(at('09:00', '2026-10-14')), TZ)).toBe('returning');
+  });
+
   it("starts fresh the next morning after yesterday's day ended", () => {
     const yesterday = [ev('day_start', '07:00', {}, '2026-10-12'), ev('in', '07:30', {}, '2026-10-12'), ev('out', '16:00', {}, '2026-10-12'),
       ev('travel_start', '16:05', { dest: 'home' }, '2026-10-12'), ev('travel_end', '16:40', {}, '2026-10-12')];

@@ -326,6 +326,24 @@ describe('taps still waiting on the phone', () => {
     expect(isClockedIn(j)).toBe(true);
     expect(tasksDone(j)).toBe(1);
     expect(j.status).toBe('inProgress');
+    // A job without the day keeps only the clock.
+    expect(j.myDay).toEqual([]);
+  });
+
+  it("join the day on any job once the database sends it (migration 127)", async () => {
+    const { applyPending } = await import('./tech-wf');
+    const office = [wfJobFromTech({ id: 'x', wo_number: '7', wo_status: 'In Progress', my_response: 'accepted', day_flow: true, my_day: [] })];
+    expect(office[0].dayFlow).toBe(true);
+    const at = new Date('2026-10-06T12:00:00Z');
+    const [j] = applyPending(office, [
+      makeAction('day', { number: '7', kind: 'day_start' }, 'clock in', at),
+      makeAction('clock', { number: '7', action: 'in' }, 'start job', new Date(at.getTime() + 60_000)),
+    ]);
+    expect(j.myDay?.map((e) => e.kind)).toEqual(['day_start', 'in']);
+  });
+
+  it('never carry the day on the office side', () => {
+    expect(wfJobFromOwner({ id: 'x', wo_number: '7', day_flow: true }).dayFlow).toBe(false);
   });
 });
 

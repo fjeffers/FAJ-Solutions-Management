@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Car, CheckCircle2, Clock, LogIn, LogOut, MapPin, PlayCircle, Receipt, Utensils } from 'lucide-react';
 import {
   buildDayLogs, dayOf, dayState, legLabel, onSiteMs, DEST_LABEL, TRIPS,
-  type DayLog, type DayState, type Trip,
+  type DayLog, type DayState, type Origin, type Trip,
 } from '@/lib/project-day';
 import { formatDuration, type WfJob } from '@/lib/wf';
 import { Dialog } from './WfUi';
@@ -38,8 +38,8 @@ const plain: React.CSSProperties = { ...big, background: 'var(--wf-card)', color
 export type DayActions = {
   /** Clock in: the start of the day (Fred, 2026-10-13: "it should start with clock-in"). */
   clockIn: () => void;
-  /** Start travel, for the trip picked in the dropdown. */
-  startTrip: (trip: Trip) => void;
+  /** Start travel, for the trip picked in the dropdown; `from` when the tech said where they're leaving from. */
+  startTrip: (trip: Trip, from?: Origin) => void;
   startJob: () => void;
   lunch: (start: boolean) => void;
   offSite: () => void;

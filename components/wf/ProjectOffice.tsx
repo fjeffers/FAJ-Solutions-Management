@@ -71,17 +71,17 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
 
   return (
     <Section
-      title="Project day"
+      title={w.is_project ? 'Project day' : 'Travel and time'}
       subtitle={w.project_name ? `${w.project_name} · from the techs' phones` : "From the techs' phones"}
       right={<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Plus size={15} /> Add receipt</button>
-        <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Client report</button>
+        {w.is_project && <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Client report</button>}
       </div>}
     >
       {events === null ? <div className="wf-subtle">Loading…</div>
         : logs.length === 0 ? (
           <div className="wf-subtle" style={{ fontSize: 13 }}>
-            Nothing yet. When a tech taps Start travel, Start job, Lunch and Off site on this site, each day shows here with the miles.
+            Nothing yet. When a tech taps Clock in, Start travel, Start job, Lunch and Off site on this {w.is_project ? 'site' : 'job'}, each day shows here with every drive and its miles.
           </div>
         ) : (
           <>

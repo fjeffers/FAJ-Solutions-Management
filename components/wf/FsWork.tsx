@@ -6,7 +6,7 @@
 // taps (DayActions) through the outbox, so they work with no signal. Styles
 // live in app/tech/fs.css under fs- names.
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { buildDayLogs, dayState, legLabel, onSiteMs, TRIPS, type DayEvent, type Trip } from '@/lib/project-day';
+import { buildDayLogs, dayState, lastPlace, legLabel, onSiteMs, TRIPS, type DayEvent, type Origin, type Trip } from '@/lib/project-day';
 import { FS_STAGE_NAME, type FsStage } from '@/lib/fs-stage';
 import { formatDuration } from '@/lib/wf';
 import type { DayActions } from './ProjectDay';
@@ -78,11 +78,22 @@ function useTick(ms = 20_000): Date {
   return now;
 }
 
+const FROM: { key: Origin; label: string }[] = [
+  { key: 'home', label: 'Home' },
+  { key: 'hotel', label: 'Hotel' },
+  { key: 'other', label: 'Somewhere else' },
+];
+const ARRIVE: Record<string, string> = {
+  site: 'Arrive on site', next_site: 'Arrive at the next site', hotel: 'Arrive at the hotel', home: 'Arrive home',
+};
+
 /**
  * The one thing to do next, in Field Service's words, sending FAJ's day taps.
+ * Every drive is its own leg with its own miles: home → hotel, hotel → site,
+ * site → hotel, and the hotel → home on the last day (Fred, 2026-10-18).
  * Stopped work is resolved from the problem bar above it (SiteAccessBar).
  */
-export function FsStageAction({ stage, events, busy, enabled, on }: {
+export function FsStageAction({ stage, events, busy, enabled, on, onReceipt }: {
   stage: FsStage;
   /** The tech's own taps on this job (job.myDay). */
   events: DayEvent[];
@@ -90,18 +101,31 @@ export function FsStageAction({ stage, events, busy, enabled, on }: {
   /** The job is accepted and still open. Driving home and lunch still work after Work done. */
   enabled: boolean;
   on: DayActions;
+  /** Gas, a meal or the hotel on the road (shown when not on site). */
+  onReceipt?: () => void;
 }) {
   const now = useTick();
   const [trip, setTrip] = useState<Trip | null>(null);
+  const [from, setFrom] = useState<Origin>('home');
   const st = dayState(events, now, TZ);
   const picked: Trip = trip ?? (stage === 'offsite' ? 'hotel' : 'site');
+  // The first drive on a job: nothing says where they're leaving from, so ask.
+  const askFrom = stage === 'clocked' && picked !== 'between' && lastPlace(events, now, TZ) === null;
   const off = !enabled || busy;
   const since = 'since' in st ? st.since : null;
   const line = stage === 'onsite' || stage === 'lunch' ? `On site ${formatDuration(onSiteMs(st, now))}${'lunchMs' in st && st.lunchMs ? ` · lunch ${formatDuration(st.lunchMs)}` : ''}`
     : since && stage !== 'done' ? `Since ${timeOf(since)}` : null;
   const travel = (
-    <form className="fs-card fs-form" onSubmit={(e) => { e.preventDefault(); setTrip(null); on.startTrip(picked); }}>
+    <form className="fs-card fs-form" onSubmit={(e) => { e.preventDefault(); setTrip(null); on.startTrip(picked, askFrom ? from : undefined); }}>
       <h3>{stage === 'offsite' ? 'Where to now?' : 'Start travel'}</h3>
+      {askFrom && (
+        <label>
+          Leaving from
+          <select value={from} onChange={(e) => setFrom(e.target.value as Origin)} disabled={off}>
+            {FROM.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+        </label>
+      )}
       <label>
         Travel to
         <select value={picked} onChange={(e) => setTrip(e.target.value as Trip)} disabled={stage === 'clocked' ? off : busy}>
@@ -125,13 +149,20 @@ export function FsStageAction({ stage, events, busy, enabled, on }: {
     case 'offsite':
       action = travel;
       break;
-    case 'outbound': {
-      const next = st.stage === 'travel' && st.dest === 'next_site';
+    case 'outbound':
+    case 'returning': {
+      // Arriving on site starts the job; anywhere else ends the drive (and at
+      // the hotel or home, signs out for the day).
+      const dest = st.stage === 'travel' ? st.dest : 'site';
       action = (
         <div className="fs-card fs-form">
-          <h3>{next ? 'Arrive at the next site' : 'Arrive on site'}</h3>
-          <p className="fs-muted">Your miles are worked out from your location when you tap.</p>
-          <button type="button" className="fs-btn fs-btn-primary" disabled={next ? busy : off} onClick={next ? on.arrived : on.startJob}>Confirm arrival</button>
+          <h3>{ARRIVE[dest]}</h3>
+          <p className="fs-muted">
+            Your miles for this drive are worked out from your location when you tap.
+            {dest === 'hotel' || dest === 'home' ? ' This signs you out for the day.' : ''}
+          </p>
+          <button type="button" className="fs-btn fs-btn-primary" disabled={dest === 'site' ? off : busy}
+            onClick={dest === 'site' ? on.startJob : on.arrived}>Confirm arrival</button>
         </div>
       );
       break;
@@ -159,17 +190,15 @@ export function FsStageAction({ stage, events, busy, enabled, on }: {
         </div>
       );
       break;
-    case 'returning':
+    case 'done':
+      // Signed out at the hotel, and still driving on today (the hotel to the site).
       action = (
         <div className="fs-card fs-form">
-          <h3>Finish return travel</h3>
-          <p className="fs-muted">This signs you out for the day.</p>
-          <button type="button" className="fs-btn fs-btn-primary" disabled={busy} onClick={on.arrived}>Confirm return</button>
+          <h3>Signed out for the day</h3>
+          <p className="fs-muted">Heading out again today? Clock in, then start the drive.</p>
+          <button type="button" className="fs-btn fs-btn-secondary" disabled={off} onClick={on.clockIn}><FsIcon name="clock" size={18} /> Clock in again</button>
         </div>
       );
-      break;
-    case 'done':
-      action = <p className="fs-card fs-empty">Done for today. Clock in again on your next day here.</p>;
       break;
   }
   return (
@@ -182,6 +211,11 @@ export function FsStageAction({ stage, events, busy, enabled, on }: {
       </div>
       {action}
       {busy && <p className="fs-muted">Getting your location…</p>}
+      {onReceipt && stage !== 'onsite' && stage !== 'lunch' && stage !== 'stopped' && (
+        <button type="button" className="fs-text-button" onClick={onReceipt}>
+          <FsIcon name="receipt" size={16} /> Add a receipt (gas, meal, hotel)
+        </button>
+      )}
     </div>
   );
 }

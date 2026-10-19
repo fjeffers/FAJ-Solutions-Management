@@ -29,8 +29,9 @@ const DISMISS_KEY = 'faj-tech-install-dismissed-2';
 
 export default function TechInstall() {
   const [deferred, setDeferred] = useState<InstallPrompt | null>(null);
-  // The phone, and whether it came from the old app's icon (next.config.ts).
-  const [found, setFound] = useState<{ phone: PhoneKind; oldIcon: boolean } | null>(null);
+  // The phone, whether it came from the old app's icon (next.config.ts), and
+  // whether the tech closed this help before.
+  const [found, setFound] = useState<{ phone: PhoneKind; oldIcon: boolean; dismissed: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -44,9 +45,12 @@ export default function TechInstall() {
 
     let dismissed = false;
     try { dismissed = localStorage.getItem(DISMISS_KEY) === '1'; } catch { /* private mode */ }
-    if (dismissed && !oldIcon) return;
+    const phone = phoneKind(navigator.userAgent);
+    // Closed before: only the iPhone's Safari note still shows, since a link in
+    // an email lands a tech who has the app back here.
+    if (dismissed && !oldIcon && phone !== 'ios') return;
 
-    setFound({ phone: phoneKind(navigator.userAgent), oldIcon });
+    setFound({ phone, oldIcon, dismissed });
     const onPrompt = (e: Event) => {
       e.preventDefault();
       setDeferred(e as InstallPrompt);
@@ -86,6 +90,10 @@ export default function TechInstall() {
         </div>
       </div>
     );
+  }
+
+  if (found?.dismissed) {
+    return <div style={{ fontSize: 12.5, color: '#555', marginBottom: 16, lineHeight: 1.5 }}>{IOS_LINKS_NOTE}</div>;
   }
 
   const kind = found?.phone ?? null;

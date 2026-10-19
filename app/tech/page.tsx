@@ -709,8 +709,9 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy, techName }: {
       <p>{line}</p>
       {action}
       {/* Today's client links where the tech starts the day, not only inside the job
-          (Fred, 2026-10-19: "everybody is complaining they can't find the client links"). */}
-      <TodayClientLinks job={job} techName={techName} />
+          (Fred, 2026-10-19: "everybody is complaining they can't find the client links").
+          Keyed by job: picking another job must not leave the last site's links up. */}
+      <TodayClientLinks key={job.id} job={job} techName={techName} />
     </section>
   );
 }

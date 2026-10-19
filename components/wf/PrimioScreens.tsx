@@ -19,6 +19,7 @@ import { listsNow, stageName } from '@/lib/app-lists';
 import { boardColumns, columnOf, moveTo, type BoardColumn, type Move } from '@/lib/dispatch-columns';
 import { shown as partShown } from '@/lib/screen-parts';
 import { Empty } from './WfUi';
+import WeekCalendar from './WeekCalendar';
 
 // ── App bar ─────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ export const DISPATCH_COLUMNS: { key: WfStatus; label: string }[] = [
   { key: 'declined', label: 'Declined' },
 ];
 
-export type DispatchView = 'board' | 'grid' | 'list';
+export type DispatchView = 'week' | 'board' | 'grid' | 'list';
 
 /** Fred's own board columns in use (Settings -> Lists & stages; hidden ones left out). */
 export function boardHolds(): { key: string; label: string }[] {
@@ -249,11 +250,13 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
   const [query, setQuery] = useState('');
   // Board (Primio's columns), Grid (cards) or List (a table) — Fred, 2026-10-04:
   // "i need a grid, list view". The choice is remembered on this device.
-  const [view, setView] = useState<DispatchView>('board');
+  // Week is where Work orders opens (Fred, 2026-10-18: "the view sucks" ... "week
+  // calendar card like view"); a new key, so every device starts on it.
+  const [view, setView] = useState<DispatchView>('week');
   useEffect(() => {
-    try { const v = localStorage.getItem('dispatch-view'); if (v === 'grid' || v === 'list') setView(v); } catch { /* private window */ }
+    try { const v = localStorage.getItem('dispatch-view-2'); if (v === 'board' || v === 'grid' || v === 'list') setView(v); } catch { /* private window */ }
   }, []);
-  const chooseView = (v: DispatchView) => { setView(v); try { localStorage.setItem('dispatch-view', v); } catch { /* private window */ } };
+  const chooseView = (v: DispatchView) => { setView(v); try { localStorage.setItem('dispatch-view-2', v); } catch { /* private window */ } };
   const live = rows.filter((r) => r.job.status !== 'closed');
   const count = (s: WfStatus) => live.filter((r) => r.job.status === s).length;
   const urgent = live.filter((r) => r.job.highPriority).length;
@@ -306,12 +309,16 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
             placeholder="Search by ID, client, location or title" aria-label="Search the dispatch board" style={{ paddingLeft: 40 }} />
         </div>
         <div className="wf-filters" role="group" aria-label="How to show jobs" style={{ flexWrap: 'nowrap' }}>
-          {([['board', 'Board', <Columns3 key="b" size={15} />], ['grid', 'Grid', <LayoutGrid key="g" size={15} />], ['list', 'List', <ListIcon key="l" size={15} />]] as const).map(([v, label, icon]) => (
+          {([['week', 'Week', <CalendarDays key="w" size={15} />], ['board', 'Board', <Columns3 key="b" size={15} />], ['grid', 'Grid', <LayoutGrid key="g" size={15} />], ['list', 'List', <ListIcon key="l" size={15} />]] as const).map(([v, label, icon]) => (
             <button key={v} className="wf-filter" aria-pressed={view === v} onClick={() => chooseView(v)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{label}</button>
           ))}
         </div>
       </div>
+      {view === 'week' && (
+        // The same jobs the tiles and the search leave showing, each once.
+        <WeekCalendar rows={[...new Map(groups.flatMap((g) => g.list).map((r) => [r.job.id, r])).values()]} onOpen={onOpen} />
+      )}
       {view === 'board' && (
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>
           {groups.map((g) => {

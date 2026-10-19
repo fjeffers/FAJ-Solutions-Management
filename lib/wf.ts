@@ -102,6 +102,8 @@ export type WfJob = {
   siteLng: number | null;
   /** YYYY-MM-DD, or null when not scheduled. */
   date: string | null;
+  /** The job's last day (YYYY-MM-DD) when it runs several days; the week calendar shows it on each. */
+  endDate?: string | null;
   startTime: string;
   endTime: string;
   status: WfStatus;
@@ -266,6 +268,7 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     siteLat: numOrNull(r.site_lat),
     siteLng: numOrNull(r.site_lng),
     date: dateOnly(s(r, 'scheduled_date')) ?? dateOnly(s(r, 'start_date')),
+    endDate: dateOnly(s(r, 'end_date')),
     startTime: s(r, 'start_time'),
     endTime: s(r, 'end_time'),
     status,

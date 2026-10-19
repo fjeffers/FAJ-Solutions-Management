@@ -180,6 +180,21 @@ export default async function PortalPage({ params, searchParams }: {
       {/* Content */}
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 16px 48px' }}>
 
+        {/* Check in, mileage, receipts and the client's forms are only in the
+            tech app (Fred, 2026-10-19: a tech on this page couldn't find where
+            to add receipts). */}
+        {!paperworkOnly && work_orders.length > 0 && (
+          <a href="/tech/login" style={{
+            display: 'block', textDecoration: 'none', marginBottom: 18, padding: '14px 16px', borderRadius: 14,
+            background: '#0E1B2E', color: 'white', border: '2px solid #C9A24B',
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Check in, mileage and receipts are in the FAJ tech app</div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 1.5 }}>
+              Tap here, then &ldquo;First time? Create your login&rdquo; with the email this link was sent to. Pick your own password.
+            </div>
+          </a>
+        )}
+
         {/* ══ PAPERWORK VIEW — reached from a W-9 request. Forms only. ══ */}
         {paperworkOnly && isContractor && (
           <PortalDocuments

@@ -4,12 +4,14 @@ import { Mail, CheckCircle2, XCircle, Inbox, LinkIcon, Sheet, Upload, RefreshCw,
 import { fmtDate, fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { ImportQueueItem, GmailConnection } from '@/lib/types';
+import ScheduleUpload from './ScheduleUpload';
 
 const SOURCE_LABELS: Record<string, string> = {
   netview_smartsheet: 'Netview/Smartsheet',
   field_nation: 'FieldNation',
   google_sheets: 'Google Sheets',
   google_docs: 'Google Docs',
+  client_schedule: "Client's weekly schedule",
 };
 
 export default function ImportQueueView({
@@ -222,6 +224,8 @@ Each one also opens a site visit at that address.`)) return;
           </a>
         </div>
       </div>
+
+      <ScheduleUpload onApprove={onApprove} onImported={onImported} />
 
       <div className="glass card" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>

@@ -1049,12 +1049,23 @@ export type ParsedNetviewFields = {
   city?: string;
   state?: string;
   zip?: string;
+
+  // The client's weekly schedule (lib/client-schedule.ts) gives the rest of the
+  // visit: the start time, the lockbox, the client's links, and the platform of
+  // the client's other jobs.
+  start_time?: string | null;
+  end_date?: string | null;
+  access_instructions?: string | null;
+  client_links?: string[];
+  checkin_link?: string | null;
+  checkout_link?: string | null;
+  source_platform?: string;
 };
 
 export type ImportQueueItem = {
   id: string;
   user_id: string;
-  source: 'netview_smartsheet' | 'field_nation' | 'google_sheets' | 'google_docs';
+  source: 'netview_smartsheet' | 'field_nation' | 'google_sheets' | 'google_docs' | 'client_schedule';
   external_dedupe_key: string;
   parsed_fields: ParsedNetviewFields;
   raw_snippet: string | null;

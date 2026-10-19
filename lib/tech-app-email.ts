@@ -52,3 +52,31 @@ export function techAppInviteBlock(appUrl: string): string {
           <p style="margin:10px 0 0;">After that, new jobs come straight to your phone.</p>
         </div>`;
 }
+
+/**
+ * "Confirm your FAJ tech login": the link that confirms a new tech login and
+ * signs the tech straight in (app/api/tech/signup, app/api/tech/confirm). Sent
+ * from FAJ's own email so it arrives (Fred, 2026-10-19).
+ */
+export function confirmLoginEmail(p: { name: string; link: string; username: string }): { subject: string; html: string } {
+  const first = esc(p.name.trim().split(/\s+/)[0] || 'there');
+  const link = esc(p.link);
+  return {
+    subject: 'Confirm your FAJ tech login',
+    html: `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1B1C1F;line-height:1.55;">
+  <div style="background:#0E1B2E;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;">
+    <div style="color:#C9A24B;font-size:11px;font-weight:700;letter-spacing:3px;">FAJ SOLUTIONS</div>
+    <div style="font-size:20px;font-weight:700;margin-top:4px;">Confirm your tech login</div>
+  </div>
+  <div style="border:1px solid #E4DFD3;border-top:none;border-radius:0 0 12px 12px;padding:20px;">
+    <p style="margin:0 0 12px;">Hi ${first},</p>
+    <p style="margin:0 0 16px;">Tap the button to confirm your email. It signs you in to the FAJ tech app and opens your jobs.</p>
+    <p style="text-align:center;margin:0 0 18px;">
+      <a href="${link}" style="display:inline-block;background:#C9A24B;color:#0E1B2E;font-weight:700;text-decoration:none;padding:13px 26px;border-radius:10px;">Confirm and open my jobs</a>
+    </p>
+    <p style="margin:0 0 6px;font-size:13px;color:#5E6470;">After this, sign in at app.fajsolutions.com/tech with your username <strong>${esc(p.username)}</strong> (or this email) and your password.</p>
+    <p style="margin:0;font-size:12px;color:#8A8F98;">Didn't ask for this? You can ignore this email.</p>
+  </div>
+</div>`,
+  };
+}

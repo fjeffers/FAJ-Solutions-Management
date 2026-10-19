@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { claimTechAccount } from '@/lib/tech-portal';
@@ -35,6 +35,12 @@ export default function TechLoginPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const switchTo = (m: Mode) => { setMode(m); setError(null); setNotice(null); };
+  // Back from a confirm link that was already used or too old (app/api/tech/confirm).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('confirm') === 'again') {
+      setNotice('That confirm link was already used or is too old. If you tapped it before, just sign in below. If not, make your login again to get a new one.');
+    }
+  }, []);
 
   const finishSignIn = async () => {
     // Bind this login to its contractor record. Safe on every sign-in — once

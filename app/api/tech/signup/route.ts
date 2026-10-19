@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { Resend } from 'resend';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { looksLikeEmail, normalizeUsername, usernameProblem } from '@/lib/usernames';
+import { confirmLoginEmail } from '@/lib/tech-app-email';
 
 // POST /api/tech/signup — a tech makes their login: name and email, then a
 // username and password (Fred, 2026-10-02).
@@ -10,6 +11,12 @@ import { looksLikeEmail, normalizeUsername, usernameProblem } from '@/lib/userna
 // links the login to that record at first sign-in (tech_claim_account), the
 // same as before. The username is saved here with the service key
 // (migration-099), only once Supabase has actually made a new login.
+//
+// The confirmation link goes out from FAJ's own email (Resend), not Supabase's
+// built-in mailer: that one sends a few emails an hour from a Supabase
+// address, and Kendell's never reached him on the first morning of the LDS
+// jobs (Fred, 2026-10-19). The link opens /api/tech/confirm, which confirms
+// the email and signs the tech straight in.
 export async function POST(req: Request) {
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return NextResponse.json({ ok: false, error: 'Bad request' }, { status: 400 }); }
@@ -29,33 +36,45 @@ export async function POST(req: Request) {
   if (taken) return NextResponse.json({ ok: false, error: `The username "${username}" is taken. Try another, like ${username}2.` }, { status: 409 });
 
   const origin = new URL(req.url).origin;
-  const supabase = await createClient('field');
-  const { data, error } = await supabase.auth.signUp({
-    email, password,
-    options: { emailRedirectTo: `${origin}/tech`, data: { full_name: name, username } },
+  // Makes the login (not yet confirmed) and hands back its confirmation token, sending nothing.
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: 'signup', email, password,
+    options: { redirectTo: `${origin}/tech`, data: { full_name: name, username } },
   });
-  if (error) {
-    const m = error.message.toLowerCase();
+  if (error || !data?.user || !data.properties?.hashed_token) {
+    const m = (error?.message ?? '').toLowerCase();
+    if (m.includes('already') || error?.code === 'email_exists') {
+      return NextResponse.json({
+        ok: false, reason: 'email_taken',
+        error: 'There is already a login for this email, so no email was sent. Sign in with your username or email and password, or tap "Forgot password?".',
+      }, { status: 409 });
+    }
     const msg = m.includes('rate limit') ? 'Too many tries. Wait a few minutes and try again.'
       : m.includes('password') ? 'Use a stronger password: at least 8 characters, not something common.'
-      : m.includes('already registered') ? 'There is already a login for this email. Sign in instead, or use "Forgot password?".'
       : "Couldn't make your login. Check your details and try again.";
     return NextResponse.json({ ok: false, error: msg }, { status: 400 });
   }
 
-  // Supabase answers "fine" for an email that already has a login, but sends
-  // nothing and makes nothing — it hands back a user with no identities.
-  if (!data.user || (Array.isArray(data.user.identities) && data.user.identities.length === 0)) {
-    return NextResponse.json({
-      ok: false, reason: 'email_taken',
-      error: 'There is already a login for this email, so no email was sent. Sign in with your username or email and password, or tap "Forgot password?".',
-    }, { status: 409 });
+  const link = `${origin}/api/tech/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=signup`;
+  const mail = confirmLoginEmail({ name, link, username });
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const { error: sendError } = await resend.emails.send({
+    from: process.env.FROM_EMAIL || 'FAJ Solutions <support@fajsolutions.com>',
+    to: email,
+    replyTo: process.env.REPLY_TO_EMAIL || undefined,
+    subject: mail.subject,
+    html: mail.html,
+  });
+  if (sendError) {
+    // No email went out, so take the half-made login back off: the tech can simply try again.
+    await admin.auth.admin.deleteUser(data.user.id);
+    return NextResponse.json({ ok: false, error: "Couldn't send the confirmation email. Check the email address and try again." }, { status: 502 });
   }
 
   const { error: nameError } = await admin.from('login_usernames').insert({ user_id: data.user.id, username });
   return NextResponse.json({
     ok: true,
-    confirmEmail: !data.session,
+    confirmEmail: true,
     // Someone took the username in the same moment: the login still works by email.
     usernameSaved: !nameError,
   });

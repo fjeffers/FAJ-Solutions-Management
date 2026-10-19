@@ -29,3 +29,15 @@ describe('the tech app email', () => {
     expect(techAppEmail({ name: '<b>x</b>', email: '<i>', appUrl: 'u', hasLogin: false }).html).not.toMatch(/<b>x|<i>/);
   });
 });
+
+describe('the confirm-your-login email (Fred, 2026-10-19)', async () => {
+  const { confirmLoginEmail } = await import('./tech-app-email');
+  it('carries the link and the username, and nothing about the office', () => {
+    const m = confirmLoginEmail({ name: 'Kendell Newbold', link: 'https://app.fajsolutions.com/api/tech/confirm?token_hash=abc&type=signup', username: 'kendal.newbold' });
+    expect(m.subject).toBe('Confirm your FAJ tech login');
+    expect(m.html).toContain('Hi Kendell,');
+    expect(m.html).toContain('href="https://app.fajsolutions.com/api/tech/confirm?token_hash=abc&amp;type=signup"');
+    expect(m.html).toContain('kendal.newbold');
+    expect(m.html).not.toMatch(/admin|office/i);
+  });
+});

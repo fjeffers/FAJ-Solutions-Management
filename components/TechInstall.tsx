@@ -1,13 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Download, X, Share } from 'lucide-react';
+import { Download, X } from 'lucide-react';
+import { installSteps, phoneKind, TECH_APP_URL, type PhoneKind } from '@/lib/install-help';
 
 /**
- * "Add this to your phone" for the tech portal.
+ * "Put this on your phone" for the tech portal.
  *
  * Android/Chrome fires beforeinstallprompt and we can trigger the real install
- * sheet. iOS Safari never fires it and offers no API at all, so the only honest
- * thing there is to show the two taps: Share → Add to Home Screen.
+ * sheet. iOS Safari never fires it and offers no API at all, so there it shows
+ * the taps: Share, then Add to Home Screen. A link opened inside Yahoo Mail,
+ * Gmail or Facebook can't install anything, so it says to open the link in
+ * Safari or Chrome, with a button to copy it (Fred, 2026-10-19: "tech are
+ * unable to install the tech app"). The steps are lib/install-help.ts.
  *
  * Hidden once installed (display-mode: standalone) or once dismissed, so it is
  * never nagging a tech who already did it.
@@ -17,12 +21,13 @@ type InstallPrompt = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 };
 
-const DISMISS_KEY = 'faj-tech-install-dismissed';
+// A new key: techs who closed the old, vaguer help see this one once.
+const DISMISS_KEY = 'faj-tech-install-dismissed-2';
 
 export default function TechInstall() {
   const [deferred, setDeferred] = useState<InstallPrompt | null>(null);
-  const [show, setShow] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const [kind, setKind] = useState<PhoneKind | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     // Already installed — nothing to offer.
@@ -35,21 +40,17 @@ export default function TechInstall() {
     try { dismissed = localStorage.getItem(DISMISS_KEY) === '1'; } catch { /* private mode */ }
     if (dismissed) return;
 
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    setIsIOS(ios);
-    if (ios) { setShow(true); return; }   // no API on iOS; show the instructions
-
+    setKind(phoneKind(navigator.userAgent));
     const onPrompt = (e: Event) => {
       e.preventDefault();
       setDeferred(e as InstallPrompt);
-      setShow(true);
     };
     window.addEventListener('beforeinstallprompt', onPrompt);
     return () => window.removeEventListener('beforeinstallprompt', onPrompt);
   }, []);
 
   const dismiss = () => {
-    setShow(false);
+    setKind(null);
     try { localStorage.setItem(DISMISS_KEY, '1'); } catch { /* private mode */ }
   };
 
@@ -61,28 +62,38 @@ export default function TechInstall() {
     setDeferred(null);
   };
 
-  if (!show) return null;
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(TECH_APP_URL); setCopied(true); } catch { /* the address is shown to copy by hand */ }
+  };
+
+  const steps = kind ? installSteps(kind, !!deferred) : '';
+  if (!kind || !steps) return null;
+  const inApp = kind === 'ios-inapp' || kind === 'android-inapp';
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16,
+      display: 'flex', alignItems: 'flex-start', gap: 11, marginBottom: 16,
       background: 'rgba(14,27,46,0.06)', border: '1px solid rgba(14,27,46,0.15)',
       borderRadius: 12, padding: '12px 14px',
     }}>
-      <Download size={18} color="var(--teal)" style={{ flexShrink: 0 }} />
+      <Download size={18} color="var(--teal)" style={{ flexShrink: 0, marginTop: 2 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 700, fontSize: 13 }}>Put this on your phone</div>
-        <div style={{ fontSize: 11.5, color: '#777', marginTop: 2, lineHeight: 1.45 }}>
-          {isIOS ? (
-            <>Tap <Share size={11} style={{ verticalAlign: -1 }} /> Share, then <strong>Add to Home Screen</strong>.
-              Then open FAJ Tech from your home screen and sign in there.</>
-          ) : (
-            'Tap Install. It opens like an app, with no browser tab and no app store.'
-          )}
+        <div style={{ fontSize: 12.5, color: '#555', marginTop: 3, lineHeight: 1.5 }}>{steps}</div>
+        {inApp && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <code style={{ fontSize: 12.5, background: 'white', border: '1px solid #ddd', borderRadius: 6, padding: '3px 8px' }}>{TECH_APP_URL.replace('https://', '')}</code>
+            <button className="btn btn-primary" onClick={() => void copy()} style={{ fontSize: 12, padding: '6px 12px' }}>
+              {copied ? 'Copied' : 'Copy the link'}
+            </button>
+          </div>
+        )}
+        <div style={{ fontSize: 11.5, color: '#777', marginTop: 6, lineHeight: 1.45 }}>
+          You don&apos;t have to install it: you can sign in and use it right here. Installing only puts an icon on your phone.
         </div>
       </div>
-      {!isIOS && (
-        <button className="btn btn-primary" onClick={install} style={{ flexShrink: 0, fontSize: 12, padding: '8px 14px' }}>
+      {deferred && (
+        <button className="btn btn-primary" onClick={() => void install()} style={{ flexShrink: 0, fontSize: 12, padding: '8px 14px' }}>
           Install
         </button>
       )}

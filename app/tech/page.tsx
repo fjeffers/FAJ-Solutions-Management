@@ -2452,13 +2452,14 @@ function ClientLinksCard({ number, siteLinks, checkoutHref }: {
   checkoutHref: () => string | null;
 }) {
   const [links, setLinks] = useState<string[]>([]);
+  const tick = useReloadTick();
   useEffect(() => {
     let live = true;
     void createClient().rpc('wf_tech_job_links', { p_wo_number: number }).then(({ data, error }) => {
       if (live && !error && Array.isArray(data)) setLinks(data.filter((l): l is string => typeof l === 'string'));
     });
     return () => { live = false; };
-  }, [number]);
+  }, [number, tick]);
   if (links.length === 0) return null;
   return (
     <section className="fs-card fs-form">
@@ -2486,14 +2487,37 @@ function ClientLinksCard({ number, siteLinks, checkoutHref }: {
 /** The job's link for on site and for check-out (migration 133). Nothing until it has loaded. */
 function useSiteLinks(number: string): SiteLinks {
   const [links, setLinks] = useState<SiteLinks>({});
+  const tick = useReloadTick();
   useEffect(() => {
     let live = true;
     void createClient().rpc('wf_tech_site_links', { p_wo_number: number }).then(({ data, error }) => {
       if (live && !error) setLinks(parseSiteLinks(data));
     });
     return () => { live = false; };
-  }, [number]);
+  }, [number, tick]);
   return links;
+}
+
+/**
+ * Ticks every minute while the app is open, and again when the tech comes back
+ * to it, so links the office adds to a job show up without leaving the job
+ * (Fred, 2026-10-19: Raja's iPhone loaded the links at 8:00, before two more
+ * were added).
+ */
+function useReloadTick(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const bump = () => { if (document.visibilityState === 'visible') setTick((t) => t + 1); };
+    const timer = window.setInterval(bump, 60_000);
+    document.addEventListener('visibilitychange', bump);
+    window.addEventListener('focus', bump);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', bump);
+      window.removeEventListener('focus', bump);
+    };
+  }, []);
+  return tick;
 }
 
 const isTeams = (l: string) => /^https:\/\/([a-z0-9-]+\.)*teams\.(microsoft|live)\.com\//i.test(l);

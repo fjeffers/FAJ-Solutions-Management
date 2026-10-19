@@ -12,11 +12,19 @@ export function techAppEmail(p: { name: string; email: string; appUrl: string; h
   const url = esc(p.appUrl);
   const email = esc(p.email);
   const subject = 'Your FAJ Solutions tech app';
+  // The steps for iPhone and Android, and the mail-app trap: a link tapped inside
+  // Yahoo Mail or Gmail opens in that app's own browser, which can't install
+  // anything (Fred, 2026-10-19: "push the app installation on all tech for
+  // iphone and android").
+  const open = `<p style="margin:4px 0;"><strong>1. Open it in Safari (iPhone) or Chrome (Android)</strong>, not inside your email app.
+        If the button opens inside your email app, tap ⋯ or ⋮ and choose <em>Open in Safari</em> or <em>Open in Chrome</em>,
+        or type <strong>${esc(p.appUrl.replace(/^https?:\/\//, ''))}</strong> into Safari or Chrome yourself.</p>`;
   const steps = p.hasLogin
-    ? `<p style="margin:4px 0;"><strong>Sign in</strong> with your username (or <strong>${email}</strong>) and your password. Forgot it? Tap "Forgot password?" on the sign-in page.</p>`
-    : `<p style="margin:4px 0;"><strong>1. Create your login.</strong> On the sign-in page tap <em>"First time? Create your login"</em>. Use your name,
-        this email address — <strong>${email}</strong> — then pick a username and a password.</p>
-       <p style="margin:12px 0 4px;"><strong>2. Confirm your email</strong> if we send you a confirmation link, then sign in.</p>`;
+    ? `${open}
+       <p style="margin:12px 0 4px;"><strong>2. Sign in</strong> with your username (or <strong>${email}</strong>) and your password. Forgot it? Tap "Forgot password?" on the sign-in page.</p>`
+    : `${open}
+       <p style="margin:12px 0 4px;"><strong>2. Create your login.</strong> Tap <em>"First time? Create your login"</em>. Use your name,
+        this email address (<strong>${email}</strong>), then pick a username and a password. Tap the link in the confirmation email we send you.</p>`;
   const html = `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a;">
         <h2 style="color:#0E1B2E;">Hi ${first},</h2>
@@ -27,8 +35,10 @@ export function techAppEmail(p: { name: string; email: string; appUrl: string; h
         </p>
         <div style="background:#f6f4ef;padding:16px;border-radius:8px;margin:16px 0;">
           ${steps}
-          <p style="margin:12px 0 4px;"><strong>${p.hasLogin ? 'Tip' : '3'}. Put it on your home screen</strong> so it opens like an app:
-          iPhone — tap Share, then <em>Add to Home Screen</em>. Android — tap the ⋮ menu, then <em>Install app</em>.</p>
+          <p style="margin:12px 0 4px;"><strong>3. Put it on your home screen</strong> so it opens like an app:</p>
+          <p style="margin:4px 0 4px 12px;"><strong>iPhone (Safari):</strong> tap Share (the square with the arrow), then <em>Add to Home Screen</em>, then <em>Add</em>.</p>
+          <p style="margin:4px 0 4px 12px;"><strong>Android (Chrome):</strong> tap ⋮ (top right), then <em>Install app</em> or <em>Add to Home screen</em>.</p>
+          <p style="margin:12px 0 4px;"><strong>4. Open FAJ Tech from your home screen</strong> and sign in. In Profile, tap <em>Turn on pop-ups</em> so new jobs reach your phone.</p>
         </div>
         <p>Your login only ever shows your own jobs and your own pay. Anything unclear, just reply to this email.</p>
         <p style="color:#888;font-size:12px;">— FAJ Solutions · Bringing People and Technology Together</p>

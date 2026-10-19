@@ -12,6 +12,7 @@ import PortalChat from './PortalChat';
 import PortalDocuments from './PortalDocuments';
 import PortalWorkExport from './PortalWorkExport';
 import type { WorkOrder, Contractor } from '@/lib/types';
+import { linkLabel, parseClientLinks } from '@/lib/client-links';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -420,6 +421,25 @@ function WOCard({
               {wo.access_instructions}
             </div>
           </div>
+        )}
+
+        {/* ── Client links (Fred, 2026-10-19: "the tech is not seeing client links").
+            The same links the tech app shows; the checkout form says so. ── */}
+        {parseClientLinks((wo.client_links ?? []).join('\n')).length > 0 && (
+          <InfoRow icon="🔗" label="Client links">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {parseClientLinks((wo.client_links ?? []).join('\n')).map((l) => (
+                <a key={l} href={l} target="_blank" rel="noopener noreferrer" style={{
+                  display: 'block', padding: '10px 12px', borderRadius: 10, border: '1px solid #d6dbe4', background: 'white',
+                  color: '#0E1B2E', fontSize: 13, fontWeight: 600, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {linkLabel(l)} ↗
+                  {l === wo.checkout_link && <span style={{ display: 'block', fontSize: 12, fontWeight: 400, color: '#5E6470' }}>Fill in when you check out each day</span>}
+                  {l === wo.checkin_link && <span style={{ display: 'block', fontSize: 12, fontWeight: 400, color: '#5E6470' }}>Join when you check in on site</span>}
+                </a>
+              ))}
+            </div>
+          </InfoRow>
         )}
 
         {/* ── Description ── */}

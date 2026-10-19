@@ -22,6 +22,7 @@
 // Pure and unit-tested (lib/project-sheet.test.ts).
 import { buildDayLogs, dayOf, parseDayEvents, totalsOf, hoursOf, type DayEvent } from './project-day';
 import { listFor, parseCloseout, skipReason, type CloseoutList } from './closeout';
+import { asks, parseCapture } from './capture';
 import { jobGaps } from './job-gaps';
 import { wfJobFromOwner } from './wf';
 import { townOf } from './places';
@@ -251,7 +252,11 @@ export function buildSheet(i: SheetInput, now: Date = new Date(), timeZone = 'Am
 
   const sites: SheetSite[] = i.jobs.map((j) => {
     const c = parseCloseout(j.closeout);
-    const list = listFor(i.lists, str(j.title), str(j.description));
+    // The deliverables only when the job asks for them, the same as the tech's
+    // screen: an LDS survey's title matched the 13-item "Site survey" list,
+    // which then sat at "0 of 13 done" on Mike's sheet (Fred, 2026-10-19).
+    const matched = listFor(i.lists, str(j.title), str(j.description));
+    const list = asks(parseCapture(j.capture), 'deliverables') ? matched : { ...matched, items: [] };
     const answers = Array.isArray(j.custom_qa)
       ? (j.custom_qa as Raw[]).filter((q) => q && typeof q === 'object' && str(q.label) && str(q.answer) && str(q.type) !== 'signature')
         .map((q) => ({ q: str(q.label), a: /^https?:\/\//.test(str(q.answer)) ? 'Attached in the app' : str(q.answer) }))

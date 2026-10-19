@@ -88,6 +88,9 @@ describe('buildSheet', () => {
     expect(site.answers).toEqual([{ q: 'Ceiling height', a: '12 ft' }]);
     // No signature asked for, so nothing is said about one; asked for, it's still owed.
     expect(site.checklist).toMatchObject({ done: 1, total: 5, sign: '' });
+    // A job that doesn't ask for deliverables shows no checklist (Fred, 2026-10-19).
+    expect(buildSheet(input({ jobs: [{ ...job, capture: ['travel', 'odometer', 'receipts'] }] }), NOW).sites[0].checklist.total).toBe(0);
+    expect(buildSheet(input({ jobs: [{ ...job, capture: ['deliverables'] }] }), NOW).sites[0].checklist.total).toBe(5);
     expect(buildSheet(input({ jobs: [{ ...job, signature_required: true }] }), NOW).sites[0].checklist.sign).toBe('Not signed off yet');
     expect(site.missing).toEqual([]);
     const closed = buildSheet(input({ jobs: [{ ...job, wo_status: 'Work Done' }] }), NOW).sites[0];

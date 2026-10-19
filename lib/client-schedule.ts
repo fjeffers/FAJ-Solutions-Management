@@ -7,7 +7,7 @@
 //
 // Pure, so the upload preview and the server read a sheet the same way
 // (lib/client-schedule.test.ts).
-import { parseClientLinks } from './client-links';
+import { CLIENT_LINKS_MAX, parseClientLinks } from './client-links';
 
 export type ScheduleCell = string | number | boolean | Date | null | undefined;
 
@@ -135,11 +135,19 @@ export function scheduleTime(v: ScheduleCell): string | null {
   return h < 24 && min < 60 ? `${pad(h)}:${pad(min)}` : null;
 }
 
-/** The first web address in a cell, cleaned like every other client link. */
+/** The longest link a job keeps (the database's limit for the check-in and checkout links). */
+export const SCHEDULE_LINK_MAX = 2000;
+
+/**
+ * The first web address in a cell, cleaned like every other client link. Never
+ * shortened: a cut link (a signed one loses its signature) looks fine and fails
+ * on site, so one too long to keep is dropped instead.
+ */
 export function scheduleLink(v: ScheduleCell): string {
-  const found = /https?:\/\/[^\s<>"']+/i.exec(text(v));
+  const found = /https?:\/\/[^\s<>"']+/i.exec(String(v ?? ''));
   if (!found) return '';
-  return parseClientLinks(found[0].replace(/[.,;:!?)]+$/, ''))[0] ?? '';
+  const link = parseClientLinks(found[0].replace(/[.,;:!?)]+$/, ''))[0] ?? '';
+  return link.length <= SCHEDULE_LINK_MAX ? link : '';
 }
 
 /**
@@ -186,14 +194,19 @@ export function parseSchedule(table: ScheduleCell[][]): { rows: ScheduleRow[]; e
   return { rows };
 }
 
+/** Rows in one upload. A bigger sheet is turned away whole, never cut short. */
+export const SCHEDULE_MAX_ROWS = 500;
+export const tooManyRows = (n: number) =>
+  `That sheet has ${n} rows; the most at once is ${SCHEDULE_MAX_ROWS}. Split it into smaller sheets and upload each.`;
+
 /** Rows sent back from the browser, kept to the shape and sizes parseSchedule gives. */
 export function cleanScheduleRows(input: unknown): ScheduleRow[] {
   if (!Array.isArray(input)) return [];
   const s = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
   const iso = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
   const hm = (v: unknown) => (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : null);
-  const link = (v: unknown) => (typeof v === 'string' ? scheduleLink(v.slice(0, 2000)) : '');
-  return input.slice(0, 500).flatMap((r): ScheduleRow[] => {
+  const link = (v: unknown) => (typeof v === 'string' ? scheduleLink(v) : '');
+  return input.slice(0, SCHEDULE_MAX_ROWS).flatMap((r): ScheduleRow[] => {
     if (!r || typeof r !== 'object') return [];
     const o = r as Record<string, unknown>;
     const siteId = s(o.siteId, 80);
@@ -257,6 +270,18 @@ export const siteKey = (v: string | null | undefined) => {
   const t = (v ?? '').trim().toLowerCase();
   return /^\d+$/.test(t) ? t.replace(/^0+(?=\d)/, '') : t;
 };
+/**
+ * Every way a row's site might be stored on its job, for the lookup: as typed,
+ * and for a number, without leading zeros and with up to three put back (Excel
+ * drops them, so "05007927" on the job arrives as 5007927).
+ */
+export function siteLookupIds(rows: Pick<ScheduleRow, 'siteId'>[]): string[] {
+  return [...new Set(rows.flatMap((r) => {
+    const k = siteKey(r.siteId);
+    return /^\d+$/.test(k) ? [r.siteId, k, `0${k}`, `00${k}`, `000${k}`] : [r.siteId, k];
+  }))];
+}
+
 const sameText = (a: string | null | undefined, b: string | null | undefined) =>
   (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
 const daysApart = (a: string, b: string) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86400000;
@@ -329,7 +354,10 @@ export function planFill(r: ScheduleRow, job: ScheduleJob): ScheduleFill {
   if (r.time && blank(job.start_time)) { patch.start_time = r.time; filled.push('start time'); }
   else if (r.time && job.start_time && job.start_time.slice(0, 5) !== r.time) differs.push(`The sheet says ${timeLabel(r.time)}; the job says ${timeLabel(job.start_time.slice(0, 5))}.`);
   const end = r.endDate ?? (blank(job.start_date) ? r.date : null);
-  if (end && blank(job.end_date)) patch.end_date = end;
+  if (end && blank(job.end_date)) {
+    patch.end_date = end;
+    if (!patch.start_date) filled.push('end date');
+  }
 
   const place: [keyof ScheduleJob, string][] = [['site_address', r.address], ['site_city', r.city], ['site_state', r.state], ['site_zip', r.zip]];
   let placed = false;
@@ -350,11 +378,15 @@ export function planFill(r: ScheduleRow, job: ScheduleJob): ScheduleFill {
   // The folder and floor plan join the job's client links; a link it already
   // has (or has as its check-in or checkout link) isn't added twice.
   const have = parseClientLinks([...(job.client_links ?? []), job.checkout_link ?? '', job.checkin_link ?? '', patch.checkout_link ?? '', patch.checkin_link ?? ''].join('\n'));
+  // A job keeps ten client links; one that won't fit is said, not promised.
+  const room = CLIENT_LINKS_MAX - (job.client_links ?? []).length;
   const add: string[] = [];
   for (const [link, label] of [[r.deliverables, 'deliverables folder'], [r.floorplan, 'floor plan']] as const) {
-    if (link && !have.includes(link) && !add.includes(link)) { add.push(link); filled.push(label); }
+    if (!link || have.includes(link) || add.includes(link)) continue;
+    if (add.length < room) { add.push(link); filled.push(label); }
+    else differs.push(`No room for the ${label}: the job already has ${CLIENT_LINKS_MAX} client links.`);
   }
-  if (add.length) patch.client_links = [...(job.client_links ?? []), ...add].slice(0, 10);
+  if (add.length) patch.client_links = [...(job.client_links ?? []), ...add];
 
   return { patch, filled, differs };
 }

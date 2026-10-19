@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import {
-  cleanScheduleRows, isCancelled, matchSchedule, newScheduleJob, planFill, siteKey, type ScheduleJob, type SchedulePreviewRow,
+  cleanScheduleRows, isCancelled, matchSchedule, newScheduleJob, planFill, siteKey, siteLookupIds, type ScheduleJob, type SchedulePreviewRow,
+  SCHEDULE_MAX_ROWS, tooManyRows,
 } from '@/lib/client-schedule';
 
 // The client's weekly schedule (lib/client-schedule.ts). The browser reads the
@@ -23,15 +24,16 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
+  if (Array.isArray(body?.rows) && body.rows.length > SCHEDULE_MAX_ROWS) {
+    return NextResponse.json({ error: tooManyRows(body.rows.length) }, { status: 400 });
+  }
   const rows = cleanScheduleRows(body?.rows);
   if (rows.length === 0) return NextResponse.json({ error: 'No rows with a Site ID came through.' }, { status: 400 });
 
-  // A site typed "05007927" in one place and 5007927 in the other is the same site.
-  const ids = [...new Set(rows.flatMap((r) => [r.siteId, siteKey(r.siteId)]))];
   const { data: jobs, error } = await supabase
     .from('work_orders')
     .select(JOB_FIELDS)
-    .in('client_reference', ids)
+    .in('client_reference', siteLookupIds(rows))
     .is('archived_at', null);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

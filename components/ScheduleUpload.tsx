@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { FileSpreadsheet, CheckCircle2, AlertTriangle, Upload } from 'lucide-react';
 import { toastError, toastSuccess } from '@/lib/toast';
 import {
-  dayLabel, parseSchedule, timeLabel, type ScheduleCell, type SchedulePreviewRow, type ScheduleRow,
+  dayLabel, parseSchedule, SCHEDULE_MAX_ROWS, timeLabel, tooManyRows, type ScheduleCell, type SchedulePreviewRow, type ScheduleRow,
 } from '@/lib/client-schedule';
 
 // The client's weekly schedule on the Import screen (lib/client-schedule.ts):
@@ -26,6 +26,11 @@ async function readSchedule(file: File) {
       const c = cell as { l?: { Target?: string }; v?: unknown; t?: string; w?: string };
       if (c.l?.Target && /^https?:\/\//i.test(c.l.Target) && !/^https?:\/\//i.test(String(c.v ?? ''))) {
         c.v = c.l.Target; c.t = 's'; delete c.w;
+      }
+      // A number shown with leading zeros (a lockbox code 0123, a zip 07801)
+      // is kept as shown: the stored number has lost them.
+      if (c.t === 'n' && typeof c.w === 'string' && /^0\d+$/.test(c.w.trim())) {
+        c.v = c.w.trim(); c.t = 's';
       }
     }
     const table = XLSX.utils.sheet_to_json<ScheduleCell[]>(ws, { header: 1, raw: true, defval: null });
@@ -68,6 +73,7 @@ export default function ScheduleUpload({
     try {
       const { rows: read, error } = await readSchedule(file);
       if (error) { toastError(error); return; }
+      if (read.length > SCHEDULE_MAX_ROWS) { toastError(tooManyRows(read.length)); return; }
       const data = await send(read, false);
       setRows(read);
       setPreview(data.rows);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   accessText, cleanScheduleRows, isCancelled, matchSchedule, newScheduleJob, parseSchedule, planFill,
-  scheduleDate, scheduleLink, scheduleTime, siteKey, type ScheduleJob,
+  scheduleDate, scheduleLink, scheduleTime, siteKey, siteLookupIds, SCHEDULE_MAX_ROWS, tooManyRows, type ScheduleJob,
 } from './client-schedule';
 
 // The client's weekly sheet as Excel hands it over: Site ID as a number, the
@@ -80,8 +80,11 @@ describe('cells', () => {
     expect(scheduleTime('morning')).toBeNull();
   });
 
-  it('links: the first web address, nothing else', () => {
+  it('links: the first web address, nothing else, and never cut short', () => {
     expect(scheduleLink(`Folder: ${FOLDER}.`)).toBe(FOLDER);
+    const signed = `https://example.com/f?sig=${'a'.repeat(900)}`;
+    expect(scheduleLink(signed)).toBe(signed);
+    expect(scheduleLink(`https://example.com/f?sig=${'a'.repeat(2100)}`)).toBe('');
     expect(scheduleLink('see email')).toBe('');
     expect(scheduleLink('.')).toBe('');
   });
@@ -89,6 +92,9 @@ describe('cells', () => {
   it('site IDs match however they are typed', () => {
     expect(siteKey('05007927')).toBe(siteKey('5007927'));
     expect(siteKey(' AB-12 ')).toBe('ab-12');
+    // The lookup finds a job stored with the zeros Excel dropped.
+    expect(siteLookupIds([{ siteId: '5007927' }])).toEqual(['5007927', '05007927', '005007927', '0005007927']);
+    expect(siteLookupIds([{ siteId: 'AB-12' }])).toEqual(['AB-12', 'ab-12']);
   });
 });
 
@@ -101,6 +107,8 @@ describe('cleanScheduleRows', () => {
     expect(bad[0]).toMatchObject({ date: null, time: null, checkout: '' });
     expect(bad[0].siteId).toHaveLength(80);
     expect(cleanScheduleRows('nope')).toEqual([]);
+    expect(tooManyRows(750)).toMatch(/750 rows.*500/);
+    expect(cleanScheduleRows(Array.from({ length: SCHEDULE_MAX_ROWS + 5 }, () => r))).toHaveLength(SCHEDULE_MAX_ROWS);
   });
 });
 
@@ -182,9 +190,25 @@ describe('planFill', () => {
     ]);
   });
 
-  it('never goes past the ten-link limit', () => {
-    const full = Array.from({ length: 10 }, (_, i) => `https://example.com/${i}`);
-    expect(planFill(r, job({ client_links: full })).patch.client_links).toHaveLength(10);
+  it("adds only links that fit under the ten-link limit, and says which didn't", () => {
+    const links = (n: number) => Array.from({ length: n }, (_, i) => `https://example.com/${i}`);
+    const full = planFill(r, job({ client_links: links(10) }));
+    expect(full.patch.client_links).toBeUndefined();
+    expect(full.filled).not.toContain('deliverables folder');
+    expect(full.differs).toContain('No room for the deliverables folder: the job already has 10 client links.');
+    const both = { ...r, floorplan: 'https://example.com/plan.pdf' };
+    const nine = planFill(both, job({ client_links: links(9) }));
+    expect(nine.patch.client_links).toEqual([...links(9), FOLDER]);
+    expect(nine.filled).toContain('deliverables folder');
+    expect(nine.differs).toContain('No room for the floor plan: the job already has 10 client links.');
+  });
+
+  it('a job missing only its end date gets it, and the preview says so', () => {
+    const { patch, filled } = planFill({ ...r, endDate: '2026-10-20' }, job({
+      external_wo_id: 'T-1001', access_instructions: 'Lockbox code 1234. Lockbox: Rear door', client_links: [FORM, FOLDER], end_date: null,
+    }));
+    expect(patch).toEqual({ end_date: '2026-10-20' });
+    expect(filled).toEqual(['end date']);
   });
 });
 

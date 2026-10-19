@@ -19,7 +19,9 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: 'FAJ Tech',
-    statusBarStyle: 'black-translucent',
+    // 'black', not 'black-translucent': installed on an iPhone, the page
+    // started under the clock and battery, hiding the logo, Menu and Log out.
+    statusBarStyle: 'black',
   },
   // Next 16 writes `capable` as the new mobile-web-app-capable tag only. iPhones
   // still read the old apple- one, and without it some add the tech portal to

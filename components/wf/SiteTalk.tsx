@@ -520,6 +520,7 @@ export function LeftSiteDialog({ onPick, onStillHere }: { onPick: (reason: strin
 
 export function SheetLinkButton({ number }: { number: string }) {
   const [busy, setBusy] = useState(false);
+  const [link, setLink] = useState<string | null>(null);
   const open = async () => {
     setBusy(true);
     // Open the tab first (phones block a pop-up opened after a wait), then point it at the sheet.
@@ -529,12 +530,21 @@ export function SheetLinkButton({ number }: { number: string }) {
       const r = data as { ok?: boolean; token?: string; site?: string } | null;
       if (!r?.ok || !r.token) { w?.close(); toastError("Couldn't open the project sheet."); return; }
       const url = `/sheet/${r.token}?site=${encodeURIComponent(r.site ?? number)}`;
-      if (w) w.location.href = url; else window.location.href = url;
+      // A phone that blocks the new window gets a link to tap. Loading the sheet in
+      // place left the home-screen app on it with no way back (Fred, 2026-10-19).
+      if (w) w.location.href = url; else setLink(url);
     } catch {
       w?.close();
       toastError('No signal — try again when you have it.');
     } finally { setBusy(false); }
   };
+  if (link) {
+    return (
+      <a className="wf-btn wf-btn-ghost wf-btn-sm" style={{ alignSelf: 'flex-start' }} href={link} target="_blank" rel="noopener noreferrer">
+        Open the project sheet
+      </a>
+    );
+  }
   return (
     <button className="wf-btn wf-btn-ghost wf-btn-sm" style={{ alignSelf: 'flex-start' }} disabled={busy} onClick={() => void open()}>
       Open the project sheet

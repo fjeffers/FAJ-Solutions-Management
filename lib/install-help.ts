@@ -23,6 +23,25 @@ export function phoneKind(ua: string): PhoneKind {
   return 'other';
 }
 
+/**
+ * On an iPhone a link in an email, a text or another app always opens Safari,
+ * never the app on the home screen, and Safari has its own sign-in. So a tech
+ * who installed the app and then taps the new-job email ends up in Safari and
+ * thinks the app "didn't stay" (Fred, 2026-10-19).
+ */
+export const IOS_LINKS_NOTE =
+  'Already on your home screen? Close Safari and tap the FAJ Tech icon instead. On an iPhone, links in emails and texts always open in Safari, not the app.';
+
+/** The old app's home-screen icon lands here with this mark (next.config.ts). */
+export const OLD_ICON_MARK = 'old-app';
+
+export function oldIconSteps(kind: PhoneKind): string {
+  const add = kind === 'ios' || kind === 'ios-inapp'
+    ? 'Then open app.fajsolutions.com/tech in Safari, tap Share, then Add to Home Screen.'
+    : 'Then open app.fajsolutions.com/tech in Chrome, tap ⋮, then Install app.';
+  return `This home-screen icon is the old FAJ app, so it opens like a website. Press and hold the icon and remove it. ${add}`;
+}
+
 /** The steps for this phone, in plain words. */
 export function installSteps(kind: PhoneKind, canPrompt: boolean): string {
   switch (kind) {

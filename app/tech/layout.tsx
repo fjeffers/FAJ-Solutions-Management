@@ -21,6 +21,11 @@ export const metadata: Metadata = {
     title: 'FAJ Tech',
     statusBarStyle: 'black-translucent',
   },
+  // Next 16 writes `capable` as the new mobile-web-app-capable tag only. iPhones
+  // still read the old apple- one, and without it some add the tech portal to
+  // the home screen as a Safari bookmark instead of an app (Fred, 2026-10-19:
+  // "when we download the app it's not staying as an app for some people").
+  other: { 'apple-mobile-web-app-capable': 'yes' },
   robots: { index: false, follow: false },
 };
 

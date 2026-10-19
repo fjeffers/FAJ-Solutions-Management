@@ -15,6 +15,8 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
     title: 'FAJ',
   },
+  // The old apple- tag iPhones still read (Next 16 writes only the new one).
+  other: { 'apple-mobile-web-app-capable': 'yes' },
 };
 
 export const viewport: Viewport = {

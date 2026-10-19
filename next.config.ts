@@ -10,10 +10,14 @@ const nextConfig: NextConfig = {
   // portal; a tech on it is in the right place, and anyone else is shown the way
   // to the office app from there.
   async redirects() {
+    // The old app's home-screen icon still opens /workflow. Landing on /tech
+    // is outside that icon's app, so an iPhone shows it like a website; the
+    // from=old-app mark lets the tech portal say to replace the icon
+    // (lib/install-help.ts).
     return [
-      { source: "/workflow", destination: "/tech", permanent: false },
-      { source: "/workflow/", destination: "/tech", permanent: false },
-      { source: "/workflow/index.html", destination: "/tech", permanent: false },
+      { source: "/workflow", destination: "/tech?from=old-app", permanent: false },
+      { source: "/workflow/", destination: "/tech?from=old-app", permanent: false },
+      { source: "/workflow/index.html", destination: "/tech?from=old-app", permanent: false },
     ];
   },
   async headers() {

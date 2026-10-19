@@ -1550,7 +1550,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   return (
     <div className="fs-stack">
       <DetailHeader job={job} ownerView={false} />
-      <JobIcons job={job} canPhoto={canReport} photoBusy={!!ph.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)} />
+      <JobIcons job={job} canPhoto={canReport} photoBusy={!!ph.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
+        onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
       {job.status === 'offered' && bottom}
       {dayCard}
       {job.description && (
@@ -1631,9 +1632,14 @@ function PhotoKindDialog({ odometer, receipts, onPick, onCancel }: {
   );
 }
 
-/** The icons under the job: Photo, Messages and Directions, one tap each. */
-function JobIcons({ job, canPhoto, photoBusy, onPhoto, onMessages }: {
+/**
+ * The icons under the job: Photo, Receipt, Messages and Directions, one tap each.
+ * Receipt only on a job that asks for receipts (Fred, 2026-10-19: "tech is not
+ * seeing where to add their receipts").
+ */
+function JobIcons({ job, canPhoto, photoBusy, onPhoto, onMessages, onReceipt }: {
   job: WfJob; canPhoto: boolean; photoBusy: boolean; onPhoto: (f: File | undefined) => void; onMessages: () => void;
+  onReceipt?: () => void;
 }) {
   const tile: React.CSSProperties = {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -1650,6 +1656,7 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onMessages }: {
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onPhoto(f); }} />
         </label>
       )}
+      {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={22} /> Receipt</button>}
       <button type="button" style={tile} onClick={onMessages}><MessageSquare size={22} /> Messages</button>
       {address && (
         <a style={tile} href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={22} /> Directions</a>
@@ -1718,12 +1725,12 @@ function JobExpenses({ expenses, canAdd, onAdd }: { expenses: TechExpense[]; can
   const approved = expenses.filter((e) => e.status === 'approved').reduce((s, e) => s + Number(e.amount), 0);
   return (
     <Section
-      title="Expenses"
-      subtitle={expenses.length ? `${expenses.length} receipt${expenses.length === 1 ? '' : 's'}${approved ? ` · ${fmtMoney(approved)} approved` : ''}` : 'Parts, fuel, tolls — anything you paid for on this job'}
-      right={canAdd ? <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onAdd}><Receipt size={15} /> Add</button> : undefined}
+      title="Receipts"
+      subtitle={expenses.length ? `${expenses.length} receipt${expenses.length === 1 ? '' : 's'}${approved ? ` · ${fmtMoney(approved)} approved` : ''}` : 'Fuel, hotel, meals, parts, tolls: anything you paid for on this job'}
+      right={canAdd ? <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onAdd}><Receipt size={15} /> Add receipt</button> : undefined}
     >
       {expenses.length === 0 ? (
-        <div className="wf-subtle" style={{ fontSize: 13 }}>No expenses yet. Snap the receipt and you&apos;re paid back once it&apos;s approved.</div>
+        <div className="wf-subtle" style={{ fontSize: 13 }}>No receipts yet. Tap Receipt at the top of the job, snap the receipt, and you&apos;re paid back once it&apos;s approved.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {expenses.map((e) => {

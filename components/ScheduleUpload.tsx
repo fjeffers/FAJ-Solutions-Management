@@ -28,8 +28,10 @@ async function readSchedule(file: File) {
         c.v = c.l.Target; c.t = 's'; delete c.w;
       }
       // A number shown with leading zeros (a lockbox code 0123, a zip 07801)
-      // is kept as shown: the stored number has lost them.
-      if (c.t === 'n' && typeof c.w === 'string' && /^0\d+$/.test(c.w.trim())) {
+      // is kept as shown: the stored number has lost them. Only when the shown
+      // text is that same number, so a time shown as "08" (a fraction of a
+      // day underneath) or a day of the month stays a date or time.
+      if (c.t === 'n' && typeof c.w === 'string' && /^0\d+$/.test(c.w.trim()) && Number(c.w) === c.v) {
         c.v = c.w.trim(); c.t = 's';
       }
     }

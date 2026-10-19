@@ -6,7 +6,11 @@
 // either way; the checkout form is filled in with them where it can be.
 import { dayOf, type DayEvent } from './project-day';
 
-export type SiteLinks = { checkin?: string; checkout?: string };
+export type SiteLinks = {
+  checkin?: string; checkout?: string;
+  /** The client's numbers for the job (migration 135): the site (client_reference) and their ticket (external_wo_id). */
+  siteId?: string; ticket?: string;
+};
 
 const web = (v: unknown): string | undefined => (typeof v === 'string' && /^https?:\/\/\S+$/i.test(v.trim()) ? v.trim() : undefined);
 
@@ -19,12 +23,22 @@ export function parseSiteLinks(raw: unknown): SiteLinks {
   const checkout = web(r.checkout);
   if (checkin) out.checkin = checkin;
   if (checkout) out.checkout = checkout;
+  const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 80) : undefined);
+  const siteId = text(r.site_id);
+  const ticket = text(r.ticket);
+  if (siteId) out.siteId = siteId;
+  if (ticket) out.ticket = ticket;
   return out;
 }
 
-/** The site number in an LDS job's title: "LDS-1110-5011876-Gaffney, NC" → "5011876". */
+/**
+ * The site number in a job's title, when the job doesn't keep it on its own:
+ * "LDS-1110-5011876-Gaffney, NC", "LDS Site 5011876 — Gaffney" or
+ * "Site ID 5006643 Goldsboro" → the number.
+ */
 export function siteIdOf(title: string | null | undefined): string | null {
-  const m = /\bLDS-\d+-(\d{4,})/i.exec(title ?? '');
+  const t = title ?? '';
+  const m = /\bLDS-\d+-(\d{4,})/i.exec(t) ?? /\bSite(?:\s*ID)?\s*#?\s*(\d{5,})\b/i.exec(t);
   return m ? m[1] : null;
 }
 

@@ -1194,7 +1194,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const [checkoutAt, setCheckoutAt] = useState<string | null>(null);
   /** The client's checkout form, filled in with this job and today's times (lib/site-links.ts). */
   const checkoutHref = (off: string) => siteLinks.checkout ? checkoutFormUrl(siteLinks.checkout, {
-    siteId: siteIdOf(job.title), wo: job.number, name: techName,
+    // The client's own numbers (migration 135): their Site ID, and their ticket, never FAJ's WO number.
+    siteId: siteLinks.siteId ?? siteIdOf(job.title), wo: siteLinks.ticket ?? '', name: techName,
     on: onSiteSince(job.myDay ?? [], off, 'America/New_York'), off, timeZone: 'America/New_York',
   }) : null;
   const [chatOpen, setChatOpen] = useState(false);

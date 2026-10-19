@@ -15,9 +15,17 @@ describe('the client links for a day on site (Fred, 2026-10-18)', () => {
     expect(parseSiteLinks(null)).toEqual({});
   });
 
-  it('finds the site number in an LDS title', () => {
+  it("reads the client's site and ticket numbers", () => {
+    expect(parseSiteLinks({ checkout: FORM, site_id: ' 5011876 ', ticket: 'LDS-1110' })).toEqual({ checkout: FORM, siteId: '5011876', ticket: 'LDS-1110' });
+    expect(parseSiteLinks({ site_id: '', ticket: 7 })).toEqual({});
+  });
+
+  it('finds the site number in a title', () => {
     expect(siteIdOf('LDS-1110-5011876-Gaffney, NC')).toBe('5011876');
     expect(siteIdOf('TEST — LDS-1110-5011876-Gaffney, NC')).toBe('5011876');
+    expect(siteIdOf('LDS Site 5011876 — Gaffney, SC (NetView LDS-1110)')).toBe('5011876');
+    expect(siteIdOf('Site 5006643 Goldsboro, NC —')).toBe('5006643');
+    expect(siteIdOf('Site ID # 5006643')).toBe('5006643');
     expect(siteIdOf('Wendy’s #4411 network')).toBeNull();
     expect(siteIdOf(null)).toBeNull();
   });

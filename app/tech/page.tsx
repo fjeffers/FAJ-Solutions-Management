@@ -281,7 +281,8 @@ export default function TechPortalPage() {
         const last = lastUid(kv);
         if (last && loadCopy(kv, last, 'profile')) u = last;
       }
-      if (!u) { router.replace('/tech/login'); return; }
+      // Signed out: to the sign-in, keeping a job link's ?wo= so it comes back to that job.
+      if (!u) { router.replace(`/tech/login${window.location.search}`); return; }
       if (cancelled) return;
       setUid(u);
 

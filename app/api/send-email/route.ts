@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import {
   workOrderEmail,
+  techJobUrl,
   paymentConfirmationEmail,
   w9RequestEmail,
   accountantSummaryEmail,
@@ -21,7 +22,7 @@ function woEmailFor(wo: WorkOrder, note: string | undefined, recipient: WORecipi
   const respond = `${base}/api/portal/respond?token=${recipient.portal_token}&wo=${wo.id}`;
   return workOrderEmail(wo, note, {
     techPay: techPayToShow(wo, recipient.name),
-    portalUrl: `${base}/portal/${recipient.portal_token}`,
+    jobUrl: techJobUrl(base, wo.id),
     acceptUrl: `${respond}&action=accept`,
     declineUrl: `${respond}&action=decline`,
   });

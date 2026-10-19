@@ -1,5 +1,22 @@
 'use client';
 import { useState, useRef } from 'react';
+import { shrinkPhoto } from '@/lib/photo-stamp';
+
+// A server request carries ~4.5 MB at most (lib/job-docs.ts), and an iPhone
+// photo is often bigger, so it failed to save (Fred, 2026-10-19: Paul's iPhone,
+// "trying to save it, it doesn't work"). Photos are sized down here first, the
+// way the tech app does; anything still too big gets a plain message.
+const SEND_MAX = 4 * 1024 * 1024;
+
+async function readyToSend(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) return file;
+  try {
+    const blob = await shrinkPhoto(file, 1920);
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg' });
+  } catch {
+    return file; // a photo this phone can't redraw goes as it is
+  }
+}
 
 interface UploadedFile {
   url: string;
@@ -35,13 +52,17 @@ export default function PortalUpload({ woId, token, initialUrls = [] }: Props) {
 
     for (const file of Array.from(fileList)) {
       try {
+        const ready = await readyToSend(file);
+        if (ready.size > SEND_MAX) {
+          throw new Error(`${file.name} is too big to send (${(ready.size / 1048576).toFixed(1)} MB). Files must be under 4 MB.`);
+        }
         const fd = new FormData();
         fd.append('token',  token);
         fd.append('wo_id',  woId);
-        fd.append('file',   file);
+        fd.append('file',   ready);
 
         const res = await fetch('/api/portal/upload', { method: 'POST', body: fd });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({ error: res.status === 413 ? 'That file is too big to send.' : 'Upload failed' }));
 
         if (!res.ok || !data.url) throw new Error(data.error ?? 'Upload failed');
 
@@ -101,7 +122,7 @@ export default function PortalUpload({ woId, token, initialUrls = [] }: Props) {
           {uploading ? 'Uploading…' : 'Tap to add photos or files'}
         </span>
         <span style={{ fontSize: 11, color: '#9ca3af' }}>
-          JPG, PNG, HEIC, PDF • max 10 MB each
+          JPG, PNG, HEIC, PDF • photos are made smaller to send • other files under 4 MB
         </span>
       </label>
 

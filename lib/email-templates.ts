@@ -83,10 +83,20 @@ function section(heading: string, content: string): string {
 // the TECH's pay (never the client price) and one-click Accept / Decline links.
 export type WorkOrderEmailOpts = {
   techPay?: number | null;
-  portalUrl?: string | null;
+  /** The job in the FAJ Tech app (techJobUrl). */
+  jobUrl?: string | null;
   acceptUrl?: string | null;
   declineUrl?: string | null;
 };
+
+/**
+ * The job in the FAJ Tech app, where the tech checks in, adds photos and checks
+ * out. Job emails used to open the old contractor portal, which an iPhone opens
+ * in Safari and which sends photos at full size (Fred, 2026-10-19: Paul's iPhone
+ * "can't basically do anything on the app"). Signed out, it lands on the sign-in
+ * and comes back to this job.
+ */
+export const techJobUrl = (base: string, woId: string) => `${base.replace(/\/+$/, '')}/tech?wo=${encodeURIComponent(woId)}`;
 
 /** "08:00" / "17:30" → "8:00 AM" / "5:30 PM"; anything else as written. */
 export function clock12(raw: string | null | undefined): string {
@@ -150,10 +160,10 @@ export function workOrderEmail(wo: WorkOrder, note?: string, opts: WorkOrderEmai
       <div style="font-size:13px;color:#555;margin-bottom:14px;font-weight:600;">Can you take this job?</div>
       <a href="${opts.acceptUrl}" style="display:inline-block;background:#047857;color:#fff;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;margin:0 6px 8px;">✓ Accept Job</a>
       <a href="${opts.declineUrl}" style="display:inline-block;background:#fff;color:#b91c1c;border:2px solid #b91c1c;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;margin:0 6px 8px;">✗ Decline</a>
-      ${opts.portalUrl ? `<div style="margin-top:10px;"><a href="${opts.portalUrl}" style="color:${TEAL};font-size:13px;font-weight:600;">Open my portal for full details ↗</a></div>` : ''}
-    </div>` : (opts.portalUrl ? `
+      ${opts.jobUrl ? `<div style="margin-top:10px;"><a href="${opts.jobUrl}" style="color:${TEAL};font-size:13px;font-weight:600;">Open the job in the FAJ Tech app ↗</a></div>` : ''}
+    </div>` : (opts.jobUrl ? `
     <div style="text-align:center;margin:28px 0;">
-      <a href="${opts.portalUrl}" style="display:inline-block;background:${TEAL};color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">Open My Portal</a>
+      <a href="${opts.jobUrl}" style="display:inline-block;background:${TEAL};color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">Open the job in the FAJ Tech app</a>
     </div>` : '');
 
   const body = `

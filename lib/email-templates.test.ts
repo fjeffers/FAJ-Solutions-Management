@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clock12, techStatusWord, scheduleLine, workOrderEmail, paymentConfirmationEmail } from './email-templates';
+import { clock12, techJobUrl, techStatusWord, scheduleLine, workOrderEmail, paymentConfirmationEmail } from './email-templates';
 import { fmtDate } from './utils';
 import type { Payment, WorkOrder } from './types';
 
@@ -36,13 +36,24 @@ describe('tech job email', () => {
   });
 
   it('never shows the job price, and shows pay only when it is given', () => {
-    const html = workOrderEmail(gaffney, undefined, { techPay: null, portalUrl: 'https://x/portal/t' });
+    const html = workOrderEmail(gaffney, undefined, { techPay: null, jobUrl: 'https://x/tech?wo=w1' });
     expect(html).not.toContain('866.46');
     expect(html).not.toContain('Your Pay');
     expect(html).toContain('8:00 AM');
     expect(html).toContain('Assigned to you');
     expect(html).toContain('29340');
     expect(workOrderEmail(gaffney, undefined, { techPay: 400 })).toContain('Your Pay');
+  });
+
+  it('the job button opens the job in the tech app, not the old portal', () => {
+    expect(techJobUrl('https://app.fajsolutions.com/', 'abc-123')).toBe('https://app.fajsolutions.com/tech?wo=abc-123');
+    expect(techJobUrl('https://x', 'a b')).toBe('https://x/tech?wo=a%20b');
+    const html = workOrderEmail(gaffney, undefined, { jobUrl: techJobUrl('https://x', 'w1') });
+    expect(html).toContain('href="https://x/tech?wo=w1"');
+    expect(html).toContain('Open the job in the FAJ Tech app');
+    expect(html).not.toContain('Open My Portal');
+    const offer = workOrderEmail(gaffney, undefined, { jobUrl: 'https://x/tech?wo=w1', acceptUrl: 'https://x/a', declineUrl: 'https://x/d' });
+    expect(offer).toContain('Open the job in the FAJ Tech app ↗');
   });
 
   it('the payment receipt a tech gets never shows the job price', () => {

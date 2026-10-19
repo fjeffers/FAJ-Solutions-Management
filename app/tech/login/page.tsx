@@ -46,7 +46,13 @@ export default function TechLoginPage() {
     // Bind this login to its contractor record. Safe on every sign-in — once
     // linked it short-circuits.
     const claim = await claimTechAccount();
-    if (claim.ok) { router.push('/tech'); router.refresh(); return; }
+    if (claim.ok) {
+      // Came from a job link (/tech?wo=…, the job emails): back to that job.
+      const wo = new URLSearchParams(window.location.search).get('wo');
+      router.push(wo ? `/tech?wo=${encodeURIComponent(wo)}` : '/tech');
+      router.refresh();
+      return;
+    }
 
     // Not a tech. The tech portal and the admin app stay separate (Fred,
     // 2026-10-02: "need to be separate from admin"): an owner or staff login is

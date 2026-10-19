@@ -2,7 +2,7 @@ import { techAppEmail, techAppInviteBlock } from '@/lib/tech-app-email';
 import { onboardingEmail } from '@/lib/onboarding-email';
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
+import { portalInviteEmail, techJobUrl, type PortalWOSummary } from '@/lib/email-templates';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { newWorkOrderPush, pushToTech } from '@/lib/tech-push';
@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
     const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com';
     const canRespond = !!(portal_token && wo_id);
     const respond = canRespond ? `${base}/api/portal/respond?token=${portal_token}&wo=${wo_id}` : null;
-    const portalUrl = portal_token ? `${base}/portal/${portal_token}` : null;
+    // The job in the tech app, not the old portal (lib/email-templates.ts techJobUrl).
+    const jobUrl = wo_id ? techJobUrl(base, wo_id) : `${base}/tech`;
     subject = `Work Order #${wo_number} Assigned to You — please accept or decline`;
     html = `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
@@ -65,9 +66,7 @@ export async function POST(req: NextRequest) {
           <a href="${respond}&action=accept" style="display:inline-block;background:#047857;color:#fff;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;margin:0 6px 8px;">✓ Accept Job</a>
           <a href="${respond}&action=decline" style="display:inline-block;background:#fff;color:#b91c1c;border:2px solid #b91c1c;padding:12px 30px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;margin:0 6px 8px;">✗ Decline</a>
         </div>` : ''}
-        ${portalUrl
-          ? `<p style="text-align:center;"><a href="${portalUrl}" style="color:#0D7377;font-weight:600;">Open your portal for full details ↗</a></p>`
-          : `<p>Log in to the contractor portal to view details and get started.</p>`}
+        <p style="text-align:center;"><a href="${jobUrl}" style="color:#0D7377;font-weight:600;">Open the job in the FAJ Tech app ↗</a></p>
         __APP_INVITE__
         <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
       </div>
@@ -79,7 +78,7 @@ export async function POST(req: NextRequest) {
         <h2 style="color:#0D7377;">Work Order Status Update</h2>
         <p>Hi ${contractor_name},</p>
         <p>Work Order <strong>#${wo_number}</strong>${title ? ` (${title})` : ''} has been updated to: <strong>${status}</strong></p>
-        <p>Log in to the contractor portal for details.</p>
+        <p>Open the FAJ Tech app for details.</p>
         <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
       </div>
     `;

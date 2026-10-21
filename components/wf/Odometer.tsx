@@ -67,7 +67,9 @@ export function useMileage(woNumber: string, moment: OdometerMoment) {
   };
   const typed = Number(reading.replace(/[,\s]/g, ''));
   const ok = reading.trim() !== '' && Number.isFinite(typed) && typed >= 0 && typed < 10_000_000;
-  return { photo, preview, takenAt, pos, reading, setReading, ai, busy, take, typed, ok };
+  // A required reading needs the photo, with the GPS on it (2026-10-20).
+  const complete = ok && !!photo && !!pos;
+  return { photo, preview, takenAt, pos, reading, setReading, ai, busy, take, typed, ok, complete };
 }
 export type Mileage = ReturnType<typeof useMileage>;
 
@@ -130,17 +132,19 @@ export function MileagePhoto({ m, moment }: { m: Mileage; moment: OdometerMoment
         {m.busy ? 'Reading the photo…'
           : m.ai != null ? (m.typed === m.ai ? 'Read from the photo. Check it matches the dashboard.' : `The photo reads ${m.ai.toLocaleString('en-US')}. The office sees both.`)
             : m.photo ? "Couldn't read the photo. Type the number in." : null}
-        {!m.busy && m.photo && !m.pos ? ' No GPS on this photo: the phone did not give a location.' : ''}
+        {!m.busy && m.photo && !m.pos ? ' No GPS on this photo. Turn on Location for this app and retake it.' : ''}
       </div>
     </div>
   );
 }
 
 /** The ending mileage, asked right after arriving. */
-export default function OdometerDialog({ woNumber, moment, keep, onClose, initialFile }: {
+export default function OdometerDialog({ woNumber, moment, keep, onClose, initialFile, required = false }: {
   woNumber: string; moment: OdometerMoment; keep: SavePhoto; onClose: () => void;
   /** A photo already taken (the job's Photo icon, marked as mileage): stamped and read at once. */
   initialFile?: File | null;
+  /** A drive to a site: no Skip, and the photo needs its GPS (lib/checkin.ts needsOdometer). */
+  required?: boolean;
 }) {
   const m = useMileage(woNumber, moment);
   const started = useRef(false);
@@ -156,13 +160,14 @@ export default function OdometerDialog({ woNumber, moment, keep, onClose, initia
     if (done === 'saved') toastSuccess('Mileage sent.');
     if (done) onClose();
   };
+  const close = required ? () => toastError('The mileage photo is needed for a drive to a site.') : onClose;
   return (
     <Dialog
       title={moment === 'start' ? 'Starting mileage' : 'Ending mileage'}
-      onClose={onClose}
+      onClose={close}
       footer={<>
-        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Skip</button>
-        <button className="wf-btn wf-btn-navy" disabled={busy || m.busy || !m.ok} onClick={() => void send()}><Gauge size={16} /> {busy ? 'Sending…' : 'Send'}</button>
+        {!required && <button className="wf-btn wf-btn-ghost" onClick={onClose}>Skip</button>}
+        <button className="wf-btn wf-btn-navy" disabled={busy || m.busy || !(required ? m.complete : m.ok)} onClick={() => void send()}><Gauge size={16} /> {busy ? 'Sending…' : 'Send'}</button>
       </>}
     >
       <p className="wf-subtle" style={{ margin: '0 0 12px', fontSize: 13.5 }}>

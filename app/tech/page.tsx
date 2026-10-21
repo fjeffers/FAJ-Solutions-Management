@@ -42,12 +42,12 @@ import { dayState, lastPlace, tripLeg, DEST_LABEL } from '@/lib/project-day';
 import { asks, type CaptureItem } from '@/lib/capture';
 import OdometerDialog, { readPhoto, type OdometerMoment, type SavePhoto } from '@/components/wf/Odometer';
 import CheckInDialog, { type CheckInSend } from '@/components/wf/CheckIn';
-import type { Drive } from '@/lib/checkin';
+import { needsOdometer, type Drive } from '@/lib/checkin';
 import type { ReceiptRead } from '@/lib/photo-read';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
-import { getPosition, stampLines, mapLink, milesBetween, type Position } from '@/lib/geo';
+import { getPosition, stampLines, mapLink, milesBetween, NEED_GPS, type Position } from '@/lib/geo';
 import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
 import { EXPENSE_CATEGORIES, EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
 import { queuePhoto, queuedPhotos, dropQueuedPhoto, type QueuedPhoto } from '@/lib/photo-queue';
@@ -363,10 +363,10 @@ export default function TechPortalPage() {
     if (arriving.current) return;
     arriving.current = true;
     try {
-      const driving = dayState(job.myDay ?? []).stage === 'travel';
-      await dayFor(job).arrive();
-      // The ending mileage, when there was a drive to end.
-      if (driving && asks(job.capture, 'travel') && asks(job.capture, 'odometer')) setOdoEnd(job);
+      const st = dayState(job.myDay ?? []);
+      const saved = await dayFor(job).arrive();
+      // The ending mileage, required at the end of a drive to a site (lib/checkin.ts needsOdometer).
+      if (saved && st.stage === 'travel' && asks(job.capture, 'travel') && needsOdometer(st.dest)) setOdoEnd(job);
     } finally {
       arriving.current = false;
     }
@@ -516,7 +516,7 @@ export default function TechPortalPage() {
             from={lastPlace(checkIn.myDay ?? [])} send={sendFor(checkIn)} onClose={() => setCheckIn(null)} />
         );
       })()}
-      {odoEnd && <OdometerDialog woNumber={odoEnd.number} moment="end" keep={keepFor(odoEnd)} onClose={() => setOdoEnd(null)} />}
+      {odoEnd && <OdometerDialog woNumber={odoEnd.number} moment="end" required keep={keepFor(odoEnd)} onClose={() => setOdoEnd(null)} />}
       {/* After the ending mileage and Check in's own steps, so one window at a time. */}
       {onSiteLink && !odoEnd && !checkIn && <OnSiteLinkDialog number={onSiteLink.number} onClose={() => setOnSiteLink(null)} />}
       <div className={`fs-layout${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}`}>
@@ -1229,6 +1229,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const shown = askedOnly(job);
   const deliverables = askedDeliverables(job, checklist.items);
   const [odometer, setOdometer] = useState<OdometerMoment | null>(null);
+  const [odoRequired, setOdoRequired] = useState(false);
   // A project site always needs the signature, or the reason there isn't one.
   const project = !!job.isProject;
   // The day of travel, lunch and time on site: project jobs, and every job once
@@ -1265,32 +1266,37 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     || Object.entries(answers).some(([id, v]) => v !== (job.questions.find((q) => q.id === id)?.answer ?? ''));
 
   // GPS on the clock (Fred, 2026-10-02). The time is the moment of the tap;
-  // the position is looked up for a few seconds at most, works with no signal,
-  // and the clock still works if the phone won't give one.
+  // the position is looked up for a few seconds at most and works with no signal.
+  // It is required (2026-10-20): with no fix the clock is not changed.
   const toggleClock = async () => {
     const on = isClockedIn(job);
     const at = new Date();
     setLocating(true);
-    const pos = await getPosition(6000);
+    const pos = await getPosition(8000);
     setLocating(false);
+    if (!pos) { toastError(NEED_GPS); return; }
     void act(
-      makeAction('clock', { number: job.number, action: on ? 'out' : 'in', lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null },
+      makeAction('clock', { number: job.number, action: on ? 'out' : 'in', lat: pos.lat, lng: pos.lng, acc: pos.accuracy },
         `Clock ${on ? 'out of' : 'in on'} WO ${job.number}`, at),
       on ? 'Clocked out.' : 'Clocked in. The job is in progress.',
     );
   };
   // The project day (migration 117). Each tap: the time now, the position if
   // the phone gives it within a few seconds, then into the outbox.
+  // Required (2026-10-20): with no fix the tap is not saved.
   const where = async () => {
     setLocating(true);
-    const pos = await getPosition(6000);
+    const pos = await getPosition(8000);
     setLocating(false);
-    return { lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null };
+    if (!pos) { toastError(NEED_GPS); return null; }
+    return { lat: pos.lat, lng: pos.lng, acc: pos.accuracy };
   };
   const dayTap = async (kind: string, extra: Record<string, unknown>, label: string, sent: string) => {
     const at = new Date();
     const g = await where();
+    if (!g) return false;
     await act(makeAction('day', { number: job.number, kind, ...g, ...extra }, `${label} — WO ${job.number}`, at), sent);
+    return true;
   };
   const dayOn: DayActions = {
     clockIn: () => void dayTap('day_start', {}, 'Clock in', 'Clocked in. Pick where you are going.'),
@@ -1298,8 +1304,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     checkIn: () => onCheckIn(job),
     startTrip: (trip, from) => {
       const leg = tripLeg(trip, job.myDay ?? []);
+      // The starting mileage is required on a drive to a site, and only then (lib/checkin.ts needsOdometer).
       void dayTap('travel_start', { origin: from ?? leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.')
-        .then(() => { if (ask('odometer')) setOdometer('start'); });
+        .then((saved) => { if (saved && needsOdometer(leg.dest)) { setOdoRequired(true); setOdometer('start'); } });
     },
     // Arriving asks for the ending mileage right after, so the tap keeps its own time and place.
     startJob: () => onArrive(job),
@@ -1314,6 +1321,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     setOffOpen(false);
     const at = new Date();
     const g = await where();
+    if (!g) return;
     if (dayState(job.myDay ?? []).stage === 'lunch') {
       await act(makeAction('day', { number: job.number, kind: 'lunch_end', ...g }, `Back from lunch — WO ${job.number}`, at));
     }
@@ -1472,7 +1480,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           onClose={() => setCheckoutAt(null)} />
       )}
       {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }} onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); }} />}
-      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} keep={keepPhoto} initialFile={odoFile} onClose={() => { setOdometer(null); setOdoFile(null); }} />}
+      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} required={odoRequired} keep={keepPhoto} initialFile={odoFile}
+        onClose={() => { setOdometer(null); setOdoFile(null); setOdoRequired(false); }} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {left.away && project && working && (
         <LeftSiteDialog onStillHere={() => left.dismiss(30)} onPick={(reason, note) => {
@@ -2082,11 +2091,13 @@ type SentPhoto = { id: string; url: string; taken_at: string; lat: number | null
  */
 function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<void>, uid: string, setBusy: (b: boolean) => void,
   onOnSite?: () => void) {
+  // Every drive and clock-in needs the GPS (2026-10-20): with no fix the tap is not saved.
   const where = async () => {
     setBusy(true);
-    const pos = await getPosition(6000);
+    const pos = await getPosition(8000);
     setBusy(false);
-    return { lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null };
+    if (!pos) { toastError(NEED_GPS); return null; }
+    return { lat: pos.lat, lng: pos.lng, acc: pos.accuracy };
   };
   const day = (kind: string, extra: Record<string, unknown>, label: string, at: Date, g: Record<string, unknown>, sent?: string) =>
     act(makeAction('day', { number: job.number, kind, ...g, ...extra }, `${label} — WO ${job.number}`, at), sent);
@@ -2103,18 +2114,22 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
   const onSite = async () => {
     const at = new Date();
     const g = await where();
+    if (!g) return false;
     if (dayState(job.myDay ?? []).stage === 'travel') await day('travel_end', {}, 'Arrived', at, g);
     await act(makeAction('clock', { number: job.number, action: 'in', ...g }, `Start job on WO ${job.number}`, at),
       'On site. Your time on site is running.');
     onOnSite?.();
+    return true;
   };
   const send: CheckInSend = {
     startDrive: async (drive: Drive, startDay: boolean) => {
       const at = new Date();
       const g = await where();
+      if (!g) return false;
       // The day starts a second before the drive, so the two stay in order.
       if (startDay) await day('day_start', {}, 'Check in', new Date(at.getTime() - 1000), g);
       await day('travel_start', { origin: drive.origin, dest: drive.dest }, 'Start travel', at, g);
+      return true;
     },
     arriveOnSite: onSite,
     keep,
@@ -2127,12 +2142,13 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     const st = dayState(job.myDay ?? []);
     if (st.stage === 'travel' && st.dest !== 'site') {
       const g = await where();
+      if (!g) return false;
       await day('travel_end', {}, 'Arrived', new Date(), g,
         st.dest === 'hotel' || st.dest === 'home' ? `At the ${st.dest}. Signed out for the day.`
           : st.dest === 'fuel' || st.dest === 'materials' ? `At the ${st.dest === 'fuel' ? 'fuel stop' : 'materials pickup'}. Tap Check in when you head out again.` : 'Arrived.');
-      return;
+      return true;
     }
-    await onSite();
+    return onSite();
   };
   return { send, keep, arrive };
 }

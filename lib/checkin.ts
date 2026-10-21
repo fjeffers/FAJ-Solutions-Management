@@ -96,6 +96,13 @@ export function checkInDrive(key: string, from: Origin | null): Drive | null {
 }
 const ORIGIN_LABEL_FOR: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Here', fuel: 'Fuel stop', materials: 'Materials pickup' };
 
+/**
+ * Only a drive to a site needs the odometer, at the start and on arrival
+ * (2026-10-20: "just travel -> on-site clock-ins requires odometer").
+ * Drives to the hotel, home, fuel or materials don't.
+ */
+export const needsOdometer = (dest: Dest | null | undefined): boolean => dest === 'site' || dest === 'next_site';
+
 /** The drive as FAJ's Start travel takes it (DayActions.startTrip). */
 export function tripOf(drive: Drive): { trip: Trip; from: Origin } {
   const trip: Trip = drive.dest === 'next_site' ? 'between' : drive.dest;

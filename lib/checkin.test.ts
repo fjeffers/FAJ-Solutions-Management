@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { DRIVES, drivesFor, driveOf, tripOf, parseStartAsks, addStartAsk, checkInNotes, checkInMissing, START_ASK_MAX } from './checkin';
+import { DRIVES, drivesFor, driveOf, tripOf, parseStartAsks, addStartAsk, checkInNotes, checkInMissing, needsOdometer, START_ASK_MAX } from './checkin';
+
+describe('check in: the odometer', () => {
+  it('is needed only on a drive to a site', () => {
+    expect(needsOdometer('site')).toBe(true);
+    expect(needsOdometer('next_site')).toBe(true);
+    for (const d of ['hotel', 'home', 'fuel', 'materials'] as const) expect(needsOdometer(d)).toBe(false);
+    expect(needsOdometer(null)).toBe(false);
+  });
+});
 
 describe('check in: the drive', () => {
   it('names every drive in one list, the likely ones first, nothing picked', () => {

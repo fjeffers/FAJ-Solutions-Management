@@ -14,8 +14,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
-  fetchTechProfile, fetchTechPayments, fetchTechSummary, fetchTechUnread, fetchTechDmUnread,
-  fetchTechPortalToken, saveTechProfile, saveTechEmergency, paymentsByYear, fetchTechMessages, sendTechMessage, claimTechAccount,
+  fetchTechProfile, fetchTechUnread, fetchTechDmUnread,
+  fetchTechPortalToken, saveTechProfile, saveTechEmergency, fetchTechMessages, sendTechMessage, claimTechAccount,
 } from '@/lib/tech-portal';
 import { fetchWfTechJobs, fetchCloseoutLists, fetchTechFilesStamp, registerTechHandlers, applyPending, toChatJob } from '@/lib/tech-wf';
 import { jobChanges } from '@/lib/tech-live';
@@ -63,10 +63,10 @@ import { checkoutFormUrl, clock24, lastOffOrNow, onSiteSince, parseSiteLinks, si
 import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
-import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
+import type { TechMessage, TechProfile } from '@/lib/types';
 import {
   CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -75,17 +75,17 @@ import ReadTool from '@/components/tools/ReadTool';
 import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 
 // Primio's tech tabs — Jobs, Available, Profile (with the W-9 inside) — plus
-// My schedule, Messages and Pay history (Fred, 2026-10-04: "the tech portal is
+// My schedule, Messages (Fred, 2026-10-04: "the tech portal is
 // whatever Primio has", keeping those three).
 // Projects sits under My jobs in the menu (Fred, 2026-10-13: "my jobs, and
 // right under my jobs ... projects"); it is not one of the bottom tabs.
 // Since 2026-10-17 the portal is Field Service's tech app (Fred: "add Field
 // Service's tech portal to FAJ Tech Portal", then "replace the tech portal"):
-// four tabs — Project, Messenger, My Schedule, Profile. My jobs, Available
-// jobs and Pay history open from Profile, so nothing a tech had is gone.
-type Tab = 'project' | 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'pay' | 'profile';
+// four tabs — Project, Messenger, My Schedule, Profile. My jobs and Available
+// jobs open from Profile, so nothing a tech had is gone.
+type Tab = 'project' | 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'profile';
 const TABS: Tab[] = ['project', 'chat', 'schedule', 'profile'];
-const UNDER_PROFILE: Tab[] = ['jobs', 'available', 'pay'];
+const UNDER_PROFILE: Tab[] = ['jobs', 'available'];
 // Projects is hidden in the tech app for now (Fred, 2026-10-14: "hide project
 // for now on the tech portal"). While it is off, project sites are ordinary
 // jobs here: listed under My jobs, with the normal clock. Set to true to bring
@@ -96,9 +96,9 @@ const SHOW_PROJECTS = false;
 // Expenses and Messages. Set to false to bring back the one-page job screen.
 const FS_JOB_SCREEN = true;
 const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, ...UNDER_PROFILE, 'projects'] : [...TABS, ...UNDER_PROFILE];
-const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
+const COPIES = ['profile', 'jobs', 'lists'];
 const TAB_TITLE: Record<Tab, string> = {
-  project: 'Work orders', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay history', profile: 'Profile',
+  project: 'Work orders', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', profile: 'Profile',
 };
 
 export default function TechPortalPage() {
@@ -124,8 +124,6 @@ export default function TechPortalPage() {
 
   const [profile, setProfile] = useState<TechProfile | null>(null);
   const [officeJobs, setOfficeJobs] = useState<WfJob[]>([]);
-  const [payments, setPayments] = useState<TechPayment[]>([]);
-  const [summary, setSummary] = useState<TechSummary | null>(null);
   const [unread, setUnread] = useState(0);
   const [portalToken, setPortalToken] = useState<string | null>(null);
   const [lists, setLists] = useState<CloseoutList[]>([]);
@@ -239,14 +237,12 @@ export default function TechPortalPage() {
         setPhase('denied');
         return;
       }
-      const [j, p, s, u1, u2, tok] = await Promise.all([
-        fetchWfTechJobs(), fetchTechPayments(), fetchTechSummary(), fetchTechUnread(), fetchTechDmUnread(), fetchTechPortalToken(),
+      const [j, u1, u2, tok] = await Promise.all([
+        fetchWfTechJobs(), fetchTechUnread(), fetchTechDmUnread(), fetchTechPortalToken(),
       ]);
-      setProfile(me); setOfficeJobs(j); setPayments(p); setSummary(s); setUnread(u1 + u2); setPortalToken(tok);
+      setProfile(me); setOfficeJobs(j); setUnread(u1 + u2); setPortalToken(tok);
       saveCopy(kv, u, 'profile', me);
       saveCopy(kv, u, 'jobs', j);
-      saveCopy(kv, u, 'payments', p);
-      saveCopy(kv, u, 'summary', s);
       setSavedAt(null);
       boxRef.current?.noteSignal(true);
       setPhase('ready');
@@ -297,8 +293,6 @@ export default function TechPortalPage() {
       if (cp && cj) {
         setProfile(cp.value);
         setOfficeJobs(cj.value);
-        setPayments(loadCopy<TechPayment[]>(kv, u, 'payments')?.value ?? []);
-        setSummary(loadCopy<TechSummary>(kv, u, 'summary')?.value ?? null);
         setLists(loadCopy<CloseoutList[]>(kv, u, 'lists')?.value ?? []);
         setSavedAt(cj.at);
         setPhase('ready');
@@ -579,12 +573,7 @@ export default function TechPortalPage() {
                   <FsPageHeader title="Available jobs" subtitle="Jobs offered to you. Accept or decline." />
                   <AvailableTab offers={offers} act={act} onOpen={openFromList} />
                 </>
-              ) : (
-                <>
-                  <FsPageHeader title="Pay history" subtitle="What you've been paid, job by job." />
-                  <PayTab payments={payments} summary={summary} />
-                </>
-              )}
+              ) : null}
             </>
           ) : tab === 'projects' ? (
             <ProjectsTab jobs={projectJobs} onOpen={openFromList} />
@@ -802,7 +791,6 @@ function ProfileMenu({ offers, go }: { offers: number; go: (t: Tab) => void }) {
       <button type="button" onClick={() => go('available')}>
         <FsIcon name="inbox" size={18} /> Available jobs{offers > 0 && <em>{offers}</em>}
       </button>
-      <button type="button" onClick={() => go('pay')}><FsIcon name="money" size={18} /> Pay history</button>
     </div>
   );
 }
@@ -2718,54 +2706,6 @@ function JobMessages({ number, talk, keep }: {
         <button className="wf-btn wf-btn-navy" onClick={send} disabled={sending || !draft.trim()} aria-label="Send"><Send size={17} /></button>
       </div>
     </Section>
-  );
-}
-
-// ── Pay history (their own pay only — never on a job) ──────────────────────
-
-function PayTab({ payments, summary }: { payments: TechPayment[]; summary: TechSummary | null }) {
-  const years = useMemo(() => paymentsByYear(payments), [payments]);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-          <div className="wf-card" style={{ padding: 14 }}>
-            <div className="wf-label">Paid this year</div>
-            <div className="wf-display" style={{ fontSize: 22, fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(summary.paid_this_year)}</div>
-          </div>
-          <div className="wf-card" style={{ padding: 14 }}>
-            <div className="wf-label">Paid all time</div>
-            <div className="wf-display" style={{ fontSize: 22, fontWeight: 700 }}>{fmtMoney(summary.paid_all_time)}</div>
-          </div>
-          <div className="wf-card" style={{ padding: '10px 14px', gridColumn: '1 / -1', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <div className="wf-label">Jobs worked</div>
-            <div className="wf-display" style={{ fontSize: 18, fontWeight: 700 }}>{summary.jobs_total}</div>
-          </div>
-        </div>
-      )}
-      {payments.length === 0 ? <Empty icon={<Wallet size={34} />} title="No payments recorded yet" /> : years.map((y) => (
-        <div key={y.year}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-            <h3 className="wf-title" style={{ fontSize: 17 }}>{y.year}</h3>
-            <div className="wf-display" style={{ fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(y.total)}</div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {y.payments.map((p) => (
-              <div key={p.id} className="wf-card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600 }}>{p.wo_title || p.wo_site || (p.wo_number ? `WO ${p.wo_number}` : 'Payment')}</div>
-                  <div className="wf-subtle" style={{ fontSize: 12.5 }}>
-                    {[p.payment_date && fmtDate(p.payment_date), p.wo_number && `WO ${p.wo_number}`, p.method].filter(Boolean).join(' · ')}
-                  </div>
-                  {p.notes && <div className="wf-subtle" style={{ fontSize: 12 }}>{p.notes}</div>}
-                </div>
-                <div className="wf-display" style={{ fontSize: 17, fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(p.amount)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 

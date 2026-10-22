@@ -5,8 +5,8 @@
 //   1. Where are you driving? One drop-down: Home → Hotel, Hotel → Site,
 //      Site → Hotel… (lib/checkin.ts). Tapping Start the drive records it at
 //      once, with the time and GPS, through the outbox, so it works with no signal.
-//   2. The starting mileage: a GPS-stamped photo, read by the AI (Odometer.tsx).
-//      Required on a drive to a site, and only then (2026-10-20, lib/checkin.ts
+//   2. The starting mileage: a GPS-stamped photo, the number read from it by the
+//      AI (Odometer.tsx). Required on every drive (Fred, 2026-10-21, lib/checkin.ts
 //      needsOdometer). Every tap needs the GPS; with no fix nothing is saved.
 //   3. At the start of the day, what the office listed for check-in on the job:
 //      a photo (GPS-stamped, kept with the job's photos) or a short answer (sent
@@ -115,15 +115,15 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
   return (
     <Dialog
       title={title}
-      // Once the drive is recorded, closing only skips the rest; never the mileage on a drive to a site.
-      onClose={step === 'mileage' ? () => toastError('The starting mileage photo is needed for a drive to a site.') : onClose}
+      // Once the drive is recorded, closing only skips the rest; never the starting mileage.
+      onClose={step === 'mileage' ? () => toastError('The starting mileage photo is needed for every drive.') : onClose}
       footer={step === 'drive' ? <>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
         {travel && !onSiteChosen
           ? <button className="wf-btn wf-btn-navy" disabled={busy || !drive} onClick={() => void startDrive()}>{busy ? 'One moment…' : 'Start the drive'}</button>
           : <button className="wf-btn wf-btn-navy" disabled={busy} onClick={() => void arrive()}><MapPin size={16} /> {busy ? 'One moment…' : "I'm on site"}</button>}
       </> : step === 'mileage' ? <>
-        {/* Required on a drive to a site: no Skip, and the photo needs its GPS. */}
+        {/* Required on every drive: no Skip, and the photo needs its GPS and a number read from it. */}
         <button className="wf-btn wf-btn-navy" disabled={busy || m.busy || !m.complete} onClick={() => void mileage()}>{busy ? 'Sending…' : 'Next'}</button>
       </> : <>
         <button className="wf-btn wf-btn-ghost" onClick={finish}>Skip</button>
@@ -155,7 +155,7 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
       {step === 'mileage' && (
         <>
           <p className="wf-subtle" style={{ margin: '0 0 12px', fontSize: 13.5 }}>
-            Take a photo of the odometer before you drive off. The time and GPS go on the photo, and the miles go on the weekly bill.
+            Take a photo of the odometer before you drive off. The miles are read from the photo, the time and GPS go on it, and the miles go on the weekly bill.
           </p>
           <MileagePhoto m={m} moment="start" />
         </>

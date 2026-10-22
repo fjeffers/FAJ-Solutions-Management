@@ -42,7 +42,7 @@ import { dayState, lastPlace, tripLeg, DEST_LABEL } from '@/lib/project-day';
 import { asks, type CaptureItem } from '@/lib/capture';
 import OdometerDialog, { readPhoto, type OdometerMoment, type SavePhoto } from '@/components/wf/Odometer';
 import CheckInDialog, { type CheckInSend } from '@/components/wf/CheckIn';
-import { needsOdometer, type Drive } from '@/lib/checkin';
+import { needsOdometer, stopReceipt, type Drive } from '@/lib/checkin';
 import type { ReceiptRead } from '@/lib/photo-read';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
@@ -344,6 +344,8 @@ export default function TechPortalPage() {
   // should be a sign out button somewhere on the top of the app").
   const [checkIn, setCheckIn] = useState<WfJob | null>(null);
   const [odoEnd, setOdoEnd] = useState<WfJob | null>(null);
+  // At a fuel or materials stop: the receipt, after the ending mileage (Fred, 2026-10-21).
+  const [stopFor, setStopFor] = useState<{ job: WfJob; category: ExpenseCategory } | null>(null);
   const [dayBusy, setDayBusy] = useState(false);
   // On site: the client's link for the day, e.g. their Teams meeting (migration 133).
   const [onSiteLink, setOnSiteLink] = useState<WfJob | null>(null);
@@ -365,8 +367,12 @@ export default function TechPortalPage() {
     try {
       const st = dayState(job.myDay ?? []);
       const saved = await dayFor(job).arrive();
-      // The ending mileage, required at the end of a drive to a site (lib/checkin.ts needsOdometer).
-      if (saved && st.stage === 'travel' && asks(job.capture, 'travel') && needsOdometer(st.dest)) setOdoEnd(job);
+      if (!saved || st.stage !== 'travel') return;
+      // The ending mileage, required at the end of every drive (lib/checkin.ts needsOdometer),
+      // then the receipt at a fuel or materials stop (stopReceipt).
+      if (asks(job.capture, 'travel') && needsOdometer(st.dest)) setOdoEnd(job);
+      const receipt = stopReceipt(st.dest);
+      if (receipt) setStopFor({ job, category: receipt });
     } finally {
       arriving.current = false;
     }
@@ -517,6 +523,7 @@ export default function TechPortalPage() {
         );
       })()}
       {odoEnd && <OdometerDialog woNumber={odoEnd.number} moment="end" required keep={keepFor(odoEnd)} onClose={() => setOdoEnd(null)} />}
+      {stopFor && !odoEnd && <ExpenseDialog job={stopFor.job} initialCategory={stopFor.category} onClose={() => setStopFor(null)} onSaved={() => setStopFor(null)} />}
       {/* After the ending mileage and Check in's own steps, so one window at a time. */}
       {onSiteLink && !odoEnd && !checkIn && <OnSiteLinkDialog number={onSiteLink.number} onClose={() => setOnSiteLink(null)} />}
       <div className={`fs-layout${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}`}>
@@ -1767,11 +1774,16 @@ function JobExpenses({ expenses, canAdd, onAdd }: { expenses: TechExpense[]; can
 }
 
 /** Snap the receipt, say what it was for, and send it to Fred. Needs signal. */
-function ExpenseDialog({ job, initialFile, onClose, onSaved }: { job: WfJob; initialFile?: File | null; onClose: () => void; onSaved: () => void }) {
+function ExpenseDialog({ job, initialFile, initialCategory = 'materials', onClose, onSaved }: {
+  job: WfJob; initialFile?: File | null;
+  /** A fuel or materials stop opens the receipt under its own category. */
+  initialCategory?: ExpenseCategory;
+  onClose: () => void; onSaved: () => void;
+}) {
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState<ExpenseCategory>('materials');
+  const [category, setCategory] = useState<ExpenseCategory>(initialCategory);
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [note, setNote] = useState('');

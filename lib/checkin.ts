@@ -97,11 +97,15 @@ export function checkInDrive(key: string, from: Origin | null): Drive | null {
 const ORIGIN_LABEL_FOR: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Here', fuel: 'Fuel stop', materials: 'Materials pickup' };
 
 /**
- * Only a drive to a site needs the odometer, at the start and on arrival
- * (2026-10-20: "just travel -> on-site clock-ins requires odometer").
- * Drives to the hotel, home, fuel or materials don't.
+ * Every drive needs the odometer, at the start and on arrival (Fred,
+ * 2026-10-21: home → hotel, hotel → site, site → hotel and back home, fuel and
+ * materials stops too). Starting work where the tech already is has no drive.
  */
-export const needsOdometer = (dest: Dest | null | undefined): boolean => dest === 'site' || dest === 'next_site';
+export const needsOdometer = (dest: Dest | null | undefined): boolean => dest != null;
+
+/** A fuel or materials stop asks for the receipt on arrival, filed under its category (Fred, 2026-10-21). */
+export const stopReceipt = (dest: Dest | null | undefined): 'fuel' | 'materials' | null =>
+  dest === 'fuel' || dest === 'materials' ? dest : null;
 
 /** The drive as FAJ's Start travel takes it (DayActions.startTrip). */
 export function tripOf(drive: Drive): { trip: Trip; from: Origin } {

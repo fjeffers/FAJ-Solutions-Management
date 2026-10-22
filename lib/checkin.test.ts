@@ -1,12 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { DRIVES, drivesFor, driveOf, tripOf, parseStartAsks, addStartAsk, checkInNotes, checkInMissing, needsOdometer, START_ASK_MAX } from './checkin';
+import { DRIVES, drivesFor, driveOf, tripOf, parseStartAsks, addStartAsk, checkInNotes, checkInMissing, needsOdometer, stopReceipt, START_ASK_MAX } from './checkin';
 
-describe('check in: the odometer', () => {
-  it('is needed only on a drive to a site', () => {
-    expect(needsOdometer('site')).toBe(true);
-    expect(needsOdometer('next_site')).toBe(true);
-    for (const d of ['hotel', 'home', 'fuel', 'materials'] as const) expect(needsOdometer(d)).toBe(false);
+describe('check in: the odometer and stop receipts', () => {
+  it('needs the odometer on every drive, not when starting work where the tech is', () => {
+    for (const d of ['site', 'next_site', 'hotel', 'home', 'fuel', 'materials'] as const) expect(needsOdometer(d)).toBe(true);
     expect(needsOdometer(null)).toBe(false);
+    expect(needsOdometer(undefined)).toBe(false);
+  });
+  it('asks for the receipt at a fuel or materials stop only', () => {
+    expect(stopReceipt('fuel')).toBe('fuel');
+    expect(stopReceipt('materials')).toBe('materials');
+    for (const d of ['site', 'next_site', 'hotel', 'home'] as const) expect(stopReceipt(d)).toBeNull();
+    expect(stopReceipt(null)).toBeNull();
   });
 });
 

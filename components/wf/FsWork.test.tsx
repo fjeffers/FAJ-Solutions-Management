@@ -76,13 +76,12 @@ describe('FsStageAction', () => {
     expect(on.arrived).toHaveBeenCalledOnce();
   });
 
-  it('on site: lunch and off site; off site: travel to the hotel by default', async () => {
+  it('on site: off site, no lunch button (lunch stays on the clock); off site: travel to the hotel by default', async () => {
     const on = actions();
     const onSite: DayEvent[] = [{ kind: 'day_start', at: iso(120) }, { kind: 'in', at: iso(90) }];
     const { rerender } = render(<FsStageAction stage="onsite" events={onSite} busy={false} enabled on={on} />);
     expect(screen.getByText(/On site 1h 30m/)).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Start lunch' }));
-    expect(on.lunch).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole('button', { name: /lunch/i })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Off site' }));
     expect(on.offSite).toHaveBeenCalledOnce();
     rerender(<FsStageAction stage="offsite" events={[...onSite, { kind: 'out', at: iso(1) }]} busy={false} enabled={false} on={on} />);
@@ -112,12 +111,15 @@ describe('FsStageAction', () => {
     expect(on.clockIn).toHaveBeenCalledOnce();
   });
 
-  it('offers a receipt on the road, not while on site', async () => {
+  it('offers a receipt on the road and on site (a meal at lunch), not when work is stopped', async () => {
     const onReceipt = vi.fn();
     const { rerender } = render(<FsStageAction stage="clocked" events={[]} busy={false} enabled on={actions()} onReceipt={onReceipt} />);
     await userEvent.click(screen.getByRole('button', { name: /Add a receipt/ }));
     expect(onReceipt).toHaveBeenCalledOnce();
     rerender(<FsStageAction stage="onsite" events={[]} busy={false} enabled on={actions()} onReceipt={onReceipt} />);
+    await userEvent.click(screen.getByRole('button', { name: /Add a receipt/ }));
+    expect(onReceipt).toHaveBeenCalledTimes(2);
+    rerender(<FsStageAction stage="stopped" events={[]} busy={false} enabled on={actions()} onReceipt={onReceipt} />);
     expect(screen.queryByRole('button', { name: /Add a receipt/ })).toBeNull();
   });
 

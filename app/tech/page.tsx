@@ -1009,7 +1009,7 @@ function ProjectsTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => 
     groups.set(k, [...(groups.get(k) ?? []), j]);
   }
   if (jobs.length === 0) {
-    return <Empty title="No projects yet" message="When the office puts you on a project site, it shows here with Start travel, Start job, Lunch, Off site and the drive to the hotel or home." />;
+    return <Empty title="No projects yet" message="When the office puts you on a project site, it shows here with Start travel, Start job, Off site and the drive to the hotel or home." />;
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -1493,8 +1493,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       {left.away && project && working && (
         <LeftSiteDialog onStillHere={() => left.dismiss(30)} onPick={(reason, note) => {
           if (reason === 'Leaving for the day') { left.dismiss(600); setOffOpen(true); return; }
+          // Lunch is still on the clock (Fred, 2026-10-21): the project manager is told, nothing stops.
           left.dismiss(reason === 'Lunch' ? 90 : 30);
-          if (reason === 'Lunch') dayOn.lunch(true);
           void act(makeAction('sitemsg', {
             number: job.number, kind: 'away', to: 'Everyone',
             reason: reason === 'Other' ? note : reason, body: reason !== 'Other' && note ? note : '',
@@ -1546,7 +1546,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       <SiteAccessBar number={job.number} talk={talk} late={late}
         showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
       <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating || dayBusy} enabled={working} afterWork={job.status === 'workDone'} on={dayOn}
-        travel={ask('travel')} lunch={ask('lunch')}
+        travel={ask('travel')}
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
       {project && <SheetLinkButton number={job.number} />}
     </>

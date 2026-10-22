@@ -66,7 +66,7 @@ import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
 import {
   CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown, Gauge,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -1448,6 +1448,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
           )}
           <JobPhotos canAdd={canReport} ph={ph} />
+          {live && ask('travel') && ask('odometer') && <MileageCard job={job} canAdd={canReport} keep={keepPhoto} />}
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} talk={project ? talk : undefined} keep={msgDraft} /></div>}
         </>}
@@ -1584,6 +1585,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           <FsDayLog events={job.myDay ?? []} />
         </section>
       )}
+      {live && ask('travel') && ask('odometer') && <MileageCard job={job} canAdd={canReport} keep={keepPhoto} />}
       <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
       {job.status !== 'offered' && bottom}
       {msgOpen && (
@@ -2273,6 +2275,50 @@ type JobDoc = { id: string; name: string; kind: string; pages: number | null; cr
 // Files the office attached on the job (work_orders.doc_urls, migration 125).
 type JobFile = { url: string; name: string };
 type ToolKey = 'scan' | 'edit' | 'read' | 'count' | 'measure';
+
+/**
+ * Mileage on a job that asks for odometer photos. The start and end are asked
+ * live (Check in and arriving), but a tech can forget — e.g. they got home, hit
+ * "I'm home", and only then remember the ending photo (Fred, 2026-10-21: "needs
+ * to be a way to add it afterwards"). This card shows what's recorded and lets
+ * them add a starting or ending photo at any time while the job is still theirs,
+ * through the same dialog and the same wf_tech_add_odometer the live flow uses.
+ */
+function MileageCard({ job, canAdd, keep }: { job: WfJob; canAdd: boolean; keep: SavePhoto }) {
+  const [add, setAdd] = useState<OdometerMoment | null>(null);
+  const readings = job.myOdometer ?? [];
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <section className="fs-card fs-form">
+      <h3><Gauge size={16} style={{ verticalAlign: '-3px', marginRight: 6 }} />Mileage</h3>
+      {readings.length > 0 ? (
+        <ul style={{ margin: '0 0 12px', paddingLeft: 18 }}>
+          {readings.map((r, i) => (
+            <li key={`${r.at}-${i}`} style={{ fontSize: 13.5 }}>
+              {r.reading.toLocaleString('en-US')} mi <span className="fs-scope">· {when(r.at)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="fs-scope" style={{ margin: '0 0 12px' }}>No odometer photos yet.</p>
+      )}
+      {canAdd && (
+        <>
+          <p className="fs-scope" style={{ margin: '0 0 8px' }}>Forgot a photo? Add it now — the AI reads the number off the odometer.</p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="wf-btn wf-btn-outline" onClick={() => setAdd('start')}>
+              <Camera size={16} /> Add starting mileage
+            </button>
+            <button type="button" className="wf-btn wf-btn-navy" onClick={() => setAdd('end')}>
+              <Camera size={16} /> Add ending mileage
+            </button>
+          </div>
+        </>
+      )}
+      {add && <OdometerDialog woNumber={job.number} moment={add} keep={keep} onClose={() => setAdd(null)} />}
+    </section>
+  );
+}
 
 function JobTools({ job, canAdd, ph, onNote }: {
   job: WfJob; canAdd: boolean; ph: ReturnType<typeof useJobPhotos>;

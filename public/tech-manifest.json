@@ -1,11 +1,12 @@
 {
   "name": "FAJ Tech Portal",
   "short_name": "FAJ Tech",
-  "description": "Your jobs, your hours, your pay — FAJ Solutions",
+  "description": "Your jobs, your schedule, your messages — FAJ Solutions",
   "id": "/tech",
   "start_url": "/tech",
   "scope": "/tech",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
   "theme_color": "#0E1B2E",
   "background_color": "#F6F4EF",
@@ -16,7 +17,6 @@
     { "src": "/icons/tech-icon-maskable-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "My work",  "url": "/tech",  "description": "The jobs that are still yours to do" },
-    { "name": "My pay",   "url": "/tech?tab=pay", "description": "What you were paid, and when" }
+    { "name": "My work",  "url": "/tech",  "description": "The jobs that are still yours to do" }
   ]
 }

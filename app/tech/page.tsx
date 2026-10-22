@@ -49,7 +49,8 @@ import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { getPosition, stampLines, mapLink, milesBetween, NEED_GPS, type Position } from '@/lib/geo';
 import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
-import { EXPENSE_CATEGORIES, EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
+import { EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
+import { useExpenseCategories } from '@/lib/use-expense-categories';
 import { queuePhoto, queuedPhotos, dropQueuedPhoto, type QueuedPhoto } from '@/lib/photo-queue';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
@@ -1784,6 +1785,7 @@ function ExpenseDialog({ job, initialFile, initialCategory = 'materials', onClos
   const [preview, setPreview] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>(initialCategory);
+  const categories = useExpenseCategories().list;
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [note, setNote] = useState('');
@@ -1890,7 +1892,8 @@ function ExpenseDialog({ job, initialFile, initialCategory = 'materials', onClos
         <div>
           {label('What was it for?')}
           <div className="wf-filters">
-            {EXPENSE_CATEGORIES.map((c) => (
+            {/* Fred's list, then the office's own categories (migration 136). */}
+            {categories.map((c) => (
               <button key={c.key} className="wf-filter" aria-pressed={category === c.key} onClick={() => setCategory(c.key)}>{c.label}</button>
             ))}
           </div>

@@ -19,7 +19,8 @@ import {
   buildDayLogs, dayOf, hoursOf, legLabel, parseDayEvents, totalsOf, type DayEvent, type DayLog,
 } from '@/lib/project-day';
 import { parseCloseout, parseCloseoutLists, listFor, skipReason, type CloseoutList } from '@/lib/closeout';
-import { EXPENSE_CATEGORIES, expenseCategoryLabel, expenseReasonText, parseExpenseAmount } from '@/lib/expenses';
+import { expenseCategoryLabel, expenseReasonText, parseExpenseAmount, totalsByCategory } from '@/lib/expenses';
+import { useExpenseCategories } from '@/lib/use-expense-categories';
 import { inRange } from '@/lib/job-log';
 import { formatDuration, isFinished, wfJobFromOwner } from '@/lib/wf';
 import { jobGaps } from '@/lib/job-gaps';
@@ -278,8 +279,23 @@ function MilesEdit({ id, miles, onSaved }: { id: string | null; miles: number | 
 
 const todayNY = () => dayOf(new Date().toISOString(), TZ);
 
+const NEW_CATEGORY = '__new';
+
 function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; onClose: () => void; onSaved: () => void }) {
   const [category, setCategory] = useState('hotel');
+  // "+ Add new expense category…" (Fred, 2026-10-21): the office names its own, migration 136.
+  const cats = useExpenseCategories();
+  const [newName, setNewName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const addCategory = async () => {
+    setAdding(true);
+    const r = await cats.add(newName);
+    setAdding(false);
+    if ('error' in r) { toastError(r.error); return; }
+    setCategory(r.key);
+    setNewName('');
+    toastSuccess(`${expenseCategoryLabel(r.key)} added to the list.`);
+  };
   const [vendor, setVendor] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayNY);
@@ -311,7 +327,7 @@ function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; onClose
     <Dialog title="Add a receipt" onClose={onClose}
       footer={<>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-navy" disabled={busy || amt == null} onClick={() => void save()}>
+        <button className="wf-btn wf-btn-navy" disabled={busy || amt == null || category === NEW_CATEGORY} onClick={() => void save()}>
           <Receipt size={16} /> {busy ? 'Saving…' : 'Save receipt'}
         </button>
       </>}>
@@ -321,13 +337,23 @@ function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; onClose
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <label>{label('What for')}
           <select className="wf-input" value={category} onChange={(e) => setCategory(e.target.value)}>
-            {EXPENSE_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+            <option value={NEW_CATEGORY}>+ Add new expense category…</option>
+            {cats.list.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
           </select>
         </label>
         <label>{label('Amount')}<input className="wf-input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$0.00" /></label>
         <label>{label('Store / hotel')}<input className="wf-input" value={vendor} onChange={(e) => setVendor(e.target.value)} maxLength={120} placeholder="Hampton Inn" /></label>
         <label>{label('Date')}<input className="wf-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
       </div>
+      {category === NEW_CATEGORY && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 10 }}>
+          <label style={{ flex: 1 }}>{label('New category name')}
+            <input className="wf-input" value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={40} placeholder="Tool rental" autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) void addCategory(); }} />
+          </label>
+          <button className="wf-btn wf-btn-navy" disabled={adding || !newName.trim()} onClick={() => void addCategory()}>{adding ? 'Adding…' : 'Add'}</button>
+        </div>
+      )}
       <label style={{ display: 'block', marginTop: 10 }}>{label('Note (optional)')}
         <input className="wf-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder="2 nights, 2 rooms" />
       </label>
@@ -474,7 +500,7 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   const shown = perSite.filter((s) => s.logs.length > 0 || s.receipts.length > 0 || s.photos.length > 0);
   const all = totalsOf(shown.flatMap((s) => s.logs));
   const receipts = shown.flatMap((s) => s.receipts.map((r) => ({ ...r, wo: s.wo })));
-  const byCat = EXPENSE_CATEGORIES.map((c) => ({ c, sum: receipts.filter((r) => r.category === c.key).reduce((t, r) => t + Number(r.amount), 0) })).filter((x) => x.sum > 0);
+  const byCat = totalsByCategory(receipts);
   const receiptTotal = receipts.reduce((t, r) => t + Number(r.amount), 0);
   const client = (wos ?? []).find((x) => x.customer_name)?.customer_name ?? '';
   const range = `${fmtDayLong(from)} – ${fmtDayLong(to)}`;
@@ -715,7 +741,7 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
                   <H>Receipts</H>
                   {byCat.length > 0 && (
                     <div className="jl-avoid" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
-                      {byCat.map(({ c, sum }) => <span key={c.key}><b>{c.label}:</b> {fmtMoney(sum)}</span>)}
+                      {byCat.map((c) => <span key={c.key}><b>{c.label}:</b> {fmtMoney(c.sum)}</span>)}
                       <span><b>Total:</b> {fmtMoney(receiptTotal)}</span>
                     </div>
                   )}

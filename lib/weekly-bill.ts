@@ -16,7 +16,7 @@
 // Pure and unit-tested (lib/weekly-bill.test.ts). The screen is ProjectReport
 // (components/wf/ProjectOffice.tsx); the AI summary reads these numbers.
 import { asks, type CaptureItem } from './capture';
-import { expenseCategoryLabel, EXPENSE_CATEGORIES } from './expenses';
+import { expenseCategoryLabel, totalsByCategory } from './expenses';
 import { hoursOf, legLabel, type DayLog, type Leg, type Origin } from './project-day';
 import { amountDiffers, odometerDiffers } from './photo-read';
 import { ACTIVITY_LABEL, activityOf } from './checkin';
@@ -251,9 +251,8 @@ export function siteBill(input: {
       onSiteHours: r2(days.reduce((t, d) => t + d.onSiteHours, 0)),
       travelHours: r2(days.reduce((t, d) => t + d.travelHours, 0)),
       gpsMiles: gpsTotal, odoMiles: odoTotal, receipts: receiptTotal, gallons,
-      byCategory: EXPENSE_CATEGORIES
-        .map((c) => ({ key: c.key, label: c.label, sum: r2(receipts.filter((r) => r.category === c.key).reduce((t, r) => t + Number(r.amount), 0)) }))
-        .filter((c) => c.sum > 0),
+      // The office's own categories too (migration 136).
+      byCategory: totalsByCategory(receipts),
     },
   };
 }

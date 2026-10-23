@@ -206,9 +206,13 @@ html:has(.fs-phone) body { background: #E4E1DA; }
    grew to its widest child (the job's tab bar), so the job screen ran off the
    right edge of a phone (Fred's screenshot, 2026-10-23). */
 .fs-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
+/* The same for every one-column card grid in the page, so long text never widens a card. */
+.fs-stat-card, .fs-wo-card, .fs-menu-card, .fs-stop, .fs-timeline, .wf-tool-menu { grid-template-columns: minmax(0, 1fr); }
 .fs-stack > .fs-btn-secondary { justify-self: start; }
 .fs-split { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
-.fs-form { display: grid; gap: 14px; padding: 22px 24px; }
+/* minmax(0, 1fr): the card's one column fits the card, so a long link shortens with "…"
+   instead of widening the card past the phone screen (Client links, 2026-10-23). */
+.fs-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 22px 24px; }
 .fs-form h3, .fs-day-title { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.2; color: var(--ink); }
 .fs-form p { margin: 0; }
 .fs-form label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); }

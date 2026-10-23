@@ -1884,6 +1884,18 @@ function ExpenseDialog({ job, initialFile, initialCategory = 'materials', onClos
             {reading ? 'Reading the receipt…' : 'Filled in from the photo. Check each one before you send.'}
           </div>
         )}
+        {/* The lines read off the receipt go to the office with it (Fred, 2026-10-22). */}
+        {!reading && ai && ai.items.length > 0 && (
+          <div style={{ border: '1px solid var(--wf-line)', borderRadius: 10, padding: '8px 10px' }}>
+            <div className="wf-label" style={{ marginBottom: 4 }}>On the receipt</div>
+            {ai.items.map((it, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '2px 0' }}>
+                <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{it.qty != null && it.qty !== 1 ? `${it.qty} × ` : ''}{it.name}</span>
+                {it.amount != null && <span>{fmtMoney(it.amount)}</span>}
+              </div>
+            ))}
+          </div>
+        )}
         <label style={{ display: 'block' }}>{label('Amount')}
           <input className="wf-input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </label>

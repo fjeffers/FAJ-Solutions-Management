@@ -12,9 +12,14 @@ export const PHOTO_READ_MODEL = 'claude-sonnet-5-5';
 
 export type PhotoKind = 'odometer' | 'receipt';
 export type OdometerRead = { reading: number | null };
+/** One line on a receipt (Fred, 2026-10-22: "maybe the items ... so I know what I'm paying for"). */
+export type ReceiptItem = { name: string; qty: number | null; amount: number | null };
 export type ReceiptRead = {
   amount: number | null; vendor: string | null; date: string | null; category: ExpenseCategory | null; gallons: number | null;
+  /** The lines on the receipt, at most RECEIPT_ITEMS_MAX (kept with the receipt in job_expenses.ai). */
+  items: ReceiptItem[];
 };
+export const RECEIPT_ITEMS_MAX = 25;
 
 const num = (v: unknown): number | null => {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.replace(/[$,\s]/g, '')) : NaN;
@@ -26,6 +31,27 @@ export function sanitizeOdometer(raw: unknown): OdometerRead {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const n = num(o.reading);
   return { reading: n != null && n >= 0 && n < 10_000_000 ? round(n, 1) : null };
+}
+
+/** The lines read off a receipt, from what was stored with it ([] for older receipts). */
+export function receiptItems(ai: unknown): ReceiptItem[] {
+  const list = ai && typeof ai === 'object' && Array.isArray((ai as { items?: unknown }).items) ? (ai as { items: unknown[] }).items : [];
+  const out: ReceiptItem[] = [];
+  for (const it of list) {
+    if (!it || typeof it !== 'object') continue;
+    const o = it as Record<string, unknown>;
+    const name = typeof o.name === 'string' ? o.name.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+    if (!name) continue;
+    const qty = num(o.qty);
+    const amount = num(o.amount);
+    out.push({
+      name,
+      qty: qty != null && qty > 0 && qty < 100_000 ? round(qty, 3) : null,
+      amount: amount != null && Math.abs(amount) < 100_000 ? round(amount, 2) : null,
+    });
+    if (out.length >= RECEIPT_ITEMS_MAX) break;
+  }
+  return out;
 }
 
 const CATS = new Set<string>(EXPENSE_CATEGORIES.map((c) => c.key));
@@ -45,6 +71,7 @@ export function sanitizeReceipt(raw: unknown, today: string): ReceiptRead {
     date,
     category,
     gallons: category === 'fuel' && gallons != null && gallons > 0 && gallons < 1000 ? round(gallons, 3) : null,
+    items: receiptItems(o),
   };
 }
 
@@ -58,6 +85,14 @@ export function photoSchema(kind: PhotoKind): Record<string, unknown> {
       amount: nullable('number'), vendor: nullable('string'), date: nullable('string'),
       category: { anyOf: [{ type: 'string', enum: EXPENSE_CATEGORIES.map((c) => c.key) }, { type: 'null' }] },
       gallons: nullable('number'),
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { name: { type: 'string' }, qty: nullable('number'), amount: nullable('number') },
+          required: ['name', 'qty', 'amount'], additionalProperties: false,
+        },
+      },
     };
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 }
@@ -81,6 +116,7 @@ Return what the receipt shows, using null for anything it does not show clearly:
 - "date": the date on the receipt as YYYY-MM-DD.
 - "category": one of ${EXPENSE_CATEGORIES.map((c) => `"${c.key}" (${c.label})`).join(', ')}.
 - "gallons": for fuel only, the gallons pumped.
+- "items": each line item bought, in order, at most ${RECEIPT_ITEMS_MAX}: "name" short and plain (e.g. "Cat6 cable 1000ft", "Unleaded"), "qty" the quantity if shown, "amount" that line's price in dollars. Leave out tax, totals, payment and change lines. [] if no lines are readable.
 
 Prefer null over a guess. The technician checks every value before it's sent.`;
 }

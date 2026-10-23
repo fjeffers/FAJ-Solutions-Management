@@ -21,6 +21,7 @@ import {
 import { parseCloseout, parseCloseoutLists, listFor, skipReason, type CloseoutList } from '@/lib/closeout';
 import { expenseCategoryLabel, expenseReasonText, parseExpenseAmount, totalsByCategory } from '@/lib/expenses';
 import { useExpenseCategories } from '@/lib/use-expense-categories';
+import { receiptItems } from '@/lib/photo-read';
 import { inRange } from '@/lib/job-log';
 import { formatDuration, isFinished, wfJobFromOwner } from '@/lib/wf';
 import { jobGaps } from '@/lib/job-gaps';
@@ -36,7 +37,7 @@ import { aiFailureText } from '@/lib/wo-ai';
 import { downloadXLSXBook } from '@/lib/export';
 import { billJpeg } from '@/lib/bill-image';
 import {
-  billReadings, matchOdometer, odoProblems, sheetName, siteBill, siteSheetRows, summaryFacts, totalsSheetRows,
+  billReadings, matchOdometer, odoProblems, receiptItemRows, sheetName, siteBill, siteSheetRows, summaryFacts, totalsSheetRows,
   type BillDay, type BillLeg, type BillSite, type OdoProblem, type OdoRow, type SiteBill,
 } from '@/lib/weekly-bill';
 
@@ -521,6 +522,8 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
     await downloadXLSXBook(`${fileBase}.xlsx`, [
       { name: 'Totals', rows: totalsSheetRows(title, client, range, billSites), colWidths: [32, 10, 8, 14, 13, 11, 15, 12] },
       ...billSites.map((x) => ({ name: sheetName(`${x.wo} ${x.name}`, taken), rows: siteSheetRows(x, range), colWidths: [12, 18, 12, 11, 14, 11, 11, 13, 12, 11, 15, 12] })),
+      // Every receipt line by line, as read off the photos (Fred, 2026-10-22).
+      ...(billSites.some((x) => x.bill.receipts.length) ? [{ name: sheetName('Receipt items', taken), rows: receiptItemRows(billSites), colWidths: [11, 22, 10, 18, 20, 14, 30, 6, 12, 13] }] : []),
     ]);
   };
   const jpeg = async (x: BillSite) => {
@@ -753,7 +756,14 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
                           <td style={cell}>{fmtDay(r.expense_date)}</td>
                           <td style={cell}>WO {r.wo.wo_number}</td>
                           <td style={cell}>{expenseCategoryLabel(r.category)}</td>
-                          <td style={cell}>{[r.vendor, r.note].filter(Boolean).join(' — ') || '—'}</td>
+                          <td style={cell}>{[r.vendor, r.note].filter(Boolean).join(' — ') || '—'}
+                            {/* The lines read off the receipt photo (Fred, 2026-10-22). */}
+                            {receiptItems(r.ai).length > 0 && (
+                              <div style={{ fontSize: 11.5, color: '#5E6470', marginTop: 2 }}>
+                                {receiptItems(r.ai).map((it) => `${it.qty != null && it.qty !== 1 ? `${it.qty} × ` : ''}${it.name}${it.amount != null ? ` ${fmtMoney(it.amount)}` : ''}`).join(' · ')}
+                              </div>
+                            )}
+                          </td>
                           <td style={cell}>{fmtMoney(Number(r.amount))}</td>
                         </tr>
                       ))}

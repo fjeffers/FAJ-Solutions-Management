@@ -14,8 +14,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
-  fetchTechProfile, fetchTechPayments, fetchTechSummary, fetchTechUnread, fetchTechDmUnread,
-  fetchTechPortalToken, saveTechProfile, saveTechEmergency, paymentsByYear, fetchTechMessages, sendTechMessage, claimTechAccount,
+  fetchTechProfile, fetchTechUnread, fetchTechDmUnread,
+  fetchTechPortalToken, saveTechProfile, saveTechEmergency, fetchTechMessages, sendTechMessage, claimTechAccount,
 } from '@/lib/tech-portal';
 import { fetchWfTechJobs, fetchCloseoutLists, fetchTechFilesStamp, registerTechHandlers, applyPending, toChatJob } from '@/lib/tech-wf';
 import { jobChanges } from '@/lib/tech-live';
@@ -38,7 +38,7 @@ import { FS_STAGE_NAME, fsStage, type FsStage } from '@/lib/fs-stage';
 import { addNotes, clearNotes, loadNotes, markRead, messageNote, notesFromChanges, saveNotes, type TechNote } from '@/lib/tech-inbox';
 import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
-import { dayState, lastPlace, tripLeg, DEST_LABEL } from '@/lib/project-day';
+import { dayState, lastPlace, onTheWay, tripLeg } from '@/lib/project-day';
 import { asks, type CaptureItem } from '@/lib/capture';
 import OdometerDialog, { readPhoto, type OdometerMoment, type SavePhoto } from '@/components/wf/Odometer';
 import CheckInDialog, { type CheckInSend } from '@/components/wf/CheckIn';
@@ -61,13 +61,14 @@ import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
 import { checkoutFormUrl, clock24, lastOffOrNow, onSiteSince, parseSiteLinks, siteIdOf, type SiteLinks } from '@/lib/site-links';
-import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
+import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
+import DirectionsButton from '@/components/wf/Directions';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
-import type { TechMessage, TechPayment, TechProfile, TechSummary } from '@/lib/types';
+import type { TechMessage, TechProfile } from '@/lib/types';
 import {
   CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, Wallet, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -82,11 +83,12 @@ import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 // right under my jobs ... projects"); it is not one of the bottom tabs.
 // Since 2026-10-17 the portal is Field Service's tech app (Fred: "add Field
 // Service's tech portal to FAJ Tech Portal", then "replace the tech portal"):
-// four tabs — Project, Messenger, My Schedule, Profile. My jobs, Available
-// jobs and Pay history open from Profile, so nothing a tech had is gone.
-type Tab = 'project' | 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'pay' | 'profile';
+// four tabs — Project, Messenger, My Schedule, Profile. My jobs and Available
+// jobs open from Profile. No pay anywhere in the tech app (Fred, 2026-10-22:
+// "techs shouldn't see money for pay anywhere"): Pay history is gone.
+type Tab = 'project' | 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'profile';
 const TABS: Tab[] = ['project', 'chat', 'schedule', 'profile'];
-const UNDER_PROFILE: Tab[] = ['jobs', 'available', 'pay'];
+const UNDER_PROFILE: Tab[] = ['jobs', 'available'];
 // Projects is hidden in the tech app for now (Fred, 2026-10-14: "hide project
 // for now on the tech portal"). While it is off, project sites are ordinary
 // jobs here: listed under My jobs, with the normal clock. Set to true to bring
@@ -97,9 +99,13 @@ const SHOW_PROJECTS = false;
 // Expenses and Messages. Set to false to bring back the one-page job screen.
 const FS_JOB_SCREEN = true;
 const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, ...UNDER_PROFILE, 'projects'] : [...TABS, ...UNDER_PROFILE];
-const COPIES = ['profile', 'jobs', 'payments', 'summary', 'lists'];
+const COPIES = ['profile', 'jobs', 'lists'];
+// Pay copies an older version saved on the phone: deleted on open.
+const OLD_PAY_COPIES = ['payments', 'summary'];
+/** This device's layout: 'wide' or phone (the default). */
+const VIEW_KEY = 'fs-view';
 const TAB_TITLE: Record<Tab, string> = {
-  project: 'Work orders', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', pay: 'Pay history', profile: 'Profile',
+  project: 'Work orders', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', profile: 'Profile',
 };
 
 export default function TechPortalPage() {
@@ -125,8 +131,6 @@ export default function TechPortalPage() {
 
   const [profile, setProfile] = useState<TechProfile | null>(null);
   const [officeJobs, setOfficeJobs] = useState<WfJob[]>([]);
-  const [payments, setPayments] = useState<TechPayment[]>([]);
-  const [summary, setSummary] = useState<TechSummary | null>(null);
   const [unread, setUnread] = useState(0);
   const [portalToken, setPortalToken] = useState<string | null>(null);
   const [lists, setLists] = useState<CloseoutList[]>([]);
@@ -240,14 +244,12 @@ export default function TechPortalPage() {
         setPhase('denied');
         return;
       }
-      const [j, p, s, u1, u2, tok] = await Promise.all([
-        fetchWfTechJobs(), fetchTechPayments(), fetchTechSummary(), fetchTechUnread(), fetchTechDmUnread(), fetchTechPortalToken(),
+      const [j, u1, u2, tok] = await Promise.all([
+        fetchWfTechJobs(), fetchTechUnread(), fetchTechDmUnread(), fetchTechPortalToken(),
       ]);
-      setProfile(me); setOfficeJobs(j); setPayments(p); setSummary(s); setUnread(u1 + u2); setPortalToken(tok);
+      setProfile(me); setOfficeJobs(j); setUnread(u1 + u2); setPortalToken(tok);
       saveCopy(kv, u, 'profile', me);
       saveCopy(kv, u, 'jobs', j);
-      saveCopy(kv, u, 'payments', p);
-      saveCopy(kv, u, 'summary', s);
       setSavedAt(null);
       boxRef.current?.noteSignal(true);
       setPhase('ready');
@@ -293,13 +295,12 @@ export default function TechPortalPage() {
       b.onFlushed = () => { void loadLive(u, true); };
       boxRef.current = b;
 
+      clearCopies(kv, u, OLD_PAY_COPIES);
       const cp = loadCopy<TechProfile>(kv, u, 'profile');
       const cj = loadCopy<WfJob[]>(kv, u, 'jobs');
       if (cp && cj) {
         setProfile(cp.value);
         setOfficeJobs(cj.value);
-        setPayments(loadCopy<TechPayment[]>(kv, u, 'payments')?.value ?? []);
-        setSummary(loadCopy<TechSummary>(kv, u, 'summary')?.value ?? null);
         setLists(loadCopy<CloseoutList[]>(kv, u, 'lists')?.value ?? []);
         setSavedAt(cj.at);
         setPhase('ready');
@@ -384,6 +385,15 @@ export default function TechPortalPage() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  // Phone view unless this device chose Wide view (Profile > Screen).
+  const [wide, setWideState] = useState(() => {
+    try { return typeof window !== 'undefined' && window.localStorage.getItem(VIEW_KEY) === 'wide'; } catch { return false; }
+  });
+  const setWide = (w: boolean) => {
+    setWideState(w);
+    setDrawer(false);
+    try { window.localStorage.setItem(VIEW_KEY, w ? 'wide' : 'phone'); } catch { /* private window: this visit only */ }
+  };
   const go = (t: Tab) => { setTab(t); setOpenId(null); setDrawer(false); window.scrollTo({ top: 0 }); };
 
   const counts = techCounts(jobs);
@@ -476,12 +486,12 @@ export default function TechPortalPage() {
   ];
   const navKey: Tab = underProfile ? 'profile' : tab;
   const toggleMenu = () => {
-    if (window.matchMedia('(max-width: 900px)').matches) setDrawer((v) => !v);
+    if (!wide || window.matchMedia('(max-width: 900px)').matches) setDrawer((v) => !v);
     else setCollapsed((v) => !v);
   };
 
   return (
-    <div className="wf fs fs-app">
+    <div className={`wf fs fs-app${wide ? '' : ' fs-phone'}`}>
       <Toaster />
       <header className="fs-topbar">
         <FsBrand />
@@ -582,15 +592,10 @@ export default function TechPortalPage() {
                   paperworkDue={paperworkDue} profile={profile} projects={projectJobs.length}
                   onOpen={openFromList} go={go}
                 />
-              ) : tab === 'available' ? (
+              ) : (
                 <>
                   <FsPageHeader title="Available jobs" subtitle="Jobs offered to you. Accept or decline." />
                   <AvailableTab offers={offers} act={act} onOpen={openFromList} />
-                </>
-              ) : (
-                <>
-                  <FsPageHeader title="Pay history" subtitle="What you've been paid, job by job." />
-                  <PayTab payments={payments} summary={summary} />
                 </>
               )}
             </>
@@ -621,7 +626,7 @@ export default function TechPortalPage() {
                   offText="Turn on so new work orders and messages pop up on this phone, even with the app closed." />
               </div>
               <ProfileTab
-                profile={profile} portalToken={portalToken} onSignOut={signOut}
+                profile={profile} portalToken={portalToken} onSignOut={signOut} wide={wide} onWide={setWide}
                 onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }}
                 onFiled={() => { if (uid) void loadLive(uid, true); }}
               />
@@ -639,11 +644,10 @@ export default function TechPortalPage() {
 /** On the way to the hotel or home: Sign out for the day, at the top of every screen. */
 function DayStrip({ job, busy, onSignOut }: { job: WfJob; busy: boolean; onSignOut: () => void }) {
   const st = dayState(job.myDay ?? []);
-  const dest = st.stage === 'travel' ? DEST_LABEL[st.dest].toLowerCase() : 'hotel';
   const since = st.stage === 'travel' ? ` · since ${new Date(st.since).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : '';
   return (
     <div className="fs-day-strip" role="region" aria-label="Your day">
-      <span><b>On the way to the {dest}</b><small>WO {job.number}{since}</small></span>
+      <span><b>{onTheWay(st.stage === 'travel' ? st.dest : 'hotel')}</b><small>WO {job.number}{since}</small></span>
       <button type="button" disabled={busy} onClick={onSignOut}>{busy ? 'One moment…' : 'Sign out for the day'}</button>
     </div>
   );
@@ -677,7 +681,7 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   let action: React.ReactNode;
   if (stage === 'outbound' || stage === 'returning') {
     const dest = st.stage === 'travel' ? st.dest : 'site';
-    line = `On the way to the ${dest === 'next_site' ? 'next site' : dest}${since ? ` since ${since}` : ''}.`;
+    line = `${onTheWay(dest)}${since ? ` since ${since}` : ''}.`;
     action = (
       <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy} onClick={() => onArrive(job)}>
         {dest === 'hotel' || dest === 'home' ? 'Sign out for the day' : 'I have arrived'}
@@ -810,7 +814,6 @@ function ProfileMenu({ offers, go }: { offers: number; go: (t: Tab) => void }) {
       <button type="button" onClick={() => go('available')}>
         <FsIcon name="inbox" size={18} /> Available jobs{offers > 0 && <em>{offers}</em>}
       </button>
-      <button type="button" onClick={() => go('pay')}><FsIcon name="money" size={18} /> Pay history</button>
     </div>
   );
 }
@@ -1436,9 +1439,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setChatOpen((v) => !v)} aria-pressed={chatOpen}>
             <MessageSquare size={15} /> Messages
           </button>
-          {fullAddress(job) && (
-            <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={15} /> Directions</a>
-          )}
+          <DirectionsButton job={job} className="wf-btn wf-btn-outline wf-btn-sm" />
         </>}
         clock={project && (working || job.status === 'workDone')
           ? <>
@@ -1675,9 +1676,7 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onMessages, onReceipt }: 
       )}
       {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={22} /> Receipt</button>}
       <button type="button" style={tile} onClick={onMessages}><MessageSquare size={22} /> Messages</button>
-      {address && (
-        <a style={tile} href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={22} /> Directions</a>
-      )}
+      {address && <DirectionsButton job={job} style={tile} icon={<Navigation size={22} />} />}
     </div>
   );
 }
@@ -1720,9 +1719,7 @@ function QuickActions({ job, showClock, clockEnabled, locating, photoBusy, onClo
       <button style={tile} onClick={onNote}><NotebookPen size={24} color="var(--wf-navy)" /> Note</button>
       <button style={tile} onClick={onExpense}><Receipt size={24} color="var(--wf-navy)" /> Expense</button>
       <button style={tile} onClick={onMessages}><MessageSquare size={24} color="var(--wf-navy)" /> Messages</button>
-      {address && (
-        <a style={tile} href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={24} color="var(--wf-navy)" /> Directions</a>
-      )}
+      {address && <DirectionsButton job={job} style={tile} icon={<Navigation size={24} color="var(--wf-navy)" />} />}
     </div>
   );
 }
@@ -2752,54 +2749,6 @@ function JobMessages({ number, talk, keep }: {
   );
 }
 
-// ── Pay history (their own pay only — never on a job) ──────────────────────
-
-function PayTab({ payments, summary }: { payments: TechPayment[]; summary: TechSummary | null }) {
-  const years = useMemo(() => paymentsByYear(payments), [payments]);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-          <div className="wf-card" style={{ padding: 14 }}>
-            <div className="wf-label">Paid this year</div>
-            <div className="wf-display" style={{ fontSize: 22, fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(summary.paid_this_year)}</div>
-          </div>
-          <div className="wf-card" style={{ padding: 14 }}>
-            <div className="wf-label">Paid all time</div>
-            <div className="wf-display" style={{ fontSize: 22, fontWeight: 700 }}>{fmtMoney(summary.paid_all_time)}</div>
-          </div>
-          <div className="wf-card" style={{ padding: '10px 14px', gridColumn: '1 / -1', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <div className="wf-label">Jobs worked</div>
-            <div className="wf-display" style={{ fontSize: 18, fontWeight: 700 }}>{summary.jobs_total}</div>
-          </div>
-        </div>
-      )}
-      {payments.length === 0 ? <Empty icon={<Wallet size={34} />} title="No payments recorded yet" /> : years.map((y) => (
-        <div key={y.year}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-            <h3 className="wf-title" style={{ fontSize: 17 }}>{y.year}</h3>
-            <div className="wf-display" style={{ fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(y.total)}</div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {y.payments.map((p) => (
-              <div key={p.id} className="wf-card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600 }}>{p.wo_title || p.wo_site || (p.wo_number ? `WO ${p.wo_number}` : 'Payment')}</div>
-                  <div className="wf-subtle" style={{ fontSize: 12.5 }}>
-                    {[p.payment_date && fmtDate(p.payment_date), p.wo_number && `WO ${p.wo_number}`, p.method].filter(Boolean).join(' · ')}
-                  </div>
-                  {p.notes && <div className="wf-subtle" style={{ fontSize: 12 }}>{p.notes}</div>}
-                </div>
-                <div className="wf-display" style={{ fontSize: 17, fontWeight: 700, color: 'var(--wf-success)' }}>{fmtMoney(p.amount)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── Profile ─────────────────────────────────────────────────────────────────
 
 /**
@@ -2855,8 +2804,10 @@ function EmergencyCard({ profile, onSaved }: { profile: TechProfile; onSaved: (p
   );
 }
 
-function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
+function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut, wide, onWide }: {
   profile: TechProfile; portalToken: string | null; onSaved: (p: TechProfile) => void; onFiled: () => void; onSignOut: () => void;
+  /** Wide (desktop) view on this device; phone view otherwise. */
+  wide: boolean; onWide: (wide: boolean) => void;
 }) {
   const [formsOpen, setFormsOpen] = useState(false);
   const [phone, setPhone] = useState(profile.phone ?? '');
@@ -2888,6 +2839,15 @@ function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 640 }}>
       <UsernameCard />
+      <Section title="Screen" subtitle="How the app is laid out on this device">
+        <div className="wf-filters" role="group" aria-label="Screen layout">
+          <button className="wf-filter" aria-pressed={!wide} onClick={() => onWide(false)}>Phone view</button>
+          <button className="wf-filter" aria-pressed={wide} onClick={() => onWide(true)}>Wide view</button>
+        </div>
+        <p className="wf-subtle" style={{ margin: '8px 0 0', fontSize: 12.5 }}>
+          Phone view is the default. Wide view uses the whole screen on a tablet or computer.
+        </p>
+      </Section>
       <Section title="Change password" subtitle="Your current password, then the new one twice">
         <ChangePasswordForm />
       </Section>

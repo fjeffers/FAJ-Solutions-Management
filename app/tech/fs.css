@@ -42,8 +42,19 @@
 .fs .wf-label { color: var(--muted); }
 .fs .wf-tab-badge, .fs .wf-rail-badge { background: var(--green); color: #fff; }
 
-/* App frame */
-.fs-app { min-height: 100vh; background: var(--page); }
+/* App frame. Nothing may be wider than the screen: on Android a too-wide card
+   made the whole page zoom out, so the top bar covered only part of it
+   (Fred's screenshot, 2026-10-22). */
+.fs-app { min-height: 100vh; background: var(--page); overflow-x: clip; max-width: 100vw; }
+.fs-content > * { max-width: 100%; }
+.fs-content a, .fs-content p, .fs-content b, .fs-content span { overflow-wrap: anywhere; }
+
+/* Phone view, the default (Fred, 2026-10-22: "default view as phone/mobile,
+   with an option to make wide/desktop view"). On a computer the app is a
+   phone-width column with the menu as a drawer, the same as on a phone.
+   Wide view (Profile > Screen) brings back the full desktop layout. */
+.fs-app.fs-phone { max-width: 560px; margin: 0 auto; box-shadow: 0 0 0 1px var(--line), 0 10px 40px rgba(14, 27, 46, 0.12); }
+html:has(.fs-phone) body { background: #E4E1DA; }
 .fs-topbar {
   position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 22px;
   height: 76px; padding: 0 28px 0 0; background: #fff; border-bottom: 1px solid var(--line);
@@ -320,6 +331,40 @@
   .fs-page-head h1 { font-size: 28px; }
   .fs-page-head-side { justify-content: flex-start; }
 }
+/* Phone view on a wider screen: the same rules as a phone (above and below). */
+.fs-phone .fs-stat-grid { grid-template-columns: 1fr; }
+.fs-phone .fs-split { grid-template-columns: 1fr; }
+.fs-phone .fs-topbar { gap: 10px; padding-right: 14px; height: 68px; }
+.fs-phone .fs-day-strip { top: 68px; padding: 10px 14px; }
+.fs-phone .fs-brand { width: auto; padding: 0 12px; }
+.fs-phone .fs-brand img { height: 40px; }
+.fs-phone .fs-menu-button { margin-left: 0; height: 44px; width: 40px; padding: 0; justify-content: center; }
+.fs-phone .fs-menu-button span, .fs-phone .fs-crumbs, .fs-phone .fs-who, .fs-phone .fs-live-pill, .fs-phone .fs-refresh { display: none; }
+.fs-phone .fs-signout { margin-left: auto; border: 0; padding: 0 4px; }
+.fs-phone .fs-topbar .fs-bell-wrap { margin-left: auto; }
+.fs-phone .fs-topbar .fs-bell-wrap ~ .fs-signout { margin-left: 0; }
+.fs-phone .fs-note-center { position: fixed; top: 76px; left: 12px; right: 12px; width: auto; max-width: 536px; }
+.fs-phone .fs-layout, .fs-phone .fs-layout.collapsed { grid-template-columns: minmax(0, 1fr); background: none; min-height: calc(100vh - 68px); }
+.fs-phone .fs-sidebar, .fs-phone .fs-sidebar.collapsed {
+  position: fixed; top: 68px; left: 0; bottom: 0; z-index: 40; width: min(320px, 82vw); height: auto;
+  padding: 18px 18px 24px; align-items: stretch; transform: translateX(-100%); transition: transform 0.2s;
+}
+.fs-phone .fs-layout.drawer-open .fs-sidebar { transform: none; }
+.fs-phone .fs-sidebar.collapsed .fs-side-nav button { width: auto; justify-content: flex-start; padding: 0 14px; }
+.fs-phone .fs-side-close {
+  display: flex; justify-content: space-between; align-items: center; width: 100%; height: 42px; padding: 0 14px; margin-bottom: 28px;
+  border: 1px solid #24406A; border-radius: 8px; background: var(--forest-2); color: #fff; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.fs-phone .fs-scrim { display: block; position: fixed; inset: 68px 0 0; z-index: 35; border: 0; background: rgba(2, 4, 9, 0.35); }
+.fs-phone .fs-layout:not(.drawer-open) .fs-scrim { display: none; }
+.fs-phone .fs-content { padding: 26px 16px 72px; }
+.fs-phone .fs-page-head { flex-direction: column; margin-bottom: 24px; }
+.fs-phone .fs-page-head h1 { font-size: 28px; }
+.fs-phone .fs-page-head-side { justify-content: flex-start; }
+.fs-phone .fs-wo-grid { grid-template-columns: 1fr; }
+.fs-phone .fs-next-action { flex-direction: column; align-items: flex-start; }
+.fs-phone .fs-form { padding: 18px 16px; }
+
 @media (max-width: 640px) {
   .fs-stat-grid { grid-template-columns: 1fr; }
   .fs-wo-grid { grid-template-columns: 1fr; }

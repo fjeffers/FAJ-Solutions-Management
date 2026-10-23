@@ -136,7 +136,11 @@ textarea.wf-input { resize: vertical; }
 .wf-dialog {
   background: var(--wf-surface); border-radius: 20px; width: 100%; max-width: 480px;
   max-height: 90vh; overflow-y: auto; padding: 20px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  /* Never wider than the screen, even with the phone's large text on (Fred's
+     Ending mileage screenshot, 2026-10-22: words cut off at both edges). */
+  overflow-x: hidden; overflow-wrap: anywhere; box-sizing: border-box;
 }
+.wf-dialog img, .wf-dialog input, .wf-dialog select, .wf-dialog textarea { max-width: 100%; box-sizing: border-box; }
 @media (max-width: 768px) {
   .wf-overlay { align-items: flex-end; padding: 0; }
   .wf-dialog { border-radius: 20px 20px 0 0; max-height: 92vh; }

@@ -202,7 +202,10 @@ html:has(.fs-phone) body { background: #E4E1DA; }
 .fs-text-button { display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 0; border: 0; background: none; font: inherit; font-weight: 650; color: var(--green); cursor: pointer; }
 .fs-text-button:disabled { cursor: not-allowed; opacity: 0.55; }
 .fs-muted { margin: 0; color: var(--muted); }
-.fs-stack { display: grid; gap: 18px; align-content: start; }
+/* One column, never wider than the screen. Without the column size, the column
+   grew to its widest child (the job's tab bar), so the job screen ran off the
+   right edge of a phone (Fred's screenshot, 2026-10-23). */
+.fs-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
 .fs-stack > .fs-btn-secondary { justify-self: start; }
 .fs-split { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .fs-form { display: grid; gap: 14px; padding: 22px 24px; }

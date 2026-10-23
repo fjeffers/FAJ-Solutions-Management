@@ -35,12 +35,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        {children}
+        {/* A slim strip above the page, not over it: the floating badge covered the logo on phones. */}
         {isPracticeCopy && (
-          <div role="note" style={{ position: 'fixed', top: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 10000, pointerEvents: 'none', background: '#B45309', color: '#fff', font: '600 12px/1.3 Inter, Arial, sans-serif', padding: '6px 12px', borderRadius: 999, boxShadow: '0 2px 8px rgba(0,0,0,0.25)', maxWidth: '92vw', textAlign: 'center' }}>
-            Test site · a copy of real FAJ data · changes here don&apos;t reach the live app
+          <div role="note" style={{ background: '#B45309', color: '#fff', font: '600 11.5px/1.3 Inter, Arial, sans-serif', padding: '4px 10px', textAlign: 'center' }}>
+            Test site · copy of real FAJ data · changes don&apos;t reach the live app
           </div>
         )}
+        {children}
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}`,

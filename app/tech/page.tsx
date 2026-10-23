@@ -78,7 +78,7 @@ import ReadTool from '@/components/tools/ReadTool';
 import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 
 // Primio's tech tabs — Jobs, Available, Profile (with the W-9 inside) — plus
-// My schedule, Messages and Pay history (Fred, 2026-10-04: "the tech portal is
+// My schedule, Messages (Fred, 2026-10-04: "the tech portal is
 // whatever Primio has", keeping those three).
 // Projects sits under My jobs in the menu (Fred, 2026-10-13: "my jobs, and
 // right under my jobs ... projects"); it is not one of the bottom tabs.

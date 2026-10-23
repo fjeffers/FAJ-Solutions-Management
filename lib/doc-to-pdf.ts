@@ -71,14 +71,43 @@ export function wrapLine(text: string, max: number, width: (s: string) => number
 const safe = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
   .replace(/…/g, '...').replace(/[☐-☒□■]/g, '[ ]').replace(/[^\x09\x0A\x20-\x7E -ÿ•]/g, '');
 
-/** The blocks as a letter-size PDF. */
+/**
+ * Column widths for a table: each column as wide as its longest cell, shrunk
+ * to fit `max` when they don't all fit, but never below `min` while there's room.
+ */
+export function columnWidths(rows: string[][], max: number, width: (s: string) => number, min = 28): number[] {
+  const n = Math.max(1, ...rows.map((r) => r.length));
+  const want = Array.from({ length: n }, (_, i) => Math.max(min, ...rows.map((r) => width(r[i] ?? '') + 8)));
+  const total = want.reduce((a, b) => a + b, 0);
+  if (total <= max) return want.map((w) => (w * max) / total);
+  const floor = Math.min(min, max / n);
+  const spare = max - floor * n;
+  const extra = want.map((w) => Math.max(0, w - floor));
+  const sum = extra.reduce((a, b) => a + b, 0) || 1;
+  return extra.map((e) => floor + (e * spare) / sum);
+}
+
+/** The blocks as a letter-size PDF; sideways when a table has many columns. */
 export async function blocksToPdf(blocks: DocBlock[], title: string): Promise<Uint8Array> {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const doc = await PDFDocument.create();
   doc.setTitle(title); doc.setProducer('FAJ Solutions'); doc.setCreator('FAJ Solutions');
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const W = 612, H = 792, M = 54, width = W - 2 * M;
+  const cols = Math.max(0, ...blocks.map((b) => (b.kind === 'row' ? b.cells.length : 0)));
+  const [W, H] = cols >= 6 ? [792, 612] : [612, 792];
+  const M = cols >= 6 ? 36 : 54, width = W - 2 * M;
+  const tableSize = cols > 12 ? 6.5 : cols > 8 ? 7.5 : 9.5;
+  // Each run of rows is one table, with its own column widths.
+  const widths = new Map<number, number[]>();
+  for (let i = 0; i < blocks.length;) {
+    if (blocks[i].kind !== 'row') { i++; continue; }
+    let j = i; while (j < blocks.length && blocks[j].kind === 'row') j++;
+    const run = blocks.slice(i, j) as Extract<DocBlock, { kind: 'row' }>[];
+    const w = columnWidths(run.map((r) => r.cells.map(safe)), width, (t) => bold.widthOfTextAtSize(t, tableSize));
+    for (let k = i; k < j; k++) widths.set(k, w);
+    i = j;
+  }
   let page = doc.addPage([W, H]);
   let y = H - M;
   const need = (h: number) => { if (y - h < M) { page = doc.addPage([W, H]); y = H - M; } };
@@ -91,7 +120,7 @@ export async function blocksToPdf(blocks: DocBlock[], title: string): Promise<Ui
       if (line) page.drawText(line, { x, y, size, font, color: rgb(0.1, 0.1, 0.12) });
     }
   };
-  for (const b of blocks) {
+  for (const [bi, b] of blocks.entries()) {
     if (b.kind === 'heading') {
       y -= 6; draw(b.text, M, width, b.level <= 1 ? 16 : b.level === 2 ? 13.5 : 12, true); y -= 2;
     } else if (b.kind === 'para') {
@@ -101,18 +130,19 @@ export async function blocksToPdf(blocks: DocBlock[], title: string): Promise<Ui
       page.drawText(safe(b.marker), { x: M + 4, y: top - 10.5 * 1.35, size: 10.5, font: regular });
       draw(b.text, M + 22, width - 22, 10.5, false); y -= 2;
     } else {
-      const n = Math.max(1, b.cells.length);
-      const col = width / n;
-      const size = 9.5;
+      const cw = widths.get(bi) ?? [width];
+      const size = tableSize;
       const font = b.header ? bold : regular;
-      const cellLines = b.cells.map((c) => wrapLine(safe(c), col - 8, (s) => font.widthOfTextAtSize(s, size)));
+      const cellLines = cw.map((col, i) => wrapLine(safe(b.cells[i] ?? ''), col - 6, (s) => font.widthOfTextAtSize(s, size)));
       const rows = Math.max(1, ...cellLines.map((l) => l.length));
       const h = rows * size * 1.35 + 6;
       need(h);
+      let x = M;
       cellLines.forEach((lines, i) => {
-        const x = M + i * col;
+        const col = cw[i];
         page.drawRectangle({ x, y: y - h, width: col, height: h, borderColor: rgb(0.75, 0.75, 0.78), borderWidth: 0.6 });
-        lines.forEach((line, j) => { if (line) page.drawText(line, { x: x + 4, y: y - 3 - (j + 1) * size * 1.35 + 2, size, font, color: rgb(0.1, 0.1, 0.12) }); });
+        lines.forEach((line, j) => { if (line) page.drawText(line, { x: x + 3, y: y - 3 - (j + 1) * size * 1.35 + 2, size, font, color: rgb(0.1, 0.1, 0.12) }); });
+        x += col;
       });
       y -= h;
     }

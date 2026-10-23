@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { blocksFromHtml, blocksToPdf, wrapLine } from './doc-to-pdf';
+import { blocksFromHtml, blocksToPdf, columnWidths, wrapLine } from './doc-to-pdf';
 import { fieldLabel, fillForm, readFormFields } from './pdf-form';
 
 const page = (html: string) => { const d = document.createElement('div'); d.innerHTML = html; return d; };
@@ -59,5 +59,19 @@ describe('fillable PDF boxes', () => {
     expect(fieldLabel('form1[0].Customer_Name[0]')).toBe('Customer name');
     expect(fieldLabel('Text Field 12', 'Site ID')).toBe('Site ID');
     expect(fieldLabel('dateSigned')).toBe('Date signed');
+  });
+});
+
+describe('columnWidths', () => {
+  const w = (s: string) => s.length * 5;
+  it('gives long columns more room and fills the width', () => {
+    const c = columnWidths([['ID', 'A long street address'], ['1', '2']], 300, w);
+    expect(c[1]).toBeGreaterThan(c[0]);
+    expect(c.reduce((a, b) => a + b, 0)).toBeCloseTo(300);
+  });
+  it('shrinks to fit when the columns are too wide', () => {
+    const c = columnWidths([Array.from({ length: 12 }, () => 'x'.repeat(30))], 600, w);
+    expect(c).toHaveLength(12);
+    expect(c.reduce((a, b) => a + b, 0)).toBeCloseTo(600);
   });
 });

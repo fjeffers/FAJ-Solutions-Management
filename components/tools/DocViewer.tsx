@@ -3,17 +3,19 @@
 // working for all ... ios, windows, and android"). A plain link left it to the
 // phone: Android Chrome downloads a PDF instead of showing it, and a Word or
 // Excel file needs those apps. Here every kind opens the same on every device:
-//   PDF    its pages, and its fillable boxes as boxes to fill in (lib/pdf-form.ts)
+//   PDF    its pages, and its fillable boxes as boxes to fill in (lib/pdf-form.ts);
+//          blank paper around a small table is cut away (lib/pdf-trim.ts)
 //   Word   an editable page, like a Google Doc, made into a PDF to sign (lib/doc-to-pdf.ts)
-//   Excel  its sheets as tables
+//   Excel  its sheets as tables to fill in, made into a PDF to sign the same way
 //   Photo  the picture
 // "Fill in & sign" hands a PDF to the PDF editor (components/tools/PdfEditor).
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Loader2, Signature, X } from 'lucide-react';
+import { Download, Loader2, Minus, Plus, Signature, X } from 'lucide-react';
 import { openPdf, renderPage } from '@/lib/pdf-view';
 import { fillForm, readFormFields, type FormField, type FormValues } from '@/lib/pdf-form';
 import { blocksFromHtml, blocksToPdf } from '@/lib/doc-to-pdf';
+import { trimPdf } from '@/lib/pdf-trim';
 import { toastError } from '@/lib/toast';
 
 export type DocKind = 'pdf' | 'word' | 'sheet' | 'image' | 'other';
@@ -51,6 +53,8 @@ export default function DocViewer({ url, name, onClose, onSign }: {
   const [values, setValues] = useState<FormValues>({});
   const [html, setHtml] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A wide page (a spreadsheet saved as a PDF) opens zoomed in, to read by sliding sideways.
+  const [zoom, setZoom] = useState(1);
   const editRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const title = name.replace(/\.(pdf|docx|xlsx|xls|csv)$/i, '');
@@ -62,32 +66,39 @@ export default function DocViewer({ url, name, onClose, onSign }: {
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error("Couldn't open the document.");
-        const b = new Uint8Array(await res.arrayBuffer());
+        let b = new Uint8Array(await res.arrayBuffer());
         if (!live) return;
-        setBytes(b);
         if (kind === 'pdf') {
           const f = await readFormFields(b);
           if (!live) return;
+          if (!f.length) { const t = await trimPdf(b).catch(() => null); if (t) b = new Uint8Array(t); }
+          if (!live) return;
+          setBytes(b);
           setFields(f);
           setValues(Object.fromEntries(f.map((x) => [x.name, x.value])));
           const pdf = await openPdf(b);
           const width = Math.min(1200, Math.round((typeof window !== 'undefined' ? window.innerWidth : 600) * 2));
           for (let i = 1; i <= pdf.numPages && live; i++) {
-            const { blob } = await renderPage(await pdf.getPage(i), 0, width, 0.8);
+            const pg = await pdf.getPage(i);
+            const vp = pg.getViewport({ scale: 1 });
+            if (i === 1 && vp.width / vp.height > 1.8 && window.innerWidth < 700) setZoom(2.25);
+            const { blob } = await renderPage(pg, 0, Math.min(3000, width * (vp.width / vp.height > 1.8 ? 2.25 : 1)), 0.8);
             const u = URL.createObjectURL(blob);
             urls.push(u);
             if (live) setPages((p) => [...p, u]);
           }
         } else if (kind === 'word') {
+          setBytes(b);
           const mammoth = await import('mammoth');
           const r = await mammoth.convertToHtml({ arrayBuffer: b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer });
           if (live) setHtml(r.value || '<p></p>');
         } else if (kind === 'sheet') {
+          setBytes(b);
           const XLSX = await import('xlsx');
           const wb = XLSX.read(b, { type: 'array' });
           const out = wb.SheetNames.map((s) => `<h3>${s.replace(/[<>&"]/g, '')}</h3>${XLSX.utils.sheet_to_html(wb.Sheets[s], { header: '', footer: '' })}`).join('');
           if (live) setHtml(out);
-        }
+        } else setBytes(b);
       } catch (e) {
         if (live) setError(e instanceof Error && e.message.startsWith("Couldn't") ? e.message : "Couldn't open the document. Try again when you have signal.");
       }
@@ -108,8 +119,8 @@ export default function DocViewer({ url, name, onClose, onSign }: {
       if (kind === 'pdf') {
         const out = fields.length ? await fillForm(bytes, values) : bytes;
         onSign(new Blob([out.slice()], { type: 'application/pdf' }), title);
-      } else if (kind === 'word' && editRef.current) {
-        const out = await blocksToPdf(blocksFromHtml(editRef.current), title);
+      } else if ((kind === 'word' && editRef.current) || (kind === 'sheet' && sheetRef.current)) {
+        const out = await blocksToPdf(blocksFromHtml((kind === 'word' ? editRef.current : sheetRef.current)!), title);
         onSign(new Blob([out.slice()], { type: 'application/pdf' }), title);
       }
     } catch {
@@ -149,7 +160,7 @@ export default function DocViewer({ url, name, onClose, onSign }: {
     );
   };
 
-  const canSign = !!onSign && !!bytes && (kind === 'pdf' || (kind === 'word' && html != null));
+  const canSign = !!onSign && !!bytes && (kind === 'pdf' || ((kind === 'word' || kind === 'sheet') && html != null));
   const loading = !error && (!bytes || (kind === 'pdf' && pages.length === 0) || ((kind === 'word' || kind === 'sheet') && html == null));
 
   const body = (
@@ -157,6 +168,12 @@ export default function DocViewer({ url, name, onClose, onSign }: {
       style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', flexDirection: 'column', background: 'var(--wf-surface, #F6F4EF)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--wf-line)', background: 'var(--wf-card, #fff)' }}>
         <b style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontSize: 15 }}>{title}</b>
+        {kind === 'pdf' && pages.length > 0 && (
+          <>
+            <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setZoom((z) => Math.max(1, z / 1.5))} disabled={zoom <= 1} aria-label="Zoom out"><Minus size={16} /></button>
+            <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setZoom((z) => Math.min(5, z * 1.5))} disabled={zoom >= 5} aria-label="Zoom in"><Plus size={16} /></button>
+          </>
+        )}
         <a className="wf-btn wf-btn-ghost wf-btn-sm" href={url} download={name || undefined} target="_blank" rel="noopener noreferrer" aria-label="Download"><Download size={16} /></a>
         <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
       </div>
@@ -174,9 +191,14 @@ export default function DocViewer({ url, name, onClose, onSign }: {
               {fields.map(field)}
             </div>
           )}
+          {kind === 'pdf' && pages.length > 0 && zoom > 1 && (
+            <div className="wf-subtle" style={{ fontSize: 12.5 }}>Slide sideways to see the whole page. Use − and + to zoom.</div>
+          )}
           {kind === 'pdf' && pages.map((src, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={src} src={src} alt={`Page ${i + 1}`} style={{ width: '100%', height: 'auto', background: '#fff', borderRadius: 6, boxShadow: '0 1px 4px rgba(0,0,0,0.12)' }} />
+            <div key={src} style={{ overflowX: 'auto', borderRadius: 6 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt={`Page ${i + 1}`} style={{ display: 'block', width: `${zoom * 100}%`, maxWidth: 'none', height: 'auto', background: '#fff', borderRadius: 6, boxShadow: '0 1px 4px rgba(0,0,0,0.12)' }} />
+            </div>
           ))}
 
           {kind === 'word' && html != null && (
@@ -188,7 +210,11 @@ export default function DocViewer({ url, name, onClose, onSign }: {
           )}
 
           {kind === 'sheet' && html != null && (
-            <div ref={sheetRef} className="wf-doc-sheet" style={{ background: '#fff', padding: 12, borderRadius: 6, overflowX: 'auto' }} />
+            <>
+              <div className="wf-subtle" style={{ fontSize: 12.5 }}>Tap a box to type in it, like a Google Sheet. Slide sideways to see every column, then Fill in &amp; sign.</div>
+              <div ref={sheetRef} contentEditable={!!onSign} suppressContentEditableWarning className="wf-doc-sheet"
+                style={{ background: '#fff', padding: 12, borderRadius: 6, overflowX: 'auto', outline: 'none' }} />
+            </>
           )}
 
           {kind === 'image' && (

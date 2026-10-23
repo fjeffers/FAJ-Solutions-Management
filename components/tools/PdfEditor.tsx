@@ -91,7 +91,7 @@ async function loadImage(file: Blob, maxSide: number): Promise<HTMLCanvasElement
 }
 
 /** Photos as a PDF, one letter-width page each. */
-async function photosToPdf(files: File[]): Promise<Blob> {
+export async function photosToPdf(files: File[]): Promise<Blob> {
   const { PDFDocument } = await import('pdf-lib');
   const pdf = await PDFDocument.create();
   for (const f of files) {
@@ -205,7 +205,13 @@ export default function PdfEditor({ file, name: firstName = '', heading, send, o
   useEffect(() => {
     if (!file || started.current) return;
     started.current = true;
-    void loadPdf(file).then((added) => { if (added) setPages(added); });
+    void loadPdf(file).then((added) => {
+      if (!added) return;
+      setPages(added);
+      // A wide page (a spreadsheet saved as a PDF) starts zoomed in on a phone.
+      const v = added[0] && viewOf(added[0]);
+      if (v && v.w / v.h > 1.8 && window.innerWidth < 700) setZoom(2.25);
+    });
   }, [file, loadPdf]);
 
   const addPages = async (blob: Blob, fresh = false) => {

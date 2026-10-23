@@ -43,8 +43,9 @@ import { designNow } from '@/lib/screen-design';
 import { answeredFields } from '@/lib/custom-fields';
 import { CustomFieldList } from '@/components/CustomFieldInputs';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
-import PdfEditor, { type SendResult } from '@/components/tools/PdfEditor';
-import DocViewer from '@/components/tools/DocViewer';
+import PdfEditor, { photosToPdf, type SendResult } from '@/components/tools/PdfEditor';
+import DocViewer, { docKind } from '@/components/tools/DocViewer';
+import { trimPdf } from '@/lib/pdf-trim';
 import { DOC_KINDS, editedName } from '@/lib/job-docs';
 import { ProjectDayCard, EXPENSES_CHANGED } from '@/components/wf/ProjectOffice';
 import { asks } from '@/lib/capture';
@@ -626,6 +627,14 @@ const officeFileName = (url: string) => {
   return name.replace(/^\d{13}-/, '').replace(/_/g, ' ');
 };
 
+/** A PDF with its blank paper cut away, or as it is. */
+async function trimmed(file: Blob): Promise<Blob> {
+  try {
+    const out = await trimPdf(new Uint8Array(await file.arrayBuffer()));
+    return out ? new Blob([out.slice()], { type: 'application/pdf' }) : file;
+  } catch { return file; }
+}
+
 function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLabel: string; archived: boolean; files?: string[] | null }) {
   // Files added in Edit job live in work_orders.doc_urls, not job_docs. Fred
   // uploaded one and saw "nothing there" (2026-10-18), so they show here too.
@@ -653,8 +662,22 @@ function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLab
     const { data, error } = await createClient().storage.from('job-docs').download(d.path);
     setBusyId(null);
     if (error || !data) { toastError("That document couldn't be opened."); return; }
-    setEditing({ file: data, name: editedName(d.name), kind: d.kind });
+    setEditing({ file: await trimmed(data), name: editedName(d.name), kind: d.kind });
   };
+  /** Any document from the device. Fred uploaded a Google Sheet as a PDF and got a
+   *  tiny table on a tall page (2026-10-23): a sheet, Word file or photo now goes in
+   *  as it is, and a PDF's blank paper is cut away (lib/pdf-trim.ts). */
+  const addFile = async (f: File) => {
+    const base = f.name.replace(/\.[a-z0-9]+$/i, '');
+    const k = docKind(f.name, f.type);
+    try {
+      if (k === 'pdf') setEditing({ file: await trimmed(f), name: base, kind: 'Work order' });
+      else if (k === 'image') setEditing({ file: await photosToPdf([f]), name: base, kind: 'Other' });
+      else if (k === 'word' || k === 'sheet') setViewing({ url: URL.createObjectURL(f), name: f.name, kind: 'Work order' });
+      else toastError('That kind of file can’t be added. Use a PDF, Word, Excel or Google Sheet download, or a photo.');
+    } catch { toastError('That file couldn’t be opened.'); }
+  };
+  const closeViewer = () => { if (viewing?.url.startsWith('blob:')) URL.revokeObjectURL(viewing.url); setViewing(null); };
   const share = async (d: JobDoc) => {
     setBusyId(d.id);
     const { error } = await createClient().from('job_docs').update({ for_tech: !d.for_tech }).eq('id', d.id);
@@ -691,12 +714,12 @@ function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLab
   };
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   return (
-    <Section title="Documents" subtitle="PDFs on the job — scans and signed copies from techs, and PDFs to fill in and sign"
+    <Section title="Documents" subtitle="Documents on the job — scans and signed copies from techs, and PDFs, Word files and sheets to fill in and sign"
       right={!archived ? (
         <label className="wf-btn wf-btn-outline wf-btn-sm" style={{ cursor: 'pointer' }}>
-          <FilePlus2 size={14} /> Add a PDF
-          <input type="file" accept="application/pdf,.pdf" style={{ display: 'none' }}
-            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setEditing({ file: f, name: f.name.replace(/\.pdf$/i, ''), kind: 'Work order' }); }} />
+          <FilePlus2 size={14} /> Add a document
+          <input type="file" accept="application/pdf,.pdf,.docx,.xlsx,.xls,.csv,image/*" style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void addFile(f); }} />
         </label>
       ) : undefined}>
       {officeFiles.map((u) => (
@@ -710,7 +733,7 @@ function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLab
       ))}
       {docs.length === 0 ? (officeFiles.length > 0 ? null : (
         <div className="wf-subtle" style={{ fontSize: 13.5 }}>
-          Nothing yet. Add a PDF to fill in or sign it here — tick &ldquo;Techs on this job can open it&rdquo; and they can sign it on site.
+          Nothing yet. Add a document — a PDF, Word file, Excel or Google Sheet, or a photo — to fill in or sign it here — tick &ldquo;Techs on this job can open it&rdquo; and they can sign it on site.
         </div>
       )) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -735,8 +758,8 @@ function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLab
         </div>
       )}
       {viewing && (
-        <DocViewer url={viewing.url} name={viewing.name} onClose={() => setViewing(null)}
-          onSign={archived ? undefined : (pdf, name) => { const kind = viewing.kind; setViewing(null); setEditing({ file: pdf, name: editedName(name), kind }); }} />
+        <DocViewer url={viewing.url} name={viewing.name} onClose={closeViewer}
+          onSign={archived ? undefined : (pdf, name) => { const kind = viewing.kind; const fresh = viewing.url.startsWith('blob:'); closeViewer(); setEditing({ file: pdf, name: fresh ? name : editedName(name), kind }); }} />
       )}
       {editing && (
         <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}

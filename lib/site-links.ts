@@ -48,8 +48,14 @@ function parts(iso: string, timeZone: string) {
   }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
   return { y: p.year, m: p.month, d: p.day, h: p.hour === '24' ? '00' : p.hour, min: p.minute };
 }
-/** "07:30", the way the LDS form shows its times. */
+/** "07:30". */
 export const clock24 = (iso: string, timeZone: string) => { const p = parts(iso, timeZone); return `${p.h}:${p.min}`; };
+/** "4:06 pm", the LDS form's times ("e.g., 08:00 am", "e.g., 5:00 pm"). */
+export const clock12 = (iso: string, timeZone: string) => {
+  const p = parts(iso, timeZone);
+  const h = Number(p.h);
+  return `${h % 12 === 0 ? 12 : h % 12}:${p.min} ${h < 12 ? 'am' : 'pm'}`;
+};
 /** "10/19/2026", the LDS form's date. */
 export const dateMDY = (iso: string, timeZone: string) => { const p = parts(iso, timeZone); return `${p.m}/${p.d}/${p.y}`; };
 
@@ -79,8 +85,10 @@ export function lastOffOrNow(events: readonly DayEvent[], now: string, timeZone:
  * The checkout form, filled in where it can be. A Smartsheet form fills a box
  * from its address (?Box name=value) and ignores names it doesn't have, so the
  * LDS form's own box names are sent: Site ID, Work Order #, Checkout Date,
- * Full Name, Time On Site, Time Off Site. The tech still picks their role,
- * adds any issues, checks it and submits it. Any other form opens as it is.
+ * Full Name, Check In Time, Check Out Time. (Fred, 2026-10-22: the times came
+ * up blank; the form had renamed "Time On Site" / "Time Off Site" and wants
+ * "4:06 pm", not "16:06".) The tech still picks their role, adds any issues,
+ * checks it and submits it. Any other form opens as it is.
  */
 export function checkoutFormUrl(link: string, f: {
   siteId: string | null; wo: string; name: string; on: string | null; off: string; timeZone: string;
@@ -91,8 +99,8 @@ export function checkoutFormUrl(link: string, f: {
     ['Work Order #', f.wo],
     ['Checkout Date', dateMDY(f.off, f.timeZone)],
     ['Full Name', f.name],
-    ['Time On Site', f.on ? clock24(f.on, f.timeZone) : ''],
-    ['Time Off Site', clock24(f.off, f.timeZone)],
+    ['Check In Time', f.on ? clock12(f.on, f.timeZone) : ''],
+    ['Check Out Time', clock12(f.off, f.timeZone)],
   ];
   const q = pairs
     .filter(([, v]) => v.trim())

@@ -44,6 +44,7 @@ import { answeredFields } from '@/lib/custom-fields';
 import { CustomFieldList } from '@/components/CustomFieldInputs';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
 import PdfEditor, { type SendResult } from '@/components/tools/PdfEditor';
+import DocViewer from '@/components/tools/DocViewer';
 import { DOC_KINDS, editedName } from '@/lib/job-docs';
 import { ProjectDayCard, EXPENSES_CHANGED } from '@/components/wf/ProjectOffice';
 import { asks } from '@/lib/capture';
@@ -631,6 +632,9 @@ function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLab
   const officeFiles = (files ?? []).filter((u) => u.includes('/storage/v1/object/public/deliverables/wo-docs/'));
   const [docs, setDocs] = useState<JobDoc[] | null>(null);
   const [editing, setEditing] = useState<{ file: Blob; name: string; kind: string } | null>(null);
+  // Open shows the document inside the app (components/tools/DocViewer). A plain link
+  // spun forever on Fred's Android phone, which has no PDF viewer of its own (2026-10-23).
+  const [viewing, setViewing] = useState<{ url: string; name: string; kind: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const load = async () => {
     const { data } = await createClient().from('job_docs').select('id, name, kind, pages, sent_by, path, created_at, for_tech').eq('wo_id', woId).order('created_at', { ascending: false });
@@ -642,7 +646,7 @@ function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLab
   const open = async (d: JobDoc) => {
     const { data, error } = await createClient().storage.from('job-docs').createSignedUrl(d.path, 600);
     if (error || !data?.signedUrl) { toastError("That document couldn't be opened."); return; }
-    window.open(data.signedUrl, '_blank', 'noopener');
+    setViewing({ url: data.signedUrl, name: /\.pdf$/i.test(d.name) ? d.name : `${d.name}.pdf`, kind: d.kind });
   };
   const editDoc = async (d: JobDoc) => {
     setBusyId(d.id);
@@ -701,7 +705,7 @@ function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLab
             <span style={{ display: 'block', fontWeight: 600, overflowWrap: 'anywhere' }}>{officeFileName(u)}</span>
             <span className="wf-subtle" style={{ fontSize: 12.5 }}>Added in Edit job · the techs on this job can open it</span>
           </span>
-          <a className="wf-btn wf-btn-outline wf-btn-sm" href={u} target="_blank" rel="noopener noreferrer">Open</a>
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setViewing({ url: u, name: officeFileName(u), kind: 'Signed document' })}>Open</button>
         </div>
       ))}
       {docs.length === 0 ? (officeFiles.length > 0 ? null : (
@@ -729,6 +733,10 @@ function JobDocsCard({ woId, jobLabel, archived, files }: { woId: string; jobLab
             </div>
           ))}
         </div>
+      )}
+      {viewing && (
+        <DocViewer url={viewing.url} name={viewing.name} onClose={() => setViewing(null)}
+          onSign={archived ? undefined : (pdf, name) => { const kind = viewing.kind; setViewing(null); setEditing({ file: pdf, name: editedName(name), kind }); }} />
       )}
       {editing && (
         <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}

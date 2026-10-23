@@ -73,6 +73,7 @@ import {
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
 import PdfEditor from '@/components/tools/PdfEditor';
+import DocViewer, { docKind } from '@/components/tools/DocViewer';
 import ReadTool from '@/components/tools/ReadTool';
 import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 
@@ -2311,6 +2312,9 @@ function JobTools({ job, canAdd, ph, onNote }: {
   const [menu, setMenu] = useState(false);
   const [docs, setDocs] = useState<JobDoc[]>([]);
   const [editing, setEditing] = useState<{ file: Blob | null; name: string; kind: string } | null>(null);
+  // Any document opened inside the app (components/tools/DocViewer): PDF, Word, Excel or a photo.
+  const [viewing, setViewing] = useState<{ url: string; name: string; kind: string; local?: boolean } | null>(null);
+  const closeViewer = () => { if (viewing?.local) URL.revokeObjectURL(viewing.url); setViewing(null); };
   const [opening, setOpening] = useState<string | null>(null);
   const loadDocs = useCallback(async () => {
     const { data, error } = await createClient().rpc('wf_tech_job_docs', { p_wo_number: job.number });
@@ -2361,17 +2365,9 @@ function JobTools({ job, canAdd, ph, onNote }: {
         toastError(j.error ?? "Couldn't open the document.");
         return;
       }
-      setEditing({ file: await res.blob(), name: signedName(d.name), kind: d.kind === 'Work order' ? 'Signed work order' : d.kind });
-    } catch {
-      toastError('No signal. Try again when you have signal.');
-    } finally { setOpening(null); }
-  };
-  const signFile = async (f: JobFile) => {
-    setOpening(f.url);
-    try {
-      const res = await fetch(f.url);
-      if (!res.ok) { toastError("Couldn't open the document."); return; }
-      setEditing({ file: await res.blob(), name: signedName(f.name.replace(/\.pdf$/i, '')), kind: 'Signed document' });
+      // Through the viewer, so a form's boxes can be filled in before signing.
+      const blob = await res.blob();
+      setViewing({ url: URL.createObjectURL(blob), name: /\.pdf$/i.test(d.name) ? d.name : `${d.name}.pdf`, kind: d.kind === 'Work order' ? 'Signed work order' : d.kind, local: true });
     } catch {
       toastError('No signal. Try again when you have signal.');
     } finally { setOpening(null); }
@@ -2395,17 +2391,17 @@ function JobTools({ job, canAdd, ph, onNote }: {
     {files.length > 0 && (
       <Section title="Job documents" subtitle="Guides and forms for this job">
         {files.map((f) => {
-          const pdf = /\.pdf$/i.test(f.url);
+          // Opened inside the app on every phone and computer (Fred, 2026-10-22); PDF and Word can be filled in and signed.
+          const k = docKind(f.name) !== 'other' ? docKind(f.name) : docKind(f.url);
+          const fillable = canAdd && (k === 'pdf' || k === 'word');
           return (
             <div key={f.url} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--wf-line)', fontSize: 13.5 }}>
               <FileText size={15} color="var(--wf-subtle)" />
               <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{f.name}</span>
-              <a className="wf-btn wf-btn-outline wf-btn-sm" href={f.url} target="_blank" rel="noopener noreferrer">Open</a>
-              {pdf && canAdd && (
-                <button type="button" className="wf-btn wf-btn-gold wf-btn-sm" disabled={opening === f.url} onClick={() => void signFile(f)}>
-                  {opening === f.url ? 'Opening…' : <><Signature size={14} /> Sign</>}
-                </button>
-              )}
+              <button type="button" className={`wf-btn wf-btn-sm ${fillable ? 'wf-btn-gold' : 'wf-btn-outline'}`}
+                onClick={() => setViewing({ url: f.url, name: f.name, kind: 'Signed document' })}>
+                {fillable ? <><Signature size={14} /> Open &amp; fill in</> : 'Open'}
+              </button>
             </div>
           );
         })}
@@ -2456,6 +2452,10 @@ function JobTools({ job, canAdd, ph, onNote }: {
     {(tool === 'count' || tool === 'measure') && (
       <PhotoMarkup mode={tool} onClose={() => setTool(null)}
         onSave={async (file, source) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what); }} />
+    )}
+    {viewing && (
+      <DocViewer url={viewing.url} name={viewing.name} onClose={closeViewer}
+        onSign={canAdd ? (pdf, name) => { const kind = viewing.kind; closeViewer(); setEditing({ file: pdf, name: signedName(name), kind }); } : undefined} />
     )}
     {editing && (
       <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}

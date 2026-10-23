@@ -215,6 +215,13 @@ textarea.wf-input { resize: vertical; }
 .wf .spin { animation: wf-spin 0.9s linear infinite; }
 @keyframes wf-spin { to { transform: rotate(360deg); } }
 
+/* Word and Excel files shown in the app (components/tools/DocViewer.tsx). */
+.wf-doc-page table, .wf-doc-sheet table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.wf-doc-page td, .wf-doc-page th, .wf-doc-sheet td, .wf-doc-sheet th { border: 1px solid #D5D2CA; padding: 6px 8px; vertical-align: top; font-size: 14px; }
+.wf-doc-page img { max-width: 100%; height: auto; }
+.wf-doc-page p { margin: 0 0 10px; }
+.wf-doc-sheet h3 { margin: 12px 0 6px; font-size: 15px; }
+
 /* Available / Current / Pending / Closed on a phone: the count sits under the
    label so all four fit across a 375px screen. */
 @media (max-width: 520px) {

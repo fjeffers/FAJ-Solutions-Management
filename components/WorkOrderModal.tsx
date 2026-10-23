@@ -35,6 +35,7 @@ import { parseStartAsks, type StartAsk } from '@/lib/checkin';
 import { useJobTemplates } from '@/components/useJobTemplates';
 import { CAPTURE_ITEMS, parseCapture, templateOf, toggleItem, type CaptureItem } from '@/lib/capture';
 import { createClient } from '@/lib/supabase/client';
+import AddressCheck from '@/components/AddressCheck';
 
 type Tab = WoTab;
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -565,6 +566,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
   const set = (k: keyof WorkOrder, v: string | number | boolean | null) =>
     setForm((f) => ({ ...f, [k]: v }));
+  // Typing in an address field drops a position picked with Check address; saving looks it up again.
+  const setAddr = (k: 'site_address' | 'site_city' | 'site_state' | 'site_zip', v: string) =>
+    setForm((f) => ({ ...f, [k]: v, ...(f[k] !== v && f.site_lat !== undefined ? { site_lat: undefined, site_lng: undefined } : {}) }));
 
   const applyTemplate = (templateId: string) => {
     const tpl = questionTemplates.find((t) => t.id === templateId);
@@ -1235,19 +1239,22 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               <input className="input" value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="e.g. Walmart #4521, Eastgate Mall" />
             </PF>
             <PF label="Street Address" icon={<MapPin size={13} />}>
-              <input className="input" value={form.site_address ?? ''} onChange={(e) => set('site_address', e.target.value)} placeholder="123 Main St" />
+              <input className="input" value={form.site_address ?? ''} onChange={(e) => setAddr('site_address', e.target.value)} placeholder="123 Main St" />
             </PF>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 100px', gap: 12 }}>
               <PF label="City">
-                <input className="input" value={form.site_city ?? ''} onChange={(e) => set('site_city', e.target.value)} placeholder="City" />
+                <input className="input" value={form.site_city ?? ''} onChange={(e) => setAddr('site_city', e.target.value)} placeholder="City" />
               </PF>
               <PF label="State">
-                <input className="input" value={form.site_state ?? ''} onChange={(e) => set('site_state', e.target.value.toUpperCase())} placeholder="PA" maxLength={2} />
+                <input className="input" value={form.site_state ?? ''} onChange={(e) => setAddr('site_state', e.target.value.toUpperCase())} placeholder="PA" maxLength={2} />
               </PF>
               <PF label="ZIP">
-                <input className="input" value={form.site_zip ?? ''} onChange={(e) => set('site_zip', e.target.value)} placeholder="00000" maxLength={10} />
+                <input className="input" value={form.site_zip ?? ''} onChange={(e) => setAddr('site_zip', e.target.value)} placeholder="00000" maxLength={10} />
               </PF>
             </div>
+            <AddressCheck form={form} onUse={(a) => setForm((f) => ({
+              ...f, site_address: a.street, site_city: a.city, site_state: a.state, site_zip: a.zip, site_lat: a.lat, site_lng: a.lng,
+            }))} />
             {form.site_address && form.site_city && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <iframe

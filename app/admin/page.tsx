@@ -13,6 +13,7 @@ import { CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, Cli
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
+import { MoneyHub, isMoneyView } from '@/components/MoneyHub';
 import WorkOrdersView, { type LinkedVisit } from '@/components/WorkOrdersView';
 import PaymentsView from '@/components/PaymentsView';
 import ContractorsView from '@/components/ContractorsView';
@@ -161,7 +162,7 @@ export default function HomePage() {
   const [officeOpen, setOfficeOpen] = useState<boolean>(() => sectionOfView(appLayout.resolved, viewFromUrl()) !== null);
   const [openSection, setOpenSection] = useState<string | null>(() => sectionOfView(appLayout.resolved, viewFromUrl()));
   function openOfficeFor(v: View) {
-    const g = sectionOfView(layoutRef.current, v);
+    const g = sectionOfView(layoutRef.current, isMoneyView(v) ? 'financials' : v);
     if (g) { setOfficeOpen(true); setOpenSection(g); }
   }
   // Read once on mount: the board should open on the linked work order, but
@@ -1610,7 +1611,8 @@ Go ahead?`)) return;
                               </a>
                             );
                           }
-                          const active = view === i.view;
+                          // Every money screen is a tab of the Financials dashboard, so its entry stays lit.
+                          const active = view === i.view || (i.view === 'financials' && isMoneyView(view));
                           return (
                             <button key={i.view} className={`nav-btn ${active ? 'active' : ''}`} onClick={() => navigate(i.view as View)} style={sub}>
                               <OfficeIcon k={i.view} size={14} /> {i.label}
@@ -1711,6 +1713,10 @@ Go ahead?`)) return;
             coming={shown('dash.coming') ? <ComingUp jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'dashboard')} /> : undefined}
             screenName={(k) => screenLabel(appLayout.layout, k)}
           />
+        )}
+        {/* The Financials dashboard: the money in and out on top, a tab for each money screen below. */}
+        {isMoneyView(view) && (
+          <MoneyHub view={view} onGo={navigate} invoices={invoices} invoicePayments={invoicePayments} payments={payments} workOrders={enrichedWOs} />
         )}
         {view === 'financials' && (
           <FinancialDashboardView workOrders={enrichedWOs} />

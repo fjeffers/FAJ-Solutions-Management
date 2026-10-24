@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeOdometer, sanitizeReceipt, photoSchema, photoPrompt, odometerDiffers, amountDiffers, receiptItems } from './photo-read';
+import { sanitizeOdometer, sanitizeReceipt, photoSchema, photoPrompt, odometerDiffers, amountDiffers, receiptItems, fitReceiptAi } from './photo-read';
 
 describe('reading a photo', () => {
   it('keeps an odometer number and drops anything else', () => {
@@ -47,5 +47,19 @@ describe('reading a photo', () => {
     expect(odometerDiffers(48231, null)).toBe(false);
     expect(amountDiffers(41.24, 41.24)).toBe(false);
     expect(amountDiffers(14.24, 41.24)).toBe(true);
+  });
+});
+
+describe('a long receipt', () => {
+  it('keeps as many lines as fit the database, instead of losing them all', () => {
+    const items = Array.from({ length: 25 }, (_, i) => ({ name: `Ç${'é'.repeat(58)}${i}`, qty: 1, amount: 9.99 }));
+    const ai = { amount: 249.75, vendor: 'Home Depot', items };
+    const fit = fitReceiptAi(ai)!;
+    expect(new TextEncoder().encode(JSON.stringify(fit)).length).toBeLessThanOrEqual(3500);
+    expect((fit.items as unknown[]).length).toBeGreaterThan(5);
+    expect((fit.items as unknown[]).length).toBeLessThan(25);
+    expect(fit.vendor).toBe('Home Depot');
+    const small = { amount: 4, items: [{ name: 'Tape', qty: 1, amount: 4 }] };
+    expect(fitReceiptAi(small)).toBe(small);
   });
 });

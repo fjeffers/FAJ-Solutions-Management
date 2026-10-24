@@ -166,7 +166,7 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
 AS $$
 BEGIN
   IF auth.uid() IS NULL OR NOT is_business_owner(auth.uid()) THEN RETURN jsonb_build_object('ok', false, 'reason', 'not_owner'); END IF;
-  UPDATE expense_categories SET active = false WHERE key = p_key AND NOT builtin;
+  UPDATE expense_categories SET active = false WHERE key = p_key AND NOT builtin AND created_by = auth.uid();
   IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'reason', 'not_found'); END IF;
   RETURN jsonb_build_object('ok', true);
 END;

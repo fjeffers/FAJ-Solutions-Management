@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom';
 import { Download, Loader2, Minus, Plus, Signature, X } from 'lucide-react';
 import { openPdf, renderPage } from '@/lib/pdf-view';
 import { fillForm, readFormFields, type FormField, type FormValues } from '@/lib/pdf-form';
-import { blocksFromHtml, blocksToPdf } from '@/lib/doc-to-pdf';
+import { blocksFromHtml, blocksToPdf, lostInPdf } from '@/lib/doc-to-pdf';
 import { trimPdf } from '@/lib/pdf-trim';
 import { toastError } from '@/lib/toast';
 
@@ -114,6 +114,9 @@ export default function DocViewer({ url, name, onClose, onSign }: {
 
   const sign = async () => {
     if (!onSign || !bytes) return;
+    const page = kind === 'word' ? editRef.current : kind === 'sheet' ? sheetRef.current : null;
+    const lost = page ? lostInPdf(page) : [];
+    if (lost.length && !window.confirm(`This document has ${lost.join(' and ')}. The signed PDF keeps the words and tables only, so ${lost.length > 1 ? 'these' : 'they'} won't be in it. Sign it anyway?`)) return;
     setBusy(true);
     try {
       if (kind === 'pdf') {

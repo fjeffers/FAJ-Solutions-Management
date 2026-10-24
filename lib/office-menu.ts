@@ -30,6 +30,10 @@ export type OfficeGroup = { id: string; title: string; items: OfficeItem[] };
  */
 export const SIDEBAR_VIEWS = ['dashboard', 'workorders', 'scheduling', 'messages', 'office', 'settings'] as const;
 
+/** Screens reached as tabs of the Financials dashboard, not from the menu (components/MoneyHub), with their names. */
+export const MONEY_TAB_LABELS: Record<string, string> = { invoices: 'Invoices', payables: 'Pay Techs', payments: 'Payments Made', ledger: 'Ledger' };
+export const MONEY_TAB_VIEWS = ['invoices', 'payables', 'payments', 'ledger'] as const;
+
 export const OFFICE_GROUPS: OfficeGroup[] = [
   {
     id: 'everyday',
@@ -38,7 +42,6 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
       // Fred, 2026-10-13: projects — travel, time on site, miles, receipts, the client report.
       { view: 'projects', label: 'Projects', hint: 'Multi-day sites: travel, time on site, miles, receipts and the weekly bill' },
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
-      { view: 'payables', label: 'Pay Techs', hint: 'What each tech is owed, and paying them' },
       { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },
       { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },
       { view: 'import-queue', label: 'Import', hint: 'Work orders from email and spreadsheets waiting to come in' },
@@ -52,13 +55,13 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
       // Fred, 2026-10-24: "add it under office and i can pull it by the app work order number and edit whats needed";
       // "field sheet in under money".
       { view: 'fieldsheet', label: 'Field Sheet', hint: 'Pull a job by WO number: fix hours, miles and receipts, see the photos, bill it' },
-      { view: 'payments', label: 'Payments Made', hint: 'History of payments sent to techs' },
-      { view: 'financials', label: 'Financials', hint: 'Revenue, profit and trends' },
-      { view: 'ledger', label: 'Ledger', hint: 'Income and expense ledger' },
+      // Fred, 2026-10-24: "payment made, Financials, and ledger ... combine it and call it Financials dashboard";
+      // "all money under one place financials dashboard including pay tech". Invoices, Pay Techs, Payments Made
+      // and the Ledger are its tabs (components/MoneyHub).
+      { view: 'financials', label: 'Financials dashboard', hint: 'All the money: invoices and money in, paying techs, payments made, the ledger, trends' },
       { view: 'customers', label: 'Customers', hint: 'Clients and what each one brings in' },
       { view: 'quickbooks', label: 'QuickBooks', hint: 'Connection to QuickBooks' },
       { view: null, href: 'netview', label: 'NetView Invoice', hint: "NetView's vendor payment form (opens their site)" },
-      { view: 'invoices', label: 'Invoices', hint: 'Client invoices and money received' },
     ],
   },
   {

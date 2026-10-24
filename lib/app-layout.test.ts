@@ -18,7 +18,7 @@ describe('menu layout (Settings -> Menu & screens)', () => {
   });
 
   it('every screen appears exactly once, whatever was saved', () => {
-    for (const saved of [null, 'junk', 42, {}, { main: 'x' }, { main: ['payments', 'payments', 'nope'], sections: [{ id: 'a', items: ['payments', 'ledger'] }] }]) {
+    for (const saved of [null, 'junk', 42, {}, { main: 'x' }, { main: ['customers', 'customers', 'nope'], sections: [{ id: 'a', items: ['customers', 'quickbooks'] }] }]) {
       const keys = keysOf(normalizeLayout(saved));
       expect(keys.sort()).toEqual(Object.keys(SCREENS).sort());
     }
@@ -26,11 +26,11 @@ describe('menu layout (Settings -> Menu & screens)', () => {
 
   it('bad or old saved values fall back safely', () => {
     expect(normalizeLayout(null)).toEqual(std());
-    const l = normalizeLayout({ main: ['dashboard'], sections: [{ id: 'money', title: '  Cash  ', items: ['ledger'] }], labels: { ledger: '  Books ', bogus: 'x', payments: '' }, hidden: ['office', 'settings', 'w9', 'nope'] });
+    const l = normalizeLayout({ main: ['dashboard'], sections: [{ id: 'money', title: '  Cash  ', items: ['quickbooks'] }], labels: { quickbooks: '  Books ', bogus: 'x', customers: '' }, hidden: ['office', 'settings', 'w9', 'nope'] });
     expect(l.main).toEqual(['dashboard', 'workorders', 'scheduling', 'messages', 'office', 'settings']); // the rest come back in their usual places
     expect(l.sections[0]).toMatchObject({ id: 'money', title: 'Cash' });
-    expect(l.sections[0].items[0]).toBe('ledger');
-    expect(l.labels).toEqual({ ledger: 'Books' });
+    expect(l.sections[0].items[0]).toBe('quickbooks');
+    expect(l.labels).toEqual({ quickbooks: 'Books' });
     expect(l.hidden).toEqual(['w9']); // Office and Settings can never be hidden
   });
 
@@ -103,10 +103,10 @@ describe('menu layout (Settings -> Menu & screens)', () => {
     let l = addSection(std(), 'Billing', 'billing');
     expect(l.sections.at(-1)).toEqual({ id: 'billing', title: 'Billing', items: [] });
     l = renameSection(l, 'billing', 'Billing day');
-    l = moveScreen(l, 'payments', 'billing');
+    l = moveScreen(l, 'customers', 'billing');
     expect(removeSection(l, 'billing')).toBe(l);
     expect(visibleLayout(resolveLayout(l)).sections.find((s) => s.id === 'billing')!.title).toBe('Billing day');
-    l = moveScreen(l, 'payments', 'money');
+    l = moveScreen(l, 'customers', 'money');
     expect(removeSection(l, 'billing').sections.map((s) => s.id)).not.toContain('billing');
     expect(isStandard(removeSection(l, 'billing'))).toBe(false); // Payments Made is now at the bottom of Money
   });
@@ -130,9 +130,9 @@ describe('menu layout (Settings -> Menu & screens)', () => {
   });
 
   it('search uses the new name and the standard one', () => {
-    const r = resolveLayout(renameScreen(std(), 'payables', 'Payroll'));
-    expect(searchSections(r.sections, 'payroll').flatMap((s) => s.items.map((i) => i.key))).toEqual(['payables']);
-    expect(searchSections(r.sections, 'pay techs').flatMap((s) => s.items.map((i) => i.key))).toContain('payables');
+    const r = resolveLayout(renameScreen(std(), 'financials', 'Money'));
+    expect(searchSections(r.sections, 'money').flatMap((s) => s.items.map((i) => i.key))).toContain('financials');
+    expect(searchSections(r.sections, 'financials dashboard').flatMap((s) => s.items.map((i) => i.key))).toContain('financials');
     expect(searchSections(r.sections, 'zzz')).toEqual([]);
   });
 });

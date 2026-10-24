@@ -83,12 +83,12 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // sw.js/manifest.json/icons must be served without an auth redirect, otherwise
+  // sw.js/tech-sw.js/manifest.json/icons must be served without an auth redirect, otherwise
   // the browser refuses to register the service worker ("behind a redirect").
   // tech-manifest.json must be reachable logged-out, exactly like manifest.json:
   // the browser fetches it before install, and a redirect there means the tech
   // portal simply cannot be added to a home screen.
   // workflow/ holds only the retirement worker for phones that opened the old
   // separate WorkFlow app; it must load signed out, like sw.js.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.json|tech-manifest\\.json|icons/|workflow|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|sw\\.js|tech-sw\\.js|manifest\\.json|tech-manifest\\.json|icons/|workflow|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };

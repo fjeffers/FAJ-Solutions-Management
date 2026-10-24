@@ -16,9 +16,9 @@
 // Pure and unit-tested (lib/weekly-bill.test.ts). The screen is ProjectReport
 // (components/wf/ProjectOffice.tsx); the AI summary reads these numbers.
 import { asks, type CaptureItem } from './capture';
-import { expenseCategoryLabel, EXPENSE_CATEGORIES } from './expenses';
+import { expenseCategoryLabel, totalsByCategory } from './expenses';
 import { hoursOf, legLabel, type DayLog, type Leg, type Origin } from './project-day';
-import { amountDiffers, odometerDiffers } from './photo-read';
+import { amountDiffers, odometerDiffers, receiptItems } from './photo-read';
 import { ACTIVITY_LABEL, activityOf } from './checkin';
 
 export type OdoRow = {
@@ -251,9 +251,8 @@ export function siteBill(input: {
       onSiteHours: r2(days.reduce((t, d) => t + d.onSiteHours, 0)),
       travelHours: r2(days.reduce((t, d) => t + d.travelHours, 0)),
       gpsMiles: gpsTotal, odoMiles: odoTotal, receipts: receiptTotal, gallons,
-      byCategory: EXPENSE_CATEGORIES
-        .map((c) => ({ key: c.key, label: c.label, sum: r2(receipts.filter((r) => r.category === c.key).reduce((t, r) => t + Number(r.amount), 0)) }))
-        .filter((c) => c.sum > 0),
+      // The office's own categories too (migration 137).
+      byCategory: totalsByCategory(receipts),
     },
   };
 }
@@ -322,6 +321,29 @@ export function totalsSheetRows(project: string, client: string, range: string, 
   const sum = (f: (b: SiteBill) => number) => r2(sites.reduce((t, x) => t + f(x.bill), 0));
   rows.push(['Total', '', '', sum((b) => b.totals.onSiteHours), sum((b) => b.totals.travelHours), sum((b) => b.totals.gpsMiles),
     ...(odo ? [sum((b) => b.totals.odoMiles ?? 0)] : []), sum((b) => b.totals.receipts)]);
+  return rows;
+}
+
+/**
+ * Every receipt, line by line (Fred, 2026-10-22: the vendor, the date, how much,
+ * "the items ... so I know what I'm paying for ... and then it could go into a
+ * spreadsheet"). The lines are what the AI read off the photo (lib/photo-read.ts);
+ * a receipt read before that, or with no readable lines, is one row.
+ */
+export function receiptItemRows(sites: BillSite[]): (string | number)[][] {
+  const rows: (string | number)[][] = [
+    ['Receipt items'], [],
+    ['Date', 'Site', 'WO', 'Technician', 'Store', 'For', 'Item', 'Qty', 'Item amount', 'Receipt total'],
+  ];
+  for (const x of sites) {
+    for (const r of x.bill.receipts) {
+      const base = [r.expense_date, x.name, x.wo, r.contractor_name ?? '', r.vendor ?? '', expenseCategoryLabel(r.category)];
+      const items = receiptItems(r.ai);
+      if (items.length === 0) rows.push([...base, r.note ?? '', '', '', Number(r.amount)]);
+      else items.forEach((it, i) => rows.push([...base, it.name, it.qty ?? '', it.amount ?? '', i === 0 ? Number(r.amount) : '']));
+    }
+  }
+  rows.push(['Total', '', '', '', '', '', '', '', '', r2(sites.reduce((t, x) => t + x.bill.totals.receipts, 0))]);
   return rows;
 }
 

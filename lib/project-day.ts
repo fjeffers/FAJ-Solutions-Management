@@ -41,6 +41,9 @@ const DESTS: Dest[] = ['site', 'hotel', 'home', 'next_site', 'fuel', 'materials'
 export const ORIGIN_LABEL: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Other', fuel: 'Fuel stop', materials: 'Materials pickup' };
 export const DEST_LABEL: Record<Dest, string> = { site: 'Site', hotel: 'Hotel', home: 'Home', next_site: 'Next site', fuel: 'Fuel stop', materials: 'Materials pickup' };
 
+/** "On the way home", "On the way to the hotel" (not "to the home", Fred's screenshot 2026-10-22). */
+export const onTheWay = (dest: Dest): string => (dest === 'home' ? 'On the way home' : `On the way to the ${DEST_LABEL[dest].toLowerCase()}`);
+
 type Raw = Record<string, unknown>;
 const isObj = (v: unknown): v is Raw => !!v && typeof v === 'object' && !Array.isArray(v);
 

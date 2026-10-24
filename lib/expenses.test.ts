@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseExpenseAmount, expenseCategoryLabel, expenseReasonText } from './expenses';
+import { afterEach, describe, expect, it } from 'vitest';
+import { EXPENSE_CATEGORIES, customCategoryKey, parseExpenseAmount, expenseCategoryLabel, expenseReasonText, setCustomExpenseCategories, totalsByCategory } from './expenses';
 import { billableExtras, contractorOwedOnWO, woPayoutTotal, woProfit } from './utils';
 import type { PayAddon, WorkOrder } from './types';
 
@@ -57,5 +57,34 @@ describe('expense entry', () => {
     expect(expenseCategoryLabel('tolls_parking')).toBe('Tolls & parking');
     expect(expenseCategoryLabel('nope')).toBe('Other');
     expect(expenseReasonText('bad_amount')).toMatch(/amount/);
+  });
+});
+
+describe('expense categories (migration 137)', () => {
+  afterEach(() => setCustomExpenseCategories([]));
+  it("puts Fred's list first, and old receipts keep their keys ('hotel' reads Lodging)", () => {
+    expect(EXPENSE_CATEGORIES.slice(0, 7).map((c) => c.label)).toEqual(['Mileage', 'Meals', 'Lodging', 'Travel', 'Labor', 'Materials', 'Rental']);
+    expect(expenseCategoryLabel('hotel')).toBe('Lodging');
+    expect(expenseCategoryLabel('fuel')).toBe('Fuel');
+  });
+  it("labels the office's own categories, from the list or from the key before it loads", () => {
+    expect(expenseCategoryLabel('c_tool_rental')).toBe('Tool rental');
+    setCustomExpenseCategories([{ key: 'c_tool_rental', label: 'Tool Rental (Sunbelt)' }]);
+    expect(expenseCategoryLabel('c_tool_rental')).toBe('Tool Rental (Sunbelt)');
+  });
+  it('makes the same key as the database', () => {
+    expect(customCategoryKey('Tool rental')).toBe('c_tool_rental');
+    expect(customCategoryKey('  Per-diem / Snacks!! ')).toBe('c_per_diem_snacks');
+    expect(customCategoryKey('***')).toBeNull();
+  });
+  it('totals per category, the built-in order first, then the custom ones', () => {
+    const totals = totalsByCategory([
+      { category: 'c_tool_rental', amount: 40 }, { category: 'fuel', amount: '30.10' }, { category: 'mileage', amount: 12.5 }, { category: 'fuel', amount: 20 },
+    ]);
+    expect(totals).toEqual([
+      { key: 'mileage', label: 'Mileage', sum: 12.5 },
+      { key: 'fuel', label: 'Fuel', sum: 50.1 },
+      { key: 'c_tool_rental', label: 'Tool rental', sum: 40 },
+    ]);
   });
 });

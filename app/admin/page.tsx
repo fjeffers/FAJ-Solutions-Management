@@ -443,7 +443,13 @@ export default function HomePage() {
       || prevWO.site_state   !== (w.site_state   ?? null);
     let siteLat = prevWO?.site_lat ?? null;
     let siteLng = prevWO?.site_lng ?? null;
-    if (w.site_address && (addressChanged || siteLat == null)) {
+    // A position just picked with Check address (components/AddressCheck.tsx) is kept as it is.
+    const picked = w.site_lat != null && w.site_lng != null
+      && (w.site_lat !== prevWO?.site_lat || w.site_lng !== prevWO?.site_lng);
+    if (picked) {
+      siteLat = w.site_lat ?? null;
+      siteLng = w.site_lng ?? null;
+    } else if (w.site_address && (addressChanged || siteLat == null)) {
       const fullAddress = [w.site_address, w.site_city, w.site_state, w.site_zip].filter(Boolean).join(', ');
       const coords = await geocodeAddress(fullAddress);
       siteLat = coords?.lat ?? null;

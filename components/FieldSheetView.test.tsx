@@ -187,4 +187,31 @@ describe('Field Sheet', () => {
       p_op: 'add', p_wo_id: 'wo', p_tech: 'Dwayne Cudjoe', p_kind: 'out', p_at: '2026-10-21T21:18:00.000Z',
     }));
   });
+
+  it('enters a day in plain boxes: what the app has fills in, every box changes, Save keeps it', async () => {
+    const user = userEvent.setup();
+    render(<FieldSheetView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+    expect(await screen.findByText('Enter a day')).toBeTruthy();
+    // Dwayne on Wed the 21st: the app's arrival is filled in.
+    expect((screen.getByLabelText('Arrived on site') as HTMLInputElement).value).toBe('07:44');
+    await user.type(screen.getByLabelText('Odometer start'), '41200');
+    await user.type(screen.getByLabelText('Odometer end'), '41290');
+    await user.type(screen.getByLabelText('Hours on site'), '8');
+    await user.click(screen.getByRole('button', { name: 'Save this day' }));
+    expect(upserts).toContainEqual(['field_sheet_days', expect.objectContaining({
+      day: '2026-10-21', tech: 'Dwayne Cudjoe', edits: { odoStart: 41200, odoEnd: 41290, hours: 8 },
+    })]);
+    // A day the app doesn't have: blank boxes, typed in and saved as a day the office added.
+    const day = screen.getByLabelText('Day');
+    await user.clear(day);
+    await user.type(day, '2026-10-22');
+    expect((screen.getByLabelText('Arrived on site') as HTMLInputElement).value).toBe('');
+    await user.type(screen.getByLabelText('Hours on site'), '6.5');
+    await user.type(screen.getByLabelText('Notes for this day'), 'Pulled cable, second floor');
+    await user.click(screen.getByRole('button', { name: 'Save this day' }));
+    expect(upserts).toContainEqual(['field_sheet_days', expect.objectContaining({
+      day: '2026-10-22', tech: 'Dwayne Cudjoe', added: true, edits: { hours: 6.5, note: 'Pulled cable, second floor' },
+    })]);
+  });
 });

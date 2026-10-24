@@ -77,11 +77,17 @@ export const ON_SITE_KEY = 'on-site';
  * Check in's choices: "Traveling to" (hotel, site, home, fuel, the next site),
  * then "On site" at the bottom. After Work done only the drive back (hotel,
  * home or fuel). The next site is offered only when leaving a site.
+ *
+ * Leaving the hotel or home, Site comes first and the place the tech is at
+ * says so: on 2026-10-21 Paul Gibbs picked Hotel (then first on the list) for
+ * the drive from the hotel to the site, and the app signed him out on arrival.
  */
 export function checkInChoices(from: Origin | null, afterWork = false): { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] {
-  const to = TRAVEL_TO.filter((t) => (afterWork ? ['hotel', 'home', 'fuel'].includes(t.dest) : t.dest !== 'next_site' || from === 'site'));
+  const all = TRAVEL_TO.filter((t) => (afterWork ? ['hotel', 'home', 'fuel'].includes(t.dest) : t.dest !== 'next_site' || from === 'site'));
+  const leaving = from === 'hotel' || from === 'home';
+  const to = leaving ? [...all.filter((t) => t.dest === 'site'), ...all.filter((t) => t.dest !== 'site')] : all;
   const groups: { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] = [
-    { group: 'travel', label: 'Traveling to', options: to.map((t) => ({ key: `to-${t.dest}`, label: t.label })) },
+    { group: 'travel', label: 'Traveling to', options: to.map((t) => ({ key: `to-${t.dest}`, label: t.dest === from ? `${t.label} (you're here now)` : t.label })) },
   ];
   if (!afterWork) groups.push({ group: 'on_site', label: 'On site', options: [{ key: ON_SITE_KEY, label: 'Log in on site: start work' }] });
   return groups;
@@ -94,6 +100,9 @@ export function checkInDrive(key: string, from: Origin | null): Drive | null {
   const origin: Origin = t.dest === 'next_site' ? 'site' : from ?? 'other';
   return { key, origin, dest: t.dest, label: `${ORIGIN_LABEL_FOR[origin]} → ${t.dest === 'next_site' ? 'Next site' : t.label}` };
 }
+/** A drive to the place the tech is already at (Hotel → Hotel): almost always the wrong pick. */
+export const samePlace = (drive: Drive | null): boolean =>
+  !!drive && (drive.dest === 'hotel' || drive.dest === 'home') && drive.origin === drive.dest;
 const ORIGIN_LABEL_FOR: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Here', fuel: 'Fuel stop', materials: 'Materials pickup' };
 
 /**

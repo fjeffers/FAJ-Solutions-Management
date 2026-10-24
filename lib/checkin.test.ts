@@ -89,9 +89,12 @@ describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
 
   it('lists Traveling to (hotel, site, home, fuel) and On site at the bottom', async () => {
     const { checkInDrive } = await import('./checkin');
-    const groups = checkInChoices('hotel');
+    const groups = checkInChoices(null);
     expect(groups.map((g) => g.label)).toEqual(['Traveling to', 'On site']);
     expect(groups[0].options.map((o) => o.label)).toEqual(['Hotel', 'Site', 'Home', 'Fuel', 'Materials']);
+    // Leaving the hotel, the site comes first and the hotel says they're there (Paul Gibbs, 2026-10-21: Hotel → Hotel).
+    expect(checkInChoices('hotel')[0].options.map((o) => o.label)).toEqual(['Site', "Hotel (you're here now)", 'Home', 'Fuel', 'Materials']);
+    expect(checkInChoices('home')[0].options.map((o) => o.label)).toEqual(['Site', 'Hotel', "Home (you're here now)", 'Fuel', 'Materials']);
     expect(groups[1].options).toEqual([{ key: ON_SITE_KEY, label: 'Log in on site: start work' }]);
     // The next site only when leaving a site; after Work done only the drive back.
     expect(checkInChoices('site')[0].options.map((o) => o.label)).toContain('Next site');
@@ -103,6 +106,10 @@ describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
     expect(checkInDrive('to-next_site', 'site')).toMatchObject({ origin: 'site', dest: 'next_site' });
     expect(checkInDrive('to-site', null)).toMatchObject({ origin: 'other', label: 'Here → Site' });
     expect(checkInDrive(ON_SITE_KEY, 'site')).toBeNull();
+    const { samePlace } = await import('./checkin');
+    expect(samePlace(checkInDrive('to-hotel', 'hotel'))).toBe(true);
+    expect(samePlace(checkInDrive('to-site', 'hotel'))).toBe(false);
+    expect(samePlace(checkInDrive('to-hotel', 'site'))).toBe(false);
   });
 
   it('saves all four: each drive with where it went, and work on site as the clock', () => {

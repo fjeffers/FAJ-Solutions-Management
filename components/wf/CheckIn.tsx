@@ -15,7 +15,7 @@
 import { useState } from 'react';
 import { Camera, CheckCircle2, MapPin } from 'lucide-react';
 import { asks } from '@/lib/capture';
-import { ON_SITE_KEY, checkInChoices, checkInDrive, checkInMissing, checkInNotes, needsOdometer, type Drive } from '@/lib/checkin';
+import { ON_SITE_KEY, checkInChoices, checkInDrive, checkInMissing, checkInNotes, needsOdometer, samePlace, type Drive } from '@/lib/checkin';
 import { getPosition, stampLines } from '@/lib/geo';
 import { stampPhoto } from '@/lib/photo-stamp';
 import type { Origin } from '@/lib/project-day';
@@ -146,6 +146,11 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
                 ))}
               </select>
             </label>
+          )}
+          {travel && samePlace(drive) && (
+            <p role="alert" style={{ margin: 0, fontSize: 13.5, padding: '8px 10px', borderRadius: 8, background: '#FDF3E1', color: '#7A4B00' }}>
+              You&apos;re at the {drive!.dest} now. Driving to the job? Pick <b>Site</b>, or the time on site won&apos;t count.
+            </p>
           )}
           <p className="wf-subtle" style={{ margin: 0, fontSize: 13 }}>
             {startOfDay ? 'This checks you in for the day. ' : ''}The time and your location are saved when you tap {travel && !onSiteChosen ? 'Start the drive' : "I'm on site"}.

@@ -16,7 +16,7 @@ import { Car, FileSpreadsheet, FileText, Image as ImageIcon, MapPin, Plus, Print
 import { createClient } from '@/lib/supabase/client';
 import { useLiveRows } from '@/components/wf/useLive';
 import {
-  buildDayLogs, dayOf, hoursOf, legLabel, parseDayEvents, totalsOf, type DayEvent, type DayLog,
+  buildDayLogs, gapOnSite, dayOf, hoursOf, legLabel, parseDayEvents, totalsOf, type DayEvent, type DayLog,
 } from '@/lib/project-day';
 import { parseCloseout, parseCloseoutLists, listFor, skipReason, type CloseoutList } from '@/lib/closeout';
 import { expenseCategoryLabel, expenseReasonText, parseExpenseAmount, totalsByCategory } from '@/lib/expenses';
@@ -200,6 +200,8 @@ function OdoLine({ l, problems, urls }: { l: BillLeg; problems: OdoProblem[]; ur
 }
 
 function DayBlock({ d, onChanged, odo }: { d: DayLog; onChanged: () => void; odo: DayOdo | null }) {
+  // Drives but no clock-in on site (a wrong pick like Hotel → Hotel): show the stretch between drives.
+  const gap = d.spans.length ? null : gapOnSite(d.legs);
   return (
     <div style={{ borderTop: '1px solid var(--wf-line)', padding: '10px 0' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -213,6 +215,12 @@ function DayBlock({ d, onChanged, odo }: { d: DayLog; onChanged: () => void; odo
           {d.clockIn ? `Clocked in ${timeOf(d.clockIn)}` : 'No clock-in'}
           {d.signOut ? ` · signed out ${timeOf(d.signOut)}` : ''}
           {d.clockIn && d.signOut ? ` (${formatDuration(Date.parse(d.signOut) - Date.parse(d.clockIn))} day)` : ''}
+        </div>
+      )}
+      {gap && (
+        <div style={{ fontSize: 12.5, margin: '2px 0 4px', padding: '6px 10px', borderRadius: 8, background: '#FDF3E1', color: '#7A4B00' }}>
+          No clock-in on site, but {timeOf(gap.arrived)}–{timeOf(gap.leftSite)} ({formatDuration(gap.ms)}) falls between drives: likely on site.
+          Hours and the Field Sheet count it as Started and Finished; check it there.
         </div>
       )}
       {[

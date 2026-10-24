@@ -314,6 +314,11 @@ function DayCard({ row, woId, openPunch, onSave, onClocked }: {
           </button>
         </div>
       )}
+      {(row.source.arrived === 'guess' || row.source.leftSite === 'guess') && (
+        <div style={{ background: '#FDF3E1', color: '#7A4B00', borderRadius: 8, padding: '6px 10px', fontSize: 13 }}>
+          No clock-in on site this day: Started and Finished are worked out from the drives. Check them, then Save.
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
         {BOXES.map(({ f, label, time }) => {
           const auto = f === 'hours' ? c.hoursAuto : f === 'travel' ? c.travelAuto : f === 'miles' ? c.milesAuto : null;

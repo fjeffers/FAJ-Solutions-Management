@@ -7,11 +7,12 @@ import {
   billRange, blocksBilling, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
 } from '@/lib/field-sheet';
 import type { OdoRow } from '@/lib/weekly-bill';
+import { timesheetFile, timesheetLines, timesheetPdf } from '@/lib/timesheet';
 import { NextResponse } from 'next/server';
 
 // Bill one site's Field Sheet for a week — IN QUICKBOOKS, and email it to the client.
 //
-// Body: { wo_id, from?, to?, dry_run?, send?, photos? }
+// Body: { wo_id, from?, to?, dry_run?, send?, photos?, timesheet? }
 //
 // Fred, 2026-10-24: "when i finish it then save and uploaded into quickbooks
 // the same way ... and sent off the client". The same way as the Site Log
@@ -21,6 +22,8 @@ import { NextResponse } from 'next/server';
 // first. The same dates on the same site are never billed twice. With photos,
 // the week's odometer, receipt and job photos are attached to the invoice and go
 // in the client's email ("thats what the customer gets along with the pictures").
+// With timesheet, the hours day by day go first as a PDF (lib/timesheet.ts):
+// "so i can send it or attached to the quickbooks".
 
 const TZ = 'America/New_York';
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -47,7 +50,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const { wo_id, from: fromIn, to: toIn, dry_run, send, photos } = body as { wo_id?: string; from?: string; to?: string; dry_run?: boolean; send?: boolean; photos?: boolean };
+  const { wo_id, from: fromIn, to: toIn, dry_run, send, photos, timesheet } = body as { wo_id?: string; from?: string; to?: string; dry_run?: boolean; send?: boolean; photos?: boolean; timesheet?: boolean };
   if (!wo_id || typeof wo_id !== 'string') return NextResponse.json({ error: 'Which job is this for?' }, { status: 400 });
   if ((fromIn && !DAY.test(fromIn)) || (toIn && !DAY.test(toIn))) return NextResponse.json({ error: 'Pick the dates again.' }, { status: 400 });
   if (fromIn && toIn && fromIn > toIn) return NextResponse.json({ error: 'The week starts after it ends. Pick the dates again.' }, { status: 400 });
@@ -174,7 +177,23 @@ export async function POST(req: Request) {
       .update({ customer_name: customer, qbo_invoice_id: invoice.id, qbo_invoice_number: invoice.docNumber, total: invoice.total })
       .eq('id', held).select('id').single();
 
-    // The photos, attached before the email goes so they go with it.
+    // The timesheet, then the photos, attached before the email goes so they go with it.
+    let timesheetAttached = false;
+    let timesheetError: string | null = null;
+    if (timesheet) {
+      try {
+        const head = {
+          woNumber: wo.wo_number, clientWo: wo.external_wo_id, site: s.site || wo.site_name || wo.title || '', client: customer, from, to,
+          address: [wo.site_address, [wo.site_city, [wo.site_state, wo.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', '),
+        };
+        const pdf = await timesheetPdf(head, timesheetLines(rows));
+        await attachToInvoice(session.environment, session.realm_id, session.access_token, invoice.id,
+          { name: timesheetFile(head, 'pdf').replace(/\s+/g, '-'), type: 'application/pdf', bytes: pdf.slice().buffer });
+        timesheetAttached = true;
+      } catch {
+        timesheetError = "The timesheet couldn't go with the invoice. Download it from the work order and add it in QuickBooks.";
+      }
+    }
     let attached = 0;
     let photoError: string | null = null;
     if (photos) {
@@ -224,6 +243,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true, invoice_id: invoice.id, invoice_number: invoice.docNumber, total: invoice.total, balance: invoice.balance,
       sent_to: sentTo, send_error: sendError, photos_attached: attached, photo_error: photoError,
+      timesheet_attached: timesheetAttached, timesheet_error: timesheetError,
       // Surfaced rather than swallowed: the invoice is real either way, and without the record these dates could be billed again.
       write_back_error: recErr ? recErr.message : null,
     });

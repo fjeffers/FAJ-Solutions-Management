@@ -656,6 +656,8 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, photoC
 }) {
   const [send, setSend] = useState(true);
   const [photos, setPhotos] = useState(true);
+  // The timesheet PDF goes with the invoice (Fred, 2026-10-24: "so i can send it or attached to the quickbooks").
+  const [timesheet, setTimesheet] = useState(true);
   const [busy, setBusy] = useState(false);
   const range = billRange(rows, receipts, from, to);
   const f = range?.from ?? '', t = range?.to ?? '';
@@ -671,16 +673,17 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, photoC
       if (!window.confirm(`Create a ${fmtMoney(totals.bill)} invoice for ${client} in QuickBooks${send && email ? ` and email it to ${email}` : ''}?`)) return;
       const res = await fetch('/api/quickbooks/field-sheet-invoice', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wo_id: wo.id, from: from || undefined, to: to || undefined, send: send && !!email, photos: photos && photoCount > 0 }),
+        body: JSON.stringify({ wo_id: wo.id, from: from || undefined, to: to || undefined, send: send && !!email, photos: photos && photoCount > 0, timesheet }),
       });
       const j = (await res.json().catch(() => ({}))) as {
         ok?: boolean; dry_run?: boolean; error?: string; fix?: string; warning?: string; invoice_number?: string; total?: number;
         sent_to?: string | null; send_error?: string | null; write_back_error?: string | null; photos_attached?: number; photo_error?: string | null;
+        timesheet_attached?: boolean; timesheet_error?: string | null;
       };
       if (!res.ok || j.error) { toastError([j.error ?? "Couldn't create the invoice.", j.fix].filter(Boolean).join(' ')); return; }
       if (j.dry_run) { toastError(j.warning ?? 'QuickBooks is not connected yet.'); return; }
-      toastSuccess(`QuickBooks invoice ${j.invoice_number} for ${fmtMoney(j.total ?? totals.bill)} created${j.photos_attached ? ` with ${j.photos_attached} photos` : ''}${j.sent_to ? ` and emailed to ${j.sent_to}` : ''}.`);
-      for (const err of [j.send_error, j.photo_error, j.write_back_error]) if (err) toastError(err);
+      toastSuccess(`QuickBooks invoice ${j.invoice_number} for ${fmtMoney(j.total ?? totals.bill)} created${j.timesheet_attached ? ' with the timesheet' : ''}${j.photos_attached ? `${j.timesheet_attached ? ' and' : ' with'} ${j.photos_attached} photos` : ''}${j.sent_to ? ` and emailed to ${j.sent_to}` : ''}.`);
+      for (const err of [j.send_error, j.timesheet_error, j.photo_error, j.write_back_error]) if (err) toastError(err);
       onDone();
     } catch {
       toastError("Couldn't reach the app. Check your connection.");
@@ -710,6 +713,9 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, photoC
           {already.qbo_invoice_id ? `These dates are already on QuickBooks invoice ${already.qbo_invoice_number ?? ''}. Pick another week.` : 'An invoice for these dates is being created. Refresh in a minute.'}
         </div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', fontSize: 13.5 }}>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={timesheet} onChange={(e) => setTimesheet(e.target.checked)} /> Attach the timesheet (PDF)
+          </label>
           <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             <input type="checkbox" checked={photos && photoCount > 0} onChange={(e) => setPhotos(e.target.checked)} disabled={photoCount === 0} /> {photoCount ? `Attach the ${photoCount} photos` : 'No photos to attach'}
           </label>

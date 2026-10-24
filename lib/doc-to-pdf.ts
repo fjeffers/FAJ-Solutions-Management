@@ -80,7 +80,7 @@ export function wrapLine(text: string, max: number, width: (s: string) => number
 }
 
 // Characters Helvetica (WinAnsi) can't draw become close plain ones.
-const safe = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
+export const safe = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
   .replace(/…/g, '...').replace(/[☐-☒□■]/g, '[ ]').replace(/[^\x09\x0A\x20-\x7E -ÿ•]/g, '');
 
 /**

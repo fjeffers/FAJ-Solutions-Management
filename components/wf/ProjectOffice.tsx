@@ -33,7 +33,11 @@ import { PushSwitch } from './PushSwitch';
 import { mailtoHref, sheetInvite, smsHref } from '@/lib/send-sheet';
 import { asks, parseCapture } from '@/lib/capture';
 import { askedDeliverables } from '@/lib/wf';
-import { clock, dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
+import { dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
+import TimesheetExport from '@/components/TimesheetExport';
+import dynamic from 'next/dynamic';
+// The day cards (components/HoursView.tsx), loaded when opened: HoursView reads loadEvents from here.
+const JobDays = dynamic(() => import('@/components/HoursView').then((m) => m.JobDays), { ssr: false });
 import { aiFailureText } from '@/lib/wo-ai';
 import { downloadXLSXBook } from '@/lib/export';
 import { billJpeg } from '@/lib/bill-image';
@@ -49,6 +53,8 @@ const fmtDayLong = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(
 
 /** Tell the Expenses card to reload after the office adds or removes a receipt. */
 export const EXPENSES_CHANGED = 'faj:expenses-changed';
+/** The office saved a day on Hours or the work order (field_sheet_days): the totals reload. */
+export const HOURS_CHANGED = 'faj:hours-changed';
 
 type EventRow = { id?: string; contractor_name: string; kind: string; at: string; origin?: string | null; dest?: string | null; miles?: number | null; wo_id?: string };
 
@@ -107,7 +113,7 @@ export function ProjectDayCard({ w, lists, billed }: {
         <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Weekly bill</button>
       </div>}
     >
-      <BilledHours rows={billed ?? null} />
+      <BilledHours w={w} rows={billed ?? null} />
       {events === null ? <div className="wf-subtle">Loading…</div>
         : logs.length === 0 ? (
           <div className="wf-subtle" style={{ fontSize: 13 }}>
@@ -164,6 +170,11 @@ export function useBilledRows(w: Pick<EnrichedWorkOrder, 'id' | 'contractor_name
     });
   }, [w.id]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const on = () => void load();
+    window.addEventListener(HOURS_CHANGED, on);
+    return () => window.removeEventListener(HOURS_CHANGED, on);
+  }, [load]);
   useLiveRows('field_sheet_days', w.id, () => void load());
   useLiveRows('job_day_events', w.id, () => void load());
   useLiveRows('job_punches', w.id, () => void load());
@@ -178,48 +189,31 @@ export function useBilledRows(w: Pick<EnrichedWorkOrder, 'id' | 'contractor_name
 export const billedHoursOf = (rows: SheetRow[] | null): number | null =>
   rows && rows.length ? Math.round(rows.reduce((t, r) => t + dayCalc(r.values, 0).hours, 0) * 100) / 100 : null;
 
-function BilledHours({ rows }: { rows: SheetRow[] | null }) {
-  if (!rows?.length) return null;
-  const calc = rows.map((r) => ({ r, c: dayCalc(r.values, 0) }));
-  const sum = calc.reduce((t, { r, c }) => ({ hours: t.hours + c.hours, travel: t.travel + c.travel, miles: t.miles + c.miles, meals: t.meals + (r.values.meals ?? 0) }),
+/**
+ * The timesheet on the work order: the totals as billed, the day cards to
+ * change them right here, and the PDF (with the pictures) or spreadsheet to
+ * pull (Fred, 2026-10-24: "remove hours and add it as a export spread sheet";
+ * "so i edit the work orders then down load it and done no back and forth").
+ */
+function BilledHours({ w, rows }: { w: EnrichedWorkOrder; rows: SheetRow[] | null }) {
+  const [open, setOpen] = useState(false);
+  if (!rows) return null;
+  const sum = rows.reduce((t, r) => { const c = dayCalc(r.values, 0); return { hours: t.hours + c.hours, travel: t.travel + c.travel, miles: t.miles + c.miles, meals: t.meals + (r.values.meals ?? 0) }; },
     { hours: 0, travel: 0, miles: 0, meals: 0 });
-  const cell: React.CSSProperties = { padding: '5px 8px', borderBottom: '1px solid var(--wf-line)', whiteSpace: 'nowrap' };
+  const days = new Set(rows.map((r) => r.day)).size;
   return (
-    <div className="wf-card" style={{ padding: '10px 12px', marginBottom: 12, borderLeft: '4px solid #C9A24B' }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 6 }}>
-        <b>Hours as billed</b>
-        <span className="wf-subtle" style={{ fontSize: 12.5 }}>Your changes on the Hours screen included. Gold rows were changed by you.</span>
+    <div className="wf-card" style={{ padding: '10px 12px', marginBottom: 12, borderLeft: '4px solid #C9A24B', display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <b>Timesheet</b>
+        <span style={{ fontSize: 13 }}>
+          {days} day{days === 1 ? '' : 's'} · <b>{sum.hours.toFixed(2)} h</b> on site · {sum.travel.toFixed(2)} h travel · {Math.round(sum.miles * 10) / 10} mi · {fmtMoney(sum.meals)} meals
+        </span>
+        <button type="button" className={`wf-btn wf-btn-sm ${open ? 'wf-btn-outline' : 'wf-btn-navy'}`} style={{ marginLeft: 'auto' }} aria-expanded={open} onClick={() => setOpen((x) => !x)}>
+          {open ? 'Done editing' : 'Edit the hours'}
+        </button>
       </div>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
-          <thead>
-            <tr className="wf-label" style={{ textAlign: 'left' }}>
-              {['Day', 'Tech', 'Started', 'Finished', 'On site', 'Travel', 'Miles', 'Meals'].map((h) => <th key={h} style={cell}>{h}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {calc.map(({ r, c }) => (
-              <tr key={r.key} style={Object.keys(r.edits).length ? { background: '#FDF3E1' } : undefined}>
-                <td style={cell}>{fmtDay(r.day)}</td>
-                <td style={cell}>{r.tech}</td>
-                <td style={cell}>{clock(r.values.arrived) || '—'}</td>
-                <td style={cell}>{clock(r.values.leftSite) || '—'}</td>
-                <td style={cell}><b>{c.hours.toFixed(2)} h</b></td>
-                <td style={cell}>{c.travel.toFixed(2)} h</td>
-                <td style={cell}>{c.miles}</td>
-                <td style={cell}>{r.values.meals ? fmtMoney(r.values.meals) : '—'}</td>
-              </tr>
-            ))}
-            <tr style={{ fontWeight: 700 }}>
-              <td style={cell} colSpan={4}>{rows.length} day{rows.length === 1 ? '' : 's'}</td>
-              <td style={cell}>{sum.hours.toFixed(2)} h</td>
-              <td style={cell}>{sum.travel.toFixed(2)} h</td>
-              <td style={cell}>{Math.round(sum.miles * 10) / 10}</td>
-              <td style={cell}>{fmtMoney(sum.meals)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <TimesheetExport key={`${rows.length}:${rows[0]?.day ?? ''}:${rows.at(-1)?.day ?? ''}`} wo={w} rows={rows} />
+      {open && <JobDays wo={w} inWorkOrder />}
     </div>
   );
 }

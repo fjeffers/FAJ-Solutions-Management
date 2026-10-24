@@ -28,6 +28,8 @@ import { groupLabel, groupOf, hoursLookNow, HOURS_GROUPS, type HoursLook } from 
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { fixPunch } from '@/components/ClockFix';
 import { findJob } from '@/components/FieldSheetView';
+import TimesheetExport from '@/components/TimesheetExport';
+import { HOURS_CHANGED } from '@/components/wf/ProjectOffice';
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -105,10 +107,11 @@ const totalText = (t: Totals) =>
 
 /**
  * One job's days as cards, with the bar that sets how they show. Also on the
- * work order's Time Logs tab. Opens the way Settings -> Hours screen has it;
- * onLook saves a change made on the bar back to Settings.
+ * work order's Time Logs tab and its Timesheet (inWorkOrder: no job name or
+ * export there, the work order shows them). Opens the way Settings -> Hours
+ * screen has it; onLook saves a change made on the bar back to Settings.
  */
-export function JobDays({ wo, onLook }: { wo: WorkOrder; onLook?: (l: HoursLook) => void }) {
+export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; onLook?: (l: HoursLook) => void; inWorkOrder?: boolean }) {
   const db = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<DayEvent[]>([]);
@@ -164,19 +167,25 @@ export function JobDays({ wo, onLook }: { wo: WorkOrder; onLook?: (l: HoursLook)
       .select('id, day, tech, edits, added, hidden').single();
     if (error || !data) { toastError("That day didn't save. Check your connection and try again."); return false; }
     setSaved((list) => [...list.filter((s) => !(s.day === row.day && s.tech === row.tech)), ...toSaved([data])]);
+    window.dispatchEvent(new Event(HOURS_CHANGED));
     return true;
   };
 
   if (loading) return <div className="wf-card" style={{ padding: 16 }}>Loading WO {wo.wo_number}…</div>;
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <div className="wf-card" style={{ padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-          <div className="wf-title" style={{ fontSize: 17 }}>{jobName(wo)}</div>
-          <div className="wf-subtle" style={{ fontSize: 13 }}>WO {wo.wo_number}{wo.external_wo_id ? ` · ${wo.external_wo_id}` : ''} · {techs.join(', ') || 'no tech yet'}</div>
+      {inWorkOrder ? (
+        <div><button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setAdding(true)}><Plus size={15} /> Add a day</button></div>
+      ) : (
+        <div className="wf-card" style={{ padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+            <div className="wf-title" style={{ fontSize: 17 }}>{jobName(wo)}</div>
+            <div className="wf-subtle" style={{ fontSize: 13 }}>WO {wo.wo_number}{wo.external_wo_id ? ` · ${wo.external_wo_id}` : ''} · {techs.join(', ') || 'no tech yet'}</div>
+          </div>
+          <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setAdding(true)}><Plus size={15} /> Add a day</button>
+          <div style={{ flexBasis: '100%' }}><TimesheetExport key={rows.length} wo={wo} rows={rows} /></div>
         </div>
-        <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setAdding(true)}><Plus size={15} /> Add a day</button>
-      </div>
+      )}
       {adding && <AddDayCard techs={techs} defaultDay={wo.start_date ?? dayOf(new Date().toISOString(), TZ)} onCancel={() => setAdding(false)}
         onAdd={async (day, tech) => {
           const row: SheetRow = { key: `${day}|${tech}`, day, tech, id: null, added: true, hidden: false, missing: false, app: null, edits: {}, values: {} as SheetRow['values'], source: {} };

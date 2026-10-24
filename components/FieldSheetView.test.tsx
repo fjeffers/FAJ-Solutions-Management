@@ -137,7 +137,7 @@ describe('Field Sheet', () => {
     expect(await screen.findByText('Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h')).toBeTruthy();
     expect(screen.getAllByText('$816.09').length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /create the invoice in quickbooks/i }));
-    expect(posted).toEqual([{ wo_id: 'wo', send: true, photos: false }]);
+    expect(posted).toEqual([{ wo_id: 'wo', send: true, photos: false, timesheet: true }]);
   });
 
   it('never sends a new client’s invoice to the last client’s email', async () => {

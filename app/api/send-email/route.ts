@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
+import { emailClient, EMAIL_NOT_SET_UP } from '@/lib/email-client';
 import {
   workOrderEmail,
   paymentConfirmationEmail,
@@ -37,7 +37,8 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const resend = emailClient();
+  if (!resend) return NextResponse.json({ error: EMAIL_NOT_SET_UP }, { status: 503 });
   try {
     const body = await req.json();
     const { type, to, subject, data } = body as {

@@ -99,4 +99,21 @@ describe('Edit job', () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({ external_wo_id: null, customer_name: null, source_platform: 'Internal', contractor_pay: null });
     vi.restoreAllMocks();
   });
+
+  // Fred, 2026-10-24: "every time I take out pay, it comes right back". The price stayed on the job and
+  // rebuilt its Labour line when it opened again, and the mileage was worked out again from the address.
+  it('keeps Pay off after Save: the job opens again without it', async () => {
+    const onSave = vi.fn();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const priced = { ...NO_TECH, total_amount: 500, pay_addons: [], billable_miles: null, site_address: '6420 Morganton Road', site_city: 'Fayetteville', site_state: 'NC' } as unknown as WorkOrder;
+    render(<WorkOrderModal item={priced} contractors={[]} questionTemplates={[]} onSave={onSave} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Pay' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    const saved = onSave.mock.calls[0][0] as WorkOrder;
+    expect(saved).toMatchObject({ total_amount: 0, billable_miles: 0, pay_addons: [], contractor_pay: null });
+    cleanup();
+    render(<WorkOrderModal item={saved} contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
+    expect(screen.queryByRole('button', { name: /^Pay/ })).toBeNull();
+    vi.restoreAllMocks();
+  });
 });

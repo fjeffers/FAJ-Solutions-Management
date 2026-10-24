@@ -470,6 +470,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
    * Reimbursing the tech is a separate decision — the mileage rows below are
    * still his to add — so this fills the billable side only.
    */
+  /** Pay taken off this job: mileage is not worked out for it again. */
+  const milesOff = useRef(false);
   const autoCalcBillableMiles = async (silent = false) => {
     const dest = [form.site_address, form.site_city, form.site_state, form.site_zip].filter(Boolean).join(', ');
     if (!dest) {
@@ -486,6 +488,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     setCalcingMiles(true);
     const mi = await roundTripMiles(home, dest);
     setCalcingMiles(false);
+    // Pay was taken off while the trip was being worked out: leave it off.
+    if (silent && milesOff.current) return;
     if (mi == null) {
       if (!silent) toastError("Couldn't route that address — check street, city and state on the Site tab.");
       return;
@@ -517,9 +521,11 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     if (autoTried.current) return;
     const hasAddress = !!(form.site_address || form.site_zip);
     const noTravelYet = !payAddons.some((a) => a.kind === 'mileage') && !form.billable_travel;
-    // Left off in Generate with AI's "Build this job?" (lib/ai-needs.ts): 0 billable miles, no charge.
-    const declined = !item && prefill?.billable_miles === 0;
-    if (!hasAddress || !noTravelYet || declined) return;
+    // Only for a job whose miles were never worked out. 0 is no mileage charge (left off in Generate
+    // with AI's "Build this job?", lib/ai-needs.ts, or Pay removed); miles worked out once and the
+    // line since taken off stay off (Fred, 2026-10-24: "every time I take out pay, it comes right back").
+    const workedOut = form.billable_miles != null;
+    if (!hasAddress || !noTravelYet || workedOut || milesOff.current) return;
     autoTried.current = true;
     void autoCalcBillableMiles(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -705,7 +711,14 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     marketplace: { what: 'the client, buyer, ticket #, site #, project and status', clear: () => setForm((f) => ({
       ...f, customer_name: '', buyer_company: '', external_wo_id: '', client_reference: '', project_name: '', is_project: false,
       source_platform: 'Internal', client_status: '', client_program: '' })) },
-    pay: { what: 'the tech pay and the pay add-ons', clear: () => { setContractorPay({}); setPayAddons([]); } },
+    pay: { what: 'the price, the tech pay and the pay add-ons, mileage included', clear: () => {
+      setContractorPay({});
+      setPayAddons([]);
+      // And the price, which the Labour line is rebuilt from when the job opens, with 0 miles so mileage
+      // isn't worked out again. Otherwise Pay comes straight back (lib/utils.ts seedPayLines).
+      setForm((f) => ({ ...f, total_amount: 0, billable_miles: 0 }));
+      milesOff.current = true;
+    } },
     site: { what: 'the site name and address', clear: () => setForm((f) => ({
       ...f, site_name: '', site_address: '', site_city: '', site_state: '', site_zip: '', site_lat: undefined, site_lng: undefined })) },
     scope: { what: 'the access, parking, tools, parts, deliverables and the checklist', clear: () => {
@@ -766,7 +779,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       // orders raised before the rebuild, and billableExtras only reads them
       // when a job has no add-ons.
       pay_addons:         payAddons.filter((a) => Number(a.amount) !== 0),
-      billable_miles:     Number(form.billable_miles)     || null,
+      // 0 is kept: no mileage charge, so the job doesn't work one out again when it opens.
+      billable_miles:     form.billable_miles == null ? null : Number(form.billable_miles) || 0,
       // Mileage (migration-032) — drop zero-mile rows
       mileage_logs: mileageLogs.filter((r) => (Number(r.miles) || 0) > 0),
       total_amount:    computed,

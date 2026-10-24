@@ -1,7 +1,7 @@
 import { techAppEmail, techAppInviteBlock } from '@/lib/tech-app-email';
 import { onboardingEmail } from '@/lib/onboarding-email';
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
+import { emailClient, EMAIL_NOT_SET_UP } from '@/lib/email-client';
 import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -14,8 +14,7 @@ const OWNER_EMAIL = 'fajsolutions@gmail.com';
 const OWNER_TYPES = new Set(['contractor_accepted', 'contractor_status_update', 'import_queue_pending', 'w9_filed']);
 
 export async function POST(req: NextRequest) {
-  const resend = new Resend(process.env.RESEND_API_KEY);
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
 
   // Owner-facing types are safe to leave open: the recipient is hard-coded to
   // Fred, and the portal's server actions (no session cookie) rely on them.
@@ -202,14 +201,17 @@ export async function POST(req: NextRequest) {
     html = html.replace('__APP_INVITE__', inApp ? '' : techAppInviteBlock(`${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com'}/tech`));
   }
 
+  const resend = emailClient();
+  if (!resend) return NextResponse.json({ error: EMAIL_NOT_SET_UP, pushed, texted, emailed: false }, { status: 503 });
   try {
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       from,
       to,
       subject,
       html,
       replyTo: process.env.REPLY_TO_EMAIL || undefined,
     });
+    if (error) return NextResponse.json({ error: error.message, pushed, texted, emailed: false }, { status: 502 });
     return NextResponse.json({ ok: true, pushed, texted, emailed: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';

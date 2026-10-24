@@ -41,8 +41,11 @@ export default function EmailModal({ payload, onClose, onSent }: { payload: Emai
           cc: ccList.length ? ccList : undefined,
         }),
       });
-      const json = await res.json();
-      if (!res.ok || json.error) throw new Error(json.error ?? 'Send failed');
+      // A server that crashed answers with an empty body; say so instead of a JSON parse error.
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok || json.error) {
+        throw new Error(json.error ?? (res.ok ? 'Send failed' : `The server didn't answer (error ${res.status}). The email may not have gone. Try again.`));
+      }
       setSent(true);
       // Let the caller record the consequence of a successful send (e.g. flip
       // an invoice from draft to sent). Never runs on a failed send.

@@ -2103,7 +2103,14 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {tab === 'timelog' && (
           <div style={{ display: 'grid', gap: 20 }}>
             {item && <div className="wf"><JobDays wo={item} /></div>}
-            <WOTimeLogs woId={item?.id} />
+            {/* The phones' own record, which the office's changes above never alter: folded away so it
+                isn't read as the hours (Fred, 2026-10-24: "i updated the time loge but it did not reflect"). */}
+            <details>
+              <summary style={{ cursor: 'pointer', fontSize: 13, color: '#6b7280', padding: '4px 0' }}>
+                What the techs&apos; phones recorded (your changes are in the days above)
+              </summary>
+              <WOTimeLogs woId={item?.id} />
+            </details>
           </div>
         )}
 

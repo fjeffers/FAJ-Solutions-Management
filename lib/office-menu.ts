@@ -39,6 +39,8 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     id: 'everyday',
     title: 'Every day',
     items: [
+      // Fred, 2026-10-24: "build the simpler hours screen one card per day and way for me to edit the hours on each work orders".
+      { view: 'hours', label: 'Hours', hint: 'Each job day by day: start, finish, hours, miles, meals — change any of them and Save' },
       // Fred, 2026-10-13: projects — travel, time on site, miles, receipts, the client report.
       { view: 'projects', label: 'Projects', hint: 'Multi-day sites: travel, time on site, miles, receipts and the weekly bill' },
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },

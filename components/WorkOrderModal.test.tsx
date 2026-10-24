@@ -16,6 +16,7 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 vi.mock('@/lib/toast', () => ({ toastError: () => {}, toastSuccess: () => {}, toastInfo: () => {} }));
 vi.mock('@/components/WOTimeLogs', () => ({ default: () => null }));
+vi.mock('@/components/HoursView', () => ({ JobDays: () => null }));
 vi.mock('@/components/WorkOrderChatPanel', () => ({ default: () => null }));
 
 import WorkOrderModal from './WorkOrderModal';

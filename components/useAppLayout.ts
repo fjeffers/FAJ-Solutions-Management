@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { normalizeLayout, resolveLayout, STANDARD_LAYOUT, visibleLayout, type Layout } from '@/lib/app-layout';
 import { setPartsOffNow } from '@/lib/screen-parts';
 import { setDesignNow } from '@/lib/screen-design';
+import { setHoursLookNow } from '@/lib/hours-look';
 
 const CACHE_KEY = 'faj-app-layout';
 export type LayoutSaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -32,6 +33,7 @@ export function useAppLayout() {
   // Every screen asks lib/screen-parts what to show; keep it on Fred's choices.
   setPartsOffNow(layout.off ?? []);
   setDesignNow(layout.design);
+  setHoursLookNow(layout.hours);
 
   useEffect(() => {
     void supabase.from('user_settings').select('layout').maybeSingle().then(({ data, error }) => {

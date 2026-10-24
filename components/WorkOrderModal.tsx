@@ -18,6 +18,7 @@ import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE, mileageForTech 
 import { roundTripMiles } from '@/lib/driving';
 import { toastError, toastSuccess } from '@/lib/toast';
 import WOTimeLogs from '@/components/WOTimeLogs';
+import { JobDays } from '@/components/HoursView';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import {
   PAY_TYPES,
@@ -2093,8 +2094,14 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         )}
 
         {/* ── TIME LOGS TAB ── */}
+        {/* The same day cards as the Hours screen, so a time changed here is the
+            time on the Field Sheet and the invoice, and the other way round
+            (Fred, 2026-10-24: "so i change the time do it reflest in the work order"). */}
         {tab === 'timelog' && (
-          <WOTimeLogs woId={item?.id} />
+          <div style={{ display: 'grid', gap: 20 }}>
+            {item && <div className="wf"><JobDays wo={item} /></div>}
+            <WOTimeLogs woId={item?.id} />
+          </div>
         )}
 
         {/* ── CHAT TAB ── */}

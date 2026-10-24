@@ -72,12 +72,13 @@ import SketchesPanel from '@/components/sketch/SketchesPanel';
 import { PrimioBar } from '@/components/wf/PrimioScreens';
 import { ProjectsView } from '@/components/wf/ProjectOffice';
 import FieldSheetView from '@/components/FieldSheetView';
+import HoursView from '@/components/HoursView';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
-  'team', 'support', 'office', 'messages', 'sketches', 'projects', 'fieldsheet',
+  'team', 'support', 'office', 'messages', 'sketches', 'projects', 'fieldsheet', 'hours',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -1777,6 +1778,7 @@ Go ahead?`)) return;
         {view === 'sitelog' && <SiteLogView />}
         {view === 'projects' && <ProjectsView workOrders={enrichedWOs} onOpen={(id) => openJobFrom(id, 'projects')} />}
         {view === 'fieldsheet' && <FieldSheetView workOrders={enrichedWOs} />}
+        {view === 'hours' && <HoursView workOrders={enrichedWOs} onLook={(hours) => appLayout.update({ ...appLayout.layout, hours })} />}
         {view === 'team' && <TeamView onOpenContractors={() => navigate('contractors')} />}
         {view === 'maintenance' && <MaintenanceView />}
         {view === 'invoices' && (

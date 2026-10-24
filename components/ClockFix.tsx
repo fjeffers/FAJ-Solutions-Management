@@ -23,10 +23,10 @@ const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-
 const at = (iso: string) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ });
 const COLS = 'id, wo_id, wo_number, contractor_name, kind, at';
 
-type Fix = { p_op: 'add' | 'move' | 'remove'; p_wo_id: string; p_tech?: string; p_kind?: 'in' | 'out'; p_at?: string; p_id?: string; p_note?: string };
+export type Fix = { p_op: 'add' | 'move' | 'remove'; p_wo_id: string; p_tech?: string; p_kind?: 'in' | 'out'; p_at?: string; p_id?: string; p_note?: string };
 
 /** One change to the clock. True when it saved. */
-async function fixPunch(args: Fix): Promise<boolean> {
+export async function fixPunch(args: Fix): Promise<boolean> {
   const { data, error } = await createClient().rpc('wf_owner_fix_punch', {
     p_op: args.p_op, p_wo_id: args.p_wo_id, p_tech: args.p_tech ?? null, p_kind: args.p_kind ?? null,
     p_at: args.p_at ?? null, p_id: args.p_id ?? null, p_note: args.p_note ?? null,

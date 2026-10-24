@@ -43,6 +43,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     field_nation: 'FieldNation',
     google_sheets: 'Internal',
     google_docs: 'Internal',
+    client_schedule: 'Internal',
   };
 
   const { data: newWO, error: insertError } = await supabase.from('work_orders').insert({
@@ -55,8 +56,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     customer_id: customerId,
     client_reference: f.client_reference ?? null,
     external_wo_id: f.external_wo_id ?? null,
-    source_platform: SOURCE_PLATFORM_MAP[item.source] ?? 'Internal',
+    // A weekly-schedule row takes the platform of the client's other jobs.
+    source_platform: f.source_platform || SOURCE_PLATFORM_MAP[item.source] || 'Internal',
     start_date: f.start_date ?? null,
+    start_time: f.start_time ?? null,
+    end_date: f.end_date ?? null,
+    access_instructions: f.access_instructions ?? null,
+    client_links: f.client_links?.length ? f.client_links.slice(0, 10) : null,
+    checkin_link: f.checkin_link ?? null,
+    checkout_link: f.checkout_link ?? null,
     // Location, when the email stated it (a go-back list gives one per site).
     site_name: f.site_name ?? null,
     site_address: f.site_address ?? null,

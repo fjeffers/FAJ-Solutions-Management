@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
-import { installSteps, phoneKind, TECH_APP_URL, type PhoneKind } from '@/lib/install-help';
+import { installSteps, IOS_LINKS_NOTE, OLD_ICON_MARK, oldIconSteps, phoneKind, TECH_APP_URL, type PhoneKind } from '@/lib/install-help';
 
 /**
  * "Put this on your phone" for the tech portal.
@@ -14,7 +14,10 @@ import { installSteps, phoneKind, TECH_APP_URL, type PhoneKind } from '@/lib/ins
  * unable to install the tech app"). The steps are lib/install-help.ts.
  *
  * Hidden once installed (display-mode: standalone) or once dismissed, so it is
- * never nagging a tech who already did it.
+ * never nagging a tech who already did it. Two things show anyway on an iPhone
+ * (Fred, 2026-10-19: "it's not staying as an app for some people"): the old
+ * app's icon, which now opens like a website, and that a link in an email or
+ * text always opens Safari rather than the app.
  */
 type InstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -26,21 +29,28 @@ const DISMISS_KEY = 'faj-tech-install-dismissed-2';
 
 export default function TechInstall() {
   const [deferred, setDeferred] = useState<InstallPrompt | null>(null);
-  const [kind, setKind] = useState<PhoneKind | null>(null);
+  // The phone, whether it came from the old app's icon (next.config.ts), and
+  // whether the tech closed this help before.
+  const [found, setFound] = useState<{ phone: PhoneKind; oldIcon: boolean; dismissed: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    // Opened from the old app's icon: replace it, whatever else.
+    const oldIcon = new URLSearchParams(window.location.search).get('from') === OLD_ICON_MARK;
     // Already installed — nothing to offer.
     const standalone =
       window.matchMedia?.('(display-mode: standalone)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    if (standalone) return;
+    if (standalone && !oldIcon) return;
 
     let dismissed = false;
     try { dismissed = localStorage.getItem(DISMISS_KEY) === '1'; } catch { /* private mode */ }
-    if (dismissed) return;
+    const phone = phoneKind(navigator.userAgent);
+    // Closed before: only the iPhone's Safari note still shows, since a link in
+    // an email lands a tech who has the app back here.
+    if (dismissed && !oldIcon && phone !== 'ios') return;
 
-    setKind(phoneKind(navigator.userAgent));
+    setFound({ phone, oldIcon, dismissed });
     const onPrompt = (e: Event) => {
       e.preventDefault();
       setDeferred(e as InstallPrompt);
@@ -50,7 +60,7 @@ export default function TechInstall() {
   }, []);
 
   const dismiss = () => {
-    setKind(null);
+    setFound(null);
     try { localStorage.setItem(DISMISS_KEY, '1'); } catch { /* private mode */ }
   };
 
@@ -66,6 +76,27 @@ export default function TechInstall() {
     try { await navigator.clipboard.writeText(TECH_APP_URL); setCopied(true); } catch { /* the address is shown to copy by hand */ }
   };
 
+  if (found?.oldIcon) {
+    return (
+      <div role="alert" style={{
+        display: 'flex', alignItems: 'flex-start', gap: 11, marginBottom: 16,
+        background: 'rgba(180,83,9,0.08)', border: '1px solid rgba(180,83,9,0.35)',
+        borderRadius: 12, padding: '12px 14px',
+      }}>
+        <Download size={18} color="#B45309" style={{ flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Replace the icon on your phone</div>
+          <div style={{ fontSize: 12.5, color: '#555', marginTop: 3, lineHeight: 1.5 }}>{oldIconSteps(found.phone)}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (found?.dismissed) {
+    return <div style={{ fontSize: 12.5, color: '#555', marginBottom: 16, lineHeight: 1.5 }}>{IOS_LINKS_NOTE}</div>;
+  }
+
+  const kind = found?.phone ?? null;
   const steps = kind ? installSteps(kind, !!deferred) : '';
   if (!kind || !steps) return null;
   const inApp = kind === 'ios-inapp' || kind === 'android-inapp';
@@ -80,6 +111,7 @@ export default function TechInstall() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 700, fontSize: 13 }}>Put this on your phone</div>
         <div style={{ fontSize: 12.5, color: '#555', marginTop: 3, lineHeight: 1.5 }}>{steps}</div>
+        {kind === 'ios' && <div style={{ fontSize: 12.5, color: '#555', marginTop: 6, lineHeight: 1.5 }}>{IOS_LINKS_NOTE}</div>}
         {inApp && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             <code style={{ fontSize: 12.5, background: 'white', border: '1px solid #ddd', borderRadius: 6, padding: '3px 8px' }}>{TECH_APP_URL.replace('https://', '')}</code>

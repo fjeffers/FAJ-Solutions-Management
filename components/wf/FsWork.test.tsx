@@ -148,7 +148,8 @@ describe('FsStageAction', () => {
     expect(on.clockIn).toHaveBeenCalledOnce();
     rerender(<FsStageAction stage="clocked" events={[...atHotel, { kind: 'day_start', at: iso(5) }]} busy={false} enabled={false} afterWork on={on} />);
     const to = screen.getByRole('combobox', { name: 'Travel to' });
-    expect(within(to).getAllByRole('option').map((o) => o.getAttribute('value'))).toEqual(['hotel', 'home']);
+    // Already at the hotel: home is the only drive left (never Hotel → Hotel).
+    expect(within(to).getAllByRole('option').map((o) => o.getAttribute('value'))).toEqual(['home']);
     expect((to as HTMLSelectElement).value).toBe('home');
     expect(screen.queryByRole('button', { name: /Already on site/ })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /Start travel/ }));

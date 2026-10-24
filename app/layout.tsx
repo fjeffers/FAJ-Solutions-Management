@@ -6,15 +6,15 @@ import './wf.css';
 export const metadata: Metadata = {
   title: 'FAJ Business Manager',
   description: 'Contractor payment tracker for FAJ Solutions',
-  manifest: '/manifest.json',
+  // The office app's install (manifest, iPhone app tags) lives in
+  // app/admin/layout.tsx, the tech app's in app/tech/layout.tsx. Here, at the
+  // root, it was on every page, so the old contractor portal, client invoices
+  // and the password pages offered to install the office app: a tech who took
+  // it got the office sign-in, which looks like a desktop site and won't take a
+  // tech login (Fred, 2026-10-19).
   // Fred's logo (2026-10-02: "the web app should have my logo").
   // New file names (…-v2) so browsers drop the old cached teal icons.
   icons: { icon: '/icons/faj-favicon-v2.png', apple: '/icons/apple-touch-icon.png' },
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'FAJ',
-  },
 };
 
 export const viewport: Viewport = {

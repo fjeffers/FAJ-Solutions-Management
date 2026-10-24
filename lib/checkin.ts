@@ -79,7 +79,12 @@ export const ON_SITE_KEY = 'on-site';
  * home or fuel). The next site is offered only when leaving a site.
  */
 export function checkInChoices(from: Origin | null, afterWork = false): { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] {
-  const to = TRAVEL_TO.filter((t) => (afterWork ? ['hotel', 'home', 'fuel'].includes(t.dest) : t.dest !== 'next_site' || from === 'site'));
+  const to = TRAVEL_TO.filter((t) => (afterWork ? ['hotel', 'home', 'fuel'].includes(t.dest) : t.dest !== 'next_site' || from === 'site'))
+    // Never the hotel or home they're already at (Fred, 2026-10-23: a tech at the
+    // hotel picked Hotel, meaning "leaving the hotel"; the day read Hotel → Hotel,
+    // never asked him to check in on site, and showed 0m on site). A site stays:
+    // off site, the drive back to it is a real one.
+    .filter((t) => !((t.dest === 'hotel' || t.dest === 'home') && t.dest === from));
   const groups: { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] = [
     { group: 'travel', label: 'Traveling to', options: to.map((t) => ({ key: `to-${t.dest}`, label: t.label })) },
   ];

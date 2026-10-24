@@ -285,7 +285,8 @@ export default function TechPortalPage() {
         const last = lastUid(kv);
         if (last && loadCopy(kv, last, 'profile')) u = last;
       }
-      if (!u) { router.replace('/tech/login'); return; }
+      // Signed out: to the sign-in, keeping a job link's ?wo= so it comes back to that job.
+      if (!u) { router.replace(`/tech/login${window.location.search}`); return; }
       if (cancelled) return;
       setUid(u);
 
@@ -338,7 +339,10 @@ export default function TechPortalPage() {
     const waiting = boxRef.current?.pending.length ?? 0;
     if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} been sent yet. They stay on this phone and go out the next time you sign in. Log out anyway?`)) return;
     if (uid) { clearCopies(kv, uid, COPIES); clearNotes(kv, uid); }
-    await supabase.auth.signOut();
+    // This phone only. The default signed the tech out everywhere, so logging
+    // out in Safari (where links in emails open) also signed out the app on
+    // the home screen: "log out, log in every time" (Fred, 2026-10-19).
+    await supabase.auth.signOut({ scope: 'local' });
     router.replace('/tech/login');
   };
 
@@ -583,7 +587,7 @@ export default function TechPortalPage() {
                 techName={profile?.name ?? ''} />
             </>
           ) : tab === 'project' ? (
-            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} />
+            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} techName={profile?.name ?? ''} />
           ) : underProfile ? (
             <>
               <button type="button" className="fs-back-link" onClick={() => go('profile')}><FsIcon name="back" size={16} />Profile</button>
@@ -658,8 +662,10 @@ function DayStrip({ job, busy, onSignOut }: { job: WfJob; busy: boolean; onSignO
  * The first thing after logging in (Fred, 2026-10-18: "when they log in it should ask"):
  * Check in for today's job, or the one step that's next on the job they're in the middle of.
  */
-function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
+function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy, techName }: {
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
+  /** For the client's checkout form. */
+  techName: string;
 }) {
   const today = todayISO();
   const now = new Date();
@@ -716,8 +722,18 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
       )}
       <p>{line}</p>
       {action}
+      {/* Today's client links where the tech starts the day, not only inside the job
+          (Fred, 2026-10-19: "everybody is complaining they can't find the client links").
+          Keyed by job: picking another job must not leave the last site's links up. */}
+      <TodayClientLinks key={job.id} job={job} techName={techName} />
     </section>
   );
+}
+
+function TodayClientLinks({ job, techName }: { job: WfJob; techName: string }) {
+  const { siteLinks, checkoutHref } = useClientCheckout(job, techName);
+  return <ClientLinksCard number={job.number} siteLinks={siteLinks} plain
+    checkoutHref={() => checkoutHref(lastOffOrNow(job.myDay ?? [], new Date().toISOString(), 'America/New_York'))} />;
 }
 
 // Fred, 2026-10-18: "Under work order should have assigned and available and
@@ -726,8 +742,9 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
 // office to close it).
 type WoList = 'assigned' | 'available' | 'pending';
 
-function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
+function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy, techName }: {
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
+  techName: string;
 }) {
   const today = todayISO();
   const live = sortTechJobs(jobs.filter(canWork), today);
@@ -775,7 +792,7 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   return (
     <>
       <FsPageHeader title="Work orders" subtitle="Your assigned work, one tap away." />
-      <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
+      <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} techName={techName} />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">
           <div>Open work orders<FsIcon name="sheet" size={18} /></div>
@@ -1202,14 +1219,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   techName: string;
 }) {
   // The client's links for the day (migration 133): the checkout form opens when they go off site.
-  const siteLinks = useSiteLinks(job.number);
+  const { siteLinks, checkoutHref } = useClientCheckout(job, techName);
   const [checkoutAt, setCheckoutAt] = useState<string | null>(null);
-  /** The client's checkout form, filled in with this job and today's times (lib/site-links.ts). */
-  const checkoutHref = (off: string) => siteLinks.checkout ? checkoutFormUrl(siteLinks.checkout, {
-    // The client's own numbers (migration 135): their Site ID, and their ticket, never FAJ's WO number.
-    siteId: siteLinks.siteId ?? siteIdOf(job.title), wo: siteLinks.ticket ?? '', name: techName,
-    on: onSiteSince(job.myDay ?? [], off, 'America/New_York'), off, timeZone: 'America/New_York',
-  }) : null;
   const [chatOpen, setChatOpen] = useState(false);
   const [doneOpen, setDoneOpen] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -1571,6 +1582,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       <DetailHeader job={job} ownerView={false} />
       <JobIcons job={job} canPhoto={canReport} photoBusy={!!ph.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
+      {/* First on the job, so the client's Teams and checkout form are never hunted for (Fred, 2026-10-19). */}
+      <ClientLinksCard number={job.number} siteLinks={siteLinks} checkoutHref={() => checkoutHref(lastOffOrNow(job.myDay ?? [], new Date().toISOString(), 'America/New_York'))} />
       {job.status === 'offered' && bottom}
       {dayCard}
       {job.description && (
@@ -1579,7 +1592,6 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           <p className="fs-scope">{job.description}</p>
         </section>
       )}
-      <ClientLinksCard number={job.number} siteLinks={siteLinks} checkoutHref={() => checkoutHref(lastOffOrNow(job.myDay ?? [], new Date().toISOString(), 'America/New_York'))} />
       <SiteInfoCard job={job} />
       <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
       {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
@@ -2486,10 +2498,12 @@ function JobTools({ job, canAdd, ph, onNote }: {
 
 /** The client's links for this job (migration 130; Fred, 2026-10-18: "I just
  *  want to link that link into the work order"). Nothing shows without any. */
-function ClientLinksCard({ number, siteLinks, checkoutHref }: {
+function ClientLinksCard({ number, siteLinks, checkoutHref, plain = false }: {
   number: string; siteLinks: SiteLinks;
   /** The checkout form filled in with today's times. */
   checkoutHref: () => string | null;
+  /** Inside another card (Today): no card of its own. */
+  plain?: boolean;
 }) {
   const [links, setLinks] = useState<string[]>([]);
   const tick = useReloadTick();
@@ -2501,13 +2515,12 @@ function ClientLinksCard({ number, siteLinks, checkoutHref }: {
     return () => { live = false; };
   }, [number, tick]);
   if (links.length === 0) return null;
-  return (
-    <section className="fs-card fs-form">
-      <h3>Client links</h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+  // minWidth 0 all the way down: a long address must shorten with "…", never widen the card.
+  const list = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
         {links.map((l) => (
           <a key={l} className="wf-btn wf-btn-outline" href={l === siteLinks.checkout ? checkoutHref() ?? l : l} target="_blank" rel="noopener noreferrer"
-            style={{ justifyContent: 'space-between', minWidth: 0 }}>
+            style={{ justifyContent: 'space-between', minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
             <span style={{ minWidth: 0, textAlign: 'left' }}>
               <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
               {(l === siteLinks.checkin || l === siteLinks.checkout) && (
@@ -2520,8 +2533,26 @@ function ClientLinksCard({ number, siteLinks, checkoutHref }: {
           </a>
         ))}
       </div>
+  );
+  if (plain) return <div style={{ marginTop: 12, minWidth: 0 }}><div className="wf-label" style={{ marginBottom: 6 }}>Client links</div>{list}</div>;
+  return (
+    <section className="fs-card fs-form">
+      <h3>Client links</h3>
+      <p className="fs-muted" style={{ margin: '0 0 8px', fontSize: 13 }}>Each opens in its own window. Come back to the app when you are done.</p>
+      {list}
     </section>
   );
+}
+
+/** The client's links for the day, and their checkout form filled in with this job and the times (lib/site-links.ts). */
+function useClientCheckout(job: WfJob, techName: string) {
+  const siteLinks = useSiteLinks(job.number);
+  const checkoutHref = (off: string) => siteLinks.checkout ? checkoutFormUrl(siteLinks.checkout, {
+    // The client's own numbers (migration 135): their Site ID, and their ticket, never FAJ's WO number.
+    siteId: siteLinks.siteId ?? siteIdOf(job.title), wo: siteLinks.ticket ?? '', name: techName,
+    on: onSiteSince(job.myDay ?? [], off, 'America/New_York'), off, timeZone: 'America/New_York',
+  }) : null;
+  return { siteLinks, checkoutHref };
 }
 
 /** The job's link for on site and for check-out (migration 133). Nothing until it has loaded. */

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { Resend } from 'resend';
 import { declinedPush, pushToUser } from '@/lib/tech-push';
+import { techJobUrl } from '@/lib/email-templates';
 
 // One-click Accept / Decline from assignment emails.
 // GET so it works as a plain email link: /api/portal/respond?token=..&wo=..&action=accept
@@ -9,7 +10,7 @@ import { declinedPush, pushToUser } from '@/lib/tech-push';
 
 const OWNER_EMAIL = 'fajsolutions@gmail.com';
 
-function page(title: string, body: string, portalUrl?: string): NextResponse {
+function page(title: string, body: string, jobUrl?: string): NextResponse {
   return new NextResponse(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
     <body style="margin:0;font-family:Georgia,serif;background:#faf7ef;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;">
@@ -17,7 +18,7 @@ function page(title: string, body: string, portalUrl?: string): NextResponse {
         <div style="font-size:13px;letter-spacing:3px;color:#C9A961;font-weight:700;margin-bottom:10px;">FAJ SOLUTIONS</div>
         <h1 style="font-size:26px;margin:0 0 12px;color:#1a1a1a;">${title}</h1>
         <p style="font-size:15px;color:#555;line-height:1.6;margin:0 0 24px;">${body}</p>
-        ${portalUrl ? `<a href="${portalUrl}" style="display:inline-block;background:#0D7377;color:white;padding:13px 28px;border-radius:8px;text-decoration:none;font-family:sans-serif;font-weight:700;font-size:14px;">Open My Portal</a>` : ''}
+        ${jobUrl ? `<a href="${jobUrl}" style="display:inline-block;background:#0D7377;color:white;padding:13px 28px;border-radius:8px;text-decoration:none;font-family:sans-serif;font-weight:700;font-size:14px;">Open the job in the FAJ Tech app</a>` : ''}
       </div>
     </body></html>`,
     { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
@@ -104,16 +105,16 @@ export async function GET(req: NextRequest) {
     } catch { /* the email went */ }
   }
 
-  const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com'}/portal/${contractor.portal_token}`;
+  // Accepted: on to the job in the tech app, where check-in and photos are.
+  const jobUrl = techJobUrl(process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com', wo.id);
   return action === 'accept'
     ? page(
         `You're on it — WO #${wo.wo_number}`,
-        'Thanks for confirming. All the job details, check-in, and site reference numbers are in your portal.',
-        portalUrl,
+        'Thanks for confirming. All the job details, check-in, and site reference numbers are in the FAJ Tech app.',
+        jobUrl,
       )
     : page(
         `Declined — WO #${wo.wo_number}`,
         'Got it — FAJ Solutions has been notified so the job can be reassigned. Nothing else needed from you.',
-        portalUrl,
       );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { installSteps, phoneKind } from './install-help';
+import { installSteps, oldIconSteps, phoneKind, IOS_LINKS_NOTE } from './install-help';
 
 const SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 const IOS_YAHOO = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 YahooMobile/1.0 (mail; 7.40.0)';
@@ -28,5 +28,12 @@ describe('putting the tech app on a phone (Fred, 2026-10-19)', () => {
     expect(installSteps('android-inapp', false)).toContain('Open in Chrome');
     expect(installSteps('samsung', false)).toContain('Home screen');
     expect(installSteps('other', false)).toBe('');
+  });
+
+  it('says links open Safari on an iPhone, and how to replace the old icon', () => {
+    expect(IOS_LINKS_NOTE).toContain('links in emails and texts always open in Safari');
+    expect(oldIconSteps('ios')).toContain('Add to Home Screen');
+    expect(oldIconSteps('android')).toContain('Install app');
+    expect(oldIconSteps('ios')).toContain('old FAJ app');
   });
 });

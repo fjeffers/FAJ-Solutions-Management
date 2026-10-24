@@ -4,7 +4,7 @@ import { getValidQboSession } from '@/lib/quickbooks-session';
 import { attachToInvoice, findOrCreateCustomer, findOrCreateServiceItem, createInvoice, sendInvoice } from '@/lib/quickbooks';
 import { dayOf, parseDayEvents, type DayEvent } from '@/lib/project-day';
 import {
-  billRange, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
+  billRange, blocksBilling, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
 } from '@/lib/field-sheet';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { NextResponse } from 'next/server';
@@ -27,8 +27,6 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // QuickBooks emails attachments with the invoice; keep the email a sensible size.
 const MAX_PHOTOS = 40;
 const MAX_PHOTO_BYTES = 18 * 1024 * 1024;
-// An invoice started this long ago and never finished: the request died, so the site isn't held any more.
-const STALE_MS = 10 * 60 * 1000;
 
 type PhotoFile = { label: string; path?: string; url?: string };
 /** A file in this app's own Supabase storage. */
@@ -137,7 +135,7 @@ export async function POST(req: Request) {
   const { data: open } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at').eq('wo_id', wo.id).is('qbo_invoice_id', null);
   let holdId: string | null = null;
   for (const o of open ?? []) {
-    if (Date.now() - Date.parse(o.created_at) < STALE_MS) continue;
+    if (blocksBilling({ qbo_invoice_id: null, created_at: o.created_at })) continue;
     if (o.from_day === from && o.to_day === to) holdId = o.id;
     else await admin.from('field_sheet_invoices').delete().eq('id', o.id).is('qbo_invoice_id', null);
   }

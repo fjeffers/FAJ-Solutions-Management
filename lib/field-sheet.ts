@@ -517,6 +517,13 @@ export function billRange(rows: SheetRow[], receipts: SheetReceipt[], from?: str
   return { from: f, to: to || dated.at(-1) || f };
 }
 
+/** An invoice started this long ago and never finished: the request died, so its dates aren't held any more. */
+export const HOLD_STALE_MS = 10 * 60 * 1000;
+
+/** An invoice row that blocks billing these dates: one QuickBooks accepted, or one being created right now. */
+export const blocksBilling = (i: { qbo_invoice_id: string | null; created_at: string }, now = Date.now()) =>
+  !!i.qbo_invoice_id || now - Date.parse(i.created_at) < HOLD_STALE_MS;
+
 /** A sheet with no mileage rate of its own bills at the account's (Settings), on the screen and on the invoice alike. */
 export function withAccountRate(s: SheetSettings, accountRate: unknown): SheetSettings {
   const rate = accountRate == null || accountRate === '' ? NaN : Number(accountRate);

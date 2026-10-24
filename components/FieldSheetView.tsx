@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  billRange, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  billRange, blocksBilling, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
   withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
@@ -628,7 +628,8 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, photoC
   const [busy, setBusy] = useState(false);
   const range = billRange(rows, receipts, from, to);
   const f = range?.from ?? '', t = range?.to ?? '';
-  const already = range ? invoices.find((i) => overlaps(range, { from: i.from_day, to: i.to_day })) : undefined;
+  // One QuickBooks has, or one being created now; one that was cut off over ten minutes ago can be tried again.
+  const already = range ? invoices.find((i) => blocksBilling(i) && overlaps(range, { from: i.from_day, to: i.to_day })) : undefined;
   const client = s.client || wo.customer_name || '';
   const email = s.email.trim();
   const create = async () => {
@@ -694,7 +695,7 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, photoC
             <div className="wf-label">Invoiced</div>
             {invoices.map((i) => (
               <div key={i.id}>
-                {i.qbo_invoice_id ? <>QuickBooks invoice <b>{i.qbo_invoice_number || '—'}</b></> : 'Being created in QuickBooks'} · {fmtDay(i.from_day)} – {fmtDay(i.to_day)}
+                {i.qbo_invoice_id ? <>QuickBooks invoice <b>{i.qbo_invoice_number || '—'}</b></> : blocksBilling(i) ? 'Being created in QuickBooks' : 'Cut off before QuickBooks answered: check QuickBooks, then create it again'} · {fmtDay(i.from_day)} – {fmtDay(i.to_day)}
                 {i.total != null ? ` · ${fmtMoney(Number(i.total))}` : ''} · {i.customer_name}
                 {i.qbo_invoice_id ? (i.sent_to ? ` · emailed to ${i.sent_to}` : ' · not emailed') : ''}
               </div>

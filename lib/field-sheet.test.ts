@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildDayLogs, type DayEvent } from './project-day';
 import { matchOdometer, type OdoRow } from './weekly-bill';
 import {
-  appDays, billRange, clock, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, sheetRows, sheetTotals,
+  appDays, billRange, blocksBilling, clock, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, sheetRows, sheetTotals,
   withAccountRate,
   type SavedDay, type SheetReceipt, type SheetSettings,
 } from './field-sheet';
@@ -327,5 +327,12 @@ describe('the QuickBooks invoice', () => {
     expect(withAccountRate(bill({ mileRate: null }), 0.7).mileRate).toBe(0.7);
     expect(withAccountRate(bill({ mileRate: 0.6 }), 0.7).mileRate).toBe(0.6);
     expect(withAccountRate(bill({ mileRate: null }), null).mileRate).toBeNull();
+  });
+
+  it('lets dates be billed again once an invoice cut off over ten minutes ago, never one QuickBooks has', () => {
+    const now = Date.parse('2026-10-24T12:00:00Z');
+    expect(blocksBilling({ qbo_invoice_id: '42', created_at: '2026-10-01T12:00:00Z' }, now)).toBe(true);
+    expect(blocksBilling({ qbo_invoice_id: null, created_at: '2026-10-24T11:55:00Z' }, now)).toBe(true);
+    expect(blocksBilling({ qbo_invoice_id: null, created_at: '2026-10-24T11:45:00Z' }, now)).toBe(false);
   });
 });

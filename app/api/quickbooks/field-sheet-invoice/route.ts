@@ -4,7 +4,7 @@ import { getValidQboSession } from '@/lib/quickbooks-session';
 import { attachToInvoice, findOrCreateCustomer, findOrCreateServiceItem, createInvoice, sendInvoice } from '@/lib/quickbooks';
 import { dayOf, parseDayEvents, type DayEvent } from '@/lib/project-day';
 import {
-  fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals, type SavedDay, type SheetReceipt,
+  billRange, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
 } from '@/lib/field-sheet';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { NextResponse } from 'next/server';
@@ -27,6 +27,8 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // QuickBooks emails attachments with the invoice; keep the email a sensible size.
 const MAX_PHOTOS = 40;
 const MAX_PHOTO_BYTES = 18 * 1024 * 1024;
+// An invoice started this long ago and never finished: the request died, so the site isn't held any more.
+const STALE_MS = 10 * 60 * 1000;
 
 type PhotoFile = { label: string; path?: string; url?: string };
 /** A file in this app's own Supabase storage. */
@@ -50,27 +52,34 @@ export async function POST(req: Request) {
   const { wo_id, from: fromIn, to: toIn, dry_run, send, photos } = body as { wo_id?: string; from?: string; to?: string; dry_run?: boolean; send?: boolean; photos?: boolean };
   if (!wo_id || typeof wo_id !== 'string') return NextResponse.json({ error: 'Which job is this for?' }, { status: 400 });
   if ((fromIn && !DAY.test(fromIn)) || (toIn && !DAY.test(toIn))) return NextResponse.json({ error: 'Pick the dates again.' }, { status: 400 });
+  if (fromIn && toIn && fromIn > toIn) return NextResponse.json({ error: 'The week starts after it ends. Pick the dates again.' }, { status: 400 });
 
   const { data: wo } = await supabase.from('work_orders')
     .select('id, wo_number, external_wo_id, site_name, title, site_address, site_city, site_state, site_zip, customer_name, contractor_name, contractor_names, start_date, end_date')
     .eq('id', wo_id).eq('user_id', user.id).maybeSingle();
   if (!wo) return NextResponse.json({ error: 'That work order was not found.' }, { status: 404 });
 
-  const [sheet, days, ev, punches, odo, ex, billed, jobPhotos] = await Promise.all([
+  const [sheet, days, ev, punches, odo, ex, billed, jobPhotos, account] = await Promise.all([
     supabase.from('field_sheets').select('settings').eq('wo_id', wo.id).maybeSingle(),
     supabase.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', wo.id),
     supabase.from('job_day_events').select('id, contractor_name, kind, at, origin, dest, miles').eq('wo_id', wo.id).order('at'),
     supabase.from('job_punches').select('contractor_name, kind, at').eq('wo_id', wo.id).order('at'),
     supabase.from('job_odometer').select('wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', wo.id).order('at'),
     supabase.from('job_expenses').select('id, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', wo.id),
-    supabase.from('field_sheet_invoices').select('from_day, to_day, qbo_invoice_number').eq('wo_id', wo.id),
+    supabase.from('field_sheet_invoices').select('from_day, to_day, qbo_invoice_id, qbo_invoice_number').eq('wo_id', wo.id),
     supabase.from('wo_photos').select('url, taken_at').eq('wo_id', wo.id).order('taken_at'),
+    supabase.from('user_settings').select('mileage_rate').maybeSingle(),
   ]);
   if (days.error || billed.error) {
     return NextResponse.json({ error: "The Field Sheet isn't set up in the database yet.", fix: 'Run migration 136 in Supabase, then try again.' }, { status: 500 });
   }
+  // Every record the bill is built from, or nothing: a read that failed would leave its charges off and mark the dates billed.
+  if ([sheet, ev, punches, odo, ex, jobPhotos, account].some((r) => r.error)) {
+    return NextResponse.json({ error: "Couldn't read the whole sheet, so nothing was billed.", fix: 'Check your connection and try again.' }, { status: 503 });
+  }
 
-  const s = parseSettings(sheet.data?.settings);
+  // The same rate the screen shows: the sheet's own, else the account's.
+  const s = withAccountRate(parseSettings(sheet.data?.settings), account.data?.mileage_rate);
   const events: DayEvent[] = parseDayEvents([...(ev.data ?? []), ...(punches.data ?? [])]);
   const readings = ((odo.data ?? []) as OdoRow[]).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
   const saved: SavedDay[] = (days.data ?? []).map((d) => ({ ...d, edits: parseEdits(d.edits) }));
@@ -81,23 +90,26 @@ export async function POST(req: Request) {
     .filter((e) => inDates(e.expense_date, fromIn, toIn))
     .map((e) => ({ id: e.id, category: e.category, amount: Number(e.amount), status: e.status, vendor: e.vendor, date: e.expense_date }));
 
-  // The dates billed: those picked, else the first to the last day on the sheet.
-  const shown = rows.filter((r) => !r.hidden).map((r) => r.day).sort();
-  const from = fromIn || shown[0] || wo.start_date || dayOf(new Date().toISOString(), TZ);
-  const to = toIn || shown.at(-1) || from;
+  // The dates billed: those picked, else the first to the last thing on the bill (days and receipts).
+  const range = billRange(rows, receipts, fromIn, toIn);
+  const from = range?.from ?? (fromIn || wo.start_date || dayOf(new Date().toISOString(), TZ));
+  const to = range?.to ?? (toIn || from);
+  if (from > to) return NextResponse.json({ error: 'The week starts after it ends. Pick the dates again.' }, { status: 400 });
   const totals = sheetTotals(rows, receipts, s);
   const customer = (s.client || wo.customer_name || '').trim();
   if (!customer) return NextResponse.json({ error: 'Pick the client this is billed to.' }, { status: 400 });
   if (totals.lines.length === 0) {
     return NextResponse.json({ error: 'Nothing to bill for these dates yet.', fix: 'Set how the client is billed (rate, mileage, meals or hotel) above.' }, { status: 422 });
   }
-  const before = (billed.data ?? []).find((b) => overlaps({ from, to }, { from: b.from_day, to: b.to_day }));
-  if (before) {
-    return NextResponse.json({
-      error: `${fmt(before.from_day)} – ${fmt(before.to_day)} is already on QuickBooks invoice ${before.qbo_invoice_number ?? ''}.`.replace(' .', '.'),
+  const alreadyBilled = (list: { from_day: string; to_day: string; qbo_invoice_id: string | null; qbo_invoice_number: string | null }[]) => {
+    const b = list.find((x) => x.qbo_invoice_id && overlaps({ from, to }, { from: x.from_day, to: x.to_day }));
+    return b ? NextResponse.json({
+      error: `${fmt(b.from_day)} – ${fmt(b.to_day)} is already on QuickBooks invoice ${b.qbo_invoice_number ?? ''}.`.replace(' .', '.'),
       fix: 'Pick dates that are not billed yet.',
-    }, { status: 409 });
-  }
+    }, { status: 409 }) : null;
+  };
+  const before = alreadyBilled(billed.data ?? []);
+  if (before) return before;
 
   const site = s.site || [wo.site_name || wo.title, [wo.site_city, wo.site_state].filter(Boolean).join(', ')].filter(Boolean).join(' — ');
   const memo = `${site} · WO ${wo.wo_number}${wo.external_wo_id ? ` · Client # ${wo.external_wo_id}` : ''} · ${fmt(from)} – ${fmt(to)}`;
@@ -117,18 +129,52 @@ export async function POST(req: Request) {
     });
   }
 
-  try {
-    const customerId = await findOrCreateCustomer(session.environment, session.realm_id, session.access_token, customer);
-    const itemId = await findOrCreateServiceItem(session.environment, session.realm_id, session.access_token);
-    const payload = fieldSheetInvoice(totals.lines, { customerId, itemId, memo, note, email, txnDate: dayOf(new Date().toISOString(), TZ) });
-    const invoice = await createInvoice(session.environment, session.realm_id, session.access_token, payload as unknown as Record<string, unknown>);
+  // Hold the site BEFORE QuickBooks is called: one invoice in the making per site
+  // (field_sheet_invoices_one_in_progress), so two clicks or two tabs can't bill the
+  // same dates twice. The hold's id is QuickBooks' requestid, so a request that died
+  // after QuickBooks took it is retried as the same invoice, not a second one.
+  const admin = createAdminClient();
+  const { data: open } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at').eq('wo_id', wo.id).is('qbo_invoice_id', null);
+  let holdId: string | null = null;
+  for (const o of open ?? []) {
+    if (Date.now() - Date.parse(o.created_at) < STALE_MS) continue;
+    if (o.from_day === from && o.to_day === to) holdId = o.id;
+    else await admin.from('field_sheet_invoices').delete().eq('id', o.id).is('qbo_invoice_id', null);
+  }
+  if (!holdId) {
+    const { data: hold, error: holdErr } = await admin.from('field_sheet_invoices')
+      .insert({ user_id: user.id, wo_id: wo.id, from_day: from, to_day: to, customer_name: customer }).select('id').single();
+    if (holdErr || !hold) {
+      return NextResponse.json(holdErr?.code === '23505'
+        ? { error: 'An invoice for this site is being created right now.', fix: 'Wait a minute, refresh, and check the Invoiced list.' }
+        : { error: "Couldn't start the invoice.", fix: 'Check your connection and try again.' }, { status: holdErr?.code === '23505' ? 409 : 500 });
+    }
+    holdId = hold.id as string;
+  }
+  if (!holdId) return NextResponse.json({ error: "Couldn't start the invoice." }, { status: 500 });
+  const held = holdId;
+  const release = () => admin.from('field_sheet_invoices').delete().eq('id', held).is('qbo_invoice_id', null);
+  // Now that this request holds the site, an invoice that finished a moment ago counts too.
+  const { data: done, error: doneErr } = await admin.from('field_sheet_invoices').select('from_day, to_day, qbo_invoice_id, qbo_invoice_number').eq('wo_id', wo.id);
+  const clash = doneErr ? NextResponse.json({ error: "Couldn't check what's billed, so nothing was billed.", fix: 'Try again.' }, { status: 503 }) : alreadyBilled(done ?? []);
+  if (clash) { await release(); return clash; }
 
-    // Recorded only AFTER QuickBooks accepted it, the same as the Site Log.
-    const admin = createAdminClient();
-    const { data: rec, error: recErr } = await admin.from('field_sheet_invoices').insert({
-      user_id: user.id, wo_id: wo.id, from_day: from, to_day: to, customer_name: customer,
-      qbo_invoice_id: invoice.id, qbo_invoice_number: invoice.docNumber, total: invoice.total,
-    }).select('id').single();
+  try {
+    let invoice: Awaited<ReturnType<typeof createInvoice>>;
+    try {
+      const customerId = await findOrCreateCustomer(session.environment, session.realm_id, session.access_token, customer);
+      const itemId = await findOrCreateServiceItem(session.environment, session.realm_id, session.access_token);
+      const payload = fieldSheetInvoice(totals.lines, { customerId, itemId, memo, note, email, txnDate: dayOf(new Date().toISOString(), TZ) });
+      invoice = await createInvoice(session.environment, session.realm_id, session.access_token, payload as unknown as Record<string, unknown>, held);
+    } catch (e) {
+      await release();
+      throw e;
+    }
+
+    // The hold becomes the record, the same row, once QuickBooks has accepted it.
+    const { data: rec, error: recErr } = await admin.from('field_sheet_invoices')
+      .update({ customer_name: customer, qbo_invoice_id: invoice.id, qbo_invoice_number: invoice.docNumber, total: invoice.total })
+      .eq('id', held).select('id').single();
 
     // The photos, attached before the email goes so they go with it.
     let attached = 0;

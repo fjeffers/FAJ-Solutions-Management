@@ -29,7 +29,10 @@ const tables: Record<string, Record<string, unknown>[]> = {
   field_sheets: [{ settings: { mileRate: 0.6 } }],
   field_sheet_days: [],
   user_settings: [{ mileage_rate: 0.7 }],
-  customers: [{ id: 'cu1', name: 'NetView', billing_email: 'ap@netview.com', default_mileage_rate: 0.6, payment_terms: 'Net 30' }],
+  customers: [
+    { id: 'cu1', name: 'NetView', billing_email: 'ap@netview.com', default_mileage_rate: 0.6, payment_terms: 'Net 30' },
+    { id: 'cu2', name: "Wendy's", billing_email: null, default_mileage_rate: null, payment_terms: null },
+  ],
   field_sheet_invoices: [],
 };
 const upserts: [string, Record<string, unknown>][] = [];
@@ -135,6 +138,27 @@ describe('Field Sheet', () => {
     expect(screen.getAllByText('$816.09').length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /create the invoice in quickbooks/i }));
     expect(posted).toEqual([{ wo_id: 'wo', send: true, photos: false }]);
+  });
+
+  it('never sends a new client’s invoice to the last client’s email', async () => {
+    const user = userEvent.setup();
+    render(<FieldSheetView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+    // The box is drawn afresh after each save, so it's found again each time.
+    const pick = async (name: string) => {
+      const box = await screen.findByLabelText('Client');
+      await user.clear(box);
+      await user.type(box, name);
+      await user.tab();
+    };
+    await pick('NetView');
+    expect(upserts.at(-1)?.[1]).toMatchObject({ settings: expect.objectContaining({ email: 'ap@netview.com' }) });
+    // Wendy's has no billing email on file: the email empties instead of staying NetView's.
+    await pick("Wendy's");
+    expect(upserts.at(-1)?.[1]).toMatchObject({ settings: expect.objectContaining({ client: "Wendy's", customerId: 'cu2', email: '' }) });
+    // A name that isn't a customer yet empties it too.
+    await pick('Acme');
+    expect(upserts.at(-1)?.[1]).toMatchObject({ settings: expect.objectContaining({ client: 'Acme', customerId: null, email: '' }) });
   });
 
   it('gives the client a plain report: one line per day, the times on site, no raw taps', async () => {

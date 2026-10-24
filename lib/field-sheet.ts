@@ -505,6 +505,24 @@ export const inDates = (day: string, from?: string | null, to?: string | null) =
 /** Two date ranges share a day. */
 export const overlaps = (a: { from: string; to: string }, b: { from: string; to: string }) => a.from <= b.to && b.from <= a.to;
 
+/**
+ * The dates an invoice covers: those picked, else the first to the last thing it
+ * bills — the days on the sheet and the approved receipts — so a hotel receipt
+ * the night before the first day is inside the dates recorded as billed.
+ */
+export function billRange(rows: SheetRow[], receipts: SheetReceipt[], from?: string | null, to?: string | null): { from: string; to: string } | null {
+  const dated = [...rows.filter((r) => !r.hidden).map((r) => r.day), ...receipts.filter((e) => e.status === 'approved' && e.date).map((e) => e.date!)].sort();
+  const f = from || dated[0];
+  if (!f) return null;
+  return { from: f, to: to || dated.at(-1) || f };
+}
+
+/** A sheet with no mileage rate of its own bills at the account's (Settings), on the screen and on the invoice alike. */
+export function withAccountRate(s: SheetSettings, accountRate: unknown): SheetSettings {
+  const rate = accountRate == null || accountRate === '' ? NaN : Number(accountRate);
+  return s.mileRate == null && Number.isFinite(rate) ? { ...s, mileRate: rate } : s;
+}
+
 /** The QuickBooks invoice for a sheet's lines: each line dated, the site and dates printed for the client. */
 export function fieldSheetInvoice(lines: BillLine[], opts: {
   customerId: string; itemId: string; memo: string; note: string; email?: string | null; txnDate?: string;

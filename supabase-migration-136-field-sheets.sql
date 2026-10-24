@@ -18,9 +18,11 @@
 --   field_sheet_invoices  each QuickBooks invoice raised from a sheet: the
 --                     dates it bills (a week, usually), the client, the number
 --                     QuickBooks gave it, the total, and who it was emailed to.
---                     Written only by the server after QuickBooks accepts the
---                     invoice (/api/quickbooks/field-sheet-invoice); the same
---                     dates on the same site are never billed twice.
+--                     Written only by the server (/api/quickbooks/field-sheet-invoice):
+--                     the row is taken BEFORE QuickBooks is called, with no
+--                     invoice yet, and filled in when QuickBooks accepts it. One
+--                     such row per work order at a time, so two tabs or two
+--                     clicks can't both bill the same dates.
 --
 -- Fred, 2026-10-24: "when i finish it then save and uploaded into quickbooks
 -- the same way ... and sent off the client"; "each site gets build on a
@@ -61,15 +63,17 @@ CREATE TABLE IF NOT EXISTS public.field_sheet_invoices (
   from_day date NOT NULL,
   to_day date NOT NULL,
   customer_name text NOT NULL,
-  qbo_invoice_id text NOT NULL,
+  qbo_invoice_id text,
   qbo_invoice_number text,
-  total numeric NOT NULL,
+  total numeric,
   sent_to text,
   sent_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT field_sheet_invoices_dates CHECK (to_day >= from_day)
 );
 CREATE INDEX IF NOT EXISTS field_sheet_invoices_wo ON public.field_sheet_invoices (wo_id, from_day);
+-- An invoice being created (no QuickBooks id yet): one per work order at a time.
+CREATE UNIQUE INDEX IF NOT EXISTS field_sheet_invoices_one_in_progress ON public.field_sheet_invoices (wo_id) WHERE qbo_invoice_id IS NULL;
 
 ALTER TABLE public.field_sheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.field_sheet_invoices ENABLE ROW LEVEL SECURITY;

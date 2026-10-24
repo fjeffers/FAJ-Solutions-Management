@@ -22,8 +22,8 @@ import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
-  type BillItem, type LaborType, type SavedDay, type SheetField, type SheetRow, type SheetSettings, type SheetTotals,
+  billRange, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
 import { downloadXLSXBook } from '@/lib/export';
@@ -160,7 +160,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
   }, [db]);
   const loadInvoices = useCallback(async () => {
     const { data } = await db.from('field_sheet_invoices')
-      .select('id, from_day, to_day, customer_name, qbo_invoice_number, total, sent_to, sent_at, created_at').eq('wo_id', wo.id).order('from_day');
+      .select('id, from_day, to_day, customer_name, qbo_invoice_id, qbo_invoice_number, total, sent_to, sent_at, created_at').eq('wo_id', wo.id).order('from_day');
     setInvoices((data as SheetInvoice[] | null) ?? []);
   }, [db, wo.id]);
   const loadExpenses = useCallback(async () => {
@@ -192,8 +192,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
       setReadings(odo);
       setPhotos((ph.data as Photo[] | null) ?? []);
       const s = parseSettings((fs.data as { settings?: unknown } | null)?.settings);
-      const rate = Number((us.data as { mileage_rate?: unknown } | null)?.mileage_rate);
-      const start = s.mileRate == null && Number.isFinite(rate) ? { ...s, mileRate: rate } : s;
+      const start = withAccountRate(s, (us.data as { mileage_rate?: unknown } | null)?.mileage_rate);
       setSettings(start);
       lastSettings.current = start;
       if (days.error) toastError("The field sheet isn't set up in the database yet (migration 136). Your changes won't save until it is.");
@@ -212,7 +211,8 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
   const visible = rows.filter((r) => showHidden || !r.hidden);
   const inRange = (d: string) => inDates(d, from, to);
   const receipts = expenses.filter((e) => inRange(e.expense_date));
-  const totals = sheetTotals(rows, receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date })), settings);
+  const billed: SheetReceipt[] = receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date }));
+  const totals = sheetTotals(rows, billed, settings);
   const allTechs = [...new Set([...techs, ...rows.map((r) => r.tech)])];
 
   // ── saving: one write at a time per line, and for the rates, so an older save can't land after a newer one ──
@@ -221,6 +221,14 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
     const p = (queues.current.get(key) ?? Promise.resolve()).then(fn, fn);
     queues.current.set(key, p);
     return p;
+  };
+  // A write that failed since the last flush. The screen has already gone back to what is saved.
+  const failedSave = useRef(false);
+  /** Wait for every change typed so far to reach the database; false if one didn't. The invoice is built from what is saved. */
+  const flush = async () => {
+    failedSave.current = false;
+    await Promise.all([...queues.current.values()]);
+    return !failedSave.current;
   };
   // After a failed write, show what is really saved.
   const reloadSaved = async () => {
@@ -238,7 +246,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
         .upsert({ wo_id: wo.id, day: next.day, tech: next.tech, edits: next.edits, added: next.added, hidden: next.hidden, updated_at: new Date().toISOString() },
           { onConflict: 'wo_id,tech,day' })
         .select('id').single();
-      if (error) { toastError("That change didn't save. Check your connection and try again."); await reloadSaved(); return; }
+      if (error) { failedSave.current = true; toastError("That change didn't save. Check your connection and try again."); await reloadSaved(); return; }
       setSaved((list) => list.map((s) => (s.day === next.day && s.tech === next.tech ? { ...s, id: (data as { id: string }).id } : s)));
       onOpened();
     });
@@ -253,7 +261,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
     setSaved((list) => list.filter((s) => !(s.day === row.day && s.tech === row.tech)));
     return inTurn(row.key, async () => {
       const { error } = await db.from('field_sheet_days').delete().eq('wo_id', wo.id).eq('tech', row.tech).eq('day', row.day);
-      if (error) { toastError("Couldn't undo that. Check your connection."); await reloadSaved(); }
+      if (error) { failedSave.current = true; toastError("Couldn't undo that. Check your connection."); await reloadSaved(); }
     });
   };
   const saveSettings = (patch: Partial<SheetSettings>) => {
@@ -262,7 +270,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
     setSettings(next);
     return inTurn('settings', async () => {
       const { error } = await db.from('field_sheets').upsert({ wo_id: wo.id, settings: next, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' });
-      if (error) { toastError("That didn't save, so it's back to what it was. Check your connection."); setSettings(lastSettings.current); return; }
+      if (error) { failedSave.current = true; toastError("That didn't save, so it's back to what it was. Check your connection."); setSettings(lastSettings.current); return; }
       lastSettings.current = next;
       onOpened();
     });
@@ -410,8 +418,8 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
         </div>
       </Section>
 
-      <FinishPanel wo={wo} s={settings} totals={totals} from={from} to={to} rows={rows} invoices={invoices}
-        photoCount={shots.reduce((t, g) => t + g.list.length, 0)} onDone={() => void loadInvoices()} />
+      <FinishPanel wo={wo} s={settings} totals={totals} from={from} to={to} rows={rows} receipts={billed} invoices={invoices}
+        photoCount={shots.reduce((t, g) => t + g.list.length, 0)} flush={flush} onDone={() => void loadInvoices()} />
 
       <Section title="Photos" subtitle="time, place and GPS are stamped by the tech's phone">
         {shots.every((s) => s.list.length === 0) && <div className="wf-subtle" style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Camera size={16} /> No photos on this job yet.</div>}
@@ -459,7 +467,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
 
 type Client = { id: string; name: string; billing_email: string | null; default_mileage_rate: number | null; payment_terms: string | null };
 type SheetInvoice = {
-  id: string; from_day: string; to_day: string; customer_name: string; qbo_invoice_number: string | null; total: number;
+  id: string; from_day: string; to_day: string; customer_name: string; qbo_invoice_id: string | null; qbo_invoice_number: string | null; total: number | null;
   sent_to: string | null; sent_at: string | null; created_at: string;
 };
 
@@ -527,11 +535,14 @@ function TextBox({ id, label, value, onSave, placeholder, list, width = 240 }: {
  */
 function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: EnrichedWorkOrder; customers: Client[]; onSave: (p: Partial<SheetSettings>) => void }) {
   const pickClient = (name: string) => {
-    const c = customers.find((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase());
-    if (!c) { onSave({ client: name, customerId: null }); return; }
+    const key = (x: string) => x.trim().toLowerCase();
+    const same = key(name) === key(s.client || wo.customer_name || '');
+    const c = customers.find((x) => key(x.name) === key(name));
+    // Another client never keeps the last one's email: their invoice and photos would go to the wrong company.
+    if (!c) { if (!same) onSave({ client: name, customerId: null, email: '' }); return; }
     onSave({
       client: c.name, customerId: c.id,
-      email: c.billing_email ?? s.email,
+      email: same ? s.email || c.billing_email || '' : c.billing_email ?? '',
       mileRate: c.default_mileage_rate != null ? Number(c.default_mileage_rate) : s.mileRate,
     });
   };
@@ -608,22 +619,24 @@ function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: Enri
  * "when i finish it then save and uploaded into quickbooks the same way ... and
  * sent off the client"; "thats what the customer gets along with the pictures").
  */
-function FinishPanel({ wo, s, totals, from, to, rows, invoices, photoCount, onDone }: {
-  wo: EnrichedWorkOrder; s: SheetSettings; totals: SheetTotals; from: string; to: string; rows: SheetRow[];
-  invoices: SheetInvoice[]; photoCount: number; onDone: () => void;
+function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, photoCount, flush, onDone }: {
+  wo: EnrichedWorkOrder; s: SheetSettings; totals: SheetTotals; from: string; to: string; rows: SheetRow[]; receipts: SheetReceipt[];
+  invoices: SheetInvoice[]; photoCount: number; flush: () => Promise<boolean>; onDone: () => void;
 }) {
   const [send, setSend] = useState(true);
   const [photos, setPhotos] = useState(true);
   const [busy, setBusy] = useState(false);
-  const days = rows.filter((r) => !r.hidden).map((r) => r.day).sort();
-  const f = from || days[0] || '', t = to || days.at(-1) || f;
-  const already = f ? invoices.find((i) => overlaps({ from: f, to: t }, { from: i.from_day, to: i.to_day })) : undefined;
+  const range = billRange(rows, receipts, from, to);
+  const f = range?.from ?? '', t = range?.to ?? '';
+  const already = range ? invoices.find((i) => overlaps(range, { from: i.from_day, to: i.to_day })) : undefined;
   const client = s.client || wo.customer_name || '';
   const email = s.email.trim();
   const create = async () => {
-    if (!window.confirm(`Create a ${fmtMoney(totals.bill)} invoice for ${client} in QuickBooks${send && email ? ` and email it to ${email}` : ''}?`)) return;
     setBusy(true);
     try {
+      // The invoice is built from what is saved: wait for the last change typed, and stop if one didn't save.
+      if (!(await flush())) { toastError("A change didn't save, so nothing was billed. Check the figures and try again."); return; }
+      if (!window.confirm(`Create a ${fmtMoney(totals.bill)} invoice for ${client} in QuickBooks${send && email ? ` and email it to ${email}` : ''}?`)) return;
       const res = await fetch('/api/quickbooks/field-sheet-invoice', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wo_id: wo.id, from: from || undefined, to: to || undefined, send: send && !!email, photos: photos && photoCount > 0 }),
@@ -661,7 +674,9 @@ function FinishPanel({ wo, s, totals, from, to, rows, invoices, photoCount, onDo
             </table>
           </div>
         )}
-        {already && <div style={{ fontSize: 13, color: '#B45309' }}>These dates are already on QuickBooks invoice {already.qbo_invoice_number}. Pick another week.</div>}
+        {already && <div style={{ fontSize: 13, color: '#B45309' }}>
+          {already.qbo_invoice_id ? `These dates are already on QuickBooks invoice ${already.qbo_invoice_number ?? ''}. Pick another week.` : 'An invoice for these dates is being created. Refresh in a minute.'}
+        </div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', fontSize: 13.5 }}>
           <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             <input type="checkbox" checked={photos && photoCount > 0} onChange={(e) => setPhotos(e.target.checked)} disabled={photoCount === 0} /> {photoCount ? `Attach the ${photoCount} photos` : 'No photos to attach'}
@@ -679,8 +694,9 @@ function FinishPanel({ wo, s, totals, from, to, rows, invoices, photoCount, onDo
             <div className="wf-label">Invoiced</div>
             {invoices.map((i) => (
               <div key={i.id}>
-                QuickBooks invoice <b>{i.qbo_invoice_number ?? '—'}</b> · {fmtDay(i.from_day)} – {fmtDay(i.to_day)} · {fmtMoney(Number(i.total))} · {i.customer_name}
-                {i.sent_to ? ` · emailed to ${i.sent_to}` : ' · not emailed'}
+                {i.qbo_invoice_id ? <>QuickBooks invoice <b>{i.qbo_invoice_number || '—'}</b></> : 'Being created in QuickBooks'} · {fmtDay(i.from_day)} – {fmtDay(i.to_day)}
+                {i.total != null ? ` · ${fmtMoney(Number(i.total))}` : ''} · {i.customer_name}
+                {i.qbo_invoice_id ? (i.sent_to ? ` · emailed to ${i.sent_to}` : ' · not emailed') : ''}
               </div>
             ))}
           </div>

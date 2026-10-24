@@ -276,8 +276,11 @@ export async function createInvoice(
   realmId: string,
   accessToken: string,
   payload: Record<string, unknown>,
+  /** QuickBooks' requestid: the same id sent again returns the first invoice instead of making a second one. */
+  requestId?: string,
 ): Promise<{ id: string; docNumber: string; total: number; balance: number }> {
-  const res = await fetch(`${apiBase(environment)}/${realmId}/invoice?minorversion=65`, {
+  const rid = requestId ? `&requestid=${encodeURIComponent(requestId)}` : '';
+  const res = await fetch(`${apiBase(environment)}/${realmId}/invoice?minorversion=65${rid}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(payload),

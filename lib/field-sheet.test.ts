@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { buildDayLogs, type DayEvent } from './project-day';
 import { matchOdometer, type OdoRow } from './weekly-bill';
 import {
-  appDays, clock, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, sheetRows, sheetTotals,
+  appDays, billRange, clock, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, sheetRows, sheetTotals,
+  withAccountRate,
   type SavedDay, type SheetReceipt, type SheetSettings,
 } from './field-sheet';
 
@@ -311,5 +312,20 @@ describe('the QuickBooks invoice', () => {
     expect(overlaps({ from: '2026-10-18', to: '2026-10-24' }, { from: '2026-10-24', to: '2026-10-30' })).toBe(true);
     expect(overlaps({ from: '2026-10-18', to: '2026-10-24' }, { from: '2026-10-25', to: '2026-10-31' })).toBe(false);
     expect([inDates('2026-10-19', '2026-10-19', '2026-10-23'), inDates('2026-10-18', '2026-10-19', ''), inDates('2026-10-30', '', '')]).toEqual([true, false, true]);
+  });
+
+  it('records the dates billed from the days and the approved receipts, so a hotel the night before is inside them', () => {
+    const rows = sheetRows({ app, saved: [], techs: [], days: [] }).filter((r) => r.key === '2026-10-21|Dwayne');
+    const hotel: SheetReceipt = { id: 'h', category: 'hotel', amount: 120, status: 'approved', date: '2026-10-20' };
+    const declined: SheetReceipt = { id: 'd', category: 'meals', amount: 20, status: 'declined', date: '2026-10-25' };
+    expect(billRange(rows, [hotel, declined])).toEqual({ from: '2026-10-20', to: '2026-10-21' });
+    expect(billRange(rows, [hotel], '2026-10-19', '2026-10-23')).toEqual({ from: '2026-10-19', to: '2026-10-23' });
+    expect(billRange([], [])).toBeNull();
+  });
+
+  it('bills miles at the account rate when the sheet has none, the same as the screen shows', () => {
+    expect(withAccountRate(bill({ mileRate: null }), 0.7).mileRate).toBe(0.7);
+    expect(withAccountRate(bill({ mileRate: 0.6 }), 0.7).mileRate).toBe(0.6);
+    expect(withAccountRate(bill({ mileRate: null }), null).mileRate).toBeNull();
   });
 });

@@ -31,10 +31,14 @@ export async function POST(req: Request) {
   const gallonsRaw = String(form.get('gallons') ?? '').trim();
   const gallons = gallonsRaw && category === 'fuel' ? Number(gallonsRaw) : null;
   let ai: Record<string, unknown> | null = null;
-  try {
-    const parsed = JSON.parse(String(form.get('ai') ?? 'null'));
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ai = fitReceiptAi(parsed);
-  } catch { /* none */ }
+  const aiText = String(form.get('ai') ?? 'null');
+  // A real receipt's reading is a few KB; anything far bigger is ignored unread.
+  if (aiText.length <= 32_768) {
+    try {
+      const parsed = JSON.parse(aiText);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ai = fitReceiptAi(parsed);
+    } catch { /* none */ }
+  }
   if (gallons != null && !(gallons > 0 && gallons < 1000)) return NextResponse.json({ ok: false, error: 'Enter the gallons on the fuel receipt.' }, { status: 400 });
   if (!woNumber) return NextResponse.json({ ok: false, error: 'Missing the job.' }, { status: 400 });
   if (amount == null) return NextResponse.json({ ok: false, error: expenseReasonText('bad_amount') }, { status: 400 });

@@ -1,7 +1,7 @@
 import { techAppEmail, techAppInviteBlock } from '@/lib/tech-app-email';
 import { onboardingEmail } from '@/lib/onboarding-email';
 import { NextRequest, NextResponse } from 'next/server';
-import { emailClient, EMAIL_NOT_SET_UP } from '@/lib/email-client';
+import { emailClient, emailNotSetUp } from '@/lib/email-client';
 import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -202,7 +202,7 @@ export async function POST(req: NextRequest) {
   }
 
   const resend = emailClient();
-  if (!resend) return NextResponse.json({ error: EMAIL_NOT_SET_UP, pushed, texted, emailed: false }, { status: 503 });
+  if (!resend) return NextResponse.json({ error: emailNotSetUp(), pushed, texted, emailed: false }, { status: 503 });
   try {
     const { error } = await resend.emails.send({
       from,

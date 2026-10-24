@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client';
 import { agoText, freshness, fromPhotos, fromPunches, fromTimeLogs, latestByTech, type Sighting } from '@/lib/tech-locations';
 import { STATUS_COLORS } from '@/lib/utils';
 import type { Contractor, EnrichedWorkOrder, WorkOrder, ContractorTimeLog } from '@/lib/types';
+import { clientNumbers, fullAddress, techsOf } from '@/lib/site-info';
+import { geocodeAddress } from '@/lib/geocode';
 
 // react-leaflet touches `window` on import, so it must never render during SSR.
 const MapInner = dynamic(() => import('./DispatchMapInner'), { ssr: false, loading: () => <MapLoading /> });
@@ -53,6 +55,16 @@ export default function DispatchMapView({
   );
 
   const unmappedCount = activeWOs.length - mappedWOs.length;
+  // Look up the pin for every job with an address but none yet, and save it, so the map catches up.
+  const [locating, setLocating] = useState(false);
+  const locate = async () => {
+    setLocating(true);
+    for (const w of activeWOs.filter((x) => (x.site_lat == null || x.site_lng == null) && fullAddress(x))) {
+      const at = await geocodeAddress(fullAddress(w));
+      if (at) onUpdateWO(w.id, { site_lat: at.lat, site_lng: at.lng });
+    }
+    setLocating(false);
+  };
 
   // Where everyone is (lib/tech-locations.ts): each tech's newest known spot —
   // clock punches and job-photo locations from the last 30 days, plus the
@@ -90,7 +102,12 @@ export default function DispatchMapView({
         <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Dispatch Map</h1>
         <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>
           {mappedWOs.length} location{mappedWOs.length !== 1 ? 's' : ''} mapped · {liveContractors.length} contractor{liveContractors.length !== 1 ? 's' : ''} tracked
-          {unmappedCount > 0 && ` · ${unmappedCount} not yet geocoded`}
+          {unmappedCount > 0 && ` · ${unmappedCount} not on the map yet`}
+          {unmappedCount > 0 && (
+            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8, fontSize: 12, padding: '3px 10px' }} disabled={locating} onClick={() => void locate()}>
+              {locating ? 'Finding them…' : 'Find them on the map'}
+            </button>
+          )}
         </p>
       </div>
 
@@ -116,10 +133,13 @@ export default function DispatchMapView({
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>
               WO #{selected.wo_number}
             </div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{selected.title || 'Untitled'}</div>
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{selected.site_address}</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{selected.site_name || selected.title || 'Untitled'}</div>
+            {selected.site_name && selected.title && <div style={{ fontSize: 12, color: '#666', marginBottom: 2 }}>{selected.title}</div>}
+            {clientNumbers(selected) && <div style={{ fontSize: 12, color: '#444', fontWeight: 600, marginBottom: 2 }}>{clientNumbers(selected)}</div>}
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{fullAddress(selected)}</div>
+            {selected.start_date && <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{selected.start_date}{selected.end_date && selected.end_date !== selected.start_date ? ` – ${selected.end_date}` : ''}{selected.start_time ? ` · ${selected.start_time}` : ''}</div>}
             <div style={{ fontSize: 12, color: '#666', marginBottom: 16 }}>
-              Currently: <strong>{selected.contractor_name || 'Unassigned'}</strong>
+              Currently: <strong>{techsOf(selected).join(', ') || 'Unassigned'}</strong>
             </div>
 
             <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>

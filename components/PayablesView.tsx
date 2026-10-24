@@ -1,12 +1,13 @@
 'use client';
 import { useMemo } from 'react';
 import { DollarSign, Landmark, Smartphone, Plus, AlertTriangle } from 'lucide-react';
-import { fmtMoney, contractorOwedOnWO } from '@/lib/utils';
+import { fmtMoney } from '@/lib/utils';
+import { payableSlices, type PayableSlice } from '@/lib/payables';
 import type { EnrichedWorkOrder, Contractor, Payment } from '@/lib/types';
 
 // One contractor's slice of a work order: their share of the pay, what they've
 // been paid so far on it, and what's still owed to them.
-type PayableRow = EnrichedWorkOrder & { share: number; sharePaid: number; shareRemaining: number };
+type PayableRow = PayableSlice<EnrichedWorkOrder>;
 
 const PAYMENT_STATUS_META: Record<string, { bg: string; color: string; label: string }> = {
   pending: { bg: 'rgba(245,158,11,0.12)', color: '#b45309', label: 'Unpaid'  },
@@ -61,44 +62,11 @@ export default function PayablesView({
     };
   }, [workOrders]);
   const groups = useMemo(() => {
-    // Break each WO into per-tech rows so multi-tech jobs show what each tech
-    // is owed (their share from contractor_pay), not just the primary.
-    const map = new Map<string, PayableRow[]>();
-    // Jobs paid MORE than the tech's share. Each row is clamped at zero so a
-    // single job never shows a negative balance — but that clamp also hid the
-    // money entirely, so a tech already paid $2,600 against a $500 share still
-    // read as owed in full on his other jobs. Kept separately and shown, rather
-    // than netted off silently: whether an overpayment on one job was meant to
-    // cover another is Fred's call, not an assumption to bury in a total.
-    const overMap = new Map<string, PayableRow[]>();
-    for (const w of workOrders) {
-      const names = (w.contractor_names && w.contractor_names.length > 0)
-        ? w.contractor_names
-        : (w.contractor_name ? [w.contractor_name] : []);
-      // A job with no contractor_pay has no agreed tech rate, and the legacy
-      // fallback then values their share at the FULL client price. Shown as a
-      // balance, that reads as a debt and invites payment against a guess —
-      // on 7 Aug 2026 it produced $9,125 of recorded payments that never
-      // happened, each one topping a job up to exactly its client price.
-      // These belong in the needs-setup banner until a real split is entered.
-      const hasSplit = Boolean(w.contractor_pay && Object.keys(w.contractor_pay).length > 0);
-      for (const name of names) {
-        const share = contractorOwedOnWO(w, name);
-        const sharePaid = payments
-          .filter((p) => p.wo_number === w.wo_number && p.contractor_name === name)
-          .reduce((s, p) => s + Number(p.amount), 0);
-        if (!hasSplit && sharePaid <= share) continue;
-        if (sharePaid - share > 0.009) {
-          overMap.set(name, [...(overMap.get(name) ?? []),
-            { ...w, share, sharePaid, shareRemaining: 0 }]);
-          continue;
-        }
-        if (share <= 0) continue;
-        const shareRemaining = Math.max(0, share - sharePaid);
-        if (shareRemaining <= 0) continue;
-        map.set(name, [...(map.get(name) ?? []), { ...w, share, sharePaid, shareRemaining }]);
-      }
-    }
+    // Each WO broken into per-tech slices (lib/payables), so multi-tech jobs show
+    // what each tech is owed — their share from contractor_pay — not just the
+    // primary. Jobs paid MORE than a tech's share are kept apart and shown, not
+    // netted off: whether that was meant to cover another job is Fred's call.
+    const { owed: map, over: overMap } = payableSlices(workOrders, payments);
     const allNames = new Set([...map.keys(), ...overMap.keys()]);
     return Array.from(allNames)
       .map((name) => {

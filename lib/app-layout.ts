@@ -13,7 +13,7 @@
 // left menu (it's how you reach everything else), and Settings can never be
 // hidden (it's how you undo all this).
 
-import { OFFICE_GROUPS, SIDEBAR_VIEWS, type OfficeGroup } from './office-menu';
+import { MONEY_TAB_LABELS, OFFICE_GROUPS, SIDEBAR_VIEWS, type OfficeGroup } from './office-menu';
 import { PART_KEYS } from './screen-parts';
 import { normalizeDesign, STANDARD_DESIGN, type ScreenDesign } from './screen-design';
 
@@ -145,14 +145,15 @@ export function normalizeLayout(raw: unknown): Layout {
   const off = Array.isArray(src.off) ? [...new Set(src.off.filter((k): k is string => typeof k === 'string' && PART_KEYS.includes(k)))] : [];
 
   // Shortcut blocks may only open screens that still exist in the app.
-  const design = normalizeDesign(src.design, (v) => known(v) && SCREENS[v].view !== null);
+  // A dashboard shortcut may go to a screen in the menu, or to a tab of the Financials dashboard.
+  const design = normalizeDesign(src.design, (v) => (known(v) && SCREENS[v].view !== null) || Object.prototype.hasOwnProperty.call(MONEY_TAB_LABELS, v));
 
   return { main, sections, labels, hidden, off, design };
 }
 
 /** A screen's name as Fred has it (his own name, or the standard one). */
 export function screenLabel(l: Layout, key: string): string {
-  return cleanText(l.labels[key]) || SCREENS[key]?.label || key;
+  return cleanText(l.labels[key]) || SCREENS[key]?.label || MONEY_TAB_LABELS[key] || key;
 }
 
 function screen(l: Layout, key: string): Screen {

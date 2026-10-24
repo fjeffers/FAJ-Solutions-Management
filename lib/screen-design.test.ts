@@ -97,7 +97,7 @@ describe('screen designer', () => {
     const withLinks = normalizeLayout({ design: editBlock(addLinks(std(), 'links:x'), 'links:x', { views: ['invoices', 'gone-screen'] }) });
     expect(withLinks.design.dash.find((b) => b.key === 'links:x')).toMatchObject({ views: ['invoices'] });
 
-    const changed = setPartShown(renameScreen(l, 'invoices', 'Bills'), 'dash.status', false);
+    const changed = setPartShown(renameScreen(l, 'customers', 'Clients'), 'dash.status', false);
     expect(isStandardMenu(changed)).toBe(false);
     const reset = resetMenu(changed);
     expect(isStandardMenu(reset)).toBe(true);

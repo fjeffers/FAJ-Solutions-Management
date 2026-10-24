@@ -63,6 +63,21 @@ describe('Hours', () => {
     expect(upserts.at(-1)).toMatchObject({ edits: { arrived: null, hours: 0, travel: 3.55 } });
   });
 
+  it('shows a monday.com-style board: a status on each day, and a cell saves when you leave it', async () => {
+    const user = userEvent.setup();
+    const onLook = vi.fn();
+    render(<HoursView workOrders={[wo]} onLook={onLook} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    await user.click(await screen.findByRole('button', { name: 'Board' }));
+    expect(onLook).toHaveBeenLastCalledWith(expect.objectContaining({ cards: 'board' }));
+    expect(screen.getByText('From the app')).toBeTruthy();
+    const meals = screen.getByLabelText('Meals $ Frederick Jeffers 2026-10-23');
+    await user.type(meals, '25');
+    await user.tab();
+    expect(upserts.at(-1)).toMatchObject({ day: '2026-10-23', tech: 'Frederick Jeffers', edits: { meals: 25 } });
+    expect(await screen.findByText('Changed')).toBeTruthy();
+  });
+
   it('clocks out a tech still clocked in, at the Finished time', async () => {
     const user = userEvent.setup();
     render(<HoursView workOrders={[wo]} />);

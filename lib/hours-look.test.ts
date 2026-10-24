@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { groupLabel, groupOf, normalizeHoursLook, STANDARD_HOURS_LOOK } from './hours-look';
+import { dayStatus, groupLabel, groupOf, normalizeHoursLook, STANDARD_HOURS_LOOK } from './hours-look';
 
 describe('normalizeHoursLook', () => {
   it('keeps good choices and drops anything else', () => {
     expect(normalizeHoursLook({ order: 'old', group: 'month', cards: 'short' })).toEqual({ order: 'old', group: 'month', cards: 'short' });
+    expect(normalizeHoursLook({ cards: 'board' }).cards).toBe('board');
     expect(normalizeHoursLook({ order: 'sideways', group: 'year', cards: 3 })).toEqual(STANDARD_HOURS_LOOK);
     expect(normalizeHoursLook(null)).toEqual(STANDARD_HOURS_LOOK);
   });
@@ -26,5 +27,17 @@ describe('groupLabel', () => {
   it('names a week and a month', () => {
     expect(groupLabel('2026-10-19', 'week')).toBe('Week of Mon, Oct 19 – Sun, Oct 25');
     expect(groupLabel('2026-10', 'month')).toBe('October 2026');
+  });
+});
+
+describe('dayStatus', () => {
+  const day = (v: Partial<{ hours: number | null; arrived: string | null; leftSite: string | null }>, extra: Partial<Parameters<typeof dayStatus>[0]> = {}) =>
+    dayStatus({ app: {}, edits: {}, source: {}, values: { hours: null, arrived: '08:00', leftSite: '16:00', ...v }, ...extra });
+  it('reads a day the way the board labels it', () => {
+    expect(day({})).toBe('app');
+    expect(day({}, { edits: { meals: 50 } })).toBe('changed');
+    expect(day({}, { source: { arrived: 'guess' } })).toBe('check');
+    expect(day({}, { app: null })).toBe('typed');
+    expect(day({ hours: 0, arrived: null, leftSite: null }, { edits: { hours: 0 } })).toBe('travel');
   });
 });

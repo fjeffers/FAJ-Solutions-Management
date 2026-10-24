@@ -5,7 +5,7 @@
 // with the menu layout (components/useAppLayout.ts); the choices are in
 // lib/hours-look.ts. The bar above the cards changes the same setting.
 import type { Layout } from '@/lib/app-layout';
-import { HOURS_GROUPS, normalizeHoursLook, type HoursLook } from '@/lib/hours-look';
+import { HOURS_CARDS, HOURS_GROUPS, normalizeHoursLook, type HoursLook } from '@/lib/hours-look';
 import type { LayoutSaveState } from '@/components/useAppLayout';
 import { SaveLine } from '@/components/LayoutEditor';
 
@@ -17,10 +17,7 @@ const CHOICES: { key: keyof HoursLook; title: string; options: { value: string; 
     { value: 'new', label: 'Newest day first', hint: 'The last day worked on top' },
     { value: 'old', label: 'Oldest day first', hint: 'The first day on top, like an invoice' },
   ] },
-  { key: 'cards', title: 'Cards', options: [
-    { value: 'full', label: 'Full cards', hint: 'Every box open, ready to type in' },
-    { value: 'short', label: 'Short list', hint: 'One line a day; tap a line to open it' },
-  ] },
+  { key: 'cards', title: 'Cards', options: HOURS_CARDS },
 ];
 
 export default function HoursLookEditor({ layout, onChange, saveState, saveError, onRetry }: {

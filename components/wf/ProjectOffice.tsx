@@ -35,6 +35,7 @@ import { asks, parseCapture } from '@/lib/capture';
 import { askedDeliverables } from '@/lib/wf';
 import { dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
 import TimesheetExport from '@/components/TimesheetExport';
+import { HOURS_CHANGED } from '@/lib/hours-look';
 import dynamic from 'next/dynamic';
 // The day cards (components/HoursView.tsx), loaded when opened: HoursView reads loadEvents from here.
 const JobDays = dynamic(() => import('@/components/HoursView').then((m) => m.JobDays), { ssr: false });
@@ -53,8 +54,7 @@ const fmtDayLong = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(
 
 /** Tell the Expenses card to reload after the office adds or removes a receipt. */
 export const EXPENSES_CHANGED = 'faj:expenses-changed';
-/** The office saved a day on Hours or the work order (field_sheet_days): the totals reload. */
-export const HOURS_CHANGED = 'faj:hours-changed';
+
 
 type EventRow = { id?: string; contractor_name: string; kind: string; at: string; origin?: string | null; dest?: string | null; miles?: number | null; wo_id?: string };
 

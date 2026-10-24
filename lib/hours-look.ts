@@ -70,6 +70,11 @@ export function dayStatus(r: {
   return r.app ? 'app' : 'typed';
 }
 
+/** The office saved a day on Hours or the work order (field_sheet_days): the work order's totals reload. */
+export const HOURS_CHANGED = 'faj:hours-changed';
+/** Save every day card with changes: the work order's Save Changes sends it (Fred, 2026-10-24: "save all is not working (save Changes)"). */
+export const HOURS_SAVE_ALL = 'faj:hours-save-all';
+
 let now: HoursLook = STANDARD_HOURS_LOOK;
 /** Kept on Fred's choice by useAppLayout, like the screen parts. */
 export function setHoursLookNow(l: HoursLook | undefined): void { now = normalizeHoursLook(l); }

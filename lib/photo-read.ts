@@ -56,19 +56,27 @@ export function receiptItems(ai: unknown): ReceiptItem[] {
 
 /**
  * What the AI read, cut to what the database keeps: wf_tech_add_expense drops the
- * whole object at 4 KB, so a long receipt loses its last lines instead of all of them.
+ * whole object when pg_column_size(jsonb) reaches 4 KB, so a long receipt loses its
+ * last lines instead of all of them. jsonb is larger than the JSON text (a header
+ * per value, numbers stored wide), so the text budget leaves room per line. The
+ * input comes from the request: anything far beyond a real receipt is dropped
+ * before any work, and at most RECEIPT_ITEMS_MAX lines are looked at.
  */
-export function fitReceiptAi(ai: Record<string, unknown>, maxBytes = 3500): Record<string, unknown> | null {
-  const size = (x: unknown) => new TextEncoder().encode(JSON.stringify(x)).length;
-  if (size(ai) <= maxBytes) return ai;
-  const items = Array.isArray(ai.items) ? [...ai.items] : [];
-  while (items.length > 0) {
+export function fitReceiptAi(ai: Record<string, unknown>, maxBytes = 4000): Record<string, unknown> | null {
+  const text = (x: unknown) => new TextEncoder().encode(JSON.stringify(x)).length;
+  // jsonb ≈ the text plus ~40 bytes a line and ~100 for the object (checked against pg_column_size).
+  const lines = (x: Record<string, unknown>) => (Array.isArray(x.items) ? x.items.length : 0);
+  const fits = (x: Record<string, unknown>) => text(x) + 40 * lines(x) + 100 <= maxBytes;
+  if (text(ai) > 32_768) return null;
+  const items = Array.isArray(ai.items) ? ai.items.slice(0, RECEIPT_ITEMS_MAX) : [];
+  let cut: Record<string, unknown> = Array.isArray(ai.items) ? { ...ai, items } : ai;
+  while (!fits(cut) && items.length > 0) {
     items.pop();
-    const cut = { ...ai, items };
-    if (size(cut) <= maxBytes) return cut;
+    cut = { ...ai, items: [...items] };
   }
+  if (fits(cut)) return cut;
   const { items: _drop, ...rest } = ai; // eslint-disable-line @typescript-eslint/no-unused-vars
-  return size(rest) <= maxBytes ? rest : null;
+  return fits(rest) ? rest : null;
 }
 
 const CATS = new Set<string>(EXPENSE_CATEGORIES.map((c) => c.key));

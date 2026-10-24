@@ -51,15 +51,25 @@ describe('reading a photo', () => {
 });
 
 describe('a long receipt', () => {
+  // Checked against the database (pg_column_size of the jsonb): 25 long ASCII lines → 3,447 bytes,
+  // 18 multibyte lines → 3,603, 25 short lines → 2,207; wf_tech_add_expense keeps anything under 4,096.
+  const est = (x: Record<string, unknown>) => new TextEncoder().encode(JSON.stringify(x)).length + 40 * ((x.items as unknown[] | undefined)?.length ?? 0) + 100;
+
   it('keeps as many lines as fit the database, instead of losing them all', () => {
-    const items = Array.from({ length: 25 }, (_, i) => ({ name: `Ç${'é'.repeat(58)}${i}`, qty: 1, amount: 9.99 }));
-    const ai = { amount: 249.75, vendor: 'Home Depot', items };
+    const items = Array.from({ length: 25 }, (_, i) => ({ name: `Ç${'é'.repeat(58)}${i}`, qty: 12.125, amount: 1234.56 }));
+    const ai = { amount: 249.75, vendor: 'The Home Depot #1234', date: '2026-10-21', category: 'materials', gallons: null, items };
     const fit = fitReceiptAi(ai)!;
-    expect(new TextEncoder().encode(JSON.stringify(fit)).length).toBeLessThanOrEqual(3500);
-    expect((fit.items as unknown[]).length).toBeGreaterThan(5);
-    expect((fit.items as unknown[]).length).toBeLessThan(25);
-    expect(fit.vendor).toBe('Home Depot');
+    expect(est(fit)).toBeLessThanOrEqual(4000);
+    expect((fit.items as unknown[]).length).toBe(18);
+    expect(fit.vendor).toBe('The Home Depot #1234');
     const small = { amount: 4, items: [{ name: 'Tape', qty: 1, amount: 4 }] };
-    expect(fitReceiptAi(small)).toBe(small);
+    expect(fitReceiptAi(small)).toEqual(small);
+  });
+
+  it('never works through more than a receipt’s worth of lines, and drops a huge request unread', () => {
+    const many = { amount: 1, items: Array.from({ length: 20000 }, () => 0) };
+    expect(fitReceiptAi(many)).toBeNull(); // over 32 KB as text
+    const lots = { amount: 1, items: Array.from({ length: 2000 }, () => ({ name: 'x' })) };
+    expect((fitReceiptAi(lots)!.items as unknown[]).length).toBeLessThanOrEqual(25);
   });
 });

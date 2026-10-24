@@ -16,6 +16,7 @@
 import { MONEY_TAB_LABELS, OFFICE_GROUPS, SIDEBAR_VIEWS, type OfficeGroup } from './office-menu';
 import { PART_KEYS } from './screen-parts';
 import { normalizeDesign, STANDARD_DESIGN, type ScreenDesign } from './screen-design';
+import { normalizeHoursLook, STANDARD_HOURS_LOOK, type HoursLook } from './hours-look';
 
 export type Layout = {
   /** Screens in the left menu, top to bottom. Always includes 'office'. */
@@ -30,6 +31,8 @@ export type Layout = {
   off: string[];
   /** How the Dashboard and the job page are arranged (Settings -> Screen designer; lib/screen-design.ts). */
   design: ScreenDesign;
+  /** How the Hours cards show (Settings -> Hours screen; lib/hours-look.ts). */
+  hours: HoursLook;
 };
 
 export type Screen = {
@@ -82,6 +85,7 @@ export const STANDARD_LAYOUT: Layout = {
   hidden: [],
   off: [],
   design: STANDARD_DESIGN,
+  hours: STANDARD_HOURS_LOOK,
 };
 
 const known = (k: unknown): k is string => typeof k === 'string' && Object.prototype.hasOwnProperty.call(SCREENS, k);
@@ -148,7 +152,7 @@ export function normalizeLayout(raw: unknown): Layout {
   // A dashboard shortcut may go to a screen in the menu, or to a tab of the Financials dashboard.
   const design = normalizeDesign(src.design, (v) => (known(v) && SCREENS[v].view !== null) || Object.prototype.hasOwnProperty.call(MONEY_TAB_LABELS, v));
 
-  return { main, sections, labels, hidden, off, design };
+  return { main, sections, labels, hidden, off, design, hours: normalizeHoursLook(src.hours) };
 }
 
 /** A screen's name as Fred has it (his own name, or the standard one). */
@@ -208,9 +212,9 @@ export function isStandardMenu(l: Layout): boolean {
   return menu(l) === menu(STANDARD_LAYOUT);
 }
 
-/** The standard menu, keeping the screen parts switched off and the designer's arrangement. */
+/** The standard menu, keeping the screen parts switched off, the designer's arrangement and the Hours look. */
 export function resetMenu(l: Layout): Layout {
-  return { ...normalizeLayout(STANDARD_LAYOUT), off: l.off ?? [], design: l.design ?? STANDARD_DESIGN };
+  return { ...normalizeLayout(STANDARD_LAYOUT), off: l.off ?? [], design: l.design ?? STANDARD_DESIGN, hours: l.hours ?? STANDARD_HOURS_LOOK };
 }
 
 // ── Changes Fred makes in Settings. Each returns a new Layout. ───────────────

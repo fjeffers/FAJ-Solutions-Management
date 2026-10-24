@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import {
   Award, Banknote, BarChart3, BookOpen, Building2, Calendar, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, Construction, CreditCard, ExternalLink, FileCheck2, Folder, Handshake, HardHat, KanbanSquare, LayoutGrid, Plus, SquarePlus, Sun,
   FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, MessageSquare, Network, PencilRuler, Package, Receipt, Search, Settings, ShieldCheck,
-  Sheet, Timer, TrendingUp, UserCog, Users, Wallet, Wrench, type LucideIcon,
+  Clock, Sheet, Timer, TrendingUp, UserCog, Users, Wallet, Wrench, type LucideIcon,
 } from 'lucide-react';
 import { searchSections, type ResolvedSection, type Screen } from '@/lib/app-layout';
 import { Empty } from '@/components/wf/WfUi';
@@ -22,7 +22,7 @@ const ICONS: Record<string, LucideIcon> = {
   surveys: ClipboardList, sketches: PencilRuler, quotes: FileSignature, contracts: FileCheck2,
   scheduling: Calendar, dispatch: MapIcon,
   materials: Package, maintenance: Wrench, network: Network, settings: Settings,
-  fieldsheet: Sheet,
+  fieldsheet: Sheet, hours: Clock,
 };
 
 /** A screen's icon, by view (or 'netview' / 'new-order'). Also used by the left menu and Settings. */

@@ -54,4 +54,23 @@ describe('Edit job', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     expect(onSave.mock.calls[0][0].custom).toEqual({ old: 'kept', gate: '4321#' });
   });
+
+  it('fills a new job from a pasted tracker row, and saves nothing until Save', async () => {
+    const onSave = vi.fn();
+    render(<WorkOrderModal item={null} nextWoNumber="19101414" contractors={[]} questionTemplates={[]} onSave={onSave} onClose={() => {}} />);
+    const row = ['LDS-1103', '5333202', '10/26/2026', '8:00 AM', '10/30/2026', 'Pending Tech Assignment', '', '', 'Legacy', '6420 Morganton Road', 'FAYETTEVILLE', 'NC', '#N/A',
+      'https://drive.google.com/drive/folders/abc', '.', '', 'https://app.smartsheet.com/b/form/01a1', 'Dwayne Cudjoe', '678-760-2268', 'cudjoedwayne@yahoo.com',
+      'Kendell Newbold', '470-263-5337', 'kendallnewbold@gmail.com', 'Cabling', 'LDS-1103 - 5333202 - FAYETTEVILLE'].join('\t');
+    const box = screen.getByLabelText('Tracker row');
+    await userEvent.click(box);
+    await userEvent.paste(row);
+    await userEvent.click(screen.getByRole('button', { name: 'Fill in' }));
+    expect(onSave).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: /Create Work Order/ }));
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      wo_number: '19101414', external_wo_id: 'LDS-1103', client_reference: '5333202', client_status: 'Pending Tech Assignment', client_program: 'Legacy',
+      start_date: '2026-10-26', start_time: '08:00', end_date: '2026-10-30', site_address: '6420 Morganton Road', site_city: 'Fayetteville', site_state: 'NC',
+      contractor_names: ['Dwayne Cudjoe', 'Kendell Newbold'], checkout_link: 'https://app.smartsheet.com/b/form/01a1',
+    });
+  });
 });

@@ -7,8 +7,10 @@ import {
   Upload, Camera, FolderOpen, Briefcase, ShieldCheck,
   CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package, Layers,
   Link2,
+  ClipboardPaste,
 } from 'lucide-react';
 import { linkLabel, parseClientLinks } from '@/lib/client-links';
+import { parseTrackerRow } from '@/lib/tracker-row';
 import { tabsInUse, type WoTab } from '@/lib/wo-tabs';
 import './work-order-editor.css';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
@@ -218,6 +220,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     project_name:    item?.project_name    ?? '',
     is_project:      item?.is_project      ?? false,
     client_reference: item?.client_reference ?? '',
+    client_status:   item?.client_status   ?? '',
+    client_program:  item?.client_program  ?? '',
     buyer_company:   item?.buyer_company   ?? '',
     assignment_type: item?.assignment_type ?? 'Internal',
     priority:        item?.priority        ?? 'Normal',
@@ -568,6 +572,40 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
   const set = (k: keyof WorkOrder, v: string | number | boolean | null) =>
     setForm((f) => ({ ...f, [k]: v }));
+
+  // A row pasted from the client's tracker (lib/tracker-row.ts): fills what it has, keeps the rest.
+  const [trackerRow, setTrackerRow] = useState('');
+  const fillFromTracker = () => {
+    const r = parseTrackerRow(trackerRow);
+    if (!r) { toastError("That doesn't look like a tracker row. Copy the whole row (it starts with the ticket, like LDS-1103) and paste it again."); return; }
+    const { contractor_names: techs, client_links: links, checkout_link: form_, ...fields } = r;
+    // An existing job keeps its own title and status; a new one takes the tracker's.
+    const keep = item ? ['title', 'wo_status', 'description'] : [];
+    // A new address drops the old map pin, so saving looks the new one up and the map moves with it.
+    setForm((f) => ({ ...f, ...Object.fromEntries(Object.entries(fields).filter(([k, v]) => v != null && v !== '' && !keep.includes(k))),
+      ...(fields.site_address && fields.site_address !== f.site_address ? { site_lat: undefined, site_lng: undefined } : {}) }));
+    if (techs?.length) setContractorNames((now) => [...new Set([...now, ...techs])]);
+    if (links?.length) setLinksText((now) => [...new Set([...parseClientLinks(now), ...links])].join('\n'));
+    if (form_) setCheckoutLink(form_);
+    setTrackerRow('');
+    toastSuccess(`Filled in ${r.external_wo_id}: site ${r.client_reference ?? '?'}${techs?.length ? `, ${techs.join(' and ')}` : ''}. Check it, then Save.`);
+  };
+  // A row copied from the client's tracker fills the job in; nothing is saved until Save
+  // (Fred, 2026-10-24: "just add these features to the market place ticket number site number etc").
+  // On the Marketplace tab, and on Details for a new job, so a pasted row is the first step.
+  const trackerBox = (
+    <section className="woe-card">
+      <h3><ClipboardPaste size={15} /> Paste a row from the client&apos;s tracker</h3>
+      <div style={{ fontSize: 12.5, color: '#6b7280', margin: '0 0 6px' }}>
+        Copy the job&apos;s row from the LDS / NetView sheet and paste it here: the ticket and site numbers, dates, address, techs, links and status fill in below. Check them, then Save.
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <textarea className="input" rows={2} value={trackerRow} onChange={(e) => setTrackerRow(e.target.value)} style={{ flex: '1 1 320px' }}
+          placeholder={'LDS-1103\t5333202\t10/26/2026\t8:00 AM\t10/30/2026\tPending Tech Assignment\t…'} aria-label="Tracker row" />
+        <button type="button" className="btn btn-primary" disabled={!trackerRow.trim()} onClick={fillFromTracker}>Fill in</button>
+      </div>
+    </section>
+  );
   // Typing in an address field drops a position picked with Check address; saving looks it up again.
   const setAddr = (k: 'site_address' | 'site_city' | 'site_state' | 'site_zip', v: string) =>
     setForm((f) => ({ ...f, [k]: v, ...(f[k] !== v && f.site_lat !== undefined ? { site_lat: undefined, site_lng: undefined } : {}) }));
@@ -710,6 +748,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       project_name:    form.project_name    || null,
       is_project:      !!form.is_project,
       client_reference: form.client_reference || null,
+      // Sent once either is used, so saving works before migration 140.
+      ...(form.client_status || form.client_program || item?.client_status || item?.client_program ? {
+        client_status: form.client_status?.trim() || null, client_program: form.client_program?.trim() || null,
+      } : {}),
       buyer_company:   form.buyer_company   || null,
       expense_budget:  form.expense_budget  ?? null,
       travel_amount:   form.travel_amount   ?? null,
@@ -793,6 +835,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* ── DETAILS TAB ── */}
         {tab === 'details' && (
           <div className="woe-stack">
+            {!item && trackerBox}
             <section className="woe-card">
               <h3><FileText size={15} /> Job</h3>
               <div className="woe-grid woe-grid-job">
@@ -905,6 +948,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* ── MARKETPLACE TAB ── */}
         {tab === 'marketplace' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {trackerBox}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <PF label="Source" icon={<Briefcase size={13} />}>
                 <div style={{ position: 'relative' }}>
@@ -914,8 +958,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                   <ChevronDown size={13} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
                 </div>
               </PF>
-              <PF label="External WO / Assignment ID" icon={<Hash size={13} />}>
-                <input className="input" value={form.external_wo_id ?? ''} onChange={(e) => set('external_wo_id', e.target.value)} placeholder="e.g. FN-123456, WM-98765" />
+              <PF label="Ticket # / External WO" icon={<Hash size={13} />}>
+                <input className="input" value={form.external_wo_id ?? ''} onChange={(e) => set('external_wo_id', e.target.value)} placeholder="e.g. LDS-1103, FN-123456" />
               </PF>
             </div>
 
@@ -938,8 +982,17 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                   <span><b>Project site</b>: techs log travel, time on site, lunch and receipts; miles from GPS</span>
                 </label>
               </PF>
-              <PF label="Client Reference">
-                <input className="input" value={form.client_reference ?? ''} onChange={(e) => set('client_reference', e.target.value)} placeholder="Ticket, PO, store, or billing code" />
+              <PF label="Site # / Client reference" icon={<Hash size={13} />}>
+                <input className="input" value={form.client_reference ?? ''} onChange={(e) => set('client_reference', e.target.value)} placeholder="e.g. 5333202, store or PO number" />
+              </PF>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <PF label="Client's status">
+                <input className="input" value={form.client_status ?? ''} maxLength={120} onChange={(e) => set('client_status', e.target.value)} placeholder="Their status, e.g. Pending Tech Assignment" />
+              </PF>
+              <PF label="Program / type">
+                <input className="input" value={form.client_program ?? ''} maxLength={120} onChange={(e) => set('client_program', e.target.value)} placeholder="e.g. Legacy" />
               </PF>
             </div>
 

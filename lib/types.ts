@@ -221,6 +221,9 @@ export type WorkOrder = {
   /** Part of a project: techs get the project day (migration 117). */
   is_project?: boolean;
   client_reference: string | null;
+  /** The client's own tracker status ("Pending Tech Assignment") and program ("Legacy") (migration 140). */
+  client_status?: string | null;
+  client_program?: string | null;
   buyer_company: string | null;
   assignment_type: string | null;
   priority: string | null;

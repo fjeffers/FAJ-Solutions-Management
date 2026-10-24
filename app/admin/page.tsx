@@ -468,6 +468,9 @@ export default function HomePage() {
       project_name:    w.project_name    ?? null,
       is_project:      w.is_project      ?? false,
       client_reference: w.client_reference ?? null,
+      // The client's tracker status and program (migration 140); only when the form sends them.
+      ...(w.client_status !== undefined ? { client_status: w.client_status ?? null } : {}),
+      ...(w.client_program !== undefined ? { client_program: w.client_program ?? null } : {}),
       buyer_company:   w.buyer_company   ?? null,
       assignment_type: w.assignment_type ?? 'Internal',
       priority:        w.priority        ?? 'Normal',

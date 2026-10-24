@@ -19,6 +19,7 @@ import { activeFields } from '@/lib/custom-fields';
 import { shown } from '@/lib/screen-parts';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { aiFailureText } from '@/lib/wo-ai';
+import { parseTrackerRow } from '@/lib/tracker-row';
 import { useJobTemplates } from '@/components/useJobTemplates';
 import { templateForText } from '@/lib/capture';
 import AiNeedsReview from '@/components/AiNeedsReview';
@@ -675,6 +676,13 @@ function AIGenerateModal({
 
   const generate = async () => {
     if (!prompt.trim() || loading) return;
+    // A row from the LDS tracker reads straight into the form, no AI needed (lib/tracker-row.ts).
+    const row = parseTrackerRow(prompt);
+    if (row) {
+      onGenerated(row);
+      toastSuccess(`Read ${row.external_wo_id} from the tracker${row.contractor_names?.length ? ` with ${row.contractor_names.join(' and ')}` : ''}. Check it, then Save.`);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -746,7 +754,8 @@ function AIGenerateModal({
       </>}
     >
       <p className="wf-subtle" style={{ marginTop: 0 }}>
-        Paste the whole email or work order — Field Nation, NetView, a client&apos;s message, or your own notes.
+        Paste the whole email or work order — Field Nation, NetView, a client&apos;s message, your own notes, or a row
+        copied from the LDS tracker (it fills the form straight away).
         The AI reads it, then asks you what this job needs before it builds anything: what the tech records, which
         contacts and links to keep, access, parts, deliverables, the price and the mileage charge. Nothing is saved
         until you check the job and press Save.

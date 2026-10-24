@@ -1,6 +1,7 @@
 'use client';
 import { useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { clientNumbers, fullAddress, techsOf } from '@/lib/site-info';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { STATUS_COLORS, fmtMoney } from '@/lib/utils';
@@ -68,8 +69,10 @@ export default function DispatchMapInner({
             <Popup>
               <div style={{ fontSize: 12, minWidth: 140 }}>
                 <div style={{ fontWeight: 700, color: 'var(--teal)' }}>WO #{w.wo_number}</div>
-                <div style={{ fontWeight: 600 }}>{w.title || 'Untitled'}</div>
-                <div style={{ color: '#666' }}>{w.contractor_name || 'Unassigned'}</div>
+                <div style={{ fontWeight: 600 }}>{w.site_name || w.title || 'Untitled'}</div>
+                {clientNumbers(w) && <div style={{ color: '#444' }}>{clientNumbers(w)}</div>}
+                <div style={{ color: '#888' }}>{fullAddress(w)}</div>
+                <div style={{ color: '#666' }}>{techsOf(w).join(', ') || 'Unassigned'}</div>
                 <div style={{ color: '#888' }}>{fmtMoney(Number(w.total_amount))} · {w.wo_status}</div>
               </div>
             </Popup>

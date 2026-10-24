@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  billRange, blocksBilling, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  atCost, billRange, blocksBilling, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
   withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
@@ -33,6 +33,7 @@ import type { EnrichedWorkOrder } from '@/lib/types';
 import { Section } from '@/components/wf/WfUi';
 import { loadEvents, OfficeReceiptDialog } from '@/components/wf/ProjectOffice';
 import FieldSheetReport from '@/components/FieldSheetReport';
+import { ClockPanel, StillOnSite } from '@/components/ClockFix';
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -105,6 +106,7 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
           </div>
         )}
       </form>
+      {!wo && <StillOnSite workOrders={workOrders} onOpen={(id) => { const w = workOrders.find((x) => x.id === id); if (w) setQ(w.wo_number); setWoId(id); }} />}
       {wo ? <Sheet key={wo.id} wo={wo} onOpened={() => setOpened((o) => (o.includes(wo.id) ? o : [wo.id, ...o]))} /> : (
         <Section title="Pick a job">
           <div style={{ fontSize: 14, lineHeight: 1.6 }}>
@@ -399,6 +401,8 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
         </div>
       </Section>
 
+      <ClockPanel wo={wo} techs={allTechs} from={from} to={to} onChanged={() => void loadEvents([wo.id]).then(setEvents)} />
+
       <Section title="Receipts" subtitle={`${approved.length} approved${waiting.length ? ` · ${waiting.length} waiting for you` : ''}`} right={
         <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Receipt size={16} /> Add a receipt</button>
       }>
@@ -414,7 +418,10 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 12, fontSize: 13 }}>
           <div>Meals: {money(totals.meals.receipts)} in receipts{totals.meals.allowed != null ? `, up to ${money(totals.meals.allowed)} (${totals.techDays} tech-days)` : ''} → <b>{money(totals.meals.claim)}</b></div>
           <div>Hotel: {money(totals.hotel.receipts)} in receipts{totals.hotel.allowed != null ? `, up to ${money(totals.hotel.allowed)}` : ''} → <b>{money(totals.hotel.claim)}</b></div>
-          <div className="wf-subtle">Not on the bill: fuel {money(totals.byCategory.fuel ?? 0)}, materials {money(totals.byCategory.materials ?? 0)}, declined {money(totals.declined)}</div>
+          <div className="wf-subtle">
+            Not on the bill: fuel and mileage {money((totals.byCategory.fuel ?? 0) + (totals.byCategory.mileage ?? 0))} (in the mileage)
+            {settings.receiptsAtCost ? '' : `, other receipts ${money(Object.entries(totals.byCategory).filter(([k]) => atCost(k)).reduce((t, [, v]) => t + v, 0))}`}, declined {money(totals.declined)}
+          </div>
         </div>
       </Section>
 
@@ -607,7 +614,7 @@ function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: Enri
         </div>
         <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: 13.5 }}>
           <input type="checkbox" checked={s.receiptsAtCost} onChange={(e) => onSave({ receiptsAtCost: e.target.checked })} />
-          Bill the other receipts at cost (parts &amp; materials, tolls, equipment). Fuel is in the mileage.
+          Bill the other receipts at cost (materials, rental, tolls, equipment, travel, labor and your own categories). Fuel and mileage are in the mileage.
         </label>
       </div>
     </Section>

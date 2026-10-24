@@ -69,7 +69,8 @@ export function StillOnSite({ workOrders, onOpen, refresh = 0 }: { workOrders: E
   const [open, setOpen] = useState<Punch[] | null>(null);
   const load = useCallback(async () => {
     const since = new Date(Date.now() - 120 * 86_400_000).toISOString();
-    const { data } = await createClient().from('job_punches').select(COLS).gte('at', since).order('at').limit(5000);
+    // Newest first, so a cap can only drop old punches, never the clock-out that ends a visit.
+    const { data } = await createClient().from('job_punches').select(COLS).gte('at', since).order('at', { ascending: false }).limit(5000);
     setOpen(stillOnSite(parsePunches(data)));
   }, []);
   useEffect(() => { void load(); }, [load, refresh]);

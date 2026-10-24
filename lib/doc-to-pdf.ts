@@ -44,6 +44,18 @@ export function blocksFromHtml(root: Element): DocBlock[] {
   return out;
 }
 
+/**
+ * What the signed PDF can't carry: it is laid out from the words, so pictures
+ * and merged table cells don't make it across. Said before signing, never
+ * dropped quietly.
+ */
+export function lostInPdf(root: Element): string[] {
+  const lost: string[] = [];
+  if (root.querySelector('img, svg, canvas')) lost.push('pictures');
+  if (root.querySelector('[colspan]:not([colspan="1"]), [rowspan]:not([rowspan="1"])')) lost.push('merged table cells');
+  return lost;
+}
+
 /** Words onto lines no wider than `max`, given a width measure. Long words are cut. */
 export function wrapLine(text: string, max: number, width: (s: string) => number): string[] {
   const lines: string[] = [];

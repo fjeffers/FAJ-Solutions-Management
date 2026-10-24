@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { expenseReasonText, parseExpenseAmount } from '@/lib/expenses';
+import { fitReceiptAi } from '@/lib/photo-read';
 
 // POST /api/tech/expense — a tech records a receipt on their own job from the
 // tech portal (migration-103). FormData: wo_number, amount, category, vendor,
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
   let ai: Record<string, unknown> | null = null;
   try {
     const parsed = JSON.parse(String(form.get('ai') ?? 'null'));
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ai = parsed;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ai = fitReceiptAi(parsed);
   } catch { /* none */ }
   if (gallons != null && !(gallons > 0 && gallons < 1000)) return NextResponse.json({ ok: false, error: 'Enter the gallons on the fuel receipt.' }, { status: 400 });
   if (!woNumber) return NextResponse.json({ ok: false, error: 'Missing the job.' }, { status: 400 });

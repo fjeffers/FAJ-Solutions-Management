@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { blocksFromHtml, blocksToPdf, columnWidths, wrapLine } from './doc-to-pdf';
+import { blocksFromHtml, blocksToPdf, columnWidths, wrapLine, lostInPdf } from './doc-to-pdf';
 import { fieldLabel, fillForm, readFormFields } from './pdf-form';
 
 const page = (html: string) => { const d = document.createElement('div'); d.innerHTML = html; return d; };
@@ -73,5 +73,14 @@ describe('columnWidths', () => {
     const c = columnWidths([Array.from({ length: 12 }, () => 'x'.repeat(30))], 600, w);
     expect(c).toHaveLength(12);
     expect(c.reduce((a, b) => a + b, 0)).toBeCloseTo(600);
+  });
+});
+
+describe('what the signed PDF can\u2019t carry', () => {
+  it('names pictures and merged cells, and nothing for plain words and tables', () => {
+    const page = (html: string) => { const d = document.createElement('div'); d.innerHTML = html; return d; };
+    expect(lostInPdf(page('<p>Site diagram</p><img src="data:image/png;base64,AA==">'))).toEqual(['pictures']);
+    expect(lostInPdf(page('<table><tr><td colspan="2">Tech</td></tr><tr><td>A</td><td>B</td></tr></table>'))).toEqual(['merged table cells']);
+    expect(lostInPdf(page('<h1>Checkout</h1><table><tr><td colspan="1">A</td><td>B</td></tr></table>'))).toEqual([]);
   });
 });

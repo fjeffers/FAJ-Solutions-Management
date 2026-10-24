@@ -54,6 +54,23 @@ export function receiptItems(ai: unknown): ReceiptItem[] {
   return out;
 }
 
+/**
+ * What the AI read, cut to what the database keeps: wf_tech_add_expense drops the
+ * whole object at 4 KB, so a long receipt loses its last lines instead of all of them.
+ */
+export function fitReceiptAi(ai: Record<string, unknown>, maxBytes = 3500): Record<string, unknown> | null {
+  const size = (x: unknown) => new TextEncoder().encode(JSON.stringify(x)).length;
+  if (size(ai) <= maxBytes) return ai;
+  const items = Array.isArray(ai.items) ? [...ai.items] : [];
+  while (items.length > 0) {
+    items.pop();
+    const cut = { ...ai, items };
+    if (size(cut) <= maxBytes) return cut;
+  }
+  const { items: _drop, ...rest } = ai; // eslint-disable-line @typescript-eslint/no-unused-vars
+  return size(rest) <= maxBytes ? rest : null;
+}
+
 const CATS = new Set<string>(EXPENSE_CATEGORIES.map((c) => c.key));
 
 export function sanitizeReceipt(raw: unknown, today: string): ReceiptRead {

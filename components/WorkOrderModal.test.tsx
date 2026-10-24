@@ -73,4 +73,30 @@ describe('Edit job', () => {
       contractor_names: ['Dwayne Cudjoe', 'Kendell Newbold'], checkout_link: 'https://app.smartsheet.com/b/form/01a1',
     });
   });
+
+  it('shows the whole job on Marketplace: location, schedule, techs, description, contact', async () => {
+    render(<WorkOrderModal item={{ ...NO_TECH, external_wo_id: 'LDS-1103', client_reference: '5333202', site_address: '6420 Morganton Road', site_city: 'Fayetteville',
+      site_state: 'NC', site_zip: '28314', start_date: '2026-10-26', start_time: '08:00', contractor_names: ['Dwayne Cudjoe'], contractor_name: 'Dwayne Cudjoe' } as WorkOrder}
+      contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: /^Marketplace/ }));
+    expect((screen.getByLabelText('Marketplace street address') as HTMLInputElement).value).toBe('6420 Morganton Road');
+    expect((screen.getByLabelText('Marketplace start date') as HTMLInputElement).value).toBe('2026-10-26');
+    expect(screen.getByText('6420 Morganton Road, Fayetteville, NC 28314 · open in Maps')).toBeTruthy();
+    expect(screen.getByText('Dwayne Cudjoe')).toBeTruthy();
+  });
+
+  it('removes a section: Marketplace and Pay come off, and what was in them is cleared on Save', async () => {
+    const onSave = vi.fn();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<WorkOrderModal item={{ ...NO_TECH, external_wo_id: 'LDS-1103', customer_name: 'LDS', source_platform: 'NetView',
+      contractor_names: ['Dwayne Cudjoe'], contractor_name: 'Dwayne Cudjoe', contractor_pay: { 'Dwayne Cudjoe': 300 } } as WorkOrder}
+      contractors={[]} questionTemplates={[]} onSave={onSave} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Marketplace' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Pay' }));
+    expect(screen.queryByRole('button', { name: /^Marketplace/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove Details' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(onSave.mock.calls[0][0]).toMatchObject({ external_wo_id: null, customer_name: null, source_platform: 'Internal', contractor_pay: null });
+    vi.restoreAllMocks();
+  });
 });

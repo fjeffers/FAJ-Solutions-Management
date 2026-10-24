@@ -8,6 +8,7 @@ import { normalizeFields } from '@/lib/custom-fields';
 import { todayISO } from '@/lib/utils';
 import type { WorkOrder } from '@/lib/types';
 import { workspaceHeader } from '@/lib/anthropic-headers';
+import { jobFile } from '@/lib/job-file';
 
 // POST /api/ai — "Generate with AI" on a new work order. Admin-only tool, not
 // portal-token gated.
@@ -27,6 +28,10 @@ import { workspaceHeader } from '@/lib/anthropic-headers';
 // grammar is too large", so every Generate with AI fell back to the text parser.
 // The prompt lists every key; parseModelJson finds the JSON and sanitizeWoAi
 // keeps only what the form understands, as before.
+//
+// 2026-10-24 (Fred: "If you look at the PDF ... these are some of the things
+// that it should basically pull from it"): the work order can come as a file
+// too — a PDF, or a picture of one — sent to the model with the text.
 export async function POST(req: Request) {
   try {
     const supabase = await createClient('admin');
@@ -35,7 +40,9 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const jobDescription: string = String(body?.job_description || '').slice(0, 30_000);
-    if (!jobDescription.trim()) return NextResponse.json({ error: 'Paste or describe the job first.' }, { status: 400 });
+    const file = jobFile(body?.file);
+    if (body?.file && !file) return NextResponse.json({ error: 'That file can’t be read. Send a PDF or a photo (JPG, PNG) under 3 MB.' }, { status: 400 });
+    if (!jobDescription.trim() && !file) return NextResponse.json({ error: 'Paste or describe the job first.' }, { status: 400 });
     // Fred's own job fields shown on the form (Settings -> Custom fields).
     const custom: AiCustomField[] = normalizeFields({ jobs: body?.custom_fields }).jobs
       .filter((d) => !d.hidden).slice(0, 30)
@@ -65,7 +72,15 @@ export async function POST(req: Request) {
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        messages: [{ role: 'user', content: buildWoPrompt(jobDescription, todayISO(), custom, templates) }],
+        messages: [{
+          role: 'user',
+          content: [
+            ...(file ? [file.kind === 'pdf'
+              ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: file.data } }
+              : { type: 'image' as const, source: { type: 'base64' as const, media_type: file.media, data: file.data } }] : []),
+            { type: 'text' as const, text: buildWoPrompt(file ? `${jobDescription}\n\n(The work order is in the attached ${file.kind === 'pdf' ? 'PDF' : 'picture'}: read every page of it.)`.trim() : jobDescription, todayISO(), custom, templates) },
+          ],
+        }],
       });
       if (message.stop_reason === 'refusal') return floor('ai_refused');
       if (message.stop_reason === 'max_tokens') return floor('ai_cut_off');

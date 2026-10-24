@@ -284,6 +284,13 @@ function DayCard({ row, woId, openPunch, onSave, onClocked }: {
     setBusy(false);
     if (ok) toastSuccess(`Saved ${fmtDay(row.day)} for ${row.tech}.`);
   };
+  // A day on the road and no work on site, like the Sunday drive home (Fred,
+  // 2026-10-24: "like sunday needs it just the travel"). The travel hours are
+  // kept as typed numbers, since without the site times they can't be worked out.
+  const travelOnly = () => setVals((x) => ({
+    ...x, arrived: '', leftSite: '', lunch: '', hours: '0', travel: x.travel || (c.travel ? String(c.travel) : ''),
+  }));
+  const isTravelOnly = typed.hours === 0 && !typed.arrived && !typed.leftSite;
   const clockOut = async () => {
     if (!openPunch) return;
     const iso = zonedIso(row.day, vals.leftSite, TZ);
@@ -316,7 +323,7 @@ function DayCard({ row, woId, openPunch, onSave, onClocked }: {
       )}
       {(row.source.arrived === 'guess' || row.source.leftSite === 'guess') && (
         <div style={{ background: '#FDF3E1', color: '#7A4B00', borderRadius: 8, padding: '6px 10px', fontSize: 13 }}>
-          No clock-in on site this day: Started and Finished are worked out from the drives. Check them, then Save.
+          No clock-in on site this day: Started and Finished are worked out from the drives, and they count as shown. If either is wrong, correct it and Save.
         </div>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
@@ -338,7 +345,9 @@ function DayCard({ row, woId, openPunch, onSave, onClocked }: {
         <button className="wf-btn wf-btn-navy" disabled={busy || !changed} onClick={() => void save()}>
           <Save size={15} /> {busy ? 'Saving…' : changed ? 'Save' : 'Saved'}
         </button>
-        <span style={{ fontSize: 14 }}><b>{c.hours.toFixed(2)} h</b> on site · {c.travel.toFixed(2)} h travel · {c.miles} mi</span>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={busy || isTravelOnly} onClick={travelOnly}
+          title="No hours on site: bill only the travel">Travel only</button>
+        <span style={{ fontSize: 14 }}>{isTravelOnly ? <b>Travel day</b> : <><b>{c.hours.toFixed(2)} h</b> on site</>} · {c.travel.toFixed(2)} h travel · {c.miles} mi</span>
       </div>
     </section>
   );

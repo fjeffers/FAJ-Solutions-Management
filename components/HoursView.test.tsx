@@ -52,6 +52,17 @@ describe('Hours', () => {
     expect(upserts.at(-1)).toMatchObject({ wo_id: 'wo', day: '2026-10-23', tech: 'Frederick Jeffers', edits: { leftSite: '15:30', miles: 104, meals: 14.5 } });
   });
 
+  it('makes a day travel only: no hours on site, the travel kept', async () => {
+    const user = userEvent.setup();
+    render(<HoursView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    await screen.findByLabelText('Started Frederick Jeffers 2026-10-23');
+    await user.click(screen.getByRole('button', { name: 'Travel only' }));
+    expect(screen.getByText('Travel day')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(upserts.at(-1)).toMatchObject({ edits: { arrived: null, hours: 0, travel: 3.55 } });
+  });
+
   it('clocks out a tech still clocked in, at the Finished time', async () => {
     const user = userEvent.setup();
     render(<HoursView workOrders={[wo]} />);

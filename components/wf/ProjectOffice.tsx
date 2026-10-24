@@ -33,6 +33,7 @@ import { PushSwitch } from './PushSwitch';
 import { mailtoHref, sheetInvite, smsHref } from '@/lib/send-sheet';
 import { asks, parseCapture } from '@/lib/capture';
 import { askedDeliverables } from '@/lib/wf';
+import { clock, dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
 import { aiFailureText } from '@/lib/wo-ai';
 import { downloadXLSXBook } from '@/lib/export';
 import { billJpeg } from '@/lib/bill-image';
@@ -70,7 +71,11 @@ export async function loadEvents(woIds: string[]): Promise<(DayEvent & { woId: s
 
 // ── On the job page ─────────────────────────────────────────────────────────
 
-export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: CloseoutList[] }) {
+export function ProjectDayCard({ w, lists, billed }: {
+  w: EnrichedWorkOrder; lists: CloseoutList[];
+  /** The days as billed, with the office's changes (useBilledRows). */
+  billed?: SheetRow[] | null;
+}) {
   const [events, setEvents] = useState<DayEvent[] | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -102,6 +107,7 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
         <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Weekly bill</button>
       </div>}
     >
+      <BilledHours rows={billed ?? null} />
       {events === null ? <div className="wf-subtle">Loading…</div>
         : logs.length === 0 ? (
           <div className="wf-subtle" style={{ fontSize: 13 }}>
@@ -132,6 +138,89 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
       )}
       {reportOpen && <ProjectReport projectName={w.is_project ? w.project_name ?? '' : ''} startWoId={w.id} lists={lists} onClose={() => setReportOpen(false)} />}
     </Section>
+  );
+}
+
+/**
+ * The hours as they'll be billed: the techs' taps with the office's changes on
+ * the Hours screen (field_sheet_days) on top, the same numbers the Field Sheet
+ * and the invoice use. Fred, 2026-10-24: "i just update the time do see it
+ * updated"; "it need to reflect of the work order also". The work order's
+ * header and its Travel and time card both read these.
+ */
+export function useBilledRows(w: Pick<EnrichedWorkOrder, 'id' | 'contractor_names' | 'contractor_name' | 'start_date' | 'end_date'>): SheetRow[] | null {
+  const [data, setData] = useState<{ events: DayEvent[]; readings: OdoRow[]; saved: SavedDay[] } | null>(null);
+  const load = useCallback(async () => {
+    const db = createClient();
+    const [events, od, days] = await Promise.all([
+      loadEvents([w.id]),
+      db.from('job_odometer').select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', w.id).order('at'),
+      db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', w.id),
+    ]);
+    setData({
+      events,
+      readings: ((od.data as OdoRow[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) })),
+      saved: days.error ? [] : ((days.data as SavedDay[] | null) ?? []).map((d) => ({ ...d, edits: parseEdits(d.edits) })),
+    });
+  }, [w.id]);
+  useEffect(() => { void load(); }, [load]);
+  useLiveRows('field_sheet_days', w.id, () => void load());
+  useLiveRows('job_day_events', w.id, () => void load());
+  useLiveRows('job_punches', w.id, () => void load());
+  useLiveRows('job_odometer', w.id, () => void load());
+  const techs = useMemo(() => (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter((t): t is string => !!t), [w.contractor_names, w.contractor_name]);
+  return useMemo(() => (data ? rowsFor({ ...data, techs, start: w.start_date, end: w.end_date, timeZone: TZ }) : null)
+    ?.filter((r) => !r.hidden && !r.missing).sort((a, b) => a.day.localeCompare(b.day) || a.tech.localeCompare(b.tech)) ?? null,
+  [data, techs, w.start_date, w.end_date]);
+}
+
+/** Hours on site the work order bills, with the office's changes: for its header. */
+export const billedHoursOf = (rows: SheetRow[] | null): number | null =>
+  rows && rows.length ? Math.round(rows.reduce((t, r) => t + dayCalc(r.values, 0).hours, 0) * 100) / 100 : null;
+
+function BilledHours({ rows }: { rows: SheetRow[] | null }) {
+  if (!rows?.length) return null;
+  const calc = rows.map((r) => ({ r, c: dayCalc(r.values, 0) }));
+  const sum = calc.reduce((t, { r, c }) => ({ hours: t.hours + c.hours, travel: t.travel + c.travel, miles: t.miles + c.miles, meals: t.meals + (r.values.meals ?? 0) }),
+    { hours: 0, travel: 0, miles: 0, meals: 0 });
+  const cell: React.CSSProperties = { padding: '5px 8px', borderBottom: '1px solid var(--wf-line)', whiteSpace: 'nowrap' };
+  return (
+    <div className="wf-card" style={{ padding: '10px 12px', marginBottom: 12, borderLeft: '4px solid #C9A24B' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 6 }}>
+        <b>Hours as billed</b>
+        <span className="wf-subtle" style={{ fontSize: 12.5 }}>Your changes on the Hours screen included. Gold rows were changed by you.</span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
+          <thead>
+            <tr className="wf-label" style={{ textAlign: 'left' }}>
+              {['Day', 'Tech', 'Started', 'Finished', 'On site', 'Travel', 'Miles', 'Meals'].map((h) => <th key={h} style={cell}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {calc.map(({ r, c }) => (
+              <tr key={r.key} style={Object.keys(r.edits).length ? { background: '#FDF3E1' } : undefined}>
+                <td style={cell}>{fmtDay(r.day)}</td>
+                <td style={cell}>{r.tech}</td>
+                <td style={cell}>{clock(r.values.arrived) || '—'}</td>
+                <td style={cell}>{clock(r.values.leftSite) || '—'}</td>
+                <td style={cell}><b>{c.hours.toFixed(2)} h</b></td>
+                <td style={cell}>{c.travel.toFixed(2)} h</td>
+                <td style={cell}>{c.miles}</td>
+                <td style={cell}>{r.values.meals ? fmtMoney(r.values.meals) : '—'}</td>
+              </tr>
+            ))}
+            <tr style={{ fontWeight: 700 }}>
+              <td style={cell} colSpan={4}>{rows.length} day{rows.length === 1 ? '' : 's'}</td>
+              <td style={cell}>{sum.hours.toFixed(2)} h</td>
+              <td style={cell}>{sum.travel.toFixed(2)} h</td>
+              <td style={cell}>{Math.round(sum.miles * 10) / 10}</td>
+              <td style={cell}>{fmtMoney(sum.meals)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

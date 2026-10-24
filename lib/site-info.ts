@@ -3,7 +3,7 @@
 // client's numbers (ticket, site) next to the job's own.
 import type { WorkOrder } from './types';
 
-type Site = Pick<WorkOrder, 'site_address' | 'site_city' | 'site_state' | 'site_zip'>;
+type Site = Partial<Pick<WorkOrder, 'site_address' | 'site_city' | 'site_state' | 'site_zip'>>;
 
 /** "6420 Morganton Road, Fayetteville, NC 28314" — whatever parts are there. */
 export const fullAddress = (w: Site): string =>

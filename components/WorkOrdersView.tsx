@@ -1,7 +1,7 @@
 'use client';
 import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { reassignWorkOrder, describeReassignment } from '@/lib/reassign';
-import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer, UserCog, Columns3, List, UserPlus, FileText, ReceiptText, ChevronDown } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Clock, Send, Wrench, Copy, DollarSign, CalendarDays, Archive, ArchiveRestore, Sparkles, X, CheckCircle2, Timer, UserCog, Columns3, List, UserPlus, FileText, ReceiptText, ChevronDown, Paperclip } from 'lucide-react';
 import { fmtMoney, fmtDate, sortByWO, workOrderBreakdownText } from '@/lib/utils';
 import type { EnrichedWorkOrder, WorkOrder, WorkOrderStatus, Contractor, Payment } from '@/lib/types';
 import { WO_STATUSES } from '@/lib/types';
@@ -664,6 +664,8 @@ function AIGenerateModal({
   // everything necessary". WorkFlow's look; the AI reads the whole paste and
   // fills every field it can, plus the tech's checklist (lib/wo-ai.ts).
   const [prompt, setPrompt] = useState('');
+  // The work order as a file: a PDF, or a photo or screenshot of it (Fred, 2026-10-24: "If you look at the PDF").
+  const [file, setFile] = useState<{ name: string; type: string; data: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Fred's templates: the AI picks the one that fits, and the job starts with its items.
@@ -674,10 +676,25 @@ function AIGenerateModal({
   const [choices, setChoices] = useState<NeedChoices | null>(null);
   const [readBy, setReadBy] = useState<{ source: string; why?: string; filled?: number } | null>(null);
 
+  const pickFile = async (f: File | undefined) => {
+    if (!f) return;
+    if (!/^(application\/pdf|image\/(jpeg|png|webp|gif))$/.test(f.type)) { setError('Send a PDF or a photo (JPG, PNG) of the work order.'); return; }
+    if (f.size > 3 * 1024 * 1024) { setError('That file is over 3 MB. Send a smaller PDF, or a screenshot of the work order.'); return; }
+    const data = await new Promise<string>((ok, bad) => {
+      const r = new FileReader();
+      r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, ''));
+      r.onerror = () => bad(r.error);
+      r.readAsDataURL(f);
+    }).catch(() => '');
+    if (!data) { setError("Couldn't open that file."); return; }
+    setError(null);
+    setFile({ name: f.name, type: f.type, data });
+  };
+
   const generate = async () => {
-    if (!prompt.trim() || loading) return;
+    if ((!prompt.trim() && !file) || loading) return;
     // A row from the LDS tracker reads straight into the form, no AI needed (lib/tracker-row.ts).
-    const row = parseTrackerRow(prompt);
+    const row = file ? null : parseTrackerRow(prompt);
     if (row) {
       onGenerated(row);
       toastSuccess(`Read ${row.external_wo_id} from the tracker${row.contractor_names?.length ? ` with ${row.contractor_names.join(' and ')}` : ''}. Check it, then Save.`);
@@ -692,6 +709,7 @@ function AIGenerateModal({
         // Fred's own job fields go along so the AI can fill those too.
         body: JSON.stringify({
           job_description: prompt,
+          ...(file ? { file: { type: file.type, data: file.data } } : {}),
           custom_fields: activeFields('jobs').map(({ id, label, kind, options }) => ({ id, label, kind, options })),
           templates: templates.map((t) => ({ id: t.id, name: t.name })),
         }),
@@ -736,6 +754,12 @@ function AIGenerateModal({
           <button className="wf-btn wf-btn-gold" onClick={build}><Sparkles size={16} /> Build the job</button>
         </>}
       >
+        {/* Say plainly when the AI didn't read it: only the text reader's basics came back (Fred, 2026-10-24: "It's not finding the address"). */}
+        {readBy && readBy.source !== 'ai' && (
+          <div role="alert" style={{ fontSize: 13, background: '#FDF3E1', color: '#7A4B00', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+            The AI didn&apos;t read this one, so only the basics were found: {aiFailureText(readBy.why)}
+          </div>
+        )}
         <AiNeedsReview found={found} choices={choices} onChange={setChoices} />
       </Dialog>
     );
@@ -748,7 +772,7 @@ function AIGenerateModal({
       wide
       footer={<>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-gold" onClick={generate} disabled={loading || !prompt.trim()}>
+        <button className="wf-btn wf-btn-gold" onClick={generate} disabled={loading || (!prompt.trim() && !file)}>
           <Sparkles size={16} /> {loading ? 'Reading the job…' : 'Read the job'}
         </button>
       </>}
@@ -769,6 +793,14 @@ function AIGenerateModal({
         placeholder={"Paste the work order here…\n\ne.g. Field Nation WO 1234567 — Wendy's #5798, 123 Main St, Roselle NJ. Replace the POS switch, run 2 new cat6 drops to the drive-thru, label and test. Arrive Tue 8am, ask for the manager (Maria 908-555-0101). Photos before/after required."}
         style={{ minHeight: 220 }}
       />
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+        <label className="wf-btn wf-btn-outline wf-btn-sm" style={{ cursor: 'pointer' }}>
+          <Paperclip size={15} /> {file ? 'Change the file' : 'Add the work order PDF or a photo of it'}
+          <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif" hidden aria-label="Work order file"
+            onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ''; }} />
+        </label>
+        {file && <span style={{ fontSize: 13 }}>{file.name} <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setFile(null)}>Remove</button></span>}
+      </div>
       {error && <div role="alert" style={{ fontSize: 13, color: 'var(--wf-danger)', marginTop: 8 }}>{error}</div>}
       <div className="wf-subtle" style={{ fontSize: 12, marginTop: 8 }}>
         Techs and their pay are never filled in by the AI — you pick those.

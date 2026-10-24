@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { linkLabel, parseClientLinks } from '@/lib/client-links';
 import { parseTrackerRow } from '@/lib/tracker-row';
+import { fullAddress } from '@/lib/site-info';
 import { tabsInUse, type WoTab } from '@/lib/wo-tabs';
 import './work-order-editor.css';
 import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
@@ -694,8 +695,34 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     tasks: tasks.length, contacts: contacts.length, poc: [form.poc_name, form.poc_phone, form.poc_email],
     questions: customQA.length, materials: materialsUsed.length, closeout: item?.closeout,
   });
-  const shownTabs = TABS.filter((t) => inUse.includes(t.key) || addedTabs.includes(t.key) || t.key === tab);
+  // Sections taken off this job with their × (Fred, 2026-10-24: "i only can add not remove i need to
+  // remove things like marketplace or pay if needed"). + Add brings one back.
+  const [removedTabs, setRemovedTabs] = useState<Tab[]>([]);
+  const shownTabs = TABS.filter((t) => !removedTabs.includes(t.key) && (inUse.includes(t.key) || addedTabs.includes(t.key) || t.key === tab));
   const hiddenTabs = TABS.filter((t) => !shownTabs.includes(t));
+  /** What removing a section clears, for the sections whose fields can simply be emptied. */
+  const clearTab: Partial<Record<Tab, { what: string; clear: () => void }>> = {
+    marketplace: { what: 'the client, buyer, ticket #, site #, project and status', clear: () => setForm((f) => ({
+      ...f, customer_name: '', buyer_company: '', external_wo_id: '', client_reference: '', project_name: '', is_project: false,
+      source_platform: 'Internal', client_status: '', client_program: '' })) },
+    pay: { what: 'the tech pay and the pay add-ons', clear: () => { setContractorPay({}); setPayAddons([]); } },
+    site: { what: 'the site name and address', clear: () => setForm((f) => ({
+      ...f, site_name: '', site_address: '', site_city: '', site_state: '', site_zip: '', site_lat: undefined, site_lng: undefined })) },
+    scope: { what: 'the access, parking, tools, parts, deliverables and the checklist', clear: () => {
+      setForm((f) => ({ ...f, access_instructions: '', parking_instructions: '', deliverable_instructions: '', deliverables: '', parts_materials: '', required_skills: '', tools_required: '' }));
+      setTasks([]);
+    } },
+    contacts: { what: 'the contacts', clear: () => { setContacts([]); setForm((f) => ({ ...f, poc_name: '', poc_phone: '', poc_email: '' })); } },
+    questions: { what: 'the questions', clear: () => setCustomQA([]) },
+  };
+  const removeTab = (k: Tab, label: string) => {
+    const c = clearTab[k];
+    if (c && inUse.includes(k) && !window.confirm(`Remove ${label} from this job? ${c.what[0].toUpperCase()}${c.what.slice(1)} will be cleared when you save.`)) return;
+    c?.clear();
+    setAddedTabs((a) => a.filter((x) => x !== k));
+    setRemovedTabs((r) => (r.includes(k) ? r : [...r, k]));
+    if (tab === k) setTab('details');
+  };
   const totalPaid   = woPayments.reduce((s, p) => s + Number(p.amount), 0);
   // What actually goes out: tech pay when set (client price otherwise) plus mileage
   const assignedTechPay = contractorNames.reduce((s, n) => s + (Number(contractorPay[n]) || 0), 0);
@@ -814,16 +841,25 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* Sections: Details, plus only what this job uses or Fred adds (lib/wo-tabs.ts). */}
         <div className="woe-tabs" role="group" aria-label="Sections">
           {shownTabs.map((t) => (
-            <button key={t.key} type="button" className="woe-tab" aria-pressed={tab === t.key} onClick={() => setTab(t.key)}>
-              {t.icon} {t.label}
-              {t.key === 'documents' && docUrls.length > 0 && <span className="woe-count">{docUrls.length}</span>}
-            </button>
+            <span key={t.key} style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <button type="button" className="woe-tab" aria-pressed={tab === t.key} onClick={() => setTab(t.key)}>
+                {t.icon} {t.label}
+                {t.key === 'documents' && docUrls.length > 0 && <span className="woe-count">{docUrls.length}</span>}
+              </button>
+              {t.key !== 'details' && (
+                <button type="button" onClick={() => removeTab(t.key, t.label)} aria-label={`Remove ${t.label}`} title={`Remove ${t.label} from this job`}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#9ca3af', display: 'inline-flex' }}>
+                  <X size={13} />
+                </button>
+              )}
+            </span>
           ))}
           {hiddenTabs.length > 0 && (
             <select className="woe-add" aria-label="Add a section" value="" onChange={(e) => {
               const k = e.target.value as Tab;
               if (!k) return;
               setAddedTabs((a) => (a.includes(k) ? a : [...a, k]));
+              setRemovedTabs((r) => r.filter((x) => x !== k));
               setTab(k);
             }}>
               <option value="">+ Add</option>
@@ -1014,6 +1050,59 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 </div>
               </PF>
             </div>
+
+            {/* The whole job in one place, the way a marketplace lists it: where, when, who, what
+                (Fred, 2026-10-24: "Marketplace should have the combined the location, addresses ... the
+                timing, the time, tech on site, the whole nine"). The same fields as the other tabs. */}
+            <section className="woe-card">
+              <h3><MapPin size={15} /> Location</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <PF label="Site name"><input className="input" value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="e.g. LDS Site 5333202" aria-label="Marketplace site name" /></PF>
+                <PF label="Street address"><input className="input" value={form.site_address ?? ''} onChange={(e) => setAddr('site_address', e.target.value)} placeholder="123 Main St" aria-label="Marketplace street address" /></PF>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginTop: 10 }}>
+                <PF label="City"><input className="input" value={form.site_city ?? ''} onChange={(e) => setAddr('site_city', e.target.value)} aria-label="Marketplace city" /></PF>
+                <PF label="State"><input className="input" value={form.site_state ?? ''} maxLength={2} onChange={(e) => setAddr('site_state', e.target.value.toUpperCase())} aria-label="Marketplace state" /></PF>
+                <PF label="ZIP"><input className="input" value={form.site_zip ?? ''} maxLength={10} onChange={(e) => setAddr('site_zip', e.target.value)} aria-label="Marketplace ZIP" /></PF>
+              </div>
+              {fullAddress(form) && (
+                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress(form))}`} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'inline-block', marginTop: 8, fontSize: 13, color: 'var(--teal)' }}>
+                  {fullAddress(form)} · open in Maps
+                </a>
+              )}
+            </section>
+
+            <section className="woe-card">
+              <h3><Calendar size={15} /> Schedule</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+                <PF label="Start date"><input className="input" type="date" value={form.start_date ?? ''} onChange={(e) => set('start_date', e.target.value)} aria-label="Marketplace start date" /></PF>
+                <PF label="Start time"><input className="input" type="time" value={form.start_time ?? ''} onChange={(e) => set('start_time', e.target.value)} aria-label="Marketplace start time" /></PF>
+                <PF label="End date"><input className="input" type="date" value={form.end_date ?? ''} onChange={(e) => set('end_date', e.target.value)} aria-label="Marketplace end date" /></PF>
+                <PF label="End time"><input className="input" type="time" value={form.end_time ?? ''} onChange={(e) => set('end_time', e.target.value)} aria-label="Marketplace end time" /></PF>
+              </div>
+            </section>
+
+            <section className="woe-card">
+              <h3><User size={15} /> Techs on site</h3>
+              {contractorNames.length
+                ? <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{contractorNames.map((n) => <span key={n} className="woe-badge" style={{ background: 'rgba(14,27,46,0.08)', color: '#0E1B2E', fontSize: 13 }}>{n}{n === resolvedLead && contractorNames.length > 1 ? ' (lead)' : ''}</span>)}</div>
+                : <div style={{ fontSize: 13, color: '#9ca3af' }}>No tech yet. Pick them on Details.</div>}
+            </section>
+
+            <section className="woe-card">
+              <h3><ClipboardList size={15} /> Site description and scope</h3>
+              <textarea className="input" rows={4} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="What the site is and what the job is" aria-label="Marketplace description" />
+            </section>
+
+            <section className="woe-card">
+              <h3><Phone size={15} /> Site contact</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+                <PF label="Name"><input className="input" value={form.poc_name ?? ''} onChange={(e) => set('poc_name', e.target.value)} aria-label="Marketplace contact name" /></PF>
+                <PF label="Phone"><input className="input" value={form.poc_phone ?? ''} onChange={(e) => set('poc_phone', e.target.value)} aria-label="Marketplace contact phone" /></PF>
+                <PF label="Email"><input className="input" value={form.poc_email ?? ''} onChange={(e) => set('poc_email', e.target.value)} aria-label="Marketplace contact email" /></PF>
+              </div>
+            </section>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
               <RequirementToggle label="Check-in required" checked={!!form.check_in_required} onChange={(v) => set('check_in_required', v)} />

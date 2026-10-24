@@ -654,7 +654,7 @@ function MetaChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
-function AIGenerateModal({
+export function AIGenerateModal({
   onClose, onGenerated,
 }: {
   onClose: () => void;
@@ -693,11 +693,18 @@ function AIGenerateModal({
 
   const generate = async () => {
     if ((!prompt.trim() && !file) || loading) return;
-    // A row from the LDS tracker reads straight into the form, no AI needed (lib/tracker-row.ts).
+    // A row from the LDS tracker is read from its cells, no AI needed (lib/tracker-row.ts), and still asks
+    // what the job needs before it builds, like any paste (Fred, 2026-10-24: "it read it and asks me,
+    // hey, do I need this, do I need that"; the row used to go straight into the form).
     const row = file ? null : parseTrackerRow(prompt);
     if (row) {
-      onGenerated(row);
-      toastSuccess(`Read ${row.external_wo_id} from the tracker${row.contractor_names?.length ? ` with ${row.contractor_names.join(' and ')}` : ''}. Check it, then Save.`);
+      const tpl = templateForText(prompt, templates);
+      const fields: Found = { ...row };
+      if (tpl) fields.start_asks = tpl.startAsks ?? [];
+      setError(null);
+      setFound(fields);
+      setChoices(defaultNeeds(fields, tpl && tpl.items.length ? tpl.items : null));
+      setReadBy({ source: 'tracker' });
       return;
     }
     setLoading(true);
@@ -740,6 +747,7 @@ function AIGenerateModal({
     const fields = applyNeeds(found, choices);
     onGenerated(fields);
     if (readBy?.source === 'ai') toastSuccess(`Built the job from the email${readBy.filled ? ` (${readBy.filled} fields)` : ''}. Check it, then Save.`);
+    else if (readBy?.source === 'tracker') toastSuccess(`Built ${fields.external_wo_id} from the tracker${fields.contractor_names?.length ? ` with ${fields.contractor_names.join(' and ')}` : ''}. Check it, then Save.`);
     else toastInfo(aiFailureText(readBy?.why));
   };
 
@@ -755,7 +763,12 @@ function AIGenerateModal({
         </>}
       >
         {/* Say plainly when the AI didn't read it: only the text reader's basics came back (Fred, 2026-10-24: "It's not finding the address"). */}
-        {readBy && readBy.source !== 'ai' && (
+        {readBy?.source === 'tracker' && (
+          <p className="wf-subtle" style={{ marginTop: 0 }}>
+            Read from the tracker row: the ticket, site, dates, address, techs and links. Tick what this job needs.
+          </p>
+        )}
+        {readBy && readBy.source !== 'ai' && readBy.source !== 'tracker' && (
           <div role="alert" style={{ fontSize: 13, background: '#FDF3E1', color: '#7A4B00', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
             The AI didn&apos;t read this one, so only the basics were found: {aiFailureText(readBy.why)}
           </div>
@@ -779,7 +792,7 @@ function AIGenerateModal({
     >
       <p className="wf-subtle" style={{ marginTop: 0 }}>
         Paste the whole email or work order — Field Nation, NetView, a client&apos;s message, your own notes, or a row
-        copied from the LDS tracker (it fills the form straight away).
+        copied from the LDS tracker.
         The AI reads it, then asks you what this job needs before it builds anything: what the tech records, which
         contacts and links to keep, access, parts, deliverables, the price and the mileage charge. Nothing is saved
         until you check the job and press Save.

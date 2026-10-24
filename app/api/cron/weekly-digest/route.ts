@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isPracticeCopy } from '@/lib/practice';
-import { Resend } from 'resend';
+import { emailClient, EMAIL_NOT_SET_UP } from '@/lib/email-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildWeeklyDigest } from '@/lib/weekly-digest';
 
@@ -17,7 +17,8 @@ export async function GET(req: Request) {
   const admin = createAdminClient();
   const digest = await buildWeeklyDigest(admin);
 
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const resend = emailClient();
+  if (!resend) return NextResponse.json({ ok: false, error: EMAIL_NOT_SET_UP }, { status: 503 });
   const from = process.env.FROM_EMAIL || 'FAJ Solutions <support@fajsolutions.com>';
   const to = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fajsolutions@gmail.com';
 

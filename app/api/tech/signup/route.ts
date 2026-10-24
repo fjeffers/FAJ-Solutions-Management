@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { Resend } from 'resend';
+import { emailClient } from '@/lib/email-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { looksLikeEmail, normalizeUsername, usernameProblem } from '@/lib/usernames';
 import { confirmLoginEmail } from '@/lib/tech-app-email';
@@ -35,6 +35,10 @@ export async function POST(req: Request) {
   const { data: taken } = await admin.from('login_usernames').select('user_id').eq('username', username).maybeSingle();
   if (taken) return NextResponse.json({ ok: false, error: `The username "${username}" is taken. Try another, like ${username}2.` }, { status: 409 });
 
+  // No email key: stop before the login is made, so a later try isn't told the email is taken.
+  const resend = emailClient();
+  if (!resend) return NextResponse.json({ ok: false, error: "Sign-up can't send its confirmation email right now. Tell Fred: email isn't set up on the server." }, { status: 503 });
+
   const origin = new URL(req.url).origin;
   // Makes the login (not yet confirmed) and hands back its confirmation token, sending nothing.
   const { data, error } = await admin.auth.admin.generateLink({
@@ -57,7 +61,6 @@ export async function POST(req: Request) {
 
   const link = `${origin}/api/tech/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=signup`;
   const mail = confirmLoginEmail({ name, link, username });
-  const resend = new Resend(process.env.RESEND_API_KEY);
   const { error: sendError } = await resend.emails.send({
     from: process.env.FROM_EMAIL || 'FAJ Solutions <support@fajsolutions.com>',
     to: email,

@@ -124,7 +124,10 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
   const st = dayState(events, now, TZ);
   // After Work done only the drive back is left: to the hotel or home.
   const homeward = !enabled && afterWork;
-  const trips = homeward ? TRIPS.filter((t) => t.key === 'hotel' || t.key === 'home') : TRIPS;
+  // Never the hotel or home they're already at (lib/checkin.ts checkInChoices, same rule).
+  const here = lastPlace(events, now, TZ);
+  const trips = (homeward ? TRIPS.filter((t) => t.key === 'hotel' || t.key === 'home') : TRIPS)
+    .filter((t) => !((t.key === 'hotel' || t.key === 'home') && t.key === here));
   const picked: Trip = trip && trips.some((t) => t.key === trip) ? trip : homeward ? 'home' : stage === 'offsite' ? 'hotel' : 'site';
   // The first drive on a job: nothing says where they're leaving from, so ask.
   const askFrom = stage === 'clocked' && picked !== 'between' && lastPlace(events, now, TZ) === null;

@@ -77,7 +77,11 @@ describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
     const { checkInDrive } = await import('./checkin');
     const groups = checkInChoices('hotel');
     expect(groups.map((g) => g.label)).toEqual(['Traveling to', 'On site']);
-    expect(groups[0].options.map((o) => o.label)).toEqual(['Hotel', 'Site', 'Home', 'Fuel', 'Materials']);
+    expect(groups[0].options.map((o) => o.label)).toEqual(['Site', 'Home', 'Fuel', 'Materials']);
+    // Never the hotel or home they're already at: no Hotel → Hotel or Home → Home.
+    expect(checkInChoices('home')[0].options.map((o) => o.label)).toEqual(['Hotel', 'Site', 'Fuel', 'Materials']);
+    expect(checkInChoices('site')[0].options.map((o) => o.label)).toContain('Site');
+    expect(checkInChoices(null)[0].options.map((o) => o.label)).toEqual(['Hotel', 'Site', 'Home', 'Fuel', 'Materials']);
     expect(groups[1].options).toEqual([{ key: ON_SITE_KEY, label: 'Log in on site: start work' }]);
     // The next site only when leaving a site; after Work done only the drive back.
     expect(checkInChoices('site')[0].options.map((o) => o.label)).toContain('Next site');

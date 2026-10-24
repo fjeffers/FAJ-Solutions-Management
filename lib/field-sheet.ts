@@ -215,6 +215,11 @@ export function sheetRows(input: { app: AppDay[]; saved: SavedDay[]; techs: stri
       else (values as Record<string, unknown>)[f] = isNum(v) ? v : null;
       source[f] = 'office';
     }
+    // A two-visit day's hours are the visit totals, already less the lunch the tech tapped:
+    // a lunch the office corrects moves them by the difference.
+    if (!retimed && a?.hours != null && 'lunch' in edits && !('hours' in edits)) {
+      values.hours = Math.max(0, r2(a.hours + ((a.lunch ?? 0) - (values.lunch ?? 0)) / 60));
+    }
     return {
       key: k, day, tech, id: s?.id ?? null, added: s?.added ?? false, hidden: s?.hidden ?? false,
       missing: !a && !s, app: a, edits, values, source,

@@ -183,6 +183,10 @@ describe('review fixes', () => {
     const [retimed] = sheetRows({ app: [a], saved: [{ id: 's', day: a.day, tech: 'Ana', edits: { leftSite: '16:00' }, added: false, hidden: false }], techs: [], days: [] });
     expect(dayCalc(retimed.values, 0.6).hours).toBe(8);
     expect(retimed.source.hours).toBeUndefined();
+    // A lunch the office enters comes off the visit totals; hours it types win.
+    const saved = (edits: Record<string, unknown>) => sheetRows({ app: [a], saved: [{ id: 's', day: a.day, tech: 'Ana', edits, added: false, hidden: false }], techs: [], days: [] })[0];
+    expect(dayCalc(saved({ lunch: 30 }).values, 0.6).hours).toBe(7.5);
+    expect(dayCalc(saved({ lunch: 30, hours: 8.25 }).values, 0.6).hours).toBe(8.25);
   });
 
   it('counts the odometer only from the first drive’s start to the last drive’s end, else the GPS', () => {

@@ -7,7 +7,7 @@
 // are approved or declined here the same way as in WorkFlow, a declined one
 // moves to its own list and leaves the bill, and the odometer, receipt and job
 // photos are at the bottom. Excel for the client or Smartsheet.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, EyeOff, FileSpreadsheet, Plus, Receipt, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -112,6 +112,8 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
 type Expense = {
   id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string;
   note: string | null; receipt_path: string | null; status: string; decline_reason: string | null;
+  /** 'faj': a receipt the office added itself; it can be removed, not approved or declined. */
+  paid_by?: string | null;
 };
 type Photo = { id: string; url: string; taken_at: string; contractor_name: string | null };
 type Shot = { src: string; title: string; caption: string };
@@ -132,19 +134,30 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
   const [addOpen, setAddOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [zoom, setZoom] = useState<Shot | null>(null);
+  // The rates as last saved: a failed save puts them back, so the totals never use an unsaved rate.
+  const lastSettings = useRef<SheetSettings>(parseSettings({}));
 
+  const sign = useCallback(async (paths: (string | null)[]) => {
+    const list = paths.filter((p): p is string => !!p);
+    if (!list.length) return;
+    const { data: signed } = await db.storage.from('job-receipts').createSignedUrls(list, 60 * 60);
+    const m: Record<string, string> = {};
+    for (const x of signed ?? []) if (x.path && x.signedUrl) m[x.path] = x.signedUrl;
+    setUrls((u) => ({ ...u, ...m }));
+  }, [db]);
   const loadExpenses = useCallback(async () => {
-    const { data } = await db.from('job_expenses')
-      .select('id, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status, decline_reason')
-      .eq('wo_id', wo.id).order('expense_date');
-    const list = ((data as Expense[] | null) ?? []).map((e) => ({ ...e, amount: Number(e.amount) }));
+    const cols = 'id, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status, decline_reason';
+    const pick = (c: string) => db.from('job_expenses').select(c).eq('wo_id', wo.id).order('expense_date');
+    const res = await pick(`${cols}, paid_by`).then((r) => (r.error ? pick(cols) : r));
+    const list = ((res.data as unknown as Expense[] | null) ?? []).map((e) => ({ ...e, amount: Number(e.amount) }));
     setExpenses(list);
+    await sign(list.map((e) => e.receipt_path));
     return list;
-  }, [db, wo.id]);
+  }, [db, wo.id, sign]);
 
   useEffect(() => {
     void (async () => {
-      const [ev, od, ex, ph, fs, days, us] = await Promise.all([
+      const [ev, od, , ph, fs, days, us] = await Promise.all([
         loadEvents([wo.id]),
         db.from('job_odometer').select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', wo.id).order('at'),
         loadExpenses(),
@@ -159,20 +172,15 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
       setPhotos((ph.data as Photo[] | null) ?? []);
       const s = parseSettings((fs.data as { settings?: unknown } | null)?.settings);
       const rate = Number((us.data as { mileage_rate?: unknown } | null)?.mileage_rate);
-      setSettings(s.mileRate == null && Number.isFinite(rate) ? { ...s, mileRate: rate } : s);
+      const start = s.mileRate == null && Number.isFinite(rate) ? { ...s, mileRate: rate } : s;
+      setSettings(start);
+      lastSettings.current = start;
       if (days.error) toastError("The field sheet isn't set up in the database yet (migration 136). Your changes won't save until it is.");
-      setSaved(((days.data as { id: string; day: string; tech: string; edits: unknown; added: boolean; hidden: boolean }[] | null) ?? [])
-        .map((d) => ({ ...d, edits: parseEdits(d.edits) })));
-      const paths = [...ex.map((e) => e.receipt_path), ...odo.map((o) => o.photo_path)].filter((p): p is string => !!p);
-      if (paths.length) {
-        const { data: signed } = await db.storage.from('job-receipts').createSignedUrls(paths, 60 * 60);
-        const m: Record<string, string> = {};
-        for (const x of signed ?? []) if (x.path && x.signedUrl) m[x.path] = x.signedUrl;
-        setUrls(m);
-      }
+      setSaved(toSaved(days.data));
+      await sign(odo.map((o) => o.photo_path));
       setLoading(false);
     })();
-  }, [db, wo.id, loadExpenses]);
+  }, [db, wo.id, loadExpenses, sign]);
 
   const techs = useMemo(() => (wo.contractor_names?.length ? wo.contractor_names : [wo.contractor_name]).filter((t): t is string => !!t), [wo]);
   const rows = useMemo(() => {
@@ -187,40 +195,65 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
   const totals = sheetTotals(rows, receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status })), settings);
   const allTechs = [...new Set([...techs, ...rows.map((r) => r.tech)])];
 
-  // ── saving ────────────────────────────────────────────────────────────────
-  const store = async (row: SheetRow, patch: { edits?: SavedDay['edits']; hidden?: boolean }) => {
+  // ── saving: one write at a time per line, and for the rates, so an older save can't land after a newer one ──
+  const queues = useRef(new Map<string, Promise<void>>());
+  const inTurn = (key: string, fn: () => Promise<void>) => {
+    const p = (queues.current.get(key) ?? Promise.resolve()).then(fn, fn);
+    queues.current.set(key, p);
+    return p;
+  };
+  // After a failed write, show what is really saved.
+  const reloadSaved = async () => {
+    const { data } = await db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', wo.id);
+    setSaved(toSaved(data));
+  };
+  const store = (row: SheetRow, patch: { edits?: SavedDay['edits']; hidden?: boolean }) => {
     const next: SavedDay = {
       id: row.id ?? `new-${row.key}`, day: row.day, tech: row.tech,
       edits: patch.edits ?? row.edits, added: row.added || !row.app, hidden: patch.hidden ?? row.hidden,
     };
-    const before = saved;
     setSaved((list) => [...list.filter((s) => !(s.day === row.day && s.tech === row.tech)), next]);
-    const { data, error } = await db.from('field_sheet_days')
-      .upsert({ wo_id: wo.id, day: next.day, tech: next.tech, edits: next.edits, added: next.added, hidden: next.hidden, updated_at: new Date().toISOString() },
-        { onConflict: 'wo_id,tech,day' })
-      .select('id').single();
-    if (error) { setSaved(before); toastError("That change didn't save. Check your connection and try again."); return; }
-    setSaved((list) => list.map((s) => (s.day === next.day && s.tech === next.tech ? { ...s, id: (data as { id: string }).id } : s)));
-    onOpened();
+    return inTurn(row.key, async () => {
+      const { data, error } = await db.from('field_sheet_days')
+        .upsert({ wo_id: wo.id, day: next.day, tech: next.tech, edits: next.edits, added: next.added, hidden: next.hidden, updated_at: new Date().toISOString() },
+          { onConflict: 'wo_id,tech,day' })
+        .select('id').single();
+      if (error) { toastError("That change didn't save. Check your connection and try again."); await reloadSaved(); return; }
+      setSaved((list) => list.map((s) => (s.day === next.day && s.tech === next.tech ? { ...s, id: (data as { id: string }).id } : s)));
+      onOpened();
+    });
   };
   const setField = (row: SheetRow, field: SheetField, value: string | number | boolean | null) => {
     const edits = nextEdits(row, field, value);
     if (JSON.stringify(edits) === JSON.stringify(row.edits)) return;
     void store(row, { edits });
   };
-  const undo = async (row: SheetRow) => {
+  const undo = (row: SheetRow) => {
     if (!row.id) return;
-    const before = saved;
-    setSaved((list) => list.filter((s) => s.id !== row.id));
-    const { error } = await db.from('field_sheet_days').delete().eq('id', row.id);
-    if (error) { setSaved(before); toastError("Couldn't undo that. Check your connection."); }
+    setSaved((list) => list.filter((s) => !(s.day === row.day && s.tech === row.tech)));
+    return inTurn(row.key, async () => {
+      const { error } = await db.from('field_sheet_days').delete().eq('wo_id', wo.id).eq('tech', row.tech).eq('day', row.day);
+      if (error) { toastError("Couldn't undo that. Check your connection."); await reloadSaved(); }
+    });
   };
-  const saveSetting = async (k: (typeof SETTING_KEYS)[number], v: number | null) => {
+  const saveSetting = (k: (typeof SETTING_KEYS)[number], v: number | null) => {
     const next = { ...settings, [k]: v };
     setSettings(next);
-    const { error } = await db.from('field_sheets').upsert({ wo_id: wo.id, settings: next, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' });
-    if (error) toastError("That rate didn't save. Check your connection.");
-    else onOpened();
+    return inTurn('settings', async () => {
+      const { error } = await db.from('field_sheets').upsert({ wo_id: wo.id, settings: next, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' });
+      if (error) { toastError("That rate didn't save, so it's back to what it was. Check your connection."); setSettings(lastSettings.current); return; }
+      lastSettings.current = next;
+      onOpened();
+    });
+  };
+  /** A receipt the office added itself: removed with its file, the same as in WorkFlow. */
+  const removeOffice = async (e: Expense) => {
+    if (!window.confirm(`Remove the ${fmtMoney(e.amount)} ${expenseCategoryLabel(e.category).toLowerCase()} receipt?`)) return;
+    const res = await fetch(`/api/owner/expense?id=${encodeURIComponent(e.id)}`, { method: 'DELETE' });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !j.ok) { toastError(j.error ?? "Couldn't remove it."); return; }
+    toastSuccess('Receipt removed.');
+    await loadExpenses();
   };
   const decide = async (e: Expense, approve: boolean) => {
     let reason: string | null = null;
@@ -344,7 +377,9 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
           actions={(e) => <><button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => void decide(e, true)}>Approve</button>
             <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void decide(e, false)}>Decline</button></>} />}
         <ReceiptList title="Approved: on the bill" list={approved} urls={urls} onZoom={setZoom}
-          actions={(e) => <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void decide(e, false)}>Decline</button>} />
+          actions={(e) => (e.paid_by === 'faj'
+            ? <><span className="wf-chip" style={{ alignSelf: 'center' }}>Paid by FAJ</span><button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void removeOffice(e)}>Remove</button></>
+            : <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void decide(e, false)}>Decline</button>)} />
         <ReceiptList title="Declined: off the bill" list={declined} urls={urls} onZoom={setZoom} declined
           actions={(e) => <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void decide(e, true)}>Approve</button>} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 12, fontSize: 13 }}>
@@ -399,6 +434,12 @@ const TDN: React.CSSProperties = { ...TD, padding: '7px 6px', textAlign: 'right'
 const IN: React.CSSProperties = { width: '100%', minWidth: 0, border: 0, background: 'transparent', font: 'inherit', padding: '7px 6px', color: 'inherit' };
 
 const address = (w: EnrichedWorkOrder) => [w.site_address, [w.site_city, [w.site_state, w.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+
+/** field_sheet_days rows as the sheet keeps them. */
+function toSaved(data: unknown): SavedDay[] {
+  return ((data as { id: string; day: string; tech: string; edits: unknown; added: boolean; hidden: boolean }[] | null) ?? [])
+    .map((d) => ({ ...d, edits: parseEdits(d.edits) }));
+}
 
 /** A typed number: '' → null (empty), junk → undefined (ignored). */
 function num(s: string): number | null | undefined {

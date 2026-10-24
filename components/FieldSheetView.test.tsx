@@ -22,7 +22,8 @@ const tables: Record<string, Record<string, unknown>[]> = {
   job_punches: [],
   job_odometer: [],
   job_expenses: [
-    { id: 'x1', contractor_name: 'Dwayne Cudjoe', category: 'fuel', vendor: 'Sheetz', amount: 64, expense_date: '2026-10-22', note: null, receipt_path: null, status: 'approved', decline_reason: null },
+    { id: 'x1', contractor_name: 'Dwayne Cudjoe', category: 'fuel', vendor: 'Sheetz', amount: 64, expense_date: '2026-10-22', note: null, receipt_path: null, status: 'approved', decline_reason: null, paid_by: 'tech' },
+    { id: 'x2', contractor_name: null, category: 'hotel', vendor: 'Hampton Inn', amount: 226, expense_date: '2026-10-21', note: null, receipt_path: null, status: 'approved', decline_reason: null, paid_by: 'faj' },
   ],
   wo_photos: [],
   field_sheets: [{ settings: { mileRate: 0.6 } }],
@@ -93,8 +94,19 @@ describe('Field Sheet', () => {
     vi.spyOn(window, 'prompt').mockReturnValue('Entered twice');
     render(<FieldSheetView workOrders={[wo]} />);
     await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
-    const approved = (await screen.findByText('Approved: on the bill (1)')).parentElement!;
+    const approved = (await screen.findByText('Approved: on the bill (2)')).parentElement!;
     await user.click(within(approved).getByRole('button', { name: 'Decline' }));
     expect(rpc).toHaveBeenCalledWith('wf_owner_decide_expense', { p_id: 'x1', p_approve: false, p_reason: 'Entered twice' });
+  });
+
+  it('offers Remove, not Decline, on a receipt the office added itself', async () => {
+    const user = userEvent.setup();
+    render(<FieldSheetView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+    const approved = (await screen.findByText('Approved: on the bill (2)')).parentElement!;
+    const hotel = within(approved).getByText('$226.00').closest('div')!;
+    expect(within(hotel).getByText('Paid by FAJ')).toBeTruthy();
+    expect(within(hotel).getByRole('button', { name: 'Remove' })).toBeTruthy();
+    expect(within(hotel).queryByRole('button', { name: 'Decline' })).toBeNull();
   });
 });

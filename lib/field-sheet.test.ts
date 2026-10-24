@@ -157,3 +157,46 @@ describe('helpers', () => {
     expect([clock('00:05'), clock('12:00'), clock('19:59'), clock('bad')]).toEqual(['12:05 AM', '12:00 PM', '7:59 PM', '']);
   });
 });
+
+describe('review fixes', () => {
+  it('adds up a day with two visits from the visits and drives, not first arrival to last departure', () => {
+    const two = buildDayLogs([
+      ev('Ana', '20', 'travel_start', '07:30', { origin: 'hotel', dest: 'site' }), ev('Ana', '20', 'travel_end', '08:00', { miles: 10 }),
+      ev('Ana', '20', 'in', '08:00'), ev('Ana', '20', 'out', '12:00'),
+      ev('Ana', '20', 'travel_start', '12:00', { origin: 'site', dest: 'materials' }), ev('Ana', '20', 'travel_end', '12:30', { miles: 6 }),
+      ev('Ana', '20', 'travel_start', '12:30', { origin: 'materials', dest: 'site' }), ev('Ana', '20', 'travel_end', '13:00', { miles: 6 }),
+      ev('Ana', '20', 'in', '13:00'), ev('Ana', '20', 'out', '17:00'),
+      ev('Ana', '20', 'travel_start', '17:00', { origin: 'site', dest: 'hotel' }), ev('Ana', '20', 'travel_end', '17:30', { miles: 10 }),
+    ], new Date('2026-10-24T12:00:00Z'), TZ);
+    const a = appDays(two, matchOdometer(two.flatMap((d) => d.legs), []), TZ)[0];
+    expect(a).toMatchObject({ arrived: '08:00', leftSite: '17:00', hours: 8, travel: 2 });
+    const [row] = sheetRows({ app: [a], saved: [], techs: [], days: [] });
+    expect(dayCalc(row.values, 0.6)).toMatchObject({ hours: 8, travel: 2, miles: 32 });
+    // Once the office retimes the day, the hours follow its times.
+    const [retimed] = sheetRows({ app: [a], saved: [{ id: 's', day: a.day, tech: 'Ana', edits: { leftSite: '16:00' }, added: false, hidden: false }], techs: [], days: [] });
+    expect(dayCalc(retimed.values, 0.6).hours).toBe(8);
+    expect(retimed.source.hours).toBeUndefined();
+  });
+
+  it('counts the odometer only from the first drive’s start to the last drive’s end, else the GPS', () => {
+    // Morning drive photographed both ends, the drive back not at all.
+    const evs = [
+      ev('Ana', '21', 'travel_start', '07:00', { origin: 'hotel', dest: 'site' }), ev('Ana', '21', 'travel_end', '07:30', { miles: 12 }),
+      ev('Ana', '21', 'travel_start', '17:00', { origin: 'hotel', dest: 'hotel' }), ev('Ana', '21', 'travel_end', '17:30', { miles: 12 }),
+    ];
+    const l = buildDayLogs(evs, new Date('2026-10-24T12:00:00Z'), TZ);
+    const shots = [odo('Ana', '21', '07:00', 1000, 'start'), odo('Ana', '21', '07:30', 1012, 'end')];
+    const a = appDays(l, matchOdometer(l.flatMap((d) => d.legs), shots), TZ)[0];
+    expect([a.odoStart, a.odoEnd, a.gps]).toEqual([1000, null, 24]);
+    expect(dayCalc(sheetRows({ app: [a], saved: [], techs: [], days: [] })[0].values, 0.6).miles).toBe(24);
+  });
+
+  it('bills nothing for meals or hotel when the allowance is set to 0', () => {
+    const rows = sheetRows({ app, saved: [], techs: [], days: [] });
+    const t = sheetTotals(rows, [{ id: '1', category: 'meals', amount: 80, status: 'approved' }, { id: '2', category: 'hotel', amount: 300, status: 'approved' }],
+      { mileRate: 0, mealRate: 0, hotelRate: 113, nights: 0, rooms: 2 });
+    expect(t.meals.claim).toBe(0);
+    expect(t.hotel.claim).toBe(0);
+    expect(t.bill).toBe(0);
+  });
+});

@@ -16,7 +16,7 @@
 // them and marked as a guess for the office to check.
 //
 // Pure and unit-tested (lib/field-sheet.test.ts). The screen is components/FieldSheetView.tsx.
-import { legLabel, type DayLog } from './project-day';
+import { hoursOf, legLabel, type DayLog } from './project-day';
 import type { BillLeg } from './weekly-bill';
 
 export const TIME_FIELDS = ['left', 'arrived', 'leftSite', 'back'] as const;
@@ -33,6 +33,12 @@ export type AppDay = {
   day: string; tech: string;
   left: string | null; arrived: string | null; leftSite: string | null; back: string | null;
   lunch: number | null; odoStart: number | null; odoEnd: number | null; gps: number | null;
+  /**
+   * Hours on site and travel as the app counted them, only on a day with more
+   * than one visit to the site: the four times can't show the time away in
+   * between, so the visits and every drive are added up instead.
+   */
+  hours: number | null; travel: number | null;
   /** Times worked out from the gap between drives, not tapped. */
   guessed: ('arrived' | 'leftSite')[];
   /** Every drive that day, for the office to read: "7:38–7:44 AM Hotel → Hotel, 2.2 mi; …". */
@@ -125,8 +131,11 @@ export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): App
         leftSite = mine[0].start; left = null; guessed.push('leftSite');
       }
     }
-    const odoStart = mine.find((l) => l.odoStart)?.odoStart?.reading ?? null;
-    const odoEnd = [...mine].reverse().find((l) => l.odoEnd)?.odoEnd?.reading ?? null;
+    // The day's odometer is the first drive's start photo and the last drive's end photo. A photo from
+    // the middle of the day would leave the other drives out of the miles, so without both the GPS counts.
+    const odoStart = mine[0]?.odoStart?.reading ?? null;
+    const odoEnd = mine.at(-1)?.odoEnd?.reading ?? null;
+    const visits = spans.length > 1;
     const drives = mine.map((l) => `${clock(t(l.start))}–${l.end ? clock(t(l.end)) : '…'} ${legLabel(l)}${l.miles != null ? `, ${r1(l.miles)} mi` : ''}`).join('; ');
     return {
       day: d.day, tech: d.tech,
@@ -134,6 +143,8 @@ export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): App
       lunch: d.lunchMs > 0 ? Math.round(d.lunchMs / MIN) : null,
       odoStart, odoEnd,
       gps: mine.length ? r1(d.miles) : null,
+      hours: visits ? hoursOf(spans.reduce((t, x) => t + x.ms, 0)) : null,
+      travel: visits ? hoursOf(mine.reduce((t, l) => t + l.ms, 0)) : null,
       guessed, drives,
     };
   });
@@ -161,7 +172,7 @@ const EMPTY: Values = {
 export function appValue(app: AppDay | null, field: SheetField): string | number | null {
   if (!app) return null;
   if (field === 'left' || field === 'arrived' || field === 'leftSite' || field === 'back') return app[field];
-  if (field === 'lunch' || field === 'odoStart' || field === 'odoEnd' || field === 'gps') return app[field];
+  if (field === 'lunch' || field === 'odoStart' || field === 'odoEnd' || field === 'gps' || field === 'hours' || field === 'travel') return app[field];
   return null;
 }
 
@@ -183,7 +194,10 @@ export function sheetRows(input: { app: AppDay[]; saved: SavedDay[]; techs: stri
     const edits: Edits = s?.edits ?? {};
     const values: Values = { ...EMPTY };
     const source: SheetRow['source'] = {};
-    for (const f of [...TIME_FIELDS, 'lunch', 'odoStart', 'odoEnd', 'gps'] as const) {
+    // Once the office retimes the day, hours and travel follow its times, not the app's visit totals.
+    const retimed = TIME_FIELDS.some((t) => t in edits);
+    for (const f of [...TIME_FIELDS, 'lunch', 'odoStart', 'odoEnd', 'gps', 'hours', 'travel'] as const) {
+      if ((f === 'hours' || f === 'travel') && retimed) continue;
       const v = appValue(a, f);
       if (v != null) {
         (values as Record<string, unknown>)[f] = v;
@@ -303,8 +317,9 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
   const byCategory: Record<string, number> = {};
   for (const r of approved) byCategory[r.category] = r2((byCategory[r.category] ?? 0) + (isNum(r.amount) ? r.amount : 0));
   const techDays = days.filter((d) => d.worked).length;
-  const mealAllowed = s.mealRate ? r2(techDays * s.mealRate) : null;
-  const hotelAllowed = s.hotelRate && s.nights && s.rooms ? r2(s.hotelRate * s.nights * s.rooms) : null;
+  // An allowance of 0 is set (bill nothing); only an empty one means no cap.
+  const mealAllowed = s.mealRate != null ? r2(techDays * s.mealRate) : null;
+  const hotelAllowed = s.hotelRate != null && s.nights != null && s.rooms != null ? r2(s.hotelRate * s.nights * s.rooms) : null;
   const mealRcpt = byCategory.meals ?? 0, hotelRcpt = byCategory.hotel ?? 0;
   const meals = { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed == null ? mealRcpt : Math.min(mealAllowed, mealRcpt) };
   const hotel = { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed == null ? hotelRcpt : Math.min(hotelAllowed, hotelRcpt) };

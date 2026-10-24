@@ -37,6 +37,8 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     items: [
       // Fred, 2026-10-13: projects — travel, time on site, miles, receipts, the client report.
       { view: 'projects', label: 'Projects', hint: 'Multi-day sites: travel, time on site, miles, receipts and the weekly bill' },
+      // Fred, 2026-10-24: "add it under office and i can pull it by the app work order number and edit whats needed".
+      { view: 'fieldsheet', label: 'Field Sheet', hint: 'Pull a job by WO number: fix hours, miles and receipts, see the photos, bill it' },
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
       { view: 'payables', label: 'Pay Techs', hint: 'What each tech is owed, and paying them' },
       { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },

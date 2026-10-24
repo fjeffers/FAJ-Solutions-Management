@@ -70,12 +70,13 @@ import { shown } from '@/lib/screen-parts';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
 import { PrimioBar } from '@/components/wf/PrimioScreens';
 import { ProjectsView } from '@/components/wf/ProjectOffice';
+import FieldSheetView from '@/components/FieldSheetView';
 
 const VIEWS = [
   'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
   'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
-  'team', 'support', 'office', 'messages', 'sketches', 'projects',
+  'team', 'support', 'office', 'messages', 'sketches', 'projects', 'fieldsheet',
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -1763,6 +1764,7 @@ Go ahead?`)) return;
         {view === 'network' && <NetworkView />}
         {view === 'sitelog' && <SiteLogView />}
         {view === 'projects' && <ProjectsView workOrders={enrichedWOs} onOpen={(id) => openJobFrom(id, 'projects')} />}
+        {view === 'fieldsheet' && <FieldSheetView workOrders={enrichedWOs} />}
         {view === 'team' && <TeamView onOpenContractors={() => navigate('contractors')} />}
         {view === 'maintenance' && <MaintenanceView />}
         {view === 'invoices' && (

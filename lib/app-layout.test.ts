@@ -89,9 +89,9 @@ describe('menu layout (Settings -> Menu & screens)', () => {
     let l = shiftScreen(std(), 'office', -1);
     expect(l.main).toEqual(['dashboard', 'workorders', 'scheduling', 'office', 'messages', 'settings']);
     expect(shiftScreen(std(), 'dashboard', -1).main).toEqual(std().main);
-    // Every day starts Projects, Site Log, Pay Techs (Projects added 2026-10-13).
-    l = shiftScreen(std(), 'payables', -1);
-    expect(l.sections[0].items.slice(0, 3)).toEqual(['projects', 'payables', 'sitelog']);
+    // Every day starts Projects, Field Sheet, Site Log (Projects added 2026-10-13, Field Sheet 2026-10-24).
+    l = shiftScreen(std(), 'sitelog', -1);
+    expect(l.sections[0].items.slice(0, 3)).toEqual(['projects', 'sitelog', 'fieldsheet']);
     expect(shiftScreen(std(), 'projects', -1).sections[0].items[0]).toBe('projects');
     l = shiftSection(std(), 'money', -1);
     expect(l.sections.map((s) => s.id).slice(0, 2)).toEqual(['money', 'everyday']);

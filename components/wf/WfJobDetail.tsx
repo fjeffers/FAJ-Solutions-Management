@@ -66,7 +66,10 @@ export function DetailHeader({ job, ownerView, loggedMs, billedHours }: {
       <hr style={{ border: 'none', borderTop: '1px solid var(--wf-line)', margin: '12px 0' }} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 16px' }}>
         <InfoItem icon={<Info size={16} />} title={`Status: ${wfStatusLabel(job.status, ownerView)}`}
-          lines={[`Time logged: ${logged ? formatDuration(logged) : '0m'}`, ...(billedHours != null ? [`Hours as billed: ${billedHours.toFixed(2)} h`] : [])]} />
+          lines={billedHours != null
+            // The hours as billed (with the office's changes) first; the techs' own clock under it.
+            ? [`Hours on site: ${billedHours.toFixed(2)} h (as billed)`, `Techs' clock: ${logged ? formatDuration(logged) : '0m'}`]
+            : [`Time logged: ${logged ? formatDuration(logged) : '0m'}`]} />
         <InfoItem icon={<MapPin size={16} />} title={`Location: ${(ownerView ? city || job.siteName : job.siteName || city) || 'not set'}`} lines={[fullAddress(job)]} />
         <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], `${job.priorityLabel} priority`]} />
         <InfoItem icon={<CalendarDays size={16} />} title="Schedule" lines={[whenDay(job), times || 'No set time']} />

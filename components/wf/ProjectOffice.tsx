@@ -33,7 +33,7 @@ import { PushSwitch } from './PushSwitch';
 import { mailtoHref, sheetInvite, smsHref } from '@/lib/send-sheet';
 import { asks, parseCapture } from '@/lib/capture';
 import { askedDeliverables } from '@/lib/wf';
-import { dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
+import { clock, dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
 import TimesheetExport from '@/components/TimesheetExport';
 import { HOURS_CHANGED } from '@/lib/hours-look';
 import dynamic from 'next/dynamic';
@@ -97,6 +97,18 @@ export function ProjectDayCard({ w, lists, billed }: {
   const showOdo = odo.readings.length > 0 || (capture !== null && asks(capture, 'odometer'));
   const legs = useMemo(() => matchOdometer(logs.flatMap((d) => d.legs), odo.readings), [logs, odo.readings]);
   const problems = useMemo(() => odoProblems(legs), [legs]);
+  // The days as billed (useBilledRows): every day the phones recorded, and the days the office typed in.
+  const billedDays = useMemo(() => billed ?? [], [billed]);
+  const billedTotals = useMemo(() => {
+    if (!billedDays.length) return null;
+    const s = billedDays.reduce((a, r) => { const c = dayCalc(r.values, 0); return { hours: a.hours + c.hours, travel: a.travel + c.travel, miles: a.miles + c.miles }; }, { hours: 0, travel: 0, miles: 0 });
+    return { days: new Set(billedDays.map((r) => r.day)).size, hours: s.hours, travel: s.travel, miles: Math.round(s.miles * 10) / 10 };
+  }, [billedDays]);
+  const dayKeys = useMemo(() => {
+    const seen = new Map<string, { day: string; tech: string }>();
+    for (const x of [...logs, ...billedDays]) seen.set(`${x.day}|${x.tech}`, { day: x.day, tech: x.tech });
+    return [...seen.values()].sort((a, b) => a.day.localeCompare(b.day) || a.tech.localeCompare(b.tech));
+  }, [logs, billedDays]);
   // A reading no drive took (a photo with no drive around it) still shows, under its day.
   const loose = useMemo(() => {
     const used = new Set(legs.flatMap((l) => [l.odoStart, l.odoEnd]));
@@ -115,27 +127,33 @@ export function ProjectDayCard({ w, lists, billed }: {
     >
       <BilledHours w={w} rows={billed ?? null} />
       {events === null ? <div className="wf-subtle">Loading…</div>
-        : logs.length === 0 ? (
+        : logs.length === 0 && !billedDays.length ? (
           <div className="wf-subtle" style={{ fontSize: 13 }}>
             Nothing yet. When a tech taps Clock in, Start travel, Start job, Lunch and Off site on this {w.is_project ? 'site' : 'job'}, each day shows here with every drive and its miles.
           </div>
         ) : (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: 12 }}>
-              {[['Days', String(t.days)], ['On site', formatDuration(t.onSiteMs)], ['Travel', formatDuration(t.travelMs)], ['Miles', String(t.miles)]].map(([k, v]) => (
+              {/* The hours as billed, with the office's changes, when there are any; else what the phones recorded. */}
+              {(billedTotals ? [['Days', String(billedTotals.days)], ['On site', `${billedTotals.hours.toFixed(2)} h`], ['Travel', `${billedTotals.travel.toFixed(2)} h`], ['Miles', String(billedTotals.miles)]]
+                : [['Days', String(t.days)], ['On site', formatDuration(t.onSiteMs)], ['Travel', formatDuration(t.travelMs)], ['Miles', String(t.miles)]]).map(([k, v]) => (
                 <div key={k} className="wf-card" style={{ padding: '8px 10px' }}>
                   <div className="wf-label">{k}</div>
                   <div className="wf-display" style={{ fontWeight: 700, fontSize: 18 }}>{v}</div>
                 </div>
               ))}
             </div>
-            {logs.map((d) => (
-              <DayBlock key={`${d.day}|${d.tech}`} d={d} onChanged={load}
-                odo={showOdo ? {
-                  legs: legs.filter((l) => l.tech === d.tech && l.day === d.day), problems, urls: odo.urls,
-                  loose: loose.filter((o) => o.contractor_name === d.tech && dayOf(o.at, TZ) === d.day),
-                } : null} />
-            ))}
+            {dayKeys.map(({ day, tech }) => {
+              const d = logs.find((x) => x.day === day && x.tech === tech);
+              const b = billedDays.find((r) => r.day === day && r.tech === tech) ?? null;
+              return d ? (
+                <DayBlock key={`${day}|${tech}`} d={d} onChanged={load} billed={b}
+                  odo={showOdo ? {
+                    legs: legs.filter((l) => l.tech === d.tech && l.day === d.day), problems, urls: odo.urls,
+                    loose: loose.filter((o) => o.contractor_name === d.tech && dayOf(o.at, TZ) === d.day),
+                  } : null} />
+              ) : b ? <OfficeDayBlock key={`${day}|${tech}`} r={b} /> : null;
+            })}
           </>
         )}
       {receiptOpen && (
@@ -282,17 +300,48 @@ function OdoLine({ l, problems, urls }: { l: BillLeg; problems: OdoProblem[]; ur
   );
 }
 
-function DayBlock({ d, onChanged, odo }: { d: DayLog; onChanged: () => void; odo: DayOdo | null }) {
+/**
+ * A day as billed, when the office changed it on Hours or the work order:
+ * the line in gold over the phone's own record (Fred, 2026-10-24: "i updated
+ * the time loge but it did not reflect in the work order").
+ */
+function BilledLine({ r }: { r: SheetRow }) {
+  const c = dayCalc(r.values, 0);
+  const times = [clock(r.values.arrived), clock(r.values.leftSite)].filter(Boolean).join(' – ');
+  return (
+    <div style={{ fontSize: 13, margin: '2px 0 4px', padding: '6px 10px', borderRadius: 8, background: '#FBF5E6', borderLeft: '3px solid #C9A24B' }}>
+      <b>As billed:</b> {times ? `${times} · ` : ''}<b>{c.hours.toFixed(2)} h</b> on site · {c.travel.toFixed(2)} h travel · {c.miles} mi
+      {r.values.meals ? ` · ${fmtMoney(r.values.meals)} meals` : ''}{r.values.note ? ` · ${r.values.note}` : ''}
+    </div>
+  );
+}
+
+/** A day the office typed in with nothing from the phones (a tech who didn't use the app that day). */
+function OfficeDayBlock({ r }: { r: SheetRow }) {
+  return (
+    <div style={{ borderTop: '1px solid var(--wf-line)', padding: '10px 0' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <b>{fmtDay(r.day)}</b><span className="wf-subtle">{r.tech}</span>
+        <span className="wf-subtle" style={{ marginLeft: 'auto', fontSize: 12.5 }}>Typed in by the office</span>
+      </div>
+      <BilledLine r={r} />
+    </div>
+  );
+}
+
+function DayBlock({ d, onChanged, odo, billed }: { d: DayLog; onChanged: () => void; odo: DayOdo | null; billed?: SheetRow | null }) {
   // Drives but no clock-in on site (a wrong pick like Hotel → Hotel): show the stretch between drives.
   const gap = d.spans.length ? null : gapOnSite(d.legs);
+  const changed = !!billed && Object.keys(billed.edits).length > 0;
   return (
     <div style={{ borderTop: '1px solid var(--wf-line)', padding: '10px 0' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
         <b>{fmtDay(d.day)}</b><span className="wf-subtle">{d.tech}</span>
         <span className="wf-subtle" style={{ marginLeft: 'auto', fontSize: 12.5 }}>
-          On site {formatDuration(d.onSiteMs)} · travel {formatDuration(d.travelMs)} · {d.miles} mi
+          {changed ? 'Phone: ' : ''}On site {formatDuration(d.onSiteMs)} · travel {formatDuration(d.travelMs)} · {d.miles} mi
         </span>
       </div>
+      {changed && <BilledLine r={billed!} />}
       {(d.clockIn || d.signOut) && (
         <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 2 }}>
           {d.clockIn ? `Clocked in ${timeOf(d.clockIn)}` : 'No clock-in'}

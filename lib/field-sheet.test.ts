@@ -259,9 +259,17 @@ describe('billing any client', () => {
 
   it('bills other receipts at cost when asked, never fuel and never declined ones', () => {
     const t = sheetTotals(rows, receipts, bill({ receiptsAtCost: true }));
-    expect(t.lines.map((l) => l.description)).toEqual(["Parts & materials — Lowe's (Tue, Oct 20)"]);
+    expect(t.lines.map((l) => l.description)).toEqual(["Materials — Lowe's (Tue, Oct 20)"]);
     expect(t.atCost).toBe(47.48);
     expect(sheetTotals(rows, receipts, bill({})).atCost).toBe(0);
+    // Fred's Rental and the office's own categories are billed at cost too; mileage receipts are in the mileage.
+    const more: SheetReceipt[] = [
+      { id: 'r', category: 'rental', amount: 150, status: 'approved', vendor: 'Sunbelt', date: '2026-10-21' },
+      { id: 'c', category: 'c_lift_rental', amount: 90, status: 'approved', date: '2026-10-21' },
+      { id: 'm', category: 'mileage', amount: 30, status: 'approved', date: '2026-10-21' },
+    ];
+    expect(sheetTotals(rows, more, bill({ receiptsAtCost: true })).lines.map((l) => [l.description, l.amount]))
+      .toEqual([['Rental — Sunbelt (Wed, Oct 21)', 150], ['Lift rental (Wed, Oct 21)', 90]]);
   });
 
   it('gives each day what it bills', () => {

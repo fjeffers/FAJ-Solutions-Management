@@ -50,7 +50,7 @@ export const EXPENSES_CHANGED = 'faj:expenses-changed';
 type EventRow = { id?: string; contractor_name: string; kind: string; at: string; origin?: string | null; dest?: string | null; miles?: number | null; wo_id?: string };
 
 /** Every tech's taps on these jobs: travel and lunch (job_day_events) and the clock (job_punches). */
-async function loadEvents(woIds: string[]): Promise<(DayEvent & { woId: string })[]> {
+export async function loadEvents(woIds: string[]): Promise<(DayEvent & { woId: string })[]> {
   if (woIds.length === 0) return [];
   const db = createClient();
   const [d, p] = await Promise.all([
@@ -278,7 +278,7 @@ function MilesEdit({ id, miles, onSaved }: { id: string | null; miles: number | 
 
 const todayNY = () => dayOf(new Date().toISOString(), TZ);
 
-function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; onClose: () => void; onSaved: () => void }) {
+export function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; onClose: () => void; onSaved: () => void }) {
   const [category, setCategory] = useState('hotel');
   const [vendor, setVendor] = useState('');
   const [amount, setAmount] = useState('');

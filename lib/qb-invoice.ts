@@ -22,6 +22,8 @@ export type QbLine = {
     ItemRef: { value: string };
     Qty: number;
     UnitPrice: number;
+    /** The day the work was done (Field Sheet lines). */
+    ServiceDate?: string;
   };
 };
 
@@ -31,6 +33,9 @@ export type QbInvoicePayload = {
   TxnDate?: string;
   DueDate?: string;
   PrivateNote?: string;
+  /** Printed on the invoice the client sees (Field Sheet: the site and the dates). */
+  CustomerMemo?: { value: string };
+  BillEmail?: { Address: string };
 };
 
 export type BuildOptions = {

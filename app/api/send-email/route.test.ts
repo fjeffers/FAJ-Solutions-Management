@@ -4,7 +4,7 @@
 // 2026-10-24). It now answers in JSON with what is missing.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import { EMAIL_NOT_SET_UP } from '@/lib/email-client';
+import { EMAIL_NOT_SET_UP, EMAIL_ON_PREVIEW } from '@/lib/email-client';
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'owner-1' } } }) } }),
@@ -22,8 +22,18 @@ afterEach(() => { vi.unstubAllEnvs(); });
 describe('POST /api/send-email', () => {
   it('says email is not set up, in JSON, when the server has no key', async () => {
     vi.stubEnv('RESEND_API_KEY', '');
+    vi.stubEnv('VERCEL_ENV', 'production');
     const res = await send();
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: EMAIL_NOT_SET_UP });
+  });
+
+  // Every failed Send to tech on 2026-10-24 was on the branch preview, which has no email key.
+  it('on a preview copy, says to send from app.fajsolutions.com instead', async () => {
+    vi.stubEnv('RESEND_API_KEY', '');
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    const res = await send();
+    expect(await res.json()).toEqual({ error: EMAIL_ON_PREVIEW });
+    expect(EMAIL_ON_PREVIEW).toContain('app.fajsolutions.com');
   });
 });

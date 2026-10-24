@@ -19,6 +19,7 @@ import { roundTripMiles } from '@/lib/driving';
 import { toastError, toastSuccess } from '@/lib/toast';
 import WOTimeLogs from '@/components/WOTimeLogs';
 import { JobDays } from '@/components/HoursView';
+import { HOURS_SAVE_ALL } from '@/lib/hours-look';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import {
   PAY_TYPES,
@@ -665,6 +666,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
 
   const handleSave = () => {
     if (!canSave) return;
+    // Hours typed on the Time Logs tab and not saved yet are saved with the work order.
+    window.dispatchEvent(new Event(HOURS_SAVE_ALL));
     // Auto-add any contractor still pending in the dropdown (user selected but didn't click "+ Add")
     let finalNames = [...contractorNames];
     const pending = contractorToAdd.trim();

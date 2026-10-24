@@ -15,7 +15,7 @@
 // view etc"): day by day, by week or by month with totals, newest or oldest
 // first, one tech or all, full cards or a short list. Settings -> Hours screen
 // keeps the choice (lib/hours-look.ts).
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Clock, LogOut, Plus, Save, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { dayOf, type DayEvent } from '@/lib/project-day';
@@ -24,13 +24,13 @@ import { clock, dayCalc, nextEdits, parseEdits, rowsFor, type SavedDay, type She
 import { parsePunches, stillOnSite, zonedIso, type Punch } from '@/lib/clock-fix';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder, WorkOrder } from '@/lib/types';
-import { groupLabel, groupOf, hoursLookNow, HOURS_CARDS, HOURS_GROUPS, type HoursLook } from '@/lib/hours-look';
+import { groupLabel, groupOf, hoursLookNow, HOURS_CARDS, HOURS_CHANGED, HOURS_GROUPS, HOURS_SAVE_ALL, type HoursLook } from '@/lib/hours-look';
 import HoursBoard from '@/components/HoursBoard';
+import DayPictures, { type DayPic } from '@/components/DayPictures';
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { fixPunch } from '@/components/ClockFix';
 import { findJob } from '@/components/FieldSheetView';
 import TimesheetExport from '@/components/TimesheetExport';
-import { HOURS_CHANGED } from '@/components/wf/ProjectOffice';
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -119,27 +119,53 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
   const [readings, setReadings] = useState<OdoRow[]>([]);
   const [saved, setSaved] = useState<SavedDay[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
+  // The day's pictures: the site photos, and the odometer photos (private, so signed links).
+  const [sitePhotos, setSitePhotos] = useState<{ url: string; taken_at: string; contractor_name: string | null }[]>([]);
+  const [odoUrls, setOdoUrls] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
   const [look, setLook] = useState<HoursLook>(hoursLookNow);
   const [tech, setTech] = useState('');
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const changeLook = (l: Partial<HoursLook>) => { const n = { ...look, ...l }; setLook(n); onLook?.(n); };
+  // What each card would save, so one press saves every changed day (Fred, 2026-10-24: "save all is not working").
+  const pendingRef = useRef(new Map<string, { row: SheetRow; edits: SavedDay['edits'] }>());
+  const [pendingCount, setPendingCount] = useState(0);
+  const onPending = useCallback((key: string, p: { row: SheetRow; edits: SavedDay['edits'] } | null) => {
+    if (p) pendingRef.current.set(key, p); else pendingRef.current.delete(key);
+    setPendingCount(pendingRef.current.size);
+  }, []);
+  const [savingAll, setSavingAll] = useState(false);
 
   const load = useCallback(async () => {
-    const [ev, od, days, pu] = await Promise.all([
+    const [ev, od, days, pu, ph] = await Promise.all([
       loadEvents([wo.id]),
       db.from('job_odometer').select('wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', wo.id).order('at'),
       db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', wo.id),
       db.from('job_punches').select('id, wo_id, wo_number, contractor_name, kind, at').eq('wo_id', wo.id).order('at'),
+      db.from('wo_photos').select('url, taken_at, contractor_name').eq('wo_id', wo.id).order('taken_at'),
     ]);
     setEvents(ev);
-    setReadings(((od.data as OdoRow[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) })));
+    const odo = ((od.data as OdoRow[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
+    setReadings(odo);
+    setSitePhotos((ph.data as { url: string; taken_at: string; contractor_name: string | null }[] | null) ?? []);
+    const paths = odo.map((o) => o.photo_path).filter((x): x is string => !!x);
+    if (paths.length) {
+      const { data: signed } = await db.storage.from('job-receipts').createSignedUrls(paths, 60 * 60);
+      setOdoUrls(Object.fromEntries((signed ?? []).filter((x) => x.path && x.signedUrl).map((x) => [x.path!, x.signedUrl as string])));
+    }
     if (days.error) toastError("Hours can't be saved yet: the database needs the Field Sheet update (migration 136).");
     setSaved(toSaved(days.data));
     setPunches(parsePunches(pu.data));
     setLoading(false);
   }, [db, wo.id]);
   useEffect(() => { void load(); }, [load]);
+  // The work order's Save Changes saves the hours too (HOURS_SAVE_ALL).
+  const saveAllRef = useRef<() => Promise<number>>(async () => 0);
+  useEffect(() => {
+    const on = () => void saveAllRef.current();
+    window.addEventListener(HOURS_SAVE_ALL, on);
+    return () => window.removeEventListener(HOURS_SAVE_ALL, on);
+  }, []);
 
   const techs = useMemo(() => (wo.contractor_names?.length ? wo.contractor_names : [wo.contractor_name]).filter((t): t is string => !!t), [wo]);
   const rows = useMemo(() => rowsFor({ events, readings, saved, techs, start: wo.start_date, end: wo.end_date, timeZone: TZ })
@@ -171,6 +197,35 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
     window.dispatchEvent(new Event(HOURS_CHANGED));
     return true;
   };
+
+  /** A tech's pictures on a day: the odometer photos first, then the site photos. */
+  const picsFor = (day: string, tech: string): DayPic[] => [
+    ...readings.filter((o) => o.contractor_name === tech && o.photo_path && odoUrls[o.photo_path] && dayOf(o.at, TZ) === day)
+      .map((o) => ({ src: odoUrls[o.photo_path!], caption: `Odometer ${o.moment === 'end' ? 'end' : 'start'}: ${o.reading.toLocaleString('en-US')}` })),
+    ...sitePhotos.filter((p) => (p.contractor_name ?? '') === tech && dayOf(p.taken_at, TZ) === day)
+      .map((p) => ({ src: p.url, caption: `Site photo · ${new Date(p.taken_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ })}` })),
+  ];
+  const pictures = (r: SheetRow) => (
+    <DayPictures pics={picsFor(r.day, r.tech)} woId={wo.id} woNumber={wo.wo_number} day={r.day} tech={r.tech}
+      onAdded={async (odo) => {
+        // The reading fills the day's odometer box, so the miles work out from it.
+        if (odo) await saveDay(r, nextEdits({ app: r.app, edits: r.edits }, odo.moment === 'start' ? 'odoStart' : 'odoEnd', odo.reading));
+        void load();
+      }} />
+  );
+
+  /** Save every card with changes; how many saved. */
+  const saveAll = async (): Promise<number> => {
+    const list = [...pendingRef.current.values()];
+    if (!list.length) return 0;
+    setSavingAll(true);
+    let n = 0;
+    for (const p of list) if (await saveDay(p.row, p.edits)) n++;
+    setSavingAll(false);
+    if (n) toastSuccess(`Saved ${n} day${n === 1 ? '' : 's'}.`);
+    return n;
+  };
+  useEffect(() => { saveAllRef.current = saveAll; });
 
   if (loading) return <div className="wf-card" style={{ padding: 16 }}>Loading WO {wo.wo_number}…</div>;
   return (
@@ -232,7 +287,7 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
         </div>
       )}
       {look.cards === 'board' && (
-        <HoursBoard onSave={saveDay}
+        <HoursBoard onSave={saveDay} pictures={pictures} picCount={(r) => picsFor(r.day, r.tech).length}
           groups={groups.map((g) => ({ key: g.key, label: look.group === 'day' ? `WO ${wo.wo_number} · every day` : groupLabel(g.key, look.group), rows: g.rows }))} />
       )}
       {look.cards !== 'board' && groups.map((g) => (
@@ -245,7 +300,7 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
           )}
           {g.rows.map((r) => {
             const card = (
-              <DayCard key={`${r.key}:${JSON.stringify(r.edits)}`} row={r} woId={wo.id}
+              <DayCard key={`${r.key}:${JSON.stringify(r.edits)}`} row={r} woId={wo.id} pictures={pictures(r)} onPending={onPending}
                 openPunch={open.find((p) => p.contractor_name === r.tech && dayOf(p.at, TZ) === r.day) ?? null}
                 onSave={saveDay} onClocked={() => void load()} />
             );
@@ -269,13 +324,37 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
           })}
         </div>
       ))}
+      {pendingCount > 0 && (
+        <div style={{ position: 'sticky', bottom: 12, zIndex: 5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+          background: '#0E1B2E', color: '#fff', borderRadius: 12, padding: '10px 14px', boxShadow: '0 6px 20px rgba(14,27,46,0.25)' }}>
+          <span style={{ fontSize: 14 }}>Changes on {pendingCount} day{pendingCount === 1 ? '' : 's'} not saved yet.</span>
+          <button className="wf-btn wf-btn-gold wf-btn-sm" style={{ marginLeft: 'auto' }} disabled={savingAll} onClick={() => void saveAll()}>
+            <Save size={15} /> {savingAll ? 'Saving…' : 'Save all changes'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function DayCard({ row, woId, openPunch, onSave, onClocked }: {
-  row: SheetRow; woId: string; openPunch: Punch | null;
+/** The edits a card's boxes make, or undefined while a number box holds something that isn't a number. */
+function cardEdits(row: SheetRow, vals: Record<string, string>): SavedDay['edits'] | undefined {
+  if (BOXES.some(({ f, time }) => !time && num(vals[f]) === undefined)) return undefined;
+  let edits = row.edits;
+  for (const { f, time } of BOXES) {
+    const v = time ? (vals[f] || null) : num(vals[f]) ?? null;
+    if (v === (row.values[f] ?? null)) continue;
+    edits = nextEdits({ app: row.app, edits }, f, v);
+  }
+  if (vals.note.trim() !== (row.values.note ?? '')) edits = nextEdits({ app: row.app, edits }, 'note', vals.note.trim() || null);
+  return edits;
+}
+
+function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending }: {
+  row: SheetRow; woId: string; openPunch: Punch | null; pictures?: React.ReactNode;
   onSave: (row: SheetRow, edits: SavedDay['edits']) => Promise<boolean>; onClocked: () => void;
+  /** Tells the day list what this card would save, so Save all can (null: nothing to save). */
+  onPending?: (key: string, p: { row: SheetRow; edits: SavedDay['edits'] } | null) => void;
 }) {
   const start = () => Object.fromEntries([...BOXES.map(({ f }) => [f, row.values[f] == null ? '' : String(row.values[f])]), ['note', row.values.note ?? '']]);
   const [vals, setVals] = useState<Record<string, string>>(start);
@@ -284,17 +363,19 @@ function DayCard({ row, woId, openPunch, onSave, onClocked }: {
   const c = dayCalc(typed, 0);
   const changed = BOXES.some(({ f }) => vals[f] !== (row.values[f] == null ? '' : String(row.values[f]))) || vals.note.trim() !== (row.values.note ?? '');
   const edited = Object.keys(row.edits).length > 0;
+  const pending = changed ? cardEdits(row, vals) : undefined;
+  const pendingKey = pending ? JSON.stringify(pending) : '';
+  useEffect(() => {
+    onPending?.(row.key, pending ? { row, edits: pending } : null);
+    // Only when what would be saved changes; the row object is new on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingKey, row.key]);
+  useEffect(() => () => onPending?.(row.key, null), [onPending, row.key]);
 
   const save = async () => {
     const bad = BOXES.find(({ f, time }) => !time && num(vals[f]) === undefined);
     if (bad) { toastError(`${bad.label}: type a number, like 7.5`); return; }
-    let edits = row.edits;
-    for (const { f, time } of BOXES) {
-      const v = time ? (vals[f] || null) : num(vals[f]) ?? null;
-      if (v === (row.values[f] ?? null)) continue;
-      edits = nextEdits({ app: row.app, edits }, f, v);
-    }
-    if (vals.note.trim() !== (row.values.note ?? '')) edits = nextEdits({ app: row.app, edits }, 'note', vals.note.trim() || null);
+    const edits = cardEdits(row, vals)!;
     setBusy(true);
     const ok = await onSave(row, edits);
     setBusy(false);
@@ -357,6 +438,7 @@ function DayCard({ row, woId, openPunch, onSave, onClocked }: {
       <label style={box}><span className="wf-label">Note</span>
         <input className="wf-input" value={vals.note} onChange={(e) => setVals((x) => ({ ...x, note: e.target.value }))} aria-label={`Note ${row.tech} ${row.day}`} />
       </label>
+      {pictures}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="wf-btn wf-btn-navy" disabled={busy || !changed} onClick={() => void save()}>
           <Save size={15} /> {busy ? 'Saving…' : changed ? 'Save' : 'Saved'}

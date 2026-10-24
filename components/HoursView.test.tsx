@@ -52,6 +52,27 @@ describe('Hours', () => {
     expect(upserts.at(-1)).toMatchObject({ wo_id: 'wo', day: '2026-10-23', tech: 'Frederick Jeffers', edits: { leftSite: '15:30', miles: 104, meals: 14.5 } });
   });
 
+  it('saves every changed day at once with Save all changes', async () => {
+    const user = userEvent.setup();
+    render(<HoursView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    await user.type(await screen.findByLabelText('Meals $ Frederick Jeffers 2026-10-23'), '30');
+    expect(screen.getByText('Changes on 1 day not saved yet.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /save all changes/i }));
+    await vi.waitFor(() => expect(upserts.at(-1)).toMatchObject({ day: '2026-10-23', edits: { meals: 30 } }));
+    await vi.waitFor(() => expect(screen.queryByText(/not saved yet/)).toBeNull());
+  });
+
+  it("saves the changed days when the work order's Save Changes asks (HOURS_SAVE_ALL)", async () => {
+    const user = userEvent.setup();
+    render(<HoursView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    await user.type(await screen.findByLabelText('Miles Frederick Jeffers 2026-10-23'), '88');
+    const { HOURS_SAVE_ALL } = await import('@/lib/hours-look');
+    window.dispatchEvent(new Event(HOURS_SAVE_ALL));
+    await vi.waitFor(() => expect(upserts.at(-1)).toMatchObject({ edits: { miles: 88 } }));
+  });
+
   it('makes a day travel only: no hours on site, the travel kept', async () => {
     const user = userEvent.setup();
     render(<HoursView workOrders={[wo]} />);

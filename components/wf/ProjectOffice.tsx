@@ -3,7 +3,8 @@
 //   ProjectDayCard     on a project job's page: each tech's day — travel legs
 //                      with miles (Fred can correct a mile figure), time on
 //                      site with lunch taken out — and Add receipt for the
-//                      hotels and meals the office paid itself.
+//                      hotels and meals the office paid itself. Fix times
+//                      corrects a tap the tech made late (migration 138).
 //   ProjectReport      the whole project (every site with the same project
 //                      name) for a week or any dates, to print or save as a
 //                      PDF and attach to the invoice: time on site, travel and
@@ -12,7 +13,7 @@
 //                      job photos. Never any tech pay or margin.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Car, FileSpreadsheet, FileText, Image as ImageIcon, MapPin, Plus, Printer, Receipt, Sparkles, X } from 'lucide-react';
+import { Car, Clock, FileSpreadsheet, FileText, Image as ImageIcon, MapPin, Plus, Printer, Receipt, Sparkles, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useLiveRows } from '@/components/wf/useLive';
 import {
@@ -36,6 +37,7 @@ import { askedDeliverables } from '@/lib/wf';
 import { aiFailureText } from '@/lib/wo-ai';
 import { downloadXLSXBook } from '@/lib/export';
 import { billJpeg } from '@/lib/bill-image';
+import { fixFailure, fixProblem, fromLocalInput, tapLabel, toLocalInput } from '@/lib/time-fix';
 import {
   billReadings, matchOdometer, odoProblems, receiptItemRows, sheetName, siteBill, siteSheetRows, summaryFacts, totalsSheetRows,
   type BillDay, type BillLeg, type BillSite, type OdoProblem, type OdoRow, type SiteBill,
@@ -49,17 +51,25 @@ const fmtDayLong = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(
 /** Tell the Expenses card to reload after the office adds or removes a receipt. */
 export const EXPENSES_CHANGED = 'faj:expenses-changed';
 
-type EventRow = { id?: string; contractor_name: string; kind: string; at: string; origin?: string | null; dest?: string | null; miles?: number | null; wo_id?: string };
+type EventRow = { id?: string; contractor_name: string; kind: string; at: string; origin?: string | null; dest?: string | null; miles?: number | null; wo_id?: string; original_at?: string | null; source?: 'day' | 'punch' };
 
 /** Every tech's taps on these jobs: travel and lunch (job_day_events) and the clock (job_punches). */
 async function loadEvents(woIds: string[]): Promise<(DayEvent & { woId: string })[]> {
   if (woIds.length === 0) return [];
   const db = createClient();
+  // original_at: the phone's time once the office corrected one (migration 138); a database without it loads the rest.
+  const read = async (table: 'job_day_events' | 'job_punches', cols: string) => {
+    const r = await db.from(table).select(`${cols}, original_at`).in('wo_id', woIds).order('at');
+    return r.error ? db.from(table).select(cols).in('wo_id', woIds).order('at') : r;
+  };
   const [d, p] = await Promise.all([
-    db.from('job_day_events').select('id, wo_id, contractor_name, kind, at, origin, dest, miles').in('wo_id', woIds).order('at'),
-    db.from('job_punches').select('wo_id, contractor_name, kind, at').in('wo_id', woIds).order('at'),
+    read('job_day_events', 'id, wo_id, contractor_name, kind, at, origin, dest, miles'),
+    read('job_punches', 'id, wo_id, contractor_name, kind, at'),
   ]);
-  const rows = [...((d.data as EventRow[] | null) ?? []), ...((p.data as EventRow[] | null) ?? [])];
+  const rows = [
+    ...((d.data as unknown as EventRow[] | null) ?? []).map((r) => ({ ...r, source: 'day' as const })),
+    ...((p.data as unknown as EventRow[] | null) ?? []).map((r) => ({ ...r, source: 'punch' as const })),
+  ];
   const out: (DayEvent & { woId: string })[] = [];
   for (const r of rows) {
     const [ev] = parseDayEvents([r]);
@@ -98,8 +108,9 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
       subtitle={w.project_name ? `${w.project_name} · from the techs' phones` : "From the techs' phones"}
       right={<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Plus size={15} /> Add receipt</button>
-        {/* The weekly bill for the client, on every job (Fred, 2026-10-18: "printed and exportable to send to clients"). */}
-        <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Weekly bill</button>
+        {/* The bill for the client, on every job (Fred, 2026-10-18: "printed and exportable to send to clients";
+            2026-10-24: "when they finish working I need to pull their hours and send it to the client"). */}
+        <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> {w.is_project ? 'Weekly bill' : 'Bill this job'}</button>
       </div>}
     >
       {events === null ? <div className="wf-subtle">Loading…</div>
@@ -119,6 +130,7 @@ export function ProjectDayCard({ w, lists }: { w: EnrichedWorkOrder; lists: Clos
             </div>
             {logs.map((d) => (
               <DayBlock key={`${d.day}|${d.tech}`} d={d} onChanged={load}
+                taps={(events ?? []).filter((e) => (e.tech ?? '') === d.tech && dayOf(e.at, TZ) === d.day)}
                 odo={showOdo ? {
                   legs: legs.filter((l) => l.tech === d.tech && l.day === d.day), problems, urls: odo.urls,
                   loose: loose.filter((o) => o.contractor_name === d.tech && dayOf(o.at, TZ) === d.day),
@@ -199,15 +211,24 @@ function OdoLine({ l, problems, urls }: { l: BillLeg; problems: OdoProblem[]; ur
   );
 }
 
-function DayBlock({ d, onChanged, odo }: { d: DayLog; onChanged: () => void; odo: DayOdo | null }) {
+function DayBlock({ d, taps, onChanged, odo }: { d: DayLog; taps: DayEvent[]; onChanged: () => void; odo: DayOdo | null }) {
+  const [fixing, setFixing] = useState(false);
+  const edited = taps.filter((t) => t.originalAt).length;
   return (
     <div style={{ borderTop: '1px solid var(--wf-line)', padding: '10px 0' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
         <b>{fmtDay(d.day)}</b><span className="wf-subtle">{d.tech}</span>
+        {edited > 0 && <span className="wf-chip" style={{ fontSize: 11.5, color: '#8A5A00', background: '#FFF8E1' }}>{edited} time{edited === 1 ? '' : 's'} corrected</span>}
         <span className="wf-subtle" style={{ marginLeft: 'auto', fontSize: 12.5 }}>
           On site {formatDuration(d.onSiteMs)} · travel {formatDuration(d.travelMs)} · {d.miles} mi
         </span>
+        {taps.some((t) => t.id) && (
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setFixing((f) => !f)} aria-expanded={fixing}>
+            <Clock size={14} /> {fixing ? 'Done' : 'Fix times'}
+          </button>
+        )}
       </div>
+      {fixing && <TapFixer taps={taps} onSaved={onChanged} />}
       {(d.clockIn || d.signOut) && (
         <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 2 }}>
           {d.clockIn ? `Clocked in ${timeOf(d.clockIn)}` : 'No clock-in'}
@@ -241,6 +262,57 @@ function DayBlock({ d, onChanged, odo }: { d: DayLog; onChanged: () => void; odo
           </div>
         ) })),
       ].sort((a, b) => a.at.localeCompare(b.at)).map((x) => x.el)}
+    </div>
+  );
+}
+
+/**
+ * Every tap the tech made that day, each with its time to correct (Fred,
+ * 2026-10-24: "get it in accurate times"). The phone's own time stays on record
+ * and shows beside a corrected one; the database allows up to 2 days either way.
+ */
+function TapFixer({ taps, onSaved }: { taps: DayEvent[]; onSaved: () => void }) {
+  const [edit, setEdit] = useState<{ tap: DayEvent; value: string; note: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!edit?.tap.id || !edit.tap.source) return;
+    const at = fromLocalInput(edit.value, TZ);
+    const problem = at ? fixProblem(edit.tap.originalAt ?? edit.tap.at, at) : 'Pick a date and time.';
+    if (problem || !at) { toastError(problem ?? 'Pick a date and time.'); return; }
+    setBusy(true);
+    const { data, error } = await createClient().rpc('wf_owner_fix_time', { p_source: edit.tap.source, p_id: edit.tap.id, p_at: at, p_note: edit.note });
+    setBusy(false);
+    const r = data as { ok?: boolean; reason?: string } | null;
+    if (error || !r?.ok) { toastError(error ? 'The time wasn’t saved. Try again.' : fixFailure(r?.reason)); return; }
+    toastSuccess(`${tapLabel(edit.tap)} is now ${timeOf(at)}.`);
+    setEdit(null);
+    onSaved();
+  };
+  return (
+    <div className="wf-card" style={{ padding: '8px 12px', margin: '8px 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="wf-subtle" style={{ fontSize: 12.5 }}>Correct a time the tech tapped late or early. The phone&apos;s time stays on record, and the bill flags the change for you.</div>
+      {taps.filter((t) => t.id && t.source).sort((a, b) => a.at.localeCompare(b.at)).map((t) => (
+        <div key={t.id} style={{ borderTop: '1px solid var(--wf-line)', paddingTop: 6 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
+            <span style={{ flex: '1 1 140px' }}>{tapLabel(t)}</span>
+            <b>{timeOf(t.at)}</b>
+            {t.originalAt && <span className="wf-subtle" style={{ fontSize: 12 }}>(phone: {timeOf(t.originalAt)})</span>}
+            {edit?.tap.id !== t.id && (
+              <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setEdit({ tap: t, value: toLocalInput(t.at, TZ), note: '' })}>Change</button>
+            )}
+          </div>
+          {edit && edit.tap.id === t.id && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+              <input type="datetime-local" className="wf-input" value={edit.value} aria-label={`New time for ${tapLabel(t)}`}
+                onChange={(e) => { const value = e.target.value; setEdit((x) => (x ? { ...x, value } : x)); }} style={{ width: 210, minHeight: 36, padding: '4px 8px' }} />
+              <input className="wf-input" placeholder="Why (optional)" value={edit.note} maxLength={300} aria-label="Why"
+                onChange={(e) => { const note = e.target.value; setEdit((x) => (x ? { ...x, note } : x)); }} style={{ flex: '1 1 160px', minHeight: 36, padding: '4px 8px' }} />
+              <button className="wf-btn wf-btn-navy wf-btn-sm" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>
+              <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={busy} onClick={() => setEdit(null)}>Cancel</button>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -463,6 +535,12 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
         db.from('job_odometer').select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').in('wo_id', ids).order('at'),
       ]);
       setEvents(ev);
+      // A job on its own: the whole job, from its first record to today (Fred, 2026-10-24: "when they finish working I need to pull their hours").
+      if (!projectName.trim()) {
+        const firsts = [...ev.map((e) => dayOf(e.at, TZ)), ...((ex.data as unknown as ReportExpense[] | null) ?? []).map((e) => e.expense_date),
+          ...((ph.data as ReportPhoto[] | null) ?? []).map((x) => dayOf(x.taken_at, TZ))].filter(Boolean).sort();
+        if (firsts[0]) setFrom(firsts[0] < todayNY() ? firsts[0] : todayNY());
+      }
       const readings = ((od.data as OdoRow[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
       setOdo(readings);
       const all = ((ex.data as unknown as ReportExpense[] | null) ?? []);
@@ -511,6 +589,8 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   const sumOf = (f: (b: SiteBill) => number) => Math.round(shown.reduce((t, s) => t + f(s.bill), 0) * 100) / 100;
   const odoTotal = Math.round(shown.reduce((t, s) => t + (s.bill.totals.odoMiles ?? 0), 0) * 10) / 10;
   const title = projectName || (wos?.[0]?.title ?? 'Project');
+  const single = !projectName.trim();
+  const fixedTaps = (woId: string) => events.filter((e) => e.woId === woId && e.originalAt && inRange(dayOf(e.at, TZ), from, to));
   const billSites: BillSite[] = shown.map(({ wo, bill }) => ({
     name: wo.site_name || wo.title || 'Site', wo: wo.wo_number, clientWo: wo.external_wo_id, address: where(wo), bill,
   }));
@@ -561,7 +641,7 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   return createPortal(
     <div id="job-log-root" className="wf" style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(2,4,9,0.55)', overflowY: 'auto', padding: '16px 12px 40px' }}>
       <div className="no-print" style={{ maxWidth: 850, margin: '0 auto 12px', background: '#F6F4EF', borderRadius: 14, padding: 14, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-        <div style={{ fontWeight: 700, fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 16, flex: '1 1 160px' }}>Weekly bill · {projectName || 'this site'}</div>
+        <div style={{ fontWeight: 700, fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 16, flex: '1 1 160px' }}>{single ? 'Job bill · this job' : `Weekly bill · ${projectName}`}</div>
         <label style={{ fontSize: 13 }}>From <input type="date" className="wf-input" style={{ width: 150, minHeight: 36, padding: '4px 8px' }} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label style={{ fontSize: 13 }}>To <input type="date" className="wf-input" style={{ width: 150, minHeight: 36, padding: '4px 8px' }} value={to} onChange={(e) => setTo(e.target.value)} /></label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
@@ -585,7 +665,7 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ height: 54, width: 'auto' }} />
           <div style={{ textAlign: 'right', color: '#fff' }}>
-            <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 1.5, color: '#E3C987' }}>WEEKLY BILL</div>
+            <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 1.5, color: '#E3C987' }}>{single ? 'JOB BILL' : 'WEEKLY BILL'}</div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>{range}</div>
           </div>
         </div>
@@ -608,7 +688,7 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
             <>
               <div className="jl-avoid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginTop: 16 }}>
                 {[
-                  ['Sites', String(shown.length)],
+                  ...(single ? [] : [['Sites', String(shown.length)]]),
                   ['Days', String(all.days)],
                   ['Hours on site', String(sumOf((b) => b.totals.onSiteHours))],
                   ['Travel hours', String(sumOf((b) => b.totals.travelHours))],
@@ -642,10 +722,14 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
                         aria-label={`Save ${site.name} as a JPEG`}><ImageIcon size={15} /> JPEG</button>
                     </div>
                     {site.address && <div style={{ color: '#5E6470', marginBottom: 6 }}>{site.address}</div>}
-                    {bill.flags.length > 0 && (
+                    {(bill.flags.length > 0 || fixedTaps(wo.id).length > 0) && (
                       <div className="no-print" role="note" style={{ border: '1px solid #F2C94C', background: '#FFF8E1', borderRadius: 10, padding: '8px 12px', margin: '6px 0 10px' }}>
                         <div style={{ fontWeight: 700, color: '#8A5A00' }}>To check before sending · only you see this</div>
                         {bill.flags.map((f) => <div key={f.text} style={{ fontSize: 12.5 }}>• {f.text}</div>)}
+                        {/* Times the office corrected (migration 138): what the bill uses, and what the phone said. */}
+                        {fixedTaps(wo.id).map((e) => (
+                          <div key={e.id} style={{ fontSize: 12.5 }}>• Time corrected: {e.tech} · {tapLabel(e)} {fmtDay(dayOf(e.at, TZ))} is {timeOf(e.at)} (the phone said {timeOf(e.originalAt!)}).</div>
+                        ))}
                       </div>
                     )}
                     {bill.days.length > 0 && (

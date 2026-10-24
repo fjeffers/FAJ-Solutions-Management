@@ -32,6 +32,10 @@ export type DayEvent = {
   id?: string;
   /** Street address of the tap's GPS position (migration 120, lib/places.ts). */
   place?: string;
+  /** Which table the tap is in: travel and lunch (job_day_events) or the clock (job_punches). */
+  source?: 'day' | 'punch';
+  /** The time the phone recorded, when the office has corrected it (migration 138). */
+  originalAt?: string;
 };
 
 const KINDS: DayKind[] = ['day_start', 'travel_start', 'travel_end', 'lunch_start', 'lunch_end', 'in', 'out'];
@@ -67,6 +71,8 @@ export function parseDayEvents(raw: unknown): DayEvent[] {
     else if (typeof r.tech === 'string' && r.tech) ev.tech = r.tech;
     if (typeof r.id === 'string' && r.id) ev.id = r.id;
     if (typeof r.place === 'string' && r.place.trim()) ev.place = r.place.trim();
+    if (r.source === 'day' || r.source === 'punch') ev.source = r.source;
+    if (typeof r.original_at === 'string' && Number.isFinite(Date.parse(r.original_at)) && Date.parse(r.original_at) !== Date.parse(at)) ev.originalAt = r.original_at;
     out.push(ev);
   }
   return sortEvents(out);

@@ -47,7 +47,7 @@ import PdfEditor, { photosToPdf, type SendResult } from '@/components/tools/PdfE
 import DocViewer, { docKind } from '@/components/tools/DocViewer';
 import { trimPdf } from '@/lib/pdf-trim';
 import { DOC_KINDS, editedName } from '@/lib/job-docs';
-import { ProjectDayCard, EXPENSES_CHANGED } from '@/components/wf/ProjectOffice';
+import { ProjectDayCard, EXPENSES_CHANGED, useBilledRows, billedHoursOf } from '@/components/wf/ProjectOffice';
 import { asks } from '@/lib/capture';
 
 type Row = { w: EnrichedWorkOrder; job: WfJob };
@@ -401,6 +401,8 @@ function OwnerJob({
         setClockMs(punches.length ? logTotals(buildVisits(punches, [])).ms : null);
       });
   }, [w.id, w.updated_at]);
+  // The hours as billed, with the office's changes on Hours (Fred, 2026-10-24: "it need to reflect of the work order also").
+  const billed = useBilledRows(w);
 
   let job = row.job;
   for (const [id, done] of Object.entries(ticked)) job = withTask(job, id, done);
@@ -547,7 +549,7 @@ function OwnerJob({
     ),
     // Every job's drives and time on site with the miles (Fred, 2026-10-18:
     // home → hotel, hotel → site, site → hotel, the hotel → home on the last day).
-    'job.project': <ProjectDayCard w={w} lists={lists} />,
+    'job.project': <ProjectDayCard w={w} lists={lists} billed={billed} />,
     'job.notes': <JobNotesCard woId={w.id} author={author ?? 'Office'} />,
     'job.docs': <JobDocsCard woId={w.id} files={w.doc_urls} jobLabel={`WO ${w.wo_number}${w.site_name || w.customer_name ? ` · ${w.site_name || w.customer_name}` : ''}`} archived={archived} />,
     'job.report': <OwnerReport w={w} onEdit={() => onEdit(w)} />,
@@ -568,6 +570,7 @@ function OwnerJob({
         job={job}
         ownerView
         loggedMs={clockMs ?? undefined}
+        billedHours={billedHoursOf(billed)}
         onBack={onBack}
         onRefresh={refresh}
         refreshing={refreshing}

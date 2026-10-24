@@ -16,7 +16,7 @@
 // them and marked as a guess for the office to check.
 //
 // Pure and unit-tested (lib/field-sheet.test.ts). The screen is components/FieldSheetView.tsx.
-import { buildDayLogs, hoursOf, legLabel, type DayEvent, type DayLog } from './project-day';
+import { buildDayLogs, gapOnSite, hoursOf, legLabel, type DayEvent, type DayLog } from './project-day';
 import { matchOdometer, type BillLeg, type OdoRow } from './weekly-bill';
 import type { QbInvoicePayload } from './qb-invoice';
 import { expenseCategoryLabel } from './expenses';
@@ -100,9 +100,6 @@ export function minutesOf(t: string | null | undefined): number | null {
 /** Hours from one clock time to the next, past midnight if it has to. */
 const hoursBetween = (a: number, b: number) => (((b - a) % 1440) + 1440) % 1440 / 60;
 
-/** A "drive" over half an hour with under half a mile: the tech never tapped arriving. */
-const stood = (l: BillLeg) => l.end != null && l.miles != null && l.miles < 0.5 && l.ms > 30 * MIN;
-
 /** Each tech's day from the app: the taps (buildDayLogs) and the drives with their odometer readings (matchOdometer). */
 export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): AppDay[] {
   const t = (iso: string | null | undefined) => (iso ? hhmm(iso, timeZone) : null);
@@ -121,13 +118,7 @@ export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): App
       left = mine[0].start;
       back = mine.at(-1)!.end;
       // On site is the longest stretch, two hours or more, between one drive ending and the next starting.
-      let best: { gap: number; arrived: string; leftSite: string } | null = null;
-      for (let i = 0; i < mine.length - 1; i++) {
-        const end = stood(mine[i]) ? mine[i].start : mine[i].end;
-        if (!end) continue;
-        const gap = Date.parse(mine[i + 1].start) - Date.parse(end);
-        if (gap >= 120 * MIN && (!best || gap > best.gap)) best = { gap, arrived: end, leftSite: mine[i + 1].start };
-      }
+      const best = gapOnSite(mine);
       if (best) {
         arrived = best.arrived; leftSite = best.leftSite; guessed.push('arrived', 'leftSite');
       } else if (mine.length === 1 && (mine[0].dest === 'hotel' || mine[0].dest === 'home') && hhmm(mine[0].start, timeZone) >= '12:00') {

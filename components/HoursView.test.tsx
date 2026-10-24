@@ -52,6 +52,17 @@ describe('Hours', () => {
     expect(upserts.at(-1)).toMatchObject({ wo_id: 'wo', day: '2026-10-23', tech: 'Frederick Jeffers', edits: { leftSite: '15:30', miles: 104, meals: 14.5 } });
   });
 
+  it('makes a day travel only: no hours on site, the travel kept', async () => {
+    const user = userEvent.setup();
+    render(<HoursView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    await screen.findByLabelText('Started Frederick Jeffers 2026-10-23');
+    await user.click(screen.getByRole('button', { name: 'Travel only' }));
+    expect(screen.getByText('Travel day')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(upserts.at(-1)).toMatchObject({ edits: { arrived: null, hours: 0, travel: 3.55 } });
+  });
+
   it('clocks out a tech still clocked in, at the Finished time', async () => {
     const user = userEvent.setup();
     render(<HoursView workOrders={[wo]} />);
@@ -59,6 +70,29 @@ describe('Hours', () => {
     await user.type(await screen.findByLabelText('Finished Frederick Jeffers 2026-10-23'), '15:30');
     await user.click(screen.getByRole('button', { name: /clock out at/i }));
     expect(rpc).toHaveBeenCalledWith('wf_owner_fix_punch', expect.objectContaining({ p_op: 'add', p_kind: 'out', p_at: '2026-10-23T19:30:00.000Z', p_tech: 'Frederick Jeffers' }));
+  });
+
+  it('says when Started and Finished come from the gap between drives', async () => {
+    const saved = tables.job_day_events, punches = tables.job_punches;
+    tables.job_punches = [];
+    // Paul Gibbs, 2026-10-21: two drives picked as Hotel → Hotel, nothing on site.
+    tables.job_day_events = [
+      { id: 'g1', wo_id: 'wo', contractor_name: 'Frederick Jeffers', kind: 'travel_start', at: at('23', '07:38'), origin: 'hotel', dest: 'hotel', miles: null },
+      { id: 'g2', wo_id: 'wo', contractor_name: 'Frederick Jeffers', kind: 'travel_end', at: at('23', '08:26'), origin: null, dest: null, miles: 2.2 },
+      { id: 'g3', wo_id: 'wo', contractor_name: 'Frederick Jeffers', kind: 'travel_start', at: at('23', '16:50'), origin: 'hotel', dest: 'hotel', miles: null },
+      { id: 'g4', wo_id: 'wo', contractor_name: 'Frederick Jeffers', kind: 'travel_end', at: at('23', '17:46'), origin: null, dest: null, miles: 2.2 },
+    ];
+    try {
+      const user = userEvent.setup();
+      render(<HoursView workOrders={[wo]} />);
+      await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+      expect(((await screen.findByLabelText('Started Frederick Jeffers 2026-10-23')) as HTMLInputElement).value).toBe('08:26');
+      expect((screen.getByLabelText('Finished Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('16:50');
+      expect(screen.getByText(/worked out from the drives/)).toBeTruthy();
+    } finally {
+      tables.job_day_events = saved;
+      tables.job_punches = punches;
+    }
   });
 
   it('shows the days by week with each week\'s totals, as a short list, and keeps the choice', async () => {

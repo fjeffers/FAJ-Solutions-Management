@@ -36,10 +36,12 @@ function InfoItem({ icon, title, lines }: { icon: ReactNode; title: string; line
  * and #number, "City - title", the company, then four key facts. The office
  * also sees who is on it and what the client pays; a tech sees no money.
  */
-export function DetailHeader({ job, ownerView, loggedMs }: {
+export function DetailHeader({ job, ownerView, loggedMs, billedHours }: {
   job: WfJob; ownerView: boolean;
   /** The office: every clock-in and clock-out on the job added up (job_punches). */
   loggedMs?: number;
+  /** The office: hours on site as billed, with its changes on the Hours screen. */
+  billedHours?: number | null;
 }) {
   const logged = loggedMs ?? workedMs(job);
   const type = workTypeFor(job.serviceType, job.title);
@@ -64,7 +66,7 @@ export function DetailHeader({ job, ownerView, loggedMs }: {
       <hr style={{ border: 'none', borderTop: '1px solid var(--wf-line)', margin: '12px 0' }} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 16px' }}>
         <InfoItem icon={<Info size={16} />} title={`Status: ${wfStatusLabel(job.status, ownerView)}`}
-          lines={[`Time logged: ${logged ? formatDuration(logged) : '0m'}`]} />
+          lines={[`Time logged: ${logged ? formatDuration(logged) : '0m'}`, ...(billedHours != null ? [`Hours as billed: ${billedHours.toFixed(2)} h`] : [])]} />
         <InfoItem icon={<MapPin size={16} />} title={`Location: ${(ownerView ? city || job.siteName : job.siteName || city) || 'not set'}`} lines={[fullAddress(job)]} />
         <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], `${job.priorityLabel} priority`]} />
         <InfoItem icon={<CalendarDays size={16} />} title="Schedule" lines={[whenDay(job), times || 'No set time']} />
@@ -216,12 +218,13 @@ export function DescriptionCard({ job }: { job: WfJob }) {
  * techs / money on the right. On a phone: one column, clock first.
  */
 export default function WfJobDetail({
-  job, ownerView, loggedMs, hideBar, onBack, onRefresh, refreshing, actions, clock, side, onToggleTask, bottom, below, simple = false,
+  job, ownerView, loggedMs, billedHours, hideBar, onBack, onRefresh, refreshing, actions, clock, side, onToggleTask, bottom, below, simple = false,
 }: {
   job: WfJob;
   ownerView: boolean;
   /** Time logged in the header, when the page has every clock-in (the office). */
   loggedMs?: number;
+  billedHours?: number | null;
   /** The page's own top bar already has Back and Refresh (the tech portal). */
   hideBar?: boolean;
   onBack: () => void;
@@ -249,7 +252,7 @@ export default function WfJobDetail({
     return (
       <div className="wf-rise">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
-          <DetailHeader job={job} ownerView={ownerView} loggedMs={loggedMs} />
+          <DetailHeader job={job} ownerView={ownerView} loggedMs={loggedMs} billedHours={billedHours} />
           {clock}
           <DescriptionCard job={job} />
         </div>
@@ -279,7 +282,7 @@ export default function WfJobDetail({
       </div>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <DetailHeader job={job} ownerView={ownerView} loggedMs={loggedMs} />
+        <DetailHeader job={job} ownerView={ownerView} loggedMs={loggedMs} billedHours={billedHours} />
         {actions && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{actions}</div>}
         <div className="wf-detail-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>

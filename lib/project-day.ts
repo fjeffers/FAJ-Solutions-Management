@@ -253,6 +253,29 @@ export function buildDayLogs(events: DayEvent[], now: Date = new Date(), timeZon
   return out.sort((a, b) => a.day.localeCompare(b.day) || a.tech.localeCompare(b.tech));
 }
 
+const MIN = 60_000;
+/** A "drive" over half an hour with under half a mile: the tech never tapped arriving. */
+const stood = (l: Pick<Leg, 'end' | 'miles' | 'ms'>) => l.end != null && l.miles != null && l.miles < 0.5 && l.ms > 30 * MIN;
+
+/**
+ * A day with drives but no clock-in on site: on site is the longest stretch,
+ * two hours or more, between one drive ending and the next starting. Paul
+ * Gibbs, 2026-10-21: he picked Hotel for the morning drive to the site, so
+ * the app signed him out on arrival and counted no time on site, though he
+ * was there 8:26 AM to 4:50 PM. Null when there is no such stretch.
+ */
+export function gapOnSite(legs: Pick<Leg, 'start' | 'end' | 'miles' | 'ms'>[]): { arrived: string; leftSite: string; ms: number } | null {
+  const mine = [...legs].sort((a, b) => a.start.localeCompare(b.start));
+  let best: { arrived: string; leftSite: string; ms: number } | null = null;
+  for (let i = 0; i < mine.length - 1; i++) {
+    const end = stood(mine[i]) ? mine[i].start : mine[i].end;
+    if (!end) continue;
+    const ms = Date.parse(mine[i + 1].start) - Date.parse(end);
+    if (ms >= 120 * MIN && (!best || ms > best.ms)) best = { arrived: end, leftSite: mine[i + 1].start, ms };
+  }
+  return best;
+}
+
 export type DayTotals = { travelMs: number; onSiteMs: number; lunchMs: number; miles: number; days: number };
 
 export function totalsOf(logs: DayLog[]): DayTotals {

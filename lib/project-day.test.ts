@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseDayEvents, dayState, onSiteMs, buildDayLogs, totalsOf, legLabel, sortEvents, lastPlace, tripLeg, type DayEvent,
+  parseDayEvents, dayState, onSiteMs, buildDayLogs, totalsOf, legLabel, sortEvents, lastPlace, tripLeg, gapOnSite, type DayEvent,
 } from './project-day';
 
 const TZ = 'America/New_York';
@@ -175,5 +175,23 @@ describe('a day left open does not block the next morning (2026-10-14)', () => {
   it('yesterday left off site: this morning Clock in moves on', () => {
     const evs = [ev('in', '09:00', {}, '2026-10-13'), ev('out', '16:00', {}, '2026-10-13'), ev('day_start', '07:00', {}, '2026-10-14')];
     expect(dayState(evs, new Date(at('07:05', '2026-10-14')), TZ).stage).toBe('clocked');
+  });
+});
+
+describe('gapOnSite', () => {
+  // Paul Gibbs, 2026-10-21: Hotel picked for the drive to the site, so no clock-in on site.
+  const day = '2026-10-21';
+  const paul = [
+    ev('day_start', '07:38', {}, day), ev('travel_start', '07:38', { origin: 'hotel', dest: 'hotel' }, day), ev('travel_end', '08:26', { miles: 2.2 }, day),
+    ev('day_start', '16:50', {}, day), ev('travel_start', '16:50', { origin: 'hotel', dest: 'hotel' }, day), ev('travel_end', '17:46', { miles: 2.2 }, day),
+  ];
+  it('finds the stretch between the drives as on site', () => {
+    const [d] = buildDayLogs(paul, new Date(at('20:00', day)), TZ);
+    expect(d.onSiteMs).toBe(0);
+    expect(gapOnSite(d.legs)).toEqual({ arrived: at('08:26', day), leftSite: at('16:50', day), ms: (8 * 60 + 24) * 60_000 });
+  });
+  it('is nothing for a short stop between drives', () => {
+    const [d] = buildDayLogs(paul.map((e) => (e.at === at('16:50', day) ? { ...e, at: at('09:30', day) } : e)), new Date(at('20:00', day)), TZ);
+    expect(gapOnSite(d.legs)).toBeNull();
   });
 });

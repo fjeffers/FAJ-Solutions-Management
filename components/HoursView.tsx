@@ -24,7 +24,8 @@ import { clock, dayCalc, nextEdits, parseEdits, rowsFor, type SavedDay, type She
 import { parsePunches, stillOnSite, zonedIso, type Punch } from '@/lib/clock-fix';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder, WorkOrder } from '@/lib/types';
-import { groupLabel, groupOf, hoursLookNow, HOURS_GROUPS, type HoursLook } from '@/lib/hours-look';
+import { groupLabel, groupOf, hoursLookNow, HOURS_CARDS, HOURS_GROUPS, type HoursLook } from '@/lib/hours-look';
+import HoursBoard from '@/components/HoursBoard';
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { fixPunch } from '@/components/ClockFix';
 import { findJob } from '@/components/FieldSheetView';
@@ -218,8 +219,10 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
           )}
           <div style={{ display: 'grid', gap: 3 }}><span className="wf-label">Cards</span>
             <div style={{ display: 'flex', gap: 4 }}>
-              <button type="button" className={`wf-btn wf-btn-sm ${look.cards === 'full' ? 'wf-btn-navy' : 'wf-btn-outline'}`} aria-pressed={look.cards === 'full'} onClick={() => changeLook({ cards: 'full' })}>Full cards</button>
-              <button type="button" className={`wf-btn wf-btn-sm ${look.cards === 'short' ? 'wf-btn-navy' : 'wf-btn-outline'}`} aria-pressed={look.cards === 'short'} onClick={() => changeLook({ cards: 'short' })}>Short list</button>
+              {HOURS_CARDS.map((k) => (
+                <button key={k.value} type="button" className={`wf-btn wf-btn-sm ${look.cards === k.value ? 'wf-btn-navy' : 'wf-btn-outline'}`}
+                  aria-pressed={look.cards === k.value} title={k.hint} onClick={() => changeLook({ cards: k.value })}>{k.label}</button>
+              ))}
             </div>
           </div>
           <div style={{ marginLeft: 'auto', fontSize: 13, textAlign: 'right' }}>
@@ -228,7 +231,11 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
           </div>
         </div>
       )}
-      {groups.map((g) => (
+      {look.cards === 'board' && (
+        <HoursBoard onSave={saveDay}
+          groups={groups.map((g) => ({ key: g.key, label: look.group === 'day' ? `WO ${wo.wo_number} · every day` : groupLabel(g.key, look.group), rows: g.rows }))} />
+      )}
+      {look.cards !== 'board' && groups.map((g) => (
         <div key={g.key} style={{ display: 'grid', gap: 10 }}>
           {look.group !== 'day' && (
             <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', padding: '6px 2px 0', borderBottom: '2px solid #C9A24B' }}>

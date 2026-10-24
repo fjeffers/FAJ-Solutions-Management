@@ -10,8 +10,12 @@ export type HoursLook = {
   order: 'new' | 'old';
   /** One run of days, or grouped by week (Monday to Sunday) or by month, each with its totals. */
   group: 'day' | 'week' | 'month';
-  /** Every box open on every card, or one line per day that opens when tapped. */
-  cards: 'full' | 'short';
+  /**
+   * Every box open on every card, one line per day that opens when tapped, or
+   * a board like monday.com: colored groups, a status label, every cell typed
+   * into and saved on the spot (Fred, 2026-10-24: "give me a monday.com feature view").
+   */
+  cards: 'full' | 'short' | 'board';
 };
 
 export const STANDARD_HOURS_LOOK: HoursLook = { order: 'new', group: 'day', cards: 'full' };
@@ -28,8 +32,42 @@ export function normalizeHoursLook(raw: unknown): HoursLook {
   return {
     order: v.order === 'old' ? 'old' : 'new',
     group: v.group === 'week' || v.group === 'month' ? v.group : 'day',
-    cards: v.cards === 'short' ? 'short' : 'full',
+    cards: v.cards === 'short' || v.cards === 'board' ? v.cards : 'full',
   };
+}
+
+export const HOURS_CARDS: { value: HoursLook['cards']; label: string; hint: string }[] = [
+  { value: 'full', label: 'Full cards', hint: 'Every box open, ready to type in' },
+  { value: 'short', label: 'Short list', hint: 'One line a day; tap a line to open it' },
+  { value: 'board', label: 'Board', hint: 'Like monday.com: colored groups, a status on each day, type in any cell' },
+];
+
+// ── The board's status label (monday.com's colored status column) ──────────
+
+export type DayStatus = 'app' | 'changed' | 'check' | 'travel' | 'typed';
+export const DAY_STATUS: Record<DayStatus, { label: string; color: string }> = {
+  app: { label: 'From the app', color: '#00C875' },
+  changed: { label: 'Changed', color: '#FDAB3D' },
+  check: { label: 'Check times', color: '#E2445C' },
+  travel: { label: 'Travel day', color: '#A25DDC' },
+  typed: { label: 'Typed in', color: '#579BFC' },
+};
+/** The colors monday.com gives its groups, in turn. */
+export const GROUP_COLORS = ['#579BFC', '#00C875', '#A25DDC', '#FDAB3D', '#E2445C', '#037F4C', '#FF158A', '#784BD1'];
+
+/**
+ * A day's status: a travel-only day; else changed by the office; else times
+ * worked out from the drives (to check); else typed in by the office with no
+ * taps; else straight from the app.
+ */
+export function dayStatus(r: {
+  app: unknown; edits: Record<string, unknown>; source: Partial<Record<string, string>>;
+  values: { hours: number | null; arrived: string | null; leftSite: string | null };
+}): DayStatus {
+  if (r.values.hours === 0 && !r.values.arrived && !r.values.leftSite) return 'travel';
+  if (Object.keys(r.edits).length) return 'changed';
+  if (r.source.arrived === 'guess' || r.source.leftSite === 'guess') return 'check';
+  return r.app ? 'app' : 'typed';
 }
 
 let now: HoursLook = STANDARD_HOURS_LOOK;

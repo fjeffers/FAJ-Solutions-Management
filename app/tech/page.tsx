@@ -38,18 +38,19 @@ import { FS_STAGE_NAME, fsStage, type FsStage } from '@/lib/fs-stage';
 import { addNotes, clearNotes, loadNotes, markRead, messageNote, notesFromChanges, saveNotes, type TechNote } from '@/lib/tech-inbox';
 import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
-import { dayState, lastPlace, tripLeg, DEST_LABEL } from '@/lib/project-day';
+import { dayState, lastPlace, onTheWay, tripLeg } from '@/lib/project-day';
 import { asks, type CaptureItem } from '@/lib/capture';
 import OdometerDialog, { readPhoto, type OdometerMoment, type SavePhoto } from '@/components/wf/Odometer';
 import CheckInDialog, { type CheckInSend } from '@/components/wf/CheckIn';
-import type { Drive } from '@/lib/checkin';
+import { needsOdometer, stopReceipt, type Drive } from '@/lib/checkin';
 import type { ReceiptRead } from '@/lib/photo-read';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
-import { getPosition, stampLines, mapLink, milesBetween, type Position } from '@/lib/geo';
+import { getPosition, stampLines, mapLink, milesBetween, NEED_GPS, type Position } from '@/lib/geo';
 import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
-import { EXPENSE_CATEGORIES, EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
+import { EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
+import { useExpenseCategories } from '@/lib/use-expense-categories';
 import { queuePhoto, queuedPhotos, dropQueuedPhoto, type QueuedPhoto } from '@/lib/photo-queue';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
@@ -60,8 +61,9 @@ import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
 import { checkoutFormUrl, clock24, lastOffOrNow, onSiteSince, parseSiteLinks, siteIdOf, type SiteLinks } from '@/lib/site-links';
-import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard, mapsDirections } from '@/components/wf/WfJobDetail';
+import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
+import DirectionsButton from '@/components/wf/Directions';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechProfile } from '@/lib/types';
 import {
@@ -71,6 +73,7 @@ import {
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
 import PdfEditor from '@/components/tools/PdfEditor';
+import DocViewer, { docKind } from '@/components/tools/DocViewer';
 import ReadTool from '@/components/tools/ReadTool';
 import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 
@@ -82,7 +85,8 @@ import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 // Since 2026-10-17 the portal is Field Service's tech app (Fred: "add Field
 // Service's tech portal to FAJ Tech Portal", then "replace the tech portal"):
 // four tabs — Project, Messenger, My Schedule, Profile. My jobs and Available
-// jobs open from Profile, so nothing a tech had is gone.
+// jobs open from Profile. No pay anywhere in the tech app (Fred, 2026-10-22:
+// "techs shouldn't see money for pay anywhere"): Pay history is gone.
 type Tab = 'project' | 'jobs' | 'projects' | 'available' | 'schedule' | 'chat' | 'profile';
 const TABS: Tab[] = ['project', 'chat', 'schedule', 'profile'];
 const UNDER_PROFILE: Tab[] = ['jobs', 'available'];
@@ -97,6 +101,10 @@ const SHOW_PROJECTS = false;
 const FS_JOB_SCREEN = true;
 const ALL_TABS: Tab[] = SHOW_PROJECTS ? [...TABS, ...UNDER_PROFILE, 'projects'] : [...TABS, ...UNDER_PROFILE];
 const COPIES = ['profile', 'jobs', 'lists'];
+// Pay copies an older version saved on the phone: deleted on open.
+const OLD_PAY_COPIES = ['payments', 'summary'];
+/** This device's layout: 'wide' or phone (the default). */
+const VIEW_KEY = 'fs-view';
 const TAB_TITLE: Record<Tab, string> = {
   project: 'Work orders', jobs: 'My jobs', projects: 'Projects', available: 'Available jobs', schedule: 'My Schedule', chat: 'Messenger', profile: 'Profile',
 };
@@ -288,6 +296,7 @@ export default function TechPortalPage() {
       b.onFlushed = () => { void loadLive(u, true); };
       boxRef.current = b;
 
+      clearCopies(kv, u, OLD_PAY_COPIES);
       const cp = loadCopy<TechProfile>(kv, u, 'profile');
       const cj = loadCopy<WfJob[]>(kv, u, 'jobs');
       if (cp && cj) {
@@ -338,6 +347,8 @@ export default function TechPortalPage() {
   // should be a sign out button somewhere on the top of the app").
   const [checkIn, setCheckIn] = useState<WfJob | null>(null);
   const [odoEnd, setOdoEnd] = useState<WfJob | null>(null);
+  // At a fuel or materials stop: the receipt, after the ending mileage (Fred, 2026-10-21).
+  const [stopFor, setStopFor] = useState<{ job: WfJob; category: ExpenseCategory } | null>(null);
   const [dayBusy, setDayBusy] = useState(false);
   // On site: the client's link for the day, e.g. their Teams meeting (migration 133).
   const [onSiteLink, setOnSiteLink] = useState<WfJob | null>(null);
@@ -357,10 +368,14 @@ export default function TechPortalPage() {
     if (arriving.current) return;
     arriving.current = true;
     try {
-      const driving = dayState(job.myDay ?? []).stage === 'travel';
-      await dayFor(job).arrive();
-      // The ending mileage, when there was a drive to end.
-      if (driving && asks(job.capture, 'travel') && asks(job.capture, 'odometer')) setOdoEnd(job);
+      const st = dayState(job.myDay ?? []);
+      const saved = await dayFor(job).arrive();
+      if (!saved || st.stage !== 'travel') return;
+      // The ending mileage, required at the end of every drive (lib/checkin.ts needsOdometer),
+      // then the receipt at a fuel or materials stop (stopReceipt).
+      if (asks(job.capture, 'travel') && needsOdometer(st.dest)) setOdoEnd(job);
+      const receipt = stopReceipt(st.dest);
+      if (receipt) setStopFor({ job, category: receipt });
     } finally {
       arriving.current = false;
     }
@@ -371,6 +386,15 @@ export default function TechPortalPage() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  // Phone view unless this device chose Wide view (Profile > Screen).
+  const [wide, setWideState] = useState(() => {
+    try { return typeof window !== 'undefined' && window.localStorage.getItem(VIEW_KEY) === 'wide'; } catch { return false; }
+  });
+  const setWide = (w: boolean) => {
+    setWideState(w);
+    setDrawer(false);
+    try { window.localStorage.setItem(VIEW_KEY, w ? 'wide' : 'phone'); } catch { /* private window: this visit only */ }
+  };
   const go = (t: Tab) => { setTab(t); setOpenId(null); setDrawer(false); window.scrollTo({ top: 0 }); };
 
   const counts = techCounts(jobs);
@@ -463,12 +487,12 @@ export default function TechPortalPage() {
   ];
   const navKey: Tab = underProfile ? 'profile' : tab;
   const toggleMenu = () => {
-    if (window.matchMedia('(max-width: 900px)').matches) setDrawer((v) => !v);
+    if (!wide || window.matchMedia('(max-width: 900px)').matches) setDrawer((v) => !v);
     else setCollapsed((v) => !v);
   };
 
   return (
-    <div className="wf fs fs-app">
+    <div className={`wf fs fs-app${wide ? '' : ' fs-phone'}`}>
       <Toaster />
       <header className="fs-topbar">
         <FsBrand />
@@ -510,7 +534,8 @@ export default function TechPortalPage() {
             from={lastPlace(checkIn.myDay ?? [])} send={sendFor(checkIn)} onClose={() => setCheckIn(null)} />
         );
       })()}
-      {odoEnd && <OdometerDialog woNumber={odoEnd.number} moment="end" keep={keepFor(odoEnd)} onClose={() => setOdoEnd(null)} />}
+      {odoEnd && <OdometerDialog woNumber={odoEnd.number} moment="end" required keep={keepFor(odoEnd)} onClose={() => setOdoEnd(null)} />}
+      {stopFor && !odoEnd && <ExpenseDialog job={stopFor.job} initialCategory={stopFor.category} onClose={() => setStopFor(null)} onSaved={() => setStopFor(null)} />}
       {/* After the ending mileage and Check in's own steps, so one window at a time. */}
       {onSiteLink && !odoEnd && !checkIn && <OnSiteLinkDialog number={onSiteLink.number} onClose={() => setOnSiteLink(null)} />}
       <div className={`fs-layout${collapsed ? ' collapsed' : ''}${drawer ? ' drawer-open' : ''}`}>
@@ -568,12 +593,12 @@ export default function TechPortalPage() {
                   paperworkDue={paperworkDue} profile={profile} projects={projectJobs.length}
                   onOpen={openFromList} go={go}
                 />
-              ) : tab === 'available' ? (
+              ) : (
                 <>
                   <FsPageHeader title="Available jobs" subtitle="Jobs offered to you. Accept or decline." />
                   <AvailableTab offers={offers} act={act} onOpen={openFromList} />
                 </>
-              ) : null}
+              )}
             </>
           ) : tab === 'projects' ? (
             <ProjectsTab jobs={projectJobs} onOpen={openFromList} />
@@ -602,7 +627,7 @@ export default function TechPortalPage() {
                   offText="Turn on so new work orders and messages pop up on this phone, even with the app closed." />
               </div>
               <ProfileTab
-                profile={profile} portalToken={portalToken} onSignOut={signOut}
+                profile={profile} portalToken={portalToken} onSignOut={signOut} wide={wide} onWide={setWide}
                 onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }}
                 onFiled={() => { if (uid) void loadLive(uid, true); }}
               />
@@ -620,11 +645,10 @@ export default function TechPortalPage() {
 /** On the way to the hotel or home: Sign out for the day, at the top of every screen. */
 function DayStrip({ job, busy, onSignOut }: { job: WfJob; busy: boolean; onSignOut: () => void }) {
   const st = dayState(job.myDay ?? []);
-  const dest = st.stage === 'travel' ? DEST_LABEL[st.dest].toLowerCase() : 'hotel';
   const since = st.stage === 'travel' ? ` · since ${new Date(st.since).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : '';
   return (
     <div className="fs-day-strip" role="region" aria-label="Your day">
-      <span><b>On the way to the {dest}</b><small>WO {job.number}{since}</small></span>
+      <span><b>{onTheWay(st.stage === 'travel' ? st.dest : 'hotel')}</b><small>WO {job.number}{since}</small></span>
       <button type="button" disabled={busy} onClick={onSignOut}>{busy ? 'One moment…' : 'Sign out for the day'}</button>
     </div>
   );
@@ -658,7 +682,7 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   let action: React.ReactNode;
   if (stage === 'outbound' || stage === 'returning') {
     const dest = st.stage === 'travel' ? st.dest : 'site';
-    line = `On the way to the ${dest === 'next_site' ? 'next site' : dest}${since ? ` since ${since}` : ''}.`;
+    line = `${onTheWay(dest)}${since ? ` since ${since}` : ''}.`;
     action = (
       <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy} onClick={() => onArrive(job)}>
         {dest === 'hotel' || dest === 'home' ? 'Sign out for the day' : 'I have arrived'}
@@ -990,7 +1014,7 @@ function ProjectsTab({ jobs, onOpen }: { jobs: WfJob[]; onOpen: (id: string) => 
     groups.set(k, [...(groups.get(k) ?? []), j]);
   }
   if (jobs.length === 0) {
-    return <Empty title="No projects yet" message="When the office puts you on a project site, it shows here with Start travel, Start job, Lunch, Off site and the drive to the hotel or home." />;
+    return <Empty title="No projects yet" message="When the office puts you on a project site, it shows here with Start travel, Start job, Off site and the drive to the hotel or home." />;
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -1217,6 +1241,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const shown = askedOnly(job);
   const deliverables = askedDeliverables(job, checklist.items);
   const [odometer, setOdometer] = useState<OdometerMoment | null>(null);
+  const [odoRequired, setOdoRequired] = useState(false);
   // A project site always needs the signature, or the reason there isn't one.
   const project = !!job.isProject;
   // The day of travel, lunch and time on site: project jobs, and every job once
@@ -1253,32 +1278,37 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     || Object.entries(answers).some(([id, v]) => v !== (job.questions.find((q) => q.id === id)?.answer ?? ''));
 
   // GPS on the clock (Fred, 2026-10-02). The time is the moment of the tap;
-  // the position is looked up for a few seconds at most, works with no signal,
-  // and the clock still works if the phone won't give one.
+  // the position is looked up for a few seconds at most and works with no signal.
+  // It is required (2026-10-20): with no fix the clock is not changed.
   const toggleClock = async () => {
     const on = isClockedIn(job);
     const at = new Date();
     setLocating(true);
-    const pos = await getPosition(6000);
+    const pos = await getPosition(8000);
     setLocating(false);
+    if (!pos) { toastError(NEED_GPS); return; }
     void act(
-      makeAction('clock', { number: job.number, action: on ? 'out' : 'in', lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null },
+      makeAction('clock', { number: job.number, action: on ? 'out' : 'in', lat: pos.lat, lng: pos.lng, acc: pos.accuracy },
         `Clock ${on ? 'out of' : 'in on'} WO ${job.number}`, at),
       on ? 'Clocked out.' : 'Clocked in. The job is in progress.',
     );
   };
   // The project day (migration 117). Each tap: the time now, the position if
   // the phone gives it within a few seconds, then into the outbox.
+  // Required (2026-10-20): with no fix the tap is not saved.
   const where = async () => {
     setLocating(true);
-    const pos = await getPosition(6000);
+    const pos = await getPosition(8000);
     setLocating(false);
-    return { lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null };
+    if (!pos) { toastError(NEED_GPS); return null; }
+    return { lat: pos.lat, lng: pos.lng, acc: pos.accuracy };
   };
   const dayTap = async (kind: string, extra: Record<string, unknown>, label: string, sent: string) => {
     const at = new Date();
     const g = await where();
+    if (!g) return false;
     await act(makeAction('day', { number: job.number, kind, ...g, ...extra }, `${label} — WO ${job.number}`, at), sent);
+    return true;
   };
   const dayOn: DayActions = {
     clockIn: () => void dayTap('day_start', {}, 'Clock in', 'Clocked in. Pick where you are going.'),
@@ -1286,8 +1316,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     checkIn: () => onCheckIn(job),
     startTrip: (trip, from) => {
       const leg = tripLeg(trip, job.myDay ?? []);
+      // The starting mileage is required on a drive to a site, and only then (lib/checkin.ts needsOdometer).
       void dayTap('travel_start', { origin: from ?? leg.origin, dest: leg.dest }, 'Start travel', 'Travel started. Drive safe.')
-        .then(() => { if (ask('odometer')) setOdometer('start'); });
+        .then((saved) => { if (saved && needsOdometer(leg.dest)) { setOdoRequired(true); setOdometer('start'); } });
     },
     // Arriving asks for the ending mileage right after, so the tap keeps its own time and place.
     startJob: () => onArrive(job),
@@ -1302,6 +1333,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     setOffOpen(false);
     const at = new Date();
     const g = await where();
+    if (!g) return;
     if (dayState(job.myDay ?? []).stage === 'lunch') {
       await act(makeAction('day', { number: job.number, kind: 'lunch_end', ...g }, `Back from lunch — WO ${job.number}`, at));
     }
@@ -1408,9 +1440,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setChatOpen((v) => !v)} aria-pressed={chatOpen}>
             <MessageSquare size={15} /> Messages
           </button>
-          {fullAddress(job) && (
-            <a className="wf-btn wf-btn-outline wf-btn-sm" href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={15} /> Directions</a>
-          )}
+          <DirectionsButton job={job} className="wf-btn wf-btn-outline wf-btn-sm" />
         </>}
         clock={project && (working || job.status === 'workDone')
           ? <>
@@ -1460,13 +1490,14 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           onClose={() => setCheckoutAt(null)} />
       )}
       {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }} onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); }} />}
-      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} keep={keepPhoto} initialFile={odoFile} onClose={() => { setOdometer(null); setOdoFile(null); }} />}
+      {odometer && <OdometerDialog woNumber={job.number} moment={odometer} required={odoRequired} keep={keepPhoto} initialFile={odoFile}
+        onClose={() => { setOdometer(null); setOdoFile(null); setOdoRequired(false); }} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {left.away && project && working && (
         <LeftSiteDialog onStillHere={() => left.dismiss(30)} onPick={(reason, note) => {
           if (reason === 'Leaving for the day') { left.dismiss(600); setOffOpen(true); return; }
+          // Lunch is still on the clock (Fred, 2026-10-21): the project manager is told, nothing stops.
           left.dismiss(reason === 'Lunch' ? 90 : 30);
-          if (reason === 'Lunch') dayOn.lunch(true);
           void act(makeAction('sitemsg', {
             number: job.number, kind: 'away', to: 'Everyone',
             reason: reason === 'Other' ? note : reason, body: reason !== 'Other' && note ? note : '',
@@ -1518,7 +1549,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       <SiteAccessBar number={job.number} talk={talk} late={late}
         showProblem={working && (dayStage === 'travel' || dayStage === 'onsite')} />
       <FsStageAction stage={stage} events={job.myDay ?? []} busy={locating || dayBusy} enabled={working} afterWork={job.status === 'workDone'} on={dayOn}
-        travel={ask('travel')} lunch={ask('lunch')}
+        travel={ask('travel')}
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
       {project && <SheetLinkButton number={job.number} />}
     </>
@@ -1646,9 +1677,7 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onMessages, onReceipt }: 
       )}
       {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={22} /> Receipt</button>}
       <button type="button" style={tile} onClick={onMessages}><MessageSquare size={22} /> Messages</button>
-      {address && (
-        <a style={tile} href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={22} /> Directions</a>
-      )}
+      {address && <DirectionsButton job={job} style={tile} icon={<Navigation size={22} />} />}
     </div>
   );
 }
@@ -1691,9 +1720,7 @@ function QuickActions({ job, showClock, clockEnabled, locating, photoBusy, onClo
       <button style={tile} onClick={onNote}><NotebookPen size={24} color="var(--wf-navy)" /> Note</button>
       <button style={tile} onClick={onExpense}><Receipt size={24} color="var(--wf-navy)" /> Expense</button>
       <button style={tile} onClick={onMessages}><MessageSquare size={24} color="var(--wf-navy)" /> Messages</button>
-      {address && (
-        <a style={tile} href={mapsDirections(job)} target="_blank" rel="noopener noreferrer"><Navigation size={24} color="var(--wf-navy)" /> Directions</a>
-      )}
+      {address && <DirectionsButton job={job} style={tile} icon={<Navigation size={24} color="var(--wf-navy)" />} />}
     </div>
   );
 }
@@ -1746,11 +1773,17 @@ function JobExpenses({ expenses, canAdd, onAdd }: { expenses: TechExpense[]; can
 }
 
 /** Snap the receipt, say what it was for, and send it to Fred. Needs signal. */
-function ExpenseDialog({ job, initialFile, onClose, onSaved }: { job: WfJob; initialFile?: File | null; onClose: () => void; onSaved: () => void }) {
+function ExpenseDialog({ job, initialFile, initialCategory = 'materials', onClose, onSaved }: {
+  job: WfJob; initialFile?: File | null;
+  /** A fuel or materials stop opens the receipt under its own category. */
+  initialCategory?: ExpenseCategory;
+  onClose: () => void; onSaved: () => void;
+}) {
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState<ExpenseCategory>('materials');
+  const [category, setCategory] = useState<ExpenseCategory>(initialCategory);
+  const categories = useExpenseCategories().list;
   const [vendor, setVendor] = useState('');
   const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [note, setNote] = useState('');
@@ -1851,13 +1884,26 @@ function ExpenseDialog({ job, initialFile, onClose, onSaved }: { job: WfJob; ini
             {reading ? 'Reading the receipt…' : 'Filled in from the photo. Check each one before you send.'}
           </div>
         )}
+        {/* The lines read off the receipt go to the office with it (Fred, 2026-10-22). */}
+        {!reading && ai && ai.items.length > 0 && (
+          <div style={{ border: '1px solid var(--wf-line)', borderRadius: 10, padding: '8px 10px' }}>
+            <div className="wf-label" style={{ marginBottom: 4 }}>On the receipt</div>
+            {ai.items.map((it, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '2px 0' }}>
+                <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{it.qty != null && it.qty !== 1 ? `${it.qty} × ` : ''}{it.name}</span>
+                {it.amount != null && <span>{fmtMoney(it.amount)}</span>}
+              </div>
+            ))}
+          </div>
+        )}
         <label style={{ display: 'block' }}>{label('Amount')}
           <input className="wf-input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </label>
         <div>
           {label('What was it for?')}
           <div className="wf-filters">
-            {EXPENSE_CATEGORIES.map((c) => (
+            {/* Fred's list, then the office's own categories (migration 137). */}
+            {categories.map((c) => (
               <button key={c.key} className="wf-filter" aria-pressed={category === c.key} onClick={() => setCategory(c.key)}>{c.label}</button>
             ))}
           </div>
@@ -2070,11 +2116,13 @@ type SentPhoto = { id: string; url: string; taken_at: string; lat: number | null
  */
 function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<void>, uid: string, setBusy: (b: boolean) => void,
   onOnSite?: () => void) {
+  // Every drive and clock-in needs the GPS (2026-10-20): with no fix the tap is not saved.
   const where = async () => {
     setBusy(true);
-    const pos = await getPosition(6000);
+    const pos = await getPosition(8000);
     setBusy(false);
-    return { lat: pos?.lat ?? null, lng: pos?.lng ?? null, acc: pos?.accuracy ?? null };
+    if (!pos) { toastError(NEED_GPS); return null; }
+    return { lat: pos.lat, lng: pos.lng, acc: pos.accuracy };
   };
   const day = (kind: string, extra: Record<string, unknown>, label: string, at: Date, g: Record<string, unknown>, sent?: string) =>
     act(makeAction('day', { number: job.number, kind, ...g, ...extra }, `${label} — WO ${job.number}`, at), sent);
@@ -2091,18 +2139,22 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
   const onSite = async () => {
     const at = new Date();
     const g = await where();
+    if (!g) return false;
     if (dayState(job.myDay ?? []).stage === 'travel') await day('travel_end', {}, 'Arrived', at, g);
     await act(makeAction('clock', { number: job.number, action: 'in', ...g }, `Start job on WO ${job.number}`, at),
       'On site. Your time on site is running.');
     onOnSite?.();
+    return true;
   };
   const send: CheckInSend = {
     startDrive: async (drive: Drive, startDay: boolean) => {
       const at = new Date();
       const g = await where();
+      if (!g) return false;
       // The day starts a second before the drive, so the two stay in order.
       if (startDay) await day('day_start', {}, 'Check in', new Date(at.getTime() - 1000), g);
       await day('travel_start', { origin: drive.origin, dest: drive.dest }, 'Start travel', at, g);
+      return true;
     },
     arriveOnSite: onSite,
     keep,
@@ -2115,12 +2167,13 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     const st = dayState(job.myDay ?? []);
     if (st.stage === 'travel' && st.dest !== 'site') {
       const g = await where();
+      if (!g) return false;
       await day('travel_end', {}, 'Arrived', new Date(), g,
         st.dest === 'hotel' || st.dest === 'home' ? `At the ${st.dest}. Signed out for the day.`
           : st.dest === 'fuel' || st.dest === 'materials' ? `At the ${st.dest === 'fuel' ? 'fuel stop' : 'materials pickup'}. Tap Check in when you head out again.` : 'Arrived.');
-      return;
+      return true;
     }
-    await onSite();
+    return onSite();
   };
   return { send, keep, arrive };
 }
@@ -2271,6 +2324,9 @@ function JobTools({ job, canAdd, ph, onNote }: {
   const [menu, setMenu] = useState(false);
   const [docs, setDocs] = useState<JobDoc[]>([]);
   const [editing, setEditing] = useState<{ file: Blob | null; name: string; kind: string } | null>(null);
+  // Any document opened inside the app (components/tools/DocViewer): PDF, Word, Excel or a photo.
+  const [viewing, setViewing] = useState<{ url: string; name: string; kind: string; local?: boolean } | null>(null);
+  const closeViewer = () => { if (viewing?.local) URL.revokeObjectURL(viewing.url); setViewing(null); };
   const [opening, setOpening] = useState<string | null>(null);
   const loadDocs = useCallback(async () => {
     const { data, error } = await createClient().rpc('wf_tech_job_docs', { p_wo_number: job.number });
@@ -2321,17 +2377,9 @@ function JobTools({ job, canAdd, ph, onNote }: {
         toastError(j.error ?? "Couldn't open the document.");
         return;
       }
-      setEditing({ file: await res.blob(), name: signedName(d.name), kind: d.kind === 'Work order' ? 'Signed work order' : d.kind });
-    } catch {
-      toastError('No signal. Try again when you have signal.');
-    } finally { setOpening(null); }
-  };
-  const signFile = async (f: JobFile) => {
-    setOpening(f.url);
-    try {
-      const res = await fetch(f.url);
-      if (!res.ok) { toastError("Couldn't open the document."); return; }
-      setEditing({ file: await res.blob(), name: signedName(f.name.replace(/\.pdf$/i, '')), kind: 'Signed document' });
+      // Through the viewer, so a form's boxes can be filled in before signing.
+      const blob = await res.blob();
+      setViewing({ url: URL.createObjectURL(blob), name: /\.pdf$/i.test(d.name) ? d.name : `${d.name}.pdf`, kind: d.kind === 'Work order' ? 'Signed work order' : d.kind, local: true });
     } catch {
       toastError('No signal. Try again when you have signal.');
     } finally { setOpening(null); }
@@ -2355,17 +2403,17 @@ function JobTools({ job, canAdd, ph, onNote }: {
     {files.length > 0 && (
       <Section title="Job documents" subtitle="Guides and forms for this job">
         {files.map((f) => {
-          const pdf = /\.pdf$/i.test(f.url);
+          // Opened inside the app on every phone and computer (Fred, 2026-10-22); PDF and Word can be filled in and signed.
+          const k = docKind(f.name) !== 'other' ? docKind(f.name) : docKind(f.url);
+          const fillable = canAdd && (k === 'pdf' || k === 'word');
           return (
             <div key={f.url} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--wf-line)', fontSize: 13.5 }}>
               <FileText size={15} color="var(--wf-subtle)" />
               <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{f.name}</span>
-              <a className="wf-btn wf-btn-outline wf-btn-sm" href={f.url} target="_blank" rel="noopener noreferrer">Open</a>
-              {pdf && canAdd && (
-                <button type="button" className="wf-btn wf-btn-gold wf-btn-sm" disabled={opening === f.url} onClick={() => void signFile(f)}>
-                  {opening === f.url ? 'Opening…' : <><Signature size={14} /> Sign</>}
-                </button>
-              )}
+              <button type="button" className={`wf-btn wf-btn-sm ${fillable ? 'wf-btn-gold' : 'wf-btn-outline'}`}
+                onClick={() => setViewing({ url: f.url, name: f.name, kind: 'Signed document' })}>
+                {fillable ? <><Signature size={14} /> Open &amp; fill in</> : 'Open'}
+              </button>
             </div>
           );
         })}
@@ -2416,6 +2464,10 @@ function JobTools({ job, canAdd, ph, onNote }: {
     {(tool === 'count' || tool === 'measure') && (
       <PhotoMarkup mode={tool} onClose={() => setTool(null)}
         onSave={async (file, source) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what); }} />
+    )}
+    {viewing && (
+      <DocViewer url={viewing.url} name={viewing.name} onClose={closeViewer}
+        onSign={canAdd ? (pdf, name) => { const kind = viewing.kind; closeViewer(); setEditing({ file: pdf, name: signedName(name), kind }); } : undefined} />
     )}
     {editing && (
       <PdfEditor file={editing.file} name={editing.name} heading={jobLabel}
@@ -2764,8 +2816,10 @@ function EmergencyCard({ profile, onSaved }: { profile: TechProfile; onSaved: (p
   );
 }
 
-function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
+function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut, wide, onWide }: {
   profile: TechProfile; portalToken: string | null; onSaved: (p: TechProfile) => void; onFiled: () => void; onSignOut: () => void;
+  /** Wide (desktop) view on this device; phone view otherwise. */
+  wide: boolean; onWide: (wide: boolean) => void;
 }) {
   const [formsOpen, setFormsOpen] = useState(false);
   const [phone, setPhone] = useState(profile.phone ?? '');
@@ -2797,6 +2851,15 @@ function ProfileTab({ profile, portalToken, onSaved, onFiled, onSignOut }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 640 }}>
       <UsernameCard />
+      <Section title="Screen" subtitle="How the app is laid out on this device">
+        <div className="wf-filters" role="group" aria-label="Screen layout">
+          <button className="wf-filter" aria-pressed={!wide} onClick={() => onWide(false)}>Phone view</button>
+          <button className="wf-filter" aria-pressed={wide} onClick={() => onWide(true)}>Wide view</button>
+        </div>
+        <p className="wf-subtle" style={{ margin: '8px 0 0', fontSize: 12.5 }}>
+          Phone view is the default. Wide view uses the whole screen on a tablet or computer.
+        </p>
+      </Section>
       <Section title="Change password" subtitle="Your current password, then the new one twice">
         <ChangePasswordForm />
       </Section>

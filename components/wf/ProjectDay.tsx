@@ -111,17 +111,18 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
         <button style={navy} disabled={busy} onClick={on.arrived}><LogIn size={20} /> Arrived — sign out</button>
       )}
 
-      {(st.stage === 'onsite' || st.stage === 'lunch') && (
+      {/* No Lunch button: lunch stays on the clock (Fred, 2026-10-21). Back from lunch is only
+          for a lunch started before that. */}
+      {st.stage === 'onsite' && <button style={red} disabled={busy} onClick={on.offSite}><LogOut size={19} /> Off site</button>}
+      {st.stage === 'lunch' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {st.stage === 'onsite'
-            ? <button style={plain} disabled={busy} onClick={() => on.lunch(true)}><Utensils size={19} /> Lunch</button>
-            : <button style={gold} disabled={busy} onClick={() => on.lunch(false)}><Utensils size={19} /> Back from lunch</button>}
+          <button style={gold} disabled={busy} onClick={() => on.lunch(false)}><Utensils size={19} /> Back from lunch</button>
           <button style={red} disabled={busy} onClick={on.offSite}><LogOut size={19} /> Off site</button>
         </div>
       )}
 
       {busy && <div className="wf-subtle" style={{ fontSize: 12.5, textAlign: 'center' }}>Getting your location…</div>}
-      {onReceipt && st.stage !== 'onsite' && st.stage !== 'lunch' && (
+      {onReceipt && (
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onReceipt}><Receipt size={15} /> Add a receipt (gas, meal, hotel)</button>
       )}
       {todayLog && <DayLines log={todayLog} />}
@@ -236,7 +237,7 @@ export function OffSiteDialog({ missing, needs, signature = true, clientCheckout
         <label className="wf-label" htmlFor="eod-done">What got done today?</label>
         <textarea id="eod-done" className="wf-input" rows={3} autoFocus value={done} maxLength={900} onChange={(e) => setDone(e.target.value)}
           style={{ fontSize: 16, marginBottom: 10 }} placeholder="e.g. Ran 12 drops on the 2nd floor, mounted the rack, tested 8 lines" />
-        <label className="wf-label" htmlFor="eod-left">What's still left?</label>
+        <label className="wf-label" htmlFor="eod-left">What&apos;s still left?</label>
         <textarea id="eod-left" className="wf-input" rows={3} value={left} maxLength={900} onChange={(e) => setLeft(e.target.value)}
           style={{ fontSize: 16 }} placeholder="e.g. Terminate and test the last 4 drops, label the patch panel" />
         <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 6 }}>

@@ -136,7 +136,11 @@ textarea.wf-input { resize: vertical; }
 .wf-dialog {
   background: var(--wf-surface); border-radius: 20px; width: 100%; max-width: 480px;
   max-height: 90vh; overflow-y: auto; padding: 20px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  /* Never wider than the screen, even with the phone's large text on (Fred's
+     Ending mileage screenshot, 2026-10-22: words cut off at both edges). */
+  overflow-x: hidden; overflow-wrap: anywhere; box-sizing: border-box;
 }
+.wf-dialog img, .wf-dialog input, .wf-dialog select, .wf-dialog textarea { max-width: 100%; box-sizing: border-box; }
 @media (max-width: 768px) {
   .wf-overlay { align-items: flex-end; padding: 0; }
   .wf-dialog { border-radius: 20px 20px 0 0; max-height: 92vh; }
@@ -210,6 +214,13 @@ textarea.wf-input { resize: vertical; }
 }
 .wf .spin { animation: wf-spin 0.9s linear infinite; }
 @keyframes wf-spin { to { transform: rotate(360deg); } }
+
+/* Word and Excel files shown in the app (components/tools/DocViewer.tsx). */
+.wf-doc-page table, .wf-doc-sheet table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.wf-doc-page td, .wf-doc-page th, .wf-doc-sheet td, .wf-doc-sheet th { border: 1px solid #D5D2CA; padding: 6px 8px; vertical-align: top; font-size: 14px; }
+.wf-doc-page img { max-width: 100%; height: auto; }
+.wf-doc-page p { margin: 0 0 10px; }
+.wf-doc-sheet h3 { margin: 12px 0 6px; font-size: 15px; }
 
 /* Available / Current / Pending / Closed on a phone: the count sits under the
    label so all four fit across a 375px screen. */

@@ -19,6 +19,7 @@
 import { buildDayLogs, hoursOf, legLabel, type DayEvent, type DayLog } from './project-day';
 import { matchOdometer, type BillLeg, type OdoRow } from './weekly-bill';
 import type { QbInvoicePayload } from './qb-invoice';
+import { expenseCategoryLabel } from './expenses';
 
 export const TIME_FIELDS = ['left', 'arrived', 'leftSite', 'back'] as const;
 // meals and spend: what was spent that day, typed by the office (Fred, 2026-10-24: "each day i enter the time and miles
@@ -351,9 +352,13 @@ export function parseEdits(raw: unknown): Edits {
 
 export type SheetReceipt = { id: string; category: string; amount: number; status: string; vendor?: string | null; date?: string | null };
 
-/** Receipts that can be billed at cost: not meals or hotel (their own lines) and not fuel (in the mileage). */
-export const AT_COST = ['materials', 'tolls_parking', 'equipment', 'other'] as const;
-const CATEGORY_WORD: Record<string, string> = { materials: 'Parts & materials', tolls_parking: 'Tolls & parking', equipment: 'Tools & equipment', other: 'Other' };
+/**
+ * Receipts that can be billed at cost: every category but meals and lodging (their
+ * own lines) and fuel and mileage (in the mileage charge). That includes Fred's
+ * Travel, Labor, Rental and the office's own categories (migration 137).
+ */
+const NOT_AT_COST = ['meals', 'hotel', 'fuel', 'mileage'];
+export const atCost = (category: string) => !NOT_AT_COST.includes(category);
 
 export type LineKind = 'labor' | 'travel' | 'fixed' | 'item' | 'mileage' | 'meals' | 'hotel' | 'receipt';
 /** One line of the client's invoice. amount is qty × rate to the cent. */
@@ -446,8 +451,8 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
   // Other receipts at cost, one line each.
   if (s.receiptsAtCost) {
     for (const r of approved) {
-      if (!(AT_COST as readonly string[]).includes(r.category) || !isNum(r.amount) || r.amount <= 0) continue;
-      lines.push(line('receipt', r.date ?? null, `${CATEGORY_WORD[r.category] ?? 'Receipt'}${r.vendor ? ` — ${r.vendor}` : ''}${r.date ? ` (${dayWord(r.date)})` : ''}`, 1, r.amount));
+      if (!atCost(r.category) || !isNum(r.amount) || r.amount <= 0) continue;
+      lines.push(line('receipt', r.date ?? null, `${expenseCategoryLabel(r.category)}${r.vendor ? ` — ${r.vendor}` : ''}${r.date ? ` (${dayWord(r.date)})` : ''}`, 1, r.amount));
     }
   }
   // The client reads it day by day: each day's labor, travel, miles and spending together, then the

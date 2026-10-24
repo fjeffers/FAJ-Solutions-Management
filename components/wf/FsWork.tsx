@@ -98,7 +98,7 @@ const ARRIVE: Record<string, string> = {
  * site → hotel, and the hotel → home on the last day (Fred, 2026-10-18).
  * Stopped work is resolved from the problem bar above it (SiteAccessBar).
  */
-export function FsStageAction({ stage, events, busy, enabled, afterWork = false, on, onReceipt, travel: asksTravel = true, lunch: asksLunch = true }: {
+export function FsStageAction({ stage, events, busy, enabled, afterWork = false, on, onReceipt, travel: asksTravel = true }: {
   stage: FsStage;
   /** The tech's own taps on this job (job.myDay). */
   events: DayEvent[];
@@ -111,12 +111,10 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
    */
   afterWork?: boolean;
   on: DayActions;
-  /** Gas, a meal or the hotel on the road (shown when not on site). */
+  /** Gas, a meal or the hotel, on the road or on site. */
   onReceipt?: () => void;
   /** The job asks for each drive (lib/capture.ts). Without it the tech just arrives on site. */
   travel?: boolean;
-  /** The job asks for lunch breaks. */
-  lunch?: boolean;
 }) {
   const now = useTick();
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -212,9 +210,9 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
       break;
     }
     case 'onsite':
+      // No lunch button: lunch stays on the clock (Fred, 2026-10-21). A meal receipt is below.
       action = (
         <div className="fs-stack">
-          {asksLunch && <button type="button" className="fs-btn fs-btn-secondary" disabled={busy} onClick={() => on.lunch(true)}>Start lunch</button>}
           <div className="fs-card fs-form">
             <h3>Finish on site</h3>
             <p className="fs-muted">Send today&apos;s report when you&apos;re coming back, or finish the site.</p>
@@ -224,6 +222,7 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
       );
       break;
     case 'lunch':
+      // Only a lunch started before lunch buttons were taken away (2026-10-21).
       action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy} onClick={() => on.lunch(false)}>Back from lunch</button>;
       break;
     case 'stopped':
@@ -261,7 +260,7 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
       </div>
       {action}
       {busy && <p className="fs-muted">Getting your location…</p>}
-      {onReceipt && stage !== 'onsite' && stage !== 'lunch' && stage !== 'stopped' && (
+      {onReceipt && stage !== 'stopped' && (
         <button type="button" className="fs-text-button" onClick={onReceipt}>
           <FsIcon name="receipt" size={16} /> Add a receipt (gas, meal, hotel)
         </button>

@@ -25,6 +25,12 @@ export function getPosition(timeoutMs = 6000): Promise<Position | null> {
   });
 }
 
+/**
+ * Clock-ins and drives need a fix (2026-10-20: "travel time and each clock in
+ * should require gps"). Shown when the phone gives no position, and the tap is not saved.
+ */
+export const NEED_GPS = 'Your location is needed for this. Turn on Location for this app, then try again.';
+
 /** "40.68840, -75.22070" — five places is about a metre. */
 export function fmtCoords(lat: number, lng: number): string {
   return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;

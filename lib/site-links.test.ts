@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkoutFormUrl, clock24, dateMDY, lastOffOrNow, onSiteSince, parseSiteLinks, siteIdOf } from './site-links';
+import { checkoutFormUrl, clock12, clock24, dateMDY, lastOffOrNow, onSiteSince, parseSiteLinks, siteIdOf } from './site-links';
 import type { DayEvent } from './project-day';
 
 const TZ = 'America/New_York';
@@ -53,13 +53,20 @@ describe('the client links for a day on site (Fred, 2026-10-18)', () => {
       siteId: '5011876', wo: '19101399', name: 'Frederick Jeffers',
       on: at('2026-10-19T07:32:00'), off: at('2026-10-19T16:30:00'), timeZone: TZ,
     });
+    // The form's box names and time format as of 2026-10-22 (its formDefinition).
     expect(url).toBe(`${FORM}?Site%20ID=5011876&Work%20Order%20%23=19101399&Checkout%20Date=10%2F19%2F2026`
-      + '&Full%20Name=Frederick%20Jeffers&Time%20On%20Site=07%3A32&Time%20Off%20Site=16%3A30');
+      + '&Full%20Name=Frederick%20Jeffers&Check%20In%20Time=7%3A32%20am&Check%20Out%20Time=4%3A30%20pm');
+  });
+
+  it('writes times the way the form asks: 12-hour with am / pm', () => {
+    expect(clock12(at('2026-10-19T00:05:00'), TZ)).toBe('12:05 am');
+    expect(clock12(at('2026-10-19T12:00:00'), TZ)).toBe('12:00 pm');
+    expect(clock12(at('2026-10-19T19:22:00'), TZ)).toBe('7:22 pm');
   });
 
   it('leaves out what it does not know, and opens any other form as it is', () => {
     const url = checkoutFormUrl(FORM, { siteId: null, wo: '19101400', name: '', on: null, off: at('2026-10-19T16:30:00'), timeZone: TZ });
-    expect(url).toBe(`${FORM}?Work%20Order%20%23=19101400&Checkout%20Date=10%2F19%2F2026&Time%20Off%20Site=16%3A30`);
+    expect(url).toBe(`${FORM}?Work%20Order%20%23=19101400&Checkout%20Date=10%2F19%2F2026&Check%20Out%20Time=4%3A30%20pm`);
     expect(checkoutFormUrl('https://forms.office.com/r/xyz', { siteId: '1', wo: '2', name: 'A', on: null, off: at('2026-10-19T16:30:00'), timeZone: TZ }))
       .toBe('https://forms.office.com/r/xyz');
   });

@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { DRIVES, drivesFor, driveOf, tripOf, parseStartAsks, addStartAsk, checkInNotes, checkInMissing, START_ASK_MAX } from './checkin';
+import { DRIVES, drivesFor, driveOf, tripOf, parseStartAsks, addStartAsk, checkInNotes, checkInMissing, needsOdometer, stopReceipt, START_ASK_MAX } from './checkin';
+
+describe('check in: the odometer and stop receipts', () => {
+  it('needs the odometer on every drive, not when starting work where the tech is', () => {
+    for (const d of ['site', 'next_site', 'hotel', 'home', 'fuel', 'materials'] as const) expect(needsOdometer(d)).toBe(true);
+    expect(needsOdometer(null)).toBe(false);
+    expect(needsOdometer(undefined)).toBe(false);
+  });
+  it('asks for the receipt at a fuel or materials stop only', () => {
+    expect(stopReceipt('fuel')).toBe('fuel');
+    expect(stopReceipt('materials')).toBe('materials');
+    for (const d of ['site', 'next_site', 'hotel', 'home'] as const) expect(stopReceipt(d)).toBeNull();
+    expect(stopReceipt(null)).toBeNull();
+  });
+});
 
 describe('check in: the drive', () => {
   it('names every drive in one list, the likely ones first, nothing picked', () => {

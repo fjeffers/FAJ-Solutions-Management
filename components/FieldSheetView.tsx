@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  billRange, blocksBilling, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  atCost, billRange, blocksBilling, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
   withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
@@ -33,6 +33,7 @@ import type { EnrichedWorkOrder } from '@/lib/types';
 import { Section } from '@/components/wf/WfUi';
 import { loadEvents, OfficeReceiptDialog } from '@/components/wf/ProjectOffice';
 import FieldSheetReport from '@/components/FieldSheetReport';
+import { ClockPanel, StillOnSite } from '@/components/ClockFix';
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -105,6 +106,7 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
           </div>
         )}
       </form>
+      {!wo && <StillOnSite workOrders={workOrders} onOpen={(id) => { const w = workOrders.find((x) => x.id === id); if (w) setQ(w.wo_number); setWoId(id); }} />}
       {wo ? <Sheet key={wo.id} wo={wo} onOpened={() => setOpened((o) => (o.includes(wo.id) ? o : [wo.id, ...o]))} /> : (
         <Section title="Pick a job">
           <div style={{ fontSize: 14, lineHeight: 1.6 }}>
@@ -360,6 +362,30 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
 
       <BillingPanel s={settings} wo={wo} customers={customers} onSave={(p) => void saveSettings(p)} />
 
+      <DayForm techs={allTechs} rows={allRows} defaultDay={from || wo.start_date || dayOf(new Date().toISOString(), TZ)}
+        photos={(day, tech) => [
+          ...readings.filter((o) => o.photo_path && urls[o.photo_path] && o.contractor_name === tech && dayOf(o.at, TZ) === day)
+            .map((o) => ({ src: urls[o.photo_path!], title: `${o.contractor_name} · ${at(o.at)}`, caption: `Odometer ${o.reading.toLocaleString('en-US')} (${o.moment === 'end' ? 'end' : 'start'} of drive)` })),
+          ...photos.filter((ph) => (ph.contractor_name ?? '') === tech && dayOf(ph.taken_at, TZ) === day)
+            .map((ph) => ({ src: ph.url, title: `${ph.contractor_name ?? ''} · ${at(ph.taken_at)}`, caption: '' })),
+        ]}
+        onZoom={setZoom}
+        onSave={async (row, edits) => {
+          // The day typed shows on the sheet even when it's outside the dates picked.
+          if (from && row.day < from) setFrom(row.day);
+          if (to && row.day > to) setTo(row.day);
+          failedSave.current = false;
+          await store(row, { edits });
+          return !failedSave.current;
+        }} />
+
+      {(from || to) && rows.length < allRows.length && (
+        <div className="wf-card" style={{ padding: '8px 12px', fontSize: 13.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', background: '#FDF3E1' }}>
+          Showing {from ? fmtDay(from) : 'the start'} – {to ? fmtDay(to) : 'the end'} only: {allRows.length - rows.length} more line{allRows.length - rows.length === 1 ? '' : 's'} on other days.
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => { setFrom(''); setTo(''); }}>Show every day</button>
+        </div>
+      )}
+
       <Section title="Days" subtitle={`${visible.filter((r) => !r.hidden).length} lines`} right={
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {rows.some((r) => r.hidden) && (
@@ -399,6 +425,8 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
         </div>
       </Section>
 
+      <ClockPanel wo={wo} techs={allTechs} from={from} to={to} onChanged={() => void loadEvents([wo.id]).then(setEvents)} />
+
       <Section title="Receipts" subtitle={`${approved.length} approved${waiting.length ? ` · ${waiting.length} waiting for you` : ''}`} right={
         <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Receipt size={16} /> Add a receipt</button>
       }>
@@ -414,7 +442,10 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 12, fontSize: 13 }}>
           <div>Meals: {money(totals.meals.receipts)} in receipts{totals.meals.allowed != null ? `, up to ${money(totals.meals.allowed)} (${totals.techDays} tech-days)` : ''} → <b>{money(totals.meals.claim)}</b></div>
           <div>Hotel: {money(totals.hotel.receipts)} in receipts{totals.hotel.allowed != null ? `, up to ${money(totals.hotel.allowed)}` : ''} → <b>{money(totals.hotel.claim)}</b></div>
-          <div className="wf-subtle">Not on the bill: fuel {money(totals.byCategory.fuel ?? 0)}, materials {money(totals.byCategory.materials ?? 0)}, declined {money(totals.declined)}</div>
+          <div className="wf-subtle">
+            Not on the bill: fuel and mileage {money((totals.byCategory.fuel ?? 0) + (totals.byCategory.mileage ?? 0))} (in the mileage)
+            {settings.receiptsAtCost ? '' : `, other receipts ${money(Object.entries(totals.byCategory).filter(([k]) => atCost(k)).reduce((t, [, v]) => t + v, 0))}`}, declined {money(totals.declined)}
+          </div>
         </div>
       </Section>
 
@@ -607,7 +638,7 @@ function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: Enri
         </div>
         <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: 13.5 }}>
           <input type="checkbox" checked={s.receiptsAtCost} onChange={(e) => onSave({ receiptsAtCost: e.target.checked })} />
-          Bill the other receipts at cost (parts &amp; materials, tolls, equipment). Fuel is in the mileage.
+          Bill the other receipts at cost (materials, rental, tolls, equipment, travel, labor and your own categories). Fuel and mileage are in the mileage.
         </label>
       </div>
     </Section>
@@ -723,6 +754,111 @@ function toSaved(data: unknown): SavedDay[] {
 }
 
 /** A typed number: '' → null (empty), junk → undefined (ignored). */
+const FORM_FIELDS: { f: Exclude<SheetField, 'note' | 'ask'>; label: string; time?: boolean }[] = [
+  { f: 'left', label: 'Left hotel / home', time: true }, { f: 'arrived', label: 'Arrived on site', time: true },
+  { f: 'leftSite', label: 'Left site', time: true }, { f: 'back', label: 'Back hotel / home', time: true },
+  { f: 'lunch', label: 'Lunch (minutes)' }, { f: 'hours', label: 'Hours on site' }, { f: 'travel', label: 'Travel hours' },
+  { f: 'odoStart', label: 'Odometer start' }, { f: 'odoEnd', label: 'Odometer end' }, { f: 'miles', label: 'Miles' },
+  { f: 'meals', label: 'Meals $' }, { f: 'spend', label: 'Spending $' },
+];
+
+/**
+ * Enter a day (Fred, 2026-10-24: "i needs the fields to all be edited by me and
+ * even if i pull from the app the day and time on site along with the pic").
+ * Pick the day and the tech: what the app has fills in, every box can be
+ * changed, and Save keeps it. Hours on site, travel and miles work themselves
+ * out from the times and the odometer unless typed.
+ */
+function DayForm({ techs, rows, defaultDay, photos, onZoom, onSave }: {
+  techs: string[]; rows: SheetRow[]; defaultDay: string;
+  photos: (day: string, tech: string) => Shot[]; onZoom: (s: Shot) => void;
+  onSave: (row: SheetRow, edits: SavedDay['edits']) => Promise<boolean>;
+}) {
+  const [day, setDay] = useState(defaultDay);
+  const [tech, setTech] = useState(techs[0] ?? '');
+  const key = `${day}|${tech.trim()}`;
+  const row = rows.find((r) => r.key === key) ?? null;
+  const blank = (): Record<string, string> => Object.fromEntries([...FORM_FIELDS.map(({ f }) => [f, '']), ['note', '']]);
+  const fill = (r: SheetRow | null) => {
+    const out = blank();
+    if (!r) return out;
+    for (const { f } of FORM_FIELDS) out[f] = r.values[f] == null ? '' : String(r.values[f]);
+    out.note = r.values.note ?? '';
+    return out;
+  };
+  const [vals, setVals] = useState<Record<string, string>>(() => fill(row));
+  const [shownKey, setShownKey] = useState(key);
+  const [busy, setBusy] = useState(false);
+  // Another day or tech picked: show what's there for it.
+  if (shownKey !== key) { setShownKey(key); setVals(fill(row)); }
+  const c = dayCalc({
+    ...(row?.values ?? ({} as SheetRow['values'])),
+    ...Object.fromEntries(FORM_FIELDS.map(({ f, time }) => [f, time ? (vals[f] || null) : (num(vals[f]) ?? null)])),
+    note: vals.note, ask: row?.values.ask ?? false,
+  } as SheetRow['values'], 0);
+
+  const save = async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { toastError('Pick the day.'); return; }
+    if (!tech.trim()) { toastError('Pick the technician.'); return; }
+    const bad = FORM_FIELDS.find(({ f, time }) => !time && num(vals[f]) === undefined);
+    if (bad) { toastError(`${bad.label}: type a number, like 12.5`); return; }
+    const base: SheetRow = row ?? { key, day, tech: tech.trim(), id: null, added: true, hidden: false, missing: false, app: null, edits: {}, values: {} as SheetRow['values'], source: {} };
+    let edits = base.edits;
+    for (const { f, time } of FORM_FIELDS) {
+      const v = time ? (vals[f] || null) : num(vals[f]) ?? null;
+      if (v === (base.values[f] ?? null)) continue;
+      edits = nextEdits({ app: base.app, edits }, f, v);
+    }
+    if (vals.note.trim() !== (base.values.note ?? '')) edits = nextEdits({ app: base.app, edits }, 'note', vals.note.trim() || null);
+    setBusy(true);
+    const ok = await onSave(base, edits);
+    setBusy(false);
+    if (ok) toastSuccess(`Saved ${fmtDay(day)} for ${tech.trim()}.`);
+  };
+  const pics = photos(day, tech.trim());
+  const box: React.CSSProperties = { display: 'grid', gap: 3, fontSize: 12, minWidth: 0 };
+  return (
+    <Section title="Enter a day" subtitle={row?.app ? 'From the app: change anything, then Save.' : row ? 'Saved: change anything, then Save.' : 'Nothing saved for this day yet: type it in, then Save.'}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+          <label style={box}><span className="wf-label">Day</span>
+            <input type="date" className="wf-input" value={day} onChange={(e) => setDay(e.target.value)} aria-label="Day" /></label>
+          <label style={box}><span className="wf-label">Technician</span>
+            <input className="wf-input" list="fs-form-techs" value={tech} onChange={(e) => setTech(e.target.value)} aria-label="Technician" />
+            <datalist id="fs-form-techs">{techs.map((t) => <option key={t} value={t} />)}</datalist></label>
+          {FORM_FIELDS.map(({ f, label, time }) => {
+            const auto = f === 'hours' ? c.hoursAuto : f === 'travel' ? c.travelAuto : f === 'miles' ? c.milesAuto : null;
+            return (
+              <label key={f} style={box}><span className="wf-label">{label}</span>
+                <input className="wf-input" type={time ? 'time' : 'text'} inputMode={time ? undefined : 'decimal'} value={vals[f]}
+                  placeholder={auto ? `${auto}${f === 'miles' ? ' mi' : ' h'} worked out` : ''} aria-label={label}
+                  onChange={(e) => setVals((x) => ({ ...x, [f]: e.target.value }))} /></label>
+            );
+          })}
+        </div>
+        <label style={box}><span className="wf-label">Notes for this day</span>
+          <textarea className="wf-input" rows={2} value={vals.note} onChange={(e) => setVals((x) => ({ ...x, note: e.target.value }))} aria-label="Notes for this day" /></label>
+        {pics.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {pics.map((p, i) => (
+              <button key={i} type="button" onClick={() => onZoom(p)} style={{ border: 0, padding: 0, background: 'none', cursor: 'zoom-in' }} aria-label={`See photo ${i + 1}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.src} alt="" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 8 }} />
+              </button>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="wf-btn wf-btn-navy" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save this day'}</button>
+          <span className="wf-subtle" style={{ fontSize: 13 }}>
+            {hrs(c.hours)} h on site · {hrs(c.travel)} h travel · {mi(c.miles)} mi
+          </span>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 function num(s: string): number | null | undefined {
   const t = s.replace(/[$,\s]/g, '');
   if (t === '') return null;

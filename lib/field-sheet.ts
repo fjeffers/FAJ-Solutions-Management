@@ -445,6 +445,10 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
       lines.push(line('receipt', r.date ?? null, `${CATEGORY_WORD[r.category] ?? 'Receipt'}${r.vendor ? ` — ${r.vendor}` : ''}${r.date ? ` (${dayWord(r.date)})` : ''}`, 1, r.amount));
     }
   }
+  // The client reads it day by day: each day's labor, travel, miles and spending together, then the
+  // lines for the whole week (a fixed price, items, meals, hotel). The sort is stable within a day.
+  const ORDER: LineKind[] = ['labor', 'travel', 'mileage', 'receipt', 'fixed', 'item', 'meals', 'hotel'];
+  lines.sort((x, y) => (x.date ? 0 : 1) - (y.date ? 0 : 1) || (x.date ?? '').localeCompare(y.date ?? '') || ORDER.indexOf(x.kind) - ORDER.indexOf(y.kind));
   const of = (...k: LineKind[]) => r2(lines.filter((l) => k.includes(l.kind)).reduce((t, l) => t + l.amount, 0));
   return {
     hours: r2(sum((d) => d.hours)), travel: r2(sum((d) => d.travel)), total: r2(sum((d) => d.total)),

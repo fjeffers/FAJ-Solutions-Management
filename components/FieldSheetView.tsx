@@ -17,7 +17,7 @@
 // (/api/quickbooks/field-sheet-invoice).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, EyeOff, FileSpreadsheet, Plus, Receipt, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
+import { Camera, EyeOff, FileSpreadsheet, FileText, Plus, Receipt, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
@@ -32,6 +32,7 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder } from '@/lib/types';
 import { Section } from '@/components/wf/WfUi';
 import { loadEvents, OfficeReceiptDialog } from '@/components/wf/ProjectOffice';
+import FieldSheetReport from '@/components/FieldSheetReport';
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -144,6 +145,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [zoom, setZoom] = useState<Shot | null>(null);
   const [customers, setCustomers] = useState<Client[]>([]);
+  const [report, setReport] = useState(false);
   const [invoices, setInvoices] = useState<SheetInvoice[]>([]);
   // The rates as last saved: a failed save puts them back, so the totals never use an unsaved rate.
   const lastSettings = useRef<SheetSettings>(parseSettings({}));
@@ -306,6 +308,15 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
       .map((p) => ({ src: p.url, title: `${p.contractor_name ?? ''} · ${at(p.taken_at)}`, caption: '' })) },
   ];
 
+  // The same photos with captions a client reads: what it shows first, then who and when.
+  const clientPhotos = [
+    { group: 'Receipts', list: receipts.filter((e) => e.status === 'approved' && e.receipt_path && urls[e.receipt_path])
+      .map((e) => ({ src: urls[e.receipt_path!], caption: `${expenseCategoryLabel(e.category)}${e.vendor ? `, ${e.vendor}` : ''}: ${fmtMoney(e.amount)}`, title: fmtDay(e.expense_date) })) },
+    { group: 'Mileage (odometer photos)', list: readings.filter((o) => o.photo_path && urls[o.photo_path] && inRange(dayOf(o.at, TZ)))
+      .map((o) => ({ src: urls[o.photo_path!], caption: `Odometer ${o.reading.toLocaleString('en-US')} at the ${o.moment === 'end' ? 'end' : 'start'} of a drive`, title: `${o.contractor_name} · ${at(o.at)}` })) },
+    { group: 'Photos from the site', list: photos.filter((p) => inRange(dayOf(p.taken_at, TZ))).map((p) => ({ src: p.url, caption: '', title: `${p.contractor_name ?? ''} · ${at(p.taken_at)}` })) },
+  ];
+
   if (loading) return <Section title={`WO ${wo.wo_number}`}><div className="wf-subtle">Pulling the job from the app…</div></Section>;
 
   const approved = receipts.filter((e) => e.status === 'approved');
@@ -323,6 +334,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReport(true)}><FileText size={16} /> Client report</button>
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void excel()}><FileSpreadsheet size={16} /> Excel (Smartsheet)</button>
           </div>
         </div>
@@ -422,6 +434,13 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
 
       {addOpen && <AddDay techs={allTechs} rows={rows} defaultDay={wo.start_date ?? ''} onClose={() => setAddOpen(false)}
         onAdd={(day, tech) => { setAddOpen(false); void store({ key: `${day}|${tech}`, day, tech, id: null, added: true, hidden: false, missing: false, app: null, edits: {}, values: {} as SheetRow['values'], source: {} }, { edits: {} }); }} />}
+      {report && (
+        <FieldSheetReport site={settings.site || jobName(wo)} client={settings.client || wo.customer_name || ''} wo={wo.wo_number} clientWo={wo.external_wo_id}
+          address={address(wo)} from={from || rows.filter((r) => !r.hidden).map((r) => r.day).sort()[0] || ''} to={to || rows.filter((r) => !r.hidden).map((r) => r.day).sort().at(-1) || ''}
+          rows={rows} s={settings} totals={totals}
+          receipts={approved.map((e) => ({ id: e.id, date: e.expense_date, category: e.category, vendor: e.vendor, amount: e.amount }))}
+          photos={clientPhotos} onClose={() => setReport(false)} />
+      )}
       {receiptOpen && <OfficeReceiptDialog woId={wo.id} onClose={() => setReceiptOpen(false)} onSaved={() => { setReceiptOpen(false); void loadExpenses(); }} />}
       {zoom && createPortal(
         <div className="wf wf-overlay" onClick={() => setZoom(null)} style={{ display: 'grid', placeItems: 'center', padding: 16 }}>

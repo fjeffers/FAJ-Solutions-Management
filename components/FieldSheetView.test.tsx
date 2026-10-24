@@ -136,4 +136,18 @@ describe('Field Sheet', () => {
     await user.click(screen.getByRole('button', { name: /create the invoice in quickbooks/i }));
     expect(posted).toEqual([{ wo_id: 'wo', send: true, photos: false }]);
   });
+
+  it('gives the client a plain report: one line per day, the times on site, no raw taps', async () => {
+    const user = userEvent.setup();
+    render(<FieldSheetView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+    await user.click(await screen.findByRole('button', { name: /client report/i }));
+    const report = document.getElementById('job-log-root')!;
+    expect(within(report).getByText('FIELD SHEET')).toBeTruthy();
+    expect(within(report).getByText('7:44 AM – 5:18 PM')).toBeTruthy();
+    expect(within(report).getAllByText('9.57 h').length).toBeGreaterThan(0);
+    expect(report.textContent).not.toMatch(/Hotel → Hotel/);
+    // Raja's blank day isn't on the client's copy.
+    expect(report.textContent).not.toMatch(/Raja Bennett/);
+  });
 });

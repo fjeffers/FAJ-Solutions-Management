@@ -225,6 +225,10 @@ describe('billing any client', () => {
       ['Wed, Oct 21 · Dwayne · on site 9.57 h — Pulled AP runs', 9.57, 813.45],
     ]);
     expect(t.lines.filter((l) => l.kind === 'travel').map((l) => l.amount)).toEqual([23.4, 11.25]);
+    // Day by day: Tuesday's labor, travel and miles, then Wednesday's.
+    expect(t.lines.map((l) => `${l.date} ${l.kind}`)).toEqual([
+      '2026-10-20 labor', '2026-10-20 travel', '2026-10-20 mileage', '2026-10-21 labor', '2026-10-21 travel', '2026-10-21 mileage',
+    ]);
     expect(t.labor).toBe(1674.3);
     expect(t.mileage).toBe(17.78);
     expect(t.bill).toBe(1692.08);

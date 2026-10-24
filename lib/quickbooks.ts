@@ -292,3 +292,50 @@ export async function createInvoice(
     balance: Number(inv.Balance ?? 0),
   };
 }
+
+/**
+ * Email an invoice to the client from QuickBooks (the client gets QuickBooks'
+ * own invoice email, with its pay-online link). sendTo overrides the address on
+ * the invoice. Returns the address QuickBooks sent it to.
+ */
+export async function sendInvoice(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+  invoiceId: string,
+  sendTo: string,
+): Promise<string> {
+  const url = `${apiBase(environment)}/${realmId}/invoice/${encodeURIComponent(invoiceId)}/send?sendTo=${encodeURIComponent(sendTo)}&minorversion=65`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/octet-stream', Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`QuickBooks couldn't email the invoice: ${await res.text()}`);
+  const data = await res.json();
+  return String(data?.Invoice?.BillEmail?.Address ?? sendTo);
+}
+
+/**
+ * Attach a file (a photo, a receipt) to an invoice. includeOnSend puts it in
+ * the email QuickBooks sends the client, so the client gets the photos with the
+ * invoice. Attach before sending.
+ */
+export async function attachToInvoice(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+  invoiceId: string,
+  file: { name: string; type: string; bytes: ArrayBuffer },
+  includeOnSend = true,
+): Promise<void> {
+  const form = new FormData();
+  const meta = { AttachableRef: [{ EntityRef: { type: 'Invoice', value: invoiceId }, IncludeOnSend: includeOnSend }], FileName: file.name, ContentType: file.type };
+  form.append('file_metadata_01', new Blob([JSON.stringify(meta)], { type: 'application/json' }), 'metadata.json');
+  form.append('file_content_01', new Blob([file.bytes], { type: file.type }), file.name);
+  const res = await fetch(`${apiBase(environment)}/${realmId}/upload?minorversion=65`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    body: form,
+  });
+  if (!res.ok) throw new Error(`QuickBooks couldn't attach ${file.name}: ${await res.text()}`);
+}

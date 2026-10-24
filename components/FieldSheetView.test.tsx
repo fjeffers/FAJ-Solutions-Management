@@ -29,6 +29,8 @@ const tables: Record<string, Record<string, unknown>[]> = {
   field_sheets: [{ settings: { mileRate: 0.6 } }],
   field_sheet_days: [],
   user_settings: [{ mileage_rate: 0.7 }],
+  customers: [{ id: 'cu1', name: 'NetView', billing_email: 'ap@netview.com', default_mileage_rate: 0.6, payment_terms: 'Net 30' }],
+  field_sheet_invoices: [],
 };
 const upserts: [string, Record<string, unknown>][] = [];
 const rpc = vi.fn(async () => ({ data: { ok: true, status: 'declined' }, error: null }));
@@ -59,7 +61,7 @@ const wo = {
   contractor_names: ['Dwayne Cudjoe', 'Raja Bennett'], contractor_name: 'Dwayne Cudjoe', start_date: '2026-10-21', end_date: '2026-10-21', is_project: false,
 } as unknown as EnrichedWorkOrder;
 
-afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); });
+afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); vi.unstubAllGlobals(); });
 
 describe('Field Sheet', () => {
   it('pulls the job by the client ticket and shows the day from the drives, with the guess marked', async () => {
@@ -108,5 +110,30 @@ describe('Field Sheet', () => {
     expect(within(hotel).getByText('Paid by FAJ')).toBeTruthy();
     expect(within(hotel).getByRole('button', { name: 'Remove' })).toBeTruthy();
     expect(within(hotel).queryByRole('button', { name: 'Decline' })).toBeNull();
+  });
+
+  it('bills each day at the client’s hourly rate and sends the week to QuickBooks', async () => {
+    const user = userEvent.setup();
+    const posted: unknown[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: string }) => {
+      posted.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ ok: true, invoice_number: '1042', total: 816.09, sent_to: 'ap@netview.com', photos_attached: 0 }), { status: 200 });
+    }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<FieldSheetView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+    // Picking the client fills their email and mileage rate.
+    const client = await screen.findByLabelText('Client');
+    await user.clear(client);
+    await user.type(client, 'NetView');
+    await user.tab();
+    expect(upserts.at(-1)).toEqual(['field_sheets', expect.objectContaining({ settings: expect.objectContaining({ client: 'NetView', customerId: 'cu1', email: 'ap@netview.com', mileRate: 0.6 }) })]);
+    await user.type(screen.getByLabelText('$ per hour on site'), '85');
+    await user.tab();
+    // Dwayne, Wed: 9.57 h × $85 + 4.4 mi × $0.60.
+    expect(await screen.findByText('Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h')).toBeTruthy();
+    expect(screen.getAllByText('$816.09').length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /create the invoice in quickbooks/i }));
+    expect(posted).toEqual([{ wo_id: 'wo', send: true, photos: false }]);
   });
 });

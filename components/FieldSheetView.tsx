@@ -1,21 +1,29 @@
 'use client';
-// Office → Field Sheet (Fred, 2026-10-24: "add it under office and i can pull
-// it by the app work order number and edit whats needed"). Type a WO number
+// Office → FAJ Solutions Field Sheet (Fred, 2026-10-24: "add it under office and
+// i can pull it by the app work order number and edit whats needed"; "give it
+// one general name ... FAJ Solutions Field sheet"; "a way for me to build not
+// only LDS but Wendys and other clients"). One sheet per site. Type a WO number
 // (or the client's ticket or site number) and the job's week comes up, one line
 // per tech per day from the techs' taps, with the office's own figures on top
 // (lib/field-sheet.ts, migration 136). Every figure can be typed over. Receipts
 // are approved or declined here the same way as in WorkFlow, a declined one
 // moves to its own list and leaves the bill, and the odometer, receipt and job
 // photos are at the bottom. Excel for the client or Smartsheet.
+//
+// Billing: pick the client, the site location and how they pay (hourly,
+// blended, fixed or per item; mileage, meals, hotel, receipts). Each day shows
+// what it bills and the week adds up. Finish creates the invoice in QuickBooks
+// the same way as the Site Log and can email it to the client
+// (/api/quickbooks/field-sheet-invoice).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, EyeOff, FileSpreadsheet, Plus, Receipt, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { Camera, EyeOff, FileSpreadsheet, Plus, Receipt, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { buildDayLogs, dayOf } from '@/lib/project-day';
-import { matchOdometer, type OdoRow } from '@/lib/weekly-bill';
+import { dayOf } from '@/lib/project-day';
+import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  appDays, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, sheetRows, sheetTotals, SETTING_KEYS,
-  type SavedDay, type SheetField, type SheetRow, type SheetSettings,
+  dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  type BillItem, type LaborType, type SavedDay, type SheetField, type SheetRow, type SheetSettings, type SheetTotals,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
 import { downloadXLSXBook } from '@/lib/export';
@@ -77,8 +85,8 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
   return (
     <div className="wf" style={{ padding: 16, maxWidth: 1400, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
-        <h1 className="wf-h1" style={{ margin: 0 }}>Field Sheet</h1>
-        <div className="wf-subtle">Pull a job by its work order number: each tech&apos;s days, miles and receipts from the app, ready to fix and bill.</div>
+        <h1 className="wf-h1" style={{ margin: 0 }}>FAJ Solutions Field Sheet</h1>
+        <div className="wf-subtle">One sheet per site, for any client. Pull a job by its work order number: each tech&apos;s days, hours, miles and receipts from the app, ready to fix, bill and send.</div>
       </div>
       <form onSubmit={pull} className="wf-card" style={{ padding: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <label htmlFor="fs-wo" className="wf-label" style={{ flexBasis: '100%' }}>Work order number, client ticket or site number</label>
@@ -100,8 +108,9 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
         <Section title="Pick a job">
           <div style={{ fontSize: 14, lineHeight: 1.6 }}>
             Type the work order number above. The sheet comes up with every day the techs logged in the app. Fix any time,
-            mile or hour by typing over it, add a day the app missed, and approve or decline the receipts. Your changes are
-            kept here; what the techs tapped is never changed.
+            mile or hour by typing over it, add a day the app missed, and approve or decline the receipts. Pick the client
+            and how they pay, then finish the week: it goes into QuickBooks as an invoice and can be emailed to the client.
+            Your changes are kept here; what the techs tapped is never changed.
           </div>
         </Section>
       )}
@@ -134,6 +143,8 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
   const [addOpen, setAddOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [zoom, setZoom] = useState<Shot | null>(null);
+  const [customers, setCustomers] = useState<Client[]>([]);
+  const [invoices, setInvoices] = useState<SheetInvoice[]>([]);
   // The rates as last saved: a failed save puts them back, so the totals never use an unsaved rate.
   const lastSettings = useRef<SheetSettings>(parseSettings({}));
 
@@ -145,6 +156,11 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
     for (const x of signed ?? []) if (x.path && x.signedUrl) m[x.path] = x.signedUrl;
     setUrls((u) => ({ ...u, ...m }));
   }, [db]);
+  const loadInvoices = useCallback(async () => {
+    const { data } = await db.from('field_sheet_invoices')
+      .select('id, from_day, to_day, customer_name, qbo_invoice_number, total, sent_to, sent_at, created_at').eq('wo_id', wo.id).order('from_day');
+    setInvoices((data as SheetInvoice[] | null) ?? []);
+  }, [db, wo.id]);
   const loadExpenses = useCallback(async () => {
     const cols = 'id, contractor_name, category, vendor, amount, expense_date, note, receipt_path, status, decline_reason';
     const pick = (c: string) => db.from('job_expenses').select(c).eq('wo_id', wo.id).order('expense_date');
@@ -165,6 +181,9 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
         db.from('field_sheets').select('settings').eq('wo_id', wo.id).maybeSingle(),
         db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', wo.id),
         db.from('user_settings').select('mileage_rate').maybeSingle(),
+        loadInvoices(),
+        db.from('customers').select('id, name, billing_email, default_mileage_rate, payment_terms').order('name')
+          .then(({ data }) => setCustomers((data as Client[] | null) ?? [])),
       ]);
       setEvents(ev);
       const odo = ((od.data as (OdoRow & { id: string })[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
@@ -180,19 +199,18 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
       await sign(odo.map((o) => o.photo_path));
       setLoading(false);
     })();
-  }, [db, wo.id, loadExpenses, sign]);
+  }, [db, wo.id, loadExpenses, loadInvoices, sign]);
 
   const techs = useMemo(() => (wo.contractor_names?.length ? wo.contractor_names : [wo.contractor_name]).filter((t): t is string => !!t), [wo]);
-  const rows = useMemo(() => {
-    const logs = buildDayLogs(events, new Date(), TZ);
-    const legs = matchOdometer(logs.flatMap((d) => d.legs), readings);
-    return sheetRows({ app: appDays(logs, legs, TZ), saved, techs, days: jobDays(wo.start_date, wo.end_date) })
-      .filter((r) => (!from || r.day >= from) && (!to || r.day <= to));
-  }, [events, readings, saved, techs, wo.start_date, wo.end_date, from, to]);
+  const allRows = useMemo(() => rowsFor({ events, readings, saved, techs, start: wo.start_date, end: wo.end_date, timeZone: TZ }),
+    [events, readings, saved, techs, wo.start_date, wo.end_date]);
+  const rows = useMemo(() => allRows.filter((r) => inDates(r.day, from, to)), [allRows, from, to]);
+  // The weeks this site has days in, Sunday to Saturday, to bill one at a time.
+  const weeks = useMemo(() => [...new Set(allRows.map((r) => weekOf(r.day)))].sort(), [allRows]);
   const visible = rows.filter((r) => showHidden || !r.hidden);
-  const inRange = (d: string) => (!from || d >= from) && (!to || d <= to);
+  const inRange = (d: string) => inDates(d, from, to);
   const receipts = expenses.filter((e) => inRange(e.expense_date));
-  const totals = sheetTotals(rows, receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status })), settings);
+  const totals = sheetTotals(rows, receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date })), settings);
   const allTechs = [...new Set([...techs, ...rows.map((r) => r.tech)])];
 
   // ── saving: one write at a time per line, and for the rates, so an older save can't land after a newer one ──
@@ -236,12 +254,13 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
       if (error) { toastError("Couldn't undo that. Check your connection."); await reloadSaved(); }
     });
   };
-  const saveSetting = (k: (typeof SETTING_KEYS)[number], v: number | null) => {
-    const next = { ...settings, [k]: v };
+  const saveSettings = (patch: Partial<SheetSettings>) => {
+    const next = { ...settings, ...patch };
+    if (JSON.stringify(next) === JSON.stringify(settings)) return Promise.resolve();
     setSettings(next);
     return inTurn('settings', async () => {
       const { error } = await db.from('field_sheets').upsert({ wo_id: wo.id, settings: next, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' });
-      if (error) { toastError("That rate didn't save, so it's back to what it was. Check your connection."); setSettings(lastSettings.current); return; }
+      if (error) { toastError("That didn't save, so it's back to what it was. Check your connection."); setSettings(lastSettings.current); return; }
       lastSettings.current = next;
       onOpened();
     });
@@ -268,11 +287,11 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
     await loadExpenses();
   };
   const excel = async () => {
-    const head = { title: `${jobName(wo)} — ${[wo.site_city, wo.site_state].filter(Boolean).join(', ')}`, wo: wo.wo_number, clientWo: wo.external_wo_id, address: address(wo) };
+    const head = { title: `${jobName(wo)} — ${[wo.site_city, wo.site_state].filter(Boolean).join(', ')}${from || to ? ` · ${from ? fmtDay(from) : '…'} – ${to ? fmtDay(to) : '…'}` : ''}`, wo: wo.wo_number, clientWo: wo.external_wo_id, address: address(wo) };
     const rec: (string | number)[][] = [['Date', 'Technician', 'For', 'Store', 'Amount', 'Status', 'Note']];
     for (const e of receipts) rec.push([e.expense_date, e.contractor_name ?? '', expenseCategoryLabel(e.category), e.vendor ?? '', e.amount, STATUS_WORD[e.status] ?? e.status, e.decline_reason ?? e.note ?? '']);
     await downloadXLSXBook(`${fileSafe(`WO ${wo.wo_number} ${wo.external_wo_id ?? ''} ${jobName(wo)}`)}.xlsx`, [
-      { name: 'Field sheet', rows: fieldSheetRows(head, rows, totals, settings), colWidths: [11, 18, 12, 12, 11, 12, 8, 9, 9, 9, 11, 11, 9, 9, 11, 50] },
+      { name: 'Field sheet', rows: fieldSheetRows(head, rows, totals, settings), colWidths: [11, 40, 12, 12, 11, 12, 8, 9, 9, 9, 11, 11, 9, 9, 11, 11, 50] },
       { name: 'Receipts', rows: rec, colWidths: [11, 18, 18, 18, 10, 10, 40] },
     ]);
   };
@@ -299,38 +318,27 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
           <div style={{ minWidth: 0 }}>
             <div className="wf-title" style={{ fontSize: 18 }}>{jobName(wo)}</div>
             <div className="wf-subtle" style={{ fontSize: 13 }}>
-              WO {wo.wo_number}{wo.external_wo_id ? ` · Client # ${wo.external_wo_id}` : ''}{wo.client_reference ? ` · Site ${wo.client_reference}` : ''} · {address(wo)}
+              {settings.client || wo.customer_name ? <b>{settings.client || wo.customer_name} · </b> : null}
+              WO {wo.wo_number}{wo.external_wo_id ? ` · Client # ${wo.external_wo_id}` : ''}{wo.client_reference ? ` · Site ${wo.client_reference}` : ''} · {settings.site || address(wo)}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => void excel()}><FileSpreadsheet size={16} /> Excel (Smartsheet)</button>
           </div>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          {([['mileRate', 'Mileage $/mi'], ['mealRate', 'Meals $/day'], ['hotelRate', 'Hotel $/night'], ['nights', 'Hotel nights'], ['rooms', 'Hotel rooms']] as const).map(([k, label]) => (
-            <label key={k} style={{ display: 'grid', gap: 3, fontSize: 12 }}>
-              <span className="wf-label">{label}</span>
-              <input key={`${k}:${settings[k] ?? ''}`} className="wf-input" style={{ width: 110, minHeight: 34, padding: '4px 8px' }} inputMode="decimal"
-                defaultValue={settings[k] ?? ''} placeholder="–"
-                onBlur={(e) => { const v = num(e.target.value); if (v !== undefined && v !== settings[k]) void saveSetting(k, v); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
-            </label>
-          ))}
-          <label style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">From</span>
-            <input type="date" className="wf-input" style={{ width: 150, minHeight: 34, padding: '4px 8px' }} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-          <label style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">To</span>
-            <input type="date" className="wf-input" style={{ width: 150, minHeight: 34, padding: '4px 8px' }} value={to} onChange={(e) => setTo(e.target.value)} /></label>
-        </div>
+        <WeekPicker weeks={weeks} from={from} to={to} onPick={(f, t) => { setFrom(f); setTo(t); }} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
           <Stat label="Hours on site" value={hrs(totals.hours)} />
           <Stat label="Travel hours" value={hrs(totals.travel)} />
           <Stat label="Miles" value={mi(totals.miles)} />
+          <Stat label="Labor" value={money(totals.labor)} />
           <Stat label="Mileage" value={money(totals.mileage)} />
-          <Stat label="Meals" value={money(totals.meals.claim)} />
-          <Stat label="Hotel" value={money(totals.hotel.claim)} />
+          <Stat label="Meals + hotel" value={money(totals.meals.claim + totals.hotel.claim)} />
           <Stat label="Bill the client" value={money(totals.bill)} strong />
         </div>
       </section>
+
+      <BillingPanel s={settings} wo={wo} customers={customers} onSave={(p) => void saveSettings(p)} />
 
       <Section title="Days" subtitle={`${visible.filter((r) => !r.hidden).length} lines`} right={
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -352,18 +360,19 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
           <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
             <thead>
               <tr>{['Day', 'Technician', 'Left hotel / home', 'Arrived on site', 'Left site', 'Back hotel / home', 'Lunch min', 'Hours on site', 'Travel hrs', 'Total',
-                'Odometer start', 'Odometer end', 'GPS mi', 'Miles', 'Mileage $', 'From the app / notes', 'Ask', ''].map((h) => <th key={h} style={TH}>{h}</th>)}</tr>
+                'Odometer start', 'Odometer end', 'GPS mi', 'Miles', 'Mileage $', 'Meals $', 'Spending $', 'Bills $', 'From the app / notes', 'Ask', ''].map((h) => <th key={h} style={TH}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {visible.map((r) => <DayLine key={r.key} r={r} rate={settings.mileRate ?? 0} onSet={setField} onUndo={undo}
+              {visible.map((r) => <DayLine key={r.key} r={r} s={settings} onSet={setField} onUndo={undo}
                 onHide={(row) => void store(row, { hidden: !row.hidden })} />)}
-              {visible.length === 0 && <tr><td colSpan={18} style={{ ...TD, padding: 14 }}>Nothing in the app for these dates yet. Press <b>Add a day</b> to type one.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={21} style={{ ...TD, padding: 14 }}>Nothing in the app for these dates yet. Press <b>Add a day</b> to type one.</td></tr>}
             </tbody>
             <tfoot>
               <tr style={{ background: '#F6F1E4', fontWeight: 700 }}>
                 <td style={TD} colSpan={7}>Total · {totals.techDays} tech-days</td>
                 <td style={TDN}>{hrs(totals.hours)}</td><td style={TDN}>{hrs(totals.travel)}</td><td style={TDN}>{hrs(totals.total)}</td>
-                <td style={TD} colSpan={3} /><td style={TDN}>{mi(totals.miles)}</td><td style={TDN}>{money(totals.mileage)}</td><td style={TD} colSpan={3} />
+                <td style={TD} colSpan={3} /><td style={TDN}>{mi(totals.miles)}</td><td style={TDN}>{money(totals.mileage)}</td>
+                <td style={TD} colSpan={2} /><td style={TDN}>{money(totals.bill)}</td><td style={TD} colSpan={3} />
               </tr>
             </tfoot>
           </table>
@@ -388,6 +397,9 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
           <div className="wf-subtle">Not on the bill: fuel {money(totals.byCategory.fuel ?? 0)}, materials {money(totals.byCategory.materials ?? 0)}, declined {money(totals.declined)}</div>
         </div>
       </Section>
+
+      <FinishPanel wo={wo} s={settings} totals={totals} from={from} to={to} rows={rows} invoices={invoices}
+        photoCount={shots.reduce((t, g) => t + g.list.length, 0)} onDone={() => void loadInvoices()} />
 
       <Section title="Photos" subtitle="time, place and GPS are stamped by the tech's phone">
         {shots.every((s) => s.list.length === 0) && <div className="wf-subtle" style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Camera size={16} /> No photos on this job yet.</div>}
@@ -423,6 +435,239 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
           </div>
         </div>, document.body)}
     </>
+  );
+}
+
+type Client = { id: string; name: string; billing_email: string | null; default_mileage_rate: number | null; payment_terms: string | null };
+type SheetInvoice = {
+  id: string; from_day: string; to_day: string; customer_name: string; qbo_invoice_number: string | null; total: number;
+  sent_to: string | null; sent_at: string | null; created_at: string;
+};
+
+/** The Sunday a day's week starts on. */
+export function weekOf(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  return new Date(d.getTime() - d.getUTCDay() * 86_400_000).toISOString().slice(0, 10);
+}
+const addDays = (day: string, n: number) => new Date(new Date(`${day}T12:00:00Z`).getTime() + n * 86_400_000).toISOString().slice(0, 10);
+
+/** The dates billed: type the week's first and last day, or pick a week the site has days in. */
+function WeekPicker({ weeks, from, to, onPick }: { weeks: string[]; from: string; to: string; onPick: (from: string, to: string) => void }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
+      <label style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Week starts</span>
+        <input type="date" className="wf-input" style={{ width: 150, minHeight: 34, padding: '4px 8px' }} value={from} onChange={(e) => onPick(e.target.value, to)} /></label>
+      <label style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Week ends</span>
+        <input type="date" className="wf-input" style={{ width: 150, minHeight: 34, padding: '4px 8px' }} value={to} onChange={(e) => onPick(from, e.target.value)} /></label>
+      {weeks.map((w) => {
+        const end = addDays(w, 6), on = from === w && to === end;
+        return (
+          <button key={w} type="button" className={`wf-btn wf-btn-sm ${on ? 'wf-btn-gold' : 'wf-btn-outline'}`} onClick={() => onPick(w, end)}>
+            Week of {fmtDay(w)}
+          </button>
+        );
+      })}
+      <button type="button" className={`wf-btn wf-btn-sm ${!from && !to ? 'wf-btn-gold' : 'wf-btn-ghost'}`} onClick={() => onPick('', '')}>Whole job</button>
+    </div>
+  );
+}
+
+/** A number box that saves when you leave it. */
+function NumBox({ id, label, value, onSave, width = 110, placeholder = '–' }: {
+  id: string; label: string; value: number | null; onSave: (v: number | null) => void; width?: number; placeholder?: string;
+}) {
+  return (
+    <label htmlFor={id} style={{ display: 'grid', gap: 3, fontSize: 12 }}>
+      <span className="wf-label">{label}</span>
+      <input id={id} key={`${id}:${value ?? ''}`} className="wf-input" style={{ width, minHeight: 34, padding: '4px 8px' }} inputMode="decimal"
+        defaultValue={value ?? ''} placeholder={placeholder}
+        onBlur={(e) => { const v = num(e.target.value); if (v === undefined) { e.target.value = String(value ?? ''); toastError('Type a number, like 12.5'); return; } if (v !== value) onSave(v); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+    </label>
+  );
+}
+
+function TextBox({ id, label, value, onSave, placeholder, list, width = 240 }: {
+  id: string; label: string; value: string; onSave: (v: string) => void; placeholder?: string; list?: string; width?: number;
+}) {
+  return (
+    <label htmlFor={id} style={{ display: 'grid', gap: 3, fontSize: 12, flex: `1 1 ${width}px`, minWidth: 0 }}>
+      <span className="wf-label">{label}</span>
+      <input id={id} key={`${id}:${value}`} className="wf-input" style={{ minHeight: 34, padding: '4px 8px', width: '100%' }} defaultValue={value}
+        placeholder={placeholder} list={list} maxLength={200}
+        onBlur={(e) => { const v = e.target.value.trim(); if (v !== value) onSave(v); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+    </label>
+  );
+}
+
+/**
+ * Who pays and how (Fred, 2026-10-24: "billing hours i can select client name ...
+ * how much an hour or fix or blended or per item then there milage ... and what
+ * the customer will pay for milage or meals or recite or hotel").
+ */
+function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: EnrichedWorkOrder; customers: Client[]; onSave: (p: Partial<SheetSettings>) => void }) {
+  const pickClient = (name: string) => {
+    const c = customers.find((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (!c) { onSave({ client: name, customerId: null }); return; }
+    onSave({
+      client: c.name, customerId: c.id,
+      email: c.billing_email ?? s.email,
+      mileRate: c.default_mileage_rate != null ? Number(c.default_mileage_rate) : s.mileRate,
+    });
+  };
+  const client = customers.find((c) => c.id === s.customerId);
+  const setItem = (i: number, p: Partial<BillItem>) => onSave({ items: s.items.map((it, j) => (j === i ? { ...it, ...p } : it)) });
+  return (
+    <Section title="Who pays and how" subtitle={s.client || wo.customer_name || 'pick the client'}>
+      <div style={{ display: 'grid', gap: 14 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <TextBox id="fs-client" label="Client" value={s.client || wo.customer_name || ''} onSave={pickClient} placeholder="LDS, Wendy's…" list="fs-clients" />
+          <datalist id="fs-clients">{customers.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+          <TextBox id="fs-email" label="Client's billing email" value={s.email} onSave={(v) => onSave({ email: v })} placeholder="ap@client.com" />
+          <TextBox id="fs-site" label="Site location (on the invoice)" value={s.site} onSave={(v) => onSave({ site: v })} placeholder={address(wo)} width={320} />
+        </div>
+        {client?.payment_terms && <div className="wf-subtle" style={{ fontSize: 12.5 }}>Payment terms: {client.payment_terms}</div>}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+          <label htmlFor="fs-labor" style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Labor billed</span>
+            <select id="fs-labor" className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={s.labor} onChange={(e) => onSave({ labor: e.target.value as LaborType })}>
+              {LABOR_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          </label>
+          {s.labor === 'hourly' && <>
+            <NumBox id="fs-rate" label="$ per hour on site" value={s.rate} onSave={(v) => onSave({ rate: v })} />
+            <NumBox id="fs-travel" label="$ per travel hour" value={s.travelRate} onSave={(v) => onSave({ travelRate: v })} placeholder="not billed" />
+          </>}
+          {s.labor === 'blended' && <NumBox id="fs-rate" label="$ per hour, every hour" value={s.rate} onSave={(v) => onSave({ rate: v })} />}
+          {s.labor === 'fixed' && <NumBox id="fs-fixed" label="Fixed price $" value={s.fixed} onSave={(v) => onSave({ fixed: v })} width={140} />}
+          <NumBox id="fs-mile" label="$ per mile" value={s.mileRate} onSave={(v) => onSave({ mileRate: v })} />
+        </div>
+        {s.labor === 'items' && (
+          <div style={{ display: 'grid', gap: 6 }}>
+            {s.items.map((it, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <TextBox id={`fs-item-${i}`} label="Item" value={it.desc} onSave={(v) => setItem(i, { desc: v })} placeholder="Cat6A drop" />
+                <NumBox id={`fs-qty-${i}`} label="Qty" value={it.qty} onSave={(v) => setItem(i, { qty: v ?? 0 })} width={80} />
+                <NumBox id={`fs-price-${i}`} label="$ each" value={it.price} onSave={(v) => setItem(i, { price: v ?? 0 })} width={100} />
+                <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" aria-label="Remove this item" onClick={() => onSave({ items: s.items.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>
+              </div>
+            ))}
+            <div><button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onSave({ items: [...s.items, { desc: '', qty: 1, price: 0 }] })}><Plus size={14} /> Add an item</button></div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+          <label htmlFor="fs-meals" style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Meals</span>
+            <select id="fs-meals" className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={s.mealMode} onChange={(e) => onSave({ mealMode: e.target.value as SheetSettings['mealMode'] })}>
+              <option value="receipts">What was spent (receipts)</option>
+              <option value="per_day">A flat amount per tech-day</option>
+            </select>
+          </label>
+          <NumBox id="fs-meal-rate" label={s.mealMode === 'per_day' ? '$ per tech-day' : 'Up to $ per tech-day'} value={s.mealRate} onSave={(v) => onSave({ mealRate: v })} placeholder={s.mealMode === 'per_day' ? '–' : 'no cap'} />
+          <label htmlFor="fs-hotel" style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Hotel</span>
+            <select id="fs-hotel" className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={s.hotelMode} onChange={(e) => onSave({ hotelMode: e.target.value as SheetSettings['hotelMode'] })}>
+              <option value="receipts">The hotel receipts</option>
+              <option value="per_night">A flat rate per room-night</option>
+            </select>
+          </label>
+          <NumBox id="fs-hotel-rate" label={s.hotelMode === 'per_night' ? '$ per room-night' : 'Up to $ per room-night'} value={s.hotelRate} onSave={(v) => onSave({ hotelRate: v })} placeholder={s.hotelMode === 'per_night' ? '–' : 'no cap'} />
+          <NumBox id="fs-nights" label="Nights" value={s.nights} onSave={(v) => onSave({ nights: v })} width={80} />
+          <NumBox id="fs-rooms" label="Rooms" value={s.rooms} onSave={(v) => onSave({ rooms: v })} width={80} />
+        </div>
+        <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: 13.5 }}>
+          <input type="checkbox" checked={s.receiptsAtCost} onChange={(e) => onSave({ receiptsAtCost: e.target.checked })} />
+          Bill the other receipts at cost (parts &amp; materials, tolls, equipment). Fuel is in the mileage.
+        </label>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * Finish the week: the bill line by line, then QuickBooks (Fred, 2026-10-24:
+ * "when i finish it then save and uploaded into quickbooks the same way ... and
+ * sent off the client"; "thats what the customer gets along with the pictures").
+ */
+function FinishPanel({ wo, s, totals, from, to, rows, invoices, photoCount, onDone }: {
+  wo: EnrichedWorkOrder; s: SheetSettings; totals: SheetTotals; from: string; to: string; rows: SheetRow[];
+  invoices: SheetInvoice[]; photoCount: number; onDone: () => void;
+}) {
+  const [send, setSend] = useState(true);
+  const [photos, setPhotos] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const days = rows.filter((r) => !r.hidden).map((r) => r.day).sort();
+  const f = from || days[0] || '', t = to || days.at(-1) || f;
+  const already = f ? invoices.find((i) => overlaps({ from: f, to: t }, { from: i.from_day, to: i.to_day })) : undefined;
+  const client = s.client || wo.customer_name || '';
+  const email = s.email.trim();
+  const create = async () => {
+    if (!window.confirm(`Create a ${fmtMoney(totals.bill)} invoice for ${client} in QuickBooks${send && email ? ` and email it to ${email}` : ''}?`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/quickbooks/field-sheet-invoice', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wo_id: wo.id, from: from || undefined, to: to || undefined, send: send && !!email, photos: photos && photoCount > 0 }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean; dry_run?: boolean; error?: string; fix?: string; warning?: string; invoice_number?: string; total?: number;
+        sent_to?: string | null; send_error?: string | null; write_back_error?: string | null; photos_attached?: number; photo_error?: string | null;
+      };
+      if (!res.ok || j.error) { toastError([j.error ?? "Couldn't create the invoice.", j.fix].filter(Boolean).join(' ')); return; }
+      if (j.dry_run) { toastError(j.warning ?? 'QuickBooks is not connected yet.'); return; }
+      toastSuccess(`QuickBooks invoice ${j.invoice_number} for ${fmtMoney(j.total ?? totals.bill)} created${j.photos_attached ? ` with ${j.photos_attached} photos` : ''}${j.sent_to ? ` and emailed to ${j.sent_to}` : ''}.`);
+      for (const err of [j.send_error, j.photo_error, j.write_back_error]) if (err) toastError(err);
+      onDone();
+    } catch {
+      toastError("Couldn't reach the app. Check your connection.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Section title="Finish and bill" subtitle={f ? `${fmtDay(f)} – ${fmtDay(t)}` : 'no days yet'}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        {totals.lines.length === 0 ? (
+          <div className="wf-subtle" style={{ fontSize: 13.5 }}>Nothing to bill yet. Set how {client || 'the client'} pays above: the hourly rate, mileage, meals or hotel.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+              <thead><tr>{['Description', 'Qty', 'Rate', 'Amount'].map((h) => <th key={h} style={{ ...TH, background: '#F6F1E4', color: 'inherit' }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {totals.lines.map((l, i) => (
+                  <tr key={i}><td style={{ ...TDN, textAlign: 'left', whiteSpace: 'normal' }}>{l.description}</td><td style={TDN}>{l.qty}</td><td style={TDN}>{fmtMoney(l.rate)}</td><td style={TDN}>{fmtMoney(l.amount)}</td></tr>
+                ))}
+              </tbody>
+              <tfoot><tr><td style={{ ...TDN, textAlign: 'left', fontWeight: 700 }} colSpan={3}>Total for {client || 'the client'}</td><td style={{ ...TDN, fontWeight: 700 }}>{fmtMoney(totals.bill)}</td></tr></tfoot>
+            </table>
+          </div>
+        )}
+        {already && <div style={{ fontSize: 13, color: '#B45309' }}>These dates are already on QuickBooks invoice {already.qbo_invoice_number}. Pick another week.</div>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', fontSize: 13.5 }}>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={photos && photoCount > 0} onChange={(e) => setPhotos(e.target.checked)} disabled={photoCount === 0} /> {photoCount ? `Attach the ${photoCount} photos` : 'No photos to attach'}
+          </label>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={send && !!email} onChange={(e) => setSend(e.target.checked)} disabled={!email} />
+            {email ? `Email it to ${email}` : 'Add the client’s email above to send it'}
+          </label>
+          <button className="wf-btn wf-btn-navy" disabled={busy || totals.lines.length === 0 || !client || !!already} onClick={() => void create()}>
+            <Send size={16} /> {busy ? 'Creating…' : 'Create the invoice in QuickBooks'}
+          </button>
+        </div>
+        {invoices.length > 0 && (
+          <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
+            <div className="wf-label">Invoiced</div>
+            {invoices.map((i) => (
+              <div key={i.id}>
+                QuickBooks invoice <b>{i.qbo_invoice_number ?? '—'}</b> · {fmtDay(i.from_day)} – {fmtDay(i.to_day)} · {fmtMoney(Number(i.total))} · {i.customer_name}
+                {i.sent_to ? ` · emailed to ${i.sent_to}` : ' · not emailed'}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -462,11 +707,11 @@ function Stat({ label, value, strong = false }: { label: string; value: string; 
   );
 }
 
-function DayLine({ r, rate, onSet, onUndo, onHide }: {
-  r: SheetRow; rate: number; onSet: (r: SheetRow, f: SheetField, v: string | number | boolean | null) => void;
+function DayLine({ r, s, onSet, onUndo, onHide }: {
+  r: SheetRow; s: SheetSettings; onSet: (r: SheetRow, f: SheetField, v: string | number | boolean | null) => void;
   onUndo: (r: SheetRow) => void; onHide: (r: SheetRow) => void;
 }) {
-  const v = r.values, c = dayCalc(v, rate);
+  const v = r.values, c = dayCalc(v, s.mileRate ?? 0);
   const bg = (f: SheetField) => (r.source[f] === 'office' ? CELL.office : r.source[f] === 'guess' ? CELL.guess : CELL.base);
   const time = (f: 'left' | 'arrived' | 'leftSite' | 'back') => (
     <td style={{ ...TD, background: bg(f), minWidth: 104 }} title={r.source[f] === 'guess' ? 'Worked out from the drives. Check it.' : undefined}>
@@ -474,7 +719,7 @@ function DayLine({ r, rate, onSet, onUndo, onHide }: {
         onBlur={(e) => { if ((e.target.value || null) !== (v[f] ?? null)) onSet(r, f, e.target.value || null); }} />
     </td>
   );
-  const number = (f: 'lunch' | 'odoStart' | 'odoEnd' | 'gps' | 'hours' | 'travel' | 'miles', auto?: string, width = 76) => (
+  const number = (f: 'lunch' | 'odoStart' | 'odoEnd' | 'gps' | 'hours' | 'travel' | 'miles' | 'meals' | 'spend', auto?: string, width = 76) => (
     <td style={{ ...TD, background: bg(f), minWidth: width }}>
       <input key={`${f}:${v[f] ?? ''}`} style={{ ...IN, textAlign: 'right' }} inputMode="decimal" defaultValue={v[f] ?? ''} placeholder={auto ?? ''}
         aria-label={`${f} ${r.tech} ${r.day}`}
@@ -495,6 +740,9 @@ function DayLine({ r, rate, onSet, onUndo, onHide }: {
       {number('odoStart', undefined, 92)}{number('odoEnd', undefined, 92)}{number('gps', undefined, 68)}
       {number('miles', c.milesAuto.toFixed(1), 68)}
       <td style={TDN}>{money(c.mileage)}</td>
+      {number('meals', s.mealMode === 'per_day' ? (c.worked && s.mealRate ? String(s.mealRate) : '') : '0.00', 76)}
+      {number('spend', '0.00', 76)}
+      <td style={{ ...TDN, fontWeight: 600 }}>{money(dayBill(c, s, v))}</td>
       <td style={{ ...TD, minWidth: 280, background: bg('note') }}>
         {r.missing && <div style={{ padding: '6px 6px 0', fontSize: 12, fontWeight: 600, color: '#9A4A12' }}>Nothing in the app for this day.</div>}
         {r.app?.drives && <div className="wf-subtle" style={{ padding: '6px 6px 0', fontSize: 11.5 }}>{r.app.drives}</div>}

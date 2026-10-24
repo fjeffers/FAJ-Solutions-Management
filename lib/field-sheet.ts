@@ -16,11 +16,14 @@
 // them and marked as a guess for the office to check.
 //
 // Pure and unit-tested (lib/field-sheet.test.ts). The screen is components/FieldSheetView.tsx.
-import { hoursOf, legLabel, type DayLog } from './project-day';
-import type { BillLeg } from './weekly-bill';
+import { buildDayLogs, hoursOf, legLabel, type DayEvent, type DayLog } from './project-day';
+import { matchOdometer, type BillLeg, type OdoRow } from './weekly-bill';
+import type { QbInvoicePayload } from './qb-invoice';
 
 export const TIME_FIELDS = ['left', 'arrived', 'leftSite', 'back'] as const;
-export const NUM_FIELDS = ['lunch', 'odoStart', 'odoEnd', 'gps', 'hours', 'travel', 'miles'] as const;
+// meals and spend: what was spent that day, typed by the office (Fred, 2026-10-24: "each day i enter the time and miles
+// travel hours and miles along with that day spending meals").
+export const NUM_FIELDS = ['lunch', 'odoStart', 'odoEnd', 'gps', 'hours', 'travel', 'miles', 'meals', 'spend'] as const;
 export type TimeField = (typeof TIME_FIELDS)[number];
 export type NumField = (typeof NUM_FIELDS)[number];
 export type SheetField = TimeField | NumField | 'note' | 'ask';
@@ -165,7 +168,7 @@ export function jobDays(start: string | null | undefined, end: string | null | u
 
 const EMPTY: Values = {
   left: null, arrived: null, leftSite: null, back: null,
-  lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, note: '', ask: false,
+  lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, meals: null, spend: null, note: '', ask: false,
 };
 
 /** The app's figure for a field, if it has one. */
@@ -266,18 +269,66 @@ export function dayCalc(v: Values, mileRate: number): DayCalc {
   const miles = v.miles ?? milesAuto;
   return {
     hoursAuto: r2(hoursAuto), travelAuto: r2(travelAuto), milesAuto: r1(milesAuto),
-    hours: r2(hours), travel: r2(travel), total: r2(hours + travel), miles: r1(miles), mileage: r2(miles * mileRate),
+    // The total adds the rounded hours, so the 9.72 h + 0.52 h the client reads comes to 10.24 h.
+    hours: r2(hours), travel: r2(travel), total: r2(r2(hours) + r2(travel)), miles: r1(miles), mileage: r2(miles * mileRate),
     worked: hours + travel > 0 || miles > 0,
   };
 }
 
-export type SheetSettings = { mileRate: number | null; mealRate: number | null; hotelRate: number | null; nights: number | null; rooms: number | null };
-export const SETTING_KEYS = ['mileRate', 'mealRate', 'hotelRate', 'nights', 'rooms'] as const;
+// ── Billing (Fred, 2026-10-24: "billing hours i can select client name ... how
+// much an hour or fix or blended or per item then there milage ... and what the
+// customer will pay for milage or meals or recite or hotel all broken down by
+// hours and days"). One sheet per site; the dates picked are the week billed.
+
+/** How the labor is billed: on-site hours at a rate (travel optional at its own), every hour at one blended rate, a fixed price, or by the item. */
+export type LaborType = 'hourly' | 'blended' | 'fixed' | 'items';
+export const LABOR_TYPES: { key: LaborType; label: string }[] = [
+  { key: 'hourly', label: 'Hourly' }, { key: 'blended', label: 'Blended rate' }, { key: 'fixed', label: 'Fixed price' }, { key: 'items', label: 'Per item' },
+];
+export type BillItem = { desc: string; qty: number; price: number };
+
+export type SheetSettings = {
+  /** The client billed: their Customers record and the name QuickBooks knows them by. */
+  customerId: string | null; client: string; email: string;
+  /** The site location as it goes on the invoice. Empty: the work order's address. */
+  site: string;
+  labor: LaborType;
+  /** Hourly: $ per hour on site. Blended: $ per hour, on site and travel alike. */
+  rate: number | null;
+  /** Hourly only: $ per travel hour. Empty: travel isn't billed. */
+  travelRate: number | null;
+  fixed: number | null;
+  items: BillItem[];
+  /** $ per mile the client pays. */
+  mileRate: number | null;
+  /** Meals: a flat amount per tech-day, or the receipts (up to that much a day when it's set). */
+  mealMode: 'receipts' | 'per_day'; mealRate: number | null;
+  /** Hotel: a flat nightly rate × nights × rooms, or the receipts (up to that when it's set). */
+  hotelMode: 'receipts' | 'per_night'; hotelRate: number | null; nights: number | null; rooms: number | null;
+  /** Bill the other approved receipts (materials, tolls, equipment, other) at cost. Fuel is in the mileage. */
+  receiptsAtCost: boolean;
+};
+export const SETTING_KEYS = ['rate', 'travelRate', 'fixed', 'mileRate', 'mealRate', 'hotelRate', 'nights', 'rooms'] as const;
+export type NumSetting = (typeof SETTING_KEYS)[number];
 
 export function parseSettings(raw: unknown): SheetSettings {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const num = (v: unknown) => (isNum(v) && v >= 0 ? v : null);
-  return { mileRate: num(o.mileRate), mealRate: num(o.mealRate), hotelRate: num(o.hotelRate), nights: num(o.nights), rooms: num(o.rooms) };
+  const str = (v: unknown, max = 300) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const labor = LABOR_TYPES.some((t) => t.key === o.labor) ? (o.labor as LaborType) : 'hourly';
+  const items = Array.isArray(o.items) ? o.items.flatMap((x) => {
+    const it = x && typeof x === 'object' ? (x as Record<string, unknown>) : {};
+    return isNum(it.qty) && isNum(it.price) ? [{ desc: str(it.desc, 200), qty: it.qty, price: it.price }] : [];
+  }).slice(0, 50) : [];
+  return {
+    customerId: typeof o.customerId === 'string' && o.customerId ? o.customerId : null,
+    client: str(o.client, 200), email: str(o.email, 200), site: str(o.site),
+    labor, rate: num(o.rate), travelRate: num(o.travelRate), fixed: num(o.fixed), items,
+    mileRate: num(o.mileRate),
+    mealMode: o.mealMode === 'per_day' ? 'per_day' : 'receipts', mealRate: num(o.mealRate),
+    hotelMode: o.hotelMode === 'per_night' ? 'per_night' : 'receipts', hotelRate: num(o.hotelRate), nights: num(o.nights), rooms: num(o.rooms),
+    receiptsAtCost: o.receiptsAtCost === true,
+  };
 }
 
 /** A field_sheet_days.edits value from the database, keeping only known fields of the right type. */
@@ -293,66 +344,174 @@ export function parseEdits(raw: unknown): Edits {
   return out as Edits;
 }
 
-export type SheetReceipt = { id: string; category: string; amount: number; status: string };
+export type SheetReceipt = { id: string; category: string; amount: number; status: string; vendor?: string | null; date?: string | null };
+
+/** Receipts that can be billed at cost: not meals or hotel (their own lines) and not fuel (in the mileage). */
+export const AT_COST = ['materials', 'tolls_parking', 'equipment', 'other'] as const;
+const CATEGORY_WORD: Record<string, string> = { materials: 'Parts & materials', tolls_parking: 'Tolls & parking', equipment: 'Tools & equipment', other: 'Other' };
+
+export type LineKind = 'labor' | 'travel' | 'fixed' | 'item' | 'mileage' | 'meals' | 'hotel' | 'receipt';
+/** One line of the client's invoice. amount is qty × rate to the cent. */
+export type BillLine = { kind: LineKind; date: string | null; description: string; qty: number; rate: number; amount: number };
+
+const line = (kind: LineKind, date: string | null, description: string, qty: number, rate: number): BillLine =>
+  ({ kind, date, description: description.slice(0, 4000), qty: r2(qty), rate, amount: r2(r2(qty) * rate) });
+const dayWord = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+/**
+ * What one line of the sheet bills for its day: labor at an hourly or blended
+ * rate, its miles, its meal (the flat daily amount, or what was spent) and the
+ * day's other spending. The week's meals are capped as a whole on the bill, so
+ * this is the day's share before any cap.
+ */
+export function dayBill(c: DayCalc, s: SheetSettings, v?: Pick<Values, 'meals' | 'spend'>): number {
+  const labor = s.labor === 'hourly' ? r2(c.hours * (s.rate ?? 0)) + r2(c.travel * (s.travelRate ?? 0))
+    : s.labor === 'blended' ? r2(c.total * (s.rate ?? 0)) : 0;
+  const meal = s.mealMode === 'per_day' ? (c.worked ? s.mealRate ?? 0 : 0) : v?.meals ?? 0;
+  return r2(labor + c.mileage + meal + (v?.spend ?? 0));
+}
 
 export type SheetTotals = {
   hours: number; travel: number; total: number; miles: number; mileage: number; techDays: number;
+  labor: number;
   meals: { allowed: number | null; receipts: number; claim: number };
   hotel: { allowed: number | null; receipts: number; claim: number };
+  atCost: number;
   bill: number;
+  lines: BillLine[];
   byCategory: Record<string, number>;
   declined: number; waiting: number;
 };
 
 /**
- * The week for the client: miles at the mileage rate, and meals and hotel from
- * the approved receipts, up to the allowance when the client sets one (NetView's
- * SOW: $50 a day for meals, the approved nightly hotel rate; paid only with
- * receipts). Fuel and materials are listed but aren't part of the bill.
+ * The bill for the lines shown (the week picked), broken down the way the
+ * invoice is: each tech's day of labor and miles, then meals, hotel and the
+ * receipts billed at cost. The bill is the sum of the invoice lines, so the
+ * sheet and QuickBooks can't disagree. Hidden lines and declined receipts
+ * are left out.
  */
 export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSettings): SheetTotals {
-  const days = rows.filter((r) => !r.hidden).map((r) => dayCalc(r.values, s.mileRate ?? 0));
-  const sum = (f: (d: DayCalc) => number) => days.reduce((t, d) => t + f(d), 0);
+  const live = rows.filter((r) => !r.hidden).map((r) => ({ r, c: dayCalc(r.values, s.mileRate ?? 0) }));
+  const sum = (f: (d: DayCalc) => number) => live.reduce((t, { c }) => t + f(c), 0);
   const approved = receipts.filter((r) => r.status === 'approved');
   const byCategory: Record<string, number> = {};
   for (const r of approved) byCategory[r.category] = r2((byCategory[r.category] ?? 0) + (isNum(r.amount) ? r.amount : 0));
-  const techDays = days.filter((d) => d.worked).length;
+  const techDays = live.filter(({ c }) => c.worked).length;
+  const lines: BillLine[] = [];
+
+  // Labor: each tech's day, with its note, so the client sees the hours by day.
+  for (const { r, c } of live) {
+    const note = r.values.note ? ` — ${r.values.note}` : '';
+    const who = `${dayWord(r.day)} · ${r.tech}`;
+    if (s.labor === 'hourly' && s.rate != null && c.hours > 0) lines.push(line('labor', r.day, `${who} · on site ${c.hours} h${note}`, c.hours, s.rate));
+    if (s.labor === 'hourly' && s.travelRate != null && c.travel > 0) lines.push(line('travel', r.day, `${who} · travel ${c.travel} h`, c.travel, s.travelRate));
+    if (s.labor === 'blended' && s.rate != null && c.total > 0) lines.push(line('labor', r.day, `${who} · ${c.hours} h on site + ${c.travel} h travel${note}`, c.total, s.rate));
+  }
+  const site = s.site ? ` — ${s.site}` : '';
+  if (s.labor === 'fixed' && s.fixed) lines.push(line('fixed', null, `Fixed price${site}`, 1, s.fixed));
+  if (s.labor === 'items') for (const it of s.items) if (it.qty && it.price) lines.push(line('item', null, it.desc || 'Item', it.qty, it.price));
+
+  // Miles: each tech's day.
+  if (s.mileRate) for (const { r, c } of live) if (c.miles > 0) lines.push({ ...line('mileage', r.day, `${dayWord(r.day)} · ${r.tech} · mileage ${c.miles} mi`, c.miles, s.mileRate), amount: c.mileage });
+
+  // What was spent on a day, typed on its line: billed as it is, with the day's note.
+  for (const { r } of live) {
+    if (r.values.spend && r.values.spend > 0) lines.push(line('receipt', r.day, `${dayWord(r.day)} · ${r.tech} · spending${r.values.note ? ` — ${r.values.note}` : ''}`, 1, r.values.spend));
+  }
+
+  // Meals and hotel: the receipts in the app plus what the office typed on each day.
   // An allowance of 0 is set (bill nothing); only an empty one means no cap.
+  const typedMeals = r2(live.reduce((t, { r }) => t + (r.values.meals ?? 0), 0));
+  const mealRcpt = r2((byCategory.meals ?? 0) + typedMeals), hotelRcpt = byCategory.hotel ?? 0;
   const mealAllowed = s.mealRate != null ? r2(techDays * s.mealRate) : null;
   const hotelAllowed = s.hotelRate != null && s.nights != null && s.rooms != null ? r2(s.hotelRate * s.nights * s.rooms) : null;
-  const mealRcpt = byCategory.meals ?? 0, hotelRcpt = byCategory.hotel ?? 0;
-  const meals = { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed == null ? mealRcpt : Math.min(mealAllowed, mealRcpt) };
-  const hotel = { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed == null ? hotelRcpt : Math.min(hotelAllowed, hotelRcpt) };
-  const mileage = r2(sum((d) => d.mileage));
+  const meals = s.mealMode === 'per_day'
+    ? { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed ?? 0 }
+    : { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed == null ? mealRcpt : Math.min(mealAllowed, mealRcpt) };
+  const hotel = s.hotelMode === 'per_night'
+    ? { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed ?? 0 }
+    : { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed == null ? hotelRcpt : Math.min(hotelAllowed, hotelRcpt) };
+  if (meals.claim > 0) lines.push(s.mealMode === 'per_day'
+    ? line('meals', null, `Meals: ${techDays} tech-days × $${s.mealRate}`, techDays, s.mealRate ?? 0)
+    : line('meals', null, `Meals (receipts${mealAllowed != null ? `, up to $${s.mealRate} a tech-day` : ''})`, 1, meals.claim));
+  if (hotel.claim > 0) lines.push(s.hotelMode === 'per_night'
+    ? line('hotel', null, `Hotel: ${s.nights} nights × ${s.rooms} rooms × $${s.hotelRate}`, (s.nights ?? 0) * (s.rooms ?? 0), s.hotelRate ?? 0)
+    : line('hotel', null, `Hotel (receipts${hotelAllowed != null ? `, up to $${s.hotelRate} a room-night` : ''})`, 1, hotel.claim));
+
+  // Other receipts at cost, one line each.
+  if (s.receiptsAtCost) {
+    for (const r of approved) {
+      if (!(AT_COST as readonly string[]).includes(r.category) || !isNum(r.amount) || r.amount <= 0) continue;
+      lines.push(line('receipt', r.date ?? null, `${CATEGORY_WORD[r.category] ?? 'Receipt'}${r.vendor ? ` — ${r.vendor}` : ''}${r.date ? ` (${dayWord(r.date)})` : ''}`, 1, r.amount));
+    }
+  }
+  const of = (...k: LineKind[]) => r2(lines.filter((l) => k.includes(l.kind)).reduce((t, l) => t + l.amount, 0));
   return {
     hours: r2(sum((d) => d.hours)), travel: r2(sum((d) => d.travel)), total: r2(sum((d) => d.total)),
-    miles: r1(sum((d) => d.miles)), mileage, techDays, meals, hotel,
-    bill: r2(mileage + meals.claim + hotel.claim),
-    byCategory,
+    miles: r1(sum((d) => d.miles)), mileage: r2(sum((d) => d.mileage)), techDays,
+    labor: of('labor', 'travel', 'fixed', 'item'), meals, hotel, atCost: of('receipt'),
+    bill: of('labor', 'travel', 'fixed', 'item', 'mileage', 'meals', 'hotel', 'receipt'),
+    lines, byCategory,
     declined: r2(receipts.filter((r) => r.status === 'declined').reduce((t, r) => t + (isNum(r.amount) ? r.amount : 0), 0)),
     waiting: receipts.filter((r) => r.status === 'submitted').length,
   };
 }
 
-/** The sheet as spreadsheet rows (Excel download, which Smartsheet imports). */
+/** The sheet as spreadsheet rows (Excel download, which Smartsheet imports): the days, then the bill line by line. */
 export function fieldSheetRows(head: { title: string; wo: string; clientWo: string | null; address: string }, rows: SheetRow[], t: SheetTotals, s: SheetSettings): (string | number)[][] {
   const out: (string | number)[][] = [
+    ['FAJ Solutions Field Sheet'],
     [head.title],
-    [[`WO ${head.wo}`, head.clientWo ? `Client # ${head.clientWo}` : '', head.address].filter(Boolean).join(' · ')],
+    [[s.client ? `Client: ${s.client}` : '', `WO ${head.wo}`, head.clientWo ? `Client # ${head.clientWo}` : '', s.site || head.address].filter(Boolean).join(' · ')],
     [],
     ['Date', 'Technician', 'Left hotel/home', 'Arrived on site', 'Left site', 'Back hotel/home', 'Lunch (min)', 'Hours on site', 'Travel hours', 'Total hours',
-      'Odometer start', 'Odometer end', 'GPS miles', 'Miles', `Mileage $ (${s.mileRate ?? 0}/mi)`, 'Notes'],
+      'Odometer start', 'Odometer end', 'GPS miles', 'Miles', `Mileage $ (${s.mileRate ?? 0}/mi)`, 'Meals $', 'Spending $', 'Day billed $', 'Notes'],
   ];
   for (const r of rows.filter((x) => !x.hidden)) {
     const v = r.values, c = dayCalc(v, s.mileRate ?? 0);
     out.push([r.day, r.tech, clock(v.left), clock(v.arrived), clock(v.leftSite), clock(v.back), v.lunch ?? '', c.hours, c.travel, c.total,
-      v.odoStart ?? '', v.odoEnd ?? '', v.gps ?? '', c.miles, c.mileage, v.note]);
+      v.odoStart ?? '', v.odoEnd ?? '', v.gps ?? '', c.miles, c.mileage, v.meals ?? '', v.spend ?? '', dayBill(c, s, v), v.note]);
   }
-  out.push(['Total', '', '', '', '', '', '', t.hours, t.travel, t.total, '', '', '', t.miles, t.mileage, `${t.techDays} tech-days`]);
+  out.push(['Week total', '', '', '', '', '', '', t.hours, t.travel, t.total, '', '', '', t.miles, t.mileage, '', '', '', `${t.techDays} tech-days`]);
   out.push([]);
-  out.push(['Mileage', t.mileage]);
-  out.push(['Meals', t.meals.claim]);
-  out.push(['Hotel', t.hotel.claim]);
-  out.push(['Reimbursement', t.bill]);
+  out.push(['Bill', 'Description', 'Qty', 'Rate', 'Amount']);
+  for (const l of t.lines) out.push([l.date ?? '', l.description, l.qty, l.rate, l.amount]);
+  out.push(['', 'Total', '', '', t.bill]);
   return out;
+}
+
+/** Every line of a site's sheet from the raw records: the screen and the invoice route build it the same way. */
+export function rowsFor(input: {
+  events: DayEvent[]; readings: OdoRow[]; saved: SavedDay[]; techs: string[];
+  start: string | null | undefined; end: string | null | undefined; now?: Date; timeZone?: string;
+}): SheetRow[] {
+  const logs = buildDayLogs(input.events, input.now ?? new Date(), input.timeZone);
+  const legs = matchOdometer(logs.flatMap((d) => d.legs), input.readings);
+  return sheetRows({ app: appDays(logs, legs, input.timeZone), saved: input.saved, techs: input.techs, days: jobDays(input.start, input.end) });
+}
+
+/** Within the dates picked (either end may be open). */
+export const inDates = (day: string, from?: string | null, to?: string | null) => (!from || day >= from) && (!to || day <= to);
+
+/** Two date ranges share a day. */
+export const overlaps = (a: { from: string; to: string }, b: { from: string; to: string }) => a.from <= b.to && b.from <= a.to;
+
+/** The QuickBooks invoice for a sheet's lines: each line dated, the site and dates printed for the client. */
+export function fieldSheetInvoice(lines: BillLine[], opts: {
+  customerId: string; itemId: string; memo: string; note: string; email?: string | null; txnDate?: string;
+}): QbInvoicePayload {
+  const payload: QbInvoicePayload = {
+    CustomerRef: { value: opts.customerId },
+    Line: lines.map((l) => ({
+      DetailType: 'SalesItemLineDetail' as const,
+      Amount: l.amount,
+      Description: l.description,
+      SalesItemLineDetail: { ItemRef: { value: opts.itemId }, Qty: l.qty, UnitPrice: l.rate, ...(l.date ? { ServiceDate: l.date } : {}) },
+    })),
+    CustomerMemo: { value: opts.memo.slice(0, 1000) },
+    PrivateNote: opts.note.slice(0, 4000),
+  };
+  if (opts.email) payload.BillEmail = { Address: opts.email };
+  if (opts.txnDate) payload.TxnDate = opts.txnDate;
+  return payload;
 }

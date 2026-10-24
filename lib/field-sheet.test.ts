@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { buildDayLogs, type DayEvent } from './project-day';
 import { matchOdometer, type OdoRow } from './weekly-bill';
 import {
-  appDays, clock, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, sheetRows, sheetTotals,
-  type SavedDay, type SheetReceipt,
+  appDays, clock, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, sheetRows, sheetTotals,
+  type SavedDay, type SheetReceipt, type SheetSettings,
 } from './field-sheet';
+
+/** Billing settings: the defaults, with these changed. */
+const bill = (o: Partial<SheetSettings>): SheetSettings => ({ ...parseSettings({}), ...o });
 
 const TZ = 'America/New_York';
 // Week 1 on the LDS Goldsboro site (2026-10-19), the taps exactly as the techs made them.
@@ -108,7 +111,8 @@ describe('the lines and the office’s edits', () => {
 
   it('keeps only known fields of the right type from the database', () => {
     expect(parseEdits({ arrived: '7:45', back: 'soon', hours: '9', miles: 12, note: 3, ask: true, junk: 1 })).toEqual({ arrived: '7:45', miles: 12, ask: true });
-    expect(parseSettings({ mileRate: 0.6, mealRate: -1, nights: 5, rooms: '2' })).toEqual({ mileRate: 0.6, mealRate: null, hotelRate: null, nights: 5, rooms: null });
+    expect(parseSettings({ mileRate: 0.6, mealRate: -1, nights: 5, rooms: '2', labor: 'nonsense', items: [{ desc: 'Drop', qty: 3, price: 85 }, { qty: 'x' }] }))
+      .toMatchObject({ mileRate: 0.6, mealRate: null, hotelRate: null, nights: 5, rooms: null, labor: 'hourly', items: [{ desc: 'Drop', qty: 3, price: 85 }], mealMode: 'receipts', receiptsAtCost: false });
   });
 });
 
@@ -123,7 +127,7 @@ describe('the totals', () => {
   ];
 
   it('bills miles, and meals and hotel from approved receipts up to the allowance; leaves out hidden lines and declined receipts', () => {
-    const t = sheetTotals(rows, receipts, { mileRate: 0.6, mealRate: 50, hotelRate: 113, nights: 5, rooms: 2 });
+    const t = sheetTotals(rows, receipts, bill({ mileRate: 0.6, mealRate: 50, hotelRate: 113, nights: 5, rooms: 2 }));
     expect(t.techDays).toBe(4);
     expect(t.meals).toEqual({ allowed: 200, receipts: 80, claim: 80 });
     expect(t.hotel).toEqual({ allowed: 1130, receipts: 900, claim: 900 });
@@ -135,16 +139,19 @@ describe('the totals', () => {
   });
 
   it('bills the receipts as they are when the client sets no allowance', () => {
-    const t = sheetTotals(rows, receipts, { mileRate: null, mealRate: null, hotelRate: null, nights: null, rooms: null });
+    const t = sheetTotals(rows, receipts, bill({}));
     expect(t.mileage).toBe(0);
     expect(t.bill).toBe(980);
   });
 
   it('writes the spreadsheet with a line per visible day and the totals', () => {
-    const s = { mileRate: 0.6, mealRate: null, hotelRate: null, nights: null, rooms: null };
+    const s = bill({ mileRate: 0.6 });
     const out = fieldSheetRows({ title: 'LDS Site 5006643', wo: '19101402', clientWo: 'LDS-1106', address: 'Goldsboro, NC' }, rows, sheetTotals(rows, receipts, s), s);
-    expect(out[1][0]).toBe('WO 19101402 · Client # LDS-1106 · Goldsboro, NC');
-    expect(out.filter((r) => /^2026-10-/.test(String(r[0])))).toHaveLength(4);
+    expect(out[0][0]).toBe('FAJ Solutions Field Sheet');
+    expect(out[2][0]).toBe('WO 19101402 · Client # LDS-1106 · Goldsboro, NC');
+    const head = out.findIndex((r) => r[0] === 'Date'), end = out.findIndex((r) => r[0] === 'Week total');
+    expect(end - head - 1).toBe(4);
+    expect(out.at(-1)).toEqual(['', 'Total', '', '', sheetTotals(rows, receipts, s).bill]);
     expect(out.find((r) => r[0] === '2026-10-21' && r[1] === 'Dwayne')!.slice(2, 6)).toEqual(['7:38 AM', '7:44 AM', '5:18 PM', '5:27 PM']);
   });
 });
@@ -194,9 +201,107 @@ describe('review fixes', () => {
   it('bills nothing for meals or hotel when the allowance is set to 0', () => {
     const rows = sheetRows({ app, saved: [], techs: [], days: [] });
     const t = sheetTotals(rows, [{ id: '1', category: 'meals', amount: 80, status: 'approved' }, { id: '2', category: 'hotel', amount: 300, status: 'approved' }],
-      { mileRate: 0, mealRate: 0, hotelRate: 113, nights: 0, rooms: 2 });
+      bill({ mileRate: 0, mealRate: 0, hotelRate: 113, nights: 0, rooms: 2 }));
     expect(t.meals.claim).toBe(0);
     expect(t.hotel.claim).toBe(0);
     expect(t.bill).toBe(0);
+  });
+});
+
+describe('billing any client', () => {
+  // Dwayne, Wed: 9.57 h on site, 0.25 h travel, 4.4 mi. Raja, Tue: 9.72 h on site, 0.52 h travel, 21 mi.
+  const rows = sheetRows({ app, saved: [{ id: 'n', day: '2026-10-21', tech: 'Dwayne', edits: { note: 'Pulled AP runs' }, added: false, hidden: false }], techs: [], days: [] })
+    .filter((r) => r.key === '2026-10-21|Dwayne' || r.key === '2026-10-20|Raja');
+  const receipts: SheetReceipt[] = [
+    { id: 'm', category: 'materials', amount: 47.48, status: 'approved', vendor: "Lowe's", date: '2026-10-20' },
+    { id: 'f', category: 'fuel', amount: 64, status: 'approved', vendor: 'Sheetz', date: '2026-10-22' },
+    { id: 'd', category: 'materials', amount: 99, status: 'declined', vendor: "Lowe's", date: '2026-10-21' },
+  ];
+
+  it('bills hourly by each tech’s day, travel at its own rate, with the day’s note', () => {
+    const t = sheetTotals(rows, receipts, bill({ labor: 'hourly', rate: 85, travelRate: 45, mileRate: 0.7 }));
+    expect(t.lines.filter((l) => l.kind === 'labor').map((l) => [l.description, l.qty, l.amount])).toEqual([
+      ['Tue, Oct 20 · Raja · on site 9.72 h', 9.72, 826.2],
+      ['Wed, Oct 21 · Dwayne · on site 9.57 h — Pulled AP runs', 9.57, 813.45],
+    ]);
+    expect(t.lines.filter((l) => l.kind === 'travel').map((l) => l.amount)).toEqual([23.4, 11.25]);
+    expect(t.labor).toBe(1674.3);
+    expect(t.mileage).toBe(17.78);
+    expect(t.bill).toBe(1692.08);
+    expect(t.bill).toBe(Math.round(t.lines.reduce((s, l) => s + l.amount, 0) * 100) / 100);
+  });
+
+  it('bills a blended rate on every hour, on site and travel', () => {
+    const t = sheetTotals(rows, [], bill({ labor: 'blended', rate: 75 }));
+    expect(t.lines.map((l) => [l.qty, l.amount])).toEqual([[10.24, 768], [9.82, 736.5]]);
+  });
+
+  it('bills a fixed price or by the item, once for the week', () => {
+    expect(sheetTotals(rows, [], bill({ labor: 'fixed', fixed: 2400, site: 'Wendy’s #1331, Hillside NJ' })).lines)
+      .toEqual([{ kind: 'fixed', date: null, description: 'Fixed price — Wendy’s #1331, Hillside NJ', qty: 1, rate: 2400, amount: 2400 }]);
+    const t = sheetTotals(rows, [], bill({ labor: 'items', items: [{ desc: 'Cat6A drop', qty: 12, price: 85 }, { desc: 'AP mount', qty: 4, price: 40 }] }));
+    expect(t.labor).toBe(1180);
+  });
+
+  it('bills meals per tech-day and hotel per night when the client pays flat rates', () => {
+    const t = sheetTotals(rows, [], bill({ mealMode: 'per_day', mealRate: 50, hotelMode: 'per_night', hotelRate: 113, nights: 5, rooms: 2 }));
+    expect(t.lines.map((l) => [l.kind, l.qty, l.amount])).toEqual([['meals', 2, 100], ['hotel', 10, 1130]]);
+  });
+
+  it('bills other receipts at cost when asked, never fuel and never declined ones', () => {
+    const t = sheetTotals(rows, receipts, bill({ receiptsAtCost: true }));
+    expect(t.lines.map((l) => l.description)).toEqual(["Parts & materials — Lowe's (Tue, Oct 20)"]);
+    expect(t.atCost).toBe(47.48);
+    expect(sheetTotals(rows, receipts, bill({})).atCost).toBe(0);
+  });
+
+  it('gives each day what it bills', () => {
+    const dwayne = rows.find((r) => r.tech === 'Dwayne')!;
+    const s = bill({ labor: 'hourly', rate: 85, mileRate: 0.7, mealMode: 'per_day', mealRate: 50 });
+    expect(dayBill(dayCalc(dwayne.values, 0.7), s)).toBe(r2(813.45 + 3.08 + 50));
+  });
+});
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+describe('what was spent each day', () => {
+  const rows = sheetRows({
+    app, techs: [], days: [],
+    saved: [
+      { id: 'a', day: '2026-10-21', tech: 'Dwayne', edits: { meals: 38.5, spend: 12, note: 'Zip ties' }, added: false, hidden: false },
+      { id: 'b', day: '2026-10-20', tech: 'Raja', edits: { meals: 61 }, added: false, hidden: false },
+    ],
+  }).filter((r) => r.key === '2026-10-21|Dwayne' || r.key === '2026-10-20|Raja');
+
+  it('adds the meals typed on each day to the meal receipts, capped by the daily allowance for the week', () => {
+    const t = sheetTotals(rows, [{ id: 'm', category: 'meals', amount: 20, status: 'approved' }], bill({ mealRate: 50 }));
+    expect(t.meals).toEqual({ allowed: 100, receipts: 119.5, claim: 100 });
+  });
+
+  it('bills the day’s other spending as it is, with the day’s note', () => {
+    const t = sheetTotals(rows, [], bill({}));
+    expect(t.lines.map((l) => [l.description, l.amount])).toEqual([['Wed, Oct 21 · Dwayne · spending — Zip ties', 12], ['Meals (receipts)', 99.5]]);
+    const dwayne = rows.find((r) => r.tech === 'Dwayne')!;
+    expect(dayBill(dayCalc(dwayne.values, 0), bill({}), dwayne.values)).toBe(50.5);
+  });
+});
+
+describe('the QuickBooks invoice', () => {
+  it('dates each line, prints the site and dates for the client, and keeps Amount = Qty × Rate', () => {
+    const rows = sheetRows({ app, saved: [], techs: [], days: [] }).filter((r) => r.key === '2026-10-21|Dwayne');
+    const t = sheetTotals(rows, [], bill({ labor: 'hourly', rate: 85, mileRate: 0.6 }));
+    const inv = fieldSheetInvoice(t.lines, { customerId: 'c1', itemId: 'i1', memo: 'LDS Site 5006643 · Oct 19 – Oct 23', note: 'WO 19101402', email: 'ap@netview.com', txnDate: '2026-10-24' });
+    expect(inv.CustomerRef).toEqual({ value: 'c1' });
+    expect(inv.BillEmail).toEqual({ Address: 'ap@netview.com' });
+    expect(inv.CustomerMemo).toEqual({ value: 'LDS Site 5006643 · Oct 19 – Oct 23' });
+    expect(inv.Line.map((l) => [l.SalesItemLineDetail.ServiceDate, l.SalesItemLineDetail.Qty, l.SalesItemLineDetail.UnitPrice, l.Amount]))
+      .toEqual([['2026-10-21', 9.57, 85, 813.45], ['2026-10-21', 4.4, 0.6, 2.64]]);
+    for (const l of inv.Line) expect(l.Amount).toBe(Math.round(l.SalesItemLineDetail.Qty * l.SalesItemLineDetail.UnitPrice * 100) / 100);
+  });
+
+  it('knows when two weeks share a day, and which days are in the dates picked', () => {
+    expect(overlaps({ from: '2026-10-18', to: '2026-10-24' }, { from: '2026-10-24', to: '2026-10-30' })).toBe(true);
+    expect(overlaps({ from: '2026-10-18', to: '2026-10-24' }, { from: '2026-10-25', to: '2026-10-31' })).toBe(false);
+    expect([inDates('2026-10-19', '2026-10-19', '2026-10-23'), inDates('2026-10-18', '2026-10-19', ''), inDates('2026-10-30', '', '')]).toEqual([true, false, true]);
   });
 });

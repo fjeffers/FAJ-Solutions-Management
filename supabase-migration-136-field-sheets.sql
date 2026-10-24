@@ -15,6 +15,19 @@
 --                     emptied on purpose), whether the office added the day
 --                     itself, and whether it's hidden from the sheet.
 --
+--   field_sheet_invoices  each QuickBooks invoice raised from a sheet: the
+--                     dates it bills (a week, usually), the client, the number
+--                     QuickBooks gave it, the total, and who it was emailed to.
+--                     Written only by the server after QuickBooks accepts the
+--                     invoice (/api/quickbooks/field-sheet-invoice); the same
+--                     dates on the same site are never billed twice.
+--
+-- Fred, 2026-10-24: "when i finish it then save and uploaded into quickbooks
+-- the same way ... and sent off the client"; "each site gets build on a
+-- separate smartsheet". settings holds the client, the site location and how
+-- the client is billed (hourly, blended, fixed or per item; mileage, meals,
+-- hotel, receipts) — lib/field-sheet.ts parseSettings.
+--
 -- Owner only, like the rest of the office screens.
 
 CREATE TABLE IF NOT EXISTS public.field_sheets (
@@ -41,7 +54,25 @@ CREATE TABLE IF NOT EXISTS public.field_sheet_days (
 );
 CREATE INDEX IF NOT EXISTS field_sheet_days_wo ON public.field_sheet_days (wo_id);
 
+CREATE TABLE IF NOT EXISTS public.field_sheet_invoices (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  wo_id uuid NOT NULL REFERENCES public.work_orders(id) ON DELETE CASCADE,
+  from_day date NOT NULL,
+  to_day date NOT NULL,
+  customer_name text NOT NULL,
+  qbo_invoice_id text NOT NULL,
+  qbo_invoice_number text,
+  total numeric NOT NULL,
+  sent_to text,
+  sent_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT field_sheet_invoices_dates CHECK (to_day >= from_day)
+);
+CREATE INDEX IF NOT EXISTS field_sheet_invoices_wo ON public.field_sheet_invoices (wo_id, from_day);
+
 ALTER TABLE public.field_sheets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.field_sheet_invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.field_sheet_days ENABLE ROW LEVEL SECURITY;
 
 -- The owner's own sheets, on the owner's own work orders.
@@ -54,3 +85,8 @@ DROP POLICY IF EXISTS field_sheet_days_owner ON public.field_sheet_days;
 CREATE POLICY field_sheet_days_owner ON public.field_sheet_days FOR ALL TO authenticated
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid() AND EXISTS (SELECT 1 FROM public.work_orders w WHERE w.id = wo_id AND w.user_id = auth.uid()));
+
+-- The owner reads their invoices; only the server (service role) writes them.
+DROP POLICY IF EXISTS field_sheet_invoices_owner_read ON public.field_sheet_invoices;
+CREATE POLICY field_sheet_invoices_owner_read ON public.field_sheet_invoices FOR SELECT TO authenticated
+  USING (user_id = auth.uid());

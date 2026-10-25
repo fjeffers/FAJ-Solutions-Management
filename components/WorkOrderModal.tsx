@@ -598,8 +598,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     if (techs?.length) setContractorNames((now) => [...new Set([...now, ...techs])]);
     if (links?.length) setLinksText((now) => [...new Set([...parseClientLinks(now), ...links])].join('\n'));
     if (form_) setCheckoutLink(form_);
-    // The tracker's Google Drive folder is where the documents go.
-    const folder = links?.find((l) => /^https:\/\/drive\.google\.com\//i.test(l));
+    // The tracker's Google Drive folder is where the documents go (a folder, not a file in Drive).
+    const folder = links?.find((l) => /^https:\/\/drive\.google\.com\/drive\/(u\/\d+\/)?folders\//i.test(l));
     if (folder) setDeliverableLink((now) => now || folder);
     setTrackerRow('');
     toastSuccess(`Filled in ${r.external_wo_id}: site ${r.client_reference ?? '?'}${techs?.length ? `, ${techs.join(' and ')}` : ''}. Check it, then Save.`);

@@ -44,5 +44,5 @@ GRANT EXECUTE ON FUNCTION public.wf_tech_site_links(text) TO authenticated;
 -- The LDS jobs: mark the links they already have.
 UPDATE public.work_orders w SET
   survey_link = COALESCE(w.survey_link, (SELECT l FROM unnest(w.client_links) l WHERE l ~* '^https://survey\.ldsqa\.fyi' LIMIT 1)),
-  deliverable_link = COALESCE(w.deliverable_link, (SELECT l FROM unnest(w.client_links) l WHERE l ~* '^https://drive\.google\.com/' LIMIT 1))
+  deliverable_link = COALESCE(w.deliverable_link, (SELECT l FROM unnest(w.client_links) l WHERE l ~* '^https://drive\.google\.com/drive/(u/[0-9]+/)?folders/' LIMIT 1))
 WHERE w.customer_name = 'LDS' AND w.client_links IS NOT NULL;

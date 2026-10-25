@@ -39,9 +39,19 @@ function query(table: string) {
       },
     }),
   });
-  chain.update = (patch: Record<string, unknown>) => ({
-    eq: async (k: string, v: unknown) => { for (const r of tables[table]) if (r[k] === v) Object.assign(r, patch); return { error: null }; },
-  });
+  chain.update = (patch: Record<string, unknown>) => {
+    const u: Record<string, unknown> = {};
+    const apply = () => {
+      beforeUpdate?.();
+      const hit = tables[table].filter((r) => where.every(([k, v]) => r[k] === v));
+      for (const r of hit) Object.assign(r, patch);
+      return { data: hit.map((r) => ({ id: r.id })), error: null };
+    };
+    for (const m of ['eq', 'is']) u[m] = (k: string, v: unknown) => { where.push([k, v]); return u; };
+    u.select = () => ({ then: (ok: (v: unknown) => unknown) => Promise.resolve(apply()).then(ok) });
+    u.then = (ok: (v: unknown) => unknown) => Promise.resolve(apply()).then(ok);
+    return u;
+  };
   chain.delete = () => {
     const d: Record<string, unknown> = {};
     for (const m of ['eq', 'is']) d[m] = (k: string, v: unknown) => { where.push([k, v]); return d; };
@@ -50,6 +60,8 @@ function query(table: string) {
   };
   return chain;
 }
+// What another press of Imported does in the moment before this one saves.
+let beforeUpdate: (() => void) | null = null;
 vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'fred' } } }) }, from: query }),
 }));
@@ -63,7 +75,7 @@ const { POST } = await import('./route');
 const post = (body: Record<string, unknown>) =>
   POST(new Request('http://localhost/api/quickbooks/field-sheet-invoice', { method: 'POST', body: JSON.stringify({ wo_id: 'wo', ...body }) }));
 
-afterEach(() => { getValidQboSession.mockClear(); tables.field_sheet_invoices = []; });
+afterEach(() => { getValidQboSession.mockClear(); tables.field_sheet_invoices = []; beforeUpdate = null; });
 const billed = () => tables.field_sheet_invoices;
 
 describe('POST /api/quickbooks/field-sheet-invoice, the import file', () => {
@@ -113,6 +125,20 @@ describe('POST /api/quickbooks/field-sheet-invoice, the import file', () => {
     expect((await create.json()).error).toMatch(/being marked imported as WO-19101402-1021/);
     expect(await (await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206, date: '2026-10-25' })).json()).toMatchObject({ ok: true });
     expect(billed()).toEqual([expect.objectContaining({ id: 'h-cut', qbo_invoice_id: 'import:WO-19101402-1021', invoice_date: '2026-10-25' })]);
+  });
+
+  it('says Billed only when the bill is saved: not when the hold went away, but yes when another press saved it first', async () => {
+    const cut = { id: 'h-cut', wo_id: 'wo', from_day: '2026-10-21', to_day: '2026-10-21', customer_name: 'LDS', qbo_invoice_id: null, qbo_invoice_number: 'WO-19101402-1021', created_at: '2026-10-24T12:00:00Z' };
+    const mark = () => post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206, date: '2026-10-25' });
+    tables.field_sheet_invoices = [{ ...cut }];
+    beforeUpdate = () => { tables.field_sheet_invoices = []; };
+    const gone = await mark();
+    expect(gone.status).toBe(500);
+    expect((await gone.json()).ok).toBeUndefined();
+    tables.field_sheet_invoices = [{ ...cut }];
+    beforeUpdate = () => { tables.field_sheet_invoices[0].qbo_invoice_id = 'import:WO-19101402-1021'; };
+    expect(await (await mark()).json()).toMatchObject({ ok: true, invoice_number: 'WO-19101402-1021' });
+    expect(billed()).toHaveLength(1);
   });
 
   it('marks nothing when the sheet bills something else now than the file has', async () => {

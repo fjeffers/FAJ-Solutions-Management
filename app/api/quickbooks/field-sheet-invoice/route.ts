@@ -146,6 +146,8 @@ export async function POST(req: Request) {
     const { data: open, error: openErr } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at, qbo_invoice_number').eq('wo_id', wo.id).is('qbo_invoice_id', null);
     if (openErr) return NextResponse.json({ error: "Couldn't check what's billed, so nothing was marked.", fix: 'Try again.' }, { status: 503 });
     let holdId: string | null = null;
+    // A hold this request made, and so may release; one it carries on with belongs to the press before.
+    let made = false;
     for (const o of open ?? []) {
       if (o.qbo_invoice_number === number && o.from_day === from && o.to_day === to) { holdId = o.id; continue; }
       if (blocksBilling({ qbo_invoice_id: null, created_at: o.created_at })) {
@@ -165,17 +167,25 @@ export async function POST(req: Request) {
           : { error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: holdErr?.code === '23505' ? 409 : 500 });
       }
       holdId = hold.id as string;
+      made = true;
     }
     const held = holdId;
-    const release = () => admin.from('field_sheet_invoices').delete().eq('id', held).is('qbo_invoice_id', null);
+    const release = async () => { if (made) await admin.from('field_sheet_invoices').delete().eq('id', held).is('qbo_invoice_id', null); };
     // Now that this request holds the site, an invoice that finished a moment ago counts too.
     const { data: all, error: allErr } = await admin.from('field_sheet_invoices').select('from_day, to_day, qbo_invoice_id, qbo_invoice_number').eq('wo_id', wo.id);
     const clash = allErr ? NextResponse.json({ error: "Couldn't check what's billed, so nothing was marked.", fix: 'Try again.' }, { status: 503 }) : alreadyBilled(all ?? []);
     if (clash) { await release(); return clash; }
-    // The hold becomes the record. qbo_invoice_id marks the dates billed everywhere; "import:" says QuickBooks gave it no id of its own here.
-    const { error: recErr } = await admin.from('field_sheet_invoices')
-      .update({ qbo_invoice_id: `import:${number}`, qbo_invoice_number: number, total: totals.bill, invoice_date: invoiceDate }).eq('id', held);
+    // The hold becomes the record, once: only while it is still a hold. qbo_invoice_id marks the dates
+    // billed everywhere; "import:" says QuickBooks gave it no id of its own here.
+    const recordId = `import:${number}`;
+    const { data: rec, error: recErr } = await admin.from('field_sheet_invoices')
+      .update({ qbo_invoice_id: recordId, qbo_invoice_number: number, total: totals.bill, invoice_date: invoiceDate }).eq('id', held).is('qbo_invoice_id', null).select('id');
     if (recErr) { await release(); return NextResponse.json({ error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: 500 }); }
+    if (!rec?.length) {
+      // Nothing changed: another press of Imported saved it a moment ago, or the hold is gone. Only the first is billed.
+      const { data: now } = await admin.from('field_sheet_invoices').select('qbo_invoice_id').eq('id', held).maybeSingle();
+      if (now?.qbo_invoice_id !== recordId) return NextResponse.json({ error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: 500 });
+    }
     return NextResponse.json({ ok: true, imported: true, invoice_number: number, total: totals.bill });
   }
 

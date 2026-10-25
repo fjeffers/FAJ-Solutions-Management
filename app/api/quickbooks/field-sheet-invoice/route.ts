@@ -118,7 +118,7 @@ export async function POST(req: Request) {
   const email = s.email.trim() || null;
   const preview = {
     customer, from, to, email, memo,
-    lines: totals.lines.map((l) => ({ date: l.date, description: l.description, qty: l.qty, rate: l.rate, amount: l.amount })),
+    lines: totals.lines.map((l) => ({ kind: l.kind, date: l.date, description: l.description, qty: l.qty, rate: l.rate, amount: l.amount })),
     total: totals.bill,
   };
 

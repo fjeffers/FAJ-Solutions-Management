@@ -28,7 +28,9 @@ import {
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
 import { isNetviewJob, netviewAnswers, netviewFormUrl, NETVIEW_PAYROLL } from '@/lib/netview-form';
 import { tapWindow, weekSites, weekToBillFor, type WeekInvoice, type WeekSite, type WeekTap, type WeekTyped } from '@/lib/week-to-bill';
-import { downloadXLSXBook } from '@/lib/export';
+import { downloadCSVText, downloadXLSXBook } from '@/lib/export';
+import { toCSV } from '@/lib/csv';
+import { fieldSheetImportRows, sheetBillTotal, sheetInvoiceNumber, type QboSheetBill } from '@/lib/qbo-work-order-export';
 import { fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder } from '@/lib/types';
@@ -55,6 +57,76 @@ export function findJob(workOrders: EnrichedWorkOrder[], q: string): EnrichedWor
 }
 
 const jobName = (w: EnrichedWorkOrder) => w.site_name || w.title || `WO ${w.wo_number}`;
+
+/**
+ * A job's bill for some dates, built by the server exactly as its invoice would
+ * be (a dry run of /api/quickbooks/field-sheet-invoice), for QuickBooks' invoice
+ * import (Fred, 2026-10-25: "i need a auto sheet to enter into quickbooks").
+ * Dates already invoiced, or nothing to bill, come back as the reason.
+ */
+async function sheetBill(wo: EnrichedWorkOrder, from?: string, to?: string): Promise<{ bill: QboSheetBill } | { error: string }> {
+  try {
+    const res = await fetch('/api/quickbooks/field-sheet-invoice', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wo_id: wo.id, from: from || undefined, to: to || undefined, dry_run: true }),
+    });
+    const j = (await res.json().catch(() => ({}))) as { error?: string; customer?: string; from?: string; to?: string; memo?: string; lines?: QboSheetBill['lines'] };
+    if (!res.ok || j.error || !j.customer || !j.from || !j.to || !j.lines?.length) return { error: j.error ?? "Couldn't build the bill." };
+    return { bill: { woNumber: wo.wo_number, customerName: j.customer, from: j.from, to: j.to, memo: j.memo ?? '', lines: j.lines } };
+  } catch {
+    return { error: "Couldn't reach the app. Check your connection." };
+  }
+}
+/** The file to import in QuickBooks: Settings → Import data → Invoices. */
+const downloadImport = (bills: QboSheetBill[], name: string) =>
+  downloadCSVText(`${fileSafe(name)}.csv`, toCSV(fieldSheetImportRows(bills, dayOf(new Date().toISOString(), TZ))));
+const IMPORT_HOW = 'In QuickBooks: Settings → Import data → Invoices. Import each file once.';
+
+/** Who is filling in NetView's form: the signed-in office user. */
+function useMe(enabled: boolean) {
+  const [me, setMe] = useState({ name: '', email: '' });
+  useEffect(() => {
+    if (!enabled) return;
+    void createClient().auth.getUser().then(({ data }) => {
+      const u = data.user;
+      const meta = (u?.user_metadata ?? {}) as { full_name?: string; name?: string };
+      setMe({ name: meta.full_name || meta.name || '', email: u?.email ?? '' });
+    });
+  }, [enabled]);
+  return me;
+}
+
+/**
+ * NetView's form for a bill in the import file, with the file's invoice number,
+ * date and total, so the two match (Fred, 2026-10-25: "each site their own
+ * bill and netview link to matched").
+ */
+const importNetviewLink = (wo: EnrichedWorkOrder, bill: QboSheetBill, me: { name: string; email: string }) => netviewFormUrl(netviewAnswers({
+  job: wo,
+  invoice: { number: sheetInvoiceNumber(bill.woNumber, bill.from), total: sheetBillTotal(bill), date: dayOf(new Date().toISOString(), TZ), from: bill.from, to: bill.to },
+  lines: bill.lines, vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
+}));
+
+/** The bills just put in an import file, each with its NetView form when it is a NetView job. */
+function MadeBills({ made, me, netview }: { made: { wo: EnrichedWorkOrder; bill: QboSheetBill }[]; me: { name: string; email: string }; netview?: boolean }) {
+  if (!made.length) return null;
+  return (
+    <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
+      <div className="wf-label">In the import file</div>
+      {made.map(({ wo, bill }) => (
+        <div key={`${wo.id}-${bill.from}`}>
+          <b>{sheetInvoiceNumber(bill.woNumber, bill.from)}</b> · {jobName(wo)} · {fmtMoney(sheetBillTotal(bill))}
+          {(netview ?? isNetviewJob(wo)) && (
+            <a className="wf-btn wf-btn-outline wf-btn-sm" style={{ marginLeft: 8 }} href={importNetviewLink(wo, bill, me)} target="_blank" rel="noopener noreferrer"
+              title={`Opens NetView's payment form with this invoice filled in. Check it, then submit. The invoice itself goes to ${NETVIEW_PAYROLL}.`}>
+              <ExternalLink size={14} /> Fill NetView form
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWorkOrder[] }) {
   const [q, setQ] = useState(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('sheet') ?? ''));
@@ -157,6 +229,33 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
   const shown = (sites ?? []).filter((s) => byId.has(s.woId));
   const left = shown.filter((s) => s.status !== 'billed').length;
   const move = (n: number) => setWeek((w) => { const f = new Date(Date.parse(`${w.from}T12:00:00Z`) + n * 7 * 86_400_000).toISOString().slice(0, 10); return { from: f, to: new Date(Date.parse(`${f}T12:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10) }; });
+  const [making, setMaking] = useState(false);
+  // The bills in the last file made, for the week it was made for.
+  const [made, setMade] = useState<{ week: string; list: { wo: EnrichedWorkOrder; bill: QboSheetBill }[] }>({ week: '', list: [] });
+  const toBill = shown.filter((s) => s.status !== 'billed');
+  const me = useMe(toBill.some((s) => isNetviewJob(byId.get(s.woId)!)));
+  const importWeek = async () => {
+    setMaking(true);
+    try {
+      const done: { wo: EnrichedWorkOrder; bill: QboSheetBill }[] = [];
+      const skipped: string[] = [];
+      for (const s of toBill) {
+        const w = byId.get(s.woId)!;
+        const r = await sheetBill(w, week.from, week.to);
+        if ('bill' in r) done.push({ wo: w, bill: r.bill }); else skipped.push(`WO ${w.wo_number}: ${r.error}`);
+      }
+      const bills = done.map((d) => d.bill);
+      setMade({ week: week.from, list: done });
+      if (bills.length) {
+        downloadImport(bills, `QuickBooks import ${week.from} to ${week.to}`);
+        toastSuccess(`${bills.length} invoice${bills.length === 1 ? '' : 's'} in the file. ${IMPORT_HOW}`);
+      }
+      for (const m of skipped) toastError(m);
+      if (!bills.length && !skipped.length) toastError('Nothing to bill this week.');
+    } finally {
+      setMaking(false);
+    }
+  };
   const WORD = { to_bill: 'To bill', partly: 'Partly billed', billed: 'Billed' } as const;
   const COLOR = { to_bill: '#B45309', partly: '#8a6d2b', billed: '#2F7D4F' } as const;
   return (
@@ -165,7 +264,13 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => move(-1)}>← Week before</button>
           <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => move(1)}>Week after →</button>
+          {toBill.length > 0 && (
+            <button type="button" className="wf-btn wf-btn-gold wf-btn-sm" disabled={making} onClick={() => void importWeek()}>
+              <FileSpreadsheet size={16} /> {making ? 'Making the file…' : `QuickBooks import file (${toBill.length} site${toBill.length === 1 ? '' : 's'})`}
+            </button>
+          )}
         </div>
+        <MadeBills made={made.week === week.from ? made.list : []} me={me} />
         {sites === null ? <div className="wf-subtle">Loading the week…</div>
           : shown.length === 0 ? <div className="wf-subtle">No techs logged work on any site this week.</div>
           : shown.map((s) => {
@@ -729,15 +834,7 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
   const [send, setSend] = useState(true);
   // NetView pays from their own form, one entry per invoice (lib/netview-form.ts).
   const netview = isNetviewJob(wo, s.client);
-  const [me, setMe] = useState({ name: '', email: '' });
-  useEffect(() => {
-    if (!netview) return;
-    void createClient().auth.getUser().then(({ data }) => {
-      const u = data.user;
-      const meta = (u?.user_metadata ?? {}) as { full_name?: string; name?: string };
-      setMe({ name: meta.full_name || meta.name || '', email: u?.email ?? '' });
-    });
-  }, [netview]);
+  const me = useMe(netview);
   const netviewLink = (i: SheetInvoice) => {
     // The invoice's own dates, so the breakdown is this invoice's (netviewAnswers checks it adds up).
     const t = sheetTotals(allRows.filter((r) => inDates(r.day, i.from_day, i.to_day)), allReceipts.filter((e) => !!e.date && inDates(e.date, i.from_day, i.to_day)), s);
@@ -783,6 +880,22 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
       setBusy(false);
     }
   };
+  // The bill in the last file made, while the sheet still bills the same: a figure changed since makes it out of date.
+  const [made, setMade] = useState<{ key: string; bill: QboSheetBill } | null>(null);
+  const madeKey = `${totals.bill}|${from}|${to}`;
+  const importSheet = async () => {
+    setBusy(true);
+    try {
+      if (!(await flush())) { toastError("A change didn't save, so the file wasn't made. Check the figures and try again."); return; }
+      const r = await sheetBill(wo, from, to);
+      if ('error' in r) { toastError(r.error); return; }
+      setMade({ key: madeKey, bill: r.bill });
+      downloadImport([r.bill], `QuickBooks import WO ${wo.wo_number}`);
+      toastSuccess(IMPORT_HOW);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Section title="Finish and bill" subtitle={f ? `${fmtDay(f)} – ${fmtDay(t)}` : 'no days yet'}>
       <div style={{ display: 'grid', gap: 12 }}>
@@ -818,7 +931,12 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
           <button className="wf-btn wf-btn-navy" disabled={busy || totals.lines.length === 0 || !client || !!already} onClick={() => void create()}>
             <Send size={16} /> {busy ? 'Creating…' : 'Create the invoice in QuickBooks'}
           </button>
+          <button className="wf-btn wf-btn-outline" disabled={busy || totals.lines.length === 0 || !client || !!already} onClick={() => void importSheet()}
+            title="A file to import in QuickBooks yourself">
+            <FileSpreadsheet size={16} /> QuickBooks import file
+          </button>
         </div>
+        {made?.key === madeKey && <MadeBills made={[{ wo, bill: made.bill }]} me={me} netview={netview} />}
         {invoices.length > 0 && (
           <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
             <div className="wf-label">Invoiced</div>

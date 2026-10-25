@@ -78,6 +78,26 @@ export async function getCompanyName(environment: 'sandbox' | 'production', real
   return data.CompanyInfo?.CompanyName ?? 'QuickBooks Company';
 }
 
+/**
+ * The company's name, and which QuickBooks it is in: the one set first, then the
+ * other. The Intuit keys decide that (development keys reach only sandbox
+ * companies, production keys only real ones), and asking the wrong one answers
+ * 403 ApplicationAuthorizationFailed (3100). That's why connecting failed on
+ * 2026-10-25: a real company, asked of the sandbox.
+ */
+export async function findCompany(preferred: 'sandbox' | 'production', realmId: string, accessToken: string): Promise<{ environment: 'sandbox' | 'production'; companyName: string }> {
+  try {
+    return { environment: preferred, companyName: await getCompanyName(preferred, realmId, accessToken) };
+  } catch (first) {
+    const other = preferred === 'production' ? 'sandbox' : 'production';
+    try {
+      return { environment: other, companyName: await getCompanyName(other, realmId, accessToken) };
+    } catch {
+      throw first;
+    }
+  }
+}
+
 export async function listAccounts(environment: 'sandbox' | 'production', realmId: string, accessToken: string): Promise<{ id: string; name: string; accountType: string }[]> {
   type QboAccount = { Id: string; Name: string; AccountType: string };
   const accounts = await qboQuery<QboAccount>(environment, realmId, accessToken, 'SELECT Id, Name, AccountType FROM Account WHERE Active = true MAXRESULTS 200');

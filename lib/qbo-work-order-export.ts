@@ -102,9 +102,11 @@ export function prepareQboCompletedJobs(workOrders: QboWorkOrderInput[]) {
   return { completedCount: completed.length, jobs, skipped };
 }
 
+const IMPORT_HEADER = ['InvoiceNo', 'Customer', 'InvoiceDate', 'DueDate', 'Terms', 'Memo', 'Item(Product/Service)', 'ItemDescription', 'ItemQuantity', 'ItemRate', 'ItemAmount', 'Service Date'];
+
 export function qboInvoiceImportRows(jobs: QboImportJob[]): string[][] {
   return [
-    ['InvoiceNo', 'Customer', 'InvoiceDate', 'DueDate', 'Terms', 'Memo', 'Item(Product/Service)', 'ItemDescription', 'ItemQuantity', 'ItemRate', 'ItemAmount', 'Service Date'],
+    IMPORT_HEADER,
     ...jobs.map((job) => [
       job.invoiceNumber,
       job.customerName,
@@ -119,5 +121,50 @@ export function qboInvoiceImportRows(jobs: QboImportJob[]): string[][] {
       job.amount.toFixed(2),
       usDate(job.serviceDate),
     ]),
+  ];
+}
+
+/** One Field Sheet bill: the lines the sheet bills for those dates (lib/field-sheet.ts sheetTotals). */
+export type QboSheetBill = {
+  woNumber: string;
+  customerName: string;
+  /** The first and last day billed. */
+  from: string;
+  to: string;
+  memo: string;
+  /** kind as on the sheet (labor, mileage, meals, hotel…), for NetView's form. */
+  lines: { kind?: string; date: string | null; description: string; qty: number; rate: number; amount: number }[];
+};
+
+/** What the bill comes to. */
+export const sheetBillTotal = (bill: QboSheetBill) => Math.round(bill.lines.reduce((t, l) => t + Math.round(l.amount * 100), 0)) / 100;
+
+/** The bill's number in the file: the job and its first day billed, so each week of a long job gets its own. */
+export const sheetInvoiceNumber = (woNumber: string, from: string) => `WO-${woNumber}-${from.slice(5, 7)}${from.slice(8, 10)}`;
+
+/**
+ * Field Sheet bills as QuickBooks' invoice import takes them (Fred, 2026-10-25:
+ * "i need a auto sheet to enter into quickbooks", while the app couldn't
+ * connect): one row per line, and the rows of one invoice share its number.
+ * Dated the day the file is made, Net 30, the same columns as the completed-jobs
+ * file. Meals and hotel are for the whole bill, so they have no service date.
+ */
+export function fieldSheetImportRows(bills: QboSheetBill[], today: string): string[][] {
+  return [
+    IMPORT_HEADER,
+    ...bills.flatMap((bill) => bill.lines.map((line) => [
+      sheetInvoiceNumber(bill.woNumber, bill.from),
+      bill.customerName,
+      usDate(today),
+      usDate(addDays(today, 30)),
+      'Net 30',
+      bill.memo,
+      'Field Services',
+      line.description,
+      String(line.qty),
+      line.rate.toFixed(2),
+      line.amount.toFixed(2),
+      line.date ? usDate(line.date) : '',
+    ])),
   ];
 }

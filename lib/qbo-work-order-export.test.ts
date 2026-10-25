@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prepareQboCompletedJobs, qboInvoiceImportRows, type QboWorkOrderInput } from './qbo-work-order-export';
+import { fieldSheetImportRows, prepareQboCompletedJobs, qboInvoiceImportRows, type QboWorkOrderInput } from './qbo-work-order-export';
 
 const workOrder = (overrides: Partial<QboWorkOrderInput> = {}): QboWorkOrderInput => ({
   id: 'wo-1',
@@ -61,5 +61,37 @@ describe('QuickBooks completed work order export', () => {
       'Completed job WO #200', 'Field Services', 'Network installation — WO #200',
       '1', '425.50', '425.50', '9/13/2026',
     ]);
+  });
+});
+
+// Fred, 2026-10-25: "i need a auto sheet to enter into quickbooks". A Field
+// Sheet bill, line by line, the way QuickBooks' invoice import takes it.
+describe('QuickBooks import file from the Field Sheet', () => {
+  it('puts each line of a bill on its own row under one invoice number, the week\'s meals and hotel undated', () => {
+    const rows = fieldSheetImportRows([{
+      woNumber: '19101401', customerName: 'LDS', from: '2026-10-18', to: '2026-10-23',
+      memo: 'LDS Site 5011876 — Gaffney, SC · WO 19101401 · Client # LDS-1110 · Oct 18, 2026 – Oct 23, 2026',
+      lines: [
+        { date: '2026-10-19', description: 'Mon, Oct 19 · Paul Gibbs · on site 10 h', qty: 10, rate: 100, amount: 1000 },
+        { date: '2026-10-19', description: 'Mon, Oct 19 · Paul Gibbs · mileage 8 mi', qty: 8, rate: 0.6, amount: 4.8 },
+        { date: null, description: 'Meals: 9 tech-days × $50', qty: 9, rate: 50, amount: 450 },
+        { date: null, description: 'Hotel (receipts)', qty: 1, rate: 350.74, amount: 350.74 },
+      ],
+    }], '2026-10-25');
+
+    expect(rows[0]).toEqual(qboInvoiceImportRows([])[0]);
+    expect(rows.slice(1).map((r) => [r[0], r[2], r[3], r[7], r[8], r[9], r[10], r[11]])).toEqual([
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Mon, Oct 19 · Paul Gibbs · on site 10 h', '10', '100.00', '1000.00', '10/19/2026'],
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Mon, Oct 19 · Paul Gibbs · mileage 8 mi', '8', '0.60', '4.80', '10/19/2026'],
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Meals: 9 tech-days × $50', '9', '50.00', '450.00', ''],
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Hotel (receipts)', '1', '350.74', '350.74', ''],
+    ]);
+    expect(new Set(rows.slice(1).map((r) => `${r[1]}|${r[4]}|${r[6]}`))).toEqual(new Set(['LDS|Net 30|Field Services']));
+  });
+
+  it('gives each week of a long job its own invoice number', () => {
+    const bill = (from: string) => ({ woNumber: '19101401', customerName: 'LDS', from, to: from, memo: '', lines: [{ date: from, description: 'x', qty: 1, rate: 1, amount: 1 }] });
+    const rows = fieldSheetImportRows([bill('2026-10-18'), bill('2026-10-25')], '2026-11-01');
+    expect(rows.slice(1).map((r) => r[0])).toEqual(['WO-19101401-1018', 'WO-19101401-1025']);
   });
 });

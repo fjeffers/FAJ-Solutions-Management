@@ -66,7 +66,7 @@ export default function TechLoginPage() {
     } else {
       setError('Signed in, but we could not open your tech account. Contact FAJ Solutions.');
     }
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     setLoading(false);
   };
 

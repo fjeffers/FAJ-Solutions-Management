@@ -37,7 +37,7 @@ export default function AccountantPage() {
   const [jobs, setJobs] = useState<WorkOrder[]>([]);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     router.replace('/accountant/login');
   };
   useInactivityLogout(signOut);

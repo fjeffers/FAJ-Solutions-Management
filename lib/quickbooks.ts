@@ -3,7 +3,9 @@
 // free Sandbox company (QBO_ENVIRONMENT=sandbox) before ever pointing this at production.
 
 const INTUIT_AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2';
-const INTUIT_TOKEN_URL = 'https://oauth2.bearer.token.intuit.com/oauth2/v1/tokens/bearer';
+// Intuit's token endpoint. It was 'oauth2.bearer.token.intuit.com', which doesn't exist:
+// connecting QuickBooks failed with ENOTFOUND (production, 2026-10-25).
+const INTUIT_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const SCOPE = 'com.intuit.quickbooks.accounting';
 
 function apiBase(environment: 'sandbox' | 'production'): string {

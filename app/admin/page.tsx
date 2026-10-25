@@ -1427,7 +1427,9 @@ Go ahead?`)) return;
   // ── Nav / Auth ─────────────────────────────────────────────────────────────
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    // This device only. Supabase's default signs the login out everywhere, which
+    // also logged Fred's phone out of the tech app ("Refresh Token Not Found").
+    await supabase.auth.signOut({ scope: 'local' });
     router.push('/admin/login');
     router.refresh();
   };

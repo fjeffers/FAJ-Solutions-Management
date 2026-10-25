@@ -344,7 +344,8 @@ export default function TechPortalPage() {
     const waiting = boxRef.current?.pending.length ?? 0;
     if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} been sent yet. They stay on this phone and go out the next time you sign in. Log out anyway?`)) return;
     if (uid) { clearCopies(kv, uid, COPIES); clearNotes(kv, uid); }
-    await supabase.auth.signOut();
+    // This phone only: logging out here never signs the tech out on another device.
+    await supabase.auth.signOut({ scope: 'local' });
     router.replace('/tech/login');
   };
 

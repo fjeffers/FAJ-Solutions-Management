@@ -44,7 +44,7 @@ export default function LoginPage() {
   }, []);
 
   const switchLogin = async () => {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     setSignedInAs(null);
     setError(null);
   };
@@ -67,7 +67,7 @@ export default function LoginPage() {
     const staff = await claimAssistantAccount();
     const section = staff.ok ? sectionForRole(staff.role) : null;
     if (section) {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
       setError(`That login has its own sign-in page: app.fajsolutions.com${section}/login`);
       setLoading(false);
       return;
@@ -78,7 +78,7 @@ export default function LoginPage() {
     const { data: who } = await supabase.rpc('wf_role');
     if ((who as { role?: string } | null)?.role === 'owner') { router.push('/admin'); router.refresh(); return; }
     const claim = await claimTechAccount();
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     setError(claim.ok
       ? "That's a tech login. Techs sign in at app.fajsolutions.com/tech — this page is for the administrator."
       : "That login isn't set up for the office. The administrator signs in here; techs sign in at app.fajsolutions.com/tech.");

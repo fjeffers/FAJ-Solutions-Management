@@ -29,6 +29,10 @@ export default function TimesheetExport({ wo, rows }: { wo: WorkOrder; rows: She
   const [from, setFrom] = useState(days[0] ?? '');
   const [to, setTo] = useState(days.at(-1) ?? '');
   const [pictures, setPictures] = useState(true);
+  // The site photos are their own pick, off unless asked: the timesheet is the
+  // hours, the receipts and the odometer (Fred, 2026-10-25: "Just don't include
+  // it in the time report").
+  const [sitePhotos, setSitePhotos] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.canShare === 'function';
 
@@ -49,7 +53,7 @@ export default function TimesheetExport({ wo, rows }: { wo: WorkOrder; rows: She
     let photos: Awaited<ReturnType<typeof timesheetPhotos>> = { photos: [], skipped: 0 };
     if (pictures) {
       setBusy('Finding the pictures…');
-      const sources = await photoSources(createClient(), wo.id, h.from, h.to);
+      const sources = await photoSources(createClient(), wo.id, h.from, h.to, { site: sitePhotos });
       photos = await timesheetPhotos(sources, (done, of) => setBusy(`Adding pictures ${done} of ${of}…`));
     }
     setBusy('Making the PDF…');
@@ -92,7 +96,10 @@ export default function TimesheetExport({ wo, rows }: { wo: WorkOrder; rows: She
       <label style={field}><span className="wf-label">To</span>
         <input type="date" className="wf-input" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Timesheet to" /></label>
       <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, paddingBottom: 8 }}>
-        <input type="checkbox" checked={pictures} onChange={(e) => setPictures(e.target.checked)} /> With the pictures
+        <input type="checkbox" checked={pictures} onChange={(e) => setPictures(e.target.checked)} /> With the receipts and odometer photos
+      </label>
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, paddingBottom: 8, opacity: pictures ? 1 : 0.5 }}>
+        <input type="checkbox" checked={pictures && sitePhotos} disabled={!pictures} onChange={(e) => setSitePhotos(e.target.checked)} /> Site photos too
       </label>
       <button type="button" className="wf-btn wf-btn-navy wf-btn-sm" disabled={!!busy} onClick={() => void downloadPdf()}><FileDown size={15} /> PDF</button>
       <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={!!busy} onClick={() => void excel()}><FileSpreadsheet size={15} /> Excel</button>

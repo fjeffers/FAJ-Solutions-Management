@@ -16,12 +16,16 @@ export type PhotoSource = { day: string; tech: string; caption: string; url: str
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
 const inDates = (d: string, from: string, to: string) => d >= from && d <= to;
 
-/** Where each picture is and what it says, oldest first: odometer, then receipts, then the site. */
-export async function photoSources(db: SupabaseClient, woId: string, from: string, to: string): Promise<PhotoSource[]> {
+/**
+ * Where each picture is and what it says, oldest first: odometer, then receipts,
+ * then the site photos when `site` (Fred, 2026-10-25: "Don't delete it. Just
+ * don't include it in the time report" — the photos stay on the job either way).
+ */
+export async function photoSources(db: SupabaseClient, woId: string, from: string, to: string, { site = true }: { site?: boolean } = {}): Promise<PhotoSource[]> {
   const [od, ex, ph] = await Promise.all([
     db.from('job_odometer').select('contractor_name, at, moment, reading, photo_path').eq('wo_id', woId).order('at'),
     db.from('job_expenses').select('contractor_name, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', woId),
-    db.from('wo_photos').select('url, taken_at, contractor_name').eq('wo_id', woId).order('taken_at'),
+    site ? db.from('wo_photos').select('url, taken_at, contractor_name').eq('wo_id', woId).order('taken_at') : { data: [] },
   ]);
   const odo = ((od.data ?? []) as { contractor_name: string; at: string; moment: string; reading: number; photo_path: string | null }[])
     .filter((o) => o.photo_path && inDates(dayOf(o.at, TZ), from, to));

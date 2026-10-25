@@ -4,7 +4,7 @@ import { getValidQboSession } from '@/lib/quickbooks-session';
 import { attachToInvoice, findOrCreateCustomer, findOrCreateServiceItem, createInvoice, sendInvoice } from '@/lib/quickbooks';
 import { dayOf, parseDayEvents, type DayEvent } from '@/lib/project-day';
 import {
-  billRange, blocksBilling, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
+  billRange, blocksBilling, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, qboItemFor, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
 } from '@/lib/field-sheet';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { timesheetFile, timesheetLines, timesheetPdf } from '@/lib/timesheet';
@@ -214,8 +214,12 @@ export async function POST(req: Request) {
     let invoice: Awaited<ReturnType<typeof createInvoice>>;
     try {
       const customerId = await findOrCreateCustomer(session.environment, session.realm_id, session.access_token, customer);
-      const itemId = await findOrCreateServiceItem(session.environment, session.realm_id, session.access_token);
-      const payload = fieldSheetInvoice(totals.lines, { customerId, itemId, memo, note, email, txnDate: dayOf(new Date().toISOString(), TZ) });
+      // Each line on its own Product/service: Cabling, Traveling, Meals, Lodging.
+      const itemIds: Record<string, string> = {};
+      for (const name of new Set(totals.lines.map((l) => qboItemFor(l.kind)))) {
+        itemIds[name] = await findOrCreateServiceItem(session.environment, session.realm_id, session.access_token, name);
+      }
+      const payload = fieldSheetInvoice(totals.lines, { customerId, itemIds, memo, note, email, txnDate: dayOf(new Date().toISOString(), TZ) });
       invoice = await createInvoice(session.environment, session.realm_id, session.access_token, payload as unknown as Record<string, unknown>, held);
     } catch (e) {
       await release();

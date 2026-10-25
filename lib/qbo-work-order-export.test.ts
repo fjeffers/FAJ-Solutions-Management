@@ -72,21 +72,24 @@ describe('QuickBooks import file from the Field Sheet', () => {
       woNumber: '19101401', customerName: 'LDS', from: '2026-10-18', to: '2026-10-23',
       memo: 'LDS Site 5011876 — Gaffney, SC · WO 19101401 · Client # LDS-1110 · Oct 18, 2026 – Oct 23, 2026',
       lines: [
-        { date: '2026-10-19', description: 'Mon, Oct 19 · Paul Gibbs · on site 10 h', qty: 10, rate: 100, amount: 1000 },
-        { date: '2026-10-19', description: 'Mon, Oct 19 · Paul Gibbs · mileage 8 mi', qty: 8, rate: 0.6, amount: 4.8 },
-        { date: null, description: 'Meals: 9 tech-days × $50', qty: 9, rate: 50, amount: 450 },
-        { date: null, description: 'Hotel (receipts)', qty: 1, rate: 350.74, amount: 350.74 },
+        { kind: 'labor', date: '2026-10-19', description: 'Mon, Oct 19 · Paul Gibbs · on site 10 h', qty: 10, rate: 100, amount: 1000 },
+        { kind: 'mileage', date: '2026-10-19', description: 'Mon, Oct 19 · Paul Gibbs · mileage 8 mi', qty: 8, rate: 0.6, amount: 4.8 },
+        { kind: 'meals', date: null, description: 'Meals: 9 tech-days × $50', qty: 9, rate: 50, amount: 450 },
+        { kind: 'hotel', date: null, description: 'Hotel (receipts)', qty: 1, rate: 350.74, amount: 350.74 },
+        { kind: 'receipt', date: '2026-10-20', description: "Materials — Lowe's", qty: 1, rate: 47.48, amount: 47.48 },
       ],
     }], '2026-10-25');
 
     expect(rows[0]).toEqual(qboInvoiceImportRows([])[0]);
-    expect(rows.slice(1).map((r) => [r[0], r[2], r[3], r[7], r[8], r[9], r[10], r[11]])).toEqual([
-      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Mon, Oct 19 · Paul Gibbs · on site 10 h', '10', '100.00', '1000.00', '10/19/2026'],
-      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Mon, Oct 19 · Paul Gibbs · mileage 8 mi', '8', '0.60', '4.80', '10/19/2026'],
-      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Meals: 9 tech-days × $50', '9', '50.00', '450.00', ''],
-      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Hotel (receipts)', '1', '350.74', '350.74', ''],
+    // Each on Fred's own Product/service: "cabling, traveling, meals, lodging".
+    expect(rows.slice(1).map((r) => [r[0], r[2], r[3], r[6], r[7], r[8], r[9], r[10], r[11]])).toEqual([
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Cabling', 'Mon, Oct 19 · Paul Gibbs · on site 10 h', '10', '100.00', '1000.00', '10/19/2026'],
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Traveling', 'Mon, Oct 19 · Paul Gibbs · mileage 8 mi', '8', '0.60', '4.80', '10/19/2026'],
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Meals', 'Meals: 9 tech-days × $50', '9', '50.00', '450.00', ''],
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Lodging', 'Hotel (receipts)', '1', '350.74', '350.74', ''],
+      ['WO-19101401-1018', '10/25/2026', '11/24/2026', 'Field Services', "Materials — Lowe's", '1', '47.48', '47.48', '10/20/2026'],
     ]);
-    expect(new Set(rows.slice(1).map((r) => `${r[1]}|${r[4]}|${r[6]}`))).toEqual(new Set(['LDS|Net 30|Field Services']));
+    expect(new Set(rows.slice(1).map((r) => `${r[1]}|${r[4]}`))).toEqual(new Set(['LDS|Net 30']));
   });
 
   it('gives each week of a long job its own invoice number', () => {

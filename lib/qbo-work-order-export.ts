@@ -1,4 +1,5 @@
 import type { WorkOrder } from './types';
+import { qboItemFor } from './field-sheet';
 
 export const QBO_IMPORT_BATCH_SIZE = 100;
 
@@ -147,7 +148,9 @@ export const sheetInvoiceNumber = (woNumber: string, from: string) => `WO-${woNu
  * "i need a auto sheet to enter into quickbooks", while the app couldn't
  * connect): one row per line, and the rows of one invoice share its number.
  * Dated the day the file is made, Net 30, the same columns as the completed-jobs
- * file. Meals and hotel are for the whole bill, so they have no service date.
+ * file. Each line goes on its own Product/service (Cabling, Traveling, Meals,
+ * Lodging: lib/field-sheet.ts QBO_ITEM). Meals and hotel are for the whole
+ * bill, so they have no service date.
  */
 export function fieldSheetImportRows(bills: QboSheetBill[], today: string): string[][] {
   return [
@@ -159,7 +162,7 @@ export function fieldSheetImportRows(bills: QboSheetBill[], today: string): stri
       usDate(addDays(today, 30)),
       'Net 30',
       bill.memo,
-      'Field Services',
+      qboItemFor(line.kind),
       line.description,
       String(line.qty),
       line.rate.toFixed(2),

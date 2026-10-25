@@ -320,7 +320,8 @@ describe('the QuickBooks invoice', () => {
   it('dates each line, prints the site and dates for the client, and keeps Amount = Qty × Rate', () => {
     const rows = sheetRows({ app, saved: [], techs: [], days: [] }).filter((r) => r.key === '2026-10-21|Dwayne');
     const t = sheetTotals(rows, [], bill({ labor: 'hourly', rate: 85, mileRate: 0.6, byDay: true }));
-    const inv = fieldSheetInvoice(t.lines, { customerId: 'c1', itemId: 'i1', memo: 'LDS Site 5006643 · Oct 19 – Oct 23', note: 'WO 19101402', email: 'ap@netview.com', txnDate: '2026-10-24' });
+    const itemIds = { Cabling: 'i-cab', Traveling: 'i-trav', Meals: 'i-meal', Lodging: 'i-lodge', 'Field Services': 'i1' };
+    const inv = fieldSheetInvoice(t.lines, { customerId: 'c1', itemIds, memo: 'LDS Site 5006643 · Oct 19 – Oct 23', note: 'WO 19101402', email: 'ap@netview.com', txnDate: '2026-10-24' });
     expect(inv.CustomerRef).toEqual({ value: 'c1' });
     expect(inv.BillEmail).toEqual({ Address: 'ap@netview.com' });
     expect(inv.CustomerMemo).toEqual({ value: 'LDS Site 5006643 · Oct 19 – Oct 23' });
@@ -328,9 +329,10 @@ describe('the QuickBooks invoice', () => {
       .toEqual([['2026-10-21', 9.57, 85, 813.45], ['2026-10-21', 4.4, 0.6, 2.64]]);
     for (const l of inv.Line) expect(l.Amount).toBe(Math.round(l.SalesItemLineDetail.Qty * l.SalesItemLineDetail.UnitPrice * 100) / 100);
     // The totals go with no date, still Amount = Qty × Rate.
-    const totals = fieldSheetInvoice(sheetTotals(rows, [], bill({ labor: 'hourly', rate: 85, mileRate: 0.6 })).lines, { customerId: 'c1', itemId: 'i1', memo: '', note: '', email: null, txnDate: '2026-10-24' });
-    expect(totals.Line.map((l) => [l.SalesItemLineDetail.ServiceDate, l.SalesItemLineDetail.Qty, l.SalesItemLineDetail.UnitPrice, l.Amount]))
-      .toEqual([[undefined, 9.57, 85, 813.45], [undefined, 4.4, 0.6, 2.64]]);
+    const totals = fieldSheetInvoice(sheetTotals(rows, [{ id: 'h', category: 'hotel', amount: 701.48, status: 'approved' }], bill({ labor: 'hourly', rate: 85, mileRate: 0.6, mealMode: 'per_day', mealRate: 50 })).lines,
+      { customerId: 'c1', itemIds, memo: '', note: '', email: null, txnDate: '2026-10-24' });
+    expect(totals.Line.map((l) => [l.SalesItemLineDetail.ServiceDate, l.SalesItemLineDetail.ItemRef.value, l.SalesItemLineDetail.Qty, l.SalesItemLineDetail.UnitPrice, l.Amount]))
+      .toEqual([[undefined, 'i-cab', 9.57, 85, 813.45], [undefined, 'i-trav', 4.4, 0.6, 2.64], [undefined, 'i-meal', 1, 50, 50], [undefined, 'i-lodge', 1, 701.48, 701.48]]);
   });
 
   it('knows when two weeks share a day, and which days are in the dates picked', () => {

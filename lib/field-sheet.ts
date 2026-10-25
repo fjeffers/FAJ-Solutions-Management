@@ -355,6 +355,16 @@ const NOT_AT_COST = ['meals', 'hotel', 'fuel', 'mileage'];
 export const atCost = (category: string) => !NOT_AT_COST.includes(category);
 
 export type LineKind = 'labor' | 'travel' | 'fixed' | 'item' | 'mileage' | 'meals' | 'hotel' | 'receipt';
+/**
+ * The QuickBooks Product/service each kind of line is booked to, from Fred's
+ * own list (2026-10-25: "cabling, traveling, meals, lodging or hotel"). The
+ * rest go to the general Field Services.
+ */
+export const QBO_ITEM: Record<LineKind, string> = {
+  labor: 'Cabling', travel: 'Traveling', mileage: 'Traveling', meals: 'Meals', hotel: 'Lodging',
+  fixed: 'Field Services', item: 'Field Services', receipt: 'Field Services',
+};
+export const qboItemFor = (kind?: string | null) => QBO_ITEM[kind as LineKind] ?? 'Field Services';
 /** One line of the client's invoice. amount is qty × rate to the cent. */
 export type BillLine = { kind: LineKind; date: string | null; description: string; qty: number; rate: number; amount: number };
 
@@ -554,7 +564,8 @@ export function withAccountRate(s: SheetSettings, accountRate: unknown): SheetSe
 
 /** The QuickBooks invoice for a sheet's lines: each line dated, the site and dates printed for the client. */
 export function fieldSheetInvoice(lines: BillLine[], opts: {
-  customerId: string; itemId: string; memo: string; note: string; email?: string | null; txnDate?: string;
+  /** QuickBooks' item id for each Product/service name the lines use (qboItemFor). */
+  customerId: string; itemIds: Record<string, string>; memo: string; note: string; email?: string | null; txnDate?: string;
 }): QbInvoicePayload {
   const payload: QbInvoicePayload = {
     CustomerRef: { value: opts.customerId },
@@ -562,7 +573,7 @@ export function fieldSheetInvoice(lines: BillLine[], opts: {
       DetailType: 'SalesItemLineDetail' as const,
       Amount: l.amount,
       Description: l.description,
-      SalesItemLineDetail: { ItemRef: { value: opts.itemId }, Qty: l.qty, UnitPrice: l.rate, ...(l.date ? { ServiceDate: l.date } : {}) },
+      SalesItemLineDetail: { ItemRef: { value: opts.itemIds[qboItemFor(l.kind)] }, Qty: l.qty, UnitPrice: l.rate, ...(l.date ? { ServiceDate: l.date } : {}) },
     })),
     CustomerMemo: { value: opts.memo.slice(0, 1000) },
     PrivateNote: opts.note.slice(0, 4000),

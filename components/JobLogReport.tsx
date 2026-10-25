@@ -3,15 +3,28 @@
 // daily log). One clean page per job: each visit with times and GPS, the
 // checklist, the answers to the job's questions, the tech's notes and the
 // stamped photos — printed, or saved as a PDF from the print window, to send a
-// client or marketplace as proof of work. No money anywhere on it. The scope
-// of work starts switched off, because Fred sometimes notes pay in it.
+// client or marketplace as proof of work. No pay anywhere on it; the only
+// amounts are on the receipts the client pays back. The scope of work starts
+// switched off, because Fred sometimes notes pay in it.
 //
 // Fred, 2026-10-18: on a finished job, anything the tech didn't fill in is
 // listed under "Not completed" (lib/job-gaps.ts), and empty parts are left out.
+//
+// Fred, 2026-10-25: the receipts and odometer photos are in it too ("unable to
+// add photes needed"), and every picture has a check mark: tap it and the
+// picture is left out of the log, tap again and it's back ("put a x or check
+// mark to add and remove photos"). Nothing is deleted; the job remembers which
+// pictures are left out (work_orders.job_log_left_out, migration 141). A site
+// photo can be labeled a receipt, and then sits with the receipts ("i can label
+// then as recipe or none recipes"; work_orders.job_log_receipt_photos). A
+// declined receipt stays on screen, marked declined, and is never printed ("if
+// decline it stay on the app but it does a photo that was decline item").
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Printer, X } from 'lucide-react';
+import { Check, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { expenseCategoryLabel } from '@/lib/expenses';
+import { toastError } from '@/lib/toast';
 import { buildVisits, inRange, logTotals, hoursText, dayOf, type Punch } from '@/lib/job-log';
 import { mapLink } from '@/lib/geo';
 import { jobGaps } from '@/lib/job-gaps';
@@ -20,7 +33,17 @@ import { asks, parseCapture } from '@/lib/capture';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
 type PhotoRow = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; contractor_name: string | null };
-type Include = { gaps: boolean; time: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; scope: boolean };
+type ReceiptRow = { id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; status: string; decline_reason: string | null; receipt_path: string | null };
+type OdoRow = { id: string; contractor_name: string | null; at: string; moment: string; reading: number; photo_path: string | null };
+/** A picture on the log. `key` is how the job remembers it's left out: 'photo:<id>', 'receipt:<id>' or 'odo:<id>'. */
+type Pic = {
+  key: string; src: string; day: string; stamp: string; tech: string | null; caption?: string;
+  /** A site photo (it can be labeled a receipt or not). */
+  photoId?: string;
+  /** A declined receipt: on screen only, never printed. */
+  declined?: boolean;
+};
+type Include = { gaps: boolean; time: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean };
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -41,9 +64,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [punches, setPunches] = useState<Punch[] | null>(null);
   const [logs, setLogs] = useState<TimeLog[]>([]);
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
+  const [receipts, setReceipts] = useState<Pic[]>([]);
+  const [odometer, setOdometer] = useState<Pic[]>([]);
+  const [leftOut, setLeftOut] = useState<Set<string>>(() => new Set(w.job_log_left_out ?? []));
+  const [receiptPhotos, setReceiptPhotos] = useState<Set<string>>(() => new Set(w.job_log_receipt_photos ?? []));
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [inc, setInc] = useState<Include>({ gaps: true, time: true, checklist: true, answers: true, notes: true, photos: true, scope: false });
+  const [inc, setInc] = useState<Include>({ gaps: true, time: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false });
 
   useEffect(() => {
     const db = createClient();
@@ -51,12 +78,56 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       db.from('job_punches').select('contractor_name, kind, at, lat, lng, accuracy').eq('wo_id', w.id).order('at'),
       db.from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id).order('taken_at'),
       fetch(`/api/wo-time-logs?wo_id=${w.id}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-    ]).then(([p, ph, l]) => {
+      db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, status, decline_reason, receipt_path').eq('wo_id', w.id).order('expense_date'),
+      db.from('job_odometer').select('id, contractor_name, at, moment, reading, photo_path').eq('wo_id', w.id).order('at'),
+      // What's left out and labeled now: the job on screen may be older than the last change.
+      db.from('work_orders').select('job_log_left_out, job_log_receipt_photos').eq('id', w.id).maybeSingle(),
+    ]).then(async ([p, ph, l, ex, od, wo]) => {
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));
       setLogs(Array.isArray(l) ? (l as TimeLog[]) : []);
+      const saved = wo.data as { job_log_left_out?: string[] | null; job_log_receipt_photos?: string[] | null } | null;
+      if (saved?.job_log_left_out) setLeftOut(new Set(saved.job_log_left_out));
+      if (saved?.job_log_receipt_photos) setReceiptPhotos(new Set(saved.job_log_receipt_photos));
+      // Approved and declined; one still waiting on Fred isn't either yet.
+      const rec = ((ex.data as ReceiptRow[] | null) ?? []).filter((e) => (e.status === 'approved' || e.status === 'declined') && e.receipt_path);
+      const odo = ((od.data as OdoRow[] | null) ?? []).filter((o) => o.photo_path);
+      const paths = [...rec.map((e) => e.receipt_path!), ...odo.map((o) => o.photo_path!)];
+      if (!paths.length) return;
+      // Receipts and odometer photos are private files: signed links.
+      const { data: signed } = await db.storage.from('job-receipts').createSignedUrls(paths, 60 * 60);
+      const url = new Map((signed ?? []).filter((x) => x.path && x.signedUrl).map((x) => [x.path!, x.signedUrl as string]));
+      setReceipts(rec.filter((e) => url.has(e.receipt_path!)).map((e) => ({
+        key: `receipt:${e.id}`, src: url.get(e.receipt_path!)!, day: e.expense_date, stamp: fmtDay(e.expense_date), tech: e.contractor_name,
+        caption: `${e.status === 'declined' ? 'Declined: ' : ''}${expenseCategoryLabel(e.category)}${e.vendor ? `, ${e.vendor}` : ''}: $${Number(e.amount).toFixed(2)}`
+          + (e.status === 'declined' && e.decline_reason ? ` (${e.decline_reason})` : ''),
+        declined: e.status === 'declined',
+      })));
+      setOdometer(odo.filter((o) => url.has(o.photo_path!)).map((o) => ({
+        key: `odo:${o.id}`, src: url.get(o.photo_path!)!, day: dayOf(o.at, TZ), stamp: fmtStamp(o.at), tech: o.contractor_name,
+        caption: `Odometer ${o.moment === 'end' ? 'end' : 'start'}: ${Number(o.reading).toLocaleString('en-US')}`,
+      })));
     });
   }, [w.id]);
+
+  /** Leave a picture out of the log, or put it back. Saved on the job straight away. */
+  const flip = async (key: string) => {
+    const before = leftOut;
+    const next = new Set(before);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setLeftOut(next);
+    const { error } = await createClient().from('work_orders').update({ job_log_left_out: [...next] }).eq('id', w.id);
+    if (error) { setLeftOut(before); toastError("That didn't save. Check your connection and try again."); }
+  };
+  /** Label a site photo a receipt, or not one. */
+  const label = async (photoId: string, receipt: boolean) => {
+    const before = receiptPhotos;
+    const next = new Set(before);
+    if (receipt) next.add(photoId); else next.delete(photoId);
+    setReceiptPhotos(next);
+    const { error } = await createClient().from('work_orders').update({ job_log_receipt_photos: [...next] }).eq('id', w.id);
+    if (error) { setReceiptPhotos(before); toastError("That didn't save. Check your connection and try again."); }
+  };
 
   // Printing shows only this report (app/wf.css, body.job-log-open).
   useEffect(() => {
@@ -65,7 +136,18 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   }, []);
 
   const visits = useMemo(() => buildVisits(punches ?? [], logs, new Date(), TZ).filter((v) => inRange(v.day, from, to)), [punches, logs, from, to]);
-  const shownPhotos = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to));
+  const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => ({
+    key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
+    caption: receiptPhotos.has(p.id) ? 'Receipt photo' : undefined,
+  }));
+  const shownPhotos = sitePics.filter((p) => !receiptPhotos.has(p.photoId!));
+  // The receipts, then the site photos labeled receipts, by day.
+  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePics.filter((p) => receiptPhotos.has(p.photoId!))]
+    .sort((a, b) => a.day.localeCompare(b.day));
+  const shownOdometer = odometer.filter((p) => inRange(p.day, from, to));
+  const printed = (p: Pic) => !p.declined && !leftOut.has(p.key);
+  const pictureCount = [...(inc.receipts ? shownReceipts : []), ...(inc.odometer ? shownOdometer : []), ...(inc.photos ? shownPhotos : [])]
+    .filter(printed).length;
   const totals = logTotals(visits);
   // Only a finished job has a "Not completed": on a job still going, it's just work still to do.
   const job = useMemo(() => wfJobFromOwner(w), [w]);
@@ -89,6 +171,49 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
   const cell: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #ECE8DF', textAlign: 'left', verticalAlign: 'top' };
 
+  /** A section of pictures, each with its check mark. Left out: faded here, not printed. */
+  const pictures = (title: string, list: Pic[]) => list.length > 0 && (
+    <div className={list.some(printed) ? undefined : 'no-print'}>
+      <H>{title}</H>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+        {list.map((p) => {
+          const out = !printed(p);
+          const what = `${p.caption ?? 'Photo'} ${p.stamp}`;
+          const isReceipt = p.photoId ? receiptPhotos.has(p.photoId) : false;
+          return (
+            <div key={p.key} className={out ? 'jl-avoid no-print' : 'jl-avoid'} style={{ position: 'relative' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.src} alt={what} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 6, border: '1px solid #E4DFD3', display: 'block', opacity: out ? 0.35 : 1 }} />
+              {p.declined ? (
+                <span style={{ position: 'absolute', top: 6, right: 6, background: '#B42318', color: '#fff', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>Declined</span>
+              ) : (
+              <button type="button" className="no-print" onClick={() => void flip(p.key)}
+                aria-label={out ? `Put back in the log: ${what}` : `Leave out of the log: ${what}`} title={out ? 'Left out. Tap to put it back.' : 'In the log. Tap to leave it out.'}
+                style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32, borderRadius: 16, border: '2px solid #fff', background: out ? '#B42318' : '#047857', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                {out ? <X size={18} /> : <Check size={18} />}
+              </button>
+              )}
+              <div style={{ fontSize: 11, color: p.declined ? '#B42318' : '#5E6470', marginTop: 3 }}>
+                {p.caption ? `${p.caption} · ` : ''}{p.stamp}{p.tech ? ` · ${p.tech}` : ''}
+              </div>
+              {p.photoId && (
+                <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                  {([[true, 'Receipt'], [false, 'Not a receipt']] as const).map(([r, text]) => (
+                    <button key={text} type="button" aria-pressed={isReceipt === r} onClick={() => { if (isReceipt !== r) void label(p.photoId!, r); }}
+                      style={{ flex: 1, fontSize: 11.5, padding: '3px 4px', borderRadius: 8, cursor: 'pointer',
+                        border: `1px solid ${isReceipt === r ? '#0E1B2E' : '#D8D3C8'}`, background: isReceipt === r ? '#0E1B2E' : '#fff', color: isReceipt === r ? '#fff' : '#1B1C1F' }}>
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return createPortal(
     <div id="job-log-root" className="wf" style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(2,4,9,0.55)', overflowY: 'auto', padding: '16px 12px 40px' }}>
       {/* Controls — never printed */}
@@ -101,7 +226,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
           {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Time & GPS')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
-          {toggle('notes', "Tech's notes")}{toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}
+          {toggle('notes', "Tech's notes")}{(receipts.length > 0 || receiptPhotos.size > 0) && toggle('receipts', 'Receipts')}{odometer.length > 0 && toggle('odometer', 'Odometer')}
+          {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}
+        </div>
+        <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
+          Tap <b style={{ color: '#047857' }}>✓</b> on a picture to leave it out of the log, <b style={{ color: '#B42318' }}>✗</b> to put it back. Label a photo Receipt and it goes with the receipts. Declined receipts stay here but never print. Nothing is deleted.
         </div>
       </div>
 
@@ -131,7 +260,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             {[
               ...(totals.ms > 0 ? [['Time on site', hoursText(totals.ms)]] : []),
               ...(totals.days > 0 ? [['Days', String(totals.days)]] : []),
-              ...(shownPhotos.length > 0 ? [['Photos', String(shownPhotos.length)]] : []),
+              ...(pictureCount > 0 ? [['Pictures', String(pictureCount)]] : []),
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
             ].map(([label, value]) => (
@@ -226,22 +355,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <><H>Technician&apos;s notes</H><div className="jl-avoid" style={{ whiteSpace: 'pre-wrap' }}>{w.closeout_notes}</div></>
           )}
 
-          {inc.photos && shownPhotos.length > 0 && (
-            <>
-              <H>Photos</H>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-                {shownPhotos.map((p) => (
-                  <div key={p.id} className="jl-avoid">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.url} alt={`Photo ${fmtStamp(p.taken_at)}`} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 6, border: '1px solid #E4DFD3', display: 'block' }} />
-                    <div style={{ fontSize: 11, color: '#5E6470', marginTop: 3 }}>
-                      {fmtStamp(p.taken_at)}{p.contractor_name ? ` · ${p.contractor_name}` : ''}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+          {inc.receipts && pictures('Receipts', shownReceipts)}
+          {inc.odometer && pictures('Odometer', shownOdometer)}
+          {inc.photos && pictures('Photos', shownPhotos)}
 
           <div style={{ marginTop: 28, paddingTop: 10, borderTop: '1px solid #E4DFD3', display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5, color: '#5E6470', flexWrap: 'wrap' }}>
             <span><b style={{ color: '#0E1B2E' }}>FAJ Solutions</b> · Bringing People and Technology Together</span>

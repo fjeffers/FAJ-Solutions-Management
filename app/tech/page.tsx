@@ -12,6 +12,7 @@
 // really made, as soon as there is signal.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechUnread, fetchTechDmUnread,
@@ -274,14 +275,19 @@ export default function TechPortalPage() {
     let cancelled = false;
     (async () => {
       let u: string | null = null;
+      // Weak signal looks the same as none: the sign-in is still on the phone
+      // but couldn't be refreshed. That's no reason to send a tech back to the
+      // sign-in (Fred, 2026-10-25: "i want tech to stay login no cutoff time").
+      let unreachable = false;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
         u = session?.user.id ?? null;
-      } catch { /* with no signal an expired sign-in cannot be refreshed */ }
+        unreachable = !!error && isAuthRetryableFetchError(error);
+      } catch { unreachable = true; /* with no signal an expired sign-in cannot be refreshed */ }
       // No signal and no usable sign-in: open on the copy saved for the last
       // person who used the portal on this phone. Taps still queue, and go out
       // once the sign-in refreshes with signal.
-      if (!u && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      if (!u && (unreachable || (typeof navigator !== 'undefined' && navigator.onLine === false))) {
         const last = lastUid(kv);
         if (last && loadCopy(kv, last, 'profile')) u = last;
       }

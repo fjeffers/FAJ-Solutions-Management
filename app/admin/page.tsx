@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders, woPayoutTotal, fmtMoney, techPayToShow } from '@/lib/utils';
 import { scheduleLine as woScheduleLine } from '@/lib/email-templates';
 import { geocodeAddress } from '@/lib/geocode';
-import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
 import { CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, ChevronRight, Plus } from 'lucide-react';
@@ -1429,8 +1428,8 @@ Go ahead?`)) return;
     router.push('/admin/login');
     router.refresh();
   };
-
-  useInactivityLogout(handleLogout);
+  // No sign-out after time away (Fred, 2026-10-25: "no cutoff time do it for
+  // both admin and tech"): the office stays signed in until Log out.
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1460,6 +1459,13 @@ Go ahead?`)) return;
     setWoStart((s) => ({ n: s.n + 1, openId: id, returnTo }));
     setView('workorders'); window.scrollTo({ top: 0 });
   };
+  // Leaving the board forgets the job it was opened on (Fred, 2026-10-25: "when
+  // i go into dispatched and try to work ther it keep pushung me vack to
+  // dashboard"). Back on the board by any route, a Dashboard tile included, it
+  // is the plain board, and closing a job stays on it.
+  useEffect(() => {
+    if (view !== 'workorders') setWoStart((s) => (s.openId || s.returnTo ? { n: s.n } : s));
+  }, [view]);
   const openNewOrder = () => { setModal({ type: 'wo', item: null }); setMobileNavOpen(false); };
   const scheduleRows: BoardRow[] = useMemo(() => enrichedWOs.map((w) => {
     const job = wfJobFromOwner(w);

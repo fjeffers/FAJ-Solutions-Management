@@ -17,7 +17,7 @@
 // (/api/quickbooks/field-sheet-invoice).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, EyeOff, FileSpreadsheet, FileText, Plus, Receipt, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
+import { Camera, ExternalLink, EyeOff, FileSpreadsheet, FileText, Plus, Receipt, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
@@ -26,6 +26,8 @@ import {
   withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
+import { isNetviewJob, netviewAnswers, netviewFormUrl, NETVIEW_PAYROLL } from '@/lib/netview-form';
+import { tapWindow, weekSites, weekToBillFor, type WeekInvoice, type WeekSite, type WeekTap, type WeekTyped } from '@/lib/week-to-bill';
 import { downloadXLSXBook } from '@/lib/export';
 import { fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
@@ -57,6 +59,7 @@ const jobName = (w: EnrichedWorkOrder) => w.site_name || w.title || `WO ${w.wo_n
 export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWorkOrder[] }) {
   const [q, setQ] = useState(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('sheet') ?? ''));
   const [woId, setWoId] = useState<string | null>(null);
+  const [week, setWeek] = useState<{ from: string; to: string } | null>(null);
   const [opened, setOpened] = useState<string[]>([]);
   useEffect(() => {
     void createClient().from('field_sheets').select('wo_id, updated_at').order('updated_at', { ascending: false }).limit(12)
@@ -73,6 +76,7 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
     e?.preventDefault();
     const w = findJob(workOrders, q);
     if (!w) { toastError(`No work order ${q.trim()} found. Type the app's WO number, or the client's ticket or site number.`); return; }
+    setWeek(null);
     setWoId(w.id);
   };
   const wo = woId ? workOrders.find((w) => w.id === woId) ?? null : null;
@@ -99,15 +103,16 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
           <div style={{ flexBasis: '100%', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {picks.map((w) => (
               <button type="button" key={w.id} className={`wf-btn wf-btn-sm ${w.id === woId ? 'wf-btn-gold' : 'wf-btn-outline'}`}
-                onClick={() => { setQ(w.wo_number); setWoId(w.id); }}>
+                onClick={() => { setQ(w.wo_number); setWeek(null); setWoId(w.id); }}>
                 WO {w.wo_number}{w.external_wo_id ? ` · ${w.external_wo_id}` : ''} · {jobName(w)}
               </button>
             ))}
           </div>
         )}
       </form>
-      {!wo && <StillOnSite workOrders={workOrders} onOpen={(id) => { const w = workOrders.find((x) => x.id === id); if (w) setQ(w.wo_number); setWoId(id); }} />}
-      {wo ? <Sheet key={wo.id} wo={wo} onOpened={() => setOpened((o) => (o.includes(wo.id) ? o : [wo.id, ...o]))} /> : (
+      {!wo && <WeekToBill workOrders={workOrders} onOpen={(id, w) => { const job = workOrders.find((x) => x.id === id); if (job) setQ(job.wo_number); setWeek(w); setWoId(id); }} />}
+      {!wo && <StillOnSite workOrders={workOrders} onOpen={(id) => { const w = workOrders.find((x) => x.id === id); if (w) setQ(w.wo_number); setWeek(null); setWoId(id); }} />}
+      {wo ? <Sheet key={wo.id} wo={wo} week={week} onOpened={() => setOpened((o) => (o.includes(wo.id) ? o : [wo.id, ...o]))} /> : (
         <Section title="Pick a job">
           <div style={{ fontSize: 14, lineHeight: 1.6 }}>
             Type the work order number above. The sheet comes up with every day the techs logged in the app. Fix any time,
@@ -121,6 +126,71 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
   );
 }
 
+/**
+ * The week to bill (lib/week-to-bill.ts): every site with work that week, what
+ * still needs an invoice first. Opening one shows its sheet on that week.
+ */
+function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; onOpen: (id: string, week: { from: string; to: string }) => void }) {
+  const [week, setWeek] = useState(() => weekToBillFor(dayOf(new Date().toISOString(), TZ)));
+  const [sites, setSites] = useState<WeekSite[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    const db = createClient();
+    const w = tapWindow(week.from, week.to);
+    void Promise.all([
+      db.from('job_day_events').select('wo_id, at').gte('at', w.gte).lt('at', w.lt),
+      db.from('job_punches').select('wo_id, at').gte('at', w.gte).lt('at', w.lt),
+      db.from('field_sheet_days').select('wo_id, day, hidden').gte('day', week.from).lte('day', week.to),
+      db.from('field_sheet_invoices').select('wo_id, from_day, to_day, qbo_invoice_id, qbo_invoice_number, created_at').lte('from_day', week.to).gte('to_day', week.from),
+    ]).then(([d, p, t, i]) => {
+      if (!live) return;
+      if (d.error || p.error) { toastError("Couldn't load the week's taps. Refresh to try again."); setSites([]); return; }
+      setSites(weekSites({
+        from: week.from, to: week.to, timeZone: TZ,
+        taps: [...((d.data as WeekTap[] | null) ?? []), ...((p.data as WeekTap[] | null) ?? [])],
+        typed: (t.data as WeekTyped[] | null) ?? [], invoices: (i.data as WeekInvoice[] | null) ?? [],
+      }));
+    });
+    return () => { live = false; };
+  }, [week]);
+  const byId = useMemo(() => new Map(workOrders.map((w) => [w.id, w])), [workOrders]);
+  const shown = (sites ?? []).filter((s) => byId.has(s.woId));
+  const left = shown.filter((s) => s.status !== 'billed').length;
+  const move = (n: number) => setWeek((w) => { const f = new Date(Date.parse(`${w.from}T12:00:00Z`) + n * 7 * 86_400_000).toISOString().slice(0, 10); return { from: f, to: new Date(Date.parse(`${f}T12:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10) }; });
+  const WORD = { to_bill: 'To bill', partly: 'Partly billed', billed: 'Billed' } as const;
+  const COLOR = { to_bill: '#B45309', partly: '#8a6d2b', billed: '#2F7D4F' } as const;
+  return (
+    <Section title="Week to bill" subtitle={`${fmtDay(week.from)} – ${fmtDay(week.to)}${sites ? ` · ${left ? `${left} to bill` : 'all billed'}` : ''}`}>
+      <div style={{ display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => move(-1)}>← Week before</button>
+          <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => move(1)}>Week after →</button>
+        </div>
+        {sites === null ? <div className="wf-subtle">Loading the week…</div>
+          : shown.length === 0 ? <div className="wf-subtle">No techs logged work on any site this week.</div>
+          : shown.map((s) => {
+            const w = byId.get(s.woId)!;
+            const techs = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean).join(', ');
+            return (
+              <button type="button" key={s.woId} className="wf-card" onClick={() => onOpen(s.woId, week)}
+                style={{ padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                <span style={{ flex: '1 1 260px', minWidth: 0 }}>
+                  <b>WO {w.wo_number}</b>{w.external_wo_id ? ` · ${w.external_wo_id}` : ''} · {jobName(w)}
+                  <span className="wf-subtle" style={{ display: 'block', fontSize: 12.5 }}>
+                    {[w.customer_name, techs, `${s.days.length} day${s.days.length === 1 ? '' : 's'}: ${s.days.map(fmtDay).join(', ')}`].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: COLOR[s.status], whiteSpace: 'nowrap' }}>
+                  {WORD[s.status]}{s.invoices.length ? ` · invoice ${s.invoices.join(', ')}` : ''}{s.status === 'partly' ? ` · ${s.unbilled.length} day${s.unbilled.length === 1 ? '' : 's'} left` : ''}
+                </span>
+              </button>
+            );
+          })}
+      </div>
+    </Section>
+  );
+}
+
 type Expense = {
   id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string;
   note: string | null; receipt_path: string | null; status: string; decline_reason: string | null;
@@ -130,7 +200,7 @@ type Expense = {
 type Photo = { id: string; url: string; taken_at: string; contractor_name: string | null };
 type Shot = { src: string; title: string; caption: string };
 
-function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }) {
+function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: string; to: string } | null; onOpened: () => void }) {
   const db = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<Awaited<ReturnType<typeof loadEvents>>>([]);
@@ -140,8 +210,9 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<SavedDay[]>([]);
   const [settings, setSettings] = useState<SheetSettings>(parseSettings({}));
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  // Opened from the week to bill: already on that week.
+  const [from, setFrom] = useState(week?.from ?? '');
+  const [to, setTo] = useState(week?.to ?? '');
   const [showHidden, setShowHidden] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -450,6 +521,7 @@ function Sheet({ wo, onOpened }: { wo: EnrichedWorkOrder; onOpened: () => void }
       </Section>
 
       <FinishPanel wo={wo} s={settings} totals={totals} from={from} to={to} rows={rows} receipts={billed} invoices={invoices}
+        allRows={allRows} allReceipts={expenses.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date }))}
         photoCount={shots.reduce((t, g) => t + g.list.length, 0)} flush={flush} onDone={() => void loadInvoices()} />
 
       <Section title="Photos" subtitle="time, place and GPS are stamped by the tech's phone">
@@ -650,11 +722,31 @@ function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: Enri
  * "when i finish it then save and uploaded into quickbooks the same way ... and
  * sent off the client"; "thats what the customer gets along with the pictures").
  */
-function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, photoCount, flush, onDone }: {
+function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRows, allReceipts, photoCount, flush, onDone }: {
   wo: EnrichedWorkOrder; s: SheetSettings; totals: SheetTotals; from: string; to: string; rows: SheetRow[]; receipts: SheetReceipt[];
-  invoices: SheetInvoice[]; photoCount: number; flush: () => Promise<boolean>; onDone: () => void;
+  invoices: SheetInvoice[]; allRows: SheetRow[]; allReceipts: SheetReceipt[]; photoCount: number; flush: () => Promise<boolean>; onDone: () => void;
 }) {
   const [send, setSend] = useState(true);
+  // NetView pays from their own form, one entry per invoice (lib/netview-form.ts).
+  const netview = isNetviewJob(wo, s.client);
+  const [me, setMe] = useState({ name: '', email: '' });
+  useEffect(() => {
+    if (!netview) return;
+    void createClient().auth.getUser().then(({ data }) => {
+      const u = data.user;
+      const meta = (u?.user_metadata ?? {}) as { full_name?: string; name?: string };
+      setMe({ name: meta.full_name || meta.name || '', email: u?.email ?? '' });
+    });
+  }, [netview]);
+  const netviewLink = (i: SheetInvoice) => {
+    // The invoice's own dates, so the breakdown is this invoice's (netviewAnswers checks it adds up).
+    const t = sheetTotals(allRows.filter((r) => inDates(r.day, i.from_day, i.to_day)), allReceipts.filter((e) => !!e.date && inDates(e.date, i.from_day, i.to_day)), s);
+    return netviewFormUrl(netviewAnswers({
+      job: wo,
+      invoice: { number: i.qbo_invoice_number ?? '', total: Number(i.total ?? t.bill), date: dayOf(i.created_at, TZ), from: i.from_day, to: i.to_day },
+      lines: t.lines, vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
+    }));
+  };
   const [photos, setPhotos] = useState(true);
   // The timesheet PDF goes with the invoice (Fred, 2026-10-24: "so i can send it or attached to the quickbooks").
   const [timesheet, setTimesheet] = useState(true);
@@ -735,6 +827,12 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, photoC
                 {i.qbo_invoice_id ? <>QuickBooks invoice <b>{i.qbo_invoice_number || '—'}</b></> : blocksBilling(i) ? 'Being created in QuickBooks' : 'Cut off before QuickBooks answered: check QuickBooks, then create it again'} · {fmtDay(i.from_day)} – {fmtDay(i.to_day)}
                 {i.total != null ? ` · ${fmtMoney(Number(i.total))}` : ''} · {i.customer_name}
                 {i.qbo_invoice_id ? (i.sent_to ? ` · emailed to ${i.sent_to}` : ' · not emailed') : ''}
+                {netview && i.qbo_invoice_id && (
+                  <a className="wf-btn wf-btn-outline wf-btn-sm" style={{ marginLeft: 8 }} href={netviewLink(i)} target="_blank" rel="noopener noreferrer"
+                    title={`Opens NetView's payment form with this invoice filled in. Check it, answer the last two questions, and Submit. The invoice itself also goes to ${NETVIEW_PAYROLL}.`}>
+                    <ExternalLink size={14} /> Fill NetView form
+                  </a>
+                )}
               </div>
             ))}
           </div>

@@ -41,7 +41,7 @@ const rpc = vi.fn(async () => ({ data: { ok: true, status: 'declined' }, error: 
 function query(table: string) {
   const result = () => ({ data: tables[table] ?? [], error: null });
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'in', 'gte', 'order', 'limit', 'delete']) chain[m] = () => chain;
+  for (const m of ['select', 'eq', 'in', 'gte', 'lt', 'lte', 'order', 'limit', 'delete']) chain[m] = () => chain;
   chain.then = (ok: (v: unknown) => unknown, bad: (e: unknown) => unknown) => Promise.resolve(result()).then(ok, bad);
   chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
   chain.single = async () => ({ data: { id: 'saved-1' }, error: null });
@@ -52,6 +52,7 @@ vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     from: (t: string) => query(t),
     rpc,
+    auth: { getUser: async () => ({ data: { user: { email: 'fajsolutions@gmail.com', user_metadata: { full_name: 'Fred Jeffers' } } } }) },
     storage: { from: () => ({ createSignedUrls: async () => ({ data: [] }) }) },
   }),
 }));

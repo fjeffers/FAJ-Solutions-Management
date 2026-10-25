@@ -288,16 +288,17 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
   const [made, setMade] = useState<{ week: string; date: string; list: MadeBill[] }>({ week: '', date: '', list: [] });
   const toBill = shown.filter((s) => s.status !== 'billed');
   const me = useMe(made.list.some(netviewBill));
-  // Every site still to bill, each as the server bills it, in the order worked: first day, then WO number.
+  // Every site still to bill, each as the server bills it, in the order worked: the site's first day
+  // that week (a bill for the week starts on the week's first day, whatever day the work did), then WO number.
   const weekBills = async () => {
-    const done: MadeBill[] = [];
+    const done: (MadeBill & { first: string })[] = [];
     const skipped: string[] = [];
     for (const s of toBill) {
       const w = byId.get(s.woId)!;
       const r = await sheetBill(w, week.from, week.to);
-      if ('bill' in r) done.push({ wo: w, bill: r.bill }); else skipped.push(`WO ${w.wo_number}: ${r.error}`);
+      if ('bill' in r) done.push({ wo: w, bill: r.bill, first: s.days[0] ?? r.bill.from }); else skipped.push(`WO ${w.wo_number}: ${r.error}`);
     }
-    done.sort((a, b) => a.bill.from.localeCompare(b.bill.from) || a.wo.wo_number.localeCompare(b.wo.wo_number, undefined, { numeric: true }));
+    done.sort((a, b) => a.first.localeCompare(b.first) || a.wo.wo_number.localeCompare(b.wo.wo_number, undefined, { numeric: true }));
     for (const m of skipped) toastError(m);
     if (!done.length && !skipped.length) toastError('Nothing to bill this week.');
     return done;

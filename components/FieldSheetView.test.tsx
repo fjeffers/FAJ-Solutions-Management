@@ -303,4 +303,26 @@ describe('Field Sheet', () => {
     expect(book[0].rows).toContainEqual(['Cabling', 'Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h', 9.57, 100, 957]);
     expect(book[0].rows.at(-1)).toEqual(['', '', '', 'Total', 1009.64]);
   });
+
+  it('puts the tabs in the order the sites were first worked that week, not by WO number', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-25T15:00:00Z'));
+    // Gaffney (WO 19101401) first worked Friday, Dover (WO 19101403) Monday.
+    const before = tables.job_day_events;
+    tables.job_day_events = [
+      { id: 'g', wo_id: 'gaffney', contractor_name: 'Paul Gibbs', kind: 'travel_start', at: at('23', '07:00'), origin: 'hotel', dest: 'hotel', miles: null },
+      { id: 'd', wo_id: 'dover', contractor_name: 'Frederick Jeffers', kind: 'travel_start', at: at('19', '07:00'), origin: 'home', dest: 'home', miles: null },
+    ];
+    try {
+      const user = userEvent.setup();
+      dryRun([]);
+      const job = (id: string, wo_number: string, site_city: string) => ({ ...wo, id, wo_number, site_city, customer_name: 'LDS' }) as EnrichedWorkOrder;
+      render(<FieldSheetView workOrders={[job('gaffney', '19101401', 'Gaffney'), job('dover', '19101403', 'Dover')]} />);
+      await user.click(await screen.findByRole('button', { name: /excel, a tab per site/i }));
+      const [, book] = downloadXLSXBook.mock.calls[0] as [string, { name: string }[]];
+      expect(book.map((t) => t.name)).toEqual(['Dover', 'Gaffney', 'All sites']);
+    } finally {
+      tables.job_day_events = before;
+    }
+  });
 });

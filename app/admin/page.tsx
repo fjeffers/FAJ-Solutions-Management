@@ -566,6 +566,10 @@ export default function HomePage() {
       logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}` });
       // Notify contractor on status change
       const prev = workOrders.find((x) => x.id === w.id);
+      // The job as saved, straight away: Edit job opened right after Save must not get the copy
+      // from before it, or a job saved with Pay removed opens with its mileage worked out again
+      // and Pay back (Fred, 2026-10-25: "but the pay still is popping up"). loadAll refreshes the rest.
+      setWorkOrders((list) => list.map((x) => (x.id === w.id ? ({ ...x, ...payload } as WorkOrder) : x)));
       if (prev && prev.wo_status !== w.wo_status) {
         const c = contractors.find((x) => x.name === w.contractor_name);
         if (c?.email) notifyContractor({ type: 'status_change', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined, status: w.wo_status ?? '' });

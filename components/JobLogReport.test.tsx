@@ -6,7 +6,7 @@
 // 2026-10-25: "put a x or check mark to add and remove photos"; "i can label
 // then as recipe or none recipes"; a declined receipt "stay on the app".
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { EnrichedWorkOrder } from '@/lib/types';
 
@@ -24,12 +24,16 @@ const tables: Record<string, Record<string, unknown>[]> = {
   work_orders: [{ job_log_left_out: [], job_log_receipt_photos: [] }],
 };
 const updates: Record<string, unknown>[] = [];
+// How long each save takes; the first one slow, to check a quick run of taps still lands in order.
+let saveDelays: number[] = [];
 function query(table: string) {
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'eq', 'order']) chain[m] = () => chain;
   chain.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: tables[table] ?? [], error: null }).then(ok);
   chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
-  chain.update = (row: Record<string, unknown>) => { updates.push(row); return { eq: async () => ({ error: null }) }; };
+  chain.update = (row: Record<string, unknown>) => ({
+    eq: async () => { await new Promise((ok) => setTimeout(ok, saveDelays.shift() ?? 0)); updates.push(row); return { error: null }; },
+  });
   return chain;
 }
 const storage = { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((p) => ({ path: p, signedUrl: `https://signed.test/${p}` })) }) }) };
@@ -42,7 +46,7 @@ const wo = {
   start_date: '2026-10-19', end_date: '2026-10-23', wo_status: 'Open', capture: [], custom_qa: [], wo_tasks: [],
 } as unknown as EnrichedWorkOrder;
 
-afterEach(() => { cleanup(); updates.length = 0; });
+afterEach(() => { cleanup(); updates.length = 0; saveDelays = []; });
 
 describe('Job log pictures', () => {
   it('has the receipts, the odometer and the site photos; a declined receipt is marked and never printed', async () => {
@@ -60,7 +64,7 @@ describe('Job log pictures', () => {
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const chips = within(await screen.findByRole('group', { name: /label photo/i }));
     await user.click(chips.getByRole('button', { name: 'Receipt' }));
-    expect(updates.at(-1)).toEqual({ job_log_receipt_photos: ['ph1'] });
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: [], job_log_receipt_photos: ['ph1'] }));
     const receipts = screen.getByRole('heading', { name: 'Receipts' }).parentElement!;
     expect(within(receipts).getByAltText(/receipt photo/i)).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Photos' })).toBeNull();
@@ -70,10 +74,34 @@ describe('Job log pictures', () => {
     const user = userEvent.setup();
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     await user.click(await screen.findByRole('button', { name: /leave out of the log: photo/i }));
-    expect(updates.at(-1)).toEqual({ job_log_left_out: ['photo:ph1'] });
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['photo:ph1'], job_log_receipt_photos: [] }));
     const back = screen.getByRole('button', { name: /put back in the log: photo/i });
     expect(back.closest('.jl-avoid')!.classList.contains('no-print')).toBe(true);
     await user.click(back);
-    expect(updates.at(-1)).toEqual({ job_log_left_out: [] });
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: [], job_log_receipt_photos: [] }));
+  });
+
+  it('keeps every choice from a quick run of taps, even when a save is slow', async () => {
+    saveDelays = [80, 0];
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /leave out of the log: photo/i }));
+    // The first save is still going when the second tap comes.
+    await new Promise((ok) => setTimeout(ok, 20));
+    fireEvent.click(screen.getByRole('button', { name: /leave out of the log: odometer start/i }));
+    await waitFor(() => expect(updates).toHaveLength(2));
+    expect(updates.at(-1)).toEqual({ job_log_left_out: ['photo:ph1', 'odo:o1'], job_log_receipt_photos: [] });
+  });
+
+  it('shows a PDF receipt as a link to open, not a broken picture', async () => {
+    const before = tables.job_expenses;
+    tables.job_expenses = [{ id: 'x3', contractor_name: null, category: 'hotel', vendor: 'Quality Inn', amount: 350.74, expense_date: '2026-10-20', status: 'approved', receipt_path: 'r/hotel.pdf' }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const link = await screen.findByRole('link', { name: /lodging, quality inn: \$350\.74/i });
+      expect(link.getAttribute('href')).toBe('https://signed.test/r/hotel.pdf');
+      expect(screen.queryByAltText(/quality inn/i)).toBeNull();
+    } finally {
+      tables.job_expenses = before;
+    }
   });
 });

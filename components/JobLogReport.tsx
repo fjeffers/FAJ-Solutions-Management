@@ -19,9 +19,9 @@
 // then as recipe or none recipes"; work_orders.job_log_receipt_photos). A
 // declined receipt stays on screen, marked declined, and is never printed ("if
 // decline it stay on the app but it does a photo that was decline item").
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Printer, X } from 'lucide-react';
+import { Check, FileText, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { toastError } from '@/lib/toast';
@@ -42,13 +42,57 @@ type Pic = {
   photoId?: string;
   /** A declined receipt: on screen only, never printed. */
   declined?: boolean;
+  /** A receipt kept as a PDF (the office can add one): a link, not a picture. */
+  pdf?: boolean;
 };
+type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
 type Include = { gaps: boolean; time: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean };
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
 const fmtStamp = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ });
+
+/**
+ * The pictures left out of the log and the photos labeled receipts, saved on
+ * the job. Saves go one at a time, each sending the choices as they are by
+ * then, so a quick run of taps never lands out of order.
+ */
+function useLogChoices(woId: string, left: string[] | null | undefined, receiptIds: string[] | null | undefined) {
+  const [first] = useState<Choices>(() => ({ leftOut: new Set(left ?? []), receiptPhotos: new Set(receiptIds ?? []) }));
+  const [now, setNow] = useState<Choices>(first);
+  const tapped = useRef<Choices>(first);
+  const kept = useRef<Choices>(first);
+  const saving = useRef<Promise<void>>(Promise.resolve());
+  const show = useCallback((c: Choices) => { tapped.current = c; setNow(c); }, []);
+  /** What the job has saved, read when the log opens. */
+  const loaded = useCallback((c: Choices) => { kept.current = c; show(c); }, [show]);
+  const choose = (next: Choices) => {
+    show(next);
+    saving.current = saving.current.then(async () => {
+      const c = tapped.current;
+      if (c === kept.current) return;
+      const { error } = await createClient().from('work_orders')
+        .update({ job_log_left_out: [...c.leftOut], job_log_receipt_photos: [...c.receiptPhotos] }).eq('id', woId);
+      if (!error) { kept.current = c; return; }
+      show(kept.current);
+      toastError("That didn't save. Check your connection and try again.");
+    });
+  };
+  /** Leave a picture out of the log, or put it back. */
+  const flip = (key: string) => {
+    const l = new Set(tapped.current.leftOut);
+    if (l.has(key)) l.delete(key); else l.add(key);
+    choose({ ...tapped.current, leftOut: l });
+  };
+  /** Label a site photo a receipt, or not one. */
+  const label = (photoId: string, receipt: boolean) => {
+    const r = new Set(tapped.current.receiptPhotos);
+    if (receipt) r.add(photoId); else r.delete(photoId);
+    choose({ ...tapped.current, receiptPhotos: r });
+  };
+  return { ...now, loaded, flip, label };
+}
 
 /** A section heading on the printed page. */
 const H = ({ children }: { children: React.ReactNode }) => (
@@ -66,8 +110,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
   const [receipts, setReceipts] = useState<Pic[]>([]);
   const [odometer, setOdometer] = useState<Pic[]>([]);
-  const [leftOut, setLeftOut] = useState<Set<string>>(() => new Set(w.job_log_left_out ?? []));
-  const [receiptPhotos, setReceiptPhotos] = useState<Set<string>>(() => new Set(w.job_log_receipt_photos ?? []));
+  const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [inc, setInc] = useState<Include>({ gaps: true, time: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false });
@@ -86,9 +129,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));
       setLogs(Array.isArray(l) ? (l as TimeLog[]) : []);
-      const saved = wo.data as { job_log_left_out?: string[] | null; job_log_receipt_photos?: string[] | null } | null;
-      if (saved?.job_log_left_out) setLeftOut(new Set(saved.job_log_left_out));
-      if (saved?.job_log_receipt_photos) setReceiptPhotos(new Set(saved.job_log_receipt_photos));
+      const kept = wo.data as { job_log_left_out?: string[] | null; job_log_receipt_photos?: string[] | null } | null;
+      if (kept) loadedChoices({ leftOut: new Set(kept.job_log_left_out ?? []), receiptPhotos: new Set(kept.job_log_receipt_photos ?? []) });
       // Approved and declined; one still waiting on Fred isn't either yet.
       const rec = ((ex.data as ReceiptRow[] | null) ?? []).filter((e) => (e.status === 'approved' || e.status === 'declined') && e.receipt_path);
       const odo = ((od.data as OdoRow[] | null) ?? []).filter((o) => o.photo_path);
@@ -102,32 +144,14 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         caption: `${e.status === 'declined' ? 'Declined: ' : ''}${expenseCategoryLabel(e.category)}${e.vendor ? `, ${e.vendor}` : ''}: $${Number(e.amount).toFixed(2)}`
           + (e.status === 'declined' && e.decline_reason ? ` (${e.decline_reason})` : ''),
         declined: e.status === 'declined',
+        pdf: /\.pdf$/i.test(e.receipt_path!),
       })));
       setOdometer(odo.filter((o) => url.has(o.photo_path!)).map((o) => ({
         key: `odo:${o.id}`, src: url.get(o.photo_path!)!, day: dayOf(o.at, TZ), stamp: fmtStamp(o.at), tech: o.contractor_name,
         caption: `Odometer ${o.moment === 'end' ? 'end' : 'start'}: ${Number(o.reading).toLocaleString('en-US')}`,
       })));
     });
-  }, [w.id]);
-
-  /** Leave a picture out of the log, or put it back. Saved on the job straight away. */
-  const flip = async (key: string) => {
-    const before = leftOut;
-    const next = new Set(before);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    setLeftOut(next);
-    const { error } = await createClient().from('work_orders').update({ job_log_left_out: [...next] }).eq('id', w.id);
-    if (error) { setLeftOut(before); toastError("That didn't save. Check your connection and try again."); }
-  };
-  /** Label a site photo a receipt, or not one. */
-  const label = async (photoId: string, receipt: boolean) => {
-    const before = receiptPhotos;
-    const next = new Set(before);
-    if (receipt) next.add(photoId); else next.delete(photoId);
-    setReceiptPhotos(next);
-    const { error } = await createClient().from('work_orders').update({ job_log_receipt_photos: [...next] }).eq('id', w.id);
-    if (error) { setReceiptPhotos(before); toastError("That didn't save. Check your connection and try again."); }
-  };
+  }, [w.id, loadedChoices]);
 
   // Printing shows only this report (app/wf.css, body.job-log-open).
   useEffect(() => {
@@ -171,8 +195,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
   const cell: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #ECE8DF', textAlign: 'left', verticalAlign: 'top' };
 
-  /** A section of pictures, each with its check mark. Left out: faded here, not printed. */
-  const pictures = (title: string, list: Pic[]) => list.length > 0 && (
+  /**
+   * A section of pictures, each with its check mark. Left out: faded here, not
+   * printed. `whole`: each one shown uncropped, so a long receipt keeps its date
+   * and total.
+   */
+  const pictures = (title: string, list: Pic[], whole = false) => list.length > 0 && (
     <div className={list.some(printed) ? undefined : 'no-print'}>
       <H>{title}</H>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
@@ -183,11 +211,19 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           return (
             <div key={p.key} className={out ? 'jl-avoid no-print' : 'jl-avoid'} style={{ position: 'relative' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.src} alt={what} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 6, border: '1px solid #E4DFD3', display: 'block', opacity: out ? 0.35 : 1 }} />
+              {p.pdf ? (
+                <a href={p.src} target="_blank" rel="noopener noreferrer" aria-label={what}
+                  style={{ aspectRatio: '3 / 4', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 6, border: '1px solid #E4DFD3', background: '#F6F4EF', color: '#0E1B2E', textDecoration: 'none', fontSize: 12, fontWeight: 600, opacity: out ? 0.35 : 1 }}>
+                  <FileText size={28} /> PDF receipt
+                  <span className="no-print" style={{ fontWeight: 400 }}>Tap to open</span>
+                </a>
+              ) : (
+                <img src={p.src} alt={what} style={{ width: '100%', aspectRatio: whole ? '3 / 4' : '4 / 3', objectFit: whole ? 'contain' : 'cover', background: whole ? '#F6F4EF' : undefined, borderRadius: 6, border: '1px solid #E4DFD3', display: 'block', opacity: out ? 0.35 : 1 }} />
+              )}
               {p.declined ? (
                 <span style={{ position: 'absolute', top: 6, right: 6, background: '#B42318', color: '#fff', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>Declined</span>
               ) : (
-              <button type="button" className="no-print" onClick={() => void flip(p.key)}
+              <button type="button" className="no-print" onClick={() => flip(p.key)}
                 aria-label={out ? `Put back in the log: ${what}` : `Leave out of the log: ${what}`} title={out ? 'Left out. Tap to put it back.' : 'In the log. Tap to leave it out.'}
                 style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32, borderRadius: 16, border: '2px solid #fff', background: out ? '#B42318' : '#047857', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                 {out ? <X size={18} /> : <Check size={18} />}
@@ -199,7 +235,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {p.photoId && (
                 <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                   {([[true, 'Receipt'], [false, 'Not a receipt']] as const).map(([r, text]) => (
-                    <button key={text} type="button" aria-pressed={isReceipt === r} onClick={() => { if (isReceipt !== r) void label(p.photoId!, r); }}
+                    <button key={text} type="button" aria-pressed={isReceipt === r} onClick={() => { if (isReceipt !== r) label(p.photoId!, r); }}
                       style={{ flex: 1, fontSize: 11.5, padding: '3px 4px', borderRadius: 8, cursor: 'pointer',
                         border: `1px solid ${isReceipt === r ? '#0E1B2E' : '#D8D3C8'}`, background: isReceipt === r ? '#0E1B2E' : '#fff', color: isReceipt === r ? '#fff' : '#1B1C1F' }}>
                       {text}
@@ -355,7 +391,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <><H>Technician&apos;s notes</H><div className="jl-avoid" style={{ whiteSpace: 'pre-wrap' }}>{w.closeout_notes}</div></>
           )}
 
-          {inc.receipts && pictures('Receipts', shownReceipts)}
+          {inc.receipts && pictures('Receipts', shownReceipts, true)}
           {inc.odometer && pictures('Odometer', shownOdometer)}
           {inc.photos && pictures('Photos', shownPhotos)}
 

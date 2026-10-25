@@ -26,13 +26,19 @@ const tables: Record<string, Record<string, unknown>[]> = {
 const updates: Record<string, unknown>[] = [];
 // How long each save takes; the first one slow, to check a quick run of taps still lands in order.
 let saveDelays: number[] = [];
+// Which saves fail, in order.
+let saveFails: boolean[] = [];
 function query(table: string) {
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'eq', 'order']) chain[m] = () => chain;
   chain.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: tables[table] ?? [], error: null }).then(ok);
   chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
   chain.update = (row: Record<string, unknown>) => ({
-    eq: async () => { await new Promise((ok) => setTimeout(ok, saveDelays.shift() ?? 0)); updates.push(row); return { error: null }; },
+    eq: async () => {
+      await new Promise((ok) => setTimeout(ok, saveDelays.shift() ?? 0));
+      updates.push(row);
+      return { error: saveFails.shift() ? { message: 'offline' } : null };
+    },
   });
   return chain;
 }
@@ -46,7 +52,7 @@ const wo = {
   start_date: '2026-10-19', end_date: '2026-10-23', wo_status: 'Open', capture: [], custom_qa: [], wo_tasks: [],
 } as unknown as EnrichedWorkOrder;
 
-afterEach(() => { cleanup(); updates.length = 0; saveDelays = []; });
+afterEach(() => { cleanup(); updates.length = 0; saveDelays = []; saveFails = []; });
 
 describe('Job log pictures', () => {
   it('has the receipts, the odometer and the site photos; a declined receipt is marked and never printed', async () => {
@@ -103,5 +109,17 @@ describe('Job log pictures', () => {
     } finally {
       tables.job_expenses = before;
     }
+  });
+
+  it('still saves a tap made while an earlier save fails', async () => {
+    saveDelays = [80, 0];
+    saveFails = [true, false];
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /leave out of the log: photo/i }));
+    await new Promise((ok) => setTimeout(ok, 20));
+    fireEvent.click(screen.getByRole('button', { name: /leave out of the log: odometer start/i }));
+    await waitFor(() => expect(updates).toHaveLength(2));
+    expect(updates.at(-1)).toEqual({ job_log_left_out: ['photo:ph1', 'odo:o1'], job_log_receipt_photos: [] });
+    expect(screen.getByRole('button', { name: /put back in the log: odometer start/i })).toBeTruthy();
   });
 });

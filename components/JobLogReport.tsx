@@ -54,6 +54,13 @@ const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hou
 const fmtStamp = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ });
 
 /**
+ * Each job's saves still going. Kept outside the log, so a log closed and
+ * opened again straight away waits for them before it reads the job.
+ */
+const savesFor = new Map<string, Promise<void>>();
+const afterSaves = (woId: string) => savesFor.get(woId) ?? Promise.resolve();
+
+/**
  * The pictures left out of the log and the photos labeled receipts, saved on
  * the job. Saves go one at a time, each sending the choices as they are by
  * then, so a quick run of taps never lands out of order.
@@ -63,21 +70,21 @@ function useLogChoices(woId: string, left: string[] | null | undefined, receiptI
   const [now, setNow] = useState<Choices>(first);
   const tapped = useRef<Choices>(first);
   const kept = useRef<Choices>(first);
-  const saving = useRef<Promise<void>>(Promise.resolve());
   const show = useCallback((c: Choices) => { tapped.current = c; setNow(c); }, []);
   /** What the job has saved, read when the log opens. */
   const loaded = useCallback((c: Choices) => { kept.current = c; show(c); }, [show]);
   const choose = (next: Choices) => {
     show(next);
-    saving.current = saving.current.then(async () => {
+    savesFor.set(woId, afterSaves(woId).then(async () => {
       const c = tapped.current;
       if (c === kept.current) return;
       const { error } = await createClient().from('work_orders')
         .update({ job_log_left_out: [...c.leftOut], job_log_receipt_photos: [...c.receiptPhotos] }).eq('id', woId);
       if (!error) { kept.current = c; return; }
-      show(kept.current);
+      // Back to what's saved, unless there was a tap since: the next save tries again with it.
+      if (tapped.current === c) show(kept.current);
       toastError("That didn't save. Check your connection and try again.");
-    });
+    }));
   };
   /** Leave a picture out of the log, or put it back. */
   const flip = (key: string) => {
@@ -123,8 +130,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       fetch(`/api/wo-time-logs?wo_id=${w.id}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
       db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, status, decline_reason, receipt_path').eq('wo_id', w.id).order('expense_date'),
       db.from('job_odometer').select('id, contractor_name, at, moment, reading, photo_path').eq('wo_id', w.id).order('at'),
-      // What's left out and labeled now: the job on screen may be older than the last change.
-      db.from('work_orders').select('job_log_left_out, job_log_receipt_photos').eq('id', w.id).maybeSingle(),
+      // What's left out and labeled now: the job on screen may be older than the last change,
+      // and a save from the log just closed may still be going.
+      afterSaves(w.id).then(() => db.from('work_orders').select('job_log_left_out, job_log_receipt_photos').eq('id', w.id).maybeSingle()),
     ]).then(async ([p, ph, l, ex, od, wo]) => {
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));

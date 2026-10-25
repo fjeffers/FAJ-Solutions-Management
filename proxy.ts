@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
 import { cookieOptionsFor, hasAdminSessionCookie, sideForApiRequest, sideForPath } from '@/lib/supabase/side';
 
@@ -30,7 +31,7 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
 
   // Pages that must work without a session. Token-gated pages authorise
@@ -64,6 +65,11 @@ export async function proxy(request: NextRequest) {
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return response;
 
   if (!user && !isAuthRoute && !isApiRoute) {
+    // The sign-in couldn't be checked (Supabase not reached): no reason to send
+    // anyone to sign in again, which couldn't work either. The page checks for
+    // itself, and the tech portal opens on its saved copy (Fred, 2026-10-25:
+    // "i want tech to stay login no cutoff time").
+    if (authError && isAuthRetryableFetchError(authError)) return response;
     const url = request.nextUrl.clone();
     // A tech whose session expired belongs back at the tech sign-in, not the
     // owner's. Landing on the wrong login is how a tech concludes the app is

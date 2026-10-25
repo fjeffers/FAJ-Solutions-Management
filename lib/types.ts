@@ -209,6 +209,10 @@ export type WorkOrder = {
   checkin_link?: string | null;
   /** Opened when the tech goes off site for the day: the client's checkout form (migration 133). */
   checkout_link?: string | null;
+  /** Where the tech fills in the site survey (migration 142). */
+  survey_link?: string | null;
+  /** Where the tech uploads the photos and documents, the deliverables (migration 142). */
+  deliverable_link?: string | null;
 
   // Contractor portal (migration-011)
   acknowledged_at: string | null;
@@ -224,6 +228,10 @@ export type WorkOrder = {
   /** The client's own tracker status ("Pending Tech Assignment") and program ("Legacy") (migration 140). */
   client_status?: string | null;
   client_program?: string | null;
+  /** Pictures left out of the Job log: 'photo:<id>', 'receipt:<id>', 'odo:<id>' (migration 141). */
+  job_log_left_out?: string[] | null;
+  /** Site photos the office labeled receipts on the Job log (wo_photos ids, migration 141). */
+  job_log_receipt_photos?: string[] | null;
   buyer_company: string | null;
   assignment_type: string | null;
   priority: string | null;

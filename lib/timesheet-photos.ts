@@ -1,5 +1,6 @@
 // The pictures that go in the timesheet PDF (lib/timesheet.ts): each day's
-// odometer photos, the approved receipts and the site photos, shrunk in the
+// odometer photos and the approved receipts, nothing else (Fred, 2026-10-25:
+// "time log should only have the receipt and odometer reading"), shrunk in the
 // browser to small JPEGs so a week of pictures still makes a PDF that can be
 // emailed or attached to a QuickBooks invoice.
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -16,12 +17,15 @@ export type PhotoSource = { day: string; tech: string; caption: string; url: str
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
 const inDates = (d: string, from: string, to: string) => d >= from && d <= to;
 
-/** Where each picture is and what it says, oldest first: odometer, then receipts, then the site. */
+/**
+ * Where each picture is and what it says, oldest first: odometer, then receipts.
+ * The site photos stay on the job but out of the timesheet (Fred, 2026-10-25:
+ * "Don't delete it. Just don't include it in the time report").
+ */
 export async function photoSources(db: SupabaseClient, woId: string, from: string, to: string): Promise<PhotoSource[]> {
-  const [od, ex, ph] = await Promise.all([
+  const [od, ex] = await Promise.all([
     db.from('job_odometer').select('contractor_name, at, moment, reading, photo_path').eq('wo_id', woId).order('at'),
     db.from('job_expenses').select('contractor_name, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', woId),
-    db.from('wo_photos').select('url, taken_at, contractor_name').eq('wo_id', woId).order('taken_at'),
   ]);
   const odo = ((od.data ?? []) as { contractor_name: string; at: string; moment: string; reading: number; photo_path: string | null }[])
     .filter((o) => o.photo_path && inDates(dayOf(o.at, TZ), from, to));
@@ -43,10 +47,6 @@ export async function photoSources(db: SupabaseClient, woId: string, from: strin
     const url = signed.get(e.receipt_path!);
     if (url) out.push({ day: e.expense_date, tech: e.contractor_name ?? '', url, order: 1,
       caption: `Receipt · ${expenseCategoryLabel(e.category)}${e.vendor ? `, ${e.vendor}` : ''}: $${Number(e.amount).toFixed(2)}` });
-  }
-  for (const p of (ph.data ?? []) as { url: string; taken_at: string; contractor_name: string | null }[]) {
-    const day = dayOf(p.taken_at, TZ);
-    if (inDates(day, from, to)) out.push({ day, tech: p.contractor_name ?? '', url: p.url, order: 2, caption: `Site photo · ${time(p.taken_at)}` });
   }
   return out.sort((a, b) => a.day.localeCompare(b.day) || a.tech.localeCompare(b.tech) || a.order - b.order);
 }

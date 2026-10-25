@@ -28,7 +28,8 @@ function query(table: string) {
   chain.single = async () => ({ data: { id: 's1', ...(upserts.at(-1) ?? {}) }, error: null });
   return chain;
 }
-vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ from: (t: string) => query(t), rpc }) }));
+const storage = { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((p) => ({ path: p, signedUrl: `https://signed.test/${p}` })) }) }) };
+vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ from: (t: string) => query(t), rpc, storage }) }));
 
 const { default: HoursView } = await import('./HoursView');
 const wo = {
@@ -36,9 +37,33 @@ const wo = {
   contractor_name: 'Frederick Jeffers', start_date: '2026-10-23', end_date: '2026-10-23', archived_at: null,
 } as unknown as EnrichedWorkOrder;
 
-afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); });
+afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); tables.job_odometer = []; delete tables.job_expenses; delete tables.wo_photos; });
 
 describe('Hours', () => {
+  it("lists the jobs worked lately, not next week's, with a job in progress first", () => {
+    const job = (n: number, start: string, extra: Record<string, unknown> = {}) =>
+      ({ id: `w${n}`, wo_number: String(19101500 + n), site_name: `Site ${n}`, start_date: start, end_date: start, archived_at: null, ...extra }) as unknown as EnrichedWorkOrder;
+    const next = Array.from({ length: 30 }, (_, i) => job(i + 1, '2099-01-01'));
+    render(<HoursView workOrders={[...next, job(40, '2026-10-21'), job(41, '2026-10-16', { wo_status: 'In Progress' })]} />);
+    const listed = screen.getAllByRole('button', { name: /^WO \d+/ }).map((b) => b.textContent);
+    expect(listed).toEqual(['WO 19101541 · Site 41', 'WO 19101540 · Site 40']);
+  });
+
+  it("puts the day's odometer and approved receipts on the card, not the site photos or a declined receipt", async () => {
+    tables.job_odometer = [{ wo_id: 'wo', contractor_name: 'Frederick Jeffers', at: at('23', '09:16'), moment: 'start', reading: 41200, ai_reading: null, photo_path: 'odo/start.jpg' }];
+    tables.job_expenses = [
+      { contractor_name: 'Frederick Jeffers', category: 'fuel', vendor: null, amount: 76.75, expense_date: '2026-10-23', status: 'approved', receipt_path: 'r/fuel.jpg' },
+      { contractor_name: 'Frederick Jeffers', category: 'fuel', vendor: 'Circle K', amount: 76.75, expense_date: '2026-10-23', status: 'declined', receipt_path: 'r/again.jpg' },
+    ];
+    tables.wo_photos = [{ url: 'https://example.test/site.jpg', taken_at: at('23', '13:00'), contractor_name: 'Frederick Jeffers' }];
+    const user = userEvent.setup();
+    render(<HoursView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    expect(await screen.findByAltText('Receipt · Fuel: $76.75')).toBeTruthy();
+    expect([...document.querySelectorAll('img')].map((i) => i.getAttribute('src'))).toEqual(['https://signed.test/odo/start.jpg', 'https://signed.test/r/fuel.jpg']);
+    expect(screen.queryByRole('button', { name: /\+ photo/i })).toBeNull();
+  });
+
   it('shows each day as a card from the app, and saves the hours, miles and meals typed', async () => {
     const user = userEvent.setup();
     render(<HoursView workOrders={[wo]} />);

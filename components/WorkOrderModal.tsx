@@ -206,6 +206,10 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // (the client's checkout form). Migration 133; Fred, 2026-10-18.
   const [checkinLink, setCheckinLink] = useState(() => item?.checkin_link ?? (!item ? prefill?.checkin_link : null) ?? '');
   const [checkoutLink, setCheckoutLink] = useState(() => item?.checkout_link ?? (!item ? prefill?.checkout_link : null) ?? '');
+  // Which link is the survey and which takes the documents (Fred, 2026-10-25: "a deliverable
+  // like like how we have a check and out like and one for survey and one doe documents").
+  const [surveyLink, setSurveyLink] = useState(() => item?.survey_link ?? (!item ? prefill?.survey_link : null) ?? '');
+  const [deliverableLink, setDeliverableLink] = useState(() => item?.deliverable_link ?? (!item ? prefill?.deliverable_link : null) ?? '');
   const { templates: jobTemplates } = useJobTemplates();
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
@@ -594,6 +598,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     if (techs?.length) setContractorNames((now) => [...new Set([...now, ...techs])]);
     if (links?.length) setLinksText((now) => [...new Set([...parseClientLinks(now), ...links])].join('\n'));
     if (form_) setCheckoutLink(form_);
+    // The tracker's Google Drive folder is where the documents go (a folder, not a file in Drive).
+    const folder = links?.find((l) => /^https:\/\/drive\.google\.com\/drive\/(u\/\d+\/)?folders\//i.test(l));
+    if (folder) setDeliverableLink((now) => now || folder);
     setTrackerRow('');
     toastSuccess(`Filled in ${r.external_wo_id}: site ${r.client_reference ?? '?'}${techs?.length ? `, ${techs.join(' and ')}` : ''}. Check it, then Save.`);
   };
@@ -821,6 +828,11 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         checkin_link: parseClientLinks(linksText).includes(checkinLink) ? checkinLink : null,
         checkout_link: parseClientLinks(linksText).includes(checkoutLink) ? checkoutLink : null,
       } : {}),
+      // The same for the survey and documents links (migration 142).
+      ...(surveyLink || deliverableLink || item?.survey_link || item?.deliverable_link ? {
+        survey_link: parseClientLinks(linksText).includes(surveyLink) ? surveyLink : null,
+        deliverable_link: parseClientLinks(linksText).includes(deliverableLink) ? deliverableLink : null,
+      } : {}),
     };
     onSave({ ...item, ...payload });
   };
@@ -973,6 +985,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                   {([
                     ['When the tech checks in on site, open (e.g. the Teams meeting)', checkinLink, setCheckinLink],
                     ['When the tech checks out for the day, open (e.g. the checkout form)', checkoutLink, setCheckoutLink],
+                    ['The site survey, where the tech fills it in', surveyLink, setSurveyLink],
+                    ['The documents, where the tech uploads the photos and deliverables (e.g. the Google Drive folder)', deliverableLink, setDeliverableLink],
                   ] as const).map(([label, value, setValue]) => (
                     <label key={label} style={{ display: 'grid', gap: 4, fontSize: 13, fontWeight: 600 }}>
                       {label}

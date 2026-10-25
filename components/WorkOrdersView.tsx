@@ -90,9 +90,15 @@ export default function WorkOrdersView({
   // card. A link to one work order (?wo=…) opens it straight away.
   const [wfOpen, setWfOpenState] = useState<string | null>(() =>
     startOpenId ?? (initialSearch ? workOrders.find((w) => w.wo_number === initialSearch)?.id ?? null : null));
+  // Only the job opened from another screen (the Dashboard, the Schedule…)
+  // goes back there when it closes, and only the once; any job worked from the
+  // board closes back to the board.
+  const backFrom = useRef(startOpenId ?? null);
   const setWfOpen = (id: string | null) => {
+    const closing = wfOpen;
     setWfOpenState(id);
-    if (id === null && startOpenId && onJobClosed) onJobClosed();
+    if (id !== null) { if (id !== backFrom.current) backFrom.current = null; return; }
+    if (backFrom.current && closing === backFrom.current && onJobClosed) { backFrom.current = null; onJobClosed(); }
   };
   const lists = listsNow(); // stage and priority names (Settings -> Lists & stages)
   // Message and photo counts for the cards, counted in the database (migration 113).

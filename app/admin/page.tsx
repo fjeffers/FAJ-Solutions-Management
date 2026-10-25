@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client';
 import { enrichWorkOrders, woPayoutTotal, fmtMoney, techPayToShow } from '@/lib/utils';
 import { scheduleLine as woScheduleLine } from '@/lib/email-templates';
 import { geocodeAddress } from '@/lib/geocode';
-import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
 import { CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, ChevronRight, Plus } from 'lucide-react';
@@ -427,7 +426,7 @@ export default function HomePage() {
 
   // Before migrations 128/130 the database has no capture / start_asks / client_links columns.
   const notYet128 = (e: { code?: string; message: string }) =>
-    e.code === 'PGRST204' && /capture|start_asks|client_links|checkin_link|checkout_link/.test(e.message)
+    e.code === 'PGRST204' && /capture|start_asks|client_links|checkin_link|checkout_link|survey_link|deliverable_link/.test(e.message)
       ? "what the tech records, the check-in items and the client links aren't switched on yet. Ask to switch them on."
       : e.message;
 
@@ -528,6 +527,9 @@ export default function HomePage() {
       // The links opened on site and at check-out (migration 133); only when the form sends them.
       ...(w.checkin_link !== undefined ? { checkin_link: w.checkin_link ?? null } : {}),
       ...(w.checkout_link !== undefined ? { checkout_link: w.checkout_link ?? null } : {}),
+      // The survey and documents links (migration 142); only when the form sends them.
+      ...(w.survey_link !== undefined ? { survey_link: w.survey_link ?? null } : {}),
+      ...(w.deliverable_link !== undefined ? { deliverable_link: w.deliverable_link ?? null } : {}),
       // Multi-contractor (migration-014)
       contractor_names: w.contractor_names ?? null,
       // Lead / Assistant tech (migration-017)
@@ -1425,12 +1427,14 @@ Go ahead?`)) return;
   // ── Nav / Auth ─────────────────────────────────────────────────────────────
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    // This device only. Supabase's default signs the login out everywhere, which
+    // also logged Fred's phone out of the tech app ("Refresh Token Not Found").
+    await supabase.auth.signOut({ scope: 'local' });
     router.push('/admin/login');
     router.refresh();
   };
-
-  useInactivityLogout(handleLogout);
+  // No sign-out after time away (Fred, 2026-10-25: "no cutoff time do it for
+  // both admin and tech"): the office stays signed in until Log out.
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1460,6 +1464,13 @@ Go ahead?`)) return;
     setWoStart((s) => ({ n: s.n + 1, openId: id, returnTo }));
     setView('workorders'); window.scrollTo({ top: 0 });
   };
+  // Leaving the board forgets the job it was opened on (Fred, 2026-10-25: "when
+  // i go into dispatched and try to work ther it keep pushung me vack to
+  // dashboard"). Back on the board by any route, a Dashboard tile included, it
+  // is the plain board, and closing a job stays on it.
+  useEffect(() => {
+    if (view !== 'workorders') setWoStart((s) => (s.openId || s.returnTo ? { n: s.n } : s));
+  }, [view]);
   const openNewOrder = () => { setModal({ type: 'wo', item: null }); setMobileNavOpen(false); };
   const scheduleRows: BoardRow[] = useMemo(() => enrichedWOs.map((w) => {
     const job = wfJobFromOwner(w);

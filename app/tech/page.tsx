@@ -12,6 +12,7 @@
 // really made, as soon as there is signal.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchTechProfile, fetchTechUnread, fetchTechDmUnread,
@@ -60,7 +61,7 @@ import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
-import { checkoutFormUrl, clock24, lastOffOrNow, onSiteSince, parseSiteLinks, siteIdOf, type SiteLinks } from '@/lib/site-links';
+import { checkoutFormUrl, clock24, lastOffOrNow, linkPurpose, onSiteSince, parseSiteLinks, siteIdOf, type SiteLinks } from '@/lib/site-links';
 import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
 import DirectionsButton from '@/components/wf/Directions';
@@ -274,14 +275,19 @@ export default function TechPortalPage() {
     let cancelled = false;
     (async () => {
       let u: string | null = null;
+      // Weak signal looks the same as none: the sign-in is still on the phone
+      // but couldn't be refreshed. That's no reason to send a tech back to the
+      // sign-in (Fred, 2026-10-25: "i want tech to stay login no cutoff time").
+      let unreachable = false;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
         u = session?.user.id ?? null;
-      } catch { /* with no signal an expired sign-in cannot be refreshed */ }
+        unreachable = !!error && isAuthRetryableFetchError(error);
+      } catch { unreachable = true; /* with no signal an expired sign-in cannot be refreshed */ }
       // No signal and no usable sign-in: open on the copy saved for the last
       // person who used the portal on this phone. Taps still queue, and go out
       // once the sign-in refreshes with signal.
-      if (!u && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      if (!u && (unreachable || (typeof navigator !== 'undefined' && navigator.onLine === false))) {
         const last = lastUid(kv);
         if (last && loadCopy(kv, last, 'profile')) u = last;
       }
@@ -338,7 +344,8 @@ export default function TechPortalPage() {
     const waiting = boxRef.current?.pending.length ?? 0;
     if (waiting > 0 && !confirm(`${waiting} tap${waiting === 1 ? " hasn't" : "s haven't"} been sent yet. They stay on this phone and go out the next time you sign in. Log out anyway?`)) return;
     if (uid) { clearCopies(kv, uid, COPIES); clearNotes(kv, uid); }
-    await supabase.auth.signOut();
+    // This phone only: logging out here never signs the tech out on another device.
+    await supabase.auth.signOut({ scope: 'local' });
     router.replace('/tech/login');
   };
 
@@ -2505,20 +2512,19 @@ function ClientLinksCard({ number, siteLinks, checkoutHref }: {
     <section className="fs-card fs-form">
       <h3>Client links</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {links.map((l) => (
-          <a key={l} className="wf-btn wf-btn-outline" href={l === siteLinks.checkout ? checkoutHref() ?? l : l} target="_blank" rel="noopener noreferrer"
-            style={{ justifyContent: 'space-between', minWidth: 0 }}>
-            <span style={{ minWidth: 0, textAlign: 'left' }}>
-              <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
-              {(l === siteLinks.checkin || l === siteLinks.checkout) && (
-                <span className="fs-muted" style={{ display: 'block', fontSize: 12, fontWeight: 400 }}>
-                  {l === siteLinks.checkin ? 'Join when you check in on site' : 'Fill in when you check out each day'}
-                </span>
-              )}
-            </span>
-            <FsIcon name="arrow" size={16} />
-          </a>
-        ))}
+        {links.map((l) => {
+          const purpose = linkPurpose(l, siteLinks);
+          return (
+            <a key={l} className="wf-btn wf-btn-outline" href={l === siteLinks.checkout ? checkoutHref() ?? l : l} target="_blank" rel="noopener noreferrer"
+              style={{ justifyContent: 'space-between', minWidth: 0 }}>
+              <span style={{ minWidth: 0, textAlign: 'left' }}>
+                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
+                {purpose && <span className="fs-muted" style={{ display: 'block', fontSize: 12, fontWeight: 400 }}>{purpose}</span>}
+              </span>
+              <FsIcon name="arrow" size={16} />
+            </a>
+          );
+        })}
       </div>
     </section>
   );

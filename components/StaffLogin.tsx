@@ -47,7 +47,7 @@ export default function StaffLogin({ title, tagline, icon, home }: {
     const section = claim.ok ? sectionForRole(claim.role) : null;
     if (section) { router.push(section); router.refresh(); return; }
     setError(staffReasonText(claim.reason));
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     setLoading(false);
   };
 

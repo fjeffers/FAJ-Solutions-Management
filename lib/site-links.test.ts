@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkoutFormUrl, clock12, clock24, dateMDY, lastOffOrNow, onSiteSince, parseSiteLinks, siteIdOf } from './site-links';
+import { checkoutFormUrl, clock12, clock24, dateMDY, lastOffOrNow, linkPurpose, onSiteSince, parseSiteLinks, siteIdOf } from './site-links';
 import type { DayEvent } from './project-day';
 
 const TZ = 'America/New_York';
@@ -13,6 +13,17 @@ describe('the client links for a day on site (Fred, 2026-10-18)', () => {
     });
     expect(parseSiteLinks({ checkin: 'javascript:alert(1)', checkout: 42 })).toEqual({});
     expect(parseSiteLinks(null)).toEqual({});
+  });
+
+  it('reads the survey and documents links, and says what each link is for (Fred, 2026-10-25)', () => {
+    const SURVEY = 'https://survey.ldsqa.fyi/';
+    const DRIVE = 'https://drive.google.com/drive/folders/abc';
+    const links = parseSiteLinks({ checkout: FORM, survey: SURVEY, deliverable: DRIVE });
+    expect(links).toEqual({ checkout: FORM, survey: SURVEY, deliverable: DRIVE });
+    expect(linkPurpose(SURVEY, links)).toBe('Fill in the site survey');
+    expect(linkPurpose(DRIVE, links)).toBe('Upload the photos and documents here');
+    expect(linkPurpose(FORM, links)).toBe('Fill in when you check out each day');
+    expect(linkPurpose('https://lds-tools-hub.ldsqa.fyi/', links)).toBeNull();
   });
 
   it("reads the client's site and ticket numbers", () => {

@@ -8,6 +8,8 @@ import { dayOf, type DayEvent } from './project-day';
 
 export type SiteLinks = {
   checkin?: string; checkout?: string;
+  /** Where the site survey is filled in, and where the documents are uploaded (migration 142). */
+  survey?: string; deliverable?: string;
   /** The client's numbers for the job (migration 135): the site (client_reference) and their ticket (external_wo_id). */
   siteId?: string; ticket?: string;
 };
@@ -23,12 +25,25 @@ export function parseSiteLinks(raw: unknown): SiteLinks {
   const checkout = web(r.checkout);
   if (checkin) out.checkin = checkin;
   if (checkout) out.checkout = checkout;
+  const survey = web(r.survey);
+  const deliverable = web(r.deliverable);
+  if (survey) out.survey = survey;
+  if (deliverable) out.deliverable = deliverable;
   const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 80) : undefined);
   const siteId = text(r.site_id);
   const ticket = text(r.ticket);
   if (siteId) out.siteId = siteId;
   if (ticket) out.ticket = ticket;
   return out;
+}
+
+/** What a client link is for, in the words under the tech's button; null for any other link. */
+export function linkPurpose(link: string, s: Pick<SiteLinks, 'checkin' | 'checkout' | 'survey' | 'deliverable'>): string | null {
+  if (link === s.checkin) return 'Join when you check in on site';
+  if (link === s.survey) return 'Fill in the site survey';
+  if (link === s.deliverable) return 'Upload the photos and documents here';
+  if (link === s.checkout) return 'Fill in when you check out each day';
+  return null;
 }
 
 /**

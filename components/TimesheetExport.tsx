@@ -92,7 +92,7 @@ export default function TimesheetExport({ wo, rows }: { wo: WorkOrder; rows: She
       <label style={field}><span className="wf-label">To</span>
         <input type="date" className="wf-input" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Timesheet to" /></label>
       <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, paddingBottom: 8 }}>
-        <input type="checkbox" checked={pictures} onChange={(e) => setPictures(e.target.checked)} /> With the pictures
+        <input type="checkbox" checked={pictures} onChange={(e) => setPictures(e.target.checked)} /> With the receipts and odometer photos
       </label>
       <button type="button" className="wf-btn wf-btn-navy wf-btn-sm" disabled={!!busy} onClick={() => void downloadPdf()}><FileDown size={15} /> PDF</button>
       <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={!!busy} onClick={() => void excel()}><FileSpreadsheet size={15} /> Excel</button>

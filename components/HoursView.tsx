@@ -23,6 +23,7 @@ import type { OdoRow } from '@/lib/weekly-bill';
 import { clock, dayCalc, nextEdits, parseEdits, rowsFor, type SavedDay, type SheetField, type SheetRow } from '@/lib/field-sheet';
 import { parsePunches, stillOnSite, zonedIso, type Punch } from '@/lib/clock-fix';
 import { toastError, toastSuccess } from '@/lib/toast';
+import { expenseCategoryLabel } from '@/lib/expenses';
 import type { EnrichedWorkOrder, WorkOrder } from '@/lib/types';
 import { groupLabel, groupOf, hoursLookNow, HOURS_CARDS, HOURS_CHANGED, HOURS_GROUPS, HOURS_SAVE_ALL, type HoursLook } from '@/lib/hours-look';
 import HoursBoard from '@/components/HoursBoard';
@@ -35,6 +36,7 @@ import TimesheetExport from '@/components/TimesheetExport';
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const jobName = (w: WorkOrder) => w.site_name || w.title || `WO ${w.wo_number}`;
+type DayReceipt = { contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; receipt_path: string };
 
 /** The boxes on a card, in the order Fred reads a day. */
 const BOXES: { f: Exclude<SheetField, 'note' | 'ask'>; label: string; time?: boolean }[] = [
@@ -65,9 +67,17 @@ export default function HoursView({ workOrders, onLook }: { workOrders: Enriched
   const [q, setQ] = useState('');
   const [woId, setWoId] = useState<string | null>(null);
   const wo = woId ? workOrders.find((w) => w.id === woId) ?? null : null;
-  // The jobs worked lately first: open ones, newest start date first.
-  const picks = useMemo(() => workOrders.filter((w) => !w.archived_at)
-    .sort((a, b) => (b.start_date ?? '').localeCompare(a.start_date ?? '')).slice(0, 12), [workOrders]);
+  // The jobs worked lately: a job still in progress first, then the newest start
+  // date up to today. Jobs that haven't started don't count (Fred, 2026-10-25: "my
+  // time that waas enter for fred is not there": next week's 34 LDS jobs had pushed
+  // every job he worked off the list).
+  const picks = useMemo(() => {
+    const today = dayOf(new Date().toISOString(), TZ);
+    const going = (w: WorkOrder) => w.wo_status === 'In Progress';
+    return workOrders.filter((w) => !w.archived_at && (going(w) || (w.start_date ?? '') <= today))
+      .sort((a, b) => Number(going(b)) - Number(going(a)) || (b.start_date ?? '').localeCompare(a.start_date ?? ''))
+      .slice(0, 20);
+  }, [workOrders]);
   const pull = (e?: React.FormEvent) => {
     e?.preventDefault();
     const w = findJob(workOrders, q);
@@ -119,9 +129,11 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
   const [readings, setReadings] = useState<OdoRow[]>([]);
   const [saved, setSaved] = useState<SavedDay[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
-  // The day's pictures: the site photos, and the odometer photos (private, so signed links).
-  const [sitePhotos, setSitePhotos] = useState<{ url: string; taken_at: string; contractor_name: string | null }[]>([]);
-  const [odoUrls, setOdoUrls] = useState<Record<string, string>>({});
+  // The day's pictures are the odometer photos and the approved receipts, nothing
+  // else (Fred, 2026-10-25: "time log should only have the receipt and odometer
+  // reading"). Both are private files, so signed links.
+  const [receipts, setReceipts] = useState<DayReceipt[]>([]);
+  const [fileUrls, setFileUrls] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
   const [look, setLook] = useState<HoursLook>(hoursLookNow);
   const [tech, setTech] = useState('');
@@ -137,21 +149,23 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
   const [savingAll, setSavingAll] = useState(false);
 
   const load = useCallback(async () => {
-    const [ev, od, days, pu, ph] = await Promise.all([
+    const [ev, od, days, pu, ex] = await Promise.all([
       loadEvents([wo.id]),
       db.from('job_odometer').select('wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', wo.id).order('at'),
       db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', wo.id),
       db.from('job_punches').select('id, wo_id, wo_number, contractor_name, kind, at').eq('wo_id', wo.id).order('at'),
-      db.from('wo_photos').select('url, taken_at, contractor_name').eq('wo_id', wo.id).order('taken_at'),
+      db.from('job_expenses').select('contractor_name, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', wo.id),
     ]);
     setEvents(ev);
     const odo = ((od.data as OdoRow[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
     setReadings(odo);
-    setSitePhotos((ph.data as { url: string; taken_at: string; contractor_name: string | null }[] | null) ?? []);
-    const paths = odo.map((o) => o.photo_path).filter((x): x is string => !!x);
+    // A declined receipt (a duplicate, say) stays on the job but not on the day.
+    const rec = ((ex.data as (DayReceipt & { status: string })[] | null) ?? []).filter((e) => e.status === 'approved' && e.receipt_path);
+    setReceipts(rec);
+    const paths = [...odo.map((o) => o.photo_path), ...rec.map((e) => e.receipt_path)].filter((x): x is string => !!x);
     if (paths.length) {
       const { data: signed } = await db.storage.from('job-receipts').createSignedUrls(paths, 60 * 60);
-      setOdoUrls(Object.fromEntries((signed ?? []).filter((x) => x.path && x.signedUrl).map((x) => [x.path!, x.signedUrl as string])));
+      setFileUrls(Object.fromEntries((signed ?? []).filter((x) => x.path && x.signedUrl).map((x) => [x.path!, x.signedUrl as string])));
     }
     if (days.error) toastError("Hours can't be saved yet: the database needs the Field Sheet update (migration 136).");
     setSaved(toSaved(days.data));
@@ -198,12 +212,12 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
     return true;
   };
 
-  /** A tech's pictures on a day: the odometer photos first, then the site photos. */
+  /** A tech's pictures on a day: the odometer photos first, then the receipts. */
   const picsFor = (day: string, tech: string): DayPic[] => [
-    ...readings.filter((o) => o.contractor_name === tech && o.photo_path && odoUrls[o.photo_path] && dayOf(o.at, TZ) === day)
-      .map((o) => ({ src: odoUrls[o.photo_path!], caption: `Odometer ${o.moment === 'end' ? 'end' : 'start'}: ${o.reading.toLocaleString('en-US')}` })),
-    ...sitePhotos.filter((p) => (p.contractor_name ?? '') === tech && dayOf(p.taken_at, TZ) === day)
-      .map((p) => ({ src: p.url, caption: `Site photo · ${new Date(p.taken_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ })}` })),
+    ...readings.filter((o) => o.contractor_name === tech && o.photo_path && fileUrls[o.photo_path] && dayOf(o.at, TZ) === day)
+      .map((o) => ({ src: fileUrls[o.photo_path!], caption: `Odometer ${o.moment === 'end' ? 'end' : 'start'}: ${o.reading.toLocaleString('en-US')}` })),
+    ...receipts.filter((e) => (e.contractor_name ?? '') === tech && e.expense_date === day && fileUrls[e.receipt_path])
+      .map((e) => ({ src: fileUrls[e.receipt_path], caption: `Receipt · ${expenseCategoryLabel(e.category)}${e.vendor ? `, ${e.vendor}` : ''}: $${Number(e.amount).toFixed(2)}` })),
   ];
   const pictures = (r: SheetRow) => (
     <DayPictures pics={picsFor(r.day, r.tech)} woId={wo.id} woNumber={wo.wo_number} day={r.day} tech={r.tech}

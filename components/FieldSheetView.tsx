@@ -87,11 +87,11 @@ const IMPORT_HOW = 'In QuickBooks: Settings → Import data → Invoices. Import
  * dates as billed under the file's number, so they can't be billed again here.
  * Never on download, only on Fred's word. Returns the reason it couldn't.
  */
-async function markImported(wo: EnrichedWorkOrder, bill: QboSheetBill): Promise<string | null> {
+async function markImported(wo: EnrichedWorkOrder, bill: QboSheetBill, date: string): Promise<string | null> {
   try {
     const res = await fetch('/api/quickbooks/field-sheet-invoice', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wo_id: wo.id, from: bill.from, to: bill.to, imported: true, total: sheetBillTotal(bill) }),
+      body: JSON.stringify({ wo_id: wo.id, from: bill.from, to: bill.to, imported: true, total: sheetBillTotal(bill), date }),
     });
     const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; fix?: string };
     return res.ok && j.ok ? null : [j.error ?? "Couldn't mark it billed.", j.fix].filter(Boolean).join(' ');
@@ -122,7 +122,7 @@ function useMe(enabled: boolean) {
 const importNetviewLink = (wo: EnrichedWorkOrder, bill: QboSheetBill, me: { name: string; email: string }, date: string) => netviewFormUrl(netviewAnswers({
   job: wo,
   invoice: { number: sheetInvoiceNumber(bill.woNumber, bill.from), total: sheetBillTotal(bill), date, from: bill.from, to: bill.to },
-  lines: bill.lines, vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
+  vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
 }));
 
 /** A NetView job, counting the client the sheet bills (the bill's customer). */
@@ -144,7 +144,7 @@ function MadeBills({ made, date, me, netview, onMarked }: {
     if (!window.confirm(`Did QuickBooks import invoice ${number}? ${dates} on ${jobName(m.wo)} will show as billed, and can't be billed again.`)) return;
     setBusy(number);
     try {
-      const err = await markImported(m.wo, m.bill);
+      const err = await markImported(m.wo, m.bill, date);
       if (err) { toastError(err); return; }
       setMarked((x) => [...x, number]);
       toastSuccess(`${number} is marked billed.`);
@@ -393,7 +393,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
   }, [db]);
   const loadInvoices = useCallback(async () => {
     const { data } = await db.from('field_sheet_invoices')
-      .select('id, from_day, to_day, customer_name, qbo_invoice_id, qbo_invoice_number, total, sent_to, sent_at, created_at').eq('wo_id', wo.id).order('from_day');
+      .select('id, from_day, to_day, customer_name, qbo_invoice_id, qbo_invoice_number, total, sent_to, sent_at, created_at, invoice_date').eq('wo_id', wo.id).order('from_day');
     setInvoices((data as SheetInvoice[] | null) ?? []);
   }, [db, wo.id]);
   const loadExpenses = useCallback(async () => {
@@ -732,6 +732,8 @@ type Client = { id: string; name: string; billing_email: string | null; default_
 type SheetInvoice = {
   id: string; from_day: string; to_day: string; customer_name: string; qbo_invoice_id: string | null; qbo_invoice_number: string | null; total: number | null;
   sent_to: string | null; sent_at: string | null; created_at: string;
+  /** An imported file's invoice date (migration 143); empty: the day the row was made. */
+  invoice_date?: string | null;
 };
 
 /** The Sunday a day's week starts on. */
@@ -895,12 +897,12 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
   const netview = isNetviewJob(wo, s.client);
   const me = useMe(netview);
   const netviewLink = (i: SheetInvoice) => {
-    // The invoice's own dates, so the breakdown is this invoice's (netviewAnswers checks it adds up).
+    // The invoice's own total, else what the sheet bills for its dates; its own date (an imported file's), else the day it was made.
     const t = sheetTotals(allRows.filter((r) => inDates(r.day, i.from_day, i.to_day)), allReceipts.filter((e) => !!e.date && inDates(e.date, i.from_day, i.to_day)), s);
     return netviewFormUrl(netviewAnswers({
       job: wo,
-      invoice: { number: i.qbo_invoice_number ?? '', total: Number(i.total ?? t.bill), date: dayOf(i.created_at, TZ), from: i.from_day, to: i.to_day },
-      lines: t.lines, vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
+      invoice: { number: i.qbo_invoice_number ?? '', total: Number(i.total ?? t.bill), date: i.invoice_date ?? dayOf(i.created_at, TZ), from: i.from_day, to: i.to_day },
+      vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
     }));
   };
   const [photos, setPhotos] = useState(true);

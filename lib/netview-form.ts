@@ -6,7 +6,8 @@
 // itself still goes to Payroll@TeamNetview.com. Entries after Monday wait a
 // week, so this sits right next to the invoice Fred just created on the Field
 // Sheet. Every answer the work order already knows is put in the link; Fred
-// checks it and presses Submit himself.
+// checks it and presses Submit himself. The money is the invoice's full total
+// only: the breakdown is on the QuickBooks invoice.
 //
 // Never filled in: the direct deposit answer, the "invoice was emailed"
 // confirmation (only Fred knows), and the form's bank and tax ID page.
@@ -59,8 +60,6 @@ export type NetviewInvoice = {
   to: string;
 };
 
-export type NetviewLine = { description: string; qty: number; rate: number; amount: number; kind?: string };
-
 /** A NetView job: NetView is the buyer, the platform, or a contact's company. */
 export function isNetviewJob(w: NetviewJob, client?: string | null): boolean {
   const nv = (s: string | null | undefined) => /net\s*view/i.test(s ?? '');
@@ -77,59 +76,24 @@ export function netviewCoordinator(contacts: Contact[] | null | undefined): stri
   return (pick?.name ?? '').trim();
 }
 
-const KIND_WORD: Record<string, string> = { labor: 'Labor', travel: 'Travel', mileage: 'Mileage', meals: 'Meals', hotel: 'Hotel' };
-const UNIT: Record<string, string> = { labor: 'h', travel: 'h', mileage: 'mi' };
-
-/**
- * The Field Sheet bills each tech's day on its own line; the form wants a few.
- * Labor, travel and mileage add up per rate; meals and hotel per kind; the
- * rest (a fixed price, items, receipts) stay as they are.
- */
-export function groupLines(lines: NetviewLine[]): NetviewLine[] {
-  const out: NetviewLine[] = [];
-  const at = new Map<string, NetviewLine>();
-  for (const l of lines) {
-    const k = l.kind ?? '';
-    const key = ['labor', 'travel', 'mileage'].includes(k) ? `${k}|${l.rate}` : ['meals', 'hotel'].includes(k) ? k : null;
-    const g = key ? at.get(key) : undefined;
-    if (g) { g.qty = Math.round((g.qty + l.qty) * 100) / 100; g.amount = Math.round((g.amount + l.amount) * 100) / 100; continue; }
-    const copy = { ...l, description: key ? KIND_WORD[k] : l.description };
-    if (key) at.set(key, copy);
-    out.push(copy);
-  }
-  // Meals and hotel added up are one amount, not a count.
-  return out.map((l) => (l.kind === 'meals' || l.kind === 'hotel') && at.get(l.kind) === l && lines.filter((x) => x.kind === l.kind).length > 1
-    ? { ...l, qty: 1, rate: l.amount } : l);
-}
-
-const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const num = (n: number) => String(Math.round(n * 100) / 100);
 const mdy = (d: string) => { const [y, m, day] = d.split('-'); return `${m}/${day}/${y}`; };
 
 /** The answers, by question. Empty answers are left out of the link. */
 export function netviewAnswers(input: {
-  job: NetviewJob; invoice: NetviewInvoice; lines: NetviewLine[]; vendor: string; enteredBy: string; email: string;
+  job: NetviewJob; invoice: NetviewInvoice; vendor: string; enteredBy: string; email: string;
 }): Record<keyof typeof Q, string> {
   const { job: w, invoice: inv } = input;
-  // The breakdown only when it is this invoice's: its lines add up to the invoice total
-  // (the sheet may have changed since). Otherwise just the total.
-  const sum = Math.round(input.lines.reduce((t, l) => t + l.amount, 0) * 100);
-  const lines = sum === Math.round(inv.total * 100) ? groupLines(input.lines) : [];
-  // Rate and quantity: the labor, when it is all at one rate. Everything else goes in Other.
-  const labor = lines.filter((l) => l.kind === 'labor');
-  const one = labor.length === 1 ? labor[0] : null;
-  const rest = one ? lines.filter((l) => l !== one) : lines;
   const days = inv.from === inv.to ? mdy(inv.from) : `${mdy(inv.from)} – ${mdy(inv.to)}`;
   const place = [w.site_name, [w.site_city, w.site_state].filter(Boolean).join(', ')].filter(Boolean).join(', ');
   return {
     invoiceDate: inv.date,
     serviceDate: inv.to,
     vendor: input.vendor,
-    rate: one ? `${money(one.rate)}/hr` : '',
-    quantity: one ? `${num(one.qty)} hours` : '',
-    other: rest.map((l) => l.qty === 1 && l.kind !== 'labor' && l.kind !== 'travel' && l.kind !== 'mileage'
-      ? `${l.description}: ${money(l.amount)}`
-      : `${l.description}: ${num(l.qty)}${UNIT[l.kind ?? ''] ? ` ${UNIT[l.kind ?? '']}` : ''} × ${money(l.rate)} = ${money(l.amount)}`).join('\n'),
+    // Only the full total (Fred, 2026-10-25: "on the [NetView] just the full total quick books will do the rest"):
+    // the breakdown is on the QuickBooks invoice that goes to Payroll.
+    rate: '',
+    quantity: '',
+    other: '',
     total: inv.total.toFixed(2),
     customer: (w.customer_name ?? '').trim(),
     invoiceNumber: inv.number,

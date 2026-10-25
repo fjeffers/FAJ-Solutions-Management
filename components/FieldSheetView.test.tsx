@@ -252,7 +252,9 @@ describe('Field Sheet', () => {
     const form = await screen.findByRole('link', { name: /fill netview form/i });
     expect(netviewAnswer(form.getAttribute('href')!, 1582831326)).toBe('WO-19101402-1021');
     expect(netviewAnswer(form.getAttribute('href')!, 1510356417)).toBe('1009.64');
-    expect(netviewAnswer(form.getAttribute('href')!, 1719028500)).toBe('$100.00/hr');
+    // Only the full total: QuickBooks has the breakdown.
+    expect(netviewAnswer(form.getAttribute('href')!, 1719028500)).toBeNull();
+    expect(netviewAnswer(form.getAttribute('href')!, 2058828780)).toBeNull();
   });
 
   it('makes one QuickBooks import file for every site still to bill that week, and marks a bill billed only when Fred says it was imported', async () => {
@@ -278,7 +280,7 @@ describe('Field Sheet', () => {
     expect(netviewAnswer(form, 270691041)).toBe('2026-10-25');
     // Downloading marks nothing; Imported does, for the bill's own dates and total.
     await user.click(within(made).getByRole('button', { name: 'Imported' }));
-    expect(posted.at(-1)).toEqual({ wo_id: 'wo', from: '2026-10-21', to: '2026-10-21', imported: true, total: 1009.64 });
+    expect(posted.at(-1)).toEqual({ wo_id: 'wo', from: '2026-10-21', to: '2026-10-21', imported: true, total: 1009.64, date: '2026-10-25' });
     expect(await within(made).findByText('Billed')).toBeTruthy();
   });
 });

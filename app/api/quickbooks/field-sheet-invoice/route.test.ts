@@ -2,7 +2,8 @@
 // import file (Greptile on PR #19): the bill comes back without asking
 // QuickBooks, so a lapsed connection never stops the file; and a bill Fred says
 // QuickBooks imported is recorded as billed, so the same dates can't be billed
-// again, but only while the sheet still bills what the file has.
+// again, but only while the sheet still bills what the file has, and under the
+// same hold as creating an invoice, with the file's own date.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const at = (hhmm: string) => new Date(`2026-10-21T${hhmm}:00-04:00`).toISOString();
@@ -18,22 +19,41 @@ const tables: Record<string, Record<string, unknown>[]> = {
   job_odometer: [], job_expenses: [], wo_photos: [], user_settings: [{ mileage_rate: 0.7 }],
   field_sheet_invoices: [],
 };
+// field_sheet_invoices is filtered and written like the real table, with its one-hold-per-site rule.
 function query(table: string) {
+  const where: [string, unknown][] = [];
+  const own = table === 'field_sheet_invoices';
+  const rows = () => (tables[table] ?? []).filter((r) => !own || where.every(([k, v]) => r[k] === v));
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'is', 'order']) chain[m] = () => chain;
-  chain.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: tables[table] ?? [], error: null }).then(ok);
-  chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
+  for (const m of ['select', 'order']) chain[m] = () => chain;
+  for (const m of ['eq', 'is']) chain[m] = (k: string, v: unknown) => { where.push([k, v]); return chain; };
+  chain.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: rows(), error: null }).then(ok);
+  chain.maybeSingle = async () => ({ data: rows()[0] ?? null, error: null });
+  chain.insert = (row: Record<string, unknown>) => ({
+    select: () => ({
+      single: async () => {
+        if (tables[table].some((r) => r.wo_id === row.wo_id && r.qbo_invoice_id == null)) return { data: null, error: { code: '23505' } };
+        const id = `row-${tables[table].length + 1}`;
+        tables[table].push({ id, qbo_invoice_id: null, created_at: new Date().toISOString(), ...row });
+        return { data: { id }, error: null };
+      },
+    }),
+  });
+  chain.update = (patch: Record<string, unknown>) => ({
+    eq: async (k: string, v: unknown) => { for (const r of tables[table]) if (r[k] === v) Object.assign(r, patch); return { error: null }; },
+  });
+  chain.delete = () => {
+    const d: Record<string, unknown> = {};
+    for (const m of ['eq', 'is']) d[m] = (k: string, v: unknown) => { where.push([k, v]); return d; };
+    d.then = (ok: (v: unknown) => unknown) => { tables[table] = tables[table].filter((r) => !where.every(([k, v]) => r[k] === v)); return Promise.resolve({ error: null }).then(ok); };
+    return d;
+  };
   return chain;
 }
-const inserted: Record<string, unknown>[] = [];
 vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'fred' } } }) }, from: query }),
 }));
-vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({
-    from: (t: string) => Object.assign(query(t), { insert: async (row: Record<string, unknown>) => { inserted.push(row); return { error: null }; } }),
-  }),
-}));
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ from: query }) }));
 // A saved connection whose refresh fails.
 const getValidQboSession = vi.fn(async () => { throw new Error('QuickBooks token request failed: invalid_grant'); });
 vi.mock('@/lib/quickbooks-session', () => ({ getValidQboSession: () => getValidQboSession() }));
@@ -43,7 +63,8 @@ const { POST } = await import('./route');
 const post = (body: Record<string, unknown>) =>
   POST(new Request('http://localhost/api/quickbooks/field-sheet-invoice', { method: 'POST', body: JSON.stringify({ wo_id: 'wo', ...body }) }));
 
-afterEach(() => { inserted.length = 0; getValidQboSession.mockClear(); tables.field_sheet_invoices = []; });
+afterEach(() => { getValidQboSession.mockClear(); tables.field_sheet_invoices = []; });
+const billed = () => tables.field_sheet_invoices;
 
 describe('POST /api/quickbooks/field-sheet-invoice, the import file', () => {
   it('gives the bill without asking QuickBooks, so a lapsed connection never stops the file', async () => {
@@ -53,28 +74,49 @@ describe('POST /api/quickbooks/field-sheet-invoice, the import file', () => {
     expect(getValidQboSession).not.toHaveBeenCalled();
   });
 
-  it('records a bill QuickBooks imported as billed, under the file’s number and the server’s total', async () => {
-    const res = await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206 });
+  it('records a bill QuickBooks imported as billed, under the file’s number, the server’s total and the file’s date', async () => {
+    const res = await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206, date: '2026-10-25' });
     expect(await res.json()).toEqual({ ok: true, imported: true, invoice_number: 'WO-19101402-1021', total: 206 });
-    expect(inserted).toEqual([{
+    expect(billed()).toEqual([expect.objectContaining({
       user_id: 'fred', wo_id: 'wo', from_day: '2026-10-21', to_day: '2026-10-21', customer_name: 'LDS',
-      qbo_invoice_id: 'import:WO-19101402-1021', qbo_invoice_number: 'WO-19101402-1021', total: 206,
-    }]);
+      qbo_invoice_id: 'import:WO-19101402-1021', qbo_invoice_number: 'WO-19101402-1021', total: 206, invoice_date: '2026-10-25',
+    })]);
     expect(getValidQboSession).not.toHaveBeenCalled();
+  });
+
+  it('marks nothing while an invoice for the site is being created in another tab', async () => {
+    const hold = { id: 'h1', wo_id: 'wo', from_day: '2026-10-21', to_day: '2026-10-21', customer_name: 'LDS', qbo_invoice_id: null, qbo_invoice_number: null, created_at: new Date().toISOString() };
+    tables.field_sheet_invoices = [hold];
+    const res = await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206, date: '2026-10-25' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/being created in QuickBooks right now/);
+    expect(billed()).toEqual([hold]);
+  });
+
+  it('marks nothing over an invoice that was cut off before QuickBooks answered, and clears an old one for other dates', async () => {
+    const old = (from: string, to: string) => ({ id: `h-${from}`, wo_id: 'wo', from_day: from, to_day: to, customer_name: 'LDS', qbo_invoice_id: null, qbo_invoice_number: null, created_at: '2026-10-24T12:00:00Z' });
+    tables.field_sheet_invoices = [old('2026-10-21', '2026-10-21')];
+    const res = await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206, date: '2026-10-25' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/cut off before QuickBooks answered/);
+    tables.field_sheet_invoices = [old('2026-10-11', '2026-10-17')];
+    expect(await (await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206, date: '2026-10-25' })).json()).toMatchObject({ ok: true });
+    expect(billed().map((r) => r.qbo_invoice_id)).toEqual(['import:WO-19101402-1021']);
   });
 
   it('marks nothing when the sheet bills something else now than the file has', async () => {
     const res = await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 180 });
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/changed since the file was made/);
-    expect(inserted).toEqual([]);
+    expect(billed()).toEqual([]);
   });
 
   it('marks nothing when the dates are already billed', async () => {
-    tables.field_sheet_invoices = [{ from_day: '2026-10-18', to_day: '2026-10-24', qbo_invoice_id: '311', qbo_invoice_number: '1042', created_at: '2026-10-24T20:00:00Z' }];
+    const done = { id: 'i1', wo_id: 'wo', from_day: '2026-10-18', to_day: '2026-10-24', qbo_invoice_id: '311', qbo_invoice_number: '1042', created_at: '2026-10-24T20:00:00Z' };
+    tables.field_sheet_invoices = [done];
     const res = await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206 });
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/already on QuickBooks invoice 1042/);
-    expect(inserted).toEqual([]);
+    expect(billed()).toEqual([done]);
   });
 });

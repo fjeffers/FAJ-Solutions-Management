@@ -270,6 +270,11 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     poc_email:       item?.poc_email       ?? '',
     support_contact: item?.support_contact ?? '',
     attachment_url:  item?.attachment_url  ?? null,
+    // The miles as saved: 0 is "no mileage charge" (Pay removed), so the job doesn't work them
+    // out again when it opens. Never read in before, so every saved job looked new to that
+    // check and Pay came back (Fred, 2026-10-25: "but the pay still is popping up").
+    billable_miles:  item?.billable_miles  ?? null,
+    billable_travel: item?.billable_travel ?? null,
     // AI-generated prefill values (see WorkOrdersView's "Generate with AI") only apply in
     // create mode, and only override the specific fields they set — everything else above
     // keeps its normal default.

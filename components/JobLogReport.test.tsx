@@ -22,6 +22,9 @@ const tables: Record<string, Record<string, unknown>[]> = {
   ],
   job_odometer: [{ id: 'o1', contractor_name: 'Paul Gibbs', at: at('19', '07:10'), moment: 'start', reading: 41200, photo_path: 'odo/start.jpg' }],
   work_orders: [{ job_log_left_out: [], job_log_receipt_photos: [] }],
+  job_day_events: [],
+  // Paul's odometer on 10/19, as the Hours screen has it.
+  field_sheet_days: [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218 }, added: false, hidden: false }],
 };
 const updates: Record<string, unknown>[] = [];
 // How long each save takes; the first one slow, to check a quick run of taps still lands in order.
@@ -30,7 +33,7 @@ let saveDelays: number[] = [];
 let saveFails: boolean[] = [];
 function query(table: string) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'order']) chain[m] = () => chain;
+  for (const m of ['select', 'eq', 'in', 'order']) chain[m] = () => chain;
   chain.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: tables[table] ?? [], error: null }).then(ok);
   chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
   chain.update = (row: Record<string, unknown>) => ({
@@ -121,5 +124,15 @@ describe('Job log pictures', () => {
     await waitFor(() => expect(updates).toHaveLength(2));
     expect(updates.at(-1)).toEqual({ job_log_left_out: ['photo:ph1', 'odo:o1'], job_log_receipt_photos: [] });
     expect(screen.getByRole('button', { name: /put back in the log: odometer start/i })).toBeTruthy();
+  });
+
+  it("shows each day's miles with the odometer, and the total (Fred: \"i don't see the mileages on the job logs\")", async () => {
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const table = (await screen.findByRole('heading', { name: 'Mileage' })).nextElementSibling as HTMLElement;
+    const cells = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+    expect(cells).toEqual([
+      ['Mon, Oct 19, 2026', 'Paul Gibbs', '41,200', '41,218', '18'],
+      ['Total', '18'],
+    ]);
   });
 });

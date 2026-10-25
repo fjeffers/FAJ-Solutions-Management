@@ -24,6 +24,9 @@ import { createPortal } from 'react-dom';
 import { Check, FileText, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
+import { dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
+import type { OdoRow as Reading } from '@/lib/weekly-bill';
+import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError } from '@/lib/toast';
 import { buildVisits, inRange, logTotals, hoursText, dayOf, type Punch } from '@/lib/job-log';
 import { mapLink } from '@/lib/geo';
@@ -46,7 +49,7 @@ type Pic = {
   pdf?: boolean;
 };
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
-type Include = { gaps: boolean; time: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean };
+type Include = { gaps: boolean; time: boolean; mileage: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean };
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -120,7 +123,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [inc, setInc] = useState<Include>({ gaps: true, time: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false });
+  // Each tech's days as the Hours screen and the Field Sheet have them, for the miles
+  // (Fred, 2026-10-25: "i don't see the mileages on the job logs along with the pictures").
+  const [days, setDays] = useState<SheetRow[]>([]);
+  const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false });
 
   useEffect(() => {
     const db = createClient();
@@ -129,11 +135,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       db.from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id).order('taken_at'),
       fetch(`/api/wo-time-logs?wo_id=${w.id}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
       db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, status, decline_reason, receipt_path').eq('wo_id', w.id).order('expense_date'),
-      db.from('job_odometer').select('id, contractor_name, at, moment, reading, photo_path').eq('wo_id', w.id).order('at'),
+      db.from('job_odometer').select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', w.id).order('at'),
       // What's left out and labeled now: the job on screen may be older than the last change,
       // and a save from the log just closed may still be going.
       afterSaves(w.id).then(() => db.from('work_orders').select('job_log_left_out, job_log_receipt_photos').eq('id', w.id).maybeSingle()),
-    ]).then(async ([p, ph, l, ex, od, wo]) => {
+      loadEvents([w.id]),
+      db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', w.id),
+    ]).then(async ([p, ph, l, ex, od, wo, ev, fs]) => {
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));
       setLogs(Array.isArray(l) ? (l as TimeLog[]) : []);
@@ -141,6 +149,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       if (kept) loadedChoices({ leftOut: new Set(kept.job_log_left_out ?? []), receiptPhotos: new Set(kept.job_log_receipt_photos ?? []) });
       // Approved and declined; one still waiting on Fred isn't either yet.
       const rec = ((ex.data as ReceiptRow[] | null) ?? []).filter((e) => (e.status === 'approved' || e.status === 'declined') && e.receipt_path);
+      const readings = ((od.data as Reading[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
+      const saved = ((fs.data as (Omit<SavedDay, 'edits'> & { edits: unknown })[] | null) ?? []).map((d) => ({ ...d, edits: parseEdits(d.edits) }));
+      const crew = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter((t): t is string => !!t);
+      setDays(rowsFor({ events: ev, readings, saved, techs: crew, start: w.start_date, end: w.end_date, timeZone: TZ }).filter((r) => !r.hidden));
       const odo = ((od.data as OdoRow[] | null) ?? []).filter((o) => o.photo_path);
       const paths = [...rec.map((e) => e.receipt_path!), ...odo.map((o) => o.photo_path!)];
       if (!paths.length) return;
@@ -181,6 +193,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const pictureCount = [...(inc.receipts ? shownReceipts : []), ...(inc.odometer ? shownOdometer : []), ...(inc.photos ? shownPhotos : [])]
     .filter(printed).length;
   const totals = logTotals(visits);
+  // A day's miles: the miles typed on the Hours screen, else the odometer, else the GPS.
+  const mileage = days.filter((r) => inRange(r.day, from, to))
+    .map((r) => ({ r, miles: dayCalc(r.values, 0).miles }))
+    .filter(({ r, miles }) => miles > 0 || r.values.odoStart != null || r.values.odoEnd != null)
+    .sort((a, b) => a.r.day.localeCompare(b.r.day) || a.r.tech.localeCompare(b.r.tech));
+  const totalMiles = Math.round(mileage.reduce((t, m) => t + m.miles, 0) * 10) / 10;
   // Only a finished job has a "Not completed": on a job still going, it's just work still to do.
   const job = useMemo(() => wfJobFromOwner(w), [w]);
   // Waits for the photos to load, so it never says "No photos" too soon.
@@ -269,7 +287,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
-          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Time & GPS')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
+          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Time & GPS')}{mileage.length > 0 && toggle('mileage', 'Mileage')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
           {toggle('notes', "Tech's notes")}{(receipts.length > 0 || receiptPhotos.size > 0) && toggle('receipts', 'Receipts')}{odometer.length > 0 && toggle('odometer', 'Odometer')}
           {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}
         </div>
@@ -304,6 +322,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             {[
               ...(totals.ms > 0 ? [['Time on site', hoursText(totals.ms)]] : []),
               ...(totals.days > 0 ? [['Days', String(totals.days)]] : []),
+              ...(totalMiles > 0 ? [['Miles', totalMiles.toLocaleString('en-US')]] : []),
               ...(pictureCount > 0 ? [['Pictures', String(pictureCount)]] : []),
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
@@ -356,6 +375,29 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                     </tbody>
                   </table>
                 )}
+            </>
+          )}
+
+          {inc.mileage && mileage.length > 0 && (
+            <>
+              <H>Mileage</H>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr style={{ background: '#F6F4EF' }}>
+                  {['Date', 'Technician', 'Odometer start', 'Odometer end', 'Miles'].map((h) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {mileage.map(({ r, miles }) => (
+                    <tr key={r.key} className="jl-avoid">
+                      <td style={cell}>{fmtDay(r.day)}</td>
+                      <td style={cell}>{r.tech}</td>
+                      <td style={cell}>{r.values.odoStart != null ? r.values.odoStart.toLocaleString('en-US') : '—'}</td>
+                      <td style={cell}>{r.values.odoEnd != null ? r.values.odoEnd.toLocaleString('en-US') : '—'}</td>
+                      <td style={cell}>{miles.toLocaleString('en-US')}</td>
+                    </tr>
+                  ))}
+                  <tr><td style={{ ...cell, fontWeight: 700 }} colSpan={4}>Total</td><td style={{ ...cell, fontWeight: 700 }}>{totalMiles.toLocaleString('en-US')}</td></tr>
+                </tbody>
+              </table>
             </>
           )}
 

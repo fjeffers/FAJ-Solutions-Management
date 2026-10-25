@@ -1004,7 +1004,9 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
             <div className="wf-label">Invoiced</div>
             {invoices.map((i) => (
               <div key={i.id}>
-                {i.qbo_invoice_id ? <>QuickBooks invoice <b>{i.qbo_invoice_number || '—'}</b></> : blocksBilling(i) ? 'Being created in QuickBooks' : 'Cut off before QuickBooks answered: check QuickBooks, then create it again'} · {fmtDay(i.from_day)} – {fmtDay(i.to_day)}
+                {i.qbo_invoice_id ? <>QuickBooks invoice <b>{i.qbo_invoice_number || '—'}</b></> : blocksBilling(i) ? 'Being created in QuickBooks'
+                  : i.qbo_invoice_number ? `Marking ${i.qbo_invoice_number} imported was cut off: make the QuickBooks import file again and press Imported`
+                  : 'Cut off before QuickBooks answered: check QuickBooks, then create it again'} · {fmtDay(i.from_day)} – {fmtDay(i.to_day)}
                 {i.total != null ? ` · ${fmtMoney(Number(i.total))}` : ''} · {i.customer_name}
                 {i.qbo_invoice_id ? (i.sent_to ? ` · emailed to ${i.sent_to}` : ' · not emailed') : ''}
                 {netview && i.qbo_invoice_id && (

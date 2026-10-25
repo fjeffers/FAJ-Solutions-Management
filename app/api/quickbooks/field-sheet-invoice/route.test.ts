@@ -104,6 +104,17 @@ describe('POST /api/quickbooks/field-sheet-invoice, the import file', () => {
     expect(billed().map((r) => r.qbo_invoice_id)).toEqual(['import:WO-19101402-1021']);
   });
 
+  it('finishes marking the same bill when an earlier press was cut off, and Create invoice won’t bill those dates again', async () => {
+    const cut = { id: 'h-cut', wo_id: 'wo', from_day: '2026-10-21', to_day: '2026-10-21', customer_name: 'LDS', qbo_invoice_id: null, qbo_invoice_number: 'WO-19101402-1021', created_at: '2026-10-24T12:00:00Z' };
+    tables.field_sheet_invoices = [{ ...cut }];
+    getValidQboSession.mockResolvedValueOnce({ environment: 'production', realm_id: 'r1', access_token: 't' } as never);
+    const create = await post({});
+    expect(create.status).toBe(409);
+    expect((await create.json()).error).toMatch(/being marked imported as WO-19101402-1021/);
+    expect(await (await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 206, date: '2026-10-25' })).json()).toMatchObject({ ok: true });
+    expect(billed()).toEqual([expect.objectContaining({ id: 'h-cut', qbo_invoice_id: 'import:WO-19101402-1021', invoice_date: '2026-10-25' })]);
+  });
+
   it('marks nothing when the sheet bills something else now than the file has', async () => {
     const res = await post({ from: '2026-10-21', to: '2026-10-21', imported: true, total: 180 });
     expect(res.status).toBe(409);

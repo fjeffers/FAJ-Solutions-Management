@@ -138,11 +138,16 @@ export async function POST(req: Request) {
     // The file's own invoice date, for NetView's form (migration 143).
     const invoiceDate = typeof importedDate === 'string' && DAY.test(importedDate) ? importedDate : dayOf(new Date().toISOString(), TZ);
     const admin = createAdminClient();
+    const number = sheetInvoiceNumber(wo.wo_number, from);
     // The same hold as creating an invoice below: one in the making per site, so an invoice
     // being created in another tab and this can't both pass their checks for the same dates.
-    const { data: open, error: openErr } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at').eq('wo_id', wo.id).is('qbo_invoice_id', null);
+    // An import's hold carries the file's number from the start (an invoice's gets QuickBooks'
+    // only once it exists), so this same bill, cut off before, carries on with its own hold.
+    const { data: open, error: openErr } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at, qbo_invoice_number').eq('wo_id', wo.id).is('qbo_invoice_id', null);
     if (openErr) return NextResponse.json({ error: "Couldn't check what's billed, so nothing was marked.", fix: 'Try again.' }, { status: 503 });
+    let holdId: string | null = null;
     for (const o of open ?? []) {
+      if (o.qbo_invoice_number === number && o.from_day === from && o.to_day === to) { holdId = o.id; continue; }
       if (blocksBilling({ qbo_invoice_id: null, created_at: o.created_at })) {
         return NextResponse.json({ error: 'An invoice for this site is being created in QuickBooks right now.', fix: 'Refresh in a minute and check the Invoiced list.' }, { status: 409 });
       }
@@ -151,22 +156,25 @@ export async function POST(req: Request) {
       }
       await admin.from('field_sheet_invoices').delete().eq('id', o.id).is('qbo_invoice_id', null);
     }
-    const { data: hold, error: holdErr } = await admin.from('field_sheet_invoices')
-      .insert({ user_id: user.id, wo_id: wo.id, from_day: from, to_day: to, customer_name: customer }).select('id').single();
-    if (holdErr || !hold) {
-      return NextResponse.json(holdErr?.code === '23505'
-        ? { error: 'An invoice for this site is being created in QuickBooks right now.', fix: 'Refresh in a minute and check the Invoiced list.' }
-        : { error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: holdErr?.code === '23505' ? 409 : 500 });
+    if (!holdId) {
+      const { data: hold, error: holdErr } = await admin.from('field_sheet_invoices')
+        .insert({ user_id: user.id, wo_id: wo.id, from_day: from, to_day: to, customer_name: customer, qbo_invoice_number: number }).select('id').single();
+      if (holdErr || !hold) {
+        return NextResponse.json(holdErr?.code === '23505'
+          ? { error: 'An invoice for this site is being created in QuickBooks right now.', fix: 'Refresh in a minute and check the Invoiced list.' }
+          : { error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: holdErr?.code === '23505' ? 409 : 500 });
+      }
+      holdId = hold.id as string;
     }
-    const release = () => admin.from('field_sheet_invoices').delete().eq('id', hold.id).is('qbo_invoice_id', null);
+    const held = holdId;
+    const release = () => admin.from('field_sheet_invoices').delete().eq('id', held).is('qbo_invoice_id', null);
     // Now that this request holds the site, an invoice that finished a moment ago counts too.
     const { data: all, error: allErr } = await admin.from('field_sheet_invoices').select('from_day, to_day, qbo_invoice_id, qbo_invoice_number').eq('wo_id', wo.id);
     const clash = allErr ? NextResponse.json({ error: "Couldn't check what's billed, so nothing was marked.", fix: 'Try again.' }, { status: 503 }) : alreadyBilled(all ?? []);
     if (clash) { await release(); return clash; }
-    const number = sheetInvoiceNumber(wo.wo_number, from);
     // The hold becomes the record. qbo_invoice_id marks the dates billed everywhere; "import:" says QuickBooks gave it no id of its own here.
     const { error: recErr } = await admin.from('field_sheet_invoices')
-      .update({ qbo_invoice_id: `import:${number}`, qbo_invoice_number: number, total: totals.bill, invoice_date: invoiceDate }).eq('id', hold.id);
+      .update({ qbo_invoice_id: `import:${number}`, qbo_invoice_number: number, total: totals.bill, invoice_date: invoiceDate }).eq('id', held);
     if (recErr) { await release(); return NextResponse.json({ error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: 500 }); }
     return NextResponse.json({ ok: true, imported: true, invoice_number: number, total: totals.bill });
   }
@@ -185,10 +193,17 @@ export async function POST(req: Request) {
   // same dates twice. The hold's id is QuickBooks' requestid, so a request that died
   // after QuickBooks took it is retried as the same invoice, not a second one.
   const admin = createAdminClient();
-  const { data: open } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at').eq('wo_id', wo.id).is('qbo_invoice_id', null);
+  const { data: open } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at, qbo_invoice_number').eq('wo_id', wo.id).is('qbo_invoice_id', null);
   let holdId: string | null = null;
   for (const o of open ?? []) {
     if (blocksBilling({ qbo_invoice_id: null, created_at: o.created_at })) continue;
+    // Marking these dates imported from the file was cut off: they're already in QuickBooks.
+    if (o.qbo_invoice_number && overlaps({ from, to }, { from: o.from_day, to: o.to_day })) {
+      return NextResponse.json({
+        error: `${fmt(o.from_day)} – ${fmt(o.to_day)} was being marked imported as ${o.qbo_invoice_number} from the QuickBooks import file.`,
+        fix: 'Make the file again and press Imported on it, so it is not billed twice.',
+      }, { status: 409 });
+    }
     if (o.from_day === from && o.to_day === to) holdId = o.id;
     else await admin.from('field_sheet_invoices').delete().eq('id', o.id).is('qbo_invoice_id', null);
   }

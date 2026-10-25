@@ -1,58 +1,56 @@
 'use client';
 // A tech's pictures on one day of a job, and adding more from the office
 // (Fred, 2026-10-24: "i need to add pictures also to the days also the odometer
-// pictures"). The site photos and the odometer photos the tech took that day,
-// small, each opening full size; + Photo, + Odometer start and + Odometer end
-// add one (app/api/jobs/day-photo). An odometer picture takes its reading, and
-// the reading fills the day's odometer box so the miles work out.
+// pictures"). The odometer photos and the receipts from that day, small, each
+// opening full size; + Odometer start and + Odometer end add one
+// (app/api/jobs/day-photo). An odometer picture takes its reading, and the
+// reading fills the day's odometer box so the miles work out. No site photos
+// here (Fred, 2026-10-25: "time log should only have the receipt and odometer
+// reading"); they stay with the job's photos.
 import { useRef, useState } from 'react';
-import { Camera, Gauge } from 'lucide-react';
+import { Gauge } from 'lucide-react';
 import { stampPhoto } from '@/lib/photo-stamp';
 import { toastError, toastSuccess } from '@/lib/toast';
 
 export type DayPic = { src: string; caption: string };
-type Kind = 'site' | 'odo_start' | 'odo_end';
-const LABEL: Record<Kind, string> = { site: 'Photo', odo_start: 'Odometer start', odo_end: 'Odometer end' };
+type Kind = 'odo_start' | 'odo_end';
+const LABEL: Record<Kind, string> = { odo_start: 'Odometer start', odo_end: 'Odometer end' };
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 export default function DayPictures({ pics, woId, woNumber, day, tech, onAdded }: {
   pics: DayPic[]; woId: string; woNumber: string; day: string; tech: string;
-  /** After a picture is stored; an odometer one passes its moment and reading. */
-  onAdded: (odo?: { moment: 'start' | 'end'; reading: number }) => void;
+  /** After an odometer picture is stored, with its moment and reading. */
+  onAdded: (odo: { moment: 'start' | 'end'; reading: number }) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  const [kind, setKind] = useState<Kind>('site');
+  const [kind, setKind] = useState<Kind>('odo_start');
   const [file, setFile] = useState<File | null>(null);
   const [reading, setReading] = useState('');
   const [busy, setBusy] = useState(false);
 
   const pick = (k: Kind) => { setKind(k); setFile(null); setReading(''); input.current?.click(); };
-  const send = async (f: File, k: Kind, miles: number | null) => {
+  const send = async (f: File, k: Kind, miles: number) => {
     setBusy(true);
     try {
       // Made small and stamped like a tech's, so it reads the same on the bill.
-      const jpeg = await stampPhoto(f, [`WO ${woNumber} · ${tech}`, `${fmtDay(day)} · ${LABEL[k]}${miles != null ? ` ${miles.toLocaleString('en-US')}` : ''}`, 'Added by the office']);
+      const jpeg = await stampPhoto(f, [`WO ${woNumber} · ${tech}`, `${fmtDay(day)} · ${LABEL[k]} ${miles.toLocaleString('en-US')}`, 'Added by the office']);
       const body = new FormData();
       body.set('wo_id', woId); body.set('day', day); body.set('tech', tech); body.set('kind', k);
-      if (miles != null) body.set('reading', String(miles));
+      body.set('reading', String(miles));
       body.set('file', new File([jpeg], 'photo.jpg', { type: 'image/jpeg' }));
       const res = await fetch('/api/jobs/day-photo', { method: 'POST', body });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !j.ok) { toastError(j.error ?? "Couldn't add the picture."); return; }
       toastSuccess(`${LABEL[k]} added to ${fmtDay(day)}.`);
       setFile(null); setReading('');
-      onAdded(k === 'site' ? undefined : { moment: k === 'odo_start' ? 'start' : 'end', reading: miles! });
+      onAdded({ moment: k === 'odo_start' ? 'start' : 'end', reading: miles });
     } catch (e) {
       toastError(e instanceof Error ? e.message : "Couldn't add the picture.");
     } finally {
       setBusy(false);
     }
   };
-  const chosen = (f: File | undefined) => {
-    if (!f) return;
-    if (kind === 'site') void send(f, 'site', null);
-    else setFile(f);
-  };
+  const chosen = (f: File | undefined) => { if (f) setFile(f); };
   const addOdo = () => {
     const miles = Number(reading.replace(/[,\s]/g, ''));
     if (!reading.trim() || !Number.isFinite(miles) || miles < 0) { toastError('Type the miles on the odometer.'); return; }
@@ -74,7 +72,6 @@ export default function DayPictures({ pics, woId, woNumber, day, tech, onAdded }
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <input ref={input} type="file" accept="image/*" hidden aria-label={`Picture for ${tech} ${day}`}
           onChange={(e) => { chosen(e.target.files?.[0]); e.target.value = ''; }} />
-        <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={busy} onClick={() => pick('site')}><Camera size={14} /> + Photo</button>
         <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={busy} onClick={() => pick('odo_start')}><Gauge size={14} /> + Odometer start</button>
         <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={busy} onClick={() => pick('odo_end')}><Gauge size={14} /> + Odometer end</button>
         {busy && <span className="wf-subtle" style={{ fontSize: 12.5 }}>Adding…</span>}

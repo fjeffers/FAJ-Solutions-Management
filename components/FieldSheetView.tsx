@@ -77,10 +77,28 @@ async function sheetBill(wo: EnrichedWorkOrder, from?: string, to?: string): Pro
     return { error: "Couldn't reach the app. Check your connection." };
   }
 }
-/** The file to import in QuickBooks: Settings → Import data → Invoices. */
-const downloadImport = (bills: QboSheetBill[], name: string) =>
-  downloadCSVText(`${fileSafe(name)}.csv`, toCSV(fieldSheetImportRows(bills, dayOf(new Date().toISOString(), TZ))));
-const IMPORT_HOW = 'In QuickBooks: Settings → Import data → Invoices. Import each file once.';
+/** The file to import in QuickBooks: Settings → Import data → Invoices. date: the invoices' date, kept for their NetView forms. */
+const downloadImport = (bills: QboSheetBill[], name: string, date: string) =>
+  downloadCSVText(`${fileSafe(name)}.csv`, toCSV(fieldSheetImportRows(bills, date)));
+const IMPORT_HOW = 'In QuickBooks: Settings → Import data → Invoices. Import each file once, then press Imported on each bill so its dates show as billed.';
+
+/**
+ * Once QuickBooks has imported a bill from the file: the server records its
+ * dates as billed under the file's number, so they can't be billed again here.
+ * Never on download, only on Fred's word. Returns the reason it couldn't.
+ */
+async function markImported(wo: EnrichedWorkOrder, bill: QboSheetBill): Promise<string | null> {
+  try {
+    const res = await fetch('/api/quickbooks/field-sheet-invoice', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wo_id: wo.id, from: bill.from, to: bill.to, imported: true, total: sheetBillTotal(bill) }),
+    });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; fix?: string };
+    return res.ok && j.ok ? null : [j.error ?? "Couldn't mark it billed.", j.fix].filter(Boolean).join(' ');
+  } catch {
+    return "Couldn't reach the app. Check your connection.";
+  }
+}
 
 /** Who is filling in NetView's form: the signed-in office user. */
 function useMe(enabled: boolean) {
@@ -101,29 +119,63 @@ function useMe(enabled: boolean) {
  * date and total, so the two match (Fred, 2026-10-25: "each site their own
  * bill and netview link to matched").
  */
-const importNetviewLink = (wo: EnrichedWorkOrder, bill: QboSheetBill, me: { name: string; email: string }) => netviewFormUrl(netviewAnswers({
+const importNetviewLink = (wo: EnrichedWorkOrder, bill: QboSheetBill, me: { name: string; email: string }, date: string) => netviewFormUrl(netviewAnswers({
   job: wo,
-  invoice: { number: sheetInvoiceNumber(bill.woNumber, bill.from), total: sheetBillTotal(bill), date: dayOf(new Date().toISOString(), TZ), from: bill.from, to: bill.to },
+  invoice: { number: sheetInvoiceNumber(bill.woNumber, bill.from), total: sheetBillTotal(bill), date, from: bill.from, to: bill.to },
   lines: bill.lines, vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
 }));
 
-/** The bills just put in an import file, each with its NetView form when it is a NetView job. */
-function MadeBills({ made, me, netview }: { made: { wo: EnrichedWorkOrder; bill: QboSheetBill }[]; me: { name: string; email: string }; netview?: boolean }) {
+/** A NetView job, counting the client the sheet bills (the bill's customer). */
+const netviewBill = (m: MadeBill) => isNetviewJob(m.wo, m.bill.customerName);
+type MadeBill = { wo: EnrichedWorkOrder; bill: QboSheetBill };
+
+/**
+ * The bills just put in an import file: each with Imported, to press once
+ * QuickBooks has taken it, and its NetView form when it is a NetView job.
+ */
+function MadeBills({ made, date, me, netview, onMarked }: {
+  made: MadeBill[]; date: string; me: { name: string; email: string }; netview?: boolean; onMarked: () => void;
+}) {
+  const [marked, setMarked] = useState<string[]>([]);
+  const [busy, setBusy] = useState('');
   if (!made.length) return null;
+  const mark = async (m: MadeBill, number: string) => {
+    const dates = m.bill.from === m.bill.to ? fmtDay(m.bill.from) : `${fmtDay(m.bill.from)} – ${fmtDay(m.bill.to)}`;
+    if (!window.confirm(`Did QuickBooks import invoice ${number}? ${dates} on ${jobName(m.wo)} will show as billed, and can't be billed again.`)) return;
+    setBusy(number);
+    try {
+      const err = await markImported(m.wo, m.bill);
+      if (err) { toastError(err); return; }
+      setMarked((x) => [...x, number]);
+      toastSuccess(`${number} is marked billed.`);
+      onMarked();
+    } finally {
+      setBusy('');
+    }
+  };
   return (
-    <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
+    <div style={{ display: 'grid', gap: 6, fontSize: 13 }}>
       <div className="wf-label">In the import file</div>
-      {made.map(({ wo, bill }) => (
-        <div key={`${wo.id}-${bill.from}`}>
-          <b>{sheetInvoiceNumber(bill.woNumber, bill.from)}</b> · {jobName(wo)} · {fmtMoney(sheetBillTotal(bill))}
-          {(netview ?? isNetviewJob(wo)) && (
-            <a className="wf-btn wf-btn-outline wf-btn-sm" style={{ marginLeft: 8 }} href={importNetviewLink(wo, bill, me)} target="_blank" rel="noopener noreferrer"
-              title={`Opens NetView's payment form with this invoice filled in. Check it, then submit. The invoice itself goes to ${NETVIEW_PAYROLL}.`}>
-              <ExternalLink size={14} /> Fill NetView form
-            </a>
-          )}
-        </div>
-      ))}
+      {made.map((m) => {
+        const number = sheetInvoiceNumber(m.bill.woNumber, m.bill.from);
+        return (
+          <div key={`${m.wo.id}-${m.bill.from}`} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <span><b>{number}</b> · {jobName(m.wo)} · {fmtMoney(sheetBillTotal(m.bill))}</span>
+            {marked.includes(number) ? <span className="wf-chip">Billed</span> : (
+              <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={busy === number} onClick={() => void mark(m, number)}
+                title="Press once QuickBooks has imported it, so these dates show as billed">
+                {busy === number ? 'Marking…' : 'Imported'}
+              </button>
+            )}
+            {(netview ?? netviewBill(m)) && (
+              <a className="wf-btn wf-btn-outline wf-btn-sm" href={importNetviewLink(m.wo, m.bill, me, date)} target="_blank" rel="noopener noreferrer"
+                title={`Opens NetView's payment form with this invoice filled in. Check it, then submit. The invoice itself goes to ${NETVIEW_PAYROLL}.`}>
+                <ExternalLink size={14} /> Fill NetView form
+              </a>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -205,6 +257,8 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
 function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; onOpen: (id: string, week: { from: string; to: string }) => void }) {
   const [week, setWeek] = useState(() => weekToBillFor(dayOf(new Date().toISOString(), TZ)));
   const [sites, setSites] = useState<WeekSite[] | null>(null);
+  // Bumped when a bill is marked imported, to load the week again.
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let live = true;
     const db = createClient();
@@ -224,20 +278,20 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
       }));
     });
     return () => { live = false; };
-  }, [week]);
+  }, [week, reload]);
   const byId = useMemo(() => new Map(workOrders.map((w) => [w.id, w])), [workOrders]);
   const shown = (sites ?? []).filter((s) => byId.has(s.woId));
   const left = shown.filter((s) => s.status !== 'billed').length;
   const move = (n: number) => setWeek((w) => { const f = new Date(Date.parse(`${w.from}T12:00:00Z`) + n * 7 * 86_400_000).toISOString().slice(0, 10); return { from: f, to: new Date(Date.parse(`${f}T12:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10) }; });
   const [making, setMaking] = useState(false);
-  // The bills in the last file made, for the week it was made for.
-  const [made, setMade] = useState<{ week: string; list: { wo: EnrichedWorkOrder; bill: QboSheetBill }[] }>({ week: '', list: [] });
+  // The bills in the last file made, for the week it was made for, and the day it was made.
+  const [made, setMade] = useState<{ week: string; date: string; list: MadeBill[] }>({ week: '', date: '', list: [] });
   const toBill = shown.filter((s) => s.status !== 'billed');
-  const me = useMe(toBill.some((s) => isNetviewJob(byId.get(s.woId)!)));
+  const me = useMe(made.list.some(netviewBill));
   const importWeek = async () => {
     setMaking(true);
     try {
-      const done: { wo: EnrichedWorkOrder; bill: QboSheetBill }[] = [];
+      const done: MadeBill[] = [];
       const skipped: string[] = [];
       for (const s of toBill) {
         const w = byId.get(s.woId)!;
@@ -245,9 +299,10 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
         if ('bill' in r) done.push({ wo: w, bill: r.bill }); else skipped.push(`WO ${w.wo_number}: ${r.error}`);
       }
       const bills = done.map((d) => d.bill);
-      setMade({ week: week.from, list: done });
+      const date = dayOf(new Date().toISOString(), TZ);
+      setMade({ week: week.from, date, list: done });
       if (bills.length) {
-        downloadImport(bills, `QuickBooks import ${week.from} to ${week.to}`);
+        downloadImport(bills, `QuickBooks import ${week.from} to ${week.to}`, date);
         toastSuccess(`${bills.length} invoice${bills.length === 1 ? '' : 's'} in the file. ${IMPORT_HOW}`);
       }
       for (const m of skipped) toastError(m);
@@ -270,7 +325,7 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
             </button>
           )}
         </div>
-        <MadeBills made={made.week === week.from ? made.list : []} me={me} />
+        <MadeBills key={`${made.week}-${made.date}-${made.list.length}`} made={made.week === week.from ? made.list : []} date={made.date} me={me} onMarked={() => setReload((n) => n + 1)} />
         {sites === null ? <div className="wf-subtle">Loading the week…</div>
           : shown.length === 0 ? <div className="wf-subtle">No techs logged work on any site this week.</div>
           : shown.map((s) => {
@@ -817,6 +872,10 @@ function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: Enri
           <input type="checkbox" checked={s.receiptsAtCost} onChange={(e) => onSave({ receiptsAtCost: e.target.checked })} />
           Bill the other receipts at cost (materials, rental, tolls, equipment, travel, labor and your own categories). Fuel and mileage are in the mileage.
         </label>
+        <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: 13.5 }}>
+          <input type="checkbox" checked={s.byDay} onChange={(e) => onSave({ byDay: e.target.checked })} />
+          Show each tech’s day on the invoice. Off, it has the totals: the hours, the mileage, the meals. The timesheet has the days.
+        </label>
       </div>
     </Section>
   );
@@ -881,7 +940,7 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
     }
   };
   // The bill in the last file made, while the sheet still bills the same: a figure changed since makes it out of date.
-  const [made, setMade] = useState<{ key: string; bill: QboSheetBill } | null>(null);
+  const [made, setMade] = useState<{ key: string; date: string; bill: QboSheetBill } | null>(null);
   const madeKey = `${totals.bill}|${from}|${to}`;
   const importSheet = async () => {
     setBusy(true);
@@ -889,8 +948,9 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
       if (!(await flush())) { toastError("A change didn't save, so the file wasn't made. Check the figures and try again."); return; }
       const r = await sheetBill(wo, from, to);
       if ('error' in r) { toastError(r.error); return; }
-      setMade({ key: madeKey, bill: r.bill });
-      downloadImport([r.bill], `QuickBooks import WO ${wo.wo_number}`);
+      const date = dayOf(new Date().toISOString(), TZ);
+      setMade({ key: madeKey, date, bill: r.bill });
+      downloadImport([r.bill], `QuickBooks import WO ${wo.wo_number}`, date);
       toastSuccess(IMPORT_HOW);
     } finally {
       setBusy(false);
@@ -936,7 +996,7 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
             <FileSpreadsheet size={16} /> QuickBooks import file
           </button>
         </div>
-        {made?.key === madeKey && <MadeBills made={[{ wo, bill: made.bill }]} me={me} netview={netview} />}
+        {made?.key === madeKey && <MadeBills made={[{ wo, bill: made.bill }]} date={made.date} me={me} netview={netview} onMarked={onDone} />}
         {invoices.length > 0 && (
           <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
             <div className="wf-label">Invoiced</div>

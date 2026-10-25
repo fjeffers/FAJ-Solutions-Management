@@ -224,7 +224,7 @@ describe('billing any client', () => {
   ];
 
   it('bills hourly by each tech’s day, travel at its own rate, with the day’s note', () => {
-    const t = sheetTotals(rows, receipts, bill({ labor: 'hourly', rate: 85, travelRate: 45, mileRate: 0.7 }));
+    const t = sheetTotals(rows, receipts, bill({ labor: 'hourly', rate: 85, travelRate: 45, mileRate: 0.7, byDay: true }));
     expect(t.lines.filter((l) => l.kind === 'labor').map((l) => [l.description, l.qty, l.amount])).toEqual([
       ['Tue, Oct 20 · Raja · on site 9.72 h', 9.72, 826.2],
       ['Wed, Oct 21 · Dwayne · on site 9.57 h — Pulled AP runs', 9.57, 813.45],
@@ -241,8 +241,21 @@ describe('billing any client', () => {
   });
 
   it('bills a blended rate on every hour, on site and travel', () => {
-    const t = sheetTotals(rows, [], bill({ labor: 'blended', rate: 75 }));
+    const t = sheetTotals(rows, [], bill({ labor: 'blended', rate: 75, byDay: true }));
     expect(t.lines.map((l) => [l.qty, l.amount])).toEqual([[10.24, 768], [9.82, 736.5]]);
+  });
+
+  // Fred, 2026-10-25: "i dont need the days i need the total hours then the total milage and the total meals 50 a day".
+  it('bills the totals unless the sheet asks for each day: the hours, the mileage, then the meals', () => {
+    const t = sheetTotals(rows, receipts, bill({ labor: 'hourly', rate: 100, travelRate: 45, mileRate: 0.6, mealMode: 'per_day', mealRate: 50 }));
+    expect(t.lines).toEqual([
+      { kind: 'labor', date: null, description: 'Hours on site: 19.29 h', qty: 19.29, rate: 100, amount: 1929 },
+      { kind: 'travel', date: null, description: 'Travel: 0.77 h', qty: 0.77, rate: 45, amount: 34.65 },
+      { kind: 'mileage', date: null, description: 'Mileage: 25.4 mi', qty: 25.4, rate: 0.6, amount: 15.24 },
+      { kind: 'meals', date: null, description: 'Meals: 2 tech-days × $50', qty: 2, rate: 50, amount: 100 },
+    ]);
+    expect(t.bill).toBe(2078.89);
+    expect(sheetTotals(rows, [], bill({ labor: 'blended', rate: 75 })).lines.map((l) => [l.description, l.amount])).toEqual([['Hours on site and travel: 20.06 h', 1504.5]]);
   });
 
   it('bills a fixed price or by the item, once for the week', () => {
@@ -306,7 +319,7 @@ describe('what was spent each day', () => {
 describe('the QuickBooks invoice', () => {
   it('dates each line, prints the site and dates for the client, and keeps Amount = Qty × Rate', () => {
     const rows = sheetRows({ app, saved: [], techs: [], days: [] }).filter((r) => r.key === '2026-10-21|Dwayne');
-    const t = sheetTotals(rows, [], bill({ labor: 'hourly', rate: 85, mileRate: 0.6 }));
+    const t = sheetTotals(rows, [], bill({ labor: 'hourly', rate: 85, mileRate: 0.6, byDay: true }));
     const inv = fieldSheetInvoice(t.lines, { customerId: 'c1', itemId: 'i1', memo: 'LDS Site 5006643 · Oct 19 – Oct 23', note: 'WO 19101402', email: 'ap@netview.com', txnDate: '2026-10-24' });
     expect(inv.CustomerRef).toEqual({ value: 'c1' });
     expect(inv.BillEmail).toEqual({ Address: 'ap@netview.com' });
@@ -314,6 +327,10 @@ describe('the QuickBooks invoice', () => {
     expect(inv.Line.map((l) => [l.SalesItemLineDetail.ServiceDate, l.SalesItemLineDetail.Qty, l.SalesItemLineDetail.UnitPrice, l.Amount]))
       .toEqual([['2026-10-21', 9.57, 85, 813.45], ['2026-10-21', 4.4, 0.6, 2.64]]);
     for (const l of inv.Line) expect(l.Amount).toBe(Math.round(l.SalesItemLineDetail.Qty * l.SalesItemLineDetail.UnitPrice * 100) / 100);
+    // The totals go with no date, still Amount = Qty × Rate.
+    const totals = fieldSheetInvoice(sheetTotals(rows, [], bill({ labor: 'hourly', rate: 85, mileRate: 0.6 })).lines, { customerId: 'c1', itemId: 'i1', memo: '', note: '', email: null, txnDate: '2026-10-24' });
+    expect(totals.Line.map((l) => [l.SalesItemLineDetail.ServiceDate, l.SalesItemLineDetail.Qty, l.SalesItemLineDetail.UnitPrice, l.Amount]))
+      .toEqual([[undefined, 9.57, 85, 813.45], [undefined, 4.4, 0.6, 2.64]]);
   });
 
   it('knows when two weeks share a day, and which days are in the dates picked', () => {

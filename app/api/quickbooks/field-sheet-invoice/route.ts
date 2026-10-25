@@ -8,11 +8,14 @@ import {
 } from '@/lib/field-sheet';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { timesheetFile, timesheetLines, timesheetPdf } from '@/lib/timesheet';
+import { sheetInvoiceNumber } from '@/lib/qbo-work-order-export';
 import { NextResponse } from 'next/server';
 
 // Bill one site's Field Sheet for a week — IN QUICKBOOKS, and email it to the client.
 //
 // Body: { wo_id, from?, to?, dry_run?, send?, photos?, timesheet? }
+//    or { wo_id, from, to, imported: true, total }: a bill from the Field Sheet's
+//       QuickBooks import file that QuickBooks has taken (see below).
 //
 // Fred, 2026-10-24: "when i finish it then save and uploaded into quickbooks
 // the same way ... and sent off the client". The same way as the Site Log
@@ -50,7 +53,9 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const { wo_id, from: fromIn, to: toIn, dry_run, send, photos, timesheet } = body as { wo_id?: string; from?: string; to?: string; dry_run?: boolean; send?: boolean; photos?: boolean; timesheet?: boolean };
+  const { wo_id, from: fromIn, to: toIn, dry_run, send, photos, timesheet, imported, total: importedTotal } = body as {
+    wo_id?: string; from?: string; to?: string; dry_run?: boolean; send?: boolean; photos?: boolean; timesheet?: boolean; imported?: boolean; total?: number;
+  };
   if (!wo_id || typeof wo_id !== 'string') return NextResponse.json({ error: 'Which job is this for?' }, { status: 400 });
   if ((fromIn && !DAY.test(fromIn)) || (toIn && !DAY.test(toIn))) return NextResponse.json({ error: 'Pick the dates again.' }, { status: 400 });
   if (fromIn && toIn && fromIn > toIn) return NextResponse.json({ error: 'The week starts after it ends. Pick the dates again.' }, { status: 400 });
@@ -122,11 +127,38 @@ export async function POST(req: Request) {
     total: totals.bill,
   };
 
+  // A bill from the QuickBooks import file, once Fred has imported it: recorded
+  // as billed under the file's invoice number, so the same dates are never billed
+  // again from here. Only on his word, never when the file is downloaded, and only
+  // while the sheet still bills what the file has.
+  if (imported) {
+    if (!fromIn || !toIn || typeof importedTotal !== 'number' || Math.round(importedTotal * 100) !== Math.round(totals.bill * 100)) {
+      return NextResponse.json({ error: 'The sheet has changed since the file was made, so it was not marked billed.', fix: 'Make the file again and import that one.' }, { status: 409 });
+    }
+    const admin = createAdminClient();
+    const { data: all, error: allErr } = await admin.from('field_sheet_invoices').select('from_day, to_day, qbo_invoice_id, qbo_invoice_number, created_at').eq('wo_id', wo.id);
+    if (allErr) return NextResponse.json({ error: "Couldn't check what's billed, so nothing was marked.", fix: 'Try again.' }, { status: 503 });
+    const clash = alreadyBilled(all ?? []);
+    if (clash) return clash;
+    if ((all ?? []).some((i) => blocksBilling(i) && overlaps({ from, to }, { from: i.from_day, to: i.to_day }))) {
+      return NextResponse.json({ error: 'An invoice for these dates is being created in QuickBooks right now.', fix: 'Refresh in a minute and check the Invoiced list.' }, { status: 409 });
+    }
+    const number = sheetInvoiceNumber(wo.wo_number, from);
+    // qbo_invoice_id marks the dates billed everywhere; "import:" says QuickBooks gave it no id of its own here.
+    const { error: recErr } = await admin.from('field_sheet_invoices').insert({
+      user_id: user.id, wo_id: wo.id, from_day: from, to_day: to, customer_name: customer,
+      qbo_invoice_id: `import:${number}`, qbo_invoice_number: number, total: totals.bill,
+    });
+    if (recErr) return NextResponse.json({ error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: 500 });
+    return NextResponse.json({ ok: true, imported: true, invoice_number: number, total: totals.bill });
+  }
+
+  // The bill alone needs no QuickBooks, so a connection that has lapsed never stops the import file.
+  if (dry_run) return NextResponse.json({ dry_run: true, ...preview });
   const session = await getValidQboSession(user.id);
-  if (dry_run || !session) {
+  if (!session) {
     return NextResponse.json({
-      dry_run: true, ...preview,
-      ...(session ? {} : { warning: 'QuickBooks is not connected yet. Open Settings → QuickBooks and connect the company to create it.' }),
+      dry_run: true, ...preview, warning: 'QuickBooks is not connected yet. Open Settings → QuickBooks and connect the company to create it.',
     });
   }
 

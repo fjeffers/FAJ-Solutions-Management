@@ -171,3 +171,61 @@ export function fieldSheetImportRows(bills: QboSheetBill[], today: string): stri
     ])),
   ];
 }
+
+/** One site's bill in the Excel workbook, with what the sheet's top says about the site. */
+export type SiteBill = { name: string; site: string; clientWo: string | null; bill: QboSheetBill };
+
+/**
+ * Excel tab names: at most 31 characters, none of : \ / ? * [ ], and no two
+ * alike (a second site in the same town gets its WO number).
+ */
+export function tabNames(names: string[]): string[] {
+  const clean = (s: string) => s.replace(/[:\\/?*[\]]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Site';
+  const seen = new Set<string>();
+  return names.map((n, i) => {
+    let name = clean(n);
+    for (let k = 2; seen.has(name.toLowerCase()); k++) name = clean(`${n.slice(0, 25)} (${k})`) || `Site ${i + 1}`;
+    seen.add(name.toLowerCase());
+    return name;
+  });
+}
+
+/**
+ * The week's bills as an Excel workbook, each site on its own tab in the order
+ * given (Fred, 2026-10-25: "on the excel sheet each site on a separate page
+ * sheet one gaffney sheet two dover sheet 3 east orange"), then a tab with
+ * every site's total. Each tab is the invoice as QuickBooks gets it: the same
+ * number, dates, products and lines as the import file.
+ */
+export function siteBillBook(sites: SiteBill[], today: string): { name: string; rows: (string | number)[][]; colWidths: number[] }[] {
+  const names = tabNames([...sites.map((s) => s.name), 'All sites']);
+  const range = (b: QboSheetBill) => (b.from === b.to ? usDate(b.from) : `${usDate(b.from)} – ${usDate(b.to)}`);
+  const tabs = sites.map((s, i) => ({
+    name: names[i],
+    colWidths: [16, 44, 10, 10, 12],
+    rows: [
+      ['FAJ Solutions', `Invoice ${sheetInvoiceNumber(s.bill.woNumber, s.bill.from)}`],
+      ['Bill to', s.bill.customerName],
+      ['Site', s.site],
+      ['Work order', `WO ${s.bill.woNumber}${s.clientWo ? ` · Client # ${s.clientWo}` : ''}`],
+      ['Service dates', range(s.bill)],
+      ['Invoice date', usDate(today), 'Due', usDate(addDays(today, 30))],
+      [],
+      ['Product/service', 'Description', 'Qty', 'Rate', 'Amount'],
+      ...s.bill.lines.map((l) => [qboItemFor(l.kind), l.description, l.qty, l.rate, l.amount]),
+      [],
+      ['', '', '', 'Total', sheetBillTotal(s.bill)],
+    ],
+  }));
+  const all = sites.reduce((t, s) => t + Math.round(sheetBillTotal(s.bill) * 100), 0) / 100;
+  return [...tabs, {
+    name: names[sites.length],
+    colWidths: [22, 18, 14, 26, 12],
+    rows: [
+      ['Site', 'Invoice', 'Work order', 'Service dates', 'Total'],
+      ...sites.map((s) => [s.name, sheetInvoiceNumber(s.bill.woNumber, s.bill.from), s.bill.woNumber, range(s.bill), sheetBillTotal(s.bill)]),
+      [],
+      ['', '', '', 'All sites', all],
+    ],
+  }];
+}

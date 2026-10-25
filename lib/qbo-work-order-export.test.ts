@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fieldSheetImportRows, prepareQboCompletedJobs, qboInvoiceImportRows, type QboWorkOrderInput } from './qbo-work-order-export';
+import { fieldSheetImportRows, prepareQboCompletedJobs, qboInvoiceImportRows, siteBillBook, tabNames, type QboWorkOrderInput } from './qbo-work-order-export';
 
 const workOrder = (overrides: Partial<QboWorkOrderInput> = {}): QboWorkOrderInput => ({
   id: 'wo-1',
@@ -96,5 +96,46 @@ describe('QuickBooks import file from the Field Sheet', () => {
     const bill = (from: string) => ({ woNumber: '19101401', customerName: 'LDS', from, to: from, memo: '', lines: [{ date: from, description: 'x', qty: 1, rate: 1, amount: 1 }] });
     const rows = fieldSheetImportRows([bill('2026-10-18'), bill('2026-10-25')], '2026-11-01');
     expect(rows.slice(1).map((r) => r[0])).toEqual(['WO-19101401-1018', 'WO-19101401-1025']);
+  });
+});
+
+// Fred, 2026-10-25: "on the excel sheet each site on a separate page sheet one gaffney sheet two dover sheet 3 east orange".
+describe('the week as an Excel workbook, a tab per site', () => {
+  const bill = (woNumber: string, from: string, lines: { kind: string; description: string; qty: number; rate: number; amount: number }[]) =>
+    ({ woNumber, customerName: 'LDS', from, to: from, memo: '', lines: lines.map((l) => ({ ...l, date: null })) });
+  it('puts each site on its own tab in order, as its invoice, then every site’s total', () => {
+    const book = siteBillBook([
+      { name: 'Gaffney', site: 'LDS Site 5011876 — Gaffney, SC', clientWo: 'LDS-1110', bill: { ...bill('19101401', '2026-10-18', [
+        { kind: 'labor', description: 'Hours on site: 72.56 h', qty: 72.56, rate: 100, amount: 7256 },
+        { kind: 'hotel', description: 'Hotel (receipts)', qty: 1, rate: 701.48, amount: 701.48 },
+      ]), to: '2026-10-23' } },
+      { name: 'Dover', site: 'LDS Site 5007927 — Dover, NJ', clientWo: 'LDS-1065', bill: bill('19101403', '2026-10-19', [
+        { kind: 'mileage', description: 'Mileage: 28 mi', qty: 28, rate: 0.6, amount: 16.8 },
+      ]) },
+    ], '2026-10-25');
+    expect(book.map((t) => t.name)).toEqual(['Gaffney', 'Dover', 'All sites']);
+    const [gaffney] = book;
+    expect(gaffney.rows.slice(0, 6)).toEqual([
+      ['FAJ Solutions', 'Invoice WO-19101401-1018'], ['Bill to', 'LDS'], ['Site', 'LDS Site 5011876 — Gaffney, SC'],
+      ['Work order', 'WO 19101401 · Client # LDS-1110'], ['Service dates', '10/18/2026 – 10/23/2026'], ['Invoice date', '10/25/2026', 'Due', '11/24/2026'],
+    ]);
+    expect(gaffney.rows.slice(7)).toEqual([
+      ['Product/service', 'Description', 'Qty', 'Rate', 'Amount'],
+      ['Cabling', 'Hours on site: 72.56 h', 72.56, 100, 7256],
+      ['Lodging', 'Hotel (receipts)', 1, 701.48, 701.48],
+      [],
+      ['', '', '', 'Total', 7957.48],
+    ]);
+    expect(book[2].rows).toEqual([
+      ['Site', 'Invoice', 'Work order', 'Service dates', 'Total'],
+      ['Gaffney', 'WO-19101401-1018', '19101401', '10/18/2026 – 10/23/2026', 7957.48],
+      ['Dover', 'WO-19101403-1019', '19101403', '10/19/2026', 16.8],
+      [],
+      ['', '', '', 'All sites', 7974.28],
+    ]);
+  });
+
+  it('names tabs the way Excel allows, and two sites in one town apart', () => {
+    expect(tabNames(['Newark', 'Newark', 'A/B: site [1]?', 'Winston-Salem Regional Distribution Center'])).toEqual(['Newark', 'Newark (2)', 'A B site 1', 'Winston-Salem Regional Distribu']);
   });
 });

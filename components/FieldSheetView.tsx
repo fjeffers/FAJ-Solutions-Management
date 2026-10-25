@@ -30,7 +30,7 @@ import { isNetviewJob, netviewAnswers, netviewFormUrl, NETVIEW_PAYROLL } from '@
 import { tapWindow, weekSites, weekToBillFor, type WeekInvoice, type WeekSite, type WeekTap, type WeekTyped } from '@/lib/week-to-bill';
 import { downloadCSVText, downloadXLSXBook } from '@/lib/export';
 import { toCSV } from '@/lib/csv';
-import { fieldSheetImportRows, sheetBillTotal, sheetInvoiceNumber, type QboSheetBill } from '@/lib/qbo-work-order-export';
+import { fieldSheetImportRows, sheetBillTotal, sheetInvoiceNumber, siteBillBook, type QboSheetBill } from '@/lib/qbo-work-order-export';
 import { fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder } from '@/lib/types';
@@ -288,16 +288,24 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
   const [made, setMade] = useState<{ week: string; date: string; list: MadeBill[] }>({ week: '', date: '', list: [] });
   const toBill = shown.filter((s) => s.status !== 'billed');
   const me = useMe(made.list.some(netviewBill));
+  // Every site still to bill, each as the server bills it, in the order worked: first day, then WO number.
+  const weekBills = async () => {
+    const done: MadeBill[] = [];
+    const skipped: string[] = [];
+    for (const s of toBill) {
+      const w = byId.get(s.woId)!;
+      const r = await sheetBill(w, week.from, week.to);
+      if ('bill' in r) done.push({ wo: w, bill: r.bill }); else skipped.push(`WO ${w.wo_number}: ${r.error}`);
+    }
+    done.sort((a, b) => a.bill.from.localeCompare(b.bill.from) || a.wo.wo_number.localeCompare(b.wo.wo_number, undefined, { numeric: true }));
+    for (const m of skipped) toastError(m);
+    if (!done.length && !skipped.length) toastError('Nothing to bill this week.');
+    return done;
+  };
   const importWeek = async () => {
     setMaking(true);
     try {
-      const done: MadeBill[] = [];
-      const skipped: string[] = [];
-      for (const s of toBill) {
-        const w = byId.get(s.woId)!;
-        const r = await sheetBill(w, week.from, week.to);
-        if ('bill' in r) done.push({ wo: w, bill: r.bill }); else skipped.push(`WO ${w.wo_number}: ${r.error}`);
-      }
+      const done = await weekBills();
       const bills = done.map((d) => d.bill);
       const date = dayOf(new Date().toISOString(), TZ);
       setMade({ week: week.from, date, list: done });
@@ -305,8 +313,21 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
         downloadImport(bills, `QuickBooks import ${week.from} to ${week.to}`, date);
         toastSuccess(`${bills.length} invoice${bills.length === 1 ? '' : 's'} in the file. ${IMPORT_HOW}`);
       }
-      for (const m of skipped) toastError(m);
-      if (!bills.length && !skipped.length) toastError('Nothing to bill this week.');
+    } finally {
+      setMaking(false);
+    }
+  };
+  // The same bills in Excel, each site on its own tab (Fred, 2026-10-25: "each site on a separate page").
+  const excelWeek = async () => {
+    setMaking(true);
+    try {
+      const done = await weekBills();
+      if (!done.length) return;
+      const site = (w: EnrichedWorkOrder) => [w.site_name || w.title, [w.site_city, w.site_state].filter(Boolean).join(', ')].filter(Boolean).join(' — ');
+      await downloadXLSXBook(`${fileSafe(`Bills ${week.from} to ${week.to}`)}.xlsx`, siteBillBook(
+        done.map(({ wo: w, bill }) => ({ name: w.site_city || jobName(w), site: site(w), clientWo: w.external_wo_id ?? null, bill })),
+        dayOf(new Date().toISOString(), TZ),
+      ));
     } finally {
       setMaking(false);
     }
@@ -322,6 +343,11 @@ function WeekToBill({ workOrders, onOpen }: { workOrders: EnrichedWorkOrder[]; o
           {toBill.length > 0 && (
             <button type="button" className="wf-btn wf-btn-gold wf-btn-sm" disabled={making} onClick={() => void importWeek()}>
               <FileSpreadsheet size={16} /> {making ? 'Making the file…' : `QuickBooks import file (${toBill.length} site${toBill.length === 1 ? '' : 's'})`}
+            </button>
+          )}
+          {toBill.length > 0 && (
+            <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={making} onClick={() => void excelWeek()}>
+              <FileSpreadsheet size={16} /> Excel, a tab per site
             </button>
           )}
         </div>

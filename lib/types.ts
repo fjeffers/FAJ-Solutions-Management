@@ -209,6 +209,10 @@ export type WorkOrder = {
   checkin_link?: string | null;
   /** Opened when the tech goes off site for the day: the client's checkout form (migration 133). */
   checkout_link?: string | null;
+  /** Where the tech fills in the site survey (migration 142). */
+  survey_link?: string | null;
+  /** Where the tech uploads the photos and documents, the deliverables (migration 142). */
+  deliverable_link?: string | null;
 
   // Contractor portal (migration-011)
   acknowledged_at: string | null;

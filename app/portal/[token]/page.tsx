@@ -13,6 +13,7 @@ import PortalDocuments from './PortalDocuments';
 import PortalWorkExport from './PortalWorkExport';
 import type { WorkOrder, Contractor } from '@/lib/types';
 import { linkLabel, parseClientLinks } from '@/lib/client-links';
+import { linkPurpose } from '@/lib/site-links';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -428,16 +429,18 @@ function WOCard({
         {parseClientLinks((wo.client_links ?? []).join('\n')).length > 0 && (
           <InfoRow icon="🔗" label="Client links">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {parseClientLinks((wo.client_links ?? []).join('\n')).map((l) => (
+              {parseClientLinks((wo.client_links ?? []).join('\n')).map((l) => {
+                const purpose = linkPurpose(l, { checkin: wo.checkin_link ?? undefined, checkout: wo.checkout_link ?? undefined, survey: wo.survey_link ?? undefined, deliverable: wo.deliverable_link ?? undefined });
+                return (
                 <a key={l} href={l} target="_blank" rel="noopener noreferrer" style={{
                   display: 'block', padding: '10px 12px', borderRadius: 10, border: '1px solid #d6dbe4', background: 'white',
                   color: '#0E1B2E', fontSize: 13, fontWeight: 600, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
                   {linkLabel(l)} ↗
-                  {l === wo.checkout_link && <span style={{ display: 'block', fontSize: 12, fontWeight: 400, color: '#5E6470' }}>Fill in when you check out each day</span>}
-                  {l === wo.checkin_link && <span style={{ display: 'block', fontSize: 12, fontWeight: 400, color: '#5E6470' }}>Join when you check in on site</span>}
+                  {purpose && <span style={{ display: 'block', fontSize: 12, fontWeight: 400, color: '#5E6470' }}>{purpose}</span>}
                 </a>
-              ))}
+                );
+              })}
             </div>
           </InfoRow>
         )}

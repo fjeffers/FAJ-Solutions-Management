@@ -40,6 +40,15 @@ const wo = {
 afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); tables.job_odometer = []; delete tables.job_expenses; delete tables.wo_photos; });
 
 describe('Hours', () => {
+  it("lists the jobs worked lately, not next week's, with a job in progress first", () => {
+    const job = (n: number, start: string, extra: Record<string, unknown> = {}) =>
+      ({ id: `w${n}`, wo_number: String(19101500 + n), site_name: `Site ${n}`, start_date: start, end_date: start, archived_at: null, ...extra }) as unknown as EnrichedWorkOrder;
+    const next = Array.from({ length: 30 }, (_, i) => job(i + 1, '2099-01-01'));
+    render(<HoursView workOrders={[...next, job(40, '2026-10-21'), job(41, '2026-10-16', { wo_status: 'In Progress' })]} />);
+    const listed = screen.getAllByRole('button', { name: /^WO \d+/ }).map((b) => b.textContent);
+    expect(listed).toEqual(['WO 19101541 · Site 41', 'WO 19101540 · Site 40']);
+  });
+
   it("puts the day's odometer and approved receipts on the card, not the site photos or a declined receipt", async () => {
     tables.job_odometer = [{ wo_id: 'wo', contractor_name: 'Frederick Jeffers', at: at('23', '09:16'), moment: 'start', reading: 41200, ai_reading: null, photo_path: 'odo/start.jpg' }];
     tables.job_expenses = [

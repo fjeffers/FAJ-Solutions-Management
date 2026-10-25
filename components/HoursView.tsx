@@ -67,9 +67,17 @@ export default function HoursView({ workOrders, onLook }: { workOrders: Enriched
   const [q, setQ] = useState('');
   const [woId, setWoId] = useState<string | null>(null);
   const wo = woId ? workOrders.find((w) => w.id === woId) ?? null : null;
-  // The jobs worked lately first: open ones, newest start date first.
-  const picks = useMemo(() => workOrders.filter((w) => !w.archived_at)
-    .sort((a, b) => (b.start_date ?? '').localeCompare(a.start_date ?? '')).slice(0, 12), [workOrders]);
+  // The jobs worked lately: a job still in progress first, then the newest start
+  // date up to today. Jobs that haven't started don't count (Fred, 2026-10-25: "my
+  // time that waas enter for fred is not there": next week's 34 LDS jobs had pushed
+  // every job he worked off the list).
+  const picks = useMemo(() => {
+    const today = dayOf(new Date().toISOString(), TZ);
+    const going = (w: WorkOrder) => w.wo_status === 'In Progress';
+    return workOrders.filter((w) => !w.archived_at && (going(w) || (w.start_date ?? '') <= today))
+      .sort((a, b) => Number(going(b)) - Number(going(a)) || (b.start_date ?? '').localeCompare(a.start_date ?? ''))
+      .slice(0, 20);
+  }, [workOrders]);
   const pull = (e?: React.FormEvent) => {
     e?.preventDefault();
     const w = findJob(workOrders, q);

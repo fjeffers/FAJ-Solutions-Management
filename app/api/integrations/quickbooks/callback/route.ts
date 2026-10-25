@@ -1,8 +1,8 @@
-import { exchangeCodeForTokens, getCompanyName } from '@/lib/quickbooks';
+import { exchangeCodeForTokens, findCompany } from '@/lib/quickbooks';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { NextResponse } from 'next/server';
 
-// Start against Sandbox until verified (see Phase 11 plan notes) — flip via env var once ready.
+// The QuickBooks tried first (QBO_ENVIRONMENT); a company that isn't there is found in the other (findCompany).
 const ENVIRONMENT = (process.env.QBO_ENVIRONMENT === 'production' ? 'production' : 'sandbox') as 'sandbox' | 'production';
 
 export async function GET(req: Request) {
@@ -18,14 +18,15 @@ export async function GET(req: Request) {
 
   try {
     const tokens = await exchangeCodeForTokens(code);
-    const companyName = await getCompanyName(ENVIRONMENT, realmId, tokens.access_token);
+    // Which QuickBooks the company is in, so every call after uses the right one.
+    const { environment, companyName } = await findCompany(ENVIRONMENT, realmId, tokens.access_token);
 
     const admin = createAdminClient();
     await admin.from('quickbooks_connections').upsert({
       user_id: userId,
       realm_id: realmId,
       company_name: companyName,
-      environment: ENVIRONMENT,
+      environment,
       refresh_token: tokens.refresh_token,
       access_token: tokens.access_token,
       token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),

@@ -9,7 +9,8 @@ import userEvent from '@testing-library/user-event';
 import type { EnrichedWorkOrder } from '@/lib/types';
 
 vi.mock('@/lib/toast', () => ({ toastError: vi.fn(), toastSuccess: vi.fn(), toastInfo: vi.fn() }));
-vi.mock('@/lib/export', () => ({ downloadXLSXBook: vi.fn() }));
+const downloadCSVText = vi.fn();
+vi.mock('@/lib/export', () => ({ downloadXLSXBook: vi.fn(), downloadCSVText: (...a: unknown[]) => downloadCSVText(...a) }));
 
 const at = (day: string, hhmm: string) => new Date(`2026-10-${day}T${hhmm}:00-04:00`).toISOString();
 const tables: Record<string, Record<string, unknown>[]> = {
@@ -65,7 +66,7 @@ const wo = {
   contractor_names: ['Dwayne Cudjoe', 'Raja Bennett'], contractor_name: 'Dwayne Cudjoe', start_date: '2026-10-21', end_date: '2026-10-21', is_project: false,
 } as unknown as EnrichedWorkOrder;
 
-afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); vi.unstubAllGlobals(); tables.job_punches = []; });
+afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); downloadCSVText.mockClear(); vi.unstubAllGlobals(); vi.useRealTimers(); tables.job_punches = []; });
 
 describe('Field Sheet', () => {
   it('pulls the job by the client ticket and shows the day from the drives, with the guess marked', async () => {
@@ -134,8 +135,8 @@ describe('Field Sheet', () => {
     expect(upserts.at(-1)).toEqual(['field_sheets', expect.objectContaining({ settings: expect.objectContaining({ client: 'NetView', customerId: 'cu1', email: 'ap@netview.com', mileRate: 0.6 }) })]);
     await user.type(screen.getByLabelText('$ per hour on site'), '85');
     await user.tab();
-    // Dwayne, Wed: 9.57 h × $85 + 4.4 mi × $0.60.
-    expect(await screen.findByText('Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h')).toBeTruthy();
+    // Dwayne, Wed: 9.57 h × $85 + 4.4 mi × $0.60, as totals.
+    expect(await screen.findByText('Hours on site: 9.57 h')).toBeTruthy();
     expect(screen.getAllByText('$816.09').length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /create the invoice in quickbooks/i }));
     expect(posted).toEqual([{ wo_id: 'wo', send: true, photos: false, timesheet: true }]);
@@ -214,5 +215,72 @@ describe('Field Sheet', () => {
     expect(upserts).toContainEqual(['field_sheet_days', expect.objectContaining({
       day: '2026-10-22', tech: 'Dwayne Cudjoe', added: true, edits: { hours: 6.5, note: 'Pulled cable, second floor' },
     })]);
+  });
+
+  // Fred, 2026-10-25: "i need a auto sheet to enter into quickbooks" (the app
+  // couldn't connect), and "each site their own bill and netview link to matched".
+  const dryRun = (posted: unknown[], customer = 'LDS') => vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: string }) => {
+    const body = JSON.parse(init.body) as { imported?: boolean };
+    posted.push(body);
+    if (body.imported) return new Response(JSON.stringify({ ok: true, imported: true, invoice_number: 'WO-19101402-1021', total: 1009.64 }), { status: 200 });
+    return new Response(JSON.stringify({
+      dry_run: true, customer, from: '2026-10-21', to: '2026-10-21', memo: 'LDS Site 5006643 — Goldsboro, NC · WO 19101402',
+      lines: [
+        { kind: 'labor', date: '2026-10-21', description: 'Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h', qty: 9.57, rate: 100, amount: 957 },
+        { kind: 'mileage', date: '2026-10-21', description: 'Wed, Oct 21 · Dwayne Cudjoe · mileage 4.4 mi', qty: 4.4, rate: 0.6, amount: 2.64 },
+        { kind: 'meals', date: null, description: 'Meals: 1 tech-days × $50', qty: 1, rate: 50, amount: 50 },
+      ],
+      total: 1009.64,
+    }), { status: 200 });
+  }));
+  const netviewAnswer = (href: string, entry: number) => new URL(href).searchParams.get(`entry.${entry}`);
+
+  it("makes the sheet's QuickBooks import file from the server's bill, with NetView's form for the same invoice", async () => {
+    const user = userEvent.setup();
+    const posted: unknown[] = [];
+    dryRun(posted);
+    render(<FieldSheetView workOrders={[{ ...wo, customer_name: 'LDS', buyer_company: 'NetView' } as EnrichedWorkOrder]} />);
+    await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+    await user.click(await screen.findByRole('button', { name: /quickbooks import file/i }));
+    expect(posted).toEqual([{ wo_id: 'wo', dry_run: true }]);
+    expect(downloadCSVText).toHaveBeenCalledTimes(1);
+    const [name, csv] = downloadCSVText.mock.calls[0] as [string, string];
+    expect(name).toBe('QuickBooks import WO 19101402.csv');
+    expect(csv.split('\n')).toHaveLength(4);
+    expect(csv).toContain('"WO-19101402-1021","LDS"');
+    expect(csv).toContain('"Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h","9.57","100.00","957.00","10/21/2026"');
+    const form = await screen.findByRole('link', { name: /fill netview form/i });
+    expect(netviewAnswer(form.getAttribute('href')!, 1582831326)).toBe('WO-19101402-1021');
+    expect(netviewAnswer(form.getAttribute('href')!, 1510356417)).toBe('1009.64');
+    // Only the full total: QuickBooks has the breakdown.
+    expect(netviewAnswer(form.getAttribute('href')!, 1719028500)).toBeNull();
+    expect(netviewAnswer(form.getAttribute('href')!, 2058828780)).toBeNull();
+  });
+
+  it('makes one QuickBooks import file for every site still to bill that week, and marks a bill billed only when Fred says it was imported', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-25T15:00:00Z'));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+    const posted: unknown[] = [];
+    // The sheet bills NetView; nothing on the job itself says NetView.
+    dryRun(posted, 'NetView');
+    render(<FieldSheetView workOrders={[{ ...wo, customer_name: 'LDS' } as EnrichedWorkOrder]} />);
+    await user.click(await screen.findByRole('button', { name: 'QuickBooks import file (1 site)' }));
+    expect(posted).toEqual([{ wo_id: 'wo', from: '2026-10-18', to: '2026-10-24', dry_run: true }]);
+    const [name, csv] = downloadCSVText.mock.calls[0] as [string, string];
+    expect(name).toBe('QuickBooks import 2026-10-18 to 2026-10-24.csv');
+    expect(csv).toContain('"WO-19101402-1021","NetView","10/25/2026","11/24/2026","Net 30"');
+    const made = (await screen.findByText('WO-19101402-1021')).closest('div')!;
+    expect(within(made).getByText(/\$1,009\.64/)).toBeTruthy();
+    // The form has the file's number and date, even a day later.
+    vi.setSystemTime(new Date('2026-10-26T15:00:00Z'));
+    const form = within(made).getByRole('link', { name: /fill netview form/i }).getAttribute('href')!;
+    expect(netviewAnswer(form, 1582831326)).toBe('WO-19101402-1021');
+    expect(netviewAnswer(form, 270691041)).toBe('2026-10-25');
+    // Downloading marks nothing; Imported does, for the bill's own dates and total.
+    await user.click(within(made).getByRole('button', { name: 'Imported' }));
+    expect(posted.at(-1)).toEqual({ wo_id: 'wo', from: '2026-10-21', to: '2026-10-21', imported: true, total: 1009.64, date: '2026-10-25' });
+    expect(await within(made).findByText('Billed')).toBeTruthy();
   });
 });

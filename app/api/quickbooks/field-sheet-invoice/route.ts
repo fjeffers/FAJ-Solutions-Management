@@ -4,15 +4,18 @@ import { getValidQboSession } from '@/lib/quickbooks-session';
 import { attachToInvoice, findOrCreateCustomer, findOrCreateServiceItem, createInvoice, sendInvoice } from '@/lib/quickbooks';
 import { dayOf, parseDayEvents, type DayEvent } from '@/lib/project-day';
 import {
-  billRange, blocksBilling, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
+  billRange, blocksBilling, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, qboItemFor, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
 } from '@/lib/field-sheet';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { timesheetFile, timesheetLines, timesheetPdf } from '@/lib/timesheet';
+import { sheetInvoiceNumber } from '@/lib/qbo-work-order-export';
 import { NextResponse } from 'next/server';
 
 // Bill one site's Field Sheet for a week — IN QUICKBOOKS, and email it to the client.
 //
 // Body: { wo_id, from?, to?, dry_run?, send?, photos?, timesheet? }
+//    or { wo_id, from, to, imported: true, total, date }: a bill from the Field Sheet's
+//       QuickBooks import file that QuickBooks has taken (see below).
 //
 // Fred, 2026-10-24: "when i finish it then save and uploaded into quickbooks
 // the same way ... and sent off the client". The same way as the Site Log
@@ -50,7 +53,9 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const { wo_id, from: fromIn, to: toIn, dry_run, send, photos, timesheet } = body as { wo_id?: string; from?: string; to?: string; dry_run?: boolean; send?: boolean; photos?: boolean; timesheet?: boolean };
+  const { wo_id, from: fromIn, to: toIn, dry_run, send, photos, timesheet, imported, total: importedTotal, date: importedDate } = body as {
+    wo_id?: string; from?: string; to?: string; dry_run?: boolean; send?: boolean; photos?: boolean; timesheet?: boolean; imported?: boolean; total?: number; date?: string;
+  };
   if (!wo_id || typeof wo_id !== 'string') return NextResponse.json({ error: 'Which job is this for?' }, { status: 400 });
   if ((fromIn && !DAY.test(fromIn)) || (toIn && !DAY.test(toIn))) return NextResponse.json({ error: 'Pick the dates again.' }, { status: 400 });
   if (fromIn && toIn && fromIn > toIn) return NextResponse.json({ error: 'The week starts after it ends. Pick the dates again.' }, { status: 400 });
@@ -118,15 +123,78 @@ export async function POST(req: Request) {
   const email = s.email.trim() || null;
   const preview = {
     customer, from, to, email, memo,
-    lines: totals.lines.map((l) => ({ date: l.date, description: l.description, qty: l.qty, rate: l.rate, amount: l.amount })),
+    lines: totals.lines.map((l) => ({ kind: l.kind, date: l.date, description: l.description, qty: l.qty, rate: l.rate, amount: l.amount })),
     total: totals.bill,
   };
 
+  // A bill from the QuickBooks import file, once Fred has imported it: recorded
+  // as billed under the file's invoice number, so the same dates are never billed
+  // again from here. Only on his word, never when the file is downloaded, and only
+  // while the sheet still bills what the file has.
+  if (imported) {
+    if (!fromIn || !toIn || typeof importedTotal !== 'number' || Math.round(importedTotal * 100) !== Math.round(totals.bill * 100)) {
+      return NextResponse.json({ error: 'The sheet has changed since the file was made, so it was not marked billed.', fix: 'Make the file again and import that one.' }, { status: 409 });
+    }
+    // The file's own invoice date, for NetView's form (migration 143).
+    const invoiceDate = typeof importedDate === 'string' && DAY.test(importedDate) ? importedDate : dayOf(new Date().toISOString(), TZ);
+    const admin = createAdminClient();
+    const number = sheetInvoiceNumber(wo.wo_number, from);
+    // The same hold as creating an invoice below: one in the making per site, so an invoice
+    // being created in another tab and this can't both pass their checks for the same dates.
+    // An import's hold carries the file's number from the start (an invoice's gets QuickBooks'
+    // only once it exists), so this same bill, cut off before, carries on with its own hold.
+    const { data: open, error: openErr } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at, qbo_invoice_number').eq('wo_id', wo.id).is('qbo_invoice_id', null);
+    if (openErr) return NextResponse.json({ error: "Couldn't check what's billed, so nothing was marked.", fix: 'Try again.' }, { status: 503 });
+    let holdId: string | null = null;
+    // A hold this request made, and so may release; one it carries on with belongs to the press before.
+    let made = false;
+    for (const o of open ?? []) {
+      if (o.qbo_invoice_number === number && o.from_day === from && o.to_day === to) { holdId = o.id; continue; }
+      if (blocksBilling({ qbo_invoice_id: null, created_at: o.created_at })) {
+        return NextResponse.json({ error: 'An invoice for this site is being created in QuickBooks right now.', fix: 'Refresh in a minute and check the Invoiced list.' }, { status: 409 });
+      }
+      if (overlaps({ from, to }, { from: o.from_day, to: o.to_day })) {
+        return NextResponse.json({ error: 'An invoice for these dates was cut off before QuickBooks answered.', fix: 'Check QuickBooks for it first. If it is not there, create it again from the sheet.' }, { status: 409 });
+      }
+      await admin.from('field_sheet_invoices').delete().eq('id', o.id).is('qbo_invoice_id', null);
+    }
+    if (!holdId) {
+      const { data: hold, error: holdErr } = await admin.from('field_sheet_invoices')
+        .insert({ user_id: user.id, wo_id: wo.id, from_day: from, to_day: to, customer_name: customer, qbo_invoice_number: number }).select('id').single();
+      if (holdErr || !hold) {
+        return NextResponse.json(holdErr?.code === '23505'
+          ? { error: 'An invoice for this site is being created in QuickBooks right now.', fix: 'Refresh in a minute and check the Invoiced list.' }
+          : { error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: holdErr?.code === '23505' ? 409 : 500 });
+      }
+      holdId = hold.id as string;
+      made = true;
+    }
+    const held = holdId;
+    const release = async () => { if (made) await admin.from('field_sheet_invoices').delete().eq('id', held).is('qbo_invoice_id', null); };
+    // Now that this request holds the site, an invoice that finished a moment ago counts too.
+    const { data: all, error: allErr } = await admin.from('field_sheet_invoices').select('from_day, to_day, qbo_invoice_id, qbo_invoice_number').eq('wo_id', wo.id);
+    const clash = allErr ? NextResponse.json({ error: "Couldn't check what's billed, so nothing was marked.", fix: 'Try again.' }, { status: 503 }) : alreadyBilled(all ?? []);
+    if (clash) { await release(); return clash; }
+    // The hold becomes the record, once: only while it is still a hold. qbo_invoice_id marks the dates
+    // billed everywhere; "import:" says QuickBooks gave it no id of its own here.
+    const recordId = `import:${number}`;
+    const { data: rec, error: recErr } = await admin.from('field_sheet_invoices')
+      .update({ qbo_invoice_id: recordId, qbo_invoice_number: number, total: totals.bill, invoice_date: invoiceDate }).eq('id', held).is('qbo_invoice_id', null).select('id');
+    if (recErr) { await release(); return NextResponse.json({ error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: 500 }); }
+    if (!rec?.length) {
+      // Nothing changed: another press of Imported saved it a moment ago, or the hold is gone. Only the first is billed.
+      const { data: now } = await admin.from('field_sheet_invoices').select('qbo_invoice_id').eq('id', held).maybeSingle();
+      if (now?.qbo_invoice_id !== recordId) return NextResponse.json({ error: "Couldn't mark it billed.", fix: 'Try again.' }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, imported: true, invoice_number: number, total: totals.bill });
+  }
+
+  // The bill alone needs no QuickBooks, so a connection that has lapsed never stops the import file.
+  if (dry_run) return NextResponse.json({ dry_run: true, ...preview });
   const session = await getValidQboSession(user.id);
-  if (dry_run || !session) {
+  if (!session) {
     return NextResponse.json({
-      dry_run: true, ...preview,
-      ...(session ? {} : { warning: 'QuickBooks is not connected yet. Open Settings → QuickBooks and connect the company to create it.' }),
+      dry_run: true, ...preview, warning: 'QuickBooks is not connected yet. Open Settings → QuickBooks and connect the company to create it.',
     });
   }
 
@@ -135,10 +203,17 @@ export async function POST(req: Request) {
   // same dates twice. The hold's id is QuickBooks' requestid, so a request that died
   // after QuickBooks took it is retried as the same invoice, not a second one.
   const admin = createAdminClient();
-  const { data: open } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at').eq('wo_id', wo.id).is('qbo_invoice_id', null);
+  const { data: open } = await admin.from('field_sheet_invoices').select('id, from_day, to_day, created_at, qbo_invoice_number').eq('wo_id', wo.id).is('qbo_invoice_id', null);
   let holdId: string | null = null;
   for (const o of open ?? []) {
     if (blocksBilling({ qbo_invoice_id: null, created_at: o.created_at })) continue;
+    // Marking these dates imported from the file was cut off: they're already in QuickBooks.
+    if (o.qbo_invoice_number && overlaps({ from, to }, { from: o.from_day, to: o.to_day })) {
+      return NextResponse.json({
+        error: `${fmt(o.from_day)} – ${fmt(o.to_day)} was being marked imported as ${o.qbo_invoice_number} from the QuickBooks import file.`,
+        fix: 'Make the file again and press Imported on it, so it is not billed twice.',
+      }, { status: 409 });
+    }
     if (o.from_day === from && o.to_day === to) holdId = o.id;
     else await admin.from('field_sheet_invoices').delete().eq('id', o.id).is('qbo_invoice_id', null);
   }
@@ -164,8 +239,12 @@ export async function POST(req: Request) {
     let invoice: Awaited<ReturnType<typeof createInvoice>>;
     try {
       const customerId = await findOrCreateCustomer(session.environment, session.realm_id, session.access_token, customer);
-      const itemId = await findOrCreateServiceItem(session.environment, session.realm_id, session.access_token);
-      const payload = fieldSheetInvoice(totals.lines, { customerId, itemId, memo, note, email, txnDate: dayOf(new Date().toISOString(), TZ) });
+      // Each line on its own Product/service: Cabling, Traveling, Meals, Lodging.
+      const itemIds: Record<string, string> = {};
+      for (const name of new Set(totals.lines.map((l) => qboItemFor(l.kind)))) {
+        itemIds[name] = await findOrCreateServiceItem(session.environment, session.realm_id, session.access_token, name);
+      }
+      const payload = fieldSheetInvoice(totals.lines, { customerId, itemIds, memo, note, email, txnDate: dayOf(new Date().toISOString(), TZ) });
       invoice = await createInvoice(session.environment, session.realm_id, session.access_token, payload as unknown as Record<string, unknown>, held);
     } catch (e) {
       await release();

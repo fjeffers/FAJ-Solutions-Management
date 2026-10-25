@@ -304,6 +304,8 @@ export type SheetSettings = {
   hotelMode: 'receipts' | 'per_night'; hotelRate: number | null; nights: number | null; rooms: number | null;
   /** Bill the other approved receipts (materials, tolls, equipment, other) at cost. Fuel is in the mileage. */
   receiptsAtCost: boolean;
+  /** The invoice shows each tech's day on its own line. Off: the totals (the timesheet has the days). */
+  byDay: boolean;
 };
 export const SETTING_KEYS = ['rate', 'travelRate', 'fixed', 'mileRate', 'mealRate', 'hotelRate', 'nights', 'rooms'] as const;
 export type NumSetting = (typeof SETTING_KEYS)[number];
@@ -325,6 +327,7 @@ export function parseSettings(raw: unknown): SheetSettings {
     mealMode: o.mealMode === 'per_day' ? 'per_day' : 'receipts', mealRate: num(o.mealRate),
     hotelMode: o.hotelMode === 'per_night' ? 'per_night' : 'receipts', hotelRate: num(o.hotelRate), nights: num(o.nights), rooms: num(o.rooms),
     receiptsAtCost: o.receiptsAtCost === true,
+    byDay: o.byDay === true,
   };
 }
 
@@ -352,6 +355,16 @@ const NOT_AT_COST = ['meals', 'hotel', 'fuel', 'mileage'];
 export const atCost = (category: string) => !NOT_AT_COST.includes(category);
 
 export type LineKind = 'labor' | 'travel' | 'fixed' | 'item' | 'mileage' | 'meals' | 'hotel' | 'receipt';
+/**
+ * The QuickBooks Product/service each kind of line is booked to, from Fred's
+ * own list (2026-10-25: "cabling, traveling, meals, lodging or hotel"). The
+ * rest go to the general Field Services.
+ */
+export const QBO_ITEM: Record<LineKind, string> = {
+  labor: 'Cabling', travel: 'Traveling', mileage: 'Traveling', meals: 'Meals', hotel: 'Lodging',
+  fixed: 'Field Services', item: 'Field Services', receipt: 'Field Services',
+};
+export const qboItemFor = (kind?: string | null) => QBO_ITEM[kind as LineKind] ?? 'Field Services';
 /** One line of the client's invoice. amount is qty × rate to the cent. */
 export type BillLine = { kind: LineKind; date: string | null; description: string; qty: number; rate: number; amount: number };
 
@@ -398,7 +411,7 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
   const byCategory: Record<string, number> = {};
   for (const r of approved) byCategory[r.category] = r2((byCategory[r.category] ?? 0) + (isNum(r.amount) ? r.amount : 0));
   const techDays = live.filter(({ c }) => c.worked).length;
-  const lines: BillLine[] = [];
+  let lines: BillLine[] = [];
 
   // Labor: each tech's day, with its note, so the client sees the hours by day.
   for (const { r, c } of live) {
@@ -446,10 +459,13 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
       lines.push(line('receipt', r.date ?? null, `${expenseCategoryLabel(r.category)}${r.vendor ? ` — ${r.vendor}` : ''}${r.date ? ` (${dayWord(r.date)})` : ''}`, 1, r.amount));
     }
   }
-  // The client reads it day by day: each day's labor, travel, miles and spending together, then the
+  // By the day, the client reads each day's labor, travel, miles and spending together, then the
   // lines for the whole week (a fixed price, items, meals, hotel). The sort is stable within a day.
+  // Otherwise the totals: the hours, the mileage, the meals (Fred, 2026-10-25: "i dont need the
+  // days i need the total hours then the total milage and the total meals 50 a day").
   const ORDER: LineKind[] = ['labor', 'travel', 'mileage', 'receipt', 'fixed', 'item', 'meals', 'hotel'];
-  lines.sort((x, y) => (x.date ? 0 : 1) - (y.date ? 0 : 1) || (x.date ?? '').localeCompare(y.date ?? '') || ORDER.indexOf(x.kind) - ORDER.indexOf(y.kind));
+  if (!s.byDay) lines = totalLines(lines, s.labor);
+  lines.sort((x, y) => (s.byDay ? (x.date ? 0 : 1) - (y.date ? 0 : 1) || (x.date ?? '').localeCompare(y.date ?? '') : 0) || ORDER.indexOf(x.kind) - ORDER.indexOf(y.kind));
   const of = (...k: LineKind[]) => r2(lines.filter((l) => k.includes(l.kind)).reduce((t, l) => t + l.amount, 0));
   return {
     hours: r2(sum((d) => d.hours)), travel: r2(sum((d) => d.travel)), total: r2(sum((d) => d.total)),
@@ -460,6 +476,26 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
     declined: r2(receipts.filter((r) => r.status === 'declined').reduce((t, r) => t + (isNum(r.amount) ? r.amount : 0), 0)),
     waiting: receipts.filter((r) => r.status === 'submitted').length,
   };
+}
+
+/**
+ * Every tech's days of labor, travel and miles as one line each (per rate), the
+ * amount worked out on the total so it is qty × rate to the cent; the rest as
+ * they are.
+ */
+function totalLines(lines: BillLine[], labor: LaborType): BillLine[] {
+  const word = { labor: labor === 'blended' ? 'Hours on site and travel' : 'Hours on site', travel: 'Travel', mileage: 'Mileage' } as Record<LineKind, string>;
+  const unit = { labor: 'h', travel: 'h', mileage: 'mi' } as Record<LineKind, string>;
+  const sums = new Map<string, { kind: LineKind; rate: number; qty: number }>();
+  const out: BillLine[] = [];
+  for (const l of lines) {
+    if (!unit[l.kind]) { out.push(l); continue; }
+    const k = `${l.kind}|${l.rate}`;
+    const g = sums.get(k);
+    if (g) g.qty += l.qty; else sums.set(k, { kind: l.kind, rate: l.rate, qty: l.qty });
+  }
+  const totals = [...sums.values()].map((g) => { const q = r2(g.qty); return line(g.kind, null, `${word[g.kind]}: ${q} ${unit[g.kind]}`, q, g.rate); });
+  return [...totals, ...out];
 }
 
 /** The sheet as spreadsheet rows (Excel download, which Smartsheet imports): the days, then the bill line by line. */
@@ -528,7 +564,8 @@ export function withAccountRate(s: SheetSettings, accountRate: unknown): SheetSe
 
 /** The QuickBooks invoice for a sheet's lines: each line dated, the site and dates printed for the client. */
 export function fieldSheetInvoice(lines: BillLine[], opts: {
-  customerId: string; itemId: string; memo: string; note: string; email?: string | null; txnDate?: string;
+  /** QuickBooks' item id for each Product/service name the lines use (qboItemFor). */
+  customerId: string; itemIds: Record<string, string>; memo: string; note: string; email?: string | null; txnDate?: string;
 }): QbInvoicePayload {
   const payload: QbInvoicePayload = {
     CustomerRef: { value: opts.customerId },
@@ -536,7 +573,7 @@ export function fieldSheetInvoice(lines: BillLine[], opts: {
       DetailType: 'SalesItemLineDetail' as const,
       Amount: l.amount,
       Description: l.description,
-      SalesItemLineDetail: { ItemRef: { value: opts.itemId }, Qty: l.qty, UnitPrice: l.rate, ...(l.date ? { ServiceDate: l.date } : {}) },
+      SalesItemLineDetail: { ItemRef: { value: opts.itemIds[qboItemFor(l.kind)] }, Qty: l.qty, UnitPrice: l.rate, ...(l.date ? { ServiceDate: l.date } : {}) },
     })),
     CustomerMemo: { value: opts.memo.slice(0, 1000) },
     PrivateNote: opts.note.slice(0, 4000),

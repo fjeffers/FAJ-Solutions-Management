@@ -30,6 +30,8 @@ export async function photoSources(db: SupabaseClient, woId: string, from: strin
     db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', woId),
     db.from('work_orders').select('job_log_left_out').eq('id', woId).maybeSingle(),
   ]);
+  // Never a PDF with pictures taken out because the list of them couldn't be read (Greptile on PR #24).
+  if (wo.error) throw new Error("Couldn't read the pictures left out of the job log. Try again.");
   const leftOut = new Set(((wo.data as { job_log_left_out?: string[] | null } | null)?.job_log_left_out) ?? []);
   const odo = ((od.data ?? []) as { id: string; contractor_name: string; at: string; moment: string; reading: number; photo_path: string | null }[])
     .filter((o) => o.photo_path && inDates(dayOf(o.at, TZ), from, to) && !leftOut.has(`odo:${o.id}`));

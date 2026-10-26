@@ -23,12 +23,14 @@ const tables: Record<string, Record<string, unknown>[]> = {
 };
 
 const asked: string[] = [];
+// The read of the pictures left out fails.
+let woFails = false;
 function query(table: string) {
   asked.push(table);
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'eq', 'order']) chain[m] = () => chain;
   chain.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: tables[table] ?? [], error: null }).then(ok);
-  chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
+  chain.maybeSingle = async () => (table === 'work_orders' && woFails ? { data: null, error: { message: 'offline' } } : { data: (tables[table] ?? [])[0] ?? null, error: null });
   return chain;
 }
 const db = {
@@ -61,6 +63,15 @@ describe('photoSources', () => {
       ]);
     } finally {
       tables.work_orders = [{ job_log_left_out: [] }];
+    }
+  });
+
+  it('makes no PDF when the pictures left out can’t be read, rather than one with them in (Greptile on PR #24)', async () => {
+    woFails = true;
+    try {
+      await expect(photoSources(db, 'wo', '2026-10-18', '2026-10-23')).rejects.toThrow(/couldn't read the pictures left out/i);
+    } finally {
+      woFails = false;
     }
   });
 

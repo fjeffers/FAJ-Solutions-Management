@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { downloadHref, photoFileName, photoDay } from './job-photos';
+import { downloadHref, fileExt, photoFileName, photoDay } from './job-photos';
 
 const pub = 'https://izr.supabase.co/storage/v1/object/public/portal-uploads/wo_1/photo_1.jpg';
 const signed = 'https://izr.supabase.co/storage/v1/object/sign/job-receipts/1/r.jpg?token=abc';
@@ -21,6 +21,16 @@ describe('saving a job’s pictures', () => {
     expect(photoFileName(['a,b:c'])).toBe('a-b-c.jpg');
     expect(photoFileName(['WO 19101401', null, 'Lodging/Quality Inn'], 'pdf')).toBe('WO 19101401 Lodging-Quality Inn.pdf');
     expect(photoFileName([])).toBe('photo.jpg');
+  });
+});
+
+describe('a picture’s own kind of file', () => {
+  it('comes from its link, so a PNG receipt saves as a PNG (Greptile on PR #23)', () => {
+    expect(fileExt('https://izr.supabase.co/storage/v1/object/sign/job-receipts/1/r_2.PNG?token=a.b')).toBe('png');
+    expect(fileExt(pub)).toBe('jpg');
+    expect(fileExt('https://izr.supabase.co/storage/v1/object/sign/job-receipts/1/hotel.pdf?token=a')).toBe('pdf');
+    expect(fileExt('https://example.com/photo', 'jpg')).toBe('jpg');
+    expect(fileExt('https://example.com/file.exe')).toBe('jpg');
   });
 });
 

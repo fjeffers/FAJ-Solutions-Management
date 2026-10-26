@@ -47,6 +47,18 @@ describe('Add photos', () => {
     expect(screen.queryByRole('button', { name: 'Add to the job' })).toBeNull();
   });
 
+  it('never saves pictures under a tech taken off the job while it was open (Greptile on PR #23)', async () => {
+    const onAdded = vi.fn();
+    const { rerender } = render(<AddJobPhotos woId="wo" woNumber="19101401" techs={['Paul Gibbs', 'Raja']} day="2026-10-19" onAdded={onAdded} />);
+    fireEvent.change(screen.getByLabelText('Pictures to add to the job'), { target: { files: [pic('a.jpg')] } });
+    fireEvent.change(screen.getByLabelText('Whose pictures'), { target: { value: 'Raja' } });
+    rerender(<AddJobPhotos woId="wo" woNumber="19101401" techs={['Paul Gibbs']} day="2026-10-19" onAdded={onAdded} />);
+    expect((screen.getByLabelText('Whose pictures') as HTMLSelectElement).value).toBe('Paul Gibbs');
+    fireEvent.click(screen.getByRole('button', { name: 'Add to the job' }));
+    await waitFor(() => expect(onAdded).toHaveBeenCalled());
+    expect(sent.map((f) => f.tech)).toEqual(['Paul Gibbs']);
+  });
+
   it('keeps the pictures not added picked, to try again, and says why', async () => {
     answers = [{ ok: true }, { ok: false, error: 'That picture is too large.' }];
     const onAdded = vi.fn();

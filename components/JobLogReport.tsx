@@ -45,7 +45,7 @@ import { mapLink } from '@/lib/geo';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
-import { downloadHref, photoDay, photoFileName } from '@/lib/job-photos';
+import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos';
 import AddJobPhotos from '@/components/AddJobPhotos';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
@@ -140,7 +140,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Each tech's days as the Hours screen and the Field Sheet have them, for the miles
   // (Fred, 2026-10-25: "i don't see the mileages on the job logs along with the pictures").
   const [days, setDays] = useState<SheetRow[]>([]);
-  // Pictures added from the office: the log reads the job again.
+  // Pictures added from the office: the log reads the job's photos again.
   const [added, setAdded] = useState(0);
   const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false });
 
@@ -187,7 +187,16 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         caption: `Odometer ${o.moment === 'end' ? 'end' : 'start'}: ${Number(o.reading).toLocaleString('en-US')}`,
       })));
     });
-  }, [w.id, loadedChoices, added]);
+  }, [w.id, loadedChoices]);
+
+  // Only the photos, after the office adds some: the pictures left out and the
+  // ones labeled receipts aren't read again, so a tap made meanwhile is never
+  // undone (Greptile on PR #23).
+  useEffect(() => {
+    if (!added) return;
+    void createClient().from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id).order('taken_at')
+      .then(({ data }) => { if (data) setPhotos(data as PhotoRow[]); });
+  }, [w.id, added]);
 
   // Printing shows only this report (app/wf.css, body.job-log-open).
   useEffect(() => {
@@ -288,7 +297,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#B42318', marginTop: 2 }}>Not in the job log: the client won’t see it. Still on the job.</div>
               )}
               {(() => {
-                const name = photoFileName([`WO ${w.wo_number}`, p.caption ?? 'Photo', p.tech, `${p.day.slice(5, 7)}-${p.day.slice(8, 10)}-${p.day.slice(0, 4)}`], p.pdf ? 'pdf' : 'jpg');
+                const name = photoFileName([`WO ${w.wo_number}`, p.caption ?? 'Photo', p.tech, `${p.day.slice(5, 7)}-${p.day.slice(8, 10)}-${p.day.slice(0, 4)}`], fileExt(p.src, p.pdf ? 'pdf' : 'jpg'));
                 return (
                   <a className="no-print" href={downloadHref(p.src, name)} download={name} aria-label={`Download ${what}`}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11.5, fontWeight: 600, color: '#0E1B2E', marginTop: 3 }}>

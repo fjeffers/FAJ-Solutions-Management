@@ -24,6 +24,8 @@ export default function AddJobPhotos({ woId, woNumber, techs, day: firstDay, onA
   const [files, setFiles] = useState<File[]>([]);
   const [day, setDay] = useState(firstDay);
   const [tech, setTech] = useState(crew[0]);
+  // The job's techs can change while this is open: one no longer on it isn't picked (Greptile on PR #23).
+  const who = crew.includes(tech) ? tech : crew[0];
   const [busy, setBusy] = useState(false);
 
   const add = async () => {
@@ -32,9 +34,9 @@ export default function AddJobPhotos({ woId, woNumber, techs, day: firstDay, onA
     let added = 0;
     try {
       for (const f of files) {
-        const jpeg = await stampPhoto(f, [`WO ${woNumber} · ${tech}`, fmtDay(day), 'Added by the office']);
+        const jpeg = await stampPhoto(f, [`WO ${woNumber} · ${who}`, fmtDay(day), 'Added by the office']);
         const body = new FormData();
-        body.set('wo_id', woId); body.set('day', day); body.set('tech', tech); body.set('kind', 'site');
+        body.set('wo_id', woId); body.set('day', day); body.set('tech', who); body.set('kind', 'site');
         body.set('file', new File([jpeg], 'photo.jpg', { type: 'image/jpeg' }));
         const res = await fetch('/api/jobs/day-photo', { method: 'POST', body });
         const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
@@ -67,7 +69,7 @@ export default function AddJobPhotos({ woId, woNumber, techs, day: firstDay, onA
           <label style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Day</span>
             <input type="date" className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={day} onChange={(e) => setDay(e.target.value)} aria-label="Day the pictures are from" /></label>
           <label style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Whose</span>
-            <select className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={tech} onChange={(e) => setTech(e.target.value)} aria-label="Whose pictures">
+            <select className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={who} onChange={(e) => setTech(e.target.value)} aria-label="Whose pictures">
               {crew.map((t) => <option key={t} value={t}>{t}</option>)}
             </select></label>
           <button type="button" className="wf-btn wf-btn-navy wf-btn-sm" disabled={busy} onClick={() => void add()}>{busy ? 'Adding…' : 'Add to the job'}</button>

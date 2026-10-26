@@ -35,7 +35,7 @@ import AddJobPhotos from '@/components/AddJobPhotos';
 import { jobGaps } from '@/lib/job-gaps';
 import { buildVisits, logTotals, type Punch } from '@/lib/job-log';
 import { mapLink } from '@/lib/geo';
-import { downloadHref, photoDay, photoFileName } from '@/lib/job-photos';
+import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos';
 import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseStatus } from '@/lib/expenses';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
@@ -1210,7 +1210,7 @@ function OwnerPhotos({ w }: { w: EnrichedWorkOrder }) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={u} alt="Job photo" loading="lazy" style={tile} />
             </a>
-            <div style={{ fontSize: 11.5, marginTop: 3 }}>{save(u, photoFileName([`WO ${w.wo_number}`, 'photo', String(i + 1)], (u.match(/\.(jpe?g|png|gif|webp|heic)(\?|$)/i)?.[1] ?? 'jpg').toLowerCase()), `job photo ${i + 1}`)}</div>
+            <div style={{ fontSize: 11.5, marginTop: 3 }}>{save(u, photoFileName([`WO ${w.wo_number}`, 'photo', String(i + 1)], fileExt(u)), `job photo ${i + 1}`)}</div>
           </div>
         ))}
       </div>

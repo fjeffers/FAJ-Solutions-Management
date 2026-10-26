@@ -27,6 +27,12 @@ export function photoFileName(parts: (string | null | undefined)[], ext = 'jpg')
   return `${name || 'photo'}.${ext}`;
 }
 
+/** A picture's own kind of file, from its link (a receipt can be a PNG or a PDF): "png". */
+export function fileExt(url: string, fallback = 'jpg'): string {
+  const ext = url.split('?')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1].toLowerCase();
+  return ext && /^(jpe?g|png|gif|webp|heic|pdf)$/.test(ext) ? ext : fallback;
+}
+
 /**
  * The day a picture the office adds goes on, to start with: today while the
  * job is on, else its first day (a job already done, or one not started yet).

@@ -81,3 +81,30 @@ describe('getting a fix for a check-in', () => {
     expect(noGpsMessage()).toMatch(/couldn't find where you are/);
   });
 });
+
+describe('what to do when Location is blocked, on the phone in hand', () => {
+  const host = 'app.fajsolutions.com';
+
+  it('the installed app on an Android phone has no web address to tap: Settings, then Chrome\'s menu (Fred, 2026-10-26)', () => {
+    const m = gpsMessage('blocked', 'android', host);
+    expect(m).not.toMatch(/web address/);
+    expect(m).toMatch(/Settings → Apps → Chrome → Permissions → Location → Allow only while using the app/);
+    expect(m).toMatch(/⋮ → Settings → Site settings → Location, tap app\.fajsolutions\.com and set it to Allow/);
+  });
+
+  it('Samsung Internet, iPhone, inside another app and a computer each get their own steps', () => {
+    expect(gpsMessage('blocked', 'samsung', host)).toMatch(/Apps → Samsung Internet → Permissions → Location.*allow app\.fajsolutions\.com/);
+    expect(gpsMessage('blocked', 'ios', host)).toMatch(/Location Services: turn it on, and set Safari Websites to While Using the App/);
+    expect(gpsMessage('blocked', 'ios-inapp', host)).toBe(gpsMessage('blocked', 'ios', host));
+    expect(gpsMessage('blocked', 'android-inapp', host)).toMatch(/Open in Chrome/);
+    expect(gpsMessage('blocked', 'other', host)).toMatch(/icon left of the web address/);
+  });
+
+  it('names the site the phone is on (the test site is another address)', () => {
+    expect(gpsMessage('blocked', 'android', 'faj-test.example.app')).toMatch(/tap faj-test\.example\.app and set it to Allow/);
+  });
+
+  it('no fix is the same on every phone', () => {
+    expect(gpsMessage('no_fix', 'ios', host)).toBe(gpsMessage('no_fix', 'android', host));
+  });
+});

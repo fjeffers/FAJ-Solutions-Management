@@ -35,6 +35,7 @@ function push(kind: ToastKind, message: string, durationMs: number) {
   setTimeout(() => dismissToast(id), durationMs);
 }
 
-export function toastError(message: string)   { push('error', message, 8000); }
+/** An error stays 8 seconds, or longer when it has steps to follow. */
+export function toastError(message: string, durationMs = 8000) { push('error', message, durationMs); }
 export function toastSuccess(message: string) { push('success', message, 3500); }
 export function toastInfo(message: string)    { push('info', message, 5000); }

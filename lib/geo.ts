@@ -5,6 +5,8 @@
 // more than a few seconds, and it works with no signal (GPS is satellites, not
 // the network). The rest is pure and unit-tested (lib/geo.test.ts).
 
+import { phoneKind, type PhoneKind } from './install-help';
+
 export type Position = { lat: number; lng: number; accuracy: number | null };
 
 /** Why the last getPosition() came back empty: the phone said no, or it had no fix in time. */
@@ -44,16 +46,43 @@ export async function getPosition(timeoutMs = 6000): Promise<Position | null> {
 /**
  * Clock-ins and drives need a fix (2026-10-20: "travel time and each clock in
  * should require gps"). Shown when the phone gives no position, and the tap is
- * not saved: what to tell the tech, by what went wrong.
+ * not saved: what to tell the tech, by what went wrong and on which phone. The
+ * app installed on a phone has no web address bar to tap (Fred, 2026-10-26,
+ * an Android phone), so the steps go through the phone's Settings and the
+ * browser's own menu, which work installed or not.
  */
-export function gpsMessage(problem: GpsProblem): string {
-  return problem === 'blocked'
-    ? 'Location is blocked for this app. Tap the icon left of the web address (or phone Settings → Apps → your browser → Permissions), set Location to Allow, then try again.'
-    : "Your phone couldn't find where you are. Check Location is on (swipe down from the top of the screen), step near a window or outside, then try again.";
+export function gpsMessage(problem: GpsProblem, kind: PhoneKind = thisPhone(), host = thisHost()): string {
+  if (problem === 'no_fix') {
+    return "Your phone couldn't find where you are. Check Location is on (swipe down from the top of the screen), step near a window or outside, then try again.";
+  }
+  switch (kind) {
+    case 'android':
+      return `Location is blocked for this app. On the phone: Settings → Apps → Chrome → Permissions → Location → Allow only while using the app. Then open Chrome, tap ⋮ → Settings → Site settings → Location, tap ${host} and set it to Allow. Then try again.`;
+    case 'samsung':
+      return `Location is blocked for this app. On the phone: Settings → Apps → Samsung Internet → Permissions → Location → Allow only while using the app. Then open Samsung Internet, tap ≡ → Settings → Sites and downloads → Site permissions → Location, and allow ${host}. Then try again.`;
+    case 'ios':
+    case 'ios-inapp':
+      return 'Location is blocked for this app. On the iPhone: Settings → Privacy & Security → Location Services: turn it on, and set Safari Websites to While Using the App. Then Settings → Apps → Safari → Location → Allow. Then try again.';
+    case 'android-inapp':
+      return 'Location is blocked here: this opened inside another app (like Gmail). Tap ⋮ → Open in Chrome, allow Location when it asks, then try again.';
+    default:
+      return 'Location is blocked for this site. Click the icon left of the web address, set Location to Allow, then try again.';
+  }
+}
+
+function thisPhone(): PhoneKind {
+  return typeof navigator === 'undefined' ? 'other' : phoneKind(navigator.userAgent ?? '');
+}
+
+function thisHost(): string {
+  return typeof location === 'undefined' ? 'app.fajsolutions.com' : location.host;
 }
 
 /** The message for the last getPosition() that came back empty. */
 export const noGpsMessage = () => gpsMessage(lastProblem);
+
+/** How long it stays up: long enough to read the steps and follow them. */
+export const NO_GPS_MS = 30_000;
 
 /** "40.68840, -75.22070" — five places is about a metre. */
 export function fmtCoords(lat: number, lng: number): string {

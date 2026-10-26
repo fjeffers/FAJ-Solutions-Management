@@ -48,7 +48,7 @@ import type { ReceiptRead } from '@/lib/photo-read';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
-import { getPosition, stampLines, mapLink, milesBetween, noGpsMessage, type Position } from '@/lib/geo';
+import { getPosition, stampLines, mapLink, milesBetween, noGpsMessage, NO_GPS_MS, type Position } from '@/lib/geo';
 import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
 import { EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
 import { useExpenseCategories } from '@/lib/use-expense-categories';
@@ -1293,7 +1293,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     setLocating(true);
     const pos = await getPosition(8000);
     setLocating(false);
-    if (!pos) { toastError(noGpsMessage()); return; }
+    if (!pos) { toastError(noGpsMessage(), NO_GPS_MS); return; }
     void act(
       makeAction('clock', { number: job.number, action: on ? 'out' : 'in', lat: pos.lat, lng: pos.lng, acc: pos.accuracy },
         `Clock ${on ? 'out of' : 'in on'} WO ${job.number}`, at),
@@ -1307,7 +1307,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     setLocating(true);
     const pos = await getPosition(8000);
     setLocating(false);
-    if (!pos) { toastError(noGpsMessage()); return null; }
+    if (!pos) { toastError(noGpsMessage(), NO_GPS_MS); return null; }
     return { lat: pos.lat, lng: pos.lng, acc: pos.accuracy };
   };
   const dayTap = async (kind: string, extra: Record<string, unknown>, label: string, sent: string) => {
@@ -2128,7 +2128,7 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     setBusy(true);
     const pos = await getPosition(8000);
     setBusy(false);
-    if (!pos) { toastError(noGpsMessage()); return null; }
+    if (!pos) { toastError(noGpsMessage(), NO_GPS_MS); return null; }
     return { lat: pos.lat, lng: pos.lng, acc: pos.accuracy };
   };
   const day = (kind: string, extra: Record<string, unknown>, label: string, at: Date, g: Record<string, unknown>, sent?: string) =>

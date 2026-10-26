@@ -31,10 +31,13 @@ const updates: Record<string, unknown>[] = [];
 let saveDelays: number[] = [];
 // Which saves fail, in order.
 let saveFails: boolean[] = [];
+// The punches come back only once this settles, to hold the log loading.
+let punchesHeld: Promise<void> = Promise.resolve();
 function query(table: string) {
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'eq', 'in', 'order']) chain[m] = () => chain;
-  chain.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: tables[table] ?? [], error: null }).then(ok);
+  chain.then = (ok: (v: unknown) => unknown) => (table === 'job_punches' ? punchesHeld : Promise.resolve())
+    .then(() => ({ data: tables[table] ?? [], error: null })).then(ok);
   chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
   chain.update = (row: Record<string, unknown>) => ({
     eq: async () => {
@@ -154,6 +157,23 @@ describe('Job log saved as a PDF', () => {
       expect(document.title).toBe('FAJ Solutions');
     } finally {
       tables.field_sheet_days = before;
+    }
+  });
+
+  it('can’t be printed until the job’s days are in, so the PDF never goes without its dates', async () => {
+    let release = () => {};
+    punchesHeld = new Promise((ok) => { release = ok; });
+    try {
+      const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
+      render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+      const print = screen.getByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      expect(print.disabled).toBe(true);
+      expect(document.title).toBe('LDS-1110 Site 5011876 — Gaffney, SC');
+      release();
+      await waitFor(() => expect(print.disabled).toBe(false));
+      expect(document.title).toBe('LDS-1110 Site 5011876 — Gaffney, SC · 10-19-2026 – 10-23-2026');
+    } finally {
+      punchesHeld = Promise.resolve();
     }
   });
 });

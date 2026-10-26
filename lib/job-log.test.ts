@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildVisits, inRange, logTotals, hoursText, dayOf, type Punch } from './job-log';
+import { buildVisits, inRange, logTotals, hoursText, dayOf, jobLogName, type Punch } from './job-log';
 import type { TimeLog } from './types';
 
 const tz = 'America/New_York';
@@ -41,5 +41,21 @@ describe('the job log', () => {
     expect(inRange('2026-10-01', '2026-10-01', '2026-10-02')).toBe(true);
     expect(inRange('2026-10-03', '', '2026-10-02')).toBe(false);
     expect(inRange('2026-09-30', '', '')).toBe(true);
+  });
+});
+
+describe('the job log’s name, which the saved PDF gets', () => {
+  const gaffney = { wo_number: '19101401', external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_city: 'Gaffney', site_state: 'SC' };
+
+  it('is the client’s WO, the site number, the city and the days, with no slash a file name can’t have', () => {
+    expect(jobLogName(gaffney, '2026-10-18', '2026-10-23')).toBe('LDS-1110 Site 5011876 — Gaffney, SC · 10-18-2026 – 10-23-2026');
+    expect(jobLogName(gaffney, '2026-10-19', '2026-10-19')).toBe('LDS-1110 Site 5011876 — Gaffney, SC · 10-19-2026');
+  });
+
+  it('makes a bare site number a site, and does without what the job doesn’t have', () => {
+    expect(jobLogName({ ...gaffney, site_name: ' 5333202', site_city: 'Fayetteville', site_state: 'NC' }, '2026-10-26', '2026-10-30'))
+      .toBe('LDS-1110 Site 5333202 — Fayetteville, NC · 10-26-2026 – 10-30-2026');
+    expect(jobLogName({ wo_number: '19101450', site_name: 'Store 12/B', site_city: 'Newark', site_state: null }, '', ''))
+      .toBe('WO 19101450 Store 12-B — Newark');
   });
 });

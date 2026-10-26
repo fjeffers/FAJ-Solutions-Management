@@ -10,7 +10,7 @@
 // functions the tech portal uses (migration-098), so both sides always agree.
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Archive, ArchiveRestore, CalendarClock, CalendarDays, CheckCircle2, Copy, DollarSign, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
+  Archive, ArchiveRestore, CalendarClock, CalendarDays, CheckCircle2, Copy, DollarSign, Download, Edit2, FileText, MessageSquare, MoreHorizontal, Navigation,
   FilePlus2, Plus, Receipt, Search, Send, Signature, Sparkles, Trash2, UserCog, Users,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -31,9 +31,11 @@ import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { type Contractor, type EnrichedWorkOrder, type WorkOrder } from '@/lib/types';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import JobLogReport from '@/components/JobLogReport';
+import AddJobPhotos from '@/components/AddJobPhotos';
 import { jobGaps } from '@/lib/job-gaps';
 import { buildVisits, logTotals, type Punch } from '@/lib/job-log';
 import { mapLink } from '@/lib/geo';
+import { downloadHref, photoDay, photoFileName } from '@/lib/job-photos';
 import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseStatus } from '@/lib/expenses';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
@@ -1153,43 +1155,63 @@ type PhotoRow = { id: string; url: string; taken_at: string; lat: number | null;
  * The job's photos (Fred, 2026-10-02): what the techs took in their portal,
  * stamped with the date, time and GPS, plus any other pictures already on the
  * job. Each tech photo links to the spot on the map where it was taken.
+ *
+ * Fred, 2026-10-26 ("still unable to download photo or add them"): Add photos
+ * puts pictures from the office's device on the job (components/AddJobPhotos),
+ * and each photo has Download, which saves it to the device.
  */
 function OwnerPhotos({ w }: { w: EnrichedWorkOrder }) {
   const [rows, setRows] = useState<PhotoRow[] | null>(null);
+  const [added, setAdded] = useState(0);
   useEffect(() => {
     createClient().from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id)
       .order('taken_at', { ascending: false })
       .then(({ data }) => setRows((data as PhotoRow[] | null) ?? []));
-  }, [w.id, w.doc_urls]);
+  }, [w.id, w.doc_urls, added]);
 
   const tech = new Set((rows ?? []).map((r) => r.url));
   const others = (w.doc_urls ?? []).filter((u) => !tech.has(u) && /\.(jpe?g|png|gif|webp|heic)(\?|$)/i.test(u));
   if (rows === null) return null;
-  if (rows.length === 0 && others.length === 0) return null;
 
   const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const fileDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', timeZone: 'America/New_York' }).replace(/\//g, '-');
   const tile = { width: '100%', aspectRatio: '1', objectFit: 'cover' as const, borderRadius: 10, display: 'block' };
+  const save = (href: string, name: string, what: string) => (
+    <a href={downloadHref(href, name)} download={name} aria-label={`Download ${what}`} style={{ color: 'var(--wf-navy)', fontWeight: 600 }}>
+      <Download size={12} style={{ verticalAlign: '-2px' }} /> Download
+    </a>
+  );
+  const crew = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter((t): t is string => !!t);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   return (
-    <Section title="Photos" subtitle={`${rows.length + others.length} on this job`}>
+    <Section title="Photos" subtitle={rows.length + others.length ? `${rows.length + others.length} on this job` : 'None yet'}
+      right={<AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={crew} day={photoDay(w.start_date, w.end_date, today)} onAdded={() => setAdded((n) => n + 1)} />}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
-        {rows.map((p) => (
-          <div key={p.id}>
-            <a href={p.url} target="_blank" rel="noopener noreferrer">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.url} alt={`Photo by ${p.contractor_name ?? 'tech'}, ${when(p.taken_at)}`} loading="lazy" style={tile} />
-            </a>
-            <div style={{ fontSize: 11.5, color: 'var(--wf-subtle)', marginTop: 3, lineHeight: 1.35 }}>
-              {p.contractor_name && <div style={{ fontWeight: 600, color: 'var(--wf-text)' }}>{p.contractor_name}</div>}
-              {when(p.taken_at)}
-              {p.lat != null && p.lng != null && <> · <a href={mapLink(p.lat, p.lng)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--wf-navy)' }}>map</a></>}
+        {rows.map((p, i) => {
+          const what = `photo by ${p.contractor_name ?? 'tech'}, ${when(p.taken_at)}`;
+          return (
+            <div key={p.id}>
+              <a href={p.url} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.url} alt={`Photo by ${p.contractor_name ?? 'tech'}, ${when(p.taken_at)}`} loading="lazy" style={tile} />
+              </a>
+              <div style={{ fontSize: 11.5, color: 'var(--wf-subtle)', marginTop: 3, lineHeight: 1.35 }}>
+                {p.contractor_name && <div style={{ fontWeight: 600, color: 'var(--wf-text)' }}>{p.contractor_name}</div>}
+                {when(p.taken_at)}
+                {p.lat != null && p.lng != null && <> · <a href={mapLink(p.lat, p.lng)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--wf-navy)' }}>map</a></>}
+                <div>{save(p.url, photoFileName([`WO ${w.wo_number}`, p.contractor_name, fileDay(p.taken_at), String(rows.length - i)]), what)}</div>
+              </div>
             </div>
+          );
+        })}
+        {others.map((u, i) => (
+          <div key={u}>
+            <a href={u} target="_blank" rel="noopener noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={u} alt="Job photo" loading="lazy" style={tile} />
+            </a>
+            <div style={{ fontSize: 11.5, marginTop: 3 }}>{save(u, photoFileName([`WO ${w.wo_number}`, 'photo', String(i + 1)], (u.match(/\.(jpe?g|png|gif|webp|heic)(\?|$)/i)?.[1] ?? 'jpg').toLowerCase()), `job photo ${i + 1}`)}</div>
           </div>
-        ))}
-        {others.map((u) => (
-          <a key={u} href={u} target="_blank" rel="noopener noreferrer">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={u} alt="Job photo" loading="lazy" style={tile} />
-          </a>
         ))}
       </div>
     </Section>

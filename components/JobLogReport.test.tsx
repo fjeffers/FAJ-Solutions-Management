@@ -93,6 +93,20 @@ describe('Job log pictures', () => {
     await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: [], job_log_receipt_photos: [] }));
   });
 
+  it('takes a picture out with its ✗ and says the client won’t see it; a ✓ puts it back (Fred, 2026-10-26)', async () => {
+    const user = userEvent.setup();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const take = await screen.findByRole('button', { name: /leave out of the log: materials, lowe's/i });
+    expect(take.getAttribute('title')).toMatch(/tap ✗ to take it out; it stays on the job/i);
+    expect(screen.queryByText(/not in the job log: the client won’t see it/i)).toBeNull();
+    await user.click(take);
+    const back = screen.getByRole('button', { name: /put back in the log: materials, lowe's/i });
+    expect(back.getAttribute('title')).toMatch(/tap ✓ to put it back/i);
+    expect(back.parentElement!.textContent).toMatch(/not in the job log: the client won’t see it\. still on the job\./i);
+    expect(back.closest('.jl-avoid')!.classList.contains('no-print')).toBe(true);
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['receipt:x1'], job_log_receipt_photos: [] }));
+  });
+
   it('keeps every choice from a quick run of taps, even when a save is slow', async () => {
     saveDelays = [80, 0];
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { fmtCoords, mapLink, fmtStampTime, stampLines, milesBetween } from './geo';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fmtCoords, mapLink, fmtStampTime, stampLines, milesBetween, getPosition, gpsMessage, noGpsMessage } from './geo';
 
 describe('where and when on a job photo', () => {
   const at = new Date('2026-10-03T00:31:07Z'); // 8:31:07 PM in Easton
@@ -43,5 +43,41 @@ describe('milesBetween', () => {
     expect(m).toBeGreaterThan(14);
     expect(m).toBeLessThan(16.5);
     expect(milesBetween(40.6884, -75.2207, 40.6884, -75.2207)).toBe(0);
+  });
+});
+
+describe('getting a fix for a check-in', () => {
+  const fix = { coords: { latitude: 40.6884, longitude: -75.2207, accuracy: 30 } };
+  const phone = (answers: Array<'ok' | 'timeout' | 'denied'>) => {
+    const calls: PositionOptions[] = [];
+    vi.stubGlobal('navigator', { geolocation: {
+      getCurrentPosition: (ok: (p: unknown) => void, fail: (e: { code: number }) => void, o: PositionOptions) => {
+        calls.push(o);
+        const a = answers.shift();
+        if (a === 'ok') ok(fix); else fail({ code: a === 'denied' ? 1 : 3 });
+      },
+    } });
+    return calls;
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('falls back to the quicker location when GPS has no fix in time', async () => {
+    const calls = phone(['timeout', 'ok']);
+    expect(await getPosition(100)).toEqual({ lat: 40.6884, lng: -75.2207, accuracy: 30 });
+    expect(calls.map((c) => c.enableHighAccuracy)).toEqual([true, false]);
+  });
+
+  it('says to allow Location when the phone refused, and does not ask twice', async () => {
+    const calls = phone(['denied']);
+    expect(await getPosition(100)).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(noGpsMessage()).toMatch(/blocked/);
+  });
+
+  it('says to turn Location on or step outside when there is no fix at all', async () => {
+    phone(['timeout', 'timeout']);
+    expect(await getPosition(100)).toBeNull();
+    expect(noGpsMessage()).toBe(gpsMessage('no_fix'));
+    expect(noGpsMessage()).toMatch(/couldn't find where you are/);
   });
 });

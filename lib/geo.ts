@@ -7,29 +7,53 @@
 
 export type Position = { lat: number; lng: number; accuracy: number | null };
 
-/** The phone's location, or null when it is off, refused, or too slow. */
-export function getPosition(timeoutMs = 6000): Promise<Position | null> {
-  if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null);
+/** Why the last getPosition() came back empty: the phone said no, or it had no fix in time. */
+export type GpsProblem = 'blocked' | 'no_fix';
+let lastProblem: GpsProblem = 'no_fix';
+
+function ask(opts: PositionOptions, timeoutMs: number): Promise<Position | GpsProblem> {
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (p: Position | null) => { if (!settled) { settled = true; resolve(p); } };
-    const timer = setTimeout(() => finish(null), timeoutMs + 500);
+    const finish = (p: Position | GpsProblem) => { if (!settled) { settled = true; resolve(p); } };
+    const timer = setTimeout(() => finish('no_fix'), timeoutMs + 500);
     navigator.geolocation.getCurrentPosition(
       (p) => {
         clearTimeout(timer);
         finish({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Number.isFinite(p.coords.accuracy) ? p.coords.accuracy : null });
       },
-      () => { clearTimeout(timer); finish(null); },
-      { enableHighAccuracy: true, maximumAge: 30_000, timeout: timeoutMs },
+      (e) => { clearTimeout(timer); finish(e.code === 1 ? 'blocked' : 'no_fix'); },
+      { ...opts, timeout: timeoutMs },
     );
   });
 }
 
 /**
- * Clock-ins and drives need a fix (2026-10-20: "travel time and each clock in
- * should require gps"). Shown when the phone gives no position, and the tap is not saved.
+ * The phone's location, or null when it is off, refused, or too slow.
+ * GPS first; when it has no fix in time (indoors, early morning: a tech at
+ * 5:31 AM on 2026-10-26 couldn't check in), the phone's quicker Wi-Fi and
+ * cell-tower location, up to 5 minutes old. A refusal is not asked again.
  */
-export const NEED_GPS = 'Your location is needed for this. Turn on Location for this app, then try again.';
+export async function getPosition(timeoutMs = 6000): Promise<Position | null> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) { lastProblem = 'no_fix'; return null; }
+  let r = await ask({ enableHighAccuracy: true, maximumAge: 30_000 }, timeoutMs);
+  if (r === 'no_fix') r = await ask({ enableHighAccuracy: false, maximumAge: 300_000 }, 4000);
+  if (typeof r === 'string') { lastProblem = r; return null; }
+  return r;
+}
+
+/**
+ * Clock-ins and drives need a fix (2026-10-20: "travel time and each clock in
+ * should require gps"). Shown when the phone gives no position, and the tap is
+ * not saved: what to tell the tech, by what went wrong.
+ */
+export function gpsMessage(problem: GpsProblem): string {
+  return problem === 'blocked'
+    ? 'Location is blocked for this app. Tap the icon left of the web address (or phone Settings → Apps → your browser → Permissions), set Location to Allow, then try again.'
+    : "Your phone couldn't find where you are. Check Location is on (swipe down from the top of the screen), step near a window or outside, then try again.";
+}
+
+/** The message for the last getPosition() that came back empty. */
+export const noGpsMessage = () => gpsMessage(lastProblem);
 
 /** "40.68840, -75.22070" — five places is about a metre. */
 export function fmtCoords(lat: number, lng: number): string {

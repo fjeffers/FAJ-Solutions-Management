@@ -94,32 +94,38 @@ function useLogChoices(woId: string, left: string[] | null | undefined, receiptI
   const show = useCallback((c: Choices) => { tapped.current = c; setNow(c); }, []);
   /** What the job has saved, read when the log opens. */
   const loaded = useCallback((c: Choices) => { kept.current = c; show(c); }, [show]);
-  const choose = (next: Choices) => {
+  /** Shows the choice and saves it; true once saved. */
+  const choose = (next: Choices): Promise<boolean> => {
     show(next);
-    savesFor.set(woId, afterSaves(woId).then(async () => {
+    const saved = afterSaves(woId).then(async () => {
       const c = tapped.current;
-      if (c === kept.current) return;
+      if (c === kept.current) return true;
       const { error } = await createClient().from('work_orders')
         .update({ job_log_left_out: [...c.leftOut], job_log_receipt_photos: [...c.receiptPhotos] }).eq('id', woId);
-      if (!error) { kept.current = c; return; }
+      if (!error) { kept.current = c; return true; }
       // Back to what's saved, unless there was a tap since: the next save tries again with it.
       if (tapped.current === c) show(kept.current);
       toastError("That didn't save. Check your connection and try again.");
-    }));
+      return false;
+    });
+    savesFor.set(woId, saved.then(() => undefined));
+    return saved;
   };
-  /** Leave a picture out of the log, or put it back. */
+  /** Leave a picture out of the log, or put it back; true once saved. */
   const flip = (key: string) => {
     const l = new Set(tapped.current.leftOut);
     if (l.has(key)) l.delete(key); else l.add(key);
-    choose({ ...tapped.current, leftOut: l });
+    return choose({ ...tapped.current, leftOut: l });
   };
+  /** The job has it saved as left out. */
+  const savedOut = (key: string) => kept.current.leftOut.has(key);
   /** Label a site photo a receipt, or not one. */
   const label = (photoId: string, receipt: boolean) => {
     const r = new Set(tapped.current.receiptPhotos);
     if (receipt) r.add(photoId); else r.delete(photoId);
-    choose({ ...tapped.current, receiptPhotos: r });
+    void choose({ ...tapped.current, receiptPhotos: r });
   };
-  return { ...now, loaded, flip, label };
+  return { ...now, loaded, flip, label, savedOut };
 }
 
 /** A section heading on the printed page. */
@@ -138,7 +144,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
   const [receipts, setReceipts] = useState<Pic[]>([]);
   const [odometer, setOdometer] = useState<Pic[]>([]);
-  const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
+  const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   // Each tech's days as the Hours screen and the Field Sheet have them, for the miles
@@ -295,10 +301,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               // The mark is what a tap does: ✗ takes it out, ✓ puts it back.
               <button type="button" className="no-print"
                 onClick={() => {
-                  flip(p.key);
-                  if (!out) toastSuccess('Taken out of the job log. It’s still on the job: tick “Pictures left out” to see it.');
-                  // The last one put back: the next one taken out goes off the screen again.
-                  else if (leftCount === 1) setInc((s) => ({ ...s, leftOut: false }));
+                  // The first one out (none others showing as left out, in these dates): off the screen,
+                  // whatever was ticked before (Greptile on PR #24).
+                  if (!out && leftCount === 0) setInc((s) => ({ ...s, leftOut: false }));
+                  // Said once it's saved, and only if it's still out then (Greptile on PR #24).
+                  void flip(p.key).then((ok) => {
+                    if (ok && !out && savedOut(p.key)) toastSuccess('Taken out of the job log. It’s still on the job: tick “Pictures left out” to see it.');
+                  });
                 }}
                 aria-label={out ? `Put back in the log: ${what}` : `Leave out of the log: ${what}`} title={out ? 'Not in the job log. Tap ✓ to put it back.' : 'In the job log. Tap ✗ to take it out; it stays on the job.'}
                 style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32, borderRadius: 16, border: `2px solid ${out ? '#fff' : '#B42318'}`, background: out ? '#047857' : '#fff', color: out ? '#fff' : '#B42318', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>

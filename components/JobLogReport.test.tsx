@@ -138,6 +138,32 @@ describe('Job log pictures', () => {
     expect((screen.getByLabelText(/pictures left out \(1\)/i) as HTMLInputElement).checked).toBe(false);
   });
 
+  it('says a picture is taken out only once that is saved (Greptile on PR #24)', async () => {
+    const toast = await import('@/lib/toast');
+    (toast.toastSuccess as unknown as ReturnType<typeof vi.fn>).mockClear();
+    saveFails = [true];
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /leave out of the log: materials, lowe's/i }));
+    await waitFor(() => expect(toast.toastError).toHaveBeenCalledWith(expect.stringMatching(/didn't save/i)));
+    expect(toast.toastSuccess).not.toHaveBeenCalled();
+    // Back where it was.
+    expect(screen.getByRole('button', { name: /leave out of the log: materials, lowe's/i })).toBeTruthy();
+  });
+
+  it('takes the next picture off the screen after the dates hide the ones left out (Greptile on PR #24)', async () => {
+    const user = userEvent.setup();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    await user.click(await screen.findByRole('button', { name: /leave out of the log: materials, lowe's: \$104/i }));
+    await user.click(screen.getByLabelText(/pictures left out \(1\)/i));
+    // Only 10/19: the 10/21 receipt left out isn't in these dates, so neither is the box.
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-19' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-19' } });
+    expect(screen.queryByLabelText(/pictures left out/i)).toBeNull();
+    await user.click(screen.getByRole('button', { name: /leave out of the log: odometer start/i }));
+    expect(screen.queryByAltText(/odometer start/i)).toBeNull();
+    expect((screen.getByLabelText(/pictures left out \(1\)/i) as HTMLInputElement).checked).toBe(false);
+  });
+
   it('has Download on every picture, named for the job, what it is, whose and the day, and an Add photos button (Fred, 2026-10-26)', async () => {
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const lowes = await screen.findByRole('link', { name: /download materials, lowe's: \$104\.17/i });

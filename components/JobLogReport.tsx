@@ -153,8 +153,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Each tech's days as the Hours screen and the Field Sheet have them, for the miles
   // (Fred, 2026-10-25: "i don't see the mileages on the job logs along with the pictures").
   const [days, setDays] = useState<SheetRow[]>([]);
-  // Pictures added from the office: the log reads the job's photos again.
+  // Pictures added from the office: the log reads the job's photos again, and the
+  // new ones are marked New and scrolled to, as they sit under their own day
+  // among the others (Fred, 2026-10-26: "when i add a photo it not saving on the job log").
   const [added, setAdded] = useState(0);
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
   const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
 
   useEffect(() => {
@@ -210,6 +213,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     void createClient().from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id).order('taken_at')
       .then(({ data }) => { if (data) setPhotos(data as PhotoRow[]); });
   }, [w.id, added]);
+  useEffect(() => {
+    if (fresh.size) document.querySelector('#job-log-root [data-fresh]')?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [fresh, photos]);
 
   // Printing shows only this report (app/wf.css, body.job-log-open).
   useEffect(() => {
@@ -300,6 +306,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               ) : (
                 <img src={p.src} alt={what} style={{ width: '100%', aspectRatio: whole ? '3 / 4' : '4 / 3', objectFit: whole ? 'contain' : 'cover', background: whole ? '#F6F4EF' : undefined, borderRadius: 6, border: '1px solid #E4DFD3', display: 'block', opacity: out ? 0.35 : 1 }} />
               )}
+              {p.photoId && fresh.has(p.src) && (
+                <span className="no-print" data-fresh style={{ position: 'absolute', top: 6, left: 6, background: '#C9A24B', color: '#0E1B2E', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>New</span>
+              )}
               {p.declined && (
                 <span style={{ position: 'absolute', top: 6, left: 6, background: '#B42318', color: '#fff', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>Declined</span>
               )}
@@ -363,7 +372,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         {/* Not until the job's days are in: the PDF's name has them (Greptile on PR #21). */}
         <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
         <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
-          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={() => setAdded((n) => n + 1)} />
+          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>

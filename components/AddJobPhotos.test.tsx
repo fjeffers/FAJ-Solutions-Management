@@ -13,7 +13,7 @@ const stampPhoto = vi.fn<(f: Blob, lines: string[]) => Promise<Blob>>(async () =
 vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: (f: Blob, lines: string[]) => stampPhoto(f, lines) }));
 
 const sent: Record<string, string>[] = [];
-let answers: { ok: boolean; error?: string }[] = [];
+let answers: { ok: boolean; error?: string; url?: string }[] = [];
 vi.stubGlobal('fetch', async (_url: string, init: { body: FormData }) => {
   const f: Record<string, string> = {};
   init.body.forEach((v, k) => { f[k] = typeof v === 'string' ? v : `file:${(v as File).type}`; });
@@ -28,6 +28,7 @@ afterEach(() => { cleanup(); sent.length = 0; answers = []; stampPhoto.mockClear
 
 describe('Add photos', () => {
   it('adds every picture picked to the job, on the day and under the name chosen', async () => {
+    answers = [{ ok: true, url: 'https://example.test/a1.jpg' }, { ok: true, url: 'https://example.test/a2.jpg' }];
     const onAdded = vi.fn();
     render(<AddJobPhotos woId="wo" woNumber="19101401" techs={['Paul Gibbs', 'Raja']} day="2026-10-19" onAdded={onAdded} />);
     fireEvent.change(screen.getByLabelText('Pictures to add to the job'), { target: { files: [pic('a.jpg'), pic('b.jpg')] } });
@@ -43,7 +44,8 @@ describe('Add photos', () => {
       { wo_id: 'wo', day: '2026-10-21', tech: 'Raja', kind: 'site', file: 'file:image/jpeg' },
     ]);
     expect(stampPhoto.mock.calls[0][1]).toEqual(['WO 19101401 · Raja', 'Wed, Oct 21', 'Added by the office']);
-    expect(toastSuccess).toHaveBeenCalledWith('2 pictures added to Wed, Oct 21.');
+    expect(toastSuccess).toHaveBeenCalledWith("2 pictures added to Wed, Oct 21, with the job's photos.");
+    expect(onAdded).toHaveBeenCalledWith(['https://example.test/a1.jpg', 'https://example.test/a2.jpg']);
     expect(screen.queryByRole('button', { name: 'Add to the job' })).toBeNull();
   });
 
@@ -69,7 +71,7 @@ describe('Add photos', () => {
     await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1));
     expect(sent).toHaveLength(2);
     expect(toastError).toHaveBeenCalledWith('That picture is too large.');
-    expect(toastSuccess).toHaveBeenCalledWith('1 picture added to Mon, Oct 19.');
+    expect(toastSuccess).toHaveBeenCalledWith("1 picture added to Mon, Oct 19, with the job's photos.");
     expect(screen.getByText('2 pictures')).toBeTruthy();
   });
 });

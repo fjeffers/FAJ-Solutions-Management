@@ -53,7 +53,7 @@ function query(table: string) {
 }
 const storage = { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((p) => ({ path: p, signedUrl: `https://signed.test/${p}` })) }) }) };
 vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ from: (t: string) => query(t), storage }) }));
-vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (url === '/api/jobs/day-photo' ? { ok: true } : []) }));
+vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (url === '/api/jobs/day-photo' ? { ok: true, url: 'https://example.test/added.jpg' } : []) }));
 // The stamp draws on a canvas, which the test browser hasn't got.
 vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: async () => new Blob(['jpeg'], { type: 'image/jpeg' }) }));
 
@@ -198,6 +198,12 @@ describe('Job log pictures', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add to the job' }));
       await waitFor(() => expect(screen.getAllByRole('link', { name: /download photo/i })).toHaveLength(2));
       expect(reads.work_orders).toBe(choicesRead);
+      // The one just added is marked New, as it sits under its own day among the others
+      // (Fred, 2026-10-26: "when i add a photo it not saving on the job log").
+      const added = screen.getAllByAltText(/^photo/i).find((img) => img.getAttribute('src') === 'https://example.test/added.jpg')!;
+      expect(added.parentElement!.textContent).toMatch(/^New/);
+      const first = screen.getAllByAltText(/^photo/i).find((img) => img.getAttribute('src') === 'https://example.test/site.jpg')!;
+      expect(first.parentElement!.textContent).not.toMatch(/New/);
     } finally {
       tables.wo_photos = before;
     }

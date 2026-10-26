@@ -1,4 +1,5 @@
 import { isPracticeCopy, isPreviewCopy, LIVE_APP_URL } from '@/lib/practice';
+import PracticeGate from '@/components/PracticeGate';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import './wf.css';
@@ -35,12 +36,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        {/* A slim strip above the page, not over it: the floating badge covered the logo on phones. */}
-        {isPracticeCopy && (
-          <div role="note" style={{ background: '#B45309', color: '#fff', font: '600 11.5px/1.3 Inter, Arial, sans-serif', padding: '4px 10px', textAlign: 'center' }}>
-            Test site · copy of real FAJ data · changes don&apos;t reach the live app
-          </div>
-        )}
+        {/* The test site opens on a full screen that sends people to the real app (components/PracticeGate.tsx). */}
+        {isPracticeCopy && <PracticeGate />}
         {isPreviewCopy && (
           <div role="note" style={{ background: '#B45309', color: '#fff', font: '600 11.5px/1.3 Inter, Arial, sans-serif', padding: '4px 10px', textAlign: 'center' }}>
             Preview copy · real FAJ data, but emails don&apos;t send from here ·{' '}

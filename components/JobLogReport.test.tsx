@@ -92,6 +92,7 @@ describe('Job log pictures', () => {
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     await user.click(await screen.findByRole('button', { name: /leave out of the log: photo/i }));
     await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['photo:ph1'], job_log_receipt_photos: [] }));
+    await user.click(screen.getByLabelText(/pictures left out \(1\)/i));
     const back = screen.getByRole('button', { name: /put back in the log: photo/i });
     expect(back.closest('.jl-avoid')!.classList.contains('no-print')).toBe(true);
     await user.click(back);
@@ -107,12 +108,34 @@ describe('Job log pictures', () => {
     expect([!!take.querySelector('svg.lucide-x'), !!take.querySelector('svg.lucide-check')]).toEqual([true, false]);
     expect(screen.queryByText(/not in the job log: the client won’t see it/i)).toBeNull();
     await user.click(take);
+    await user.click(screen.getByLabelText(/pictures left out \(1\)/i));
     const back = screen.getByRole('button', { name: /put back in the log: materials, lowe's/i });
     expect(back.getAttribute('title')).toMatch(/tap ✓ to put it back/i);
     expect([!!back.querySelector('svg.lucide-x'), !!back.querySelector('svg.lucide-check')]).toEqual([false, true]);
     expect(back.parentElement!.textContent).toMatch(/not in the job log: the client won’t see it\. still on the job\./i);
     expect(back.closest('.jl-avoid')!.classList.contains('no-print')).toBe(true);
     await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['receipt:x1'], job_log_receipt_photos: [] }));
+  });
+
+  it('takes a picture out of the log on screen too, until "Pictures left out" is ticked (Fred: "why am still see the one i removed")', async () => {
+    const user = userEvent.setup();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    await user.click(await screen.findByRole('button', { name: /leave out of the log: materials, lowe's/i }));
+    expect(screen.queryByAltText(/materials, lowe's/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /put back in the log: materials, lowe's/i })).toBeNull();
+    const toast = (await import('@/lib/toast')).toastSuccess as unknown as ReturnType<typeof vi.fn>;
+    expect(toast).toHaveBeenCalledWith(expect.stringMatching(/taken out of the job log\. it’s still on the job/i));
+    // The others stay, and the declined receipt still shows, marked.
+    expect(screen.getByRole('button', { name: /leave out of the log: odometer start/i })).toBeTruthy();
+    expect(screen.getByAltText(/declined: fuel, circle k/i)).toBeTruthy();
+    await user.click(screen.getByLabelText(/pictures left out \(1\)/i));
+    expect(screen.getByAltText(/materials, lowe's/i).closest('.jl-avoid')!.classList.contains('no-print')).toBe(true);
+    await user.click(screen.getByRole('button', { name: /put back in the log: materials, lowe's/i }));
+    expect(screen.queryByLabelText(/pictures left out/i)).toBeNull();
+    // Taken out again, it goes off the screen again.
+    await user.click(screen.getByRole('button', { name: /leave out of the log: materials, lowe's/i }));
+    expect(screen.queryByAltText(/materials, lowe's/i)).toBeNull();
+    expect((screen.getByLabelText(/pictures left out \(1\)/i) as HTMLInputElement).checked).toBe(false);
   });
 
   it('has Download on every picture, named for the job, what it is, whose and the day, and an Add photos button (Fred, 2026-10-26)', async () => {
@@ -186,6 +209,7 @@ describe('Job log pictures', () => {
     fireEvent.click(screen.getByRole('button', { name: /leave out of the log: odometer start/i }));
     await waitFor(() => expect(updates).toHaveLength(2));
     expect(updates.at(-1)).toEqual({ job_log_left_out: ['photo:ph1', 'odo:o1'], job_log_receipt_photos: [] });
+    fireEvent.click(screen.getByLabelText(/pictures left out \(2\)/i));
     expect(screen.getByRole('button', { name: /put back in the log: odometer start/i })).toBeTruthy();
   });
 

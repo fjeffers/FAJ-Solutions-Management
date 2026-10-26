@@ -24,6 +24,10 @@
 // puts pictures from the office's device on the job, and each picture has
 // Download, which saves it to the device (lib/job-photos.ts).
 //
+// Fred, 2026-10-26 ("why am still see the one i removed"): a picture taken
+// out is off the log on screen too, so the screen is what the client gets;
+// "Pictures left out" shows them again to put one back.
+//
 // Fred, 2026-10-26: the mark on a picture is what a tap does ("when i click on
 // the x i dont want the client to see it ... but it stay on the app"): ✗ takes
 // it out of the log, and a picture left out shows ✓ to put it back.
@@ -39,7 +43,7 @@ import { expenseCategoryLabel } from '@/lib/expenses';
 import { dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
 import type { OdoRow as Reading } from '@/lib/weekly-bill';
 import { loadEvents } from '@/components/wf/ProjectOffice';
-import { toastError } from '@/lib/toast';
+import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, inRange, logTotals, hoursText, dayOf, jobLogName, type Punch } from '@/lib/job-log';
 import { mapLink } from '@/lib/geo';
 import { jobGaps } from '@/lib/job-gaps';
@@ -63,7 +67,7 @@ type Pic = {
   pdf?: boolean;
 };
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
-type Include = { gaps: boolean; time: boolean; mileage: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean };
+type Include = { gaps: boolean; time: boolean; mileage: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -142,7 +146,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [days, setDays] = useState<SheetRow[]>([]);
   // Pictures added from the office: the log reads the job's photos again.
   const [added, setAdded] = useState(0);
-  const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false });
+  const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
 
   useEffect(() => {
     const db = createClient();
@@ -215,6 +219,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     .sort((a, b) => a.day.localeCompare(b.day));
   const shownOdometer = odometer.filter((p) => inRange(p.day, from, to));
   const printed = (p: Pic) => !p.declined && !leftOut.has(p.key);
+  // The pictures taken out of the log: off the screen too, until "Pictures left out" is ticked.
+  const leftCount = [...shownReceipts, ...shownOdometer, ...shownPhotos].filter((p) => !p.declined && leftOut.has(p.key)).length;
   const pictureCount = [...(inc.receipts ? shownReceipts : []), ...(inc.odometer ? shownOdometer : []), ...(inc.photos ? shownPhotos : [])]
     .filter(printed).length;
   const totals = logTotals(visits);
@@ -257,10 +263,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
   /**
    * A section of pictures, each with its mark to take it out or put it back.
-   * Left out: faded here, not printed. `whole`: each one shown uncropped, so a
-   * long receipt keeps its date and total.
+   * Left out: not printed, and shown (faded) only while "Pictures left out" is
+   * ticked. `whole`: each one shown uncropped, so a long receipt keeps its date
+   * and total.
    */
-  const pictures = (title: string, list: Pic[], whole = false) => list.length > 0 && (
+  const pictures = (title: string, all: Pic[], whole = false) => {
+    const list = all.filter((p) => inc.leftOut || p.declined || !leftOut.has(p.key));
+    return list.length > 0 && (
     <div className={list.some(printed) ? undefined : 'no-print'}>
       <H>{title}</H>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
@@ -284,7 +293,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                 <span style={{ position: 'absolute', top: 6, right: 6, background: '#B42318', color: '#fff', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>Declined</span>
               ) : (
               // The mark is what a tap does: ✗ takes it out, ✓ puts it back.
-              <button type="button" className="no-print" onClick={() => flip(p.key)}
+              <button type="button" className="no-print"
+                onClick={() => {
+                  flip(p.key);
+                  if (!out) toastSuccess('Taken out of the job log. It’s still on the job: tick “Pictures left out” to see it.');
+                  // The last one put back: the next one taken out goes off the screen again.
+                  else if (leftCount === 1) setInc((s) => ({ ...s, leftOut: false }));
+                }}
                 aria-label={out ? `Put back in the log: ${what}` : `Leave out of the log: ${what}`} title={out ? 'Not in the job log. Tap ✓ to put it back.' : 'In the job log. Tap ✗ to take it out; it stays on the job.'}
                 style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32, borderRadius: 16, border: `2px solid ${out ? '#fff' : '#B42318'}`, background: out ? '#047857' : '#fff', color: out ? '#fff' : '#B42318', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                 {out ? <Check size={18} /> : <X size={18} />}
@@ -321,7 +336,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         })}
       </div>
     </div>
-  );
+    );
+  };
 
   return createPortal(
     <div id="job-log-root" className="wf" style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(2,4,9,0.55)', overflowY: 'auto', padding: '16px 12px 40px' }}>
@@ -339,10 +355,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
           {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Time & GPS')}{mileage.length > 0 && toggle('mileage', 'Mileage')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
           {toggle('notes', "Tech's notes")}{(receipts.length > 0 || receiptPhotos.size > 0) && toggle('receipts', 'Receipts')}{odometer.length > 0 && toggle('odometer', 'Odometer')}
-          {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}
+          {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}
         </div>
         <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
-          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tap <b style={{ color: '#047857' }}>✓</b> to put it back. Label a photo Receipt and it goes with the receipts. Declined receipts stay here but never print. Nothing is deleted.
+          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Receipt and it goes with the receipts. Declined receipts stay here but never print. Nothing is deleted.
         </div>
       </div>
 

@@ -98,10 +98,13 @@ describe('Job log pictures', () => {
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const take = await screen.findByRole('button', { name: /leave out of the log: materials, lowe's/i });
     expect(take.getAttribute('title')).toMatch(/tap ✗ to take it out; it stays on the job/i);
+    // The mark Fred sees: ✗ on a picture in the log, ✓ on one left out.
+    expect([!!take.querySelector('svg.lucide-x'), !!take.querySelector('svg.lucide-check')]).toEqual([true, false]);
     expect(screen.queryByText(/not in the job log: the client won’t see it/i)).toBeNull();
     await user.click(take);
     const back = screen.getByRole('button', { name: /put back in the log: materials, lowe's/i });
     expect(back.getAttribute('title')).toMatch(/tap ✓ to put it back/i);
+    expect([!!back.querySelector('svg.lucide-x'), !!back.querySelector('svg.lucide-check')]).toEqual([false, true]);
     expect(back.parentElement!.textContent).toMatch(/not in the job log: the client won’t see it\. still on the job\./i);
     expect(back.closest('.jl-avoid')!.classList.contains('no-print')).toBe(true);
     await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['receipt:x1'], job_log_receipt_photos: [] }));

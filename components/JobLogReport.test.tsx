@@ -73,7 +73,8 @@ describe('Job log pictures', () => {
     expect(screen.getByRole('button', { name: /leave out of the log: photo/i })).toBeTruthy();
     const declined = screen.getByAltText(/declined: fuel, circle k: \$76\.75 \(duplicate\)/i);
     expect(declined.closest('.jl-avoid')!.classList.contains('no-print')).toBe(true);
-    expect(screen.queryByRole('button', { name: /circle k/i })).toBeNull();
+    // It has its ✗ like every picture (Fred, 2026-10-26: "remove on every photo and receipt").
+    expect(screen.getByRole('button', { name: /leave out of the log: declined: fuel, circle k/i })).toBeTruthy();
   });
 
   it('labels a site photo a receipt, and it moves to the receipts', async () => {
@@ -136,6 +137,18 @@ describe('Job log pictures', () => {
     await user.click(screen.getByRole('button', { name: /leave out of the log: materials, lowe's/i }));
     expect(screen.queryByAltText(/materials, lowe's/i)).toBeNull();
     expect((screen.getByLabelText(/pictures left out \(1\)/i) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('takes a declined receipt off the screen with its ✗ too (Fred: "remove on every photo and receipt")', async () => {
+    const user = userEvent.setup();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    await user.click(await screen.findByRole('button', { name: /leave out of the log: declined: fuel, circle k/i }));
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['receipt:x2'], job_log_receipt_photos: [] }));
+    expect(screen.queryByAltText(/circle k/i)).toBeNull();
+    await user.click(screen.getByLabelText(/pictures left out \(1\)/i));
+    const back = screen.getByRole('button', { name: /put back in the log: declined: fuel, circle k/i });
+    expect(back.parentElement!.textContent).toMatch(/declined/i);
+    expect(back.parentElement!.textContent).toMatch(/not in the job log: the client won’t see it/i);
   });
 
   it('says a picture is taken out only once that is saved (Greptile on PR #24)', async () => {

@@ -100,3 +100,29 @@ export function hoursText(ms: number): string {
   const m = Math.round(ms / 60_000);
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
+
+export type LogJob = {
+  wo_number: string; external_wo_id?: string | null; customer_name?: string | null;
+  site_name?: string | null; site_city?: string | null; site_state?: string | null;
+};
+
+/** "10-18-2026": a file name can't have a slash. */
+const fileDay = (d: string) => `${d.slice(5, 7)}-${d.slice(8, 10)}-${d.slice(0, 4)}`;
+
+/**
+ * The job log's name, which the print window gives the PDF it saves (Fred,
+ * 2026-10-26: "when i save the job log can it be the site number and city"):
+ * "LDS-1110 Site 5011876 — Gaffney, SC · 10-18-2026 – 10-23-2026". The client's
+ * WO number (else FAJ's), the site without the client's name in front, the
+ * city, and the first and last day the log covers.
+ */
+export function jobLogName(w: LogJob, first: string, last: string): string {
+  const client = (w.customer_name ?? '').trim().toLowerCase();
+  let site = (w.site_name ?? '').trim();
+  if (client && site.toLowerCase().startsWith(`${client} `)) site = site.slice(client.length).trim();
+  if (/^\d+$/.test(site)) site = `Site ${site}`;
+  const city = [w.site_city, w.site_state].map((s) => (s ?? '').trim()).filter(Boolean).join(', ');
+  const head = [w.external_wo_id?.trim() || `WO ${w.wo_number}`, site].filter(Boolean).join(' ') + (city ? ` — ${city}` : '');
+  const days = first && last && first !== last ? `${fileDay(first)} – ${fileDay(last)}` : first || last ? fileDay(first || last) : '';
+  return [head, days].filter(Boolean).join(' · ').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ');
+}

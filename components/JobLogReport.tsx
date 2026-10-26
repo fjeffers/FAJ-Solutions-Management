@@ -19,6 +19,10 @@
 // then as recipe or none recipes"; work_orders.job_log_receipt_photos). A
 // declined receipt stays on screen, marked declined, and is never printed ("if
 // decline it stay on the app but it does a photo that was decline item").
+//
+// Fred, 2026-10-26: the PDF it saves is named for the site and its dates ("can
+// it be the site number and city"): "LDS-1110 Site 5011876 — Gaffney, SC ·
+// 10-18-2026 – 10-23-2026".
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, FileText, Printer, X } from 'lucide-react';
@@ -28,7 +32,7 @@ import { dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/li
 import type { OdoRow as Reading } from '@/lib/weekly-bill';
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError } from '@/lib/toast';
-import { buildVisits, inRange, logTotals, hoursText, dayOf, type Punch } from '@/lib/job-log';
+import { buildVisits, inRange, logTotals, hoursText, dayOf, jobLogName, type Punch } from '@/lib/job-log';
 import { mapLink } from '@/lib/geo';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
@@ -212,6 +216,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const isUrl = (v: string) => /^https?:\/\//.test(v);
   const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: TZ });
   const range = from || to ? `${from ? fmtDay(from) : 'Start'} – ${to ? fmtDay(to) : 'today'}` : 'Whole job';
+  // The saved PDF's name: the print window names it after the page (lib/job-log.ts
+  // jobLogName). The days picked, else the job's first and last day on the Field Sheet.
+  const worked = [...visits.map((v) => v.day), ...days.filter((r) => inRange(r.day, from, to)).map((r) => r.day)].sort();
+  const logName = jobLogName(w, from || worked[0] || '', to || worked.at(-1) || '');
+  useEffect(() => {
+    const was = document.title;
+    document.title = logName;
+    return () => { document.title = was; };
+  }, [logName]);
 
   const toggle = (k: keyof Include, label: string) => (
     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>

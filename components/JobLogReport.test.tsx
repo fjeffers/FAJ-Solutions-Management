@@ -136,3 +136,24 @@ describe('Job log pictures', () => {
     ]);
   });
 });
+
+describe('Job log saved as a PDF', () => {
+  it('is named for the site, its city and the days on the sheet, and the page gets its own name back after', async () => {
+    const before = tables.field_sheet_days;
+    // Paul drove down on Sunday 10/18, the day before the job's dates.
+    tables.field_sheet_days = [...before, { id: 's0', day: '2026-10-18', tech: 'Paul Gibbs', edits: { miles: 458 }, added: true, hidden: false }];
+    document.title = 'FAJ Solutions';
+    try {
+      const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
+      const { unmount } = render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+      await waitFor(() => expect(document.title).toBe('LDS-1110 Site 5011876 — Gaffney, SC · 10-18-2026 – 10-23-2026'));
+      fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-19' } });
+      fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-19' } });
+      expect(document.title).toBe('LDS-1110 Site 5011876 — Gaffney, SC · 10-19-2026');
+      unmount();
+      expect(document.title).toBe('FAJ Solutions');
+    } finally {
+      tables.field_sheet_days = before;
+    }
+  });
+});

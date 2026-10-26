@@ -53,7 +53,7 @@ function query(table: string) {
 }
 const storage = { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((p) => ({ path: p, signedUrl: `https://signed.test/${p}` })) }) }) };
 vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ from: (t: string) => query(t), storage }) }));
-vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (url === '/api/jobs/day-photo' ? { ok: true } : []) }));
+vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (url === '/api/jobs/day-photo' ? { ok: true, url: 'https://example.test/added.jpg' } : []) }));
 // The stamp draws on a canvas, which the test browser hasn't got.
 vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: async () => new Blob(['jpeg'], { type: 'image/jpeg' }) }));
 
@@ -73,7 +73,8 @@ describe('Job log pictures', () => {
     expect(screen.getByRole('button', { name: /leave out of the log: photo/i })).toBeTruthy();
     const declined = screen.getByAltText(/declined: fuel, circle k: \$76\.75 \(duplicate\)/i);
     expect(declined.closest('.jl-avoid')!.classList.contains('no-print')).toBe(true);
-    expect(screen.queryByRole('button', { name: /circle k/i })).toBeNull();
+    // It has its ✗ like every picture (Fred, 2026-10-26: "remove on every photo and receipt").
+    expect(screen.getByRole('button', { name: /leave out of the log: declined: fuel, circle k/i })).toBeTruthy();
   });
 
   it('labels a site photo a receipt, and it moves to the receipts', async () => {
@@ -138,6 +139,18 @@ describe('Job log pictures', () => {
     expect((screen.getByLabelText(/pictures left out \(1\)/i) as HTMLInputElement).checked).toBe(false);
   });
 
+  it('takes a declined receipt off the screen with its ✗ too (Fred: "remove on every photo and receipt")', async () => {
+    const user = userEvent.setup();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    await user.click(await screen.findByRole('button', { name: /leave out of the log: declined: fuel, circle k/i }));
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['receipt:x2'], job_log_receipt_photos: [] }));
+    expect(screen.queryByAltText(/circle k/i)).toBeNull();
+    await user.click(screen.getByLabelText(/pictures left out \(1\)/i));
+    const back = screen.getByRole('button', { name: /put back in the log: declined: fuel, circle k/i });
+    expect(back.parentElement!.textContent).toMatch(/declined/i);
+    expect(back.parentElement!.textContent).toMatch(/not in the job log: the client won’t see it/i);
+  });
+
   it('says a picture is taken out only once that is saved (Greptile on PR #24)', async () => {
     const toast = await import('@/lib/toast');
     (toast.toastSuccess as unknown as ReturnType<typeof vi.fn>).mockClear();
@@ -185,6 +198,12 @@ describe('Job log pictures', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add to the job' }));
       await waitFor(() => expect(screen.getAllByRole('link', { name: /download photo/i })).toHaveLength(2));
       expect(reads.work_orders).toBe(choicesRead);
+      // The one just added is marked New, as it sits under its own day among the others
+      // (Fred, 2026-10-26: "when i add a photo it not saving on the job log").
+      const added = screen.getAllByAltText(/^photo/i).find((img) => img.getAttribute('src') === 'https://example.test/added.jpg')!;
+      expect(added.parentElement!.textContent).toMatch(/^New/);
+      const first = screen.getAllByAltText(/^photo/i).find((img) => img.getAttribute('src') === 'https://example.test/site.jpg')!;
+      expect(first.parentElement!.textContent).not.toMatch(/New/);
     } finally {
       tables.wo_photos = before;
     }

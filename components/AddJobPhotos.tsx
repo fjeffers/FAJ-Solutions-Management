@@ -17,7 +17,8 @@ export default function AddJobPhotos({ woId, woNumber, techs, day: firstDay, onA
   techs: string[];
   /** The day picked to start with (lib/job-photos.ts photoDay). */
   day: string;
-  onAdded: () => void;
+  /** With the links of the pictures added, so the job log can point them out. */
+  onAdded: (urls: string[]) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const crew = [...new Set(techs.filter(Boolean)), 'Office'];
@@ -32,6 +33,7 @@ export default function AddJobPhotos({ woId, woNumber, techs, day: firstDay, onA
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { toastError('Pick the day the pictures are from.'); return; }
     setBusy(true);
     let added = 0;
+    const urls: string[] = [];
     try {
       for (const f of files) {
         const jpeg = await stampPhoto(f, [`WO ${woNumber} · ${who}`, fmtDay(day), 'Added by the office']);
@@ -39,9 +41,10 @@ export default function AddJobPhotos({ woId, woNumber, techs, day: firstDay, onA
         body.set('wo_id', woId); body.set('day', day); body.set('tech', who); body.set('kind', 'site');
         body.set('file', new File([jpeg], 'photo.jpg', { type: 'image/jpeg' }));
         const res = await fetch('/api/jobs/day-photo', { method: 'POST', body });
-        const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; url?: string };
         if (!res.ok || !j.ok) { toastError(j.error ?? "Couldn't add the picture."); break; }
         added++;
+        if (j.url) urls.push(j.url);
       }
     } catch (e) {
       toastError(e instanceof Error ? e.message : "Couldn't add the picture.");
@@ -49,10 +52,10 @@ export default function AddJobPhotos({ woId, woNumber, techs, day: firstDay, onA
       setBusy(false);
     }
     if (added) {
-      toastSuccess(`${added} picture${added === 1 ? '' : 's'} added to ${fmtDay(day)}.`);
+      toastSuccess(`${added} picture${added === 1 ? '' : 's'} added to ${fmtDay(day)}, with the job's photos.`);
       // The ones not added stay picked, to try again.
       setFiles((fs) => fs.slice(added));
-      onAdded();
+      onAdded(urls);
     }
   };
 

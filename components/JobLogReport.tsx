@@ -24,6 +24,9 @@
 // puts pictures from the office's device on the job, and each picture has
 // Download, which saves it to the device (lib/job-photos.ts).
 //
+// Fred, 2026-10-26 ("remove on every photo and receipt"): a declined receipt
+// has its ✗ too, so every picture can come off the screen.
+//
 // Fred, 2026-10-26 ("why am still see the one i removed"): a picture taken
 // out is off the log on screen too, so the screen is what the client gets;
 // "Pictures left out" shows them again to put one back.
@@ -150,8 +153,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Each tech's days as the Hours screen and the Field Sheet have them, for the miles
   // (Fred, 2026-10-25: "i don't see the mileages on the job logs along with the pictures").
   const [days, setDays] = useState<SheetRow[]>([]);
-  // Pictures added from the office: the log reads the job's photos again.
+  // Pictures added from the office: the log reads the job's photos again, and the
+  // new ones are marked New and scrolled to, as they sit under their own day
+  // among the others (Fred, 2026-10-26: "when i add a photo it not saving on the job log").
   const [added, setAdded] = useState(0);
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
   const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
 
   useEffect(() => {
@@ -207,6 +213,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     void createClient().from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id).order('taken_at')
       .then(({ data }) => { if (data) setPhotos(data as PhotoRow[]); });
   }, [w.id, added]);
+  useEffect(() => {
+    if (fresh.size) document.querySelector('#job-log-root [data-fresh]')?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [fresh, photos]);
 
   // Printing shows only this report (app/wf.css, body.job-log-open).
   useEffect(() => {
@@ -226,7 +235,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const shownOdometer = odometer.filter((p) => inRange(p.day, from, to));
   const printed = (p: Pic) => !p.declined && !leftOut.has(p.key);
   // The pictures taken out of the log: off the screen too, until "Pictures left out" is ticked.
-  const leftCount = [...shownReceipts, ...shownOdometer, ...shownPhotos].filter((p) => !p.declined && leftOut.has(p.key)).length;
+  const leftCount = [...shownReceipts, ...shownOdometer, ...shownPhotos].filter((p) => leftOut.has(p.key)).length;
   const pictureCount = [...(inc.receipts ? shownReceipts : []), ...(inc.odometer ? shownOdometer : []), ...(inc.photos ? shownPhotos : [])]
     .filter(printed).length;
   const totals = logTotals(visits);
@@ -274,13 +283,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
    * and total.
    */
   const pictures = (title: string, all: Pic[], whole = false) => {
-    const list = all.filter((p) => inc.leftOut || p.declined || !leftOut.has(p.key));
+    const list = all.filter((p) => inc.leftOut || !leftOut.has(p.key));
     return list.length > 0 && (
     <div className={list.some(printed) ? undefined : 'no-print'}>
       <H>{title}</H>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
         {list.map((p) => {
           const out = !printed(p);
+          // Taken out with its ✗; a declined receipt can be too, though it never prints either way.
+          const taken = leftOut.has(p.key);
           const what = `${p.caption ?? 'Photo'} ${p.stamp}`;
           const isReceipt = p.photoId ? receiptPhotos.has(p.photoId) : false;
           return (
@@ -295,29 +306,32 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               ) : (
                 <img src={p.src} alt={what} style={{ width: '100%', aspectRatio: whole ? '3 / 4' : '4 / 3', objectFit: whole ? 'contain' : 'cover', background: whole ? '#F6F4EF' : undefined, borderRadius: 6, border: '1px solid #E4DFD3', display: 'block', opacity: out ? 0.35 : 1 }} />
               )}
-              {p.declined ? (
-                <span style={{ position: 'absolute', top: 6, right: 6, background: '#B42318', color: '#fff', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>Declined</span>
-              ) : (
-              // The mark is what a tap does: ✗ takes it out, ✓ puts it back.
+              {p.photoId && fresh.has(p.src) && (
+                <span className="no-print" data-fresh style={{ position: 'absolute', top: 6, left: 6, background: '#C9A24B', color: '#0E1B2E', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>New</span>
+              )}
+              {p.declined && (
+                <span style={{ position: 'absolute', top: 6, left: 6, background: '#B42318', color: '#fff', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>Declined</span>
+              )}
+              {/* The mark is what a tap does: ✗ takes it out, ✓ puts it back. Every picture has one,
+                  a declined receipt too (Fred, 2026-10-26: "remove on every photo and receipt"). */}
               <button type="button" className="no-print"
                 onClick={() => {
                   // The first one out (none others showing as left out, in these dates): off the screen,
                   // whatever was ticked before (Greptile on PR #24).
-                  if (!out && leftCount === 0) setInc((s) => ({ ...s, leftOut: false }));
+                  if (!taken && leftCount === 0) setInc((s) => ({ ...s, leftOut: false }));
                   // Said once it's saved, and only if it's still out then (Greptile on PR #24).
                   void flip(p.key).then((ok) => {
-                    if (ok && !out && savedOut(p.key)) toastSuccess('Taken out of the job log. It’s still on the job: tick “Pictures left out” to see it.');
+                    if (ok && !taken && savedOut(p.key)) toastSuccess('Taken out of the job log. It’s still on the job: tick “Pictures left out” to see it.');
                   });
                 }}
-                aria-label={out ? `Put back in the log: ${what}` : `Leave out of the log: ${what}`} title={out ? 'Not in the job log. Tap ✓ to put it back.' : 'In the job log. Tap ✗ to take it out; it stays on the job.'}
-                style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32, borderRadius: 16, border: `2px solid ${out ? '#fff' : '#B42318'}`, background: out ? '#047857' : '#fff', color: out ? '#fff' : '#B42318', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                {out ? <Check size={18} /> : <X size={18} />}
+                aria-label={taken ? `Put back in the log: ${what}` : `Leave out of the log: ${what}`} title={taken ? 'Not in the job log. Tap ✓ to put it back.' : 'In the job log. Tap ✗ to take it out; it stays on the job.'}
+                style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32, borderRadius: 16, border: `2px solid ${taken ? '#fff' : '#B42318'}`, background: taken ? '#047857' : '#fff', color: taken ? '#fff' : '#B42318', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                {taken ? <Check size={18} /> : <X size={18} />}
               </button>
-              )}
               <div style={{ fontSize: 11, color: p.declined ? '#B42318' : '#5E6470', marginTop: 3 }}>
                 {p.caption ? `${p.caption} · ` : ''}{p.stamp}{p.tech ? ` · ${p.tech}` : ''}
               </div>
-              {out && !p.declined && (
+              {taken && (
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#B42318', marginTop: 2 }}>Not in the job log: the client won’t see it. Still on the job.</div>
               )}
               {(() => {
@@ -358,7 +372,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         {/* Not until the job's days are in: the PDF's name has them (Greptile on PR #21). */}
         <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
         <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
-          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={() => setAdded((n) => n + 1)} />
+          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
@@ -367,7 +381,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}
         </div>
         <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
-          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Receipt and it goes with the receipts. Declined receipts stay here but never print. Nothing is deleted.
+          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Receipt and it goes with the receipts. Declined receipts never print, and their ✗ takes them off the screen too. Nothing is deleted.
         </div>
       </div>
 

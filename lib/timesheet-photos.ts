@@ -20,17 +20,23 @@ const inDates = (d: string, from: string, to: string) => d >= from && d <= to;
 /**
  * Where each picture is and what it says, oldest first: odometer, then receipts.
  * The site photos stay on the job but out of the timesheet (Fred, 2026-10-25:
- * "Don't delete it. Just don't include it in the time report").
+ * "Don't delete it. Just don't include it in the time report"), and so does
+ * any picture taken out of the job log with its ✗ (work_orders.job_log_left_out;
+ * Fred, 2026-10-26: "when i down load it it still there").
  */
 export async function photoSources(db: SupabaseClient, woId: string, from: string, to: string): Promise<PhotoSource[]> {
-  const [od, ex] = await Promise.all([
-    db.from('job_odometer').select('contractor_name, at, moment, reading, photo_path').eq('wo_id', woId).order('at'),
-    db.from('job_expenses').select('contractor_name, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', woId),
+  const [od, ex, wo] = await Promise.all([
+    db.from('job_odometer').select('id, contractor_name, at, moment, reading, photo_path').eq('wo_id', woId).order('at'),
+    db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', woId),
+    db.from('work_orders').select('job_log_left_out').eq('id', woId).maybeSingle(),
   ]);
-  const odo = ((od.data ?? []) as { contractor_name: string; at: string; moment: string; reading: number; photo_path: string | null }[])
-    .filter((o) => o.photo_path && inDates(dayOf(o.at, TZ), from, to));
-  const receipts = ((ex.data ?? []) as { contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; status: string; receipt_path: string | null }[])
-    .filter((e) => e.status === 'approved' && e.receipt_path && inDates(e.expense_date, from, to));
+  // Never a PDF with pictures taken out because the list of them couldn't be read (Greptile on PR #24).
+  if (wo.error) throw new Error("Couldn't read the pictures left out of the job log. Try again.");
+  const leftOut = new Set(((wo.data as { job_log_left_out?: string[] | null } | null)?.job_log_left_out) ?? []);
+  const odo = ((od.data ?? []) as { id: string; contractor_name: string; at: string; moment: string; reading: number; photo_path: string | null }[])
+    .filter((o) => o.photo_path && inDates(dayOf(o.at, TZ), from, to) && !leftOut.has(`odo:${o.id}`));
+  const receipts = ((ex.data ?? []) as { id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; status: string; receipt_path: string | null }[])
+    .filter((e) => e.status === 'approved' && e.receipt_path && inDates(e.expense_date, from, to) && !leftOut.has(`receipt:${e.id}`));
   const paths = [...odo.map((o) => o.photo_path!), ...receipts.map((e) => e.receipt_path!)];
   const signed = new Map<string, string>();
   if (paths.length) {

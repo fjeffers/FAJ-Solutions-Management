@@ -20,6 +20,10 @@
 // declined receipt stays on screen, marked declined, and is never printed ("if
 // decline it stay on the app but it does a photo that was decline item").
 //
+// Fred, 2026-10-26: the mark on a picture is what a tap does ("when i click on
+// the x i dont want the client to see it ... but it stay on the app"): ✗ takes
+// it out of the log, and a picture left out shows ✓ to put it back.
+//
 // Fred, 2026-10-26: the PDF it saves is named for the site and its dates ("can
 // it be the site number and city"): "LDS-1110 Site 5011876 — Gaffney, SC ·
 // 10-18-2026 – 10-23-2026".
@@ -235,9 +239,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const cell: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #ECE8DF', textAlign: 'left', verticalAlign: 'top' };
 
   /**
-   * A section of pictures, each with its check mark. Left out: faded here, not
-   * printed. `whole`: each one shown uncropped, so a long receipt keeps its date
-   * and total.
+   * A section of pictures, each with its mark to take it out or put it back.
+   * Left out: faded here, not printed. `whole`: each one shown uncropped, so a
+   * long receipt keeps its date and total.
    */
   const pictures = (title: string, list: Pic[], whole = false) => list.length > 0 && (
     <div className={list.some(printed) ? undefined : 'no-print'}>
@@ -262,15 +266,19 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {p.declined ? (
                 <span style={{ position: 'absolute', top: 6, right: 6, background: '#B42318', color: '#fff', borderRadius: 10, padding: '3px 9px', fontSize: 11.5, fontWeight: 700 }}>Declined</span>
               ) : (
+              // The mark is what a tap does: ✗ takes it out, ✓ puts it back.
               <button type="button" className="no-print" onClick={() => flip(p.key)}
-                aria-label={out ? `Put back in the log: ${what}` : `Leave out of the log: ${what}`} title={out ? 'Left out. Tap to put it back.' : 'In the log. Tap to leave it out.'}
-                style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32, borderRadius: 16, border: '2px solid #fff', background: out ? '#B42318' : '#047857', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                {out ? <X size={18} /> : <Check size={18} />}
+                aria-label={out ? `Put back in the log: ${what}` : `Leave out of the log: ${what}`} title={out ? 'Not in the job log. Tap ✓ to put it back.' : 'In the job log. Tap ✗ to take it out; it stays on the job.'}
+                style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32, borderRadius: 16, border: `2px solid ${out ? '#fff' : '#B42318'}`, background: out ? '#047857' : '#fff', color: out ? '#fff' : '#B42318', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                {out ? <Check size={18} /> : <X size={18} />}
               </button>
               )}
               <div style={{ fontSize: 11, color: p.declined ? '#B42318' : '#5E6470', marginTop: 3 }}>
                 {p.caption ? `${p.caption} · ` : ''}{p.stamp}{p.tech ? ` · ${p.tech}` : ''}
               </div>
+              {out && !p.declined && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#B42318', marginTop: 2 }}>Not in the job log: the client won’t see it. Still on the job.</div>
+              )}
               {p.photoId && (
                 <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                   {([[true, 'Receipt'], [false, 'Not a receipt']] as const).map(([r, text]) => (
@@ -306,7 +314,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}
         </div>
         <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
-          Tap <b style={{ color: '#047857' }}>✓</b> on a picture to leave it out of the log, <b style={{ color: '#B42318' }}>✗</b> to put it back. Label a photo Receipt and it goes with the receipts. Declined receipts stay here but never print. Nothing is deleted.
+          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tap <b style={{ color: '#047857' }}>✓</b> to put it back. Label a photo Receipt and it goes with the receipts. Declined receipts stay here but never print. Nothing is deleted.
         </div>
       </div>
 

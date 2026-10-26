@@ -49,6 +49,14 @@ describe('POST /api/jobs/day-photo', () => {
     expect(inserted[0]).toMatchObject({ table: 'job_odometer', row: { moment: 'start', reading: 142127, at: '2026-10-21T11:00:00.000Z' } });
   });
 
+  it('keeps what the AI read next to the reading, at the time the photo was taken (Fred, 2026-10-26)', async () => {
+    await post({ wo_id: 'wo-1', day: '2026-10-26', tech: 'Paul Gibbs', kind: 'odo_end', reading: '142,180', ai_reading: '142180.4', time: '07:31' });
+    expect(inserted[0]).toMatchObject({ table: 'job_odometer', row: { moment: 'end', reading: 142180, ai_reading: 142180.4, at: '2026-10-26T11:31:00.000Z' } });
+    inserted.length = 0;
+    await post({ wo_id: 'wo-1', day: '2026-10-26', tech: 'Paul Gibbs', kind: 'odo_end', reading: '142,180', ai_reading: 'junk' });
+    expect(inserted[0].row.ai_reading).toBeNull();
+  });
+
   it('asks for the reading on an odometer picture, and refuses a bad kind', async () => {
     expect((await post({ wo_id: 'wo-1', day: '2026-10-21', tech: 'Paul Gibbs', kind: 'odo_end' })).status).toBe(400);
     expect((await post({ wo_id: 'wo-1', day: '2026-10-21', tech: 'Paul Gibbs', kind: 'selfie' })).status).toBe(400);

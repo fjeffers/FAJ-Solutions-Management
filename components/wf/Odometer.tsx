@@ -10,10 +10,18 @@
 //
 // The start is part of Check in (components/wf/CheckIn.tsx); the end is asked
 // right after arriving (OdometerDialog), so the tap keeps its own time.
+//
+// A photo picked from the phone later (Fred, 2026-10-26: the app was down, "if
+// I take a picture on my phone and then upload later on"): the AI looks whether
+// it is the odometer and reads it, then the tech says starting or ending
+// (PhotoMileageDialog). It is saved at the time the photo was taken
+// (lib/photo-time.ts), with the photo's own GPS when it has one.
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Gauge } from 'lucide-react';
 import { getPosition, stampLines, type Position } from '@/lib/geo';
-import { stampPhoto } from '@/lib/photo-stamp';
+import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
+import { photoTakenAt, PHOTO_MILEAGE_MAX_AGE_MS, type PhotoTime } from '@/lib/photo-time';
+import type { SortRead } from '@/lib/photo-read';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { Dialog } from './WfUi';
 
@@ -29,7 +37,7 @@ export async function readPhoto<T>(woNumber: string, kind: 'odometer' | 'receipt
  * The AI's read, and whether it could try: 'ai' (it looked; result may be null
  * when the photo is unreadable) or 'unavailable' (no signal, not set up, or an error).
  */
-async function readPhotoFull<T>(woNumber: string, kind: 'odometer' | 'receipt', photo: Blob): Promise<{ result: T | null; source: 'ai' | 'unavailable' }> {
+async function readPhotoFull<T>(woNumber: string, kind: 'odometer' | 'receipt' | 'sort', photo: Blob): Promise<{ result: T | null; source: 'ai' | 'unavailable' }> {
   const fd = new FormData();
   fd.append('wo_number', woNumber);
   fd.append('kind', kind);
@@ -90,7 +98,7 @@ export type Mileage = ReturnType<typeof useMileage>;
 
 /** Save the reading; when the AI couldn't be reached, or the save fails, keep the photo as a job photo for the office to read. */
 /** 'saved': a reading; 'kept': kept as a job photo; null: not sent (the tech was told why). */
-export async function sendMileage(woNumber: string, moment: OdometerMoment, m: Mileage, keep: SavePhoto): Promise<'saved' | 'kept' | null> {
+export async function sendMileage(woNumber: string, moment: OdometerMoment, m: Pick<Mileage, 'photo' | 'takenAt' | 'pos' | 'ai'>, keep: SavePhoto): Promise<'saved' | 'kept' | null> {
   if (!m.photo) { toastError('Take the photo of the odometer first.'); return null; }
   const at = m.takenAt ?? new Date().toISOString();
   let error: string | null = null;
@@ -191,6 +199,113 @@ export default function OdometerDialog({ woNumber, moment, keep, onClose, initia
         {moment === 'start' ? 'Take a photo of the odometer before you drive off.' : 'Take a photo of the odometer now you have arrived.'} The time and GPS go on the photo, and the miles go on the weekly bill.
       </p>
       <MileagePhoto m={m} moment={moment} />
+    </Dialog>
+  );
+}
+
+/** What a photo picked from the phone is: the odometer (sure: the AI said so) or not, its reading, and when it was taken. */
+export type PhonePhoto = { what: 'odometer' | 'other'; sure: boolean; read: number | null; taken: PhotoTime };
+
+/** Looks at a photo picked from the phone. With no AI (no signal, not set up), the tech is asked. */
+export async function sortPhonePhoto(woNumber: string, file: File): Promise<PhonePhoto> {
+  const taken = await photoTakenAt(file);
+  let small: Blob;
+  try { small = await shrinkPhoto(file, 1600); } catch { return { what: 'other', sure: false, read: null, taken }; }
+  const r = await readPhotoFull<SortRead>(woNumber, 'sort', small);
+  if (r.source === 'unavailable') return { what: 'odometer', sure: false, read: null, taken };
+  if (r.result?.what === 'odometer') return { what: 'odometer', sure: true, read: r.result.reading, taken };
+  return { what: 'other', sure: true, read: null, taken };
+}
+
+const fmtTaken = (iso: string) => new Date(iso).toLocaleString('en-US', {
+  weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
+});
+
+/**
+ * A mileage photo from the phone: the number read from it, when it was taken,
+ * and "starting or ending?". Saved as a reading at the photo's own time; when
+ * the number can't be read, the photo has no date, or it is over two days old
+ * (the app keeps a tap's own time only that long), it goes to the office as a
+ * job photo with what is known, and the office adds it (components/DayPictures).
+ */
+export function PhotoMileageDialog({ woNumber, file, photo, keep, onNotMileage, onClose, now: nowProp }: {
+  woNumber: string; file: File; photo: PhonePhoto; keep: SavePhoto;
+  /** Not the odometer after all: it goes with the job's photos. */
+  onNotMileage: () => void;
+  onClose: () => void;
+  now?: number;
+}) {
+  const [moment, setMoment] = useState<OdometerMoment | null>(null);
+  const [busy, setBusy] = useState(false);
+  // How old the photo is, from when the dialog opened.
+  const [now] = useState(() => nowProp ?? Date.now());
+  const [preview] = useState(() => URL.createObjectURL(file));
+  useEffect(() => () => URL.revokeObjectURL(preview), [preview]);
+  const { read, taken } = photo;
+  const tooOld = !!taken.at && now - Date.parse(taken.at) > PHOTO_MILEAGE_MAX_AGE_MS;
+  const direct = read != null && !!taken.at && !tooOld;
+  const why = read == null
+    ? (photo.sure ? "Couldn't read the number, so the office reads it from the photo." : "The number can't be read right now, so the office reads it from the photo.")
+    : !taken.at ? 'This photo has no date on it, so the office adds it from the photo.'
+      : tooOld ? 'This photo is over two days old, so the office adds it from the photo.' : null;
+
+  const send = async () => {
+    if (!moment) return;
+    setBusy(true);
+    const title = moment === 'start' ? 'Starting mileage' : 'Ending mileage';
+    try {
+      const at = taken.at ?? new Date(now).toISOString();
+      const stamped = await stampPhoto(file, stampLines({ woNumber, title: `${title}, added later`, at: new Date(at), pos: taken.gps, fromLibrary: !taken.at }));
+      if (direct) {
+        const done = await sendMileage(woNumber, moment, { photo: stamped, takenAt: at, pos: taken.gps, ai: read }, keep);
+        if (done === 'saved') toastSuccess(`${title} sent: ${read!.toLocaleString('en-US')}.`);
+        if (done) onClose();
+      } else {
+        const label = `${title}${read != null ? ` ${read.toLocaleString('en-US')}` : ''} (${taken.at ? `photo from ${fmtTaken(taken.at)}` : 'no date on the photo'}, for the office to add)`;
+        const r = await keep(stamped, label, at, taken.gps);
+        if (typeof r === 'object') { toastError(r.error); return; }
+        toastSuccess(r === 'queued' ? 'Mileage photo saved on your phone. It goes to the office when you have signal.' : 'Mileage photo sent to the office.');
+        onClose();
+      }
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : "Couldn't use that photo.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const choice = (m: OdometerMoment, label: string) => (
+    <button type="button" className={`wf-btn ${moment === m ? 'wf-btn-navy' : 'wf-btn-outline'}`} aria-pressed={moment === m}
+      style={{ flex: '1 1 140px' }} onClick={() => setMoment(m)}>{label}</button>
+  );
+  return (
+    <Dialog
+      title={photo.sure ? 'Mileage photo' : 'Is this a mileage photo?'}
+      onClose={onClose}
+      footer={<>
+        <button className="wf-btn wf-btn-ghost" disabled={busy} onClick={onNotMileage}>Not a mileage photo</button>
+        <button className="wf-btn wf-btn-navy" disabled={busy || !moment} onClick={() => void send()}><Gauge size={16} /> {busy ? 'Sending…' : 'Send'}</button>
+      </>}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt="The photo picked" style={{ width: 132, height: 99, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--wf-line)' }} />
+          <div>
+            <div className="wf-label" style={{ fontWeight: 600, color: 'var(--wf-text)', fontSize: 13, marginBottom: 2 }}>Odometer</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{read != null ? read.toLocaleString('en-US') : '—'}</div>
+            <div className="wf-subtle" style={{ fontSize: 12.5 }}>{taken.at ? `Taken ${fmtTaken(taken.at)}` : 'No date on this photo'}</div>
+          </div>
+        </div>
+        <div>
+          <p style={{ margin: '0 0 8px', fontWeight: 600 }}>Is this the starting or ending mileage?</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {choice('start', 'Starting mileage')}
+            {choice('end', 'Ending mileage')}
+          </div>
+        </div>
+        {why && <p className="wf-subtle" style={{ margin: 0, fontSize: 12.5 }}>{why}</p>}
+      </div>
     </Dialog>
   );
 }

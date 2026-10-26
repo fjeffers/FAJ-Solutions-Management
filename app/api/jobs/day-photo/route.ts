@@ -6,8 +6,8 @@ import { zonedIso } from '@/lib/clock-fix';
 // POST /api/jobs/day-photo — the office adds a picture to a tech's day on a job
 // (Fred, 2026-10-24: "i need to add pictures also to the days also the odometer
 // pictures"). FormData: wo_id, day (YYYY-MM-DD), tech, kind (site | odo_start |
-// odo_end), reading (the odometer, needed for odo_*), time (HH:MM, optional),
-// file (JPEG).
+// odo_end), reading (the odometer, needed for odo_*), ai_reading (what the AI
+// read off the picture, optional), time (HH:MM, optional), file (JPEG).
 //
 // The owner's own session must see the job; then the file is stored and recorded
 // where a tech's would be: a site photo with the job's photos (wo_photos, the
@@ -29,6 +29,9 @@ export async function POST(req: Request) {
   const kind = String(form.get('kind') ?? '');
   const time = String(form.get('time') ?? '');
   const readingRaw = String(form.get('reading') ?? '').replace(/[,\s]/g, '');
+  const aiText = String(form.get('ai_reading') ?? '').trim();
+  const aiRaw = aiText ? Number(aiText) : NaN;
+  const aiReading = Number.isFinite(aiRaw) && aiRaw >= 0 && aiRaw < 10_000_000 ? Math.round(aiRaw * 10) / 10 : null;
   const file = form.get('file');
   if (!woId || !DAY.test(day) || !tech || !['site', 'odo_start', 'odo_end'].includes(kind)) return NextResponse.json({ ok: false, error: 'Bad request' }, { status: 400 });
   if (!(file instanceof Blob) || file.size === 0) return NextResponse.json({ ok: false, error: 'Pick a picture first.' }, { status: 400 });
@@ -73,7 +76,7 @@ export async function POST(req: Request) {
   if (upErr) return NextResponse.json({ ok: false, error: "Couldn't store the picture. Try again." }, { status: 500 });
   const { error } = await admin.from('job_odometer').insert({
     user_id: user.id, wo_id: wo.id, wo_number: wo.wo_number, contractor_name: tech, at,
-    moment: kind === 'odo_start' ? 'start' : 'end', reading: Math.round(reading! * 10) / 10, photo_path: path,
+    moment: kind === 'odo_start' ? 'start' : 'end', reading: Math.round(reading! * 10) / 10, ai_reading: aiReading, photo_path: path,
   });
   if (error) {
     await admin.storage.from('job-receipts').remove([path]);

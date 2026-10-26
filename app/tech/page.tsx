@@ -41,7 +41,7 @@ import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, lastPlace, onTheWay, tripLeg } from '@/lib/project-day';
 import { asks, type CaptureItem } from '@/lib/capture';
-import OdometerDialog, { readPhoto, type OdometerMoment, type SavePhoto } from '@/components/wf/Odometer';
+import OdometerDialog, { readPhoto, PhotoMileageDialog, sortPhonePhoto, type OdometerMoment, type PhonePhoto, type SavePhoto } from '@/components/wf/Odometer';
 import CheckInDialog, { type CheckInSend } from '@/components/wf/CheckIn';
 import { needsOdometer, stopReceipt, type Drive } from '@/lib/checkin';
 import type { ReceiptRead } from '@/lib/photo-read';
@@ -1249,6 +1249,21 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const deliverables = askedDeliverables(job, checklist.items);
   const [odometer, setOdometer] = useState<OdometerMoment | null>(null);
   const [odoRequired, setOdoRequired] = useState(false);
+  // A photo picked from the phone on a job that asks for mileage (Fred, 2026-10-26:
+  // the app was down): the AI looks whether it's the odometer, then the tech says
+  // starting or ending (PhotoMileageDialog). Anything else is a job photo, as before.
+  const odoAsked = ask('travel') && ask('odometer');
+  const [sorting, setSorting] = useState(false);
+  const [fromPhone, setFromPhone] = useState<{ file: File; photo: PhonePhoto } | null>(null);
+  const askPhoto = (f: File | undefined, source: 'camera' | 'library') => {
+    if (!f || source !== 'library' || !odoAsked || !canReport) { ph.ask(f, source); return; }
+    setSorting(true);
+    void sortPhonePhoto(job.number, f).then((photo) => {
+      setSorting(false);
+      if (photo.what === 'odometer') setFromPhone({ file: f, photo }); else ph.ask(f, 'library');
+    }, () => { setSorting(false); ph.ask(f, 'library'); });
+  };
+  const phPicked = { ...ph, ask: askPhoto, busy: sorting ? 'Looking at the photo…' : ph.busy };
   // A project site always needs the signature, or the reason there isn't one.
   const project = !!job.isProject;
   // The day of travel, lunch and time on site: project jobs, and every job once
@@ -1472,7 +1487,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           {(canReport || expenses.length > 0) && (
             <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
           )}
-          <JobPhotos canAdd={canReport} ph={ph} />
+          <JobPhotos canAdd={canReport} ph={phPicked} />
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} talk={project ? talk : undefined} keep={msgDraft} /></div>}
         </>}
@@ -1499,6 +1514,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }} onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); }} />}
       {odometer && <OdometerDialog woNumber={job.number} moment={odometer} required={odoRequired} keep={keepPhoto} initialFile={odoFile}
         onClose={() => { setOdometer(null); setOdoFile(null); setOdoRequired(false); }} />}
+      {fromPhone && <PhotoMileageDialog woNumber={job.number} file={fromPhone.file} photo={fromPhone.photo} keep={keepPhoto}
+        onNotMileage={() => { const f = fromPhone.file; setFromPhone(null); ph.ask(f, 'library'); }} onClose={() => setFromPhone(null)} />}
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSave={async (t) => { setNoteOpen(false); await addNote(t); }} />}
       {left.away && project && working && (
         <LeftSiteDialog onStillHere={() => left.dismiss(30)} onPick={(reason, note) => {
@@ -1576,7 +1593,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   return (
     <div className="fs-stack">
       <DetailHeader job={job} ownerView={false} />
-      <JobIcons job={job} canPhoto={canReport} photoBusy={!!ph.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
+      <JobIcons job={job} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
+        onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
       {job.status === 'offered' && bottom}
       {dayCard}
@@ -1593,7 +1611,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
         <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
       )}
-      {ask('photos') && <JobPhotos canAdd={canReport} ph={ph} />}
+      {ask('photos') && <JobPhotos canAdd={canReport} ph={phPicked} />}
       {live && (ask('notes') || shown.questions.length > 0) && (
         <JobReport
           job={shown} uid={uid} canEdit={canReport}
@@ -1659,12 +1677,15 @@ function PhotoKindDialog({ odometer, receipts, onPick, onCancel }: {
 }
 
 /**
- * The icons under the job: Photo, Receipt, Messages and Directions, one tap each.
+ * The icons under the job: Photo, Upload, Receipt, Messages and Directions, one tap each.
  * Receipt only on a job that asks for receipts (Fred, 2026-10-19: "tech is not
- * seeing where to add their receipts").
+ * seeing where to add their receipts"); Upload, a photo already on the phone,
+ * on a job that asks for mileage (Fred, 2026-10-26).
  */
-function JobIcons({ job, canPhoto, photoBusy, onPhoto, onMessages, onReceipt }: {
+function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onReceipt }: {
   job: WfJob; canPhoto: boolean; photoBusy: boolean; onPhoto: (f: File | undefined) => void; onMessages: () => void;
+  /** A photo already on the phone (a mileage photo taken while the app was down): not every job shows Photos. */
+  onUpload?: (f: File | undefined) => void;
   onReceipt?: () => void;
 }) {
   const tile: React.CSSProperties = {
@@ -1680,6 +1701,13 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onMessages, onReceipt }: 
           <Camera size={22} /> Photo
           <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onPhoto(f); }} />
+        </label>
+      )}
+      {canPhoto && onUpload && (
+        <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
+          <ImagePlus size={22} /> Upload
+          <input type="file" accept="image/*" style={{ display: 'none' }} aria-label="Upload a photo from the phone"
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onUpload(f); }} />
         </label>
       )}
       {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={22} /> Receipt</button>}

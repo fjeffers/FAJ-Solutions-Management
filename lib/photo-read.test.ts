@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeOdometer, sanitizeReceipt, photoSchema, photoPrompt, odometerDiffers, amountDiffers, receiptItems, fitReceiptAi } from './photo-read';
+import { sanitizeOdometer, sanitizeReceipt, sanitizeSort, photoSchema, photoPrompt, odometerDiffers, amountDiffers, receiptItems, fitReceiptAi } from './photo-read';
 
 describe('reading a photo', () => {
   it('keeps an odometer number and drops anything else', () => {
@@ -27,6 +27,18 @@ describe('reading a photo', () => {
     expect(photoPrompt('receipt', '2026-10-18')).toMatch(/line item/);
     expect(photoPrompt('odometer', '2026-10-18')).toMatch(/trip meter/);
     expect(photoPrompt('receipt', '2026-10-18')).toMatch(/Today is 2026-10-18/);
+  });
+
+  it('a photo from the phone: the odometer and its reading, or not one (Fred, 2026-10-26)', () => {
+    expect(sanitizeSort({ what: 'odometer', reading: '48,213.64' })).toEqual({ what: 'odometer', reading: 48213.6 });
+    expect(sanitizeSort({ what: 'odometer', reading: null })).toEqual({ what: 'odometer', reading: null });
+    // Anything else is a job photo, and never carries a reading.
+    expect(sanitizeSort({ what: 'other', reading: 12 })).toEqual({ what: 'other', reading: null });
+    expect(sanitizeSort({ what: 'receipt' })).toEqual({ what: 'other', reading: null });
+    expect(sanitizeSort(null)).toEqual({ what: 'other', reading: null });
+    expect(photoSchema('sort')).toMatchObject({ required: ['what', 'reading'], additionalProperties: false });
+    expect(photoPrompt('sort', '2026-10-26')).toMatch(/instrument cluster/);
+    expect(photoPrompt('sort', '2026-10-26')).toMatch(/trip meter/);
   });
 
   it("keeps a receipt's lines, tidied and at most 25", () => {

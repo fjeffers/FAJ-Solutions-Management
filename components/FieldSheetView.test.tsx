@@ -10,7 +10,8 @@ import type { EnrichedWorkOrder } from '@/lib/types';
 
 vi.mock('@/lib/toast', () => ({ toastError: vi.fn(), toastSuccess: vi.fn(), toastInfo: vi.fn() }));
 const downloadCSVText = vi.fn();
-vi.mock('@/lib/export', () => ({ downloadXLSXBook: vi.fn(), downloadCSVText: (...a: unknown[]) => downloadCSVText(...a) }));
+const downloadXLSXBook = vi.fn();
+vi.mock('@/lib/export', () => ({ downloadXLSXBook: (...a: unknown[]) => downloadXLSXBook(...a), downloadCSVText: (...a: unknown[]) => downloadCSVText(...a) }));
 
 const at = (day: string, hhmm: string) => new Date(`2026-10-${day}T${hhmm}:00-04:00`).toISOString();
 const tables: Record<string, Record<string, unknown>[]> = {
@@ -66,7 +67,7 @@ const wo = {
   contractor_names: ['Dwayne Cudjoe', 'Raja Bennett'], contractor_name: 'Dwayne Cudjoe', start_date: '2026-10-21', end_date: '2026-10-21', is_project: false,
 } as unknown as EnrichedWorkOrder;
 
-afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); downloadCSVText.mockClear(); vi.unstubAllGlobals(); vi.useRealTimers(); tables.job_punches = []; });
+afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); downloadCSVText.mockClear(); downloadXLSXBook.mockClear(); vi.unstubAllGlobals(); vi.useRealTimers(); tables.job_punches = []; });
 
 describe('Field Sheet', () => {
   it('pulls the job by the client ticket and shows the day from the drives, with the guess marked', async () => {
@@ -282,5 +283,46 @@ describe('Field Sheet', () => {
     await user.click(within(made).getByRole('button', { name: 'Imported' }));
     expect(posted.at(-1)).toEqual({ wo_id: 'wo', from: '2026-10-21', to: '2026-10-21', imported: true, total: 1009.64, date: '2026-10-25' });
     expect(await within(made).findByText('Billed')).toBeTruthy();
+  });
+
+  // Fred, 2026-10-25: "on the excel sheet each site on a separate page".
+  it('makes the week’s bills an Excel workbook, each site on its own tab', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-25T15:00:00Z'));
+    const user = userEvent.setup();
+    const posted: unknown[] = [];
+    dryRun(posted);
+    render(<FieldSheetView workOrders={[{ ...wo, customer_name: 'LDS' } as EnrichedWorkOrder]} />);
+    await user.click(await screen.findByRole('button', { name: /excel, a tab per site/i }));
+    expect(posted).toEqual([{ wo_id: 'wo', from: '2026-10-18', to: '2026-10-24', dry_run: true }]);
+    expect(downloadXLSXBook).toHaveBeenCalledTimes(1);
+    const [name, book] = downloadXLSXBook.mock.calls[0] as [string, { name: string; rows: unknown[][] }[]];
+    expect(name).toBe('Bills 2026-10-18 to 2026-10-24.xlsx');
+    expect(book.map((t) => t.name)).toEqual(['Goldsboro', 'All sites']);
+    expect(book[0].rows[0]).toEqual(['FAJ Solutions', 'Invoice WO-19101402-1021']);
+    expect(book[0].rows).toContainEqual(['Cabling', 'Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h', 9.57, 100, 957]);
+    expect(book[0].rows.at(-1)).toEqual(['', '', '', 'Total', 1009.64]);
+  });
+
+  it('puts the tabs in the order the sites were first worked that week, not by WO number', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-25T15:00:00Z'));
+    // Gaffney (WO 19101401) first worked Friday, Dover (WO 19101403) Monday.
+    const before = tables.job_day_events;
+    tables.job_day_events = [
+      { id: 'g', wo_id: 'gaffney', contractor_name: 'Paul Gibbs', kind: 'travel_start', at: at('23', '07:00'), origin: 'hotel', dest: 'hotel', miles: null },
+      { id: 'd', wo_id: 'dover', contractor_name: 'Frederick Jeffers', kind: 'travel_start', at: at('19', '07:00'), origin: 'home', dest: 'home', miles: null },
+    ];
+    try {
+      const user = userEvent.setup();
+      dryRun([]);
+      const job = (id: string, wo_number: string, site_city: string) => ({ ...wo, id, wo_number, site_city, customer_name: 'LDS' }) as EnrichedWorkOrder;
+      render(<FieldSheetView workOrders={[job('gaffney', '19101401', 'Gaffney'), job('dover', '19101403', 'Dover')]} />);
+      await user.click(await screen.findByRole('button', { name: /excel, a tab per site/i }));
+      const [, book] = downloadXLSXBook.mock.calls[0] as [string, { name: string }[]];
+      expect(book.map((t) => t.name)).toEqual(['Dover', 'Gaffney', 'All sites']);
+    } finally {
+      tables.job_day_events = before;
+    }
   });
 });

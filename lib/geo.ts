@@ -51,13 +51,19 @@ export async function getPosition(timeoutMs = 6000): Promise<Position | null> {
  * an Android phone), so the steps go through the phone's Settings and the
  * browser's own menu, which work installed or not.
  */
-export function gpsMessage(problem: GpsProblem, kind: PhoneKind = thisPhone(), host = thisHost()): string {
+export function gpsMessage(problem: GpsProblem, kind: PhoneKind = thisPhone(), host = thisHost(), browser = thisBrowser()): string {
   if (problem === 'no_fix') {
     return "Your phone couldn't find where you are. Check Location is on (swipe down from the top of the screen), step near a window or outside, then try again.";
   }
   switch (kind) {
-    case 'android':
-      return `Location is blocked for this app. On the phone: Settings → Apps → Chrome → Permissions → Location → Allow only while using the app. Then open Chrome, tap ⋮ → Settings → Site settings → Location, tap ${host} and set it to Allow. Then try again.`;
+    case 'android': {
+      if (browser === 'Chrome') {
+        return `Location is blocked for this app. On the phone: Settings → Apps → Chrome → Permissions → Location → Allow only while using the app. Then open Chrome, tap ⋮ → Settings → Site settings → Location, tap ${host} and set it to Allow. Then try again.`;
+      }
+      // Firefox, Edge and others on Android: their own menus differ (Greptile on PR #26).
+      const b = browser ?? 'your web browser';
+      return `Location is blocked for this app. On the phone: Settings → Apps → ${b} → Permissions → Location → Allow only while using the app. Then open ${b}, find Site permissions → Location in its settings, and allow ${host}. Then try again.`;
+    }
     case 'samsung':
       return `Location is blocked for this app. On the phone: Settings → Apps → Samsung Internet → Permissions → Location → Allow only while using the app. Then open Samsung Internet, tap ≡ → Settings → Sites and downloads → Site permissions → Location, and allow ${host}. Then try again.`;
     case 'ios':
@@ -72,6 +78,18 @@ export function gpsMessage(problem: GpsProblem, kind: PhoneKind = thisPhone(), h
 
 function thisPhone(): PhoneKind {
   return typeof navigator === 'undefined' ? 'other' : phoneKind(navigator.userAgent ?? '');
+}
+
+/** Which browser an Android phone is running, when it says: Chrome unless it is another. */
+export function androidBrowser(ua: string): string | null {
+  if (/Firefox\//.test(ua)) return 'Firefox';
+  if (/EdgA\//.test(ua)) return 'Edge';
+  if (/OPR\//.test(ua)) return 'Opera';
+  return /Chrome\//.test(ua) ? 'Chrome' : null;
+}
+
+function thisBrowser(): string | null {
+  return typeof navigator === 'undefined' ? null : androidBrowser(navigator.userAgent ?? '');
 }
 
 function thisHost(): string {

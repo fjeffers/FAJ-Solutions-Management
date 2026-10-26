@@ -206,13 +206,14 @@ export default function OdometerDialog({ woNumber, moment, keep, onClose, initia
 /** What a photo picked from the phone is: the odometer (sure: the AI said so) or not, its reading, and when it was taken. */
 export type PhonePhoto = { what: 'odometer' | 'other'; sure: boolean; read: number | null; taken: PhotoTime };
 
-/** Looks at a photo picked from the phone. With no AI (no signal, not set up), the tech is asked. */
+/** Looks at a photo picked from the phone. With no answer from the AI (no signal, not set up, unreadable), the tech is asked. */
 export async function sortPhonePhoto(woNumber: string, file: File): Promise<PhonePhoto> {
   const taken = await photoTakenAt(file);
   let small: Blob;
   try { small = await shrinkPhoto(file, 1600); } catch { return { what: 'other', sure: false, read: null, taken }; }
   const r = await readPhotoFull<SortRead>(woNumber, 'sort', small);
-  if (r.source === 'unavailable') return { what: 'odometer', sure: false, read: null, taken };
+  // No answer at all (out of reach, or it looked and said nothing): ask, rather than file it as a job photo (Greptile on PR #27).
+  if (r.source === 'unavailable' || !r.result) return { what: 'odometer', sure: false, read: null, taken };
   if (r.result?.what === 'odometer') return { what: 'odometer', sure: true, read: r.result.reading, taken };
   return { what: 'other', sure: true, read: null, taken };
 }

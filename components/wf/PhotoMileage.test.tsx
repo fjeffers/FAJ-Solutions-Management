@@ -105,5 +105,8 @@ describe('looking at a photo from the phone', () => {
     expect(await sortPhonePhoto('19101414', pic())).toMatchObject({ what: 'other' });
     answer = () => ({ ok: true, body: { ok: true, source: 'no-key', result: null } });
     expect(await sortPhonePhoto('19101414', pic())).toMatchObject({ what: 'odometer', sure: false, read: null });
+    // It looked and said nothing: ask too, never file it as a job photo unasked (Greptile on PR #27).
+    answer = () => ({ ok: true, body: { ok: true, source: 'unreadable', result: null } });
+    expect(await sortPhonePhoto('19101414', pic())).toMatchObject({ what: 'odometer', sure: false, read: null });
   });
 });

@@ -59,7 +59,9 @@ export default function DayPictures({ pics, woId, woNumber, day, tech, onAdded }
   const [busy, setBusy] = useState(false);
   const picked = useRef<File | null>(null);
 
-  const pick = (k: Kind) => { setKind(k); setFile(null); setReading(''); setTime(''); setAiRead(null); setOtherDay(null); input.current?.click(); };
+  /** Clears what came from the last picture; a reply still on its way for it is then ignored (Greptile on PR #27). */
+  const reset = () => { picked.current = null; setFile(null); setReading(''); setTime(''); setAiRead(null); setOtherDay(null); setScanning(false); };
+  const pick = (k: Kind) => { reset(); setKind(k); input.current?.click(); };
   const send = async (f: File, k: Kind, miles: number) => {
     setBusy(true);
     try {
@@ -76,7 +78,7 @@ export default function DayPictures({ pics, woId, woNumber, day, tech, onAdded }
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !j.ok) { toastError(j.error ?? "Couldn't add the picture."); return; }
       toastSuccess(`${LABEL[k]} added to ${fmtDay(day)}.`);
-      setFile(null); setReading(''); setTime(''); setAiRead(null); setOtherDay(null);
+      reset();
       onAdded({ moment: k === 'odo_start' ? 'start' : 'end', reading: miles });
     } catch (e) {
       toastError(e instanceof Error ? e.message : "Couldn't add the picture.");
@@ -87,6 +89,7 @@ export default function DayPictures({ pics, woId, woNumber, day, tech, onAdded }
   /** A picture picked: its own time fills the time box, and the AI reads the miles into the reading box. */
   const chosen = async (f: File | undefined) => {
     if (!f) return;
+    reset();
     setFile(f);
     picked.current = f;
     const taken = await photoTakenAt(f, TZ);
@@ -137,7 +140,7 @@ export default function DayPictures({ pics, woId, woNumber, day, tech, onAdded }
             <input type="time" className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={time} onChange={(e) => setTime(e.target.value)}
               aria-label={`${LABEL[kind]} time ${tech} ${day}`} /></label>
           <button type="button" className="wf-btn wf-btn-navy wf-btn-sm" disabled={busy} onClick={addOdo}>Add</button>
-          <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" disabled={busy} onClick={() => { picked.current = null; setFile(null); setScanning(false); }}>Cancel</button>
+          <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" disabled={busy} onClick={reset}>Cancel</button>
           <div className="wf-subtle" style={{ flexBasis: '100%', fontSize: 12 }} aria-live="polite">
             {scanning ? 'Reading the miles off the photo…'
               : aiRead != null ? `Read from the photo${time ? ', with the time it was taken' : ''}. Check it matches before Add.`

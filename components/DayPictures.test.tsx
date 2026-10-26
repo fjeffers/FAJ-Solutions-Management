@@ -19,11 +19,15 @@ vi.mock('@/lib/photo-time', () => ({ photoTakenAt: async () => ({ at: takenAt, f
 
 const sent: { url: string; form: Record<string, string> }[] = [];
 let aiReading: number | null = 142180.4;
+/** Holds the next AI reply until released: a slow read. */
+let hold: Promise<void> | null = null;
 vi.stubGlobal('fetch', async (url: string, init: { body: FormData }) => {
   const form: Record<string, string> = {};
   init.body.forEach((v, k) => { form[k] = typeof v === 'string' ? v : 'file'; });
   sent.push({ url, form });
-  const body = url === '/api/jobs/read-photo' ? { ok: true, source: 'ai', result: { reading: aiReading } } : { ok: true };
+  const reading = aiReading;
+  if (url === '/api/jobs/read-photo' && hold) { const h = hold; hold = null; await h; }
+  const body = url === '/api/jobs/read-photo' ? { ok: true, source: 'ai', result: { reading } } : { ok: true };
   return { ok: true, json: async () => body };
 });
 
@@ -54,6 +58,23 @@ describe("adding a tech's odometer picture from the office", () => {
       wo_id: 'wo-1', day: '2026-10-26', tech: 'Paul Gibbs', kind: 'odo_end', reading: '142180', ai_reading: '142180.4', time: '07:31', file: 'file',
     } });
     expect(stampPhoto.mock.calls[0][1]).toEqual(['WO 19101414 · Paul Gibbs', 'Mon, Oct 26, 7:31 AM · Odometer end 142,180', 'Added by the office']);
+  });
+
+  it("a slow read of an earlier picture never fills in the next one's miles (Greptile on PR #27)", async () => {
+    let release!: () => void;
+    hold = new Promise<void>((r) => { release = r; });
+    aiReading = 1000;
+    open();
+    await waitFor(() => expect(sent).toHaveLength(1));
+    // The office starts on another picture, and the first one's reply lands while it is choosing.
+    fireEvent.click(screen.getByRole('button', { name: /Odometer end/ }));
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    aiReading = 2000;
+    fireEvent.change(screen.getByLabelText('Picture for Paul Gibbs 2026-10-26'), { target: { files: [pic()] } });
+    const miles = screen.getByLabelText('Odometer end reading Paul Gibbs 2026-10-26') as HTMLInputElement;
+    await waitFor(() => expect(sent).toHaveLength(2));
+    await waitFor(() => expect(miles.value).toBe('2000'));
   });
 
   it("says so when the photo is from another day, and leaves the miles to type when the AI can't read them", async () => {

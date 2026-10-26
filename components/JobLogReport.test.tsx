@@ -33,7 +33,10 @@ let saveDelays: number[] = [];
 let saveFails: boolean[] = [];
 // The punches come back only once this settles, to hold the log loading.
 let punchesHeld: Promise<void> = Promise.resolve();
+// How many times each table was read.
+const reads: Record<string, number> = {};
 function query(table: string) {
+  reads[table] = (reads[table] ?? 0) + 1;
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'eq', 'in', 'order']) chain[m] = () => chain;
   chain.then = (ok: (v: unknown) => unknown) => (table === 'job_punches' ? punchesHeld : Promise.resolve())
@@ -50,7 +53,9 @@ function query(table: string) {
 }
 const storage = { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((p) => ({ path: p, signedUrl: `https://signed.test/${p}` })) }) }) };
 vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ from: (t: string) => query(t), storage }) }));
-vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => [] }));
+vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (url === '/api/jobs/day-photo' ? { ok: true } : []) }));
+// The stamp draws on a canvas, which the test browser hasn't got.
+vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: async () => new Blob(['jpeg'], { type: 'image/jpeg' }) }));
 
 const { default: JobLogReport } = await import('./JobLogReport');
 const wo = {
@@ -110,6 +115,44 @@ describe('Job log pictures', () => {
     await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['receipt:x1'], job_log_receipt_photos: [] }));
   });
 
+  it('has Download on every picture, named for the job, what it is, whose and the day, and an Add photos button (Fred, 2026-10-26)', async () => {
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const lowes = await screen.findByRole('link', { name: /download materials, lowe's: \$104\.17/i });
+    expect(lowes.getAttribute('download')).toBe("WO 19101401 Materials Lowe's $104.17 Paul Gibbs 10-21-2026.jpg");
+    expect(lowes.classList.contains('no-print')).toBe(true);
+    expect(screen.getByRole('link', { name: /download odometer start: 41,200/i }).getAttribute('download')).toBe('WO 19101401 Odometer start 41200 Paul Gibbs 10-19-2026.jpg');
+    expect(screen.getByRole('link', { name: /download photo/i }).getAttribute('download')).toBe('WO 19101401 Photo Paul Gibbs 10-21-2026.jpg');
+    expect(screen.getByRole('button', { name: /add photos/i })).toBeTruthy();
+  });
+
+  it('reads only the photos again after the office adds some, so a choice tapped meanwhile stays (Greptile on PR #23)', async () => {
+    const before = tables.wo_photos;
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      await screen.findByRole('link', { name: /download photo/i });
+      const choicesRead = reads.work_orders;
+      tables.wo_photos = [...before, { id: 'ph2', url: 'https://example.test/added.jpg', taken_at: at('22', '12:00'), lat: null, lng: null, contractor_name: 'Office' }];
+      fireEvent.change(screen.getByLabelText('Pictures to add to the job'), { target: { files: [new File(['x'], 'a.jpg', { type: 'image/jpeg' })] } });
+      fireEvent.click(screen.getByRole('button', { name: 'Add to the job' }));
+      await waitFor(() => expect(screen.getAllByRole('link', { name: /download photo/i })).toHaveLength(2));
+      expect(reads.work_orders).toBe(choicesRead);
+    } finally {
+      tables.wo_photos = before;
+    }
+  });
+
+  it('saves a PNG receipt as a PNG (Greptile on PR #23)', async () => {
+    const before = tables.job_expenses;
+    tables.job_expenses = [{ id: 'x4', contractor_name: 'Paul Gibbs', category: 'materials', vendor: 'Home Depot', amount: 12.5, expense_date: '2026-10-20', status: 'approved', receipt_path: 'r/office_1.png' }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const link = await screen.findByRole('link', { name: /download materials, home depot/i });
+      expect(link.getAttribute('download')).toBe('WO 19101401 Materials Home Depot $12.50 Paul Gibbs 10-20-2026.png');
+    } finally {
+      tables.job_expenses = before;
+    }
+  });
+
   it('keeps every choice from a quick run of taps, even when a save is slow', async () => {
     saveDelays = [80, 0];
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
@@ -126,7 +169,7 @@ describe('Job log pictures', () => {
     tables.job_expenses = [{ id: 'x3', contractor_name: null, category: 'hotel', vendor: 'Quality Inn', amount: 350.74, expense_date: '2026-10-20', status: 'approved', receipt_path: 'r/hotel.pdf' }];
     try {
       render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-      const link = await screen.findByRole('link', { name: /lodging, quality inn: \$350\.74/i });
+      const link = await screen.findByRole('link', { name: /^lodging, quality inn: \$350\.74/i });
       expect(link.getAttribute('href')).toBe('https://signed.test/r/hotel.pdf');
       expect(screen.queryByAltText(/quality inn/i)).toBeNull();
     } finally {

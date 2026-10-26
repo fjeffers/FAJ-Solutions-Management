@@ -20,6 +20,10 @@
 // declined receipt stays on screen, marked declined, and is never printed ("if
 // decline it stay on the app but it does a photo that was decline item").
 //
+// Fred, 2026-10-26 ("still unable to download photo or add them"): Add photos
+// puts pictures from the office's device on the job, and each picture has
+// Download, which saves it to the device (lib/job-photos.ts).
+//
 // Fred, 2026-10-26: the mark on a picture is what a tap does ("when i click on
 // the x i dont want the client to see it ... but it stay on the app"): ✗ takes
 // it out of the log, and a picture left out shows ✓ to put it back.
@@ -29,7 +33,7 @@
 // 10-18-2026 – 10-23-2026".
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, FileText, Printer, X } from 'lucide-react';
+import { Check, Download, FileText, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
@@ -41,6 +45,8 @@ import { mapLink } from '@/lib/geo';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
+import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos';
+import AddJobPhotos from '@/components/AddJobPhotos';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
 type PhotoRow = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; contractor_name: string | null };
@@ -134,6 +140,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Each tech's days as the Hours screen and the Field Sheet have them, for the miles
   // (Fred, 2026-10-25: "i don't see the mileages on the job logs along with the pictures").
   const [days, setDays] = useState<SheetRow[]>([]);
+  // Pictures added from the office: the log reads the job's photos again.
+  const [added, setAdded] = useState(0);
   const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false });
 
   useEffect(() => {
@@ -180,6 +188,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       })));
     });
   }, [w.id, loadedChoices]);
+
+  // Only the photos, after the office adds some: the pictures left out and the
+  // ones labeled receipts aren't read again, so a tap made meanwhile is never
+  // undone (Greptile on PR #23).
+  useEffect(() => {
+    if (!added) return;
+    void createClient().from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id).order('taken_at')
+      .then(({ data }) => { if (data) setPhotos(data as PhotoRow[]); });
+  }, [w.id, added]);
 
   // Printing shows only this report (app/wf.css, body.job-log-open).
   useEffect(() => {
@@ -279,6 +296,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {out && !p.declined && (
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#B42318', marginTop: 2 }}>Not in the job log: the client won’t see it. Still on the job.</div>
               )}
+              {(() => {
+                const name = photoFileName([`WO ${w.wo_number}`, p.caption ?? 'Photo', p.tech, `${p.day.slice(5, 7)}-${p.day.slice(8, 10)}-${p.day.slice(0, 4)}`], fileExt(p.src, p.pdf ? 'pdf' : 'jpg'));
+                return (
+                  <a className="no-print" href={downloadHref(p.src, name)} download={name} aria-label={`Download ${what}`}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11.5, fontWeight: 600, color: '#0E1B2E', marginTop: 3 }}>
+                    <Download size={12} /> Download
+                  </a>
+                );
+              })()}
               {p.photoId && (
                 <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                   {([[true, 'Receipt'], [false, 'Not a receipt']] as const).map(([r, text]) => (
@@ -306,6 +332,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <label style={{ fontSize: 13 }}>To <input type="date" className="wf-input" style={{ width: 150, minHeight: 36, padding: '4px 8px' }} value={to} onChange={(e) => setTo(e.target.value)} /></label>
         {/* Not until the job's days are in: the PDF's name has them (Greptile on PR #21). */}
         <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
+        <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
+          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={() => setAdded((n) => n + 1)} />
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>

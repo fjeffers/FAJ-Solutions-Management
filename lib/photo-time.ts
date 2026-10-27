@@ -140,5 +140,20 @@ export async function photoTakenAt(file: Blob, timeZone = 'America/New_York', no
   return photoTime(exif, lm, now, timeZone);
 }
 
+/**
+ * The GPS a picture carries (Fred, 2026-10-27: "Geo tag on every picture"): a
+ * photo picked from the phone keeps its own when it has one; otherwise where the
+ * phone is as it's added (whenAdded, so the stamp says so). Null when there is
+ * neither: the picture isn't sent, like a tap with no GPS.
+ */
+export async function pictureGps(file: Blob, fromPhone: boolean, here: () => Promise<Position | null>,
+  /** The GPS read off the original photo, when this file is a copy made from it (a Count or Measure markup). */
+  original?: Position | null): Promise<{ pos: Position; whenAdded: boolean } | null> {
+  const own = fromPhone ? (original !== undefined ? original : (await photoTakenAt(file)).gps) : null;
+  if (own) return { pos: own, whenAdded: false };
+  const now = await here();
+  return now ? { pos: now, whenAdded: fromPhone } : null;
+}
+
 /** Mileage older than this is added by the office: the app keeps a tap's own time only for two days (wf_trusted_time). */
 export const PHOTO_MILEAGE_MAX_AGE_MS = 47 * 3600_000;

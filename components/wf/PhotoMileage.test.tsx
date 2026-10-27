@@ -17,6 +17,11 @@ vi.mock('@/lib/photo-stamp', () => ({
   shrinkPhoto: async () => new Blob(['small'], { type: 'image/jpeg' }),
 }));
 vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:preview', revokeObjectURL: () => {} }));
+// Where the phone is now; null: no GPS at all.
+let here: { latitude: number; longitude: number; accuracy: number } | null = { latitude: 40.7, longitude: -75.3, accuracy: 12 };
+Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
+  getCurrentPosition: (ok: (p: unknown) => void, fail: (e: { code: number }) => void) => (here ? ok({ coords: here }) : fail({ code: 1 })),
+} });
 
 const sent: { url: string; form: Record<string, string> }[] = [];
 let answer: (url: string) => { ok: boolean; body: unknown } = () => ({ ok: true, body: { ok: true } });
@@ -34,6 +39,7 @@ const pic = () => new File(['x'], 'odo.jpg', { type: 'image/jpeg' });
 afterEach(() => {
   cleanup(); sent.length = 0; stampPhoto.mockClear(); toastError.mockClear(); toastSuccess.mockClear();
   answer = () => ({ ok: true, body: { ok: true } });
+  here = { latitude: 40.7, longitude: -75.3, accuracy: 12 };
 });
 
 describe('a mileage photo from the phone', () => {
@@ -48,10 +54,13 @@ describe('a mileage photo from the phone', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ending mileage' }));
     fireEvent.click(send);
     await waitFor(() => expect(onClose).toHaveBeenCalled());
+    // The photo has no GPS of its own: where the phone is now, and the stamp says so (Fred, 2026-10-27: "Geo tag on every picture").
+    expect(screen.getByText('GPS: where you are now')).toBeTruthy();
     expect(sent).toEqual([{ url: '/api/tech/odometer', form: {
-      wo_number: '19101414', at: '2026-10-26T11:31:05.000Z', moment: 'end', reading: '48213.6', ai_reading: '48213.6', file: 'file',
+      wo_number: '19101414', at: '2026-10-26T11:31:05.000Z', moment: 'end', reading: '48213.6', ai_reading: '48213.6',
+      lat: '40.7', lng: '-75.3', accuracy: '12', file: 'file',
     } }]);
-    expect(stampPhoto.mock.calls[0][1]).toEqual(['FAJ Solutions · WO 19101414 · Ending mileage, added later', 'Mon, Oct 26, 2026 · 7:31:05 AM EDT', 'GPS: location not available']);
+    expect(stampPhoto.mock.calls[0][1]).toEqual(['FAJ Solutions · WO 19101414 · Ending mileage, added later', 'Mon, Oct 26, 2026 · 7:31:05 AM EDT', 'GPS when added 40.70000, -75.30000 (±12 m)']);
     expect(keep).not.toHaveBeenCalled();
     expect(toastSuccess).toHaveBeenCalledWith('Ending mileage sent: 48,213.6.');
   });
@@ -60,10 +69,27 @@ describe('a mileage photo from the phone', () => {
     const onClose = vi.fn();
     render(<PhotoMileageDialog woNumber="19101414" file={pic()} now={NOW} keep={vi.fn()} onNotMileage={vi.fn()} onClose={onClose}
       photo={{ what: 'odometer', sure: true, read: 1200, taken: { at: '2026-10-26T11:31:05.000Z', from: 'camera', gps: { lat: 40.6884, lng: -75.2207, accuracy: null } } }} />);
+    expect(screen.getByText('GPS from the photo')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Starting mileage' }));
     fireEvent.click(screen.getByRole('button', { name: /Send/ }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(sent[0].form).toMatchObject({ moment: 'start', lat: '40.6884', lng: '-75.2207' });
+    expect(stampPhoto.mock.calls[0][1][2]).toBe('GPS 40.68840, -75.22070');
+  });
+
+  it('with no GPS on the photo and none on the phone, nothing is sent and the tech is told how to turn it on', async () => {
+    here = null;
+    const keep = vi.fn(); const onClose = vi.fn();
+    render(<PhotoMileageDialog woNumber="19101414" file={pic()} now={NOW} keep={keep} onNotMileage={vi.fn()} onClose={onClose}
+      photo={{ what: 'odometer', sure: true, read: 48213, taken: { at: '2026-10-26T11:31:05.000Z', from: 'camera', gps: null } }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Starting mileage' }));
+    fireEvent.click(screen.getByRole('button', { name: /Send/ }));
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastError.mock.calls[0][0]).toMatch(/Location is blocked/);
+    expect(sent).toHaveLength(0);
+    expect(keep).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByRole('button', { name: /Send/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('over two days old, with no date, or unreadable: the photo goes to the office with what is known', async () => {

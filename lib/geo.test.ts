@@ -26,6 +26,11 @@ describe('where and when on a job photo', () => {
     expect(lines[2]).toBe('GPS: location not available');
   });
 
+  it('a photo from the phone with no GPS of its own says the GPS is where it was added (Fred, 2026-10-27)', () => {
+    const lines = stampLines({ woNumber: '1', at, pos: { lat: 40.6884, lng: -75.2207, accuracy: null }, fromLibrary: true, gpsWhenAdded: true, timeZone: 'America/New_York' });
+    expect(lines[2]).toBe('GPS when added 40.68840, -75.22070');
+  });
+
   it('keeps a long title to one line', () => {
     const [head] = stampLines({ woNumber: '1', title: 'x'.repeat(200), at, pos: null });
     expect(head.length).toBeLessThanOrEqual(68);

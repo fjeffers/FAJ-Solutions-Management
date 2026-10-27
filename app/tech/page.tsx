@@ -49,6 +49,8 @@ import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { getPosition, stampLines, mapLink, milesBetween, noGpsMessage, NO_GPS_MS, type Position } from '@/lib/geo';
+import { pictureGps } from '@/lib/photo-time';
+import { HeldForGps } from '@/components/wf/NoGps';
 import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
 import { EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
 import { useExpenseCategories } from '@/lib/use-expense-categories';
@@ -1487,6 +1489,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           {(canReport || expenses.length > 0) && (
             <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
           )}
+          {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
           <JobPhotos canAdd={canReport} ph={phPicked} />
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} talk={project ? talk : undefined} keep={msgDraft} /></div>}
@@ -1596,6 +1599,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       <JobIcons job={job} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
         onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
+      {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
       {job.status === 'offered' && bottom}
       {dayCard}
       {job.description && (
@@ -2008,11 +2012,20 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
     await onSave({ [q.id]: r.url });
   };
 
+  // A question's photo with no GPS is held to send again, not lost (Fred, 2026-10-27; Greptile on PR #28).
+  // One per question: a photo for another question never clears this one.
+  const [held, setHeld] = useState<Record<string, File>>({});
+  const holdFor = (id: string, file: File | null) => setHeld((h) => {
+    const { [id]: _was, ...rest } = h; // eslint-disable-line @typescript-eslint/no-unused-vars
+    return file ? { ...rest, [id]: file } : rest;
+  });
   const photoAnswer = async (q: WfQuestion, file: File | undefined) => {
     if (!file) return;
+    holdFor(q.id, null);
     setBusy(q.id);
     const at = new Date();
     const pos = await getPosition(6000);
+    if (!pos) { setBusy(null); holdFor(q.id, file); toastError(noGpsMessage(), NO_GPS_MS); return; }
     try {
       const blob = await stampPhoto(file, stampLines({ woNumber: job.number, title: q.label, at, pos }));
       await uploadAnswer(q, blob);
@@ -2065,6 +2078,9 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
                       <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
                         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void photoAnswer(q, f); }} />
                     </label>
+                  )}
+                  {held[q.id] && (
+                    <HeldForGps busy={busy === q.id} onRetry={() => void photoAnswer(q, held[q.id])} onDiscard={() => holdFor(q.id, null)} />
                   )}
                 </div>
               ) : q.type === 'signature' ? (
@@ -2283,16 +2299,29 @@ function useJobPhotos(job: WfJob, uid: string) {
     return () => window.removeEventListener('online', back);
   }, [loadSent, loadWaiting, flush]);
 
-  const add = async (file: File | undefined, source: 'camera' | 'library', label: string | null = null, when?: Date) => {
+  // A photo with no GPS isn't sent (Fred, 2026-10-27), and never thrown away either (Greptile on
+  // PR #28): it is held, marks and all, until Location is on and the tech sends it again.
+  // Every one is kept: a second photo with no GPS never replaces the first.
+  const [held, setHeld] = useState<{ file: File; source: 'camera' | 'library'; label: string | null; at: Date; original?: Position | null }[]>([]);
+  const add = async (file: File | undefined, source: 'camera' | 'library', label: string | null = null, when?: Date,
+    /** The GPS of the photo this one was made from (Count, Measure). */
+    original?: Position | null) => {
     if (!file) return;
     const at = when ?? new Date();
     setBusy('Getting your location…');
-    const pos = await getPosition(8000);
+    const gps = await pictureGps(file, source === 'library', () => getPosition(8000), original);
+    if (!gps) {
+      setBusy(null);
+      setHeld((h) => [...h, { file, source, label, at, original }]);
+      toastError(`${noGpsMessage()} The photo is kept on the job to send again.`, NO_GPS_MS);
+      return;
+    }
+    const pos = gps.pos;
     setBusy('Stamping the photo…');
     let blob: Blob;
     try {
       blob = await stampPhoto(file, stampLines({
-        woNumber: job.number, title: job.client || job.title, at, pos, fromLibrary: source === 'library',
+        woNumber: job.number, title: job.client || job.title, at, pos, fromLibrary: source === 'library', gpsWhenAdded: gps.whenAdded,
       }));
     } catch (e) {
       setBusy(null);
@@ -2334,7 +2363,15 @@ function useJobPhotos(job: WfJob, uid: string) {
     setPending(null);
   };
 
-  return { sent, waiting, busy, add, flush, pending, ask, answer, cancel };
+  /** Send the held photos again, one after another; any still without GPS is held again. */
+  const retry = async () => {
+    const list = held;
+    setHeld([]);
+    for (const h of list) await add(h.file, h.source, h.label, h.at, h.original);
+  };
+  const drop = () => setHeld([]);
+
+  return { sent, waiting, busy, add, flush, pending, ask, answer, cancel, held, retry, drop };
 }
 
 // ── Tools — iScanner's, for techs (Fred, 2026-10-07: "all the above for my
@@ -2498,7 +2535,7 @@ function JobTools({ job, canAdd, ph, onNote }: {
     {tool === 'read' && <ReadTool onClose={() => setTool(null)} onNote={onNote} />}
     {(tool === 'count' || tool === 'measure') && (
       <PhotoMarkup mode={tool} onClose={() => setTool(null)}
-        onSave={async (file, source) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what); }} />
+        onSave={async (file, source, _note, gps) => { const what = tool === 'count' ? 'Count' : 'Measure'; setTool(null); await ph.add(file, source, what, undefined, gps); }} />
     )}
     {viewing && (
       <DocViewer url={viewing.url} name={viewing.name} onClose={closeViewer}

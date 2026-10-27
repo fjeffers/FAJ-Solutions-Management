@@ -126,11 +126,13 @@ export function fmtStampTime(at: Date, timeZone?: string): string {
  */
 export function stampLines(o: {
   woNumber: string; title?: string; at: Date; pos: Position | null; fromLibrary?: boolean; timeZone?: string;
+  /** A photo from the phone with no GPS of its own: the GPS is where it was added. */
+  gpsWhenAdded?: boolean;
 }): string[] {
   const head = ['FAJ Solutions', `WO ${o.woNumber}`, o.title?.trim()].filter(Boolean).join(' · ');
   const when = `${o.fromLibrary ? 'Added ' : ''}${fmtStampTime(o.at, o.timeZone)}`;
   const where = o.pos
-    ? `GPS ${fmtCoords(o.pos.lat, o.pos.lng)}${o.pos.accuracy != null ? ` (±${Math.round(o.pos.accuracy)} m)` : ''}`
+    ? `GPS ${o.gpsWhenAdded ? 'when added ' : ''}${fmtCoords(o.pos.lat, o.pos.lng)}${o.pos.accuracy != null ? ` (±${Math.round(o.pos.accuracy)} m)` : ''}`
     : 'GPS: location not available';
   return [head.length > 70 ? `${head.slice(0, 67)}…` : head, when, where];
 }

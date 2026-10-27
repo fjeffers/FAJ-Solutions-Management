@@ -5,7 +5,8 @@
 //
 // Pick a job. Every day each tech worked on it is a card: started, finished,
 // lunch, hours on site, travel hours and miles, filled in from what the techs
-// tapped. Change any box and Save. It saves to the same day lines the Field
+// tapped. Change any box and Save. With no odometer photos, the miles can be
+// worked out from the addresses driven (MilesFromAddress). It saves to the same day lines the Field
 // Sheet and the invoice read (field_sheet_days), so they all agree. A tech still
 // clocked in gets a Clock out button on the card (wf_owner_fix_punch).
 //
@@ -16,13 +17,14 @@
 // first, one tech or all, full cards or a short list. Settings -> Hours screen
 // keeps the choice (lib/hours-look.ts).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Clock, LogOut, Plus, Save, Search } from 'lucide-react';
+import { Car, ChevronDown, ChevronRight, Clock, LogOut, Plus, Save, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { dayOf, type DayEvent } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { clock, dayCalc, nextEdits, parseEdits, rowsFor, type SavedDay, type SheetField, type SheetRow } from '@/lib/field-sheet';
 import { parsePunches, stillOnSite, zonedIso, type Punch } from '@/lib/clock-fix';
 import { toastError, toastSuccess } from '@/lib/toast';
+import { oneWayMiles } from '@/lib/driving';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import type { EnrichedWorkOrder, WorkOrder } from '@/lib/types';
 import { groupLabel, groupOf, hoursLookNow, HOURS_CARDS, HOURS_CHANGED, HOURS_GROUPS, HOURS_SAVE_ALL, type HoursLook } from '@/lib/hours-look';
@@ -31,7 +33,7 @@ import DayPictures, { type DayPic } from '@/components/DayPictures';
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { fixPunch } from '@/components/ClockFix';
 import { findJob } from '@/components/FieldSheetView';
-import TimesheetExport from '@/components/TimesheetExport';
+import TimesheetExport, { siteAddress } from '@/components/TimesheetExport';
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -316,7 +318,7 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
           )}
           {g.rows.map((r) => {
             const card = (
-              <DayCard key={`${r.key}:${JSON.stringify(r.edits)}`} row={r} woId={wo.id} pictures={pictures(r)} onPending={onPending}
+              <DayCard key={`${r.key}:${JSON.stringify(r.edits)}`} row={r} woId={wo.id} site={siteAddress(wo)} pictures={pictures(r)} onPending={onPending}
                 openPunch={open.find((p) => p.contractor_name === r.tech && dayOf(p.at, TZ) === r.day) ?? null}
                 onSave={saveDay} onClocked={() => void load()} />
             );
@@ -366,8 +368,10 @@ function cardEdits(row: SheetRow, vals: Record<string, string>): SavedDay['edits
   return edits;
 }
 
-function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending }: {
+function DayCard({ row, woId, site = '', openPunch, onSave, onClocked, pictures, onPending }: {
   row: SheetRow; woId: string; openPunch: Punch | null; pictures?: React.ReactNode;
+  /** The job's site address, where the miles from an address go to unless changed. */
+  site?: string;
   onSave: (row: SheetRow, edits: SavedDay['edits']) => Promise<boolean>; onClocked: () => void;
   /** Tells the day list what this card would save, so Save all can (null: nothing to save). */
   onPending?: (key: string, p: { row: SheetRow; edits: SavedDay['edits'] } | null) => void;
@@ -404,6 +408,13 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
     ...x, arrived: '', leftSite: '', lunch: '', hours: '0', travel: x.travel || (c.travel ? String(c.travel) : ''),
   }));
   const isTravelOnly = typed.hours === 0 && !typed.arrived && !typed.leftSite;
+  // Road miles worked out from the addresses. A day with no odometer or GPS miles
+  // takes them as its Miles; a day that has some takes them on top, in Extra miles.
+  const addMiles = (miles: number) => {
+    const f = c.milesAuto ? 'extraMiles' : 'miles';
+    setVals((x) => ({ ...x, [f]: String(Math.round(((num(x[f]) ?? 0) + miles) * 10) / 10) }));
+    toastSuccess(`${miles} mi added to ${f === 'miles' ? 'Miles' : 'Extra miles'}. Press Save to keep it.`);
+  };
   const clockOut = async () => {
     if (!openPunch) return;
     const iso = zonedIso(row.day, vals.leftSite, TZ);
@@ -451,6 +462,7 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
           );
         })}
       </div>
+      <MilesFromAddress tech={row.tech} day={row.day} site={site} onMiles={addMiles} />
       <label style={box}><span className="wf-label">Note</span>
         <input className="wf-input" value={vals.note} onChange={(e) => setVals((x) => ({ ...x, note: e.target.value }))} aria-label={`Note ${row.tech} ${row.day}`} />
       </label>
@@ -464,6 +476,49 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
         <span style={{ fontSize: 14 }}>{isTravelOnly ? <b>Travel day</b> : <><b>{c.hours.toFixed(2)} h</b> on site</>} · {c.travel.toFixed(2)} h travel · {c.miles} mi</span>
       </div>
     </section>
+  );
+}
+
+/**
+ * Miles from an address (Fred, 2026-10-27: "they didn't take the pictures ... I
+ * need to add it manually from the address to basically to the site"). Type
+ * where the tech drove from; the site is filled in. One way or Round trip works
+ * out the road miles (lib/driving) and adds them to the card. The From address
+ * is kept for the tech's next day, on this computer only.
+ */
+function MilesFromAddress({ tech, day, site, onMiles }: { tech: string; day: string; site: string; onMiles: (miles: number) => void }) {
+  const key = `faj.hours.milesFrom.${tech}`;
+  const [from, setFrom] = useState(() => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } });
+  const [to, setTo] = useState(site);
+  const [busy, setBusy] = useState(false);
+  const work = async (round: boolean) => {
+    if (!from.trim() || !to.trim()) { toastError('Type the address they drove from and the address they drove to.'); return; }
+    setBusy(true);
+    const miles = await oneWayMiles(from, to);
+    setBusy(false);
+    if (miles == null) { toastError("Couldn't find a road route between those addresses. Check them, or type the miles in the Miles box."); return; }
+    try { localStorage.setItem(key, from.trim()); } catch { /* private window: nothing kept */ }
+    onMiles(round ? Math.round(miles * 2 * 10) / 10 : miles);
+  };
+  const box: React.CSSProperties = { display: 'grid', gap: 3, fontSize: 12, minWidth: 0 };
+  return (
+    <div role="group" aria-label={`Miles from an address ${tech} ${day}`}
+      style={{ display: 'grid', gap: 8, padding: 10, borderRadius: 8, background: '#F5F7FA', border: '1px solid #E2E7EE' }}>
+      <span className="wf-label" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Car size={14} /> Miles from an address</span>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+        <label style={box}><span className="wf-label">From</span>
+          <input className="wf-input" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="Home or hotel address"
+            aria-label={`Drove from ${tech} ${day}`} autoComplete="street-address" /></label>
+        <label style={box}><span className="wf-label">To</span>
+          <input className="wf-input" value={to} onChange={(e) => setTo(e.target.value)} placeholder="Site address"
+            aria-label={`Drove to ${tech} ${day}`} /></label>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={busy} onClick={() => void work(false)}>Add miles one way</button>
+        <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" disabled={busy} onClick={() => void work(true)}>Add miles round trip</button>
+        {busy && <span className="wf-subtle" style={{ fontSize: 13 }}>Working out the road miles…</span>}
+      </div>
+    </div>
   );
 }
 

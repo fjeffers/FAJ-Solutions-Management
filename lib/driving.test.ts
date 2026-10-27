@@ -1,5 +1,25 @@
-import { describe, it, expect } from 'vitest';
-import { addressVariants } from './driving';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { addressVariants, oneWayMiles } from './driving';
+
+afterEach(() => { vi.unstubAllGlobals(); });
+
+describe('oneWayMiles', () => {
+  const answer = (body: unknown) => ({ ok: true, json: async () => body });
+  it('is the road miles from one address to the other, to 0.1 mi (Fred, 2026-10-27)', async () => {
+    const fetch = vi.fn(async (url: string) => (url.includes('nominatim')
+      ? answer([{ lat: url.includes('Hotel') ? '39.16' : '38.69', lon: '-75.52' }])
+      : answer({ routes: [{ distance: 68_073.5 }] })));
+    vi.stubGlobal('fetch', fetch);
+    expect(await oneWayMiles('1 Hotel Way, Dover, DE 19901', '20 Site Rd, Milford, DE 19963')).toBe(42.3);
+    expect(fetch.mock.calls.some(([u]) => String(u).includes('router.project-osrm.org'))).toBe(true);
+  });
+
+  it("is null when an address can't be found, or either is blank", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => answer([])));
+    expect(await oneWayMiles('Nowhere at all', '20 Site Rd, Milford, DE 19963')).toBeNull();
+    expect(await oneWayMiles('', '20 Site Rd, Milford, DE 19963')).toBeNull();
+  });
+});
 
 describe('addressVariants', () => {
   it('cleans State Farm prefixes and suite numbers', () => {

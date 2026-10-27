@@ -49,6 +49,7 @@ import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { getPosition, stampLines, mapLink, milesBetween, noGpsMessage, NO_GPS_MS, type Position } from '@/lib/geo';
+import { pictureGps } from '@/lib/photo-time';
 import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
 import { EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
 import { useExpenseCategories } from '@/lib/use-expense-categories';
@@ -2013,6 +2014,8 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
     setBusy(q.id);
     const at = new Date();
     const pos = await getPosition(6000);
+    // Every picture carries its GPS (Fred, 2026-10-27).
+    if (!pos) { setBusy(null); toastError(noGpsMessage(), NO_GPS_MS); return; }
     try {
       const blob = await stampPhoto(file, stampLines({ woNumber: job.number, title: q.label, at, pos }));
       await uploadAnswer(q, blob);
@@ -2287,12 +2290,15 @@ function useJobPhotos(job: WfJob, uid: string) {
     if (!file) return;
     const at = when ?? new Date();
     setBusy('Getting your location…');
-    const pos = await getPosition(8000);
+    // Every picture carries its GPS (Fred, 2026-10-27): with none, it isn't sent.
+    const gps = await pictureGps(file, source === 'library', () => getPosition(8000));
+    if (!gps) { setBusy(null); toastError(noGpsMessage(), NO_GPS_MS); return; }
+    const pos = gps.pos;
     setBusy('Stamping the photo…');
     let blob: Blob;
     try {
       blob = await stampPhoto(file, stampLines({
-        woNumber: job.number, title: job.client || job.title, at, pos, fromLibrary: source === 'library',
+        woNumber: job.number, title: job.client || job.title, at, pos, fromLibrary: source === 'library', gpsWhenAdded: gps.whenAdded,
       }));
     } catch (e) {
       setBusy(null);

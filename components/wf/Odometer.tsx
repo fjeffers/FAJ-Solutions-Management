@@ -15,10 +15,12 @@
 // I take a picture on my phone and then upload later on"): the AI looks whether
 // it is the odometer and reads it, then the tech says starting or ending
 // (PhotoMileageDialog). It is saved at the time the photo was taken
-// (lib/photo-time.ts), with the photo's own GPS when it has one.
+// (lib/photo-time.ts), with the photo's own GPS, or else where the phone is as
+// it's added; with no GPS at all it isn't sent (Fred, 2026-10-27: "Geo tag on
+// every picture").
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Gauge } from 'lucide-react';
-import { getPosition, stampLines, type Position } from '@/lib/geo';
+import { getPosition, stampLines, noGpsMessage, NO_GPS_MS, type Position } from '@/lib/geo';
 import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
 import { photoTakenAt, PHOTO_MILEAGE_MAX_AGE_MS, type PhotoTime } from '@/lib/photo-time';
 import type { SortRead } from '@/lib/photo-read';
@@ -255,15 +257,20 @@ export function PhotoMileageDialog({ woNumber, file, photo, keep, onNotMileage, 
     setBusy(true);
     const title = moment === 'start' ? 'Starting mileage' : 'Ending mileage';
     try {
+      // Every picture carries its GPS (Fred, 2026-10-27): the photo's own, else where the phone is now; with none it isn't sent.
+      const pos = taken.gps ?? await getPosition(8000);
+      if (!pos) { toastError(noGpsMessage(), NO_GPS_MS); return; }
       const at = taken.at ?? new Date(now).toISOString();
-      const stamped = await stampPhoto(file, stampLines({ woNumber, title: `${title}, added later`, at: new Date(at), pos: taken.gps, fromLibrary: !taken.at }));
+      const stamped = await stampPhoto(file, stampLines({
+        woNumber, title: `${title}, added later`, at: new Date(at), pos, fromLibrary: !taken.at, gpsWhenAdded: !taken.gps,
+      }));
       if (direct) {
-        const done = await sendMileage(woNumber, moment, { photo: stamped, takenAt: at, pos: taken.gps, ai: read }, keep);
+        const done = await sendMileage(woNumber, moment, { photo: stamped, takenAt: at, pos, ai: read }, keep);
         if (done === 'saved') toastSuccess(`${title} sent: ${read!.toLocaleString('en-US')}.`);
         if (done) onClose();
       } else {
         const label = `${title}${read != null ? ` ${read.toLocaleString('en-US')}` : ''} (${taken.at ? `photo from ${fmtTaken(taken.at)}` : 'no date on the photo'}, for the office to add)`;
-        const r = await keep(stamped, label, at, taken.gps);
+        const r = await keep(stamped, label, at, pos);
         if (typeof r === 'object') { toastError(r.error); return; }
         toastSuccess(r === 'queued' ? 'Mileage photo saved on your phone. It goes to the office when you have signal.' : 'Mileage photo sent to the office.');
         onClose();
@@ -296,6 +303,7 @@ export function PhotoMileageDialog({ woNumber, file, photo, keep, onNotMileage, 
             <div className="wf-label" style={{ fontWeight: 600, color: 'var(--wf-text)', fontSize: 13, marginBottom: 2 }}>Odometer</div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{read != null ? read.toLocaleString('en-US') : '—'}</div>
             <div className="wf-subtle" style={{ fontSize: 12.5 }}>{taken.at ? `Taken ${fmtTaken(taken.at)}` : 'No date on this photo'}</div>
+            <div className="wf-subtle" style={{ fontSize: 12.5 }}>{taken.gps ? 'GPS from the photo' : 'GPS: where you are now'}</div>
           </div>
         </div>
         <div>

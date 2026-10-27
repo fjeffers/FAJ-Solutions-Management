@@ -16,7 +16,7 @@ import { useState } from 'react';
 import { Camera, CheckCircle2, MapPin } from 'lucide-react';
 import { asks } from '@/lib/capture';
 import { ON_SITE_KEY, checkInChoices, checkInDrive, checkInMissing, checkInNotes, needsOdometer, samePlace, type Drive } from '@/lib/checkin';
-import { getPosition, stampLines } from '@/lib/geo';
+import { getPosition, stampLines, noGpsMessage, NO_GPS_MS } from '@/lib/geo';
 import { stampPhoto } from '@/lib/photo-stamp';
 import type { Origin } from '@/lib/project-day';
 import { toastError, toastSuccess } from '@/lib/toast';
@@ -96,6 +96,8 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
     try {
       const when = new Date();
       const pos = await getPosition(6000);
+      // Every picture carries its GPS (Fred, 2026-10-27).
+      if (!pos) { toastError(noGpsMessage(), NO_GPS_MS); setPhotoBusy(null); return; }
       const blob = await stampPhoto(f, stampLines({ woNumber: job.number, title: label, at: when, pos }));
       const r = await send.keep(blob, label, when.toISOString(), pos);
       if (typeof r === 'object') toastError(r.error);

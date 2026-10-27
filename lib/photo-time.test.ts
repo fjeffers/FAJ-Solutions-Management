@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readExif, photoTime, photoTakenAt } from './photo-time';
+import { readExif, photoTime, photoTakenAt, pictureGps } from './photo-time';
 
 /** A JPEG's first bytes with an EXIF block: IFD0 → Exif IFD (times) and GPS IFD, in either byte order. */
 function jpegWithExif(o: { le?: boolean; date?: string; offset?: string; gps?: { lat: [number, number, number]; latRef: string; lng: [number, number, number]; lngRef: string } }): ArrayBuffer {
@@ -80,6 +80,20 @@ describe('when and where a photo was taken', () => {
   it('anything that is not a JPEG with EXIF gives nothing', () => {
     expect(readExif(new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer)).toEqual({ wall: null, offset: null, gps: null });
     expect(readExif(new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0, 8, 0x45, 0x78, 0x69, 0x66, 0, 0]).buffer)).toEqual({ wall: null, offset: null, gps: null });
+  });
+
+  it("every picture's GPS: a phone photo's own, else where the phone is as it's added, else none (Fred, 2026-10-27)", async () => {
+    const withGps = new File([jpegWithExif({ date: '2026:10:26 07:31:05', gps: { lat: [40, 41, 18.24], latRef: 'N', lng: [75, 13, 14.52], lngRef: 'W' } })], 'a.jpg', { type: 'image/jpeg' });
+    const without = new File([jpegWithExif({ date: '2026:10:26 07:31:05' })], 'b.jpg', { type: 'image/jpeg' });
+    const phone = { lat: 40.7, lng: -75.3, accuracy: 12 };
+    const own = await pictureGps(withGps, true, async () => phone);
+    expect(own!.whenAdded).toBe(false);
+    expect(own!.pos.lat).toBeCloseTo(40.6884, 4);
+    expect(await pictureGps(without, true, async () => phone)).toEqual({ pos: phone, whenAdded: true });
+    // A photo just taken goes by where the phone is, whatever the file says.
+    expect(await pictureGps(withGps, false, async () => phone)).toEqual({ pos: phone, whenAdded: false });
+    expect(await pictureGps(without, true, async () => null)).toBeNull();
+    expect(await pictureGps(without, false, async () => null)).toBeNull();
   });
 
   it('reads the picked file itself', async () => {

@@ -28,6 +28,15 @@ describe('timesheet', () => {
     expect(timesheetTotals(lines)).toEqual({ days: 3, hours: 20.2, travel: 5.2, total: 25.4, miles: 248.4, meals: 50 });
   });
 
+  it('adds the extra miles the office typed to the odometer miles, on the line and in the total (Fred, 2026-10-27)', () => {
+    const lines = timesheetLines([
+      row('2026-10-19', 'Paul Gibbs', { arrived: '07:37', leftSite: '17:37', odoStart: 141865, odoEnd: 142109, extraMiles: 56 }),
+      row('2026-10-21', 'Paul Gibbs', { arrived: '07:38', leftSite: '17:50', miles: 4.4, extraMiles: 10 }),
+    ]);
+    expect(lines.map((l) => l.miles)).toEqual([300, 14.4]);
+    expect(timesheetTotals(lines).miles).toBe(314.4);
+  });
+
   it('makes the spreadsheet: header, the lines, the total', () => {
     const t = timesheetTable(head, timesheetLines(rows));
     expect(t[0]).toEqual(['FAJ Solutions · Timesheet']);

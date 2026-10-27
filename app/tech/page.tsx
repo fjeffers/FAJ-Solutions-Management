@@ -1489,7 +1489,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           {(canReport || expenses.length > 0) && (
             <JobExpenses expenses={expenses} canAdd={canReport} onAdd={() => setExpenseOpen(true)} />
           )}
-          {ph.held && <HeldForGps onRetry={ph.retry} onDiscard={ph.drop} busy={!!ph.busy} />}
+          {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
           <JobPhotos canAdd={canReport} ph={phPicked} />
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} talk={project ? talk : undefined} keep={msgDraft} /></div>}
@@ -1599,7 +1599,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       <JobIcons job={job} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
         onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
-      {ph.held && <HeldForGps onRetry={ph.retry} onDiscard={ph.drop} busy={!!ph.busy} />}
+      {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
       {job.status === 'offered' && bottom}
       {dayCard}
       {job.description && (
@@ -2013,14 +2013,19 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
   };
 
   // A question's photo with no GPS is held to send again, not lost (Fred, 2026-10-27; Greptile on PR #28).
-  const [held, setHeld] = useState<{ qid: string; file: File } | null>(null);
+  // One per question: a photo for another question never clears this one.
+  const [held, setHeld] = useState<Record<string, File>>({});
+  const holdFor = (id: string, file: File | null) => setHeld((h) => {
+    const { [id]: _was, ...rest } = h; // eslint-disable-line @typescript-eslint/no-unused-vars
+    return file ? { ...rest, [id]: file } : rest;
+  });
   const photoAnswer = async (q: WfQuestion, file: File | undefined) => {
     if (!file) return;
-    setHeld(null);
+    holdFor(q.id, null);
     setBusy(q.id);
     const at = new Date();
     const pos = await getPosition(6000);
-    if (!pos) { setBusy(null); setHeld({ qid: q.id, file }); toastError(noGpsMessage(), NO_GPS_MS); return; }
+    if (!pos) { setBusy(null); holdFor(q.id, file); toastError(noGpsMessage(), NO_GPS_MS); return; }
     try {
       const blob = await stampPhoto(file, stampLines({ woNumber: job.number, title: q.label, at, pos }));
       await uploadAnswer(q, blob);
@@ -2074,8 +2079,8 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
                         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void photoAnswer(q, f); }} />
                     </label>
                   )}
-                  {held?.qid === q.id && (
-                    <HeldForGps busy={busy === q.id} onRetry={() => void photoAnswer(q, held.file)} onDiscard={() => setHeld(null)} />
+                  {held[q.id] && (
+                    <HeldForGps busy={busy === q.id} onRetry={() => void photoAnswer(q, held[q.id])} onDiscard={() => holdFor(q.id, null)} />
                   )}
                 </div>
               ) : q.type === 'signature' ? (
@@ -2296,7 +2301,8 @@ function useJobPhotos(job: WfJob, uid: string) {
 
   // A photo with no GPS isn't sent (Fred, 2026-10-27), and never thrown away either (Greptile on
   // PR #28): it is held, marks and all, until Location is on and the tech sends it again.
-  const [held, setHeld] = useState<{ file: File; source: 'camera' | 'library'; label: string | null; at: Date; original?: Position | null } | null>(null);
+  // Every one is kept: a second photo with no GPS never replaces the first.
+  const [held, setHeld] = useState<{ file: File; source: 'camera' | 'library'; label: string | null; at: Date; original?: Position | null }[]>([]);
   const add = async (file: File | undefined, source: 'camera' | 'library', label: string | null = null, when?: Date,
     /** The GPS of the photo this one was made from (Count, Measure). */
     original?: Position | null) => {
@@ -2306,7 +2312,7 @@ function useJobPhotos(job: WfJob, uid: string) {
     const gps = await pictureGps(file, source === 'library', () => getPosition(8000), original);
     if (!gps) {
       setBusy(null);
-      setHeld({ file, source, label, at, original });
+      setHeld((h) => [...h, { file, source, label, at, original }]);
       toastError(`${noGpsMessage()} The photo is kept on the job to send again.`, NO_GPS_MS);
       return;
     }
@@ -2357,8 +2363,13 @@ function useJobPhotos(job: WfJob, uid: string) {
     setPending(null);
   };
 
-  const retry = () => { if (!held) return; const h = held; setHeld(null); void add(h.file, h.source, h.label, h.at, h.original); };
-  const drop = () => setHeld(null);
+  /** Send the held photos again, one after another; any still without GPS is held again. */
+  const retry = async () => {
+    const list = held;
+    setHeld([]);
+    for (const h of list) await add(h.file, h.source, h.label, h.at, h.original);
+  };
+  const drop = () => setHeld([]);
 
   return { sent, waiting, busy, add, flush, pending, ask, answer, cancel, held, retry, drop };
 }

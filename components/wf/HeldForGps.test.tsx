@@ -32,6 +32,36 @@ describe('a picture held for want of GPS', () => {
     expect(onDiscard).toHaveBeenCalledTimes(1);
   });
 
+  it('counts the photos held', () => {
+    render(<HeldForGps count={3} onRetry={vi.fn()} onDiscard={vi.fn()} />);
+    expect(screen.getByRole('alert').textContent).toMatch(/3 photos not sent: no GPS right now/);
+    expect(screen.getByRole('alert').textContent).toMatch(/The photos are kept here until then/);
+  });
+
+  it('a second photo with no GPS never replaces or clears the first', async () => {
+    const keep = vi.fn(async () => 'sent' as const);
+    const job = { number: '19101414', capture: [], startAsks: [
+      { id: 'front', label: 'Front of the store', kind: 'photo' }, { id: 'rack', label: 'The rack', kind: 'photo' },
+    ] } as unknown as WfJob;
+    render(<CheckInDialog job={job} startOfDay from={null} onClose={vi.fn()}
+      send={{ startDrive: async () => true, arriveOnSite: async () => true, keep, note: vi.fn() }} />);
+    fireEvent.click(screen.getByRole('button', { name: /I'm on site/ }));
+    const inputs = await waitFor(() => {
+      const els = document.querySelectorAll('input[type=file]');
+      if (els.length < 2) throw new Error('no photo inputs yet');
+      return [...els] as HTMLInputElement[];
+    });
+    fireEvent.change(inputs[0], { target: { files: [new File(['a'], 'front.jpg', { type: 'image/jpeg' })] } });
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+    fireEvent.change(inputs[1], { target: { files: [new File(['b'], 'rack.jpg', { type: 'image/jpeg' })] } });
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2));
+    here = { latitude: 40.7, longitude: -75.3, accuracy: 12 };
+    fireEvent.click(screen.getAllByRole('button', { name: 'Send again' })[0]);
+    await waitFor(() => expect(keep).toHaveBeenCalledTimes(1));
+    expect((keep.mock.calls[0] as unknown[])[1]).toBe('Front of the store');
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+  });
+
   it("Check in's photo is kept when there's no GPS, and sends on Send again once there is", async () => {
     const keep = vi.fn(async () => 'sent' as const);
     const job = { number: '19101414', capture: [], startAsks: [{ id: 'front', label: 'Front of the store', kind: 'photo' }] } as unknown as WfJob;

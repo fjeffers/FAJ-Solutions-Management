@@ -92,15 +92,20 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
     if (done) next();
   };
   // A photo with no GPS is held to send again, not lost (Fred, 2026-10-27; Greptile on PR #28).
-  const [held, setHeld] = useState<{ id: string; f: File } | null>(null);
+  // One per item: a photo for another item never clears this one.
+  const [held, setHeld] = useState<Record<string, File>>({});
+  const holdFor = (id: string, f: File | null) => setHeld((h) => {
+    const { [id]: _was, ...rest } = h; // eslint-disable-line @typescript-eslint/no-unused-vars
+    return f ? { ...rest, [id]: f } : rest;
+  });
   const askPhoto = async (id: string, label: string, f: File | undefined) => {
     if (!f) return;
-    setHeld(null);
+    holdFor(id, null);
     setPhotoBusy(id);
     try {
       const when = new Date();
       const pos = await getPosition(6000);
-      if (!pos) { setHeld({ id, f }); toastError(noGpsMessage(), NO_GPS_MS); setPhotoBusy(null); return; }
+      if (!pos) { holdFor(id, f); toastError(noGpsMessage(), NO_GPS_MS); setPhotoBusy(null); return; }
       const blob = await stampPhoto(f, stampLines({ woNumber: job.number, title: label, at: when, pos }));
       const r = await send.keep(blob, label, when.toISOString(), pos);
       if (typeof r === 'object') toastError(r.error);
@@ -183,9 +188,9 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
                     <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={!!photoBusy}
                       onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void askPhoto(a.id, a.label, f); }} />
                   </label>
-                  {held?.id === a.id && (
+                  {held[a.id] && (
                     <div style={{ marginTop: 8 }}>
-                      <HeldForGps busy={photoBusy === a.id} onRetry={() => void askPhoto(a.id, a.label, held.f)} onDiscard={() => setHeld(null)} />
+                      <HeldForGps busy={photoBusy === a.id} onRetry={() => void askPhoto(a.id, a.label, held[a.id])} onDiscard={() => holdFor(a.id, null)} />
                     </div>
                   )}
                 </>

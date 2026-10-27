@@ -68,7 +68,7 @@ export async function POST(req: Request) {
   const [sheet, days, ev, punches, odo, ex, billed, jobPhotos, account] = await Promise.all([
     supabase.from('field_sheets').select('settings').eq('wo_id', wo.id).maybeSingle(),
     supabase.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', wo.id),
-    supabase.from('job_day_events').select('id, contractor_name, kind, at, origin, dest, miles').eq('wo_id', wo.id).order('at'),
+    supabase.from('job_day_events').select('id, contractor_name, kind, at, origin, dest, miles, miles_from_gps').eq('wo_id', wo.id).order('at'),
     supabase.from('job_punches').select('contractor_name, kind, at').eq('wo_id', wo.id).order('at'),
     supabase.from('job_odometer').select('wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', wo.id).order('at'),
     supabase.from('job_expenses').select('id, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', wo.id),

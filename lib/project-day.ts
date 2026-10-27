@@ -26,6 +26,8 @@ export type DayEvent = {
   dest?: Dest | null;
   /** Miles for the leg that ends here (travel_end only). */
   miles?: number | null;
+  /** The miles were typed by the office (Add miles on a drive), not the phone's GPS (miles_from_gps false). */
+  milesTyped?: boolean;
   /** Who tapped (the office reads every tech's taps). */
   tech?: string;
   /** The job_day_events row, so the office can correct the miles. */
@@ -63,6 +65,7 @@ export function parseDayEvents(raw: unknown): DayEvent[] {
     if (DESTS.includes(d)) ev.dest = d;
     const m = r.miles == null || r.miles === '' ? NaN : Number(r.miles);
     if (Number.isFinite(m) && m >= 0) ev.miles = m;
+    if (ev.miles != null && r.miles_from_gps === false) ev.milesTyped = true;
     if (typeof r.contractor_name === 'string' && r.contractor_name) ev.tech = r.contractor_name;
     else if (typeof r.tech === 'string' && r.tech) ev.tech = r.tech;
     if (typeof r.id === 'string' && r.id) ev.id = r.id;
@@ -159,6 +162,8 @@ export function onSiteMs(st: DayState, now: Date = new Date()): number {
 export type Leg = {
   tech: string; day: string; start: string; end: string | null;
   origin: Origin | null; dest: Dest; ms: number; miles: number | null;
+  /** The miles were typed by the office (Add miles), not the GPS: they go on top of the odometer's. */
+  milesTyped?: boolean;
   /** The travel_end row holding the miles (the office can correct it). */
   endId: string | null;
 };
@@ -195,6 +200,7 @@ export function buildDayLogs(events: DayEvent[], now: Date = new Date(), timeZon
         tech, day: dayOf(s.at, timeZone), start: s.at, end: end?.at ?? null,
         origin: s.origin ?? null, dest: s.dest ?? 'site', ms: Math.max(0, endMs - Date.parse(s.at)),
         miles: end?.kind === 'travel_end' && end.miles != null ? end.miles : null,
+        milesTyped: end?.kind === 'travel_end' && end.miles != null && end.milesTyped === true,
         endId: end?.kind === 'travel_end' ? end.id ?? null : null,
       });
       leg = null;

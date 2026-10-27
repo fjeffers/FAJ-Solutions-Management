@@ -39,6 +39,10 @@ export type AppDay = {
   day: string; tech: string;
   left: string | null; arrived: string | null; leftSite: string | null; back: string | null;
   lunch: number | null; odoStart: number | null; odoEnd: number | null; gps: number | null;
+  /** The drives' own miles added up: each by its odometer photos when it has both, else its typed or GPS miles. */
+  driveMiles: number | null;
+  /** Miles the office typed on drives that have both odometer photos (Add miles on the work order): on top of them. */
+  addedMiles: number | null;
   /**
    * Hours on site and travel as the app counted them, only on a day with more
    * than one visit to the site: the four times can't show the time away in
@@ -54,7 +58,9 @@ export type AppDay = {
 /** A field_sheet_days row. */
 export type SavedDay = { id: string; day: string; tech: string; edits: Edits; added: boolean; hidden: boolean };
 
-export type Values = { [K in TimeField]: string | null } & { [K in NumField]: number | null } & { note: string; ask: boolean };
+export type Values = { [K in TimeField]: string | null } & { [K in NumField]: number | null } & { note: string; ask: boolean }
+  // From the app only, never typed: AppDay.driveMiles and addedMiles.
+  & { driveMiles: number | null; addedMiles: number | null };
 export type Source = 'app' | 'guess' | 'office';
 
 export type SheetRow = {
@@ -129,9 +135,18 @@ export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): App
       }
     }
     // The day's odometer is the first drive's start photo and the last drive's end photo. A photo from
-    // the middle of the day would leave the other drives out of the miles, so without both the GPS counts.
+    // the middle of the day would leave the other drives out of the miles, so without both the drives count.
+    // A drive with a start photo and no end photo that the office added miles to ends at the start plus
+    // those miles (Fred, 2026-10-27: "i add the milage 228010 then i add 40 it should be 228050").
+    const endOf = (l: BillLeg) => l.odoEnd?.reading ?? (l.odoStart && l.milesTyped && l.miles != null ? r1(l.odoStart.reading + l.miles) : null);
     const odoStart = mine[0]?.odoStart?.reading ?? null;
-    const odoEnd = mine.at(-1)?.odoEnd?.reading ?? null;
+    const odoEnd = mine.length ? endOf(mine.at(-1)!) : null;
+    // Drive by drive (Fred, 2026-10-27: "i trying to add additionl mile"; "let them automatically read the
+    // odometer"): each drive's odometer photos when it has both, else its own miles (typed by the office,
+    // or the GPS). Miles the office typed on a drive that has both photos go on top of them.
+    const both = (l: BillLeg) => l.odoMiles != null && l.odoMiles >= 0;
+    const driveMiles = mine.length ? r1(mine.reduce((t, l) => t + (both(l) ? l.odoMiles! : l.miles ?? 0), 0)) : null;
+    const addedMiles = r1(mine.reduce((t, l) => t + (both(l) && l.milesTyped ? l.miles ?? 0 : 0), 0)) || null;
     const visits = spans.length > 1;
     const drives = mine.map((l) => `${clock(t(l.start))}–${l.end ? clock(t(l.end)) : '…'} ${legLabel(l)}${l.miles != null ? `, ${r1(l.miles)} mi` : ''}`).join('; ');
     return {
@@ -140,6 +155,7 @@ export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): App
       lunch: d.lunchMs > 0 ? Math.round(d.lunchMs / MIN) : null,
       odoStart, odoEnd,
       gps: mine.length ? r1(d.miles) : null,
+      driveMiles, addedMiles,
       hours: visits ? hoursOf(spans.reduce((t, x) => t + x.ms, 0)) : null,
       travel: visits ? hoursOf(mine.reduce((t, l) => t + l.ms, 0)) : null,
       guessed, drives,
@@ -163,6 +179,7 @@ export function jobDays(start: string | null | undefined, end: string | null | u
 const EMPTY: Values = {
   left: null, arrived: null, leftSite: null, back: null,
   lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, extraMiles: null, meals: null, spend: null, note: '', ask: false,
+  driveMiles: null, addedMiles: null,
 };
 
 /** The app's figure for a field, if it has one. */
@@ -209,6 +226,9 @@ export function sheetRows(input: { app: AppDay[]; saved: SavedDay[]; techs: stri
       else (values as Record<string, unknown>)[f] = isNum(v) ? v : null;
       source[f] = 'office';
     }
+    // The drives' miles, unless the office typed the GPS figure itself on the Field Sheet.
+    values.driveMiles = 'gps' in edits ? null : a?.driveMiles ?? null;
+    values.addedMiles = a?.addedMiles ?? null;
     // A two-visit day's hours are the visit totals, already less the lunch the tech tapped:
     // a lunch the office corrects moves them by the difference.
     if (!retimed && a?.hours != null && 'lunch' in edits && !('hours' in edits)) {
@@ -252,8 +272,11 @@ export type DayCalc = {
 /**
  * One line's figures. Hours on site: arrived to left site, less lunch. Travel:
  * left to arrived plus left site to back (or left to back on a day with no site
- * time). Miles: the odometer when both readings are there, else GPS. Any of the
- * three typed by the office wins. Extra miles the office typed are added on top.
+ * time). Miles: the odometer from the day's first photo to its last, or the
+ * drives added up (each by its own odometer, else GPS) when that's more, so a
+ * day whose odometer stops early still counts every drive. Any of the three
+ * typed by the office wins. Miles added on drives and the Extra miles the
+ * office typed are added on top.
  */
 export function dayCalc(v: Values, mileRate: number): DayCalc {
   const L = minutesOf(v.left), A = minutesOf(v.arrived), O = minutesOf(v.leftSite), B = minutesOf(v.back);
@@ -262,10 +285,11 @@ export function dayCalc(v: Values, mileRate: number): DayCalc {
     + (O != null && B != null ? hoursBetween(O, B) : 0)
     + (L != null && B != null && A == null && O == null ? hoursBetween(L, B) : 0);
   const odo = v.odoStart != null && v.odoEnd != null ? v.odoEnd - v.odoStart : null;
-  const milesAuto = odo != null && odo >= 0 ? odo : v.gps ?? 0;
+  const drives = v.driveMiles ?? v.gps ?? 0;
+  const milesAuto = odo != null && odo >= 0 ? Math.max(odo, drives) : drives;
   const hours = v.hours ?? hoursAuto;
   const travel = v.travel ?? travelAuto;
-  const miles = (v.miles ?? milesAuto) + (v.extraMiles ?? 0);
+  const miles = (v.miles ?? milesAuto) + (v.addedMiles ?? 0) + (v.extraMiles ?? 0);
   return {
     hoursAuto: r2(hoursAuto), travelAuto: r2(travelAuto), milesAuto: r1(milesAuto),
     // The total adds the rounded hours, so the 9.72 h + 0.52 h the client reads comes to 10.24 h.
@@ -515,7 +539,7 @@ export function fieldSheetRows(head: { title: string; wo: string; clientWo: stri
     out.push([r.day, r.tech, clock(v.left), clock(v.arrived), clock(v.leftSite), clock(v.back), v.lunch ?? '', c.hours, c.travel, c.total,
       v.odoStart ?? '', v.odoEnd ?? '', v.gps ?? '', c.miles, c.mileage, v.meals ?? '', v.spend ?? '', dayBill(c, s, v),
       // The columns stay as Smartsheet imports them: the extra miles are in Miles, and said in the notes.
-      [v.extraMiles ? `Miles include ${v.extraMiles} extra` : '', v.note].filter(Boolean).join(' · ')]);
+      [v.extraMiles || v.addedMiles ? `Miles include ${r1((v.extraMiles ?? 0) + (v.addedMiles ?? 0))} extra` : '', v.note].filter(Boolean).join(' · ')]);
   }
   out.push(['Week total', '', '', '', '', '', '', t.hours, t.travel, t.total, '', '', '', t.miles, t.mileage, '', '', '', `${t.techDays} tech-days`]);
   out.push([]);

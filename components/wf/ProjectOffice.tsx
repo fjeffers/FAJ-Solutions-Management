@@ -64,7 +64,7 @@ export async function loadEvents(woIds: string[]): Promise<(DayEvent & { woId: s
   if (woIds.length === 0) return [];
   const db = createClient();
   const [d, p] = await Promise.all([
-    db.from('job_day_events').select('id, wo_id, contractor_name, kind, at, origin, dest, miles').in('wo_id', woIds).order('at'),
+    db.from('job_day_events').select('id, wo_id, contractor_name, kind, at, origin, dest, miles, miles_from_gps').in('wo_id', woIds).order('at'),
     db.from('job_punches').select('wo_id, contractor_name, kind, at').in('wo_id', woIds).order('at'),
   ]);
   const rows = [...((d.data as EventRow[] | null) ?? []), ...((p.data as EventRow[] | null) ?? [])];
@@ -287,11 +287,16 @@ function OdoShot({ o, urls, label }: { o: OdoRow | null; urls: Record<string, st
 
 /** Under a drive: the odometer at the start and the end, the miles between, and anything that can't be right. */
 function OdoLine({ l, problems, urls }: { l: BillLeg; problems: OdoProblem[]; urls: Record<string, string> }) {
+  // No end photo, but the office added the drive's miles: it ends at the start plus them (Fred, 2026-10-27:
+  // "i add the milage 228010 then i add 40 it should be 228050"), as the day's miles count it.
+  const endByMiles = !l.odoEnd && l.odoStart && l.milesTyped && l.miles != null ? Math.round((l.odoStart.reading + l.miles) * 10) / 10 : null;
   return (
     <div style={{ margin: '2px 0 6px 22px', fontSize: 12.5 }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <OdoShot o={l.odoStart} urls={urls} label="Start" />
-        {(l.end || l.odoEnd) && <OdoShot o={l.odoEnd} urls={urls} label="End" />}
+        {endByMiles != null
+          ? <span>End <b>{odoNum(endByMiles)}</b> <span className="wf-subtle">(start + {l.miles} mi added)</span></span>
+          : (l.end || l.odoEnd) && <OdoShot o={l.odoEnd} urls={urls} label="End" />}
         {l.odoMiles != null && !problems.length && <span className="wf-chip">{odoNum(l.odoMiles)} mi by odometer</span>}
       </div>
       {problems.map((p) => (
@@ -364,7 +369,8 @@ function DayBlock({ d, onChanged, odo, billed }: { d: DayLog; onChanged: () => v
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, flexWrap: 'wrap' }}>
                 <Car size={14} color="var(--wf-subtle)" />
                 <span>{legLabel(l)} · {timeOf(l.start)}–{l.end ? timeOf(l.end) : 'driving now'} · {formatDuration(l.ms)}</span>
-                <MilesEdit id={l.endId} miles={l.miles} onSaved={onChanged} />
+                <MilesEdit id={l.endId} miles={l.miles} typed={l.milesTyped} onSaved={onChanged}
+                  startReading={withOdo?.odoStart && !withOdo.odoEnd ? withOdo.odoStart.reading : null} />
               </div>
               {odo && withOdo && <OdoLine l={withOdo} problems={odo.problems.get(withOdo) ?? []} urls={odo.urls} />}
             </div>
@@ -386,8 +392,20 @@ function DayBlock({ d, onChanged, odo, billed }: { d: DayLog; onChanged: () => v
   );
 }
 
-/** The miles on a leg; Fred can correct them (the GPS figure is a straight line x 1.2). */
-function MilesEdit({ id, miles, onSaved }: { id: string | null; miles: number | null; onSaved: () => void }) {
+/**
+ * The miles on a drive. Fred adds miles on top of what the odometer photos read
+ * (Fred, 2026-10-27: "i trying to add additionl mile"; "let them automatically
+ * read the odometer"), or corrects the GPS figure (a straight line x 1.2). On a
+ * drive with a start photo and no end photo, the odometer at the end can be
+ * typed instead: the miles are worked out from the start.
+ */
+export function MilesEdit({ id, miles, typed = false, startReading = null, onSaved }: {
+  id: string | null; miles: number | null; onSaved: () => void;
+  /** The miles were typed by the office: on top of the drive's photos, or its miles when it has no end photo. */
+  typed?: boolean;
+  /** The drive's start odometer, when it has no end photo. */
+  startReading?: number | null;
+}) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(miles != null ? String(miles) : '');
   if (!id) return miles != null ? <span className="wf-chip">{miles} mi</span> : <span className="wf-subtle" style={{ fontSize: 12 }}>no miles</span>;
@@ -395,24 +413,34 @@ function MilesEdit({ id, miles, onSaved }: { id: string | null; miles: number | 
     return (
       <button className="wf-chip" style={{ border: '1px solid var(--wf-line)', background: 'var(--wf-card)', cursor: 'pointer', font: 'inherit', fontSize: 12.5 }}
         onClick={() => setEditing(true)} title="Correct the miles">
-        {miles != null ? `${miles} mi` : 'Add miles'}
+        {miles == null ? 'Add miles' : typed ? `+${miles} mi added` : `${miles} mi`}
       </button>
     );
   }
   const save = async () => {
-    const n = val.trim() === '' ? null : Number(val);
-    if (n != null && (!Number.isFinite(n) || n < 0 || n >= 3000)) { toastError('Miles must be a number under 3000.'); return; }
+    const raw = val.trim().replace(/,/g, '');
+    let n = raw === '' ? null : Number(raw);
+    // The odometer at the end of the drive, not miles: the miles since its start photo.
+    let fromOdo = '';
+    if (n != null && n >= 3000 && startReading != null && n >= startReading && n - startReading < 3000) {
+      fromOdo = `${odoNum(n)} − ${odoNum(startReading)} = `;
+      n = Math.round((n - startReading) * 10) / 10;
+    }
+    if (n != null && (!Number.isFinite(n) || n < 0 || n >= 3000)) {
+      toastError(startReading != null ? `Type the miles, or the odometer at the end of this drive (it started at ${odoNum(startReading)}).` : 'Miles must be a number under 3000.');
+      return;
+    }
     const { error } = await createClient().from('job_day_events')
       .update({ miles: n == null ? null : Math.round(n * 10) / 10, miles_from_gps: false }).eq('id', id);
     if (error) { toastError("Couldn't save the miles."); return; }
     setEditing(false);
-    toastSuccess('Miles saved.');
+    toastSuccess(n == null ? 'Miles taken off.' : `${fromOdo}${n} mi added.`);
     onSaved();
   };
   return (
     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
       <input className="wf-input" inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)} autoFocus
-        style={{ width: 80, minHeight: 32, padding: '2px 8px' }} aria-label="Miles" />
+        style={{ width: 96, minHeight: 32, padding: '2px 8px' }} aria-label="Miles" placeholder={startReading != null ? 'mi or odometer' : 'miles'} />
       <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => void save()}>Save</button>
       <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setEditing(false)}>Cancel</button>
     </span>

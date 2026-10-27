@@ -5,7 +5,7 @@ import type { SheetRow } from './field-sheet';
 
 const row = (day: string, tech: string, v: Partial<SheetRow['values']>, extra: Partial<SheetRow> = {}): SheetRow => ({
   key: `${day}|${tech}`, day, tech, id: null, added: false, hidden: false, missing: false, app: null, edits: {}, source: {},
-  values: { left: null, arrived: null, leftSite: null, back: null, lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, extraMiles: null, meals: null, spend: null, note: '', ask: false, ...v },
+  values: { left: null, arrived: null, leftSite: null, back: null, lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, extraMiles: null, meals: null, spend: null, note: '', ask: false, driveMiles: null, addedMiles: null, ...v },
   ...extra,
 });
 const head: TimesheetHead = { woNumber: '19101401', clientWo: 'LDS-5391288', site: 'LDS Site', address: '1 Main St, Dover, DE', client: 'LDS', from: '2026-10-19', to: '2026-10-21' };

@@ -36,6 +36,7 @@ import { askedDeliverables } from '@/lib/wf';
 import { clock, dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
 import TimesheetExport from '@/components/TimesheetExport';
 import { HOURS_CHANGED } from '@/lib/hours-look';
+import { addDayMiles, parseMiles } from '@/lib/day-miles';
 import dynamic from 'next/dynamic';
 // The day cards (components/HoursView.tsx), loaded when opened: HoursView reads loadEvents from here.
 const JobDays = dynamic(() => import('@/components/HoursView').then((m) => m.JobDays), { ssr: false });
@@ -120,7 +121,7 @@ export function ProjectDayCard({ w, lists, billed }: {
       title={w.is_project ? 'Project day' : 'Travel and time'}
       subtitle={w.project_name ? `${w.project_name} · from the techs' phones` : "From the techs' phones"}
       right={<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Plus size={15} /> Add receipt</button>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Plus size={15} /> Add receipt or miles</button>
         {/* The weekly bill for the client, on every job (Fred, 2026-10-18: "printed and exportable to send to clients"). */}
         <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => setReportOpen(true)}><FileText size={15} /> Weekly bill</button>
       </div>}
@@ -157,7 +158,7 @@ export function ProjectDayCard({ w, lists, billed }: {
           </>
         )}
       {receiptOpen && (
-        <OfficeReceiptDialog woId={w.id} onClose={() => setReceiptOpen(false)}
+        <OfficeReceiptDialog woId={w.id} techs={(w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter((t): t is string => !!t)} onClose={() => setReceiptOpen(false)}
           onSaved={() => { setReceiptOpen(false); window.dispatchEvent(new Event(EXPENSES_CHANGED)); }} />
       )}
       {reportOpen && <ProjectReport projectName={w.is_project ? w.project_name ?? '' : ''} startWoId={w.id} lists={lists} onClose={() => setReportOpen(false)} />}
@@ -422,8 +423,19 @@ const todayNY = () => dayOf(new Date().toISOString(), TZ);
 
 const NEW_CATEGORY = '__new';
 
-export function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; onClose: () => void; onSaved: () => void }) {
+export function OfficeReceiptDialog({ woId, techs = [], onClose, onSaved }: {
+  woId: string; onClose: () => void; onSaved: () => void;
+  /** The job's techs: Mileage adds miles to one of their days. */
+  techs?: string[];
+}) {
   const [category, setCategory] = useState('hotel');
+  // Mileage asks for the tech, the miles and the day, and adds the miles to that
+  // day on Hours, on top of what's there; no receipt (Fred, 2026-10-27: "for
+  // mileage ... it's supposed to basically go to mileage"). lib/day-miles.ts.
+  const mileage = category === 'mileage';
+  const [tech, setTech] = useState(techs[0] ?? '');
+  const [miles, setMiles] = useState('');
+  const mi = parseMiles(miles);
   // "+ Add new expense category…" (Fred, 2026-10-21): the office names its own, migration 137.
   const cats = useExpenseCategories();
   const [newName, setNewName] = useState('');
@@ -444,7 +456,20 @@ export function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; 
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const amt = parseExpenseAmount(amount);
+  const saveMiles = async () => {
+    if (mi == null) { toastError('Enter the miles, like 85.'); return; }
+    if (!tech.trim()) { toastError('Pick the technician.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toastError(expenseReasonText('bad_date')); return; }
+    setBusy(true);
+    const extra = await addDayMiles(createClient(), { woId, tech: tech.trim(), day: date, miles: mi });
+    setBusy(false);
+    if (extra == null) { toastError("Couldn't add the miles. Check your connection and try again."); return; }
+    window.dispatchEvent(new Event(HOURS_CHANGED));
+    toastSuccess(`${mi} mi added to ${tech.trim()}'s miles for ${new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}.`);
+    onSaved();
+  };
   const save = async () => {
+    if (mileage) { await saveMiles(); return; }
     if (amt == null) { toastError(expenseReasonText('bad_amount')); return; }
     setBusy(true);
     const fd = new FormData();
@@ -465,15 +490,17 @@ export function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; 
   };
   const label = (t: string) => <span className="wf-label" style={{ display: 'block', marginBottom: 4 }}>{t}</span>;
   return (
-    <Dialog title="Add a receipt" onClose={onClose}
+    <Dialog title={mileage ? 'Add mileage' : 'Add a receipt'} onClose={onClose}
       footer={<>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-navy" disabled={busy || amt == null || category === NEW_CATEGORY} onClick={() => void save()}>
-          <Receipt size={16} /> {busy ? 'Saving…' : 'Save receipt'}
+        <button className="wf-btn wf-btn-navy" disabled={busy || (mileage ? mi == null || !tech.trim() : amt == null) || category === NEW_CATEGORY} onClick={() => void save()}>
+          {mileage ? <Car size={16} /> : <Receipt size={16} />} {busy ? 'Saving…' : mileage ? 'Add miles' : 'Save receipt'}
         </button>
       </>}>
       <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 10 }}>
-        A receipt FAJ paid itself (a hotel on the company card). It goes on the client report; no tech is paid back for it.
+        {mileage
+          ? "Miles added to the tech's day, on top of what's there. They show on Hours as Extra miles."
+          : 'A receipt FAJ paid itself (a hotel on the company card). It goes on the client report; no tech is paid back for it.'}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <label>{label('What for')}
@@ -482,9 +509,18 @@ export function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; 
             {cats.list.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
           </select>
         </label>
-        <label>{label('Amount')}<input className="wf-input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$0.00" /></label>
-        <label>{label('Store / hotel')}<input className="wf-input" value={vendor} onChange={(e) => setVendor(e.target.value)} maxLength={120} placeholder="Hampton Inn" /></label>
-        <label>{label('Date')}<input className="wf-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        {mileage ? (<>
+          <label>{label('Miles')}<input className="wf-input" inputMode="decimal" value={miles} onChange={(e) => setMiles(e.target.value)} placeholder="e.g. 85" autoFocus /></label>
+          <label>{label('Technician')}
+            <input className="wf-input" list="mileage-techs" value={tech} onChange={(e) => setTech(e.target.value)} maxLength={120} />
+            <datalist id="mileage-techs">{techs.map((t) => <option key={t} value={t} />)}</datalist>
+          </label>
+          <label>{label('Day driven')}<input className="wf-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        </>) : (<>
+          <label>{label('Amount')}<input className="wf-input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$0.00" /></label>
+          <label>{label('Store / hotel')}<input className="wf-input" value={vendor} onChange={(e) => setVendor(e.target.value)} maxLength={120} placeholder="Hampton Inn" /></label>
+          <label>{label('Date')}<input className="wf-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        </>)}
       </div>
       {category === NEW_CATEGORY && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 10 }}>
@@ -495,12 +531,14 @@ export function OfficeReceiptDialog({ woId, onClose, onSaved }: { woId: string; 
           <button className="wf-btn wf-btn-navy" disabled={adding || !newName.trim()} onClick={() => void addCategory()}>{adding ? 'Adding…' : 'Add'}</button>
         </div>
       )}
-      <label style={{ display: 'block', marginTop: 10 }}>{label('Note (optional)')}
-        <input className="wf-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder="2 nights, 2 rooms" />
-      </label>
-      <label style={{ display: 'block', marginTop: 10 }}>{label('Receipt photo or PDF (optional)')}
-        <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      </label>
+      {!mileage && <>
+        <label style={{ display: 'block', marginTop: 10 }}>{label('Note (optional)')}
+          <input className="wf-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder="2 nights, 2 rooms" />
+        </label>
+        <label style={{ display: 'block', marginTop: 10 }}>{label('Receipt photo or PDF (optional)')}
+          <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </label>
+      </>}
     </Dialog>
   );
 }

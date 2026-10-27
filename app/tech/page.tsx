@@ -41,19 +41,18 @@ import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
 import { dayState, lastPlace, onTheWay, tripLeg } from '@/lib/project-day';
 import { asks, type CaptureItem } from '@/lib/capture';
-import OdometerDialog, { readPhoto, PhotoMileageDialog, sortPhonePhoto, type OdometerMoment, type PhonePhoto, type SavePhoto } from '@/components/wf/Odometer';
+import OdometerDialog, { PhotoMileageDialog, sortPhonePhoto, type OdometerMoment, type PhonePhoto, type SavePhoto } from '@/components/wf/Odometer';
 import CheckInDialog, { type CheckInSend } from '@/components/wf/CheckIn';
+import ExpenseDialog from '@/components/wf/ExpenseDialog';
 import { needsOdometer, stopReceipt, type Drive } from '@/lib/checkin';
-import type { ReceiptRead } from '@/lib/photo-read';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/utils';
 import TechSchedule from '@/components/wf/TechSchedule';
 import { usernameProblem, USERNAME_RULE } from '@/lib/usernames';
 import { getPosition, stampLines, mapLink, milesBetween, noGpsMessage, NO_GPS_MS, type Position } from '@/lib/geo';
 import { pictureGps } from '@/lib/photo-time';
 import { HeldForGps } from '@/components/wf/NoGps';
-import { stampPhoto, shrinkPhoto } from '@/lib/photo-stamp';
-import { EXPENSE_STATUS, expenseCategoryLabel, parseExpenseAmount, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
-import { useExpenseCategories } from '@/lib/use-expense-categories';
+import { stampPhoto } from '@/lib/photo-stamp';
+import { EXPENSE_STATUS, expenseCategoryLabel, type ExpenseCategory, type ExpenseStatus } from '@/lib/expenses';
 import { queuePhoto, queuedPhotos, dropQueuedPhoto, type QueuedPhoto } from '@/lib/photo-queue';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
@@ -1808,161 +1807,6 @@ function JobExpenses({ expenses, canAdd, onAdd }: { expenses: TechExpense[]; can
         </div>
       )}
     </Section>
-  );
-}
-
-/** Snap the receipt, say what it was for, and send it to Fred. Needs signal. */
-function ExpenseDialog({ job, initialFile, initialCategory = 'materials', onClose, onSaved }: {
-  job: WfJob; initialFile?: File | null;
-  /** A fuel or materials stop opens the receipt under its own category. */
-  initialCategory?: ExpenseCategory;
-  onClose: () => void; onSaved: () => void;
-}) {
-  const [photo, setPhoto] = useState<Blob | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState<ExpenseCategory>(initialCategory);
-  const categories = useExpenseCategories().list;
-  const [vendor, setVendor] = useState('');
-  const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'));
-  const [note, setNote] = useState('');
-  const [gallons, setGallons] = useState('');
-  const [busy, setBusy] = useState(false);
-  // What the AI read off the photo (lib/photo-read.ts): it fills the form, the tech checks it.
-  const [ai, setAi] = useState<ReceiptRead | null>(null);
-  const [reading, setReading] = useState(false);
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
-
-  const takePhoto = async (f: File | undefined) => {
-    if (!f) return;
-    try {
-      const small = await shrinkPhoto(f);
-      setPhoto(small);
-      setPreview(URL.createObjectURL(small));
-      setReading(true);
-      const r = await readPhoto<ReceiptRead>(job.number, 'receipt', small);
-      setReading(false);
-      setAi(r);
-      if (!r) return;
-      if (r.amount != null) setAmount(r.amount.toFixed(2));
-      if (r.vendor) setVendor(r.vendor);
-      if (r.date) setDate(r.date);
-      if (r.category) setCategory(r.category);
-      if (r.gallons != null) setGallons(String(r.gallons));
-    } catch (e) {
-      setReading(false);
-      toastError(e instanceof Error ? e.message : "Couldn't use that photo.");
-    }
-  };
-
-  // A photo taken from the job's Photo icon and marked Receipt: read it at once.
-  const started = useRef(false);
-  useEffect(() => {
-    if (initialFile && !started.current) { started.current = true; void takePhoto(initialFile); }
-  }, [initialFile]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const send = async () => {
-    const amt = parseExpenseAmount(amount);
-    if (amt == null) { toastError('Enter the amount on the receipt.'); return; }
-    setBusy(true);
-    const fd = new FormData();
-    fd.append('wo_number', job.number);
-    fd.append('amount', String(amt));
-    fd.append('category', category);
-    fd.append('vendor', vendor);
-    fd.append('date', date);
-    fd.append('note', note);
-    if (category === 'fuel' && gallons.trim()) fd.append('gallons', gallons.trim());
-    if (ai) fd.append('ai', JSON.stringify(ai));
-    if (photo) fd.append('file', new File([photo], 'receipt.jpg', { type: 'image/jpeg' }));
-    try {
-      const res = await fetch('/api/tech/expense', { method: 'POST', body: fd });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      setBusy(false);
-      if (!res.ok || !json.ok) { toastError(json.error ?? "Couldn't send that expense."); return; }
-      toastSuccess(`Expense sent: ${fmtMoney(amt)}.`);
-      onSaved();
-    } catch {
-      setBusy(false);
-      toastError('Expenses need signal to send. Keep the receipt and try again when you have signal.');
-    }
-  };
-
-  const label = (t: string) => <span className="wf-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--wf-text)', fontSize: 13 }}>{t}</span>;
-  return (
-    <Dialog
-      title="Add an expense"
-      onClose={onClose}
-      footer={<>
-        <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-navy" disabled={busy || reading || !amount.trim()} onClick={() => void send()}><Receipt size={16} /> {busy ? 'Sending…' : 'Send'}</button>
-      </>}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div>
-          {label('Receipt photo')}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            {preview && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="Receipt" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--wf-line)' }} />
-            )}
-            <label className="wf-btn wf-btn-outline wf-btn-sm">
-              <Camera size={15} /> {preview ? 'Retake' : 'Take photo'}
-              <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void takePhoto(f); }} />
-            </label>
-            <label className="wf-btn wf-btn-ghost wf-btn-sm">
-              From phone
-              <input type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void takePhoto(f); }} />
-            </label>
-          </div>
-        </div>
-        {(reading || ai) && (
-          <div className="wf-subtle" style={{ fontSize: 12.5 }} aria-live="polite">
-            {reading ? 'Reading the receipt…' : 'Filled in from the photo. Check each one before you send.'}
-          </div>
-        )}
-        {/* The lines read off the receipt go to the office with it (Fred, 2026-10-22). */}
-        {!reading && ai && ai.items.length > 0 && (
-          <div style={{ border: '1px solid var(--wf-line)', borderRadius: 10, padding: '8px 10px' }}>
-            <div className="wf-label" style={{ marginBottom: 4 }}>On the receipt</div>
-            {ai.items.map((it, i) => (
-              <div key={i} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '2px 0' }}>
-                <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{it.qty != null && it.qty !== 1 ? `${it.qty} × ` : ''}{it.name}</span>
-                {it.amount != null && <span>{fmtMoney(it.amount)}</span>}
-              </div>
-            ))}
-          </div>
-        )}
-        <label style={{ display: 'block' }}>{label('Amount')}
-          <input className="wf-input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </label>
-        <div>
-          {label('What was it for?')}
-          <div className="wf-filters">
-            {/* Fred's list, then the office's own categories (migration 137). */}
-            {categories.map((c) => (
-              <button key={c.key} className="wf-filter" aria-pressed={category === c.key} onClick={() => setCategory(c.key)}>{c.label}</button>
-            ))}
-          </div>
-        </div>
-        {category === 'fuel' && (
-          <label style={{ display: 'block' }}>{label('Gallons')}
-            <input className="wf-input" inputMode="decimal" placeholder="e.g. 11.2" value={gallons} onChange={(e) => setGallons(e.target.value)} />
-          </label>
-        )}
-        <label style={{ display: 'block' }}>{label('Store')}
-          <input className="wf-input" placeholder="e.g. Home Depot" value={vendor} onChange={(e) => setVendor(e.target.value)} />
-        </label>
-        <label style={{ display: 'block' }}>{label('Date on the receipt')}
-          <input className="wf-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label style={{ display: 'block' }}>{label('Note (optional)')}
-          <input className="wf-input" placeholder="e.g. 20 Cat6 jacks for the drive-thru run" value={note} onChange={(e) => setNote(e.target.value)} />
-        </label>
-      </div>
-    </Dialog>
   );
 }
 

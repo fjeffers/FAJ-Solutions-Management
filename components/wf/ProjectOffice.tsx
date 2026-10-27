@@ -408,6 +408,8 @@ export function MilesEdit({ id, miles, typed = false, startReading = null, onSav
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(miles != null ? String(miles) : '');
+  // What's typed: miles, or the odometer at the end of the drive (Greptile on PR #31: a car under 3,000 mi).
+  const [asOdo, setAsOdo] = useState(false);
   if (!id) return miles != null ? <span className="wf-chip">{miles} mi</span> : <span className="wf-subtle" style={{ fontSize: 12 }}>no miles</span>;
   if (!editing) {
     return (
@@ -420,9 +422,13 @@ export function MilesEdit({ id, miles, typed = false, startReading = null, onSav
   const save = async () => {
     const raw = val.trim().replace(/,/g, '');
     let n = raw === '' ? null : Number(raw);
-    // The odometer at the end of the drive, not miles: the miles since its start photo.
+    // The odometer at the end of the drive, picked or too big to be miles: the miles since its start photo.
     let fromOdo = '';
-    if (n != null && n >= 3000 && startReading != null && n >= startReading && n - startReading < 3000) {
+    if (n != null && startReading != null && (asOdo || n >= 3000)) {
+      if (!Number.isFinite(n) || n < startReading || n - startReading >= 3000) {
+        toastError(`Type the miles, or the odometer at the end of this drive (it started at ${odoNum(startReading)}).`);
+        return;
+      }
       fromOdo = `${odoNum(n)} − ${odoNum(startReading)} = `;
       n = Math.round((n - startReading) * 10) / 10;
     }
@@ -440,7 +446,14 @@ export function MilesEdit({ id, miles, typed = false, startReading = null, onSav
   return (
     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
       <input className="wf-input" inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)} autoFocus
-        style={{ width: 96, minHeight: 32, padding: '2px 8px' }} aria-label="Miles" placeholder={startReading != null ? 'mi or odometer' : 'miles'} />
+        style={{ width: 96, minHeight: 32, padding: '2px 8px' }} aria-label="Miles" placeholder={asOdo ? 'odometer' : 'miles'} />
+      {startReading != null && (
+        <select className="wf-input" value={asOdo ? 'odo' : 'mi'} onChange={(e) => setAsOdo(e.target.value === 'odo')} aria-label="Miles or odometer"
+          style={{ width: 'auto', minHeight: 32, padding: '2px 6px' }}>
+          <option value="mi">miles</option>
+          <option value="odo">odometer at end</option>
+        </select>
+      )}
       <button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => void save()}>Save</button>
       <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setEditing(false)}>Cancel</button>
     </span>

@@ -119,6 +119,17 @@ describe("Add miles on a drive, on the work order (Fred, 2026-10-27: \"i add the
     expect(screen.getByRole('button', { name: '+40 mi added' })).toBeTruthy();
   });
 
+  it('takes a low odometer when it is picked as the odometer, not as miles (Greptile on PR #31)', async () => {
+    const onSaved = vi.fn();
+    render(<MilesEdit id="end-1" miles={null} startReading={2450} onSaved={onSaved} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add miles' }));
+    fireEvent.change(screen.getByLabelText('Miles or odometer'), { target: { value: 'odo' } });
+    fireEvent.change(screen.getByLabelText('Miles'), { target: { value: '2490' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(updates).toEqual([{ id: 'end-1', miles: 40, miles_from_gps: false }]);
+  });
+
   it("says what to type when it's neither miles nor an odometer after the start", async () => {
     render(<MilesEdit id="end-1" miles={null} startReading={228010} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Add miles' }));

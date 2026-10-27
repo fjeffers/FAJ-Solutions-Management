@@ -17,7 +17,7 @@
 //
 // Pure and unit-tested (lib/field-sheet.test.ts). The screen is components/FieldSheetView.tsx.
 import { buildDayLogs, gapOnSite, hoursOf, legLabel, type DayEvent, type DayLog } from './project-day';
-import { matchOdometer, type BillLeg, type OdoRow } from './weekly-bill';
+import { matchOdometer, odoProblems, type BillLeg, type OdoRow } from './weekly-bill';
 import type { QbInvoicePayload } from './qb-invoice';
 import { expenseCategoryLabel } from './expenses';
 
@@ -111,6 +111,9 @@ const hoursBetween = (a: number, b: number) => (((b - a) % 1440) + 1440) % 1440 
 /** Each tech's day from the app: the taps (buildDayLogs) and the drives with their odometer readings (matchOdometer). */
 export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): AppDay[] {
   const t = (iso: string | null | undefined) => (iso ? hhmm(iso, timeZone) : null);
+  // Drive readings that can't be right (lower at the end, farther than the drive allows, a start that
+  // doesn't follow on from the last end) don't count drive by drive (Greptile on PR #31).
+  const problems = odoProblems(legs);
   return logs.map((d) => {
     const mine = legs.filter((l) => l.tech === d.tech && l.day === d.day).sort((a, b) => a.start.localeCompare(b.start));
     const spans = [...d.spans].sort((a, b) => a.in.localeCompare(b.in));
@@ -142,9 +145,9 @@ export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): App
     const odoStart = mine[0]?.odoStart?.reading ?? null;
     const odoEnd = mine.length ? endOf(mine.at(-1)!) : null;
     // Drive by drive (Fred, 2026-10-27: "i trying to add additionl mile"; "let them automatically read the
-    // odometer"): each drive's odometer photos when it has both, else its own miles (typed by the office,
-    // or the GPS). Miles the office typed on a drive that has both photos go on top of them.
-    const both = (l: BillLeg) => l.odoMiles != null && l.odoMiles >= 0;
+    // odometer"): each drive's odometer photos when it has both and they can be right, else its own miles
+    // (typed by the office, or the GPS). Miles the office typed on a drive counted by its photos go on top.
+    const both = (l: BillLeg) => l.odoMiles != null && l.odoMiles >= 0 && !problems.has(l);
     const driveMiles = mine.length ? r1(mine.reduce((t, l) => t + (both(l) ? l.odoMiles! : l.miles ?? 0), 0)) : null;
     const addedMiles = r1(mine.reduce((t, l) => t + (both(l) && l.milesTyped ? l.miles ?? 0 : 0), 0)) || null;
     const visits = spans.length > 1;

@@ -451,6 +451,20 @@ describe('miles added on a drive (Fred, 2026-10-27: "i add the milage 228010 the
     expect(dayCalc({ ...v, addedMiles: 5, extraMiles: 10 }, 0).miles).toBe(115);
   });
 
+  it("readings that can't be right don't count drive by drive over the day's odometer (Greptile on PR #31)", () => {
+    // A mistyped end (50,110 after half an hour) and a start that doesn't follow on from it.
+    const r = rowsFor({
+      events: [
+        ev('Paul', '21', 'travel_start', '08:00', { origin: 'hotel', dest: 'site' }), ev('Paul', '21', 'travel_end', '08:30'),
+        ev('Paul', '21', 'travel_start', '09:00', { origin: 'site', dest: 'hotel' }), ev('Paul', '21', 'travel_end', '09:30'),
+      ],
+      readings: [odo('Paul', '21', '08:00', 50000, 'start'), odo('Paul', '21', '08:30', 50110, 'end'), odo('Paul', '21', '09:00', 50010, 'start'), odo('Paul', '21', '09:30', 50020, 'end')],
+      saved: [], techs: ['Paul'], start: '2026-10-21', end: '2026-10-21', timeZone: TZ,
+    })[0];
+    expect(r.values).toMatchObject({ odoStart: 50000, odoEnd: 50020, driveMiles: 0 });
+    expect(dayCalc(r.values, 0).miles).toBe(20);
+  });
+
   it('miles the office typed on a drive are marked, the GPS figure is not', () => {
     const [typed, gps, none] = parseDayEvents([
       { kind: 'travel_end', at: '2026-10-20T01:06:24Z', miles: '58.0', miles_from_gps: false },

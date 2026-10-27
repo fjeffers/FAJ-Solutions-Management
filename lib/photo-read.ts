@@ -10,8 +10,11 @@ import { EXPENSE_CATEGORIES, type ExpenseCategory } from './expenses';
 
 export const PHOTO_READ_MODEL = 'claude-sonnet-5-5';
 
-export type PhotoKind = 'odometer' | 'receipt';
+/** 'sort': a photo picked from the phone, which may or may not be the odometer (Fred, 2026-10-26). */
+export type PhotoKind = 'odometer' | 'receipt' | 'sort';
 export type OdometerRead = { reading: number | null };
+/** What a photo from the phone shows, and the odometer when it is one. */
+export type SortRead = { what: 'odometer' | 'other'; reading: number | null };
 /** One line on a receipt (Fred, 2026-10-22: "maybe the items ... so I know what I'm paying for"). */
 export type ReceiptItem = { name: string; qty: number | null; amount: number | null };
 export type ReceiptRead = {
@@ -31,6 +34,12 @@ export function sanitizeOdometer(raw: unknown): OdometerRead {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const n = num(o.reading);
   return { reading: n != null && n >= 0 && n < 10_000_000 ? round(n, 1) : null };
+}
+
+export function sanitizeSort(raw: unknown): SortRead {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  if (o.what !== 'odometer') return { what: 'other', reading: null };
+  return { what: 'odometer', reading: sanitizeOdometer(o).reading };
 }
 
 /** The lines read off a receipt, from what was stored with it ([] for older receipts). */
@@ -106,7 +115,9 @@ const nullable = (type: string) => ({ anyOf: [{ type }, { type: 'null' }] });
 export function photoSchema(kind: PhotoKind): Record<string, unknown> {
   const properties: Record<string, unknown> = kind === 'odometer'
     ? { reading: nullable('number') }
-    : {
+    : kind === 'sort'
+      ? { what: { type: 'string', enum: ['odometer', 'other'] }, reading: nullable('number') }
+      : {
       amount: nullable('number'), vendor: nullable('string'), date: nullable('string'),
       category: { anyOf: [{ type: 'string', enum: EXPENSE_CATEGORIES.map((c) => c.key) }, { type: 'null' }] },
       gallons: nullable('number'),
@@ -122,16 +133,27 @@ export function photoSchema(kind: PhotoKind): Record<string, unknown> {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 }
 
+const ODOMETER_RULES = `Rules:
+- Do not read the trip meter (often labeled TRIP, TRIP A or TRIP B), the speed, the fuel range or the clock.
+- If the odometer isn't in the photo, is blurred, or any digit is unclear, the reading is null.
+- Prefer null over a guess.`;
+
 export function photoPrompt(kind: PhotoKind, today: string): string {
   if (kind === 'odometer') {
     return `This is a photo of a vehicle's dashboard, taken by a field technician at the start or end of a drive.
 
 Read the ODOMETER: the total miles the vehicle has driven. Return {"reading": number} with the digits exactly as shown, including a tenths digit if the display has one (e.g. 48213.6).
 
-Rules:
-- Do not read the trip meter (often labeled TRIP, TRIP A or TRIP B), the speed, the fuel range or the clock.
-- If the odometer isn't in the photo, is blurred, or any digit is unclear, return {"reading": null}.
-- Prefer null over a guess. The technician will type it in.`;
+${ODOMETER_RULES} The technician will type it in.`;
+  }
+  if (kind === 'sort') {
+    return `A field technician picked this photo from their phone to add to a job. It may have been taken earlier, when the app wasn't working.
+
+Say what it shows:
+- "what": "odometer" if it is a vehicle's dashboard or instrument cluster showing the odometer (the total miles driven), else "other" (the work, the site, a receipt, a document, anything else).
+- "reading": for an odometer, the total miles exactly as shown, including a tenths digit if the display has one (e.g. 48213.6); null otherwise.
+
+${ODOMETER_RULES}`;
   }
   return `This is a photo of a receipt a field technician paid on the road. Today is ${today}.
 

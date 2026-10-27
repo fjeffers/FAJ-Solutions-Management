@@ -22,6 +22,7 @@ const COLS: Col[] = [
   { f: 'hours', label: 'On site h', width: 80, sum: true },
   { f: 'travel', label: 'Travel h', width: 76, sum: true },
   { f: 'miles', label: 'Miles', width: 70, sum: true },
+  { f: 'extraMiles', label: 'Extra mi', width: 66, sum: true },
   { f: 'meals', label: 'Meals $', width: 76, sum: true },
   { f: 'spend', label: 'Other $', width: 74, sum: true },
   { f: 'note', label: 'Note', text: true, width: 200 },

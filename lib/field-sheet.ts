@@ -24,7 +24,9 @@ import { expenseCategoryLabel } from './expenses';
 export const TIME_FIELDS = ['left', 'arrived', 'leftSite', 'back'] as const;
 // meals and spend: what was spent that day, typed by the office (Fred, 2026-10-24: "each day i enter the time and miles
 // travel hours and miles along with that day spending meals").
-export const NUM_FIELDS = ['lunch', 'odoStart', 'odoEnd', 'gps', 'hours', 'travel', 'miles', 'meals', 'spend'] as const;
+// extraMiles: miles the office adds to the day's own (Fred, 2026-10-27: "i cant add additional milage
+// manually"), like a drive the app didn't log; the odometer's miles stay as they are.
+export const NUM_FIELDS = ['lunch', 'odoStart', 'odoEnd', 'gps', 'hours', 'travel', 'miles', 'extraMiles', 'meals', 'spend'] as const;
 export type TimeField = (typeof TIME_FIELDS)[number];
 export type NumField = (typeof NUM_FIELDS)[number];
 export type SheetField = TimeField | NumField | 'note' | 'ask';
@@ -160,7 +162,7 @@ export function jobDays(start: string | null | undefined, end: string | null | u
 
 const EMPTY: Values = {
   left: null, arrived: null, leftSite: null, back: null,
-  lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, meals: null, spend: null, note: '', ask: false,
+  lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, extraMiles: null, meals: null, spend: null, note: '', ask: false,
 };
 
 /** The app's figure for a field, if it has one. */
@@ -251,7 +253,7 @@ export type DayCalc = {
  * One line's figures. Hours on site: arrived to left site, less lunch. Travel:
  * left to arrived plus left site to back (or left to back on a day with no site
  * time). Miles: the odometer when both readings are there, else GPS. Any of the
- * three typed by the office wins.
+ * three typed by the office wins. Extra miles the office typed are added on top.
  */
 export function dayCalc(v: Values, mileRate: number): DayCalc {
   const L = minutesOf(v.left), A = minutesOf(v.arrived), O = minutesOf(v.leftSite), B = minutesOf(v.back);
@@ -263,7 +265,7 @@ export function dayCalc(v: Values, mileRate: number): DayCalc {
   const milesAuto = odo != null && odo >= 0 ? odo : v.gps ?? 0;
   const hours = v.hours ?? hoursAuto;
   const travel = v.travel ?? travelAuto;
-  const miles = v.miles ?? milesAuto;
+  const miles = (v.miles ?? milesAuto) + (v.extraMiles ?? 0);
   return {
     hoursAuto: r2(hoursAuto), travelAuto: r2(travelAuto), milesAuto: r1(milesAuto),
     // The total adds the rounded hours, so the 9.72 h + 0.52 h the client reads comes to 10.24 h.
@@ -511,7 +513,9 @@ export function fieldSheetRows(head: { title: string; wo: string; clientWo: stri
   for (const r of rows.filter((x) => !x.hidden)) {
     const v = r.values, c = dayCalc(v, s.mileRate ?? 0);
     out.push([r.day, r.tech, clock(v.left), clock(v.arrived), clock(v.leftSite), clock(v.back), v.lunch ?? '', c.hours, c.travel, c.total,
-      v.odoStart ?? '', v.odoEnd ?? '', v.gps ?? '', c.miles, c.mileage, v.meals ?? '', v.spend ?? '', dayBill(c, s, v), v.note]);
+      v.odoStart ?? '', v.odoEnd ?? '', v.gps ?? '', c.miles, c.mileage, v.meals ?? '', v.spend ?? '', dayBill(c, s, v),
+      // The columns stay as Smartsheet imports them: the extra miles are in Miles, and said in the notes.
+      [v.extraMiles ? `Miles include ${v.extraMiles} extra` : '', v.note].filter(Boolean).join(' · ')]);
   }
   out.push(['Week total', '', '', '', '', '', '', t.hours, t.travel, t.total, '', '', '', t.miles, t.mileage, '', '', '', `${t.techDays} tech-days`]);
   out.push([]);

@@ -5,7 +5,7 @@ import type { SheetRow } from './field-sheet';
 
 const row = (day: string, tech: string, v: Partial<SheetRow['values']>, extra: Partial<SheetRow> = {}): SheetRow => ({
   key: `${day}|${tech}`, day, tech, id: null, added: false, hidden: false, missing: false, app: null, edits: {}, source: {},
-  values: { left: null, arrived: null, leftSite: null, back: null, lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, meals: null, spend: null, note: '', ask: false, ...v },
+  values: { left: null, arrived: null, leftSite: null, back: null, lunch: null, odoStart: null, odoEnd: null, gps: null, hours: null, travel: null, miles: null, extraMiles: null, meals: null, spend: null, note: '', ask: false, ...v },
   ...extra,
 });
 const head: TimesheetHead = { woNumber: '19101401', clientWo: 'LDS-5391288', site: 'LDS Site', address: '1 Main St, Dover, DE', client: 'LDS', from: '2026-10-19', to: '2026-10-21' };
@@ -26,6 +26,15 @@ describe('timesheet', () => {
     expect(lines[0]).toMatchObject({ started: '7:37 AM', finished: '5:37 PM', hours: 10, miles: 244 });
     expect(lines[1]).toMatchObject({ hours: 0, travel: 3.5, total: 3.5, note: 'Travel day → home' });
     expect(timesheetTotals(lines)).toEqual({ days: 3, hours: 20.2, travel: 5.2, total: 25.4, miles: 248.4, meals: 50 });
+  });
+
+  it('adds the extra miles the office typed to the odometer miles, on the line and in the total (Fred, 2026-10-27)', () => {
+    const lines = timesheetLines([
+      row('2026-10-19', 'Paul Gibbs', { arrived: '07:37', leftSite: '17:37', odoStart: 141865, odoEnd: 142109, extraMiles: 56 }),
+      row('2026-10-21', 'Paul Gibbs', { arrived: '07:38', leftSite: '17:50', miles: 4.4, extraMiles: 10 }),
+    ]);
+    expect(lines.map((l) => l.miles)).toEqual([300, 14.4]);
+    expect(timesheetTotals(lines).miles).toBe(314.4);
   });
 
   it('makes the spreadsheet: header, the lines, the total', () => {

@@ -48,6 +48,8 @@ const BOXES: { f: Exclude<SheetField, 'note' | 'ask'>; label: string; time?: boo
   { f: 'odoStart', label: 'Odometer start' },
   { f: 'odoEnd', label: 'Odometer end' },
   { f: 'miles', label: 'Miles' },
+  // Added on top of the miles above (Fred, 2026-10-27: "i cant add additional milage manually").
+  { f: 'extraMiles', label: 'Extra miles' },
   { f: 'meals', label: 'Meals $' },
   { f: 'spend', label: 'Other spending $' },
 ];

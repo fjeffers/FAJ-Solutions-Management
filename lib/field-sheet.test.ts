@@ -110,6 +110,16 @@ describe('the lines and the office’s edits', () => {
     expect(dayCalc({ ...v, hours: 8, miles: 10 }, 0.6)).toMatchObject({ hours: 8, miles: 10, mileage: 6, total: 8.25 });
   });
 
+  it('adds the extra miles the office types on top of the day\'s own (Fred, 2026-10-27: "i cant add additional milage manually")', () => {
+    const v = { ...rows.find((r) => r.key === '2026-10-21|Dwayne')!.values, odoStart: 227890, odoEnd: 227975 };
+    expect(dayCalc(v, 0.6)).toMatchObject({ milesAuto: 85, miles: 85 });
+    // The odometer's 85 stay as they are; a drive the app didn't log is added.
+    expect(dayCalc({ ...v, extraMiles: 85 }, 0.6)).toMatchObject({ milesAuto: 85, miles: 170, mileage: 102 });
+    // Miles typed by the office still win, and the extra goes on top of them.
+    expect(dayCalc({ ...v, miles: 100, extraMiles: 40 }, 0.6)).toMatchObject({ miles: 140 });
+    expect(parseEdits({ extraMiles: 85, junk: 1 })).toEqual({ extraMiles: 85 });
+  });
+
   it('keeps only known fields of the right type from the database', () => {
     expect(parseEdits({ arrived: '7:45', back: 'soon', hours: '9', miles: 12, note: 3, ask: true, junk: 1 })).toEqual({ arrived: '7:45', miles: 12, ask: true });
     expect(parseSettings({ mileRate: 0.6, mealRate: -1, nights: 5, rooms: '2', labor: 'nonsense', items: [{ desc: 'Drop', qty: 3, price: 85 }, { qty: 'x' }] }))
@@ -154,6 +164,17 @@ describe('the totals', () => {
     expect(end - head - 1).toBe(4);
     expect(out.at(-1)).toEqual(['', 'Total', '', '', sheetTotals(rows, receipts, s).bill]);
     expect(out.find((r) => r[0] === '2026-10-21' && r[1] === 'Dwayne')!.slice(2, 6)).toEqual(['7:38 AM', '7:44 AM', '5:18 PM', '5:27 PM']);
+  });
+
+  it('keeps the spreadsheet columns as Smartsheet imports them: extra miles are in Miles, and said in the notes', () => {
+    const s = bill({ mileRate: 0.6 });
+    const extra = rows.map((r) => (r.key === '2026-10-21|Dwayne' ? { ...r, values: { ...r.values, extraMiles: 40, note: 'Drive home' } } : r));
+    const out = fieldSheetRows({ title: 'T', wo: '1', clientWo: null, address: '' }, extra, sheetTotals(extra, receipts, s), s);
+    const head = out.find((r) => r[0] === 'Date')!;
+    expect(head).toHaveLength(19);
+    const line = out.find((r) => r[0] === '2026-10-21' && r[1] === 'Dwayne')!;
+    expect(line[head.indexOf('Miles')]).toBe(44.4);
+    expect(line[head.indexOf('Notes')]).toBe('Miles include 40 extra · Drive home');
   });
 });
 

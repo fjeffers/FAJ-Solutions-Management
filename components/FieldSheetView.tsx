@@ -664,18 +664,18 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
           <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
             <thead>
               <tr>{['Day', 'Technician', 'Left hotel / home', 'Arrived on site', 'Left site', 'Back hotel / home', 'Lunch min', 'Hours on site', 'Travel hrs', 'Total',
-                'Odometer start', 'Odometer end', 'GPS mi', 'Miles', 'Mileage $', 'Meals $', 'Spending $', 'Bills $', 'From the app / notes', 'Ask', ''].map((h) => <th key={h} style={TH}>{h}</th>)}</tr>
+                'Odometer start', 'Odometer end', 'GPS mi', 'Miles', 'Extra mi', 'Mileage $', 'Meals $', 'Spending $', 'Bills $', 'From the app / notes', 'Ask', ''].map((h) => <th key={h} style={TH}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {visible.map((r) => <DayLine key={r.key} r={r} s={settings} onSet={setField} onUndo={undo}
                 onHide={(row) => void store(row, { hidden: !row.hidden })} />)}
-              {visible.length === 0 && <tr><td colSpan={21} style={{ ...TD, padding: 14 }}>Nothing in the app for these dates yet. Press <b>Add a day</b> to type one.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={22} style={{ ...TD, padding: 14 }}>Nothing in the app for these dates yet. Press <b>Add a day</b> to type one.</td></tr>}
             </tbody>
             <tfoot>
               <tr style={{ background: '#F6F1E4', fontWeight: 700 }}>
                 <td style={TD} colSpan={7}>Total · {totals.techDays} tech-days</td>
                 <td style={TDN}>{hrs(totals.hours)}</td><td style={TDN}>{hrs(totals.travel)}</td><td style={TDN}>{hrs(totals.total)}</td>
-                <td style={TD} colSpan={3} /><td style={TDN}>{mi(totals.miles)}</td><td style={TDN}>{money(totals.mileage)}</td>
+                <td style={TD} colSpan={3} /><td style={TDN}>{mi(totals.miles)}</td><td style={TD} /><td style={TDN}>{money(totals.mileage)}</td>
                 <td style={TD} colSpan={2} /><td style={TDN}>{money(totals.bill)}</td><td style={TD} colSpan={3} />
               </tr>
             </tfoot>
@@ -1072,6 +1072,7 @@ const FORM_FIELDS: { f: Exclude<SheetField, 'note' | 'ask'>; label: string; time
   { f: 'leftSite', label: 'Left site', time: true }, { f: 'back', label: 'Back hotel / home', time: true },
   { f: 'lunch', label: 'Lunch (minutes)' }, { f: 'hours', label: 'Hours on site' }, { f: 'travel', label: 'Travel hours' },
   { f: 'odoStart', label: 'Odometer start' }, { f: 'odoEnd', label: 'Odometer end' }, { f: 'miles', label: 'Miles' },
+  { f: 'extraMiles', label: 'Extra miles' },
   { f: 'meals', label: 'Meals $' }, { f: 'spend', label: 'Spending $' },
 ];
 
@@ -1204,7 +1205,7 @@ function DayLine({ r, s, onSet, onUndo, onHide }: {
         onBlur={(e) => { if ((e.target.value || null) !== (v[f] ?? null)) onSet(r, f, e.target.value || null); }} />
     </td>
   );
-  const number = (f: 'lunch' | 'odoStart' | 'odoEnd' | 'gps' | 'hours' | 'travel' | 'miles' | 'meals' | 'spend', auto?: string, width = 76) => (
+  const number = (f: 'lunch' | 'odoStart' | 'odoEnd' | 'gps' | 'hours' | 'travel' | 'miles' | 'extraMiles' | 'meals' | 'spend', auto?: string, width = 76) => (
     <td style={{ ...TD, background: bg(f), minWidth: width }}>
       <input key={`${f}:${v[f] ?? ''}`} style={{ ...IN, textAlign: 'right' }} inputMode="decimal" defaultValue={v[f] ?? ''} placeholder={auto ?? ''}
         aria-label={`${f} ${r.tech} ${r.day}`}
@@ -1224,6 +1225,7 @@ function DayLine({ r, s, onSet, onUndo, onHide }: {
       <td style={TDN}>{hrs(c.total)}</td>
       {number('odoStart', undefined, 92)}{number('odoEnd', undefined, 92)}{number('gps', undefined, 68)}
       {number('miles', c.milesAuto.toFixed(1), 68)}
+      {number('extraMiles', '0', 64)}
       <td style={TDN}>{money(c.mileage)}</td>
       {number('meals', s.mealMode === 'per_day' ? (c.worked && s.mealRate ? String(s.mealRate) : '') : '0.00', 76)}
       {number('spend', '0.00', 76)}

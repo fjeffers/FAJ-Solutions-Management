@@ -77,6 +77,16 @@ describe('Hours', () => {
     expect(upserts.at(-1)).toMatchObject({ wo_id: 'wo', day: '2026-10-23', tech: 'Frederick Jeffers', edits: { leftSite: '15:30', miles: 104, meals: 14.5 } });
   });
 
+  it('adds extra miles on top of the day\'s own, and counts them in the day (Fred, 2026-10-27)', async () => {
+    const user = userEvent.setup();
+    render(<HoursView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    await user.type(await screen.findByLabelText('Extra miles Frederick Jeffers 2026-10-23'), '85');
+    expect(screen.getAllByText(/· 85 mi/).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(upserts.at(-1)).toMatchObject({ day: '2026-10-23', tech: 'Frederick Jeffers', edits: { extraMiles: 85 } });
+  });
+
   it('saves every changed day at once with Save all changes', async () => {
     const user = userEvent.setup();
     render(<HoursView workOrders={[wo]} />);

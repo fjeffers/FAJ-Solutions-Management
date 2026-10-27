@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { buildDayLogs, type DayEvent } from './project-day';
+import { buildDayLogs, parseDayEvents, type DayEvent } from './project-day';
 import { matchOdometer, type OdoRow } from './weekly-bill';
 import {
-  appDays, billRange, blocksBilling, clock, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, sheetRows, sheetTotals,
+  appDays, billRange, blocksBilling, clock, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
   withAccountRate,
   type SavedDay, type SheetReceipt, type SheetSettings,
 } from './field-sheet';
@@ -382,5 +382,95 @@ describe('the QuickBooks invoice', () => {
     expect(blocksBilling({ qbo_invoice_id: '42', created_at: '2026-10-01T12:00:00Z' }, now)).toBe(true);
     expect(blocksBilling({ qbo_invoice_id: null, created_at: '2026-10-24T11:55:00Z' }, now)).toBe(true);
     expect(blocksBilling({ qbo_invoice_id: null, created_at: '2026-10-24T11:45:00Z' }, now)).toBe(false);
+  });
+});
+
+describe('miles added on a drive (Fred, 2026-10-27: "i add the milage 228010 then i add 40 it should be 228050")', () => {
+  // WO 19101403, Mon Oct 19: four drives with odometer photos, but none at the end of the drive home.
+  const fred = 'Frederick Jeffers';
+  const day = [
+    ev(fred, '19', 'day_start', '14:35'),
+    ev(fred, '19', 'travel_start', '14:35', { origin: 'other', dest: 'site' }), ev(fred, '19', 'travel_end', '15:20'),
+    ev(fred, '19', 'in', '15:20'), ev(fred, '19', 'out', '16:21'),
+    ev(fred, '19', 'travel_start', '16:21', { origin: 'site', dest: 'home' }), ev(fred, '19', 'travel_end', '16:46'),
+    ev(fred, '19', 'travel_start', '16:58', { origin: 'home', dest: 'site' }), ev(fred, '19', 'travel_end', '16:59'),
+    ev(fred, '19', 'in', '16:59'), ev(fred, '19', 'out', '18:53'),
+    ev(fred, '19', 'travel_start', '18:54', { origin: 'site', dest: 'home' }),
+  ];
+  const photos = [
+    odo(fred, '19', '14:36', 227976, 'start'), odo(fred, '19', '15:20', 228004, 'end'),
+    odo(fred, '19', '16:21', 228004, 'start'), odo(fred, '19', '16:46', 228010, 'end'),
+    odo(fred, '19', '16:58', 228010, 'start'), odo(fred, '19', '16:59', 228010, 'end'),
+    odo(fred, '19', '18:54', 228010, 'start'),
+  ];
+  const home = (extra: Partial<DayEvent>) => ev(fred, '19', 'travel_end', '21:06', extra);
+  const theDay = (events: DayEvent[], saved: SavedDay[] = []) =>
+    rowsFor({ events, readings: photos, saved, techs: [fred], start: '2026-10-19', end: '2026-10-19', timeZone: TZ })[0];
+
+  it('40 mi added on the drive home that started at 228,010 ends it at 228,050: 74 mi for the day', () => {
+    const r = theDay([...day, home({ miles: 40, milesTyped: true })]);
+    expect(r.values).toMatchObject({ odoStart: 227976, odoEnd: 228050, driveMiles: 74, addedMiles: null });
+    expect(dayCalc(r.values, 0).miles).toBe(74);
+  });
+
+  it('with no miles added, the day is the drives the photos read (34 mi), not nothing', () => {
+    const r = theDay([...day, home({})]);
+    expect(r.values).toMatchObject({ odoEnd: null, driveMiles: 34 });
+    expect(dayCalc(r.values, 0).miles).toBe(34);
+  });
+
+  it('an end typed before the last drive (228,004) no longer holds the day at 28 mi', () => {
+    const stale: SavedDay = { id: 's', day: '2026-10-19', tech: fred, edits: { odoEnd: 228004 }, added: false, hidden: false };
+    expect(dayCalc(theDay([...day, home({ miles: 40, milesTyped: true })], [stale]).values, 0).miles).toBe(74);
+    expect(dayCalc(theDay([...day, home({})], [stale]).values, 0).miles).toBe(34);
+  });
+
+  it('miles added on a drive that has both photos go on top of them', () => {
+    const first = ev(fred, '19', 'travel_end', '15:20').at;
+    const r = theDay([...day.map((e) => (e.kind === 'travel_end' && e.at === first ? { ...e, miles: 10, milesTyped: true } : e)), home({})]);
+    expect(r.values).toMatchObject({ driveMiles: 34, addedMiles: 10 });
+    expect(dayCalc(r.values, 0).miles).toBe(44);
+    const out = fieldSheetRows({ title: 'T', wo: '19101403', clientWo: null, address: '' }, [r], sheetTotals([r], [], bill({})), bill({}));
+    const head = out.find((x) => x[0] === 'Date')!;
+    const line = out.find((x) => x[0] === '2026-10-19')!;
+    expect(line[head.indexOf('Miles')]).toBe(44);
+    expect(line[head.indexOf('Notes')]).toBe('Miles include 10 extra');
+  });
+
+  it("doesn't count a drive's GPS on top of its own odometer photos", () => {
+    const first = ev(fred, '19', 'travel_end', '15:20').at;
+    const r = theDay([...day.map((e) => (e.kind === 'travel_end' && e.at === first ? { ...e, miles: 31.5 } : e)), home({ miles: 12 })]);
+    // 28 by the first drive's photos (not its 31.5 GPS), 6, 0, and the drive home's 12 GPS.
+    expect(r.values).toMatchObject({ driveMiles: 46, addedMiles: null, odoEnd: null });
+    expect(dayCalc(r.values, 0).miles).toBe(46);
+  });
+
+  it('the odometer from the first photo to the last wins when it is more than the drives (driving between taps)', () => {
+    const v = { ...theDay([...day, home({})]).values, odoStart: 100, odoEnd: 200, driveMiles: 80 };
+    expect(dayCalc(v, 0).miles).toBe(100);
+    expect(dayCalc({ ...v, addedMiles: 5, extraMiles: 10 }, 0).miles).toBe(115);
+  });
+
+  it("readings that can't be right don't count drive by drive over the day's odometer (Greptile on PR #31)", () => {
+    // A mistyped end (50,110 after half an hour) and a start that doesn't follow on from it.
+    const r = rowsFor({
+      events: [
+        ev('Paul', '21', 'travel_start', '08:00', { origin: 'hotel', dest: 'site' }), ev('Paul', '21', 'travel_end', '08:30'),
+        ev('Paul', '21', 'travel_start', '09:00', { origin: 'site', dest: 'hotel' }), ev('Paul', '21', 'travel_end', '09:30'),
+      ],
+      readings: [odo('Paul', '21', '08:00', 50000, 'start'), odo('Paul', '21', '08:30', 50110, 'end'), odo('Paul', '21', '09:00', 50010, 'start'), odo('Paul', '21', '09:30', 50020, 'end')],
+      saved: [], techs: ['Paul'], start: '2026-10-21', end: '2026-10-21', timeZone: TZ,
+    })[0];
+    expect(r.values).toMatchObject({ odoStart: 50000, odoEnd: 50020, driveMiles: 0 });
+    expect(dayCalc(r.values, 0).miles).toBe(20);
+  });
+
+  it('miles the office typed on a drive are marked, the GPS figure is not', () => {
+    const [typed, gps, none] = parseDayEvents([
+      { kind: 'travel_end', at: '2026-10-20T01:06:24Z', miles: '58.0', miles_from_gps: false },
+      { kind: 'travel_end', at: '2026-10-20T02:06:24Z', miles: '12.0', miles_from_gps: true },
+      { kind: 'travel_end', at: '2026-10-20T03:06:24Z', miles: null, miles_from_gps: false },
+    ]);
+    expect([typed.milesTyped, gps.milesTyped, none.milesTyped]).toEqual([true, undefined, undefined]);
   });
 });

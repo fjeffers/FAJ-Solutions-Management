@@ -16,11 +16,14 @@ vi.mock('@/components/wf/Odometer', () => ({ readPhoto: vi.fn() }));
 vi.mock('@/lib/photo-stamp', () => ({ shrinkPhoto: async (f: Blob) => f, stampPhoto: async (f: Blob) => f }));
 // field_sheet_days for the office: the day isn't saved yet, so it's inserted.
 const inserts: Record<string, unknown>[] = [];
+const updates: Record<string, unknown>[] = [];
 const dayQuery = () => {
   const q = {
     select: () => q, eq: () => q,
     maybeSingle: async () => ({ data: null, error: null }),
     insert: async (row: Record<string, unknown>) => { inserts.push(row); return { error: null }; },
+    // job_day_events: a drive's miles (Add miles on the work order).
+    update: (patch: Record<string, unknown>) => ({ eq: async (_k: string, id: string) => { updates.push({ id, ...patch }); return { error: null }; } }),
   };
   return q;
 };
@@ -29,10 +32,10 @@ const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, 
 vi.stubGlobal('fetch', fetchMock);
 
 const { default: ExpenseDialog } = await import('./ExpenseDialog');
-const { OfficeReceiptDialog } = await import('./ProjectOffice');
+const { OfficeReceiptDialog, MilesEdit } = await import('./ProjectOffice');
 const { HOURS_CHANGED } = await import('@/lib/hours-look');
 
-afterEach(() => { cleanup(); fetchMock.mockClear(); toastError.mockClear(); toastSuccess.mockClear(); inserts.length = 0; });
+afterEach(() => { cleanup(); fetchMock.mockClear(); toastError.mockClear(); toastSuccess.mockClear(); inserts.length = 0; updates.length = 0; });
 
 describe('Add an expense, in the tech app', () => {
   const job = { number: '19101412' } as unknown as WfJob;
@@ -89,5 +92,50 @@ describe('Add receipt or miles, in the office', () => {
     expect(changed).toHaveBeenCalled();
     expect(toastSuccess).toHaveBeenCalledWith("85 mi added to Kendell Newbold's miles for Mon, Oct 19.");
     window.removeEventListener(HOURS_CHANGED, changed);
+  });
+});
+
+describe("Add miles on a drive, on the work order (Fred, 2026-10-27: \"i add the milage 228010 then i add 40 it should be 228050\")", () => {
+  it('takes the odometer at the end of a drive with no end photo, and adds the miles since its start', async () => {
+    const onSaved = vi.fn();
+    render(<MilesEdit id="end-1" miles={null} startReading={228010} onSaved={onSaved} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add miles' }));
+    fireEvent.change(screen.getByLabelText('Miles'), { target: { value: '228,050' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(updates).toEqual([{ id: 'end-1', miles: 40, miles_from_gps: false }]);
+    expect(toastSuccess).toHaveBeenCalledWith('228,050 − 228,010 = 40 mi added.');
+  });
+
+  it('takes plain miles too, and shows them as added', async () => {
+    const onSaved = vi.fn();
+    const { rerender } = render(<MilesEdit id="end-1" miles={null} startReading={228010} onSaved={onSaved} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add miles' }));
+    fireEvent.change(screen.getByLabelText('Miles'), { target: { value: '40' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(updates).toEqual([{ id: 'end-1', miles: 40, miles_from_gps: false }]);
+    rerender(<MilesEdit id="end-1" miles={40} typed startReading={228010} onSaved={onSaved} />);
+    expect(screen.getByRole('button', { name: '+40 mi added' })).toBeTruthy();
+  });
+
+  it('takes a low odometer when it is picked as the odometer, not as miles (Greptile on PR #31)', async () => {
+    const onSaved = vi.fn();
+    render(<MilesEdit id="end-1" miles={null} startReading={2450} onSaved={onSaved} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add miles' }));
+    fireEvent.change(screen.getByLabelText('Miles or odometer'), { target: { value: 'odo' } });
+    fireEvent.change(screen.getByLabelText('Miles'), { target: { value: '2490' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(updates).toEqual([{ id: 'end-1', miles: 40, miles_from_gps: false }]);
+  });
+
+  it("says what to type when it's neither miles nor an odometer after the start", async () => {
+    render(<MilesEdit id="end-1" miles={null} startReading={228010} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add miles' }));
+    fireEvent.change(screen.getByLabelText('Miles'), { target: { value: '220010' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Type the miles, or the odometer at the end of this drive (it started at 228,010).'));
+    expect(updates).toEqual([]);
   });
 });

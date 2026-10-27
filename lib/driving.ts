@@ -41,27 +41,13 @@ export async function drivingMiles(
 ): Promise<number | null> {
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
-    // A router that never answers is a failure, not a wait: Hours has a button on this.
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const res = await fetch(url);
     const data = await res.json();
     const meters = data?.routes?.[0]?.distance;
     return typeof meters === 'number' ? meters / 1609.344 : null;
   } catch {
     return null;
   }
-}
-
-/**
- * Road miles from one address to another, one way, rounded to 0.1 mi (Hours:
- * a day with no odometer photos). Null if either address won't geocode or
- * there's no route.
- */
-export async function oneWayMiles(fromAddress: string, toAddress: string): Promise<number | null> {
-  if (!fromAddress?.trim() || !toAddress?.trim()) return null;
-  const [from, to] = await Promise.all([geocodeFlexible(fromAddress), geocodeFlexible(toAddress)]);
-  if (!from || !to) return null;
-  const miles = await drivingMiles(from, to);
-  return miles == null ? null : Math.round(miles * 10) / 10;
 }
 
 /** Home → site → home, rounded to 0.1 mi. Null if either address won't geocode. */

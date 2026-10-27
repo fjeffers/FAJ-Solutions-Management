@@ -6,11 +6,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { EnrichedWorkOrder } from '@/lib/types';
 
-const { toastError, toastSuccess } = vi.hoisted(() => ({ toastError: vi.fn(), toastSuccess: vi.fn() }));
-vi.mock('@/lib/toast', () => ({ toastError, toastSuccess, toastInfo: vi.fn() }));
-// Road miles between two addresses (lib/driving): 42.3 one way, none for an address it can't find.
-const oneWayMiles = vi.fn(async (from: string) => (from.includes('Nowhere') ? null : 42.3));
-vi.mock('@/lib/driving', () => ({ oneWayMiles }));
+vi.mock('@/lib/toast', () => ({ toastError: vi.fn(), toastSuccess: vi.fn(), toastInfo: vi.fn() }));
 
 const at = (day: string, hhmm: string) => new Date(`2026-10-${day}T${hhmm}:00-04:00`).toISOString();
 const tables: Record<string, Record<string, unknown>[]> = {
@@ -41,10 +37,7 @@ const wo = {
   contractor_name: 'Frederick Jeffers', start_date: '2026-10-23', end_date: '2026-10-23', archived_at: null,
 } as unknown as EnrichedWorkOrder;
 
-afterEach(() => {
-  cleanup(); upserts.length = 0; rpc.mockClear(); tables.job_odometer = []; delete tables.job_expenses; delete tables.wo_photos;
-  oneWayMiles.mockClear(); toastError.mockClear(); toastSuccess.mockClear(); localStorage.clear();
-});
+afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); tables.job_odometer = []; delete tables.job_expenses; delete tables.wo_photos; });
 
 describe('Hours', () => {
   it("lists the jobs worked lately, not next week's, with a job in progress first", () => {
@@ -92,51 +85,6 @@ describe('Hours', () => {
     expect(screen.getAllByText(/· 85 mi/).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^save$/i }));
     expect(upserts.at(-1)).toMatchObject({ day: '2026-10-23', tech: 'Frederick Jeffers', edits: { extraMiles: 85 } });
-  });
-
-  describe('miles from an address, when there are no odometer photos (Fred, 2026-10-27)', () => {
-    const atSite = { ...wo, site_address: '20 Site Rd', site_city: 'Milford', site_state: 'DE', site_zip: '19963' } as unknown as EnrichedWorkOrder;
-    const open = async (user: ReturnType<typeof userEvent.setup>) => {
-      render(<HoursView workOrders={[atSite]} />);
-      await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
-      return screen.findByLabelText('Drove from Frederick Jeffers 2026-10-23');
-    };
-
-    it('works out the road miles from where they drove to the site and makes them the Miles', async () => {
-      const user = userEvent.setup();
-      await user.type(await open(user), '1 Hotel Way, Dover, DE 19901');
-      expect((screen.getByLabelText('Drove to Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('20 Site Rd, Milford, DE 19963');
-      await user.click(screen.getByRole('button', { name: 'Add miles round trip' }));
-      expect(oneWayMiles).toHaveBeenCalledWith('1 Hotel Way, Dover, DE 19901', '20 Site Rd, Milford, DE 19963');
-      await vi.waitFor(() => expect((screen.getByLabelText('Miles Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('84.6'));
-      expect(toastSuccess).toHaveBeenCalledWith('84.6 mi added to Miles. Press Save to keep it.');
-      await user.click(screen.getByRole('button', { name: /^save$/i }));
-      expect(upserts.at(-1)).toMatchObject({ day: '2026-10-23', tech: 'Frederick Jeffers', edits: { miles: 84.6 } });
-      // The tech's next day starts from the same place.
-      expect(localStorage.getItem('faj.hours.milesFrom.Frederick Jeffers')).toBe('1 Hotel Way, Dover, DE 19901');
-    });
-
-    it("adds them on top, in Extra miles, on a day the odometer already gives miles", async () => {
-      const user = userEvent.setup();
-      await user.type(await open(user), '1 Hotel Way, Dover, DE 19901');
-      await user.type(screen.getByLabelText('Odometer start Frederick Jeffers 2026-10-23'), '41200');
-      await user.type(screen.getByLabelText('Odometer end Frederick Jeffers 2026-10-23'), '41285');
-      await user.click(screen.getByRole('button', { name: 'Add miles one way' }));
-      await vi.waitFor(() => expect((screen.getByLabelText('Extra miles Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('42.3'));
-      expect((screen.getByLabelText('Miles Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('');
-      expect(screen.getAllByText(/· 127.3 mi/).length).toBeGreaterThan(0);
-      await user.click(screen.getByRole('button', { name: /^save$/i }));
-      expect(upserts.at(-1)).toMatchObject({ edits: { odoStart: 41200, odoEnd: 41285, extraMiles: 42.3 } });
-    });
-
-    it("says so and changes nothing when there's no route between the addresses", async () => {
-      const user = userEvent.setup();
-      await user.type(await open(user), 'Nowhere');
-      await user.click(screen.getByRole('button', { name: 'Add miles one way' }));
-      await vi.waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Couldn't find a road route/)));
-      expect((screen.getByLabelText('Miles Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('');
-      expect(localStorage.getItem('faj.hours.milesFrom.Frederick Jeffers')).toBeNull();
-    });
   });
 
   it('saves every changed day at once with Save all changes', async () => {

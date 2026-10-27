@@ -14,8 +14,7 @@ import { downloadXLSXBook } from '@/lib/export';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { WorkOrder } from '@/lib/types';
 
-/** The site address as one line: street, city, state zip. */
-export const siteAddress = (w: WorkOrder) => [w.site_address, [w.site_city, [w.site_state, w.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+const address = (w: WorkOrder) => [w.site_address, [w.site_city, [w.site_state, w.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');
 
 function save(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -34,7 +33,7 @@ export default function TimesheetExport({ wo, rows }: { wo: WorkOrder; rows: She
   const canShare = typeof navigator !== 'undefined' && typeof navigator.canShare === 'function';
 
   const head = (): TimesheetHead => ({
-    woNumber: wo.wo_number, clientWo: wo.external_wo_id, site: wo.site_name || wo.title || '', address: siteAddress(wo),
+    woNumber: wo.wo_number, clientWo: wo.external_wo_id, site: wo.site_name || wo.title || '', address: address(wo),
     client: wo.customer_name ?? '', from: from || days[0] || '', to: to || days.at(-1) || '',
   });
   const picked = () => timesheetLines(rows.filter((r) => inDates(r.day, from, to)));

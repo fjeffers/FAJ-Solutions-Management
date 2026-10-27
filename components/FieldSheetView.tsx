@@ -686,7 +686,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
       <ClockPanel wo={wo} techs={allTechs} from={from} to={to} onChanged={() => void loadEvents([wo.id]).then(setEvents)} />
 
       <Section title="Receipts" subtitle={`${approved.length} approved${waiting.length ? ` · ${waiting.length} waiting for you` : ''}`} right={
-        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Receipt size={16} /> Add a receipt</button>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setReceiptOpen(true)}><Receipt size={16} /> Add a receipt or miles</button>
       }>
         {waiting.length > 0 && <ReceiptList title="Waiting for you" list={waiting} urls={urls} onZoom={setZoom}
           actions={(e) => <><button className="wf-btn wf-btn-navy wf-btn-sm" onClick={() => void decide(e, true)}>Approve</button>
@@ -739,7 +739,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
           receipts={approved.map((e) => ({ id: e.id, date: e.expense_date, category: e.category, vendor: e.vendor, amount: e.amount }))}
           photos={clientPhotos} onClose={() => setReport(false)} />
       )}
-      {receiptOpen && <OfficeReceiptDialog woId={wo.id} onClose={() => setReceiptOpen(false)} onSaved={() => { setReceiptOpen(false); void loadExpenses(); }} />}
+      {receiptOpen && <OfficeReceiptDialog woId={wo.id} techs={techs} onClose={() => setReceiptOpen(false)} onSaved={() => { setReceiptOpen(false); void loadExpenses(); void reloadSaved(); }} />}
       {zoom && createPortal(
         <div className="wf wf-overlay" onClick={() => setZoom(null)} style={{ display: 'grid', placeItems: 'center', padding: 16 }}>
           <div style={{ maxWidth: '96vw', maxHeight: '92vh', display: 'grid', gap: 8 }} onClick={(e) => e.stopPropagation()}>

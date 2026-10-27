@@ -96,6 +96,15 @@ describe('when and where a photo was taken', () => {
     expect(await pictureGps(without, false, async () => null)).toBeNull();
   });
 
+  it("a Count or Measure copy keeps the original photo's GPS, read before the marks (Greptile on PR #28)", async () => {
+    const copy = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0, 2])], 'count.jpg', { type: 'image/jpeg' });
+    const original = { lat: 40.6884, lng: -75.2207, accuracy: null };
+    expect(await pictureGps(copy, true, async () => null, original)).toEqual({ pos: original, whenAdded: false });
+    // The original had none: where the phone is now, said so.
+    const phone = { lat: 40.7, lng: -75.3, accuracy: 12 };
+    expect(await pictureGps(copy, true, async () => phone, null)).toEqual({ pos: phone, whenAdded: true });
+  });
+
   it('reads the picked file itself', async () => {
     const file = new File([jpegWithExif({ date: '2026:10:26 07:31:05' })], 'odo.jpg', { type: 'image/jpeg', lastModified: NOW });
     expect(await photoTakenAt(file, TZ, NOW)).toEqual({ at: '2026-10-26T11:31:05.000Z', from: 'camera', gps: null });

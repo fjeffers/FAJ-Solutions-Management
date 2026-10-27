@@ -15,6 +15,8 @@ import { createPortal } from 'react-dom';
 import { Camera, Check, Images, Loader2, Undo2, X } from 'lucide-react';
 import { feetInches, parseLength, pxLength, scaleFrom, type Pt } from '@/lib/photo-measure';
 import { toastError } from '@/lib/toast';
+import { photoTakenAt } from '@/lib/photo-time';
+import type { Position } from '@/lib/geo';
 
 type Mode = 'count' | 'measure';
 type Line = { a: Pt; b?: Pt };
@@ -36,10 +38,10 @@ async function loadPhoto(file: File): Promise<HTMLCanvasElement> {
 export default function PhotoMarkup({ mode, onClose, onSave }: {
   mode: Mode;
   onClose: () => void;
-  /** The marked-up picture, ready for the job's photos. */
-  onSave: (file: File, source: 'camera' | 'library', note: string) => Promise<void> | void;
+  /** The marked-up picture, ready for the job's photos, with the GPS the original photo carried (the copy has none). */
+  onSave: (file: File, source: 'camera' | 'library', note: string, gps: Position | null) => Promise<void> | void;
 }) {
-  const [photo, setPhoto] = useState<{ canvas: HTMLCanvasElement; url: string; source: 'camera' | 'library' } | null>(null);
+  const [photo, setPhoto] = useState<{ canvas: HTMLCanvasElement; url: string; source: 'camera' | 'library'; gps: Position | null } | null>(null);
   const [dots, setDots] = useState<Pt[]>([]);
   const [what, setWhat] = useState('');
   const [ref, setRef] = useState<Line | null>(null);
@@ -61,7 +63,9 @@ export default function PhotoMarkup({ mode, onClose, onSave }: {
     setBusy('Opening the photo…');
     try {
       const canvas = await loadPhoto(file);
-      setPhoto({ canvas, url: canvas.toDataURL('image/jpeg', 0.85), source });
+      // Read before drawing: the marked copy is a new JPEG without the photo's GPS (Greptile on PR #28).
+      const gps = source === 'library' ? (await photoTakenAt(file)).gps : null;
+      setPhoto({ canvas, url: canvas.toDataURL('image/jpeg', 0.85), source, gps });
       setDots([]); setRef(null); setLines([]);
     } catch (e) { toastError(e instanceof Error ? e.message : "That photo couldn't be opened."); }
     finally { setBusy(null); }
@@ -141,7 +145,7 @@ export default function PhotoMarkup({ mode, onClose, onSave }: {
         lines.forEach((l) => drawLine(l, '#1565C0', label(l), false));
       }
       const blob = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("Couldn't save the picture."))), 'image/jpeg', 0.88));
-      await onSave(new File([blob], `${mode}.jpg`, { type: 'image/jpeg' }), photo.source, heading);
+      await onSave(new File([blob], `${mode}.jpg`, { type: 'image/jpeg' }), photo.source, heading, photo.gps);
     } catch (e) {
       toastError(e instanceof Error ? e.message : "Couldn't save the picture.");
     } finally { setBusy(null); }

@@ -146,8 +146,10 @@ export async function photoTakenAt(file: Blob, timeZone = 'America/New_York', no
  * phone is as it's added (whenAdded, so the stamp says so). Null when there is
  * neither: the picture isn't sent, like a tap with no GPS.
  */
-export async function pictureGps(file: Blob, fromPhone: boolean, here: () => Promise<Position | null>): Promise<{ pos: Position; whenAdded: boolean } | null> {
-  const own = fromPhone ? (await photoTakenAt(file)).gps : null;
+export async function pictureGps(file: Blob, fromPhone: boolean, here: () => Promise<Position | null>,
+  /** The GPS read off the original photo, when this file is a copy made from it (a Count or Measure markup). */
+  original?: Position | null): Promise<{ pos: Position; whenAdded: boolean } | null> {
+  const own = fromPhone ? (original !== undefined ? original : (await photoTakenAt(file)).gps) : null;
   if (own) return { pos: own, whenAdded: false };
   const now = await here();
   return now ? { pos: now, whenAdded: fromPhone } : null;

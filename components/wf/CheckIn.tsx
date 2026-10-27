@@ -22,6 +22,7 @@ import type { Origin } from '@/lib/project-day';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { WfJob } from '@/lib/wf';
 import { MileagePhoto, sendMileage, useMileage, type SavePhoto } from './Odometer';
+import { HeldForGps } from './NoGps';
 import { Dialog } from './WfUi';
 
 export type CheckInSend = {
@@ -90,14 +91,16 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
     setBusy(false);
     if (done) next();
   };
+  // A photo with no GPS is held to send again, not lost (Fred, 2026-10-27; Greptile on PR #28).
+  const [held, setHeld] = useState<{ id: string; f: File } | null>(null);
   const askPhoto = async (id: string, label: string, f: File | undefined) => {
     if (!f) return;
+    setHeld(null);
     setPhotoBusy(id);
     try {
       const when = new Date();
       const pos = await getPosition(6000);
-      // Every picture carries its GPS (Fred, 2026-10-27).
-      if (!pos) { toastError(noGpsMessage(), NO_GPS_MS); setPhotoBusy(null); return; }
+      if (!pos) { setHeld({ id, f }); toastError(noGpsMessage(), NO_GPS_MS); setPhotoBusy(null); return; }
       const blob = await stampPhoto(f, stampLines({ woNumber: job.number, title: label, at: when, pos }));
       const r = await send.keep(blob, label, when.toISOString(), pos);
       if (typeof r === 'object') toastError(r.error);
@@ -173,12 +176,19 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
             <div key={a.id}>
               <div style={{ fontWeight: 600, marginBottom: 6 }}>{a.label}</div>
               {a.kind === 'photo' ? (
-                <label className={`wf-btn ${photos[a.id] ? 'wf-btn-outline' : 'wf-btn-navy'} wf-btn-sm`} style={{ opacity: photoBusy === a.id ? 0.6 : 1 }}>
-                  {photos[a.id] ? <CheckCircle2 size={15} /> : <Camera size={15} />}
-                  {photoBusy === a.id ? 'Saving…' : photos[a.id] ? 'Taken · retake' : 'Take photo'}
-                  <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={!!photoBusy}
-                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void askPhoto(a.id, a.label, f); }} />
-                </label>
+                <>
+                  <label className={`wf-btn ${photos[a.id] ? 'wf-btn-outline' : 'wf-btn-navy'} wf-btn-sm`} style={{ opacity: photoBusy === a.id ? 0.6 : 1 }}>
+                    {photos[a.id] ? <CheckCircle2 size={15} /> : <Camera size={15} />}
+                    {photoBusy === a.id ? 'Saving…' : photos[a.id] ? 'Taken · retake' : 'Take photo'}
+                    <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={!!photoBusy}
+                      onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void askPhoto(a.id, a.label, f); }} />
+                  </label>
+                  {held?.id === a.id && (
+                    <div style={{ marginTop: 8 }}>
+                      <HeldForGps busy={photoBusy === a.id} onRetry={() => void askPhoto(a.id, a.label, held.f)} onDiscard={() => setHeld(null)} />
+                    </div>
+                  )}
+                </>
               ) : (
                 <input className="wf-input" aria-label={a.label} value={answers[a.id] ?? ''} maxLength={300}
                   onChange={(e) => setAnswers((x) => ({ ...x, [a.id]: e.target.value }))} />

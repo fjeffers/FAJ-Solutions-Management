@@ -495,18 +495,18 @@ describe('by tech', () => {
     { id: 'x', category: 'materials', amount: 76.75, status: 'declined', date: '2026-10-21', tech: 'Paul Gibbs' },
     { id: 't', category: 'equipment', amount: 25, status: 'approved', vendor: 'Home Depot', date: '2026-10-19', tech: null },
   ];
-  const s = bill({ labor: 'hourly', rate: 100, mileRate: 0.6 });
+  const s = bill({ labor: 'hourly', rate: 100, mileRate: 0.6, receiptsAtCost: true });
 
   it('gives each tech their hours, miles and the materials they bought, the office’s own last', () => {
     expect(byTech(rows, receipts, s)).toEqual([
-      { tech: 'Kendell Newbold', days: 2, hours: 20.32, travel: 0, total: 20.32, labor: 2032, miles: 0, mileage: 0, materials: [], materialsTotal: 0 },
+      { tech: 'Kendell Newbold', days: 2, hours: 20.32, travel: 0, total: 20.32, labor: 2032, miles: 0, mileage: 0, materials: [], materialsTotal: 0, materialsBilled: true },
       { tech: 'Paul Gibbs', days: 2, hours: 10, travel: 0, total: 10, labor: 1000, miles: 252, mileage: 151.2,
         materials: [
           { id: 'l2', date: '2026-10-20', category: 'materials', vendor: "Lowe's", amount: 47.48 },
           { id: 'l1', date: '2026-10-21', category: 'materials', vendor: "Lowe's", amount: 104.17 },
-        ], materialsTotal: 151.65 },
+        ], materialsTotal: 151.65, materialsBilled: true },
       { tech: 'Office', days: 0, hours: 0, travel: 0, total: 0, labor: null, miles: 0, mileage: 0,
-        materials: [{ id: 't', date: '2026-10-19', category: 'equipment', vendor: 'Home Depot', amount: 25 }], materialsTotal: 25 },
+        materials: [{ id: 't', date: '2026-10-19', category: 'equipment', vendor: 'Home Depot', amount: 25 }], materialsTotal: 25, materialsBilled: true },
     ]);
   });
 
@@ -516,6 +516,35 @@ describe('by tech', () => {
     expect(list.reduce((x, b) => x + b.hours, 0)).toBe(t.hours);
     expect(list.reduce((x, b) => x + b.miles, 0)).toBe(t.miles);
     expect(list.reduce((x, b) => x + (b.labor ?? 0), 0)).toBe(t.labor);
+    expect(list.reduce((x, b) => x + b.mileage, 0)).toBe(t.lines.filter((l) => l.kind === 'mileage').reduce((x, l) => x + l.amount, 0));
+  });
+
+  // Greptile on PR #33.
+  const typed = (list: [string, number, number][]) => sheetRows({ app: [], techs: [], days: [],
+    saved: list.map(([tech, hours, travel], i) => day(`t${i}`, '2026-10-19', tech, { hours, travel })) });
+  it('charges each tech the way the bill does, each rate rounded on its own', () => {
+    const one = typed([['Paul Gibbs', 0.33, 0.33]]);
+    const r = bill({ labor: 'hourly', rate: 19.99, travelRate: 19.99, byDay: true });
+    expect(sheetTotals(one, [], r).labor).toBe(13.2);
+    expect(byTech(one, [], r)[0].labor).toBe(13.2);
+  });
+
+  it('puts the cent the bill’s rounding of the week leaves over on the tech with the most, so the parts add up', () => {
+    const two = typed([['Kendell Newbold', 0.33, 0], ['Paul Gibbs', 0.33, 0]]);
+    const r = bill({ labor: 'hourly', rate: 19.99 });
+    expect(sheetTotals(two, [], r).labor).toBe(13.19);
+    expect(byTech(two, [], r).map((b) => b.labor)).toEqual([6.59, 6.6]);
+  });
+
+  it('counts travel billed at its own rate when there is no on-site rate', () => {
+    expect(byTech(typed([['Paul Gibbs', 2, 1]]), [], bill({ labor: 'hourly', travelRate: 45 }))[0].labor).toBe(45);
+  });
+
+  it('says when the materials are not on the client’s bill', () => {
+    const r = bill({ labor: 'hourly', rate: 100, mileRate: 0.6 });
+    const list = byTech(rows, receipts, r);
+    expect(list.every((b) => !b.materialsBilled)).toBe(true);
+    expect(byTechRows(list, r.mileRate)).toContainEqual(['Materials (not on the bill: the other receipts are not billed at cost on this job)']);
   });
 
   it('has no labor dollars when the job isn’t billed by the hour', () => {

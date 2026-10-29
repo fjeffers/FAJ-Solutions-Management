@@ -514,54 +514,80 @@ export type TechBreakdown = {
   /** Days with hours, travel or miles on them. */
   days: number;
   hours: number; travel: number; total: number;
-  /** What their hours bill at the sheet's rates; null when the labor isn't by the hour (a fixed price, items). */
+  /** Their share of the bill's labor and travel; null when the labor isn't by the hour (a fixed price, items). */
   labor: number | null;
-  miles: number; mileage: number;
+  miles: number;
+  /** Their share of the bill's mileage. */
+  mileage: number;
   materials: TechMaterial[];
   materialsTotal: number;
+  /** The materials are on the client's bill (Bill receipts at cost); otherwise they're only who bought what. */
+  materialsBilled: boolean;
 };
 /** Receipts with no tech on them: the office's own. */
 export const OFFICE = 'Office';
+
+/** The bill's labor and travel, and its mileage, as its lines charge them. */
+function billMoney(rows: SheetRow[], s: SheetSettings): { labor: number; mileage: number } {
+  const { lines } = sheetTotals(rows, [], s);
+  const of = (...k: LineKind[]) => r2(lines.filter((l) => k.includes(l.kind)).reduce((t, l) => t + l.amount, 0));
+  return { labor: of('labor', 'travel'), mileage: of('mileage') };
+}
 
 /**
  * Each tech's share of the sheet, under three headings: their hours, their miles,
  * and the materials they bought (Fred, 2026-10-29: "a separation between the tech
  * ... heading hours ... head 2 milages ... head 3 materials. I need a break down
  * from each tech"). The same figures as the bill: hidden lines and receipts that
- * aren't approved are left out, and materials are the receipts billed at cost
- * (not meals, hotel or fuel, which have their own lines or are in the mileage).
- * Sorted by name, the office's own receipts last.
+ * aren't approved are left out, each tech's labor and mileage are worked out by
+ * the bill's own rules (sheetTotals on their lines), and a cent the bill's
+ * rounding of the whole leaves over goes to the tech with the most, so the parts
+ * add up to the bill (Greptile on PR #33). Materials are the approved receipts of
+ * the kinds billed at cost (not meals, hotel or fuel, which have their own lines
+ * or are in the mileage), flagged when the job doesn't bill them. Sorted by name,
+ * the office's own receipts last.
  */
 export function byTech(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSettings): TechBreakdown[] {
+  const live = rows.filter((r) => !r.hidden);
+  const byHour = s.labor === 'hourly' || s.labor === 'blended';
   const out = new Map<string, TechBreakdown>();
   const get = (tech: string) => {
     let t = out.get(tech);
-    if (!t) out.set(tech, t = { tech, days: 0, hours: 0, travel: 0, total: 0, labor: null, miles: 0, mileage: 0, materials: [], materialsTotal: 0 });
+    if (!t) out.set(tech, t = { tech, days: 0, hours: 0, travel: 0, total: 0, labor: null, miles: 0, mileage: 0, materials: [], materialsTotal: 0, materialsBilled: !!s.receiptsAtCost });
     return t;
   };
-  for (const r of rows) {
-    if (r.hidden) continue;
-    const c = dayCalc(r.values, s.mileRate ?? 0);
-    if (!c.worked) continue;
-    const t = get(r.tech);
-    t.days += 1; t.hours += c.hours; t.travel += c.travel; t.total += c.total; t.miles += c.miles; t.mileage += c.mileage;
+  for (const tech of [...new Set(live.map((r) => r.tech))]) {
+    const mine = live.filter((r) => r.tech === tech);
+    const worked = mine.map((r) => dayCalc(r.values, s.mileRate ?? 0)).filter((c) => c.worked);
+    if (!worked.length) continue;
+    const t = get(tech);
+    const sum = (f: (c: DayCalc) => number) => worked.reduce((x, c) => x + f(c), 0);
+    const money = billMoney(mine, s);
+    Object.assign(t, {
+      days: worked.length, hours: r2(sum((c) => c.hours)), travel: r2(sum((c) => c.travel)), total: r2(sum((c) => c.total)),
+      miles: r1(sum((c) => c.miles)), labor: byHour ? money.labor : null, mileage: money.mileage,
+    });
   }
+  // The bill may charge the week's total at once (Hours on site: 72.56 h × the rate): settle the rounding.
+  const workers = [...out.values()];
+  const whole = billMoney(live, s);
+  const settle = (key: 'labor' | 'mileage', total: number) => {
+    const list = workers.filter((t) => t[key] != null);
+    const diff = r2(total - list.reduce((x, t) => x + (t[key] ?? 0), 0));
+    const top = [...list].sort((a, b) => (b[key] ?? 0) - (a[key] ?? 0))[0];
+    if (diff && top) top[key] = r2((top[key] ?? 0) + diff);
+  };
+  if (byHour) settle('labor', whole.labor);
+  settle('mileage', whole.mileage);
   for (const e of receipts) {
     if (e.status !== 'approved' || !atCost(e.category) || !isNum(e.amount) || e.amount <= 0) continue;
     const t = get(e.tech?.trim() || OFFICE);
     t.materials.push({ id: e.id, date: e.date ?? null, category: e.category, vendor: e.vendor ?? null, amount: e.amount });
     t.materialsTotal += e.amount;
   }
-  return [...out.values()].map((t) => {
-    const hours = r2(t.hours), travel = r2(t.travel), total = r2(t.total);
-    const labor = t.days === 0 ? null
-      : s.labor === 'hourly' && s.rate != null ? r2(hours * s.rate + travel * (s.travelRate ?? 0))
-      : s.labor === 'blended' && s.rate != null ? r2(total * s.rate) : null;
-    return {
-      ...t, hours, travel, total, labor, miles: r1(t.miles), mileage: r2(t.mileage), materialsTotal: r2(t.materialsTotal),
-      materials: [...t.materials].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '')),
-    };
-  }).sort((a, b) => Number(a.tech === OFFICE) - Number(b.tech === OFFICE) || a.tech.localeCompare(b.tech));
+  return [...out.values()].map((t) => ({
+    ...t, materialsTotal: r2(t.materialsTotal), materials: [...t.materials].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '')),
+  })).sort((a, b) => Number(a.tech === OFFICE) - Number(b.tech === OFFICE) || a.tech.localeCompare(b.tech));
 }
 
 /** The By tech breakdown as spreadsheet rows: Hours, then Mileage, then Materials, each tech on its own line. */
@@ -576,7 +602,8 @@ export function byTechRows(list: TechBreakdown[], mileRate: number | null): (str
   out.push([], ['Mileage'], ['Technician', 'Miles', `Mileage $ (${mileRate ?? 0}/mi)`]);
   for (const t of workers) out.push([t.tech, t.miles, t.mileage]);
   out.push(['Total', r1(sum((t) => t.miles)), r2(sum((t) => t.mileage))]);
-  out.push([], ['Materials'], ['Technician', 'Date', 'For', 'Store', 'Amount']);
+  out.push([], [list.some((t) => t.materials.length && !t.materialsBilled) ? 'Materials (not on the bill: the other receipts are not billed at cost on this job)' : 'Materials'],
+    ['Technician', 'Date', 'For', 'Store', 'Amount']);
   for (const t of list) for (const m of t.materials) out.push([t.tech, m.date ?? '', expenseCategoryLabel(m.category), m.vendor ?? '', m.amount]);
   for (const t of list) if (t.materials.length) out.push([`${t.tech} total`, '', '', '', t.materialsTotal]);
   out.push(['Total', '', '', '', r2(sum((t) => t.materialsTotal))]);

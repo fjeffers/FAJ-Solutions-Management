@@ -1231,6 +1231,9 @@ function ByTechPanel({ list, s }: { list: TechBreakdown[]; s: SheetSettings }) {
         <tr style={TOT}><td style={TDT}>Total</td><td style={TDN}>{mi(sum(workers, (t) => t.miles))}</td><td style={TDN}>{money(sum(workers, (t) => t.mileage))}</td></tr>
       </ByTechTable>
       <ByTechHead n={3} title="Materials" />
+      {withMaterials.some((t) => !t.materialsBilled) && (
+        <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 6 }}>Not on the bill: tick <b>Bill the other receipts at cost</b> above to bill them. Shown so you know who bought what.</div>
+      )}
       {withMaterials.length === 0 ? <div className="wf-subtle" style={{ fontSize: 13 }}>No materials on these dates.</div> : (
         <ByTechTable head={['Technician', 'Date', 'For', 'Store', 'Amount']}>
           {withMaterials.flatMap((t) => [

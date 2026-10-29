@@ -90,7 +90,7 @@ describe('POST /api/quickbooks/field-sheet-invoice, the import file', () => {
   it("gives each tech's hours, miles and materials with the bill, for the week's workbook", async () => {
     const j = await (await post({ dry_run: true })).json();
     expect(j.mileRate).toBe(0.6);
-    expect(j.perTech).toEqual([{ tech: 'Dwayne Cudjoe', days: 1, hours: 2, travel: 0, total: 2, labor: 200, miles: 10, mileage: 6, materials: [], materialsTotal: 0 }]);
+    expect(j.perTech).toEqual([{ tech: 'Dwayne Cudjoe', days: 1, hours: 2, travel: 0, total: 2, labor: 200, miles: 10, mileage: 6, materials: [], materialsTotal: 0, materialsBilled: false }]);
   });
 
   it('records a bill QuickBooks imported as billed, under the file’s number, the server’s total and the file’s date', async () => {

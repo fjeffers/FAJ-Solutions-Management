@@ -40,7 +40,8 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
   const num: React.CSSProperties = { ...cell, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
   const th = (t: string, right = false) => <th key={t} style={{ ...(right ? num : cell), fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: SUBTLE, fontWeight: 600 }}>{t}</th>;
   const workers = perTech.filter((t) => t.days > 0);
-  const materials = perTech.filter((t) => t.materials.length > 0);
+  // The client sees only the materials on their bill.
+  const materials = perTech.filter((t) => t.materials.length > 0 && t.materialsBilled);
   const sub: React.CSSProperties = { fontSize: 13.5, fontWeight: 700, color: NAVY, margin: '14px 0 6px' };
   const H = ({ children }: { children: React.ReactNode }) => (
     <h2 style={{ fontSize: 16, fontWeight: 700, color: NAVY, margin: '26px 0 10px', paddingBottom: 6, borderBottom: `2px solid ${GOLD}` }}>{children}</h2>
@@ -104,8 +105,9 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
           )}
 
           {/* Fred, 2026-10-29: "I need a break down from each tech": hours, then mileage, then materials. */}
-          {workers.length > 0 && <>
+          {(workers.length > 0 || materials.length > 0) && <>
             <H>By technician</H>
+            {workers.length > 0 && <>
             <h3 style={sub}>1. Hours</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>{th('Technician')}{th('Days', true)}{th('Hours on site', true)}{th('Travel', true)}</tr></thead>
@@ -122,6 +124,7 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
               ))}</tbody>
               <tfoot><tr style={{ fontWeight: 700 }}><td style={cell}>Total</td><td style={num}>{mi(totals.miles)}</td></tr></tfoot>
             </table>
+            </>}
             <h3 style={sub}>3. Materials</h3>
             {materials.length === 0 ? <div style={{ color: SUBTLE }}>No materials on these dates.</div> : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>

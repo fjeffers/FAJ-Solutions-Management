@@ -203,7 +203,30 @@ describe('FsDayLog', () => {
       { kind: 'travel_end', at: iso(160), miles: 12.5 },
     ]} readings={[{ at: iso(189), reading: 228889, moment: 'start' }, { at: iso(159), reading: 228903, moment: 'end' }]} />);
     expect(within(screen.getByText('Hotel → Site').parentElement!).getByText(/ · 30m · 14 mi \(odometer 228,889 → 228,903\)$/)).toBeTruthy();
-    expect(screen.getByText(/· 14 mi \(your odometer photos\)$/)).toBeTruthy();
+    expect(screen.getByText(/^On site 0m · travel 30m · 14 mi \(your odometer photos\)$/)).toBeTruthy();
+  });
+
+  // Fred, 2026-10-29: "Need to add Sunday to Saturday".
+  it('puts the days under their week, Sunday to Saturday, with the week’s totals', () => {
+    const drive = (start: string, end: string, miles: number): DayEvent[] => [
+      { kind: 'travel_start', at: start, origin: 'home', dest: 'site' },
+      { kind: 'travel_end', at: end, miles },
+    ];
+    render(<FsDayLog events={[
+      ...drive('2026-10-24T12:00:00Z', '2026-10-24T13:00:00Z', 40), // Saturday
+      ...drive('2026-10-25T12:00:00Z', '2026-10-25T13:00:00Z', 50), // Sunday
+      ...drive('2026-10-26T12:00:00Z', '2026-10-26T13:30:00Z', 60), // Monday
+    ]} readings={[{ at: '2026-10-26T12:01:00Z', reading: 1000, moment: 'start' }, { at: '2026-10-26T13:31:00Z', reading: 1072, moment: 'end' }]} />);
+    const titles = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+    expect(titles).toEqual([
+      'Week of Sun, Oct 25 – Sat, Oct 31', 'Monday, October 26', 'Sunday, October 25',
+      'Week of Sun, Oct 18 – Sat, Oct 24', 'Saturday, October 24',
+    ]);
+    const weekTotals = screen.getAllByText('Week total:').map((b) => b.parentElement!.textContent);
+    expect(weekTotals).toEqual([
+      'Week total: 2 days · on site 0m · travel 2h 30m · 122 mi (odometer photos and GPS — the office can correct it)',
+      'Week total: 1 day · on site 0m · travel 1h 00m · 40 mi (from GPS — the office can correct it)',
+    ]);
   });
 
   it('says so when nothing is recorded yet', () => {

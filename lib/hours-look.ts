@@ -4,11 +4,12 @@
 // Saved with Fred's menu layout (Settings -> Hours screen, user_settings.layout),
 // so the Hours screen and a work order's Time Logs tab open the way he set it, on
 // every device. The bar above the cards changes the same setting.
+import { weekStartOf } from './week-view';
 
 export type HoursLook = {
   /** Newest day first, or oldest. */
   order: 'new' | 'old';
-  /** One run of days, or grouped by week (Monday to Sunday) or by month, each with its totals. */
+  /** One run of days, or grouped by week (Sunday to Saturday) or by month, each with its totals. */
   group: 'day' | 'week' | 'month';
   /**
    * Every box open on every card, one line per day that opens when tapped, or
@@ -81,19 +82,18 @@ export function setHoursLookNow(l: HoursLook | undefined): void { now = normaliz
 export function hoursLookNow(): HoursLook { return now; }
 
 /**
- * The group a day ('2026-10-23') falls in: the Monday that starts its week, or
- * its month ('2026-10'). Days are calendar dates, so this is done in UTC and
- * never shifts with the clock.
+ * The group a day ('2026-10-23') falls in: the Sunday that starts its week, or
+ * its month ('2026-10'). Weeks run Sunday to Saturday, like the bill (Fred,
+ * 2026-10-29: "Need to add Sunday to Saturday"). Days are calendar dates, so
+ * this is done in UTC and never shifts with the clock.
  */
 export function groupOf(day: string, group: HoursLook['group']): string {
   if (group === 'day') return day;
   if (group === 'month') return day.slice(0, 7);
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-  return d.toISOString().slice(0, 10);
+  return weekStartOf(day);
 }
 
-/** 'Week of Mon, Oct 20 – Sun, Oct 26' or 'October 2026'. */
+/** 'Week of Sun, Oct 25 – Sat, Oct 31' or 'October 2026'. */
 export function groupLabel(key: string, group: HoursLook['group']): string {
   const fmt = (iso: string, o: Intl.DateTimeFormatOptions) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { ...o, timeZone: 'UTC' });
   if (group === 'month') return fmt(`${key}-01`, { month: 'long', year: 'numeric' });

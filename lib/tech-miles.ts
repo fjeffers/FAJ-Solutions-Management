@@ -54,9 +54,10 @@ export function driveMilesText(d: DriveMiles | undefined): string {
   return startOnly;
 }
 
-/** The day's miles on the phone: its drives added up, and where they come from. */
-export function dayMiles(log: DayLog, drives: Map<string, DriveMiles>): { miles: number; source: string } {
-  const list = log.legs.map((l) => drives.get(legKey(l))).filter((d): d is DriveMiles => d?.miles != null);
+/** A day's miles on the phone (or a week's, given its days): the drives added up, and where they come from. */
+export function dayMiles(logs: DayLog | DayLog[], drives: Map<string, DriveMiles>): { miles: number; source: string } {
+  const list = (Array.isArray(logs) ? logs : [logs]).flatMap((d) => d.legs)
+    .map((l) => drives.get(legKey(l))).filter((d): d is DriveMiles => d?.miles != null);
   const by = new Set(list.map((d) => d.by));
   const source = by.size === 0 ? ''
     : by.size > 1 ? 'odometer photos and GPS — the office can correct it'

@@ -6,10 +6,12 @@
 // taps (DayActions) through the outbox, so they work with no signal. Styles
 // live in app/tech/fs.css under fs- names.
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { buildDayLogs, dayState, lastPlace, legLabel, onSiteMs, TRIPS, type DayEvent, type Origin, type Trip } from '@/lib/project-day';
+import { buildDayLogs, dayState, lastPlace, legLabel, onSiteMs, TRIPS, type DayEvent, type DayLog, type Origin, type Trip } from '@/lib/project-day';
 import { FS_STAGE_NAME, type FsStage } from '@/lib/fs-stage';
 import { formatDuration, type OdometerReading } from '@/lib/wf';
-import { dayMiles, driveMiles, driveMilesText, legKey } from '@/lib/tech-miles';
+import { dayMiles, driveMiles, driveMilesText, legKey, type DriveMiles } from '@/lib/tech-miles';
+import { groupLabel } from '@/lib/hours-look';
+import { weekStartOf } from '@/lib/week-view';
 import type { DayActions } from './ProjectDay';
 import { FsChip, FsIcon } from './FsUi';
 
@@ -271,45 +273,72 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
 }
 
 /**
- * Time & travel: each day's clock in, drives and time on site, newest day first. A drive's miles
- * are its odometer photos' (`readings`, the tech's own) when it has both, else the GPS's.
+ * Time & travel: each day's clock in, drives and time on site, newest day first, under its week
+ * (Sunday to Saturday, like the bill) and the week's totals. A drive's miles are its odometer
+ * photos' (`readings`, the tech's own) when it has both, else the GPS's.
  */
 export function FsDayLog({ events, readings = [] }: { events: DayEvent[]; readings?: OdometerReading[] }) {
   const now = useTick(60_000);
   const logs = buildDayLogs(events, now, TZ).reverse();
   if (logs.length === 0) return <p className="fs-muted">Nothing recorded yet. Your clock in, drives and time on site show here.</p>;
   const drives = driveMiles(logs.flatMap((d) => d.legs), readings);
+  // Fred, 2026-10-29: "Need to add Sunday to Saturday".
+  const weeks: { key: string; logs: DayLog[] }[] = [];
+  for (const log of logs) {
+    const key = weekStartOf(log.day);
+    const last = weeks.at(-1);
+    if (last?.key === key) last.logs.push(log); else weeks.push({ key, logs: [log] });
+  }
   return (
     <div className="fs-stack">
-      {logs.map((log) => {
-        const total = dayMiles(log, drives);
-        const rows = [
-          ...(log.clockIn ? [{ at: log.clockIn, title: 'Clocked in', detail: timeOf(log.clockIn) }] : []),
-          ...log.legs.map((l) => {
-            const miles = driveMilesText(drives.get(legKey(l)));
-            return {
-              at: l.start, title: legLabel(l),
-              detail: `${timeOf(l.start)}–${l.end ? timeOf(l.end) : 'now'} · ${formatDuration(l.ms)}${miles ? ` · ${miles}` : ''}`,
-            };
-          }),
-          ...log.spans.map((s) => ({
-            at: s.in, title: 'On site',
-            detail: `${timeOf(s.in)}–${s.out ? timeOf(s.out) : 'now'} · ${formatDuration(s.ms)}${s.lunchMs ? ` (lunch ${formatDuration(s.lunchMs)})` : ''}`,
-          })),
-        ].sort((a, b) => a.at.localeCompare(b.at));
-        const day = new Date(`${log.day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+      {weeks.map((w) => {
+        const total = dayMiles(w.logs, drives);
+        const days = new Set(w.logs.map((d) => d.day)).size;
+        const sum = (f: (d: DayLog) => number) => w.logs.reduce((t, d) => t + f(d), 0);
         return (
-          <div key={log.day + log.tech}>
-            <h4 className="fs-day-title">{day}</h4>
-            <ul className="fs-timeline">
-              {rows.map((r) => <li key={r.at + r.title}><i /><div><b>{r.title}</b><small>{r.detail}</small></div></li>)}
-            </ul>
-            <p className="fs-muted">
-              On site {formatDuration(log.onSiteMs)} · travel {formatDuration(log.travelMs)}{total.miles > 0 ? ` · ${total.miles} mi (${total.source})` : ''}
-            </p>
+          <div key={w.key} className="fs-stack">
+            <div>
+              <h4 className="fs-day-title">{groupLabel(w.key, 'week')}</h4>
+              <p className="fs-muted">
+                <b>Week total:</b> {days} day{days === 1 ? '' : 's'} · on site {formatDuration(sum((d) => d.onSiteMs))} · travel {formatDuration(sum((d) => d.travelMs))}
+                {total.miles > 0 ? ` · ${total.miles} mi (${total.source})` : ''}
+              </p>
+            </div>
+            {w.logs.map((log) => <FsDay key={log.day + log.tech} log={log} drives={drives} />)}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** One day on the phone: its clock in, drives and time on site, and its totals. */
+function FsDay({ log, drives }: { log: DayLog; drives: Map<string, DriveMiles> }) {
+  const total = dayMiles(log, drives);
+  const rows = [
+    ...(log.clockIn ? [{ at: log.clockIn, title: 'Clocked in', detail: timeOf(log.clockIn) }] : []),
+    ...log.legs.map((l) => {
+      const miles = driveMilesText(drives.get(legKey(l)));
+      return {
+        at: l.start, title: legLabel(l),
+        detail: `${timeOf(l.start)}–${l.end ? timeOf(l.end) : 'now'} · ${formatDuration(l.ms)}${miles ? ` · ${miles}` : ''}`,
+      };
+    }),
+    ...log.spans.map((s) => ({
+      at: s.in, title: 'On site',
+      detail: `${timeOf(s.in)}–${s.out ? timeOf(s.out) : 'now'} · ${formatDuration(s.ms)}${s.lunchMs ? ` (lunch ${formatDuration(s.lunchMs)})` : ''}`,
+    })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const day = new Date(`${log.day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  return (
+    <div>
+      <h4 className="fs-day-title">{day}</h4>
+      <ul className="fs-timeline">
+        {rows.map((r) => <li key={r.at + r.title}><i /><div><b>{r.title}</b><small>{r.detail}</small></div></li>)}
+      </ul>
+      <p className="fs-muted">
+        On site {formatDuration(log.onSiteMs)} · travel {formatDuration(log.travelMs)}{total.miles > 0 ? ` · ${total.miles} mi (${total.source})` : ''}
+      </p>
     </div>
   );
 }

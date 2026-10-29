@@ -36,6 +36,7 @@ import { askedDeliverables } from '@/lib/wf';
 import { clock, dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
 import TimesheetExport from '@/components/TimesheetExport';
 import { HOURS_CHANGED } from '@/lib/hours-look';
+import { weekStartOf } from '@/lib/week-view';
 import { addDayMiles, parseMiles } from '@/lib/day-miles';
 import dynamic from 'next/dynamic';
 // The day cards (components/HoursView.tsx), loaded when opened: HoursView reads loadEvents from here.
@@ -632,12 +633,6 @@ const clientSummary = (text: string) => text.split('\n').map((l) => l.replace(/\
 const fileSafe = (s: string) => s.replace(/[\\/:*?"<>|#]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Weekly bill';
 type ReportPhoto = { id: string; wo_id: string; url: string; taken_at: string; contractor_name: string | null };
 
-/** Monday of this week (New York), as YYYY-MM-DD. */
-function mondayOf(day: string): string {
-  const d = new Date(`${day}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-  return d.toISOString().slice(0, 10);
-}
 
 export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   projectName: string; startWoId: string; lists: CloseoutList[]; onClose: () => void;
@@ -648,7 +643,8 @@ export function ProjectReport({ projectName, startWoId, lists, onClose }: {
   const [waiting, setWaiting] = useState(0);
   const [photos, setPhotos] = useState<ReportPhoto[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
-  const [from, setFrom] = useState(() => mondayOf(todayNY()));
+  // This week so far, from its Sunday: weeks run Sunday to Saturday, like the bill (Fred, 2026-10-29).
+  const [from, setFrom] = useState(() => weekStartOf(todayNY()));
   const [to, setTo] = useState(todayNY);
   const [showPhotos, setShowPhotos] = useState(true);
   // Odometer readings (migration 128), and the AI's summary Fred can edit before printing.

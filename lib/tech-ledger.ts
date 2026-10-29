@@ -136,17 +136,20 @@ export const PERIODS: { key: Period; label: string }[] = [
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-/** First and last day (YYYY-MM-DD) of a period around `today`; null for all time. Weeks start Monday. */
+/**
+ * First and last day (YYYY-MM-DD) of a period around `today`; null for all time. Weeks run Sunday
+ * to Saturday, like the bill (Fred, 2026-10-29: "Need to add Sunday to Saturday").
+ */
 export function periodRange(p: Period, today: string): { from: string; to: string } | null {
   if (p === 'all') return null;
   const [y, m, d] = today.split('-').map(Number);
   const t = new Date(y, m - 1, d);
   if (p === 'week' || p === 'lastWeek') {
-    const monday = new Date(t);
-    monday.setDate(t.getDate() - ((t.getDay() + 6) % 7) - (p === 'lastWeek' ? 7 : 0));
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    return { from: iso(monday), to: iso(sunday) };
+    const sunday = new Date(t);
+    sunday.setDate(t.getDate() - t.getDay() - (p === 'lastWeek' ? 7 : 0));
+    const saturday = new Date(sunday);
+    saturday.setDate(sunday.getDate() + 6);
+    return { from: iso(sunday), to: iso(saturday) };
   }
   if (p === 'month' || p === 'lastMonth') {
     const first = new Date(y, m - 1 - (p === 'lastMonth' ? 1 : 0), 1);

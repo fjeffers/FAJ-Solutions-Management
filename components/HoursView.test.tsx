@@ -175,8 +175,9 @@ describe('Hours', () => {
       await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
       await user.click(await screen.findByRole('button', { name: 'By week' }));
       expect(onLook).toHaveBeenLastCalledWith(expect.objectContaining({ group: 'week' }));
-      expect(screen.getByText('Week of Mon, Oct 26 – Sun, Nov 1')).toBeTruthy();
-      expect(screen.getByText('Week of Mon, Oct 19 – Sun, Oct 25')).toBeTruthy();
+      // Sunday to Saturday, like the bill (Fred, 2026-10-29).
+      expect(screen.getByText('Week of Sun, Oct 25 – Sat, Oct 31')).toBeTruthy();
+      expect(screen.getByText('Week of Sun, Oct 18 – Sat, Oct 24')).toBeTruthy();
       expect(screen.getByText(/^1 day · 4\.00 h on site/)).toBeTruthy();
 
       await user.click(screen.getByRole('button', { name: 'Short list' }));

@@ -22,8 +22,8 @@ import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  atCost, billRange, blocksBilling, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
-  withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals,
+  atCost, billRange, blocksBilling, byTech, byTechRows, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals, type TechBreakdown,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
 import { isNetviewJob, netviewAnswers, netviewFormUrl, NETVIEW_PAYROLL } from '@/lib/netview-form';
@@ -70,9 +70,9 @@ async function sheetBill(wo: EnrichedWorkOrder, from?: string, to?: string): Pro
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wo_id: wo.id, from: from || undefined, to: to || undefined, dry_run: true }),
     });
-    const j = (await res.json().catch(() => ({}))) as { error?: string; customer?: string; from?: string; to?: string; memo?: string; lines?: QboSheetBill['lines'] };
+    const j = (await res.json().catch(() => ({}))) as { error?: string; customer?: string; from?: string; to?: string; memo?: string; lines?: QboSheetBill['lines'] } & Pick<QboSheetBill, 'perTech' | 'mileRate'>;
     if (!res.ok || j.error || !j.customer || !j.from || !j.to || !j.lines?.length) return { error: j.error ?? "Couldn't build the bill." };
-    return { bill: { woNumber: wo.wo_number, customerName: j.customer, from: j.from, to: j.to, memo: j.memo ?? '', lines: j.lines } };
+    return { bill: { woNumber: wo.wo_number, customerName: j.customer, from: j.from, to: j.to, memo: j.memo ?? '', lines: j.lines, perTech: j.perTech, mileRate: j.mileRate } };
   } catch {
     return { error: "Couldn't reach the app. Check your connection." };
   }
@@ -471,8 +471,10 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
   const visible = rows.filter((r) => showHidden || !r.hidden);
   const inRange = (d: string) => inDates(d, from, to);
   const receipts = expenses.filter((e) => inRange(e.expense_date));
-  const billed: SheetReceipt[] = receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date }));
+  const billed: SheetReceipt[] = receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date, tech: e.contractor_name }));
   const totals = sheetTotals(rows, billed, settings);
+  // Each tech's hours, miles and materials (Fred, 2026-10-29: "I need a break down from each tech").
+  const perTech = byTech(rows, billed, settings);
   const allTechs = [...new Set([...techs, ...rows.map((r) => r.tech)])];
 
   // ── saving: one write at a time per line, and for the rates, so an older save can't land after a newer one ──
@@ -563,6 +565,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
     await downloadXLSXBook(`${fileSafe(`WO ${wo.wo_number} ${wo.external_wo_id ?? ''} ${jobName(wo)}`)}.xlsx`, [
       { name: 'Field sheet', rows: fieldSheetRows(head, rows, totals, settings), colWidths: [11, 40, 12, 12, 11, 12, 8, 9, 9, 9, 11, 11, 9, 9, 11, 11, 50] },
       { name: 'Receipts', rows: rec, colWidths: [11, 18, 18, 18, 10, 10, 40] },
+      { name: 'By tech', rows: byTechRows(perTech, settings.mileRate), colWidths: [22, 11, 14, 14, 12, 12] },
     ]);
   };
 
@@ -683,6 +686,8 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
         </div>
       </Section>
 
+      <ByTechPanel list={perTech} s={settings} />
+
       <ClockPanel wo={wo} techs={allTechs} from={from} to={to} onChanged={() => void loadEvents([wo.id]).then(setEvents)} />
 
       <Section title="Receipts" subtitle={`${approved.length} approved${waiting.length ? ` · ${waiting.length} waiting for you` : ''}`} right={
@@ -708,7 +713,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
       </Section>
 
       <FinishPanel wo={wo} s={settings} totals={totals} from={from} to={to} rows={rows} receipts={billed} invoices={invoices}
-        allRows={allRows} allReceipts={expenses.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date }))}
+        allRows={allRows} allReceipts={expenses.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date, tech: e.contractor_name }))}
         photoCount={shots.reduce((t, g) => t + g.list.length, 0)} flush={flush} onDone={() => void loadInvoices()} />
 
       <Section title="Photos" subtitle="time, place and GPS are stamped by the tech's phone">
@@ -735,7 +740,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
       {report && (
         <FieldSheetReport site={settings.site || jobName(wo)} client={settings.client || wo.customer_name || ''} wo={wo.wo_number} clientWo={wo.external_wo_id}
           address={address(wo)} from={from || rows.filter((r) => !r.hidden).map((r) => r.day).sort()[0] || ''} to={to || rows.filter((r) => !r.hidden).map((r) => r.day).sort().at(-1) || ''}
-          rows={rows} s={settings} totals={totals}
+          rows={rows} s={settings} totals={totals} perTech={perTech}
           receipts={approved.map((e) => ({ id: e.id, date: e.expense_date, category: e.category, vendor: e.vendor, amount: e.amount }))}
           photos={clientPhotos} onClose={() => setReport(false)} />
       )}
@@ -1178,6 +1183,68 @@ function num(s: string): number | null | undefined {
   if (t === '') return null;
   const n = Number(t);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+const TDT: React.CSSProperties = { ...TD, padding: '7px 6px' };
+const TOT: React.CSSProperties = { background: '#F6F1E4', fontWeight: 700 };
+function ByTechHead({ n, title }: { n: number; title: string }) {
+  return <h4 style={{ margin: '14px 0 6px', fontSize: 14.5 }}>{n}. {title}</h4>;
+}
+function ByTechTable({ head, children }: { head: string[]; children: React.ReactNode }) {
+  return (
+    <div style={{ overflowX: 'auto', border: '1px solid var(--wf-line, #E4DFD3)', borderRadius: 10 }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+        <thead><tr>{head.map((h) => <th key={h} style={TH}>{h}</th>)}</tr></thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Each tech's hours, miles and materials, one heading each (Fred, 2026-10-29: "show tech one hours
+ * and then tech 2 hours heading hours the head 2 milages ... head 3 materials").
+ */
+function ByTechPanel({ list, s }: { list: TechBreakdown[]; s: SheetSettings }) {
+  const workers = list.filter((t) => t.days > 0);
+  const withMaterials = list.filter((t) => t.materials.length > 0);
+  if (!workers.length && !withMaterials.length) return null;
+  const sum = (l: TechBreakdown[], f: (t: TechBreakdown) => number) => l.reduce((x, t) => x + f(t), 0);
+  const showLabor = workers.some((t) => t.labor != null);
+  return (
+    <Section title="By tech" subtitle="each tech's hours, miles and materials for these dates">
+      <ByTechHead n={1} title="Hours" />
+      <ByTechTable head={['Technician', 'Days', 'Hours on site', 'Travel hrs', 'Total hrs', ...(showLabor ? ['Labor $'] : [])]}>
+        {workers.map((t) => (
+          <tr key={t.tech}><td style={TDT}>{t.tech}</td><td style={TDN}>{t.days}</td><td style={TDN}>{hrs(t.hours)}</td><td style={TDN}>{hrs(t.travel)}</td>
+            <td style={TDN}>{hrs(t.total)}</td>{showLabor && <td style={TDN}>{t.labor == null ? '–' : money(t.labor)}</td>}</tr>
+        ))}
+        <tr style={TOT}><td style={TDT}>Total</td><td style={TDN}>{sum(workers, (t) => t.days)}</td><td style={TDN}>{hrs(sum(workers, (t) => t.hours))}</td>
+          <td style={TDN}>{hrs(sum(workers, (t) => t.travel))}</td><td style={TDN}>{hrs(sum(workers, (t) => t.total))}</td>
+          {showLabor && <td style={TDN}>{money(sum(workers, (t) => t.labor ?? 0))}</td>}</tr>
+      </ByTechTable>
+      <ByTechHead n={2} title="Mileage" />
+      <ByTechTable head={['Technician', 'Miles', `Mileage $ (${s.mileRate ?? 0}/mi)`]}>
+        {workers.map((t) => (
+          <tr key={t.tech}><td style={TDT}>{t.tech}</td><td style={TDN}>{mi(t.miles)}</td><td style={TDN}>{money(t.mileage)}</td></tr>
+        ))}
+        <tr style={TOT}><td style={TDT}>Total</td><td style={TDN}>{mi(sum(workers, (t) => t.miles))}</td><td style={TDN}>{money(sum(workers, (t) => t.mileage))}</td></tr>
+      </ByTechTable>
+      <ByTechHead n={3} title="Materials" />
+      {withMaterials.length === 0 ? <div className="wf-subtle" style={{ fontSize: 13 }}>No materials on these dates.</div> : (
+        <ByTechTable head={['Technician', 'Date', 'For', 'Store', 'Amount']}>
+          {withMaterials.flatMap((t) => [
+            ...t.materials.map((m) => (
+              <tr key={m.id}><td style={TDT}>{t.tech}</td><td style={TDT}>{m.date ? fmtDay(m.date) : ''}</td><td style={TDT}>{expenseCategoryLabel(m.category)}</td>
+                <td style={TDT}>{m.vendor ?? ''}</td><td style={TDN}>{fmtMoney(m.amount)}</td></tr>
+            )),
+            <tr key={`${t.tech}-total`} style={{ fontWeight: 600 }}><td style={TDT} colSpan={4}>{t.tech} total</td><td style={TDN}>{fmtMoney(t.materialsTotal)}</td></tr>,
+          ])}
+          <tr style={TOT}><td style={TDT} colSpan={4}>Total</td><td style={TDN}>{fmtMoney(sum(withMaterials, (t) => t.materialsTotal))}</td></tr>
+        </ByTechTable>
+      )}
+    </Section>
+  );
 }
 
 function Swatch({ bg }: { bg: string }) {

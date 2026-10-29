@@ -8,7 +8,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X } from 'lucide-react';
-import { clock, dayCalc, type SheetRow, type SheetSettings, type SheetTotals } from '@/lib/field-sheet';
+import { clock, dayCalc, type SheetRow, type SheetSettings, type SheetTotals, type TechBreakdown } from '@/lib/field-sheet';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { fmtMoney } from '@/lib/utils';
 
@@ -21,9 +21,12 @@ const fmtLong = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en
 const h = (n: number) => (n ? `${n.toFixed(2)} h` : '—');
 const mi = (n: number) => (n ? `${n.toLocaleString('en-US', { maximumFractionDigits: 1 })} mi` : '—');
 
-export default function FieldSheetReport({ site, client, wo, clientWo, address, from, to, rows, s, totals, receipts, photos, onClose }: {
+export default function FieldSheetReport({ site, client, wo, clientWo, address, from, to, rows, s, totals, perTech = [], receipts, photos, onClose }: {
   site: string; client: string; wo: string; clientWo: string | null; address: string; from: string; to: string;
-  rows: SheetRow[]; s: SheetSettings; totals: SheetTotals; receipts: ReportReceipt[]; photos: { group: string; list: ReportPhoto[] }[];
+  rows: SheetRow[]; s: SheetSettings; totals: SheetTotals;
+  /** Each tech's hours, miles and materials (lib/field-sheet.ts byTech). */
+  perTech?: TechBreakdown[];
+  receipts: ReportReceipt[]; photos: { group: string; list: ReportPhoto[] }[];
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -36,6 +39,9 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
   const cell: React.CSSProperties = { padding: '8px 10px', borderBottom: `1px solid ${LINE}`, textAlign: 'left', verticalAlign: 'top' };
   const num: React.CSSProperties = { ...cell, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
   const th = (t: string, right = false) => <th key={t} style={{ ...(right ? num : cell), fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: SUBTLE, fontWeight: 600 }}>{t}</th>;
+  const workers = perTech.filter((t) => t.days > 0);
+  const materials = perTech.filter((t) => t.materials.length > 0);
+  const sub: React.CSSProperties = { fontSize: 13.5, fontWeight: 700, color: NAVY, margin: '14px 0 6px' };
   const H = ({ children }: { children: React.ReactNode }) => (
     <h2 style={{ fontSize: 16, fontWeight: 700, color: NAVY, margin: '26px 0 10px', paddingBottom: 6, borderBottom: `2px solid ${GOLD}` }}>{children}</h2>
   );
@@ -96,6 +102,41 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
               <tfoot><tr style={{ fontWeight: 700 }}><td style={cell} colSpan={3}>Total</td><td style={num}>{h(totals.hours)}</td><td style={num}>{h(totals.travel)}</td><td style={num}>{mi(totals.miles)}</td></tr></tfoot>
             </table>
           )}
+
+          {/* Fred, 2026-10-29: "I need a break down from each tech": hours, then mileage, then materials. */}
+          {workers.length > 0 && <>
+            <H>By technician</H>
+            <h3 style={sub}>1. Hours</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>{th('Technician')}{th('Days', true)}{th('Hours on site', true)}{th('Travel', true)}</tr></thead>
+              <tbody>{workers.map((t) => (
+                <tr key={t.tech} className="jl-avoid"><td style={cell}>{t.tech}</td><td style={num}>{t.days}</td><td style={num}>{h(t.hours)}</td><td style={num}>{h(t.travel)}</td></tr>
+              ))}</tbody>
+              <tfoot><tr style={{ fontWeight: 700 }}><td style={cell}>Total</td><td style={num}>{workers.reduce((x, t) => x + t.days, 0)}</td><td style={num}>{h(totals.hours)}</td><td style={num}>{h(totals.travel)}</td></tr></tfoot>
+            </table>
+            <h3 style={sub}>2. Mileage</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>{th('Technician')}{th('Miles', true)}</tr></thead>
+              <tbody>{workers.map((t) => (
+                <tr key={t.tech} className="jl-avoid"><td style={cell}>{t.tech}</td><td style={num}>{mi(t.miles)}</td></tr>
+              ))}</tbody>
+              <tfoot><tr style={{ fontWeight: 700 }}><td style={cell}>Total</td><td style={num}>{mi(totals.miles)}</td></tr></tfoot>
+            </table>
+            <h3 style={sub}>3. Materials</h3>
+            {materials.length === 0 ? <div style={{ color: SUBTLE }}>No materials on these dates.</div> : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>{th('Technician')}{th('Day')}{th('For')}{th('Where')}{th('Amount', true)}</tr></thead>
+                <tbody>{materials.flatMap((t) => [
+                  ...t.materials.map((m) => (
+                    <tr key={m.id} className="jl-avoid"><td style={cell}>{t.tech}</td><td style={{ ...cell, whiteSpace: 'nowrap' }}>{m.date ? fmtDay(m.date) : ''}</td>
+                      <td style={cell}>{expenseCategoryLabel(m.category)}</td><td style={cell}>{m.vendor ?? ''}</td><td style={num}>{fmtMoney(m.amount)}</td></tr>
+                  )),
+                  <tr key={`${t.tech}-total`} className="jl-avoid" style={{ fontWeight: 600 }}><td style={cell} colSpan={4}>{t.tech} total</td><td style={num}>{fmtMoney(t.materialsTotal)}</td></tr>,
+                ])}</tbody>
+                <tfoot><tr style={{ fontWeight: 700 }}><td style={cell} colSpan={4}>Total</td><td style={num}>{fmtMoney(materials.reduce((x, t) => x + t.materialsTotal, 0))}</td></tr></tfoot>
+              </table>
+            )}
+          </>}
 
           {totals.lines.length > 0 && <>
             <H>The bill</H>

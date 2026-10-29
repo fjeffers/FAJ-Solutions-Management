@@ -178,6 +178,38 @@ describe('Field Sheet', () => {
     expect(report.textContent).not.toMatch(/Raja Bennett/);
   });
 
+  // Fred, 2026-10-29: "show tech one hours and then tech 2 hours heading hours the head 2 milages ... head 3 materials".
+  it('breaks the week down by tech: hours, then mileage, then materials, on the sheet, the Excel and the client report', async () => {
+    const user = userEvent.setup();
+    tables.job_expenses = [...tables.job_expenses,
+      { id: 'x3', contractor_name: 'Raja Bennett', category: 'materials', vendor: "Lowe's", amount: 47.48, expense_date: '2026-10-21', note: null, receipt_path: null, status: 'approved', decline_reason: null, paid_by: 'tech' }];
+    try {
+      render(<FieldSheetView workOrders={[wo]} />);
+      await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+      const section = (await screen.findByText('By tech')).closest('section')!;
+      const heads = within(section).getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+      expect(heads).toEqual(['1. Hours', '2. Mileage', '3. Materials']);
+      const [hours, miles, materials] = within(section).getAllByRole('table');
+      expect(within(hours).getByText('Dwayne Cudjoe').closest('tr')!.textContent).toContain('9.57');
+      expect(within(miles).getByText('Dwayne Cudjoe').closest('tr')!.textContent).toBe('Dwayne Cudjoe4.4$2.64');
+      // Only what was bought for the job: not the fuel (in the mileage) or the hotel (its own line).
+      expect(within(materials).getAllByRole('row').map((r) => r.textContent)).toEqual([
+        'TechnicianDateForStoreAmount', "Raja BennettWed, Oct 21MaterialsLowe's$47.48", 'Raja Bennett total$47.48', 'Total$47.48',
+      ]);
+
+      await user.click(screen.getByRole('button', { name: /excel/i }));
+      const sheets = downloadXLSXBook.mock.calls.at(-1)![1] as { name: string; rows: unknown[][] }[];
+      expect(sheets.map((x) => x.name)).toEqual(['Field sheet', 'Receipts', 'By tech']);
+
+      await user.click(screen.getByRole('button', { name: /client report/i }));
+      const report = document.getElementById('job-log-root')!;
+      expect(within(report).getByText('By technician')).toBeTruthy();
+      expect(within(report).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['1. Hours', '2. Mileage', '3. Materials']);
+    } finally {
+      tables.job_expenses = tables.job_expenses.filter((e) => e.id !== 'x3');
+    }
+  });
+
   it('lists who is still clocked in and clocks them out at the time the office types', async () => {
     const user = userEvent.setup();
     tables.job_punches = [{ id: 'p1', wo_id: 'wo', wo_number: '19101402', contractor_name: 'Dwayne Cudjoe', kind: 'in', at: at('21', '07:44') }];

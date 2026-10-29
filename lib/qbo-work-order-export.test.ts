@@ -135,6 +135,23 @@ describe('the week as an Excel workbook, a tab per site', () => {
     ]);
   });
 
+  // Fred, 2026-10-29: "I need a break down from each tech".
+  it("puts each tech's hours, miles and materials under the site's bill when it has them", () => {
+    const perTech = [
+      { tech: 'Kendell Newbold', days: 4, hours: 42.04, travel: 0, total: 42.04, labor: 4204, miles: 0, mileage: 0, materials: [], materialsTotal: 0 },
+      { tech: 'Paul Gibbs', days: 5, hours: 30.52, travel: 13.27, total: 43.79, labor: 3052, miles: 458, mileage: 274.8,
+        materials: [{ id: 'l', date: '2026-10-20', category: 'materials', vendor: "Lowe's", amount: 47.48 }], materialsTotal: 47.48 },
+    ];
+    const [gaffney] = siteBillBook([{ name: 'Gaffney', site: 'Gaffney, SC', clientWo: null, bill: { ...bill('19101401', '2026-10-18', [
+      { kind: 'labor', description: 'Hours on site: 72.56 h', qty: 72.56, rate: 100, amount: 7256 },
+    ]), perTech, mileRate: 0.6 } }], '2026-10-25');
+    const rows = gaffney.rows.map((r) => r[0]);
+    const total = gaffney.rows.findIndex((r) => r[3] === 'Total');
+    expect(rows.slice(total + 1, total + 6)).toEqual([undefined, 'By tech', undefined, 'Hours', 'Technician']);
+    expect(gaffney.rows).toContainEqual(['Paul Gibbs', 458, 274.8]);
+    expect(gaffney.rows).toContainEqual(['Paul Gibbs', '2026-10-20', 'Materials', "Lowe's", 47.48]);
+  });
+
   it('names tabs the way Excel allows, and two sites in one town apart', () => {
     expect(tabNames(['Newark', 'Newark', 'A/B: site [1]?', 'Winston-Salem Regional Distribution Center'])).toEqual(['Newark', 'Newark (2)', 'A B site 1', 'Winston-Salem Regional Distribu']);
   });

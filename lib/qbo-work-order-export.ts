@@ -1,5 +1,5 @@
 import type { WorkOrder } from './types';
-import { qboItemFor } from './field-sheet';
+import { byTechRows, qboItemFor, type TechBreakdown } from './field-sheet';
 
 export const QBO_IMPORT_BATCH_SIZE = 100;
 
@@ -135,6 +135,9 @@ export type QboSheetBill = {
   memo: string;
   /** kind as on the sheet (labor, mileage, meals, hotel…), for NetView's form. */
   lines: { kind?: string; date: string | null; description: string; qty: number; rate: number; amount: number }[];
+  /** Each tech's hours, miles and materials, and the rate the miles are at (lib/field-sheet.ts byTech): under the bill on its tab. */
+  perTech?: TechBreakdown[];
+  mileRate?: number | null;
 };
 
 /** What the bill comes to. */
@@ -215,6 +218,7 @@ export function siteBillBook(sites: SiteBill[], today: string): { name: string; 
       ...s.bill.lines.map((l) => [qboItemFor(l.kind), l.description, l.qty, l.rate, l.amount]),
       [],
       ['', '', '', 'Total', sheetBillTotal(s.bill)],
+      ...(s.bill.perTech?.length ? [[], ...byTechRows(s.bill.perTech, s.bill.mileRate ?? null)] : []),
     ],
   }));
   const all = sites.reduce((t, s) => t + Math.round(sheetBillTotal(s.bill) * 100), 0) / 100;

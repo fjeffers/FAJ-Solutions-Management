@@ -11,11 +11,13 @@ describe('normalizeHoursLook', () => {
 });
 
 describe('groupOf', () => {
-  it('puts a day in the week that starts on its Monday', () => {
-    expect(groupOf('2026-10-23', 'week')).toBe('2026-10-19'); // a Friday
-    expect(groupOf('2026-10-19', 'week')).toBe('2026-10-19'); // the Monday itself
-    expect(groupOf('2026-10-25', 'week')).toBe('2026-10-19'); // Sunday ends the week
-    expect(groupOf('2026-11-01', 'week')).toBe('2026-10-26'); // across a month
+  // Fred, 2026-10-29: "Need to add Sunday to Saturday" — the same weeks as the bill.
+  it('puts a day in the week that starts on its Sunday', () => {
+    expect(groupOf('2026-10-23', 'week')).toBe('2026-10-18'); // a Friday
+    expect(groupOf('2026-10-18', 'week')).toBe('2026-10-18'); // the Sunday itself
+    expect(groupOf('2026-10-24', 'week')).toBe('2026-10-18'); // Saturday ends the week
+    expect(groupOf('2026-10-25', 'week')).toBe('2026-10-25'); // the next Sunday starts the next
+    expect(groupOf('2026-11-02', 'week')).toBe('2026-11-01'); // across a month
   });
   it('puts a day in its month, or keeps it as itself', () => {
     expect(groupOf('2026-10-23', 'month')).toBe('2026-10');
@@ -25,7 +27,7 @@ describe('groupOf', () => {
 
 describe('groupLabel', () => {
   it('names a week and a month', () => {
-    expect(groupLabel('2026-10-19', 'week')).toBe('Week of Mon, Oct 19 – Sun, Oct 25');
+    expect(groupLabel('2026-10-25', 'week')).toBe('Week of Sun, Oct 25 – Sat, Oct 31');
     expect(groupLabel('2026-10', 'month')).toBe('October 2026');
   });
 });

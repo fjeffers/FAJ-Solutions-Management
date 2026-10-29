@@ -2,8 +2,9 @@
 // The project day on a tech's phone (Fred, 2026-10-13). One big next step at
 // a time: Start travel → Start job → Lunch / Off site → Travel to the hotel,
 // home or the next site → Arrived. The timer at the top shows time on site
-// (lunch taken out) with Off site beside it. Every tap carries GPS; the miles
-// for each drive are worked out from it. No money on this screen.
+// (lunch taken out) with Off site beside it. Every tap carries GPS; a drive's
+// miles are its odometer photos' when it has both, else the GPS's
+// (lib/tech-miles.ts). No money on this screen.
 import { useEffect, useMemo, useState } from 'react';
 import { Car, CheckCircle2, Clock, LogIn, LogOut, MapPin, PlayCircle, Receipt, Utensils } from 'lucide-react';
 import {
@@ -11,6 +12,7 @@ import {
   type DayLog, type DayState, type Origin, type Trip,
 } from '@/lib/project-day';
 import { formatDuration, type WfJob } from '@/lib/wf';
+import { dayMiles, driveMiles, driveMilesText, legKey, type DriveMiles } from '@/lib/tech-miles';
 import { Dialog } from './WfUi';
 
 const TZ = 'America/New_York';
@@ -57,16 +59,18 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
   onReceipt?: () => void;
 }) {
   const now = useTick();
-  const events = job.myDay ?? [];
+  const myDay = job.myDay;
+  const events = useMemo(() => myDay ?? [], [myDay]);
   const st = dayState(events, now, TZ);
   // The dropdown starts on Site in the morning and on Hotel once off site.
   const [trip, setTrip] = useState<Trip | null>(null);
   const picked: Trip = trip ?? (st.stage === 'offsite' ? 'hotel' : 'site');
   const today = dayOf(now.toISOString(), TZ);
-  const todayLog = useMemo(
-    () => buildDayLogs(events, now, TZ).find((d) => d.day === today) ?? null,
-    [events, now, today],
-  );
+  const logs = useMemo(() => buildDayLogs(events, now, TZ), [events, now]);
+  const todayLog = logs.find((d) => d.day === today) ?? null;
+  // Each drive's miles from the tech's own odometer photos, the way the bill counts them.
+  const odometer = job.myOdometer;
+  const drives = useMemo(() => driveMiles(logs.flatMap((d) => d.legs), odometer ?? []), [logs, odometer]);
   const off = !enabled || busy;
 
   return (
@@ -125,7 +129,7 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
       {onReceipt && (
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onReceipt}><Receipt size={15} /> Add a receipt (gas, meal, hotel)</button>
       )}
-      {todayLog && <DayLines log={todayLog} />}
+      {todayLog && <DayLines log={todayLog} drives={drives} />}
     </div>
   );
 }
@@ -169,13 +173,17 @@ function Header({ st, now, onSite }: { st: DayState; now: Date; onSite: number }
 }
 
 /** Today's drives and time on site, under the buttons. */
-function DayLines({ log }: { log: DayLog }) {
+function DayLines({ log, drives }: { log: DayLog; drives: Map<string, DriveMiles> }) {
+  const total = dayMiles(log, drives);
   const rows: { at: string; icon: React.ReactNode; text: string }[] = [
     ...(log.clockIn ? [{ at: log.clockIn, icon: <Clock size={14} />, text: `Clocked in · ${timeOf(log.clockIn)}` }] : []),
-    ...log.legs.map((l) => ({
-      at: l.start, icon: <Car size={14} />,
-      text: `${legLabel(l)} · ${timeOf(l.start)}–${l.end ? timeOf(l.end) : 'now'} · ${formatDuration(l.ms)}${l.miles != null ? ` · ${l.miles} mi` : ''}`,
-    })),
+    ...log.legs.map((l) => {
+      const miles = driveMilesText(drives.get(legKey(l)));
+      return {
+        at: l.start, icon: <Car size={14} />,
+        text: `${legLabel(l)} · ${timeOf(l.start)}–${l.end ? timeOf(l.end) : 'now'} · ${formatDuration(l.ms)}${miles ? ` · ${miles}` : ''}`,
+      };
+    }),
     ...log.spans.map((s) => ({
       at: s.in, icon: <MapPin size={14} />,
       text: `On site · ${timeOf(s.in)}–${s.out ? timeOf(s.out) : 'now'} · ${formatDuration(s.ms)}${s.lunchMs ? ` (lunch ${formatDuration(s.lunchMs)})` : ''}`,
@@ -190,7 +198,7 @@ function DayLines({ log }: { log: DayLog }) {
           <span style={{ color: 'var(--wf-subtle)', display: 'inline-flex' }}>{r.icon}</span>{r.text}
         </div>
       ))}
-      {log.miles > 0 && <div className="wf-subtle" style={{ fontSize: 12 }}>{log.miles} miles today (from GPS — the office can correct it)</div>}
+      {total.miles > 0 && <div className="wf-subtle" style={{ fontSize: 12 }}>{total.miles} miles today ({total.source})</div>}
     </div>
   );
 }

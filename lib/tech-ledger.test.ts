@@ -61,16 +61,18 @@ describe("a tech's time & pay log", () => {
     expect(unmatchedPayments('Davis', jobs, [pay('1', 'Davis', 50), pay('999', 'Davis', 75), pay('999', 'Paul', 10)]).map((p) => p.amount)).toEqual([75]);
   });
 
-  it('periods: weeks run Monday to Sunday', () => {
+  it('periods: weeks run Sunday to Saturday, like the bill', () => {
     // 2026-10-06 is a Tuesday
-    expect(periodRange('week', '2026-10-06')).toEqual({ from: '2026-10-05', to: '2026-10-11' });
-    expect(periodRange('lastWeek', '2026-10-06')).toEqual({ from: '2026-09-28', to: '2026-10-04' });
+    expect(periodRange('week', '2026-10-06')).toEqual({ from: '2026-10-04', to: '2026-10-10' });
+    expect(periodRange('lastWeek', '2026-10-06')).toEqual({ from: '2026-09-27', to: '2026-10-03' });
+    expect(periodRange('week', '2026-10-04')).toEqual({ from: '2026-10-04', to: '2026-10-10' }); // a Sunday starts its week
+    expect(periodRange('week', '2026-10-10')).toEqual({ from: '2026-10-04', to: '2026-10-10' }); // a Saturday ends it
     expect(periodRange('month', '2026-10-06')).toEqual({ from: '2026-10-01', to: '2026-10-31' });
     expect(periodRange('lastMonth', '2026-01-15')).toEqual({ from: '2025-12-01', to: '2025-12-31' });
     expect(periodRange('year', '2026-10-06')).toEqual({ from: '2026-01-01', to: '2026-12-31' });
     expect(periodRange('all', '2026-10-06')).toBeNull();
-    expect(inRange('2026-10-05', periodRange('week', '2026-10-06'))).toBe(true);
-    expect(inRange('2026-10-04', periodRange('week', '2026-10-06'))).toBe(false);
+    expect(inRange('2026-10-04', periodRange('week', '2026-10-06'))).toBe(true);
+    expect(inRange('2026-10-03', periodRange('week', '2026-10-06'))).toBe(false);
   });
 
   it('time with FAJ since the hire date', () => {

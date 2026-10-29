@@ -1628,7 +1628,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       {dayFlow && live && (
         <section className="fs-card fs-form">
           <h3>My time and travel</h3>
-          <FsDayLog events={job.myDay ?? []} />
+          <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} />
         </section>
       )}
       <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />

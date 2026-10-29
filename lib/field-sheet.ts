@@ -591,12 +591,13 @@ export function byTech(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSetti
   };
   for (const tech of [...new Set(live.map((r) => r.tech))]) {
     const mine = live.filter((r) => r.tech === tech).sort((a, b) => a.day.localeCompare(b.day));
-    // The days worked, and a day with only a meal typed on it: the bill counts that meal too.
+    // The days worked, a day with only a meal typed on it (the bill counts that meal too) and a day
+    // with only a note, so what the office wrote for the client still reaches them (Greptile on PR #33).
     const days = mine.map((r) => {
       const c = dayCalc(r.values, s.mileRate ?? 0);
       const meals = s.mealMode === 'per_day' ? (c.worked ? s.mealRate ?? 0 : 0) : r.values.meals ?? 0;
       return { r, c, meals };
-    }).filter(({ c, meals }) => c.worked || meals > 0);
+    }).filter(({ r, c, meals }) => c.worked || meals > 0 || r.values.note.trim());
     if (!days.length) continue;
     const t = get(tech);
     const lines: TechDay[] = days.map(({ r, c, meals }) => ({
@@ -656,16 +657,24 @@ export const techDayWord = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDat
  * start and end and miles), then Hotel, Meals and Materials, each tech's total
  * after their lines and every tech's together at the end.
  */
-export function byTechRows(list: TechBreakdown[], mileRate: number | null): (string | number)[][] {
+export function byTechRows(list: TechBreakdown[], mileRate: number | null, bill: { kind?: string | null; description: string; amount: number }[] = []): (string | number)[][] {
   const sum = (l: TechBreakdown[], f: (t: TechBreakdown) => number) => l.reduce((x, t) => x + f(t), 0);
-  const workers = list.filter((t) => t.days > 0);
+  const workers = list.filter((t) => t.days > 0 || t.lines.some((d) => d.note));
+  // What the bill charges for meals or the hotel when that isn't what was spent (a cap, a flat rate a night),
+  // said under the spending so the two don't look like they disagree (Greptile on PR #33).
+  const onBill = (kind: LineKind, spent: number) => {
+    const l = bill.filter((x) => x.kind === kind);
+    const billed = r2(l.reduce((x, b) => x + b.amount, 0));
+    if (l.length && billed !== r2(spent)) out.push([`On the bill: ${l.map((b) => b.description).join('; ')}`, '', '', '', billed]);
+  };
   const money = workers.some((t) => t.labor != null);
   const out: (string | number)[][] = [['By tech']];
   if (workers.length) {
     out.push([], ['Hours'], ['Technician', 'Day', 'Clock in', 'Clock out', 'Lunch (min)', 'Hours on site', 'Travel hours', ...(money ? ['Labor $'] : []), 'Note']);
     for (const t of workers) {
       const worked = t.lines.filter((x) => x.hours || x.travel);
-      for (const d of worked) out.push([t.tech, techDayWord(d.day), clock(d.arrived), clock(d.leftSite), d.lunch ?? '', d.hours, d.travel, ...(money ? [''] : []), d.note]);
+      // A day with only a note on it (a drive, say) keeps its line here, so the note reaches the client.
+      for (const d of t.lines.filter((x) => x.hours || x.travel || x.note)) out.push([t.tech, techDayWord(d.day), clock(d.arrived), clock(d.leftSite), d.lunch ?? '', d.hours, d.travel, ...(money ? [''] : []), d.note]);
       out.push([`${t.tech} total`, `${worked.length} day${worked.length === 1 ? '' : 's'}`, '', '', '', t.hours, t.travel, ...(money ? [t.labor ?? ''] : []), '']);
     }
     out.push(['All techs', '', '', '', '', r2(sum(workers, (t) => t.hours)), r2(sum(workers, (t) => t.travel)), ...(money ? [r2(sum(workers, (t) => t.labor ?? 0))] : []), '']);
@@ -680,17 +689,18 @@ export function byTechRows(list: TechBreakdown[], mileRate: number | null): (str
     }
     out.push(['All techs', '', '', '', '', '', r1(sum(workers, (t) => t.miles)), r2(sum(workers, (t) => t.mileage))]);
   }
-  const receipts = (title: string, items: (t: TechBreakdown) => TechMaterial[], total: (t: TechBreakdown) => number) => {
+  const receipts = (title: string, items: (t: TechBreakdown) => TechMaterial[], total: (t: TechBreakdown) => number, kind?: LineKind) => {
     const who = list.filter((t) => items(t).length);
-    if (!who.length) return;
+    if (!who.length && !(kind && bill.some((b) => b.kind === kind))) return;
     out.push([], [title], ['Technician', 'Date', 'For', 'Store', 'Amount']);
     for (const t of who) {
       for (const m of items(t)) out.push([t.tech, m.date ? techDayWord(m.date) : '', expenseCategoryLabel(m.category), m.vendor ?? '', m.amount]);
       out.push([`${t.tech} total`, '', '', '', total(t)]);
     }
-    out.push(['All techs', '', '', '', r2(sum(who, total))]);
+    if (who.length) out.push(['All techs', '', '', '', r2(sum(who, total))]);
+    if (kind) onBill(kind, sum(who, total));
   };
-  receipts('Hotel', (t) => t.hotels, (t) => t.hotelTotal);
+  receipts('Hotel', (t) => t.hotels, (t) => t.hotelTotal, 'hotel');
   // Meals: the days' meals (a flat rate a day, or what was typed) and the meal receipts.
   const eaters = list.filter((t) => t.meals > 0);
   if (eaters.length) {
@@ -701,6 +711,10 @@ export function byTechRows(list: TechBreakdown[], mileRate: number | null): (str
       out.push([`${t.tech} total`, '', '', '', t.meals]);
     }
     out.push(['All techs', '', '', '', r2(sum(eaters, (t) => t.meals))]);
+    onBill('meals', sum(eaters, (t) => t.meals));
+  } else if (bill.some((b) => b.kind === 'meals')) {
+    out.push([], ['Meals'], ['Technician', 'Day', 'For', 'Store', 'Amount']);
+    onBill('meals', 0);
   }
   receipts(list.some((t) => t.materials.length && !t.materialsBilled) ? 'Materials (not on the bill: the other receipts are not billed at cost on this job)' : 'Materials',
     (t) => t.materials, (t) => t.materialsTotal);

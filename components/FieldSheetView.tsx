@@ -566,7 +566,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
     await downloadXLSXBook(`${fileSafe(`WO ${wo.wo_number} ${wo.external_wo_id ?? ''} ${jobName(wo)}`)}.xlsx`, [
       { name: 'Field sheet', rows: fieldSheetRows(head, rows, totals, settings), colWidths: [11, 40, 12, 12, 11, 12, 8, 9, 9, 9, 11, 11, 9, 9, 11, 11, 50] },
       { name: 'Receipts', rows: rec, colWidths: [11, 18, 18, 18, 10, 10, 40] },
-      { name: 'By tech', rows: byTechRows(perTech, settings.mileRate), colWidths: [22, 11, 14, 14, 12, 12] },
+      { name: 'By tech', rows: byTechRows(perTech, settings.mileRate, totals.lines), colWidths: [22, 11, 14, 14, 12, 12] },
     ]);
   };
 
@@ -687,7 +687,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
         </div>
       </Section>
 
-      <ByTechPanel list={perTech} s={settings} />
+      <ByTechPanel list={perTech} s={settings} bill={totals.lines} />
 
       <ClockPanel wo={wo} techs={allTechs} from={from} to={to} onChanged={() => void loadEvents([wo.id]).then(setEvents)} />
 
@@ -1191,12 +1191,12 @@ function num(s: string): number | null | undefined {
  * Materials, each tech's days and their total, then the next tech (Fred, 2026-10-29: "each tech get
  * their own break down"). The same rows as the By tech tab of the Excel.
  */
-function ByTechPanel({ list, s }: { list: TechBreakdown[]; s: SheetSettings }) {
+function ByTechPanel({ list, s, bill }: { list: TechBreakdown[]; s: SheetSettings; bill: SheetTotals['lines'] }) {
   if (!list.some((t) => t.days > 0 || t.hotels.length || t.meals > 0 || t.materials.length)) return null;
   const notBilled = list.some((t) => t.materials.length && !t.materialsBilled);
   return (
     <Section title="By tech" subtitle="each tech's days and totals, as the client reads them">
-      <ByTechTables rows={byTechRows(list, s.mileRate)}
+      <ByTechTables rows={byTechRows(list, s.mileRate, bill)}
         heading={(title) => <h4 style={{ margin: '14px 0 6px', fontSize: 14.5 }}>{title}</h4>}
         th={{ ...TH, position: 'static' }} td={{ ...TD, padding: '7px 6px' }} total={{ background: '#F6F1E4', fontWeight: 700 }} />
       {notBilled && (

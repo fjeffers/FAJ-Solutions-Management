@@ -22,7 +22,7 @@ export function byTechBlocks(rows: Cell[][]): Block[] {
   return out;
 }
 
-const isTotal = (r: Cell[]) => typeof r[0] === 'string' && (r[0].endsWith(' total') || r[0] === 'All techs');
+const isTotal = (r: Cell[]) => typeof r[0] === 'string' && (r[0].endsWith(' total') || r[0] === 'All techs' || r[0].startsWith('On the bill'));
 
 /** A cell as its column reads it: money, hours, odometer or miles. */
 function show(col: string, v: Cell): string {

@@ -43,7 +43,7 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
   // The client sees only the materials on their bill, and the office's own receipts under FAJ's name.
   const techRows = byTechRows(perTech.map((t) => ({
     ...t, tech: t.tech === OFFICE ? 'FAJ Solutions' : t.tech, ...(t.materialsBilled ? {} : { materials: [], materialsTotal: 0 }),
-  })), s.mileRate);
+  })), s.mileRate, totals.lines);
   const sub: React.CSSProperties = { fontSize: 13.5, fontWeight: 700, color: NAVY, margin: '14px 0 6px' };
   const H = ({ children }: { children: React.ReactNode }) => (
     <h2 style={{ fontSize: 16, fontWeight: 700, color: NAVY, margin: '26px 0 10px', paddingBottom: 6, borderBottom: `2px solid ${GOLD}` }}>{children}</h2>

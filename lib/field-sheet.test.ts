@@ -563,6 +563,28 @@ describe('by tech', () => {
     expect(flat.reduce((x, b) => x + b.meals, 0)).toBe(sheetTotals(rows, receipts, bill({ mealMode: 'per_day', mealRate: 50 })).meals.claim);
   });
 
+  // Greptile on PR #33: what the bill charges when that isn't what was spent, and notes on days with no hours.
+  it('says what the bill charges for meals and the hotel when that isn’t what was spent', () => {
+    const one = sheetRows({ app: [], techs: [], days: [], saved: [day('a', '2026-10-19', 'Paul Gibbs', { arrived: '08:00', leftSite: '16:00', meals: 80 })] });
+    const r = bill({ labor: 'hourly', rate: 100, mealRate: 50, hotelMode: 'per_night', hotelRate: 113, nights: 1, rooms: 1 });
+    const t = sheetTotals(one, [], r);
+    const out = byTechRows(byTech(one, [], r), r.mileRate, t.lines);
+    expect(out).toContainEqual(['All techs', '', '', '', 80]);
+    expect(out).toContainEqual(['On the bill: Meals (receipts, up to $50 a tech-day)', '', '', '', 50]);
+    expect(out).toContainEqual(['On the bill: Hotel: 1 nights × 1 rooms × $113', '', '', '', 113]);
+    // When the bill charges what was spent, there's nothing to explain.
+    expect(byTechRows(list, s.mileRate, sheetTotals(rows, receipts, s).lines).some((x) => String(x[0]).startsWith('On the bill'))).toBe(false);
+  });
+
+  it('keeps the note on a day with no hours, so it still reaches the client', () => {
+    const noted = sheetRows({ app: [], techs: [], days: [], saved: [
+      day('a', '2026-10-18', 'Paul Gibbs', { odoStart: 141865, odoEnd: 142109, note: 'Drove down to Gaffney' }),
+      day('b', '2026-10-24', 'Paul Gibbs', { note: 'Rained out' }),
+    ] });
+    const hours = byTechRows(byTech(noted, [], s), s.mileRate).filter((r) => r[0] === 'Paul Gibbs' && r.length === 9);
+    expect(hours.map((r) => [r[1], r[8]])).toEqual([['Sun, 10/18', 'Drove down to Gaffney'], ['Sat, 10/24', 'Rained out']]);
+  });
+
   it('says when the materials are not on the client’s bill', () => {
     const r = bill({ labor: 'hourly', rate: 100, mileRate: 0.6 });
     const notBilled = byTech(rows, receipts, r);

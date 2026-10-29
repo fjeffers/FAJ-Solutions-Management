@@ -218,7 +218,7 @@ export function siteBillBook(sites: SiteBill[], today: string): { name: string; 
       ...s.bill.lines.map((l) => [qboItemFor(l.kind), l.description, l.qty, l.rate, l.amount]),
       [],
       ['', '', '', 'Total', sheetBillTotal(s.bill)],
-      ...(s.bill.perTech?.length ? [[], ...byTechRows(s.bill.perTech, s.bill.mileRate ?? null)] : []),
+      ...(s.bill.perTech?.length ? [[], ...byTechRows(s.bill.perTech, s.bill.mileRate ?? null, s.bill.lines)] : []),
     ],
   }));
   const all = sites.reduce((t, s) => t + Math.round(sheetBillTotal(s.bill) * 100), 0) / 100;

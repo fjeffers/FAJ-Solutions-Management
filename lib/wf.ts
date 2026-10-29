@@ -167,12 +167,18 @@ export type WfJob = {
 
 type Row = Record<string, unknown>;
 
-export type OdometerReading = { at: string; reading: number };
+/** `moment`: a start or an end photo (migration 144); missing from before it. */
+export type OdometerReading = { at: string; reading: number; moment?: 'start' | 'end' };
 function parseOdometer(raw: unknown): OdometerReading[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((o): o is Row => !!o && typeof o === 'object')
-    .map((o) => ({ at: String(o.at ?? ''), reading: Number(o.reading) }))
+    .map((o) => {
+      const r: OdometerReading = { at: String(o.at ?? ''), reading: Number(o.reading) };
+      const m = o.moment;
+      if (m === 'start' || m === 'end') r.moment = m;
+      return r;
+    })
     .filter((o) => Number.isFinite(Date.parse(o.at)) && Number.isFinite(o.reading))
     .sort((a, b) => a.at.localeCompare(b.at));
 }

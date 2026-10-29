@@ -191,9 +191,19 @@ describe('FsDayLog', () => {
     ]} />);
     expect(screen.getByText('Clocked in')).toBeTruthy();
     expect(screen.getByText('Hotel → Site')).toBeTruthy();
-    expect(within(screen.getByText('Hotel → Site').parentElement!).getByText(/ · 30m · 12.5 mi$/)).toBeTruthy();
+    expect(within(screen.getByText('Hotel → Site').parentElement!).getByText(/ · 30m · 12.5 mi \(GPS\)$/)).toBeTruthy();
     expect(within(screen.getByText('On site').parentElement!).getByText(/ · 2h 00m$/)).toBeTruthy();
-    expect(screen.getByText(/^On site 2h 00m · travel 30m · 12.5 mi/)).toBeTruthy();
+    expect(screen.getByText(/^On site 2h 00m · travel 30m · 12.5 mi \(from GPS — the office can correct it\)/)).toBeTruthy();
+  });
+
+  // Fred, 2026-10-29: "Tech are complaining the take pictures a day it takes the milage but at the end it [shows] different figures".
+  it('shows the drive’s miles from its odometer photos when it has both', () => {
+    render(<FsDayLog events={[
+      { kind: 'travel_start', at: iso(190), origin: 'hotel', dest: 'site' },
+      { kind: 'travel_end', at: iso(160), miles: 12.5 },
+    ]} readings={[{ at: iso(189), reading: 228889, moment: 'start' }, { at: iso(159), reading: 228903, moment: 'end' }]} />);
+    expect(within(screen.getByText('Hotel → Site').parentElement!).getByText(/ · 30m · 14 mi \(odometer 228,889 → 228,903\)$/)).toBeTruthy();
+    expect(screen.getByText(/· 14 mi \(your odometer photos\)$/)).toBeTruthy();
   });
 
   it('says so when nothing is recorded yet', () => {

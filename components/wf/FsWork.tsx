@@ -8,7 +8,8 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { buildDayLogs, dayState, lastPlace, legLabel, onSiteMs, TRIPS, type DayEvent, type Origin, type Trip } from '@/lib/project-day';
 import { FS_STAGE_NAME, type FsStage } from '@/lib/fs-stage';
-import { formatDuration } from '@/lib/wf';
+import { formatDuration, type OdometerReading } from '@/lib/wf';
+import { dayMiles, driveMiles, driveMilesText, legKey } from '@/lib/tech-miles';
 import type { DayActions } from './ProjectDay';
 import { FsChip, FsIcon } from './FsUi';
 
@@ -269,20 +270,28 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
   );
 }
 
-/** Time & travel: each day's clock in, drives and time on site, newest day first. */
-export function FsDayLog({ events }: { events: DayEvent[] }) {
+/**
+ * Time & travel: each day's clock in, drives and time on site, newest day first. A drive's miles
+ * are its odometer photos' (`readings`, the tech's own) when it has both, else the GPS's.
+ */
+export function FsDayLog({ events, readings = [] }: { events: DayEvent[]; readings?: OdometerReading[] }) {
   const now = useTick(60_000);
   const logs = buildDayLogs(events, now, TZ).reverse();
   if (logs.length === 0) return <p className="fs-muted">Nothing recorded yet. Your clock in, drives and time on site show here.</p>;
+  const drives = driveMiles(logs.flatMap((d) => d.legs), readings);
   return (
     <div className="fs-stack">
       {logs.map((log) => {
+        const total = dayMiles(log, drives);
         const rows = [
           ...(log.clockIn ? [{ at: log.clockIn, title: 'Clocked in', detail: timeOf(log.clockIn) }] : []),
-          ...log.legs.map((l) => ({
-            at: l.start, title: legLabel(l),
-            detail: `${timeOf(l.start)}–${l.end ? timeOf(l.end) : 'now'} · ${formatDuration(l.ms)}${l.miles != null ? ` · ${l.miles} mi` : ''}`,
-          })),
+          ...log.legs.map((l) => {
+            const miles = driveMilesText(drives.get(legKey(l)));
+            return {
+              at: l.start, title: legLabel(l),
+              detail: `${timeOf(l.start)}–${l.end ? timeOf(l.end) : 'now'} · ${formatDuration(l.ms)}${miles ? ` · ${miles}` : ''}`,
+            };
+          }),
           ...log.spans.map((s) => ({
             at: s.in, title: 'On site',
             detail: `${timeOf(s.in)}–${s.out ? timeOf(s.out) : 'now'} · ${formatDuration(s.ms)}${s.lunchMs ? ` (lunch ${formatDuration(s.lunchMs)})` : ''}`,
@@ -296,7 +305,7 @@ export function FsDayLog({ events }: { events: DayEvent[] }) {
               {rows.map((r) => <li key={r.at + r.title}><i /><div><b>{r.title}</b><small>{r.detail}</small></div></li>)}
             </ul>
             <p className="fs-muted">
-              On site {formatDuration(log.onSiteMs)} · travel {formatDuration(log.travelMs)}{log.miles > 0 ? ` · ${log.miles} mi (from GPS — the office can correct it)` : ''}
+              On site {formatDuration(log.onSiteMs)} · travel {formatDuration(log.travelMs)}{total.miles > 0 ? ` · ${total.miles} mi (${total.source})` : ''}
             </p>
           </div>
         );

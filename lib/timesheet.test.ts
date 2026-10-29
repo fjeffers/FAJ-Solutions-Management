@@ -20,11 +20,11 @@ const rows = [
 ];
 
 describe('timesheet', () => {
-  it('has a line per tech per day worked, oldest first, with the hours as billed', () => {
+  it('has a line per tech per day worked, each tech’s days together, oldest first, with the hours as billed', () => {
     const lines = timesheetLines(rows);
-    expect(lines.map((l) => `${l.day} ${l.tech}`)).toEqual(['2026-10-19 Paul Gibbs', '2026-10-20 Kendell Newbold', '2026-10-21 Paul Gibbs']);
-    expect(lines[0]).toMatchObject({ started: '7:37 AM', finished: '5:37 PM', hours: 10, miles: 244 });
-    expect(lines[1]).toMatchObject({ hours: 0, travel: 3.5, total: 3.5, note: 'Travel day → home' });
+    expect(lines.map((l) => `${l.day} ${l.tech}`)).toEqual(['2026-10-20 Kendell Newbold', '2026-10-19 Paul Gibbs', '2026-10-21 Paul Gibbs']);
+    expect(lines[1]).toMatchObject({ started: '7:37 AM', finished: '5:37 PM', hours: 10, odoStart: 141865, odoEnd: 142109, miles: 244 });
+    expect(lines[0]).toMatchObject({ hours: 0, travel: 3.5, total: 3.5, note: 'Travel day → home' });
     expect(timesheetTotals(lines)).toEqual({ days: 3, hours: 20.2, travel: 5.2, total: 25.4, miles: 248.4, meals: 50 });
   });
 
@@ -41,8 +41,21 @@ describe('timesheet', () => {
     const t = timesheetTable(head, timesheetLines(rows));
     expect(t[0]).toEqual(['FAJ Solutions · Timesheet']);
     expect(t[1]).toEqual(['Work order 19101401 · Client # LDS-5391288']);
-    expect(t.at(-1)).toEqual(['Total', '3 days', '', '', '', 20.2, 5.2, 25.4, 248.4, '$50.00', '']);
+    expect(t.at(-1)).toEqual(['All techs', '3 days', '', '', '', 20.2, 5.2, 25.4, '', 248.4, '$50.00', '']);
     expect(timesheetFile(head, 'pdf')).toBe('Timesheet WO 19101401 2026-10-19 to 2026-10-21.pdf');
+  });
+
+  // Fred, 2026-10-29: "each tech get their own break down ... once finish with tech one hours then same for tech 2".
+  it('goes tech by tech, each tech’s days with the odometer, then their total', () => {
+    const t = timesheetTable(head, timesheetLines(rows));
+    const body = t.slice(t.findIndex((r) => r[0] === 'Date') + 1);
+    expect(body.map((r) => [r[0], r[1]])).toEqual([
+      ['Tue, Oct 20, 2026', 'Kendell Newbold'], ['Kendell Newbold total', '1 day'],
+      ['Mon, Oct 19, 2026', 'Paul Gibbs'], ['Wed, Oct 21, 2026', 'Paul Gibbs'], ['Paul Gibbs total', '2 days'],
+      ['All techs', '3 days'],
+    ]);
+    expect(body[2][8]).toBe('141,865 – 142,109');
+    expect(body[4].slice(5, 10)).toEqual([20.2, 1.7, 21.9, '', 248.4]);
   });
 
   it('makes a PDF that opens, with a page of pictures after the hours', async () => {

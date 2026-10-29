@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildDayLogs, parseDayEvents, type DayEvent } from './project-day';
 import { matchOdometer, type OdoRow } from './weekly-bill';
 import {
-  appDays, billRange, blocksBilling, byTech, byTechRows, clock, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
+  appDays, billRange, blocksBilling, byTech, byTechRows, clock, dayMiles, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
   withAccountRate,
   type SavedDay, type SheetReceipt, type SheetSettings,
 } from './field-sheet';
@@ -475,12 +475,13 @@ describe('miles added on a drive (Fred, 2026-10-27: "i add the milage 228010 the
   });
 });
 
-// Fred, 2026-10-29: "show tech one hours and then tech 2 hours heading hours the head 2 milages ... head 3 materials.
-// I need a break down from each tech". Gaffney's week, as the office typed it.
+// Fred, 2026-10-29: "each tech get their own break down: tech one day clock in - out = total ... once finish
+// with tech one hours then same for tech 2 ... odometers: tech one starting milage - end milage = total ...
+// same with the hotels, materials and any things"; "make sure it all adds up correctly". Gaffney's week.
 describe('by tech', () => {
   const day = (id: string, d: string, tech: string, edits: SavedDay['edits'], hidden = false): SavedDay => ({ id, day: d, tech, edits, added: true, hidden });
   const rows = sheetRows({ app: [], techs: [], days: [], saved: [
-    day('a', '2026-10-18', 'Paul Gibbs', { miles: 244 }),
+    day('a', '2026-10-18', 'Paul Gibbs', { odoStart: 141865, odoEnd: 142109 }),
     day('b', '2026-10-19', 'Paul Gibbs', { arrived: '07:37', leftSite: '17:37', miles: 8 }),
     day('c', '2026-10-19', 'Kendell Newbold', { arrived: '07:37', leftSite: '17:37' }),
     day('d', '2026-10-20', 'Kendell Newbold', { arrived: '07:50', leftSite: '18:09' }),
@@ -491,37 +492,52 @@ describe('by tech', () => {
     { id: 'l1', category: 'materials', amount: 104.17, status: 'approved', vendor: "Lowe's", date: '2026-10-21', tech: 'Paul Gibbs' },
     { id: 'l2', category: 'materials', amount: 47.48, status: 'approved', vendor: "Lowe's", date: '2026-10-20', tech: 'Paul Gibbs' },
     { id: 'h', category: 'hotel', amount: 350.74, status: 'approved', vendor: 'Quality Inn', date: '2026-10-18', tech: 'Paul Gibbs' },
+    { id: 'm', category: 'meals', amount: 18.5, status: 'approved', vendor: 'Waffle House', date: '2026-10-19', tech: 'Paul Gibbs' },
     { id: 'f', category: 'fuel', amount: 76.75, status: 'approved', date: '2026-10-21', tech: 'Paul Gibbs' },
     { id: 'x', category: 'materials', amount: 76.75, status: 'declined', date: '2026-10-21', tech: 'Paul Gibbs' },
     { id: 't', category: 'equipment', amount: 25, status: 'approved', vendor: 'Home Depot', date: '2026-10-19', tech: null },
   ];
   const s = bill({ labor: 'hourly', rate: 100, mileRate: 0.6, receiptsAtCost: true });
+  const list = byTech(rows, receipts, s);
+  const [kendell, paul, office] = list;
 
-  it('gives each tech their hours, miles and the materials they bought, the office’s own last', () => {
-    expect(byTech(rows, receipts, s)).toEqual([
-      { tech: 'Kendell Newbold', days: 2, hours: 20.32, travel: 0, total: 20.32, labor: 2032, miles: 0, mileage: 0, materials: [], materialsTotal: 0, materialsBilled: true },
-      { tech: 'Paul Gibbs', days: 2, hours: 10, travel: 0, total: 10, labor: 1000, miles: 252, mileage: 151.2,
-        materials: [
-          { id: 'l2', date: '2026-10-20', category: 'materials', vendor: "Lowe's", amount: 47.48 },
-          { id: 'l1', date: '2026-10-21', category: 'materials', vendor: "Lowe's", amount: 104.17 },
-        ], materialsTotal: 151.65, materialsBilled: true },
-      { tech: 'Office', days: 0, hours: 0, travel: 0, total: 0, labor: null, miles: 0, mileage: 0,
-        materials: [{ id: 't', date: '2026-10-19', category: 'equipment', vendor: 'Home Depot', amount: 25 }], materialsTotal: 25, materialsBilled: true },
+  it('gives each tech their own days, oldest first, the office’s own receipts last', () => {
+    expect(list.map((t) => t.tech)).toEqual(['Kendell Newbold', 'Paul Gibbs', 'Office']);
+    expect(kendell.lines.map((d) => [d.day, d.arrived, d.leftSite, d.hours, d.meals])).toEqual([
+      ['2026-10-19', '07:37', '17:37', 10, 0], ['2026-10-20', '07:50', '18:09', 10.32, 0], ['2026-10-23', null, null, 0, 50],
     ]);
+    expect(kendell).toMatchObject({ days: 2, hours: 20.32, labor: 2032, miles: 0, meals: 50 });
+    expect(paul.lines.map((d) => [d.day, d.odoStart, d.odoEnd, d.miles])).toEqual([['2026-10-18', 141865, 142109, 244], ['2026-10-19', null, null, 8]]);
+    expect(paul).toMatchObject({ days: 2, hours: 10, labor: 1000, miles: 252, mileage: 151.2, hotelTotal: 350.74, meals: 18.5, materialsTotal: 151.65 });
+    expect(paul.materials.map((m) => m.id)).toEqual(['l2', 'l1']);
+    expect(office).toMatchObject({ days: 0, labor: null, materials: [expect.objectContaining({ id: 't', amount: 25 })], materialsTotal: 25 });
   });
 
-  it('adds up to the sheet’s own totals', () => {
+  it('adds up: each tech’s days to their total, every tech to the sheet and the bill', () => {
     const t = sheetTotals(rows, receipts, s);
-    const list = byTech(rows, receipts, s);
+    const of = (k: string) => t.lines.filter((l) => l.kind === k).reduce((x, l) => x + l.amount, 0);
+    for (const b of list) {
+      expect(b.lines.reduce((x, d) => x + d.hours, 0)).toBeCloseTo(b.hours, 6);
+      expect(b.lines.reduce((x, d) => x + d.miles, 0)).toBeCloseTo(b.miles, 6);
+    }
     expect(list.reduce((x, b) => x + b.hours, 0)).toBe(t.hours);
     expect(list.reduce((x, b) => x + b.miles, 0)).toBe(t.miles);
     expect(list.reduce((x, b) => x + (b.labor ?? 0), 0)).toBe(t.labor);
-    expect(list.reduce((x, b) => x + b.mileage, 0)).toBe(t.lines.filter((l) => l.kind === 'mileage').reduce((x, l) => x + l.amount, 0));
+    expect(list.reduce((x, b) => x + b.mileage, 0)).toBe(of('mileage'));
+    expect(list.reduce((x, b) => x + b.meals, 0)).toBe(t.meals.receipts);
+    expect(list.reduce((x, b) => x + b.hotelTotal, 0)).toBe(t.hotel.receipts);
+    expect(list.reduce((x, b) => x + b.materialsTotal, 0)).toBe(of('receipt'));
+  });
+
+  it('splits a day’s miles so the line adds up: the odometer’s end less start, plus the miles with no photos', () => {
+    expect(dayMiles({ odoStart: 141865, odoEnd: 142109, miles: 244 })).toEqual({ odometer: 244, other: 0 });
+    expect(dayMiles({ odoStart: 228889, odoEnd: 228978, miles: 112 })).toEqual({ odometer: 89, other: 23 });
+    expect(dayMiles({ odoStart: null, odoEnd: null, miles: 8 })).toEqual({ odometer: null, other: 8 });
   });
 
   // Greptile on PR #33.
-  const typed = (list: [string, number, number][]) => sheetRows({ app: [], techs: [], days: [],
-    saved: list.map(([tech, hours, travel], i) => day(`t${i}`, '2026-10-19', tech, { hours, travel })) });
+  const typed = (rowsIn: [string, number, number][]) => sheetRows({ app: [], techs: [], days: [],
+    saved: rowsIn.map(([tech, hours, travel], i) => day(`t${i}`, '2026-10-19', tech, { hours, travel })) });
   it('charges each tech the way the bill does, each rate rounded on its own', () => {
     const one = typed([['Paul Gibbs', 0.33, 0.33]]);
     const r = bill({ labor: 'hourly', rate: 19.99, travelRate: 19.99, byDay: true });
@@ -540,40 +556,54 @@ describe('by tech', () => {
     expect(byTech(typed([['Paul Gibbs', 2, 1]]), [], bill({ labor: 'hourly', travelRate: 45 }))[0].labor).toBe(45);
   });
 
+  it('has no labor dollars when the job isn’t billed by the hour, and a flat meal a day when meals are billed that way', () => {
+    expect(byTech(rows, [], bill({ labor: 'fixed', fixed: 2400 })).map((b) => b.labor)).toEqual([null, null]);
+    const flat = byTech(rows, receipts, bill({ mealMode: 'per_day', mealRate: 50 }));
+    expect(flat.map((b) => [b.tech, b.meals])).toEqual([['Kendell Newbold', 100], ['Paul Gibbs', 100], ['Office', 0]]);
+    expect(flat.reduce((x, b) => x + b.meals, 0)).toBe(sheetTotals(rows, receipts, bill({ mealMode: 'per_day', mealRate: 50 })).meals.claim);
+  });
+
   it('says when the materials are not on the client’s bill', () => {
     const r = bill({ labor: 'hourly', rate: 100, mileRate: 0.6 });
-    const list = byTech(rows, receipts, r);
-    expect(list.every((b) => !b.materialsBilled)).toBe(true);
-    expect(byTechRows(list, r.mileRate)).toContainEqual(['Materials (not on the bill: the other receipts are not billed at cost on this job)']);
+    const notBilled = byTech(rows, receipts, r);
+    expect(notBilled.every((b) => !b.materialsBilled)).toBe(true);
+    expect(byTechRows(notBilled, r.mileRate)).toContainEqual(['Materials (not on the bill: the other receipts are not billed at cost on this job)']);
   });
 
-  it('has no labor dollars when the job isn’t billed by the hour', () => {
-    expect(byTech(rows, [], bill({ labor: 'fixed', fixed: 2400 })).map((b) => b.labor)).toEqual([null, null]);
-  });
-
-  it('goes in the spreadsheet as three headings: Hours, Mileage, Materials', () => {
-    const out = byTechRows(byTech(rows, receipts, s), s.mileRate);
-    const at = (title: string) => out.findIndex((r) => r[0] === title);
-    expect(out[0]).toEqual(['By tech']);
-    expect(at('Hours')).toBeLessThan(at('Mileage'));
-    expect(at('Mileage')).toBeLessThan(at('Materials'));
-    expect(out.slice(at('Hours') + 1, at('Hours') + 5)).toEqual([
-      ['Technician', 'Days', 'Hours on site', 'Travel hours', 'Total hours', 'Labor $'],
-      ['Kendell Newbold', 2, 20.32, 0, 20.32, 2032],
-      ['Paul Gibbs', 2, 10, 0, 10, 1000],
-      ['Total', 4, 30.32, 0, 30.32, 3032],
+  it('goes in the spreadsheet tech by tech under each heading, each tech’s days then their total', () => {
+    const out = byTechRows(list, s.mileRate);
+    const block = (title: string) => { const i = out.findIndex((r) => r.length === 1 && r[0] === title); const j = out.findIndex((r, k) => k > i && r.length === 0); return out.slice(i + 1, j < 0 ? undefined : j); };
+    expect(out.filter((r) => r.length === 1).map((r) => r[0])).toEqual(['By tech', 'Hours', 'Mileage', 'Hotel', 'Meals', 'Materials']);
+    expect(block('Hours')).toEqual([
+      ['Technician', 'Day', 'Clock in', 'Clock out', 'Lunch (min)', 'Hours on site', 'Travel hours', 'Labor $', 'Note'],
+      ['Kendell Newbold', 'Mon, 10/19', '7:37 AM', '5:37 PM', '', 10, 0, '', ''],
+      ['Kendell Newbold', 'Tue, 10/20', '7:50 AM', '6:09 PM', '', 10.32, 0, '', ''],
+      ['Kendell Newbold total', '2 days', '', '', '', 20.32, 0, 2032, ''],
+      ['Paul Gibbs', 'Mon, 10/19', '7:37 AM', '5:37 PM', '', 10, 0, '', ''],
+      ['Paul Gibbs total', '1 day', '', '', '', 10, 0, 1000, ''],
+      ['All techs', '', '', '', '', 30.32, 0, 3032, ''],
     ]);
-    expect(out.slice(at('Mileage') + 1, at('Mileage') + 5)).toEqual([
-      ['Technician', 'Miles', 'Mileage $ (0.6/mi)'], ['Kendell Newbold', 0, 0], ['Paul Gibbs', 252, 151.2], ['Total', 252, 151.2],
+    expect(block('Mileage')).toEqual([
+      ['Technician', 'Day', 'Odometer start', 'Odometer end', 'Odometer miles', 'Other miles', 'Miles', 'Mileage $ (0.6/mi)'],
+      ['Paul Gibbs', 'Sun, 10/18', 141865, 142109, 244, '', 244, ''],
+      ['Paul Gibbs', 'Mon, 10/19', '', '', '', 8, 8, ''],
+      ['Paul Gibbs total', '', '', '', 244, 8, 252, 151.2],
+      ['All techs', '', '', '', '', '', 252, 151.2],
     ]);
-    expect(out.slice(at('Materials') + 1)).toEqual([
+    expect(block('Hotel')).toEqual([
+      ['Technician', 'Date', 'For', 'Store', 'Amount'], ['Paul Gibbs', 'Sun, 10/18', 'Lodging', 'Quality Inn', 350.74], ['Paul Gibbs total', '', '', '', 350.74], ['All techs', '', '', '', 350.74],
+    ]);
+    expect(block('Meals')).toEqual([
+      ['Technician', 'Day', 'For', 'Store', 'Amount'],
+      ['Kendell Newbold', 'Fri, 10/23', 'Meals', '', 50], ['Kendell Newbold total', '', '', '', 50],
+      ['Paul Gibbs', 'Mon, 10/19', 'Meal receipt', 'Waffle House', 18.5], ['Paul Gibbs total', '', '', '', 18.5],
+      ['All techs', '', '', '', 68.5],
+    ]);
+    expect(block('Materials')).toEqual([
       ['Technician', 'Date', 'For', 'Store', 'Amount'],
-      ['Paul Gibbs', '2026-10-20', 'Materials', "Lowe's", 47.48],
-      ['Paul Gibbs', '2026-10-21', 'Materials', "Lowe's", 104.17],
-      ['Office', '2026-10-19', 'Tools & equipment', 'Home Depot', 25],
-      ['Paul Gibbs total', '', '', '', 151.65],
-      ['Office total', '', '', '', 25],
-      ['Total', '', '', '', 176.65],
+      ['Paul Gibbs', 'Tue, 10/20', 'Materials', "Lowe's", 47.48], ['Paul Gibbs', 'Wed, 10/21', 'Materials', "Lowe's", 104.17], ['Paul Gibbs total', '', '', '', 151.65],
+      ['Office', 'Mon, 10/19', 'Tools & equipment', 'Home Depot', 25], ['Office total', '', '', '', 25],
+      ['All techs', '', '', '', 176.65],
     ]);
   });
 });

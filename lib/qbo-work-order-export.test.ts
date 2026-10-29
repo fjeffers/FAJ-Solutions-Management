@@ -137,10 +137,13 @@ describe('the week as an Excel workbook, a tab per site', () => {
 
   // Fred, 2026-10-29: "I need a break down from each tech".
   it("puts each tech's hours, miles and materials under the site's bill when it has them", () => {
+    const none = { hotels: [], hotelTotal: 0, mealReceipts: [], meals: 0, materials: [], materialsTotal: 0, materialsBilled: true };
     const perTech = [
-      { tech: 'Kendell Newbold', days: 4, hours: 42.04, travel: 0, total: 42.04, labor: 4204, miles: 0, mileage: 0, materials: [], materialsTotal: 0, materialsBilled: true },
-      { tech: 'Paul Gibbs', days: 5, hours: 30.52, travel: 13.27, total: 43.79, labor: 3052, miles: 458, mileage: 274.8,
-        materials: [{ id: 'l', date: '2026-10-20', category: 'materials', vendor: "Lowe's", amount: 47.48 }], materialsTotal: 47.48, materialsBilled: true },
+      { ...none, tech: 'Kendell Newbold', days: 1, hours: 10, travel: 0, total: 10, labor: 1000, miles: 0, mileage: 0,
+        lines: [{ day: '2026-10-19', arrived: '07:37', leftSite: '17:37', lunch: null, hours: 10, travel: 0, odoStart: null, odoEnd: null, miles: 0, meals: 0, note: '' }] },
+      { ...none, tech: 'Paul Gibbs', days: 1, hours: 0, travel: 0, total: 0, labor: 0, miles: 244, mileage: 146.4,
+        lines: [{ day: '2026-10-18', arrived: null, leftSite: null, lunch: null, hours: 0, travel: 0, odoStart: 141865, odoEnd: 142109, miles: 244, meals: 0, note: '' }],
+        materials: [{ id: 'l', date: '2026-10-20', category: 'materials', vendor: "Lowe's", amount: 47.48 }], materialsTotal: 47.48 },
     ];
     const [gaffney] = siteBillBook([{ name: 'Gaffney', site: 'Gaffney, SC', clientWo: null, bill: { ...bill('19101401', '2026-10-18', [
       { kind: 'labor', description: 'Hours on site: 72.56 h', qty: 72.56, rate: 100, amount: 7256 },
@@ -148,8 +151,9 @@ describe('the week as an Excel workbook, a tab per site', () => {
     const rows = gaffney.rows.map((r) => r[0]);
     const total = gaffney.rows.findIndex((r) => r[3] === 'Total');
     expect(rows.slice(total + 1, total + 6)).toEqual([undefined, 'By tech', undefined, 'Hours', 'Technician']);
-    expect(gaffney.rows).toContainEqual(['Paul Gibbs', 458, 274.8]);
-    expect(gaffney.rows).toContainEqual(['Paul Gibbs', '2026-10-20', 'Materials', "Lowe's", 47.48]);
+    expect(gaffney.rows).toContainEqual(['Kendell Newbold', 'Mon, 10/19', '7:37 AM', '5:37 PM', '', 10, 0, '', '']);
+    expect(gaffney.rows).toContainEqual(['Paul Gibbs', 'Sun, 10/18', 141865, 142109, 244, '', 244, '']);
+    expect(gaffney.rows).toContainEqual(['Paul Gibbs', 'Tue, 10/20', 'Materials', "Lowe's", 47.48]);
   });
 
   it('names tabs the way Excel allows, and two sites in one town apart', () => {

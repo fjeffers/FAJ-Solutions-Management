@@ -35,6 +35,7 @@ import { fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder } from '@/lib/types';
 import { Section } from '@/components/wf/WfUi';
+import ByTechTables from '@/components/ByTechTables';
 import { loadEvents, OfficeReceiptDialog } from '@/components/wf/ProjectOffice';
 import FieldSheetReport from '@/components/FieldSheetReport';
 import { ClockPanel, StillOnSite } from '@/components/ClockFix';
@@ -1185,66 +1186,21 @@ function num(s: string): number | null | undefined {
   return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
-const TDT: React.CSSProperties = { ...TD, padding: '7px 6px' };
-const TOT: React.CSSProperties = { background: '#F6F1E4', fontWeight: 700 };
-function ByTechHead({ n, title }: { n: number; title: string }) {
-  return <h4 style={{ margin: '14px 0 6px', fontSize: 14.5 }}>{n}. {title}</h4>;
-}
-function ByTechTable({ head, children }: { head: string[]; children: React.ReactNode }) {
-  return (
-    <div style={{ overflowX: 'auto', border: '1px solid var(--wf-line, #E4DFD3)', borderRadius: 10 }}>
-      <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
-        <thead><tr>{head.map((h) => <th key={h} style={TH}>{h}</th>)}</tr></thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
-  );
-}
-
 /**
- * Each tech's hours, miles and materials, one heading each (Fred, 2026-10-29: "show tech one hours
- * and then tech 2 hours heading hours the head 2 milages ... head 3 materials").
+ * Each tech's own breakdown, the way the client reads it: under Hours, Mileage, Hotel, Meals and
+ * Materials, each tech's days and their total, then the next tech (Fred, 2026-10-29: "each tech get
+ * their own break down"). The same rows as the By tech tab of the Excel.
  */
 function ByTechPanel({ list, s }: { list: TechBreakdown[]; s: SheetSettings }) {
-  const workers = list.filter((t) => t.days > 0);
-  const withMaterials = list.filter((t) => t.materials.length > 0);
-  if (!workers.length && !withMaterials.length) return null;
-  const sum = (l: TechBreakdown[], f: (t: TechBreakdown) => number) => l.reduce((x, t) => x + f(t), 0);
-  const showLabor = workers.some((t) => t.labor != null);
+  if (!list.some((t) => t.days > 0 || t.hotels.length || t.meals > 0 || t.materials.length)) return null;
+  const notBilled = list.some((t) => t.materials.length && !t.materialsBilled);
   return (
-    <Section title="By tech" subtitle="each tech's hours, miles and materials for these dates">
-      <ByTechHead n={1} title="Hours" />
-      <ByTechTable head={['Technician', 'Days', 'Hours on site', 'Travel hrs', 'Total hrs', ...(showLabor ? ['Labor $'] : [])]}>
-        {workers.map((t) => (
-          <tr key={t.tech}><td style={TDT}>{t.tech}</td><td style={TDN}>{t.days}</td><td style={TDN}>{hrs(t.hours)}</td><td style={TDN}>{hrs(t.travel)}</td>
-            <td style={TDN}>{hrs(t.total)}</td>{showLabor && <td style={TDN}>{t.labor == null ? '–' : money(t.labor)}</td>}</tr>
-        ))}
-        <tr style={TOT}><td style={TDT}>Total</td><td style={TDN}>{sum(workers, (t) => t.days)}</td><td style={TDN}>{hrs(sum(workers, (t) => t.hours))}</td>
-          <td style={TDN}>{hrs(sum(workers, (t) => t.travel))}</td><td style={TDN}>{hrs(sum(workers, (t) => t.total))}</td>
-          {showLabor && <td style={TDN}>{money(sum(workers, (t) => t.labor ?? 0))}</td>}</tr>
-      </ByTechTable>
-      <ByTechHead n={2} title="Mileage" />
-      <ByTechTable head={['Technician', 'Miles', `Mileage $ (${s.mileRate ?? 0}/mi)`]}>
-        {workers.map((t) => (
-          <tr key={t.tech}><td style={TDT}>{t.tech}</td><td style={TDN}>{mi(t.miles)}</td><td style={TDN}>{money(t.mileage)}</td></tr>
-        ))}
-        <tr style={TOT}><td style={TDT}>Total</td><td style={TDN}>{mi(sum(workers, (t) => t.miles))}</td><td style={TDN}>{money(sum(workers, (t) => t.mileage))}</td></tr>
-      </ByTechTable>
-      <ByTechHead n={3} title="Materials" />
-      {withMaterials.some((t) => !t.materialsBilled) && (
-        <div className="wf-subtle" style={{ fontSize: 12.5, marginBottom: 6 }}>Not on the bill: tick <b>Bill the other receipts at cost</b> above to bill them. Shown so you know who bought what.</div>
-      )}
-      {withMaterials.length === 0 ? <div className="wf-subtle" style={{ fontSize: 13 }}>No materials on these dates.</div> : (
-        <ByTechTable head={['Technician', 'Date', 'For', 'Store', 'Amount']}>
-          {withMaterials.flatMap((t) => [
-            ...t.materials.map((m) => (
-              <tr key={m.id}><td style={TDT}>{t.tech}</td><td style={TDT}>{m.date ? fmtDay(m.date) : ''}</td><td style={TDT}>{expenseCategoryLabel(m.category)}</td>
-                <td style={TDT}>{m.vendor ?? ''}</td><td style={TDN}>{fmtMoney(m.amount)}</td></tr>
-            )),
-            <tr key={`${t.tech}-total`} style={{ fontWeight: 600 }}><td style={TDT} colSpan={4}>{t.tech} total</td><td style={TDN}>{fmtMoney(t.materialsTotal)}</td></tr>,
-          ])}
-          <tr style={TOT}><td style={TDT} colSpan={4}>Total</td><td style={TDN}>{fmtMoney(sum(withMaterials, (t) => t.materialsTotal))}</td></tr>
-        </ByTechTable>
+    <Section title="By tech" subtitle="each tech's days and totals, as the client reads them">
+      <ByTechTables rows={byTechRows(list, s.mileRate)}
+        heading={(title) => <h4 style={{ margin: '14px 0 6px', fontSize: 14.5 }}>{title}</h4>}
+        th={{ ...TH, position: 'static' }} td={{ ...TD, padding: '7px 6px' }} total={{ background: '#F6F1E4', fontWeight: 700 }} />
+      {notBilled && (
+        <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 6 }}>Materials aren&apos;t on this bill: tick <b>Bill the other receipts at cost</b> above to bill them. They&apos;re shown so you know who bought what.</div>
       )}
     </Section>
   );

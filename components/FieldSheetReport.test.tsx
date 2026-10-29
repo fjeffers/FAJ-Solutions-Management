@@ -8,7 +8,8 @@ import FieldSheetReport from './FieldSheetReport';
 
 const s = { ...parseSettings({}), receiptsAtCost: true };
 const lowes = (billed: boolean): TechBreakdown => ({
-  tech: 'Paul Gibbs', days: 0, hours: 0, travel: 0, total: 0, labor: null, miles: 0, mileage: 0,
+  tech: 'Paul Gibbs', days: 0, lines: [], hours: 0, travel: 0, total: 0, labor: null, miles: 0, mileage: 0,
+  hotels: [], hotelTotal: 0, mealReceipts: [], meals: 0,
   materials: [{ id: 'l', date: '2026-10-20', category: 'materials', vendor: "Lowe's", amount: 47.48 }], materialsTotal: 47.48, materialsBilled: billed,
 });
 const show = (perTech: TechBreakdown[]) => render(
@@ -24,12 +25,14 @@ describe('the client report, by technician', () => {
     show([lowes(true)]);
     const report = document.getElementById('job-log-root')!;
     expect(within(report).getByText('By technician')).toBeTruthy();
-    expect(within(report).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['3. Materials']);
+    expect(within(report).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['1. Materials']);
     expect(within(report).getAllByText('$47.48').length).toBeGreaterThan(0);
   });
 
   it('leaves out materials the client is not billed for', () => {
     show([lowes(false)]);
-    expect(screen.queryByText('By technician')).toBeNull();
+    expect(screen.queryByText(/Materials/)).toBeNull();
+    expect(screen.queryByText('$47.48')).toBeNull();
+    expect(screen.getByText('No work recorded for these dates.')).toBeTruthy();
   });
 });

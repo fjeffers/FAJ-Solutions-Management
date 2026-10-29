@@ -373,7 +373,8 @@ export function parseEdits(raw: unknown): Edits {
   return out as Edits;
 }
 
-export type SheetReceipt = { id: string; category: string; amount: number; status: string; vendor?: string | null; date?: string | null };
+/** `tech`: who it's from (job_expenses.contractor_name); empty for the office's own. */
+export type SheetReceipt = { id: string; category: string; amount: number; status: string; vendor?: string | null; date?: string | null; tech?: string | null };
 
 /**
  * Receipts that can be billed at cost: every category but meals and lodging (their
@@ -505,6 +506,219 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
     declined: r2(receipts.filter((r) => r.status === 'declined').reduce((t, r) => t + (isNum(r.amount) ? r.amount : 0), 0)),
     waiting: receipts.filter((r) => r.status === 'submitted').length,
   };
+}
+
+export type TechMaterial = { id: string; date: string | null; category: string; vendor: string | null; amount: number };
+/** One day of a tech's, as the client reads it: clock in to clock out, the odometer start to end. */
+export type TechDay = {
+  day: string;
+  /** Clock in and clock out on site (HH:MM). */
+  arrived: string | null; leftSite: string | null;
+  lunch: number | null;
+  hours: number; travel: number;
+  odoStart: number | null; odoEnd: number | null;
+  /** The day's billed miles: the odometer's, or the drives' when that's more, plus miles added. */
+  miles: number;
+  /** The meal billed for the day: the flat daily rate, or what the office typed. */
+  meals: number;
+  note: string;
+};
+export type TechBreakdown = {
+  tech: string;
+  /** Days with hours, travel or miles on them. */
+  days: number;
+  /** Those days, oldest first. */
+  lines: TechDay[];
+  hours: number; travel: number; total: number;
+  /** Their share of the bill's labor and travel; null when the labor isn't by the hour (a fixed price, items). */
+  labor: number | null;
+  miles: number;
+  /** Their share of the bill's mileage. */
+  mileage: number;
+  /** Their hotel receipts. */
+  hotels: TechMaterial[];
+  hotelTotal: number;
+  /** Their meal receipts; the meals typed or allowed by the day are on their lines. */
+  mealReceipts: TechMaterial[];
+  /** Their days' meals and meal receipts together. */
+  meals: number;
+  materials: TechMaterial[];
+  materialsTotal: number;
+  /** The materials are on the client's bill (Bill receipts at cost); otherwise they're only who bought what. */
+  materialsBilled: boolean;
+};
+/** Receipts with no tech on them: the office's own. */
+export const OFFICE = 'Office';
+
+/** The bill's labor and travel, and its mileage, as its lines charge them. */
+function billMoney(rows: SheetRow[], s: SheetSettings): { labor: number; mileage: number } {
+  const { lines } = sheetTotals(rows, [], s);
+  const of = (...k: LineKind[]) => r2(lines.filter((l) => k.includes(l.kind)).reduce((t, l) => t + l.amount, 0));
+  return { labor: of('labor', 'travel'), mileage: of('mileage') };
+}
+
+/**
+ * Each tech's own breakdown, the way the client reads the invoice (Fred,
+ * 2026-10-29: "each tech get their own break down: tech one day clock in - out =
+ * total, day 2 ... once finish with tech one hours then same for tech 2 ...
+ * odometers: tech one starting milage - end milage = total ... each tech you add
+ * the days and give the total for each tech, same with the hotels, materials
+ * and any things"). Each tech's days (clock in, clock out, hours, the odometer's
+ * start and end, the miles, the meal), then their hotel, meal and material
+ * receipts, each with their totals. The same figures as the bill: hidden lines
+ * and receipts that aren't approved are left out, each tech's labor and mileage
+ * are worked out by the bill's own rules (sheetTotals on their lines), and a cent
+ * the bill's rounding of the whole leaves over goes to the tech with the most, so
+ * the parts add up to the bill (Greptile on PR #33). Materials are the approved
+ * receipts of the kinds billed at cost (not fuel, which is in the mileage),
+ * flagged when the job doesn't bill them. Sorted by name, the office's own
+ * receipts last.
+ */
+export function byTech(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSettings): TechBreakdown[] {
+  const live = rows.filter((r) => !r.hidden);
+  // Labor dollars when the job bills by the hour at a rate it has (a rate left empty bills nothing).
+  const byHour = (s.labor === 'hourly' && (s.rate != null || s.travelRate != null)) || (s.labor === 'blended' && s.rate != null);
+  const out = new Map<string, TechBreakdown>();
+  const get = (tech: string) => {
+    let t = out.get(tech);
+    if (!t) {
+      out.set(tech, t = {
+        tech, days: 0, lines: [], hours: 0, travel: 0, total: 0, labor: null, miles: 0, mileage: 0,
+        hotels: [], hotelTotal: 0, mealReceipts: [], meals: 0, materials: [], materialsTotal: 0, materialsBilled: !!s.receiptsAtCost,
+      });
+    }
+    return t;
+  };
+  for (const tech of [...new Set(live.map((r) => r.tech))]) {
+    const mine = live.filter((r) => r.tech === tech).sort((a, b) => a.day.localeCompare(b.day));
+    // The days worked, a day with only a meal typed on it (the bill counts that meal too) and a day
+    // with only a note, so what the office wrote for the client still reaches them (Greptile on PR #33).
+    const days = mine.map((r) => {
+      const c = dayCalc(r.values, s.mileRate ?? 0);
+      const meals = s.mealMode === 'per_day' ? (c.worked ? s.mealRate ?? 0 : 0) : r.values.meals ?? 0;
+      return { r, c, meals };
+    }).filter(({ r, c, meals }) => c.worked || meals > 0 || r.values.note.trim());
+    if (!days.length) continue;
+    const t = get(tech);
+    const lines: TechDay[] = days.map(({ r, c, meals }) => ({
+      day: r.day, arrived: r.values.arrived, leftSite: r.values.leftSite, lunch: r.values.lunch,
+      hours: c.hours, travel: c.travel, odoStart: r.values.odoStart, odoEnd: r.values.odoEnd, miles: c.miles, meals, note: r.values.note.trim(),
+    }));
+    const sum = (f: (d: TechDay) => number) => lines.reduce((x, d) => x + f(d), 0);
+    const money = billMoney(mine, s);
+    Object.assign(t, {
+      days: days.filter(({ c }) => c.worked).length, lines,
+      hours: r2(sum((d) => d.hours)), travel: r2(sum((d) => d.travel)), total: r2(sum((d) => d.hours + d.travel)),
+      miles: r1(sum((d) => d.miles)), labor: byHour ? money.labor : null, mileage: money.mileage, meals: r2(sum((d) => d.meals)),
+    });
+  }
+  // The bill may charge the week's total at once (Hours on site: 72.56 h × the rate): settle the rounding.
+  const workers = [...out.values()];
+  const whole = billMoney(live, s);
+  const settle = (key: 'labor' | 'mileage', total: number) => {
+    const list = workers.filter((t) => t[key] != null);
+    const diff = r2(total - list.reduce((x, t) => x + (t[key] ?? 0), 0));
+    const top = [...list].sort((a, b) => (b[key] ?? 0) - (a[key] ?? 0))[0];
+    if (diff && top) top[key] = r2((top[key] ?? 0) + diff);
+  };
+  if (byHour) settle('labor', whole.labor);
+  settle('mileage', whole.mileage);
+  for (const e of receipts) {
+    if (e.status !== 'approved' || !isNum(e.amount) || e.amount <= 0) continue;
+    const item: TechMaterial = { id: e.id, date: e.date ?? null, category: e.category, vendor: e.vendor ?? null, amount: e.amount };
+    const who = e.tech?.trim() || OFFICE;
+    if (e.category === 'hotel') { const t = get(who); t.hotels.push(item); t.hotelTotal += e.amount; }
+    // Meal receipts count when the meals are billed from receipts, not at a flat rate a day.
+    else if (e.category === 'meals') { if (s.mealMode !== 'per_day') { const t = get(who); t.mealReceipts.push(item); t.meals += e.amount; } }
+    else if (atCost(e.category)) { const t = get(who); t.materials.push(item); t.materialsTotal += e.amount; }
+  }
+  const byDate = (a: TechMaterial, b: TechMaterial) => (a.date ?? '').localeCompare(b.date ?? '');
+  return [...out.values()].map((t) => ({
+    ...t, hotelTotal: r2(t.hotelTotal), meals: r2(t.meals), materialsTotal: r2(t.materialsTotal),
+    hotels: [...t.hotels].sort(byDate), mealReceipts: [...t.mealReceipts].sort(byDate), materials: [...t.materials].sort(byDate),
+  })).sort((a, b) => Number(a.tech === OFFICE) - Number(b.tech === OFFICE) || a.tech.localeCompare(b.tech));
+}
+
+/**
+ * A day's miles split so they add up on the line: the odometer's (end less start, when both
+ * photos are there and read forward) and the rest (drives with no photos, miles the office added).
+ */
+export function dayMiles(d: Pick<TechDay, 'odoStart' | 'odoEnd' | 'miles'>): { odometer: number | null; other: number } {
+  const odometer = d.odoStart != null && d.odoEnd != null && d.odoEnd >= d.odoStart ? r1(Math.min(d.odoEnd - d.odoStart, d.miles)) : null;
+  return { odometer, other: r1(d.miles - (odometer ?? 0)) };
+}
+
+/** "Mon 10/19" for a day in the breakdown. */
+export const techDayWord = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'UTC' });
+
+/**
+ * The breakdown as spreadsheet rows, each tech's own block under each heading:
+ * Hours (each day's clock in, clock out and hours), Mileage (each day's odometer
+ * start and end and miles), then Hotel, Meals and Materials, each tech's total
+ * after their lines and every tech's together at the end.
+ */
+export function byTechRows(list: TechBreakdown[], mileRate: number | null, bill: { kind?: string | null; description: string; amount: number }[] = []): (string | number)[][] {
+  const sum = (l: TechBreakdown[], f: (t: TechBreakdown) => number) => l.reduce((x, t) => x + f(t), 0);
+  const workers = list.filter((t) => t.days > 0 || t.lines.some((d) => d.note));
+  // What the bill charges for meals or the hotel when that isn't what was spent (a cap, a flat rate a night),
+  // said under the spending so the two don't look like they disagree (Greptile on PR #33).
+  const onBill = (kind: LineKind, spent: number) => {
+    const l = bill.filter((x) => x.kind === kind);
+    const billed = r2(l.reduce((x, b) => x + b.amount, 0));
+    if (l.length && billed !== r2(spent)) out.push([`On the bill: ${l.map((b) => b.description).join('; ')}`, '', '', '', billed]);
+  };
+  const money = workers.some((t) => t.labor != null);
+  const out: (string | number)[][] = [['By tech']];
+  if (workers.length) {
+    out.push([], ['Hours'], ['Technician', 'Day', 'Clock in', 'Clock out', 'Lunch (min)', 'Hours on site', 'Travel hours', ...(money ? ['Labor $'] : []), 'Note']);
+    for (const t of workers) {
+      const worked = t.lines.filter((x) => x.hours || x.travel);
+      // A day with only a note on it (a drive, say) keeps its line here, so the note reaches the client.
+      for (const d of t.lines.filter((x) => x.hours || x.travel || x.note)) out.push([t.tech, techDayWord(d.day), clock(d.arrived), clock(d.leftSite), d.lunch ?? '', d.hours, d.travel, ...(money ? [''] : []), d.note]);
+      out.push([`${t.tech} total`, `${worked.length} day${worked.length === 1 ? '' : 's'}`, '', '', '', t.hours, t.travel, ...(money ? [t.labor ?? ''] : []), '']);
+    }
+    out.push(['All techs', '', '', '', '', r2(sum(workers, (t) => t.hours)), r2(sum(workers, (t) => t.travel)), ...(money ? [r2(sum(workers, (t) => t.labor ?? 0))] : []), '']);
+    // Each day adds up on its line: the odometer's end less its start, plus the miles with no photos, is the day's miles.
+    out.push([], ['Mileage'], ['Technician', 'Day', 'Odometer start', 'Odometer end', 'Odometer miles', 'Other miles', 'Miles', `Mileage $ (${mileRate ?? 0}/mi)`]);
+    for (const t of workers.filter((x) => x.miles > 0)) {
+      for (const d of t.lines.filter((x) => x.miles > 0)) {
+        const m = dayMiles(d);
+        out.push([t.tech, techDayWord(d.day), d.odoStart ?? '', d.odoEnd ?? '', m.odometer ?? '', m.other || '', d.miles, '']);
+      }
+      out.push([`${t.tech} total`, '', '', '', r1(t.lines.reduce((x, d) => x + (dayMiles(d).odometer ?? 0), 0)), r1(t.lines.reduce((x, d) => x + dayMiles(d).other, 0)), t.miles, t.mileage]);
+    }
+    out.push(['All techs', '', '', '', '', '', r1(sum(workers, (t) => t.miles)), r2(sum(workers, (t) => t.mileage))]);
+  }
+  const receipts = (title: string, items: (t: TechBreakdown) => TechMaterial[], total: (t: TechBreakdown) => number, kind?: LineKind) => {
+    const who = list.filter((t) => items(t).length);
+    if (!who.length && !(kind && bill.some((b) => b.kind === kind))) return;
+    out.push([], [title], ['Technician', 'Date', 'For', 'Store', 'Amount']);
+    for (const t of who) {
+      for (const m of items(t)) out.push([t.tech, m.date ? techDayWord(m.date) : '', expenseCategoryLabel(m.category), m.vendor ?? '', m.amount]);
+      out.push([`${t.tech} total`, '', '', '', total(t)]);
+    }
+    if (who.length) out.push(['All techs', '', '', '', r2(sum(who, total))]);
+    if (kind) onBill(kind, sum(who, total));
+  };
+  receipts('Hotel', (t) => t.hotels, (t) => t.hotelTotal, 'hotel');
+  // Meals: the days' meals (a flat rate a day, or what was typed) and the meal receipts.
+  const eaters = list.filter((t) => t.meals > 0);
+  if (eaters.length) {
+    out.push([], ['Meals'], ['Technician', 'Day', 'For', 'Store', 'Amount']);
+    for (const t of eaters) {
+      for (const d of t.lines.filter((x) => x.meals > 0)) out.push([t.tech, techDayWord(d.day), 'Meals', '', d.meals]);
+      for (const m of t.mealReceipts) out.push([t.tech, m.date ? techDayWord(m.date) : '', 'Meal receipt', m.vendor ?? '', m.amount]);
+      out.push([`${t.tech} total`, '', '', '', t.meals]);
+    }
+    out.push(['All techs', '', '', '', r2(sum(eaters, (t) => t.meals))]);
+    onBill('meals', sum(eaters, (t) => t.meals));
+  } else if (bill.some((b) => b.kind === 'meals')) {
+    out.push([], ['Meals'], ['Technician', 'Day', 'For', 'Store', 'Amount']);
+    onBill('meals', 0);
+  }
+  receipts(list.some((t) => t.materials.length && !t.materialsBilled) ? 'Materials (not on the bill: the other receipts are not billed at cost on this job)' : 'Materials',
+    (t) => t.materials, (t) => t.materialsTotal);
+  return out;
 }
 
 /**

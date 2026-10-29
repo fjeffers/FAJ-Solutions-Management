@@ -25,22 +25,36 @@ export type TimesheetPhoto = { day: string; tech: string; caption: string; jpeg:
 
 export type TimesheetLine = {
   day: string; tech: string; started: string; finished: string; lunch: number | null;
-  hours: number; travel: number; total: number; miles: number; meals: number; note: string;
+  hours: number; travel: number; total: number;
+  /** The day's odometer, its first reading and its last. */
+  odoStart: number | null; odoEnd: number | null;
+  miles: number; meals: number; note: string;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** One line per tech per day worked, oldest day first. */
+/**
+ * One line per tech per day worked: each tech's days together, oldest first, the techs by name
+ * (Fred, 2026-10-29: "each tech get their own break down ... once finish with tech one hours then
+ * same for tech 2").
+ */
 export function timesheetLines(rows: SheetRow[]): TimesheetLine[] {
   return rows.filter((r) => !r.hidden && !r.missing)
-    .sort((a, b) => a.day.localeCompare(b.day) || a.tech.localeCompare(b.tech))
+    .sort((a, b) => a.tech.localeCompare(b.tech) || a.day.localeCompare(b.day))
     .map((r) => {
       const c = dayCalc(r.values, 0);
       return {
         day: r.day, tech: r.tech, started: clock(r.values.arrived), finished: clock(r.values.leftSite), lunch: r.values.lunch,
-        hours: c.hours, travel: c.travel, total: c.total, miles: c.miles, meals: r.values.meals ?? 0, note: r.values.note.trim(),
+        hours: c.hours, travel: c.travel, total: c.total, odoStart: r.values.odoStart, odoEnd: r.values.odoEnd,
+        miles: c.miles, meals: r.values.meals ?? 0, note: r.values.note.trim(),
       };
     });
+}
+
+/** The lines tech by tech, each tech's with their own total. */
+export function timesheetByTech(lines: TimesheetLine[]): { tech: string; lines: TimesheetLine[]; total: ReturnType<typeof timesheetTotals> }[] {
+  const techs = [...new Set(lines.map((l) => l.tech))];
+  return techs.map((tech) => { const mine = lines.filter((l) => l.tech === tech); return { tech, lines: mine, total: timesheetTotals(mine) }; });
 }
 
 export function timesheetTotals(lines: TimesheetLine[]) {
@@ -53,11 +67,17 @@ export function timesheetTotals(lines: TimesheetLine[]) {
 export const sheetDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 const money = (n: number) => `$${n.toFixed(2)}`;
 
-export const TIMESHEET_COLUMNS = ['Date', 'Technician', 'Started', 'Finished', 'Lunch (min)', 'On site (h)', 'Travel (h)', 'Total (h)', 'Miles', 'Meals', 'Note'];
+export const TIMESHEET_COLUMNS = ['Date', 'Technician', 'Started', 'Finished', 'Lunch (min)', 'On site (h)', 'Travel (h)', 'Total (h)', 'Odometer', 'Miles', 'Meals', 'Note'];
 
+const odo = (n: number) => n.toLocaleString('en-US');
 /** The cells of one line, as the PDF and the spreadsheet show them. */
 function cells(l: TimesheetLine): (string | number)[] {
-  return [sheetDay(l.day), l.tech, l.started, l.finished, l.lunch ?? '', l.hours, l.travel, l.total, l.miles, l.meals ? money(l.meals) : '', l.note];
+  const odometer = l.odoStart != null && l.odoEnd != null ? `${odo(l.odoStart)} – ${odo(l.odoEnd)}` : '';
+  return [sheetDay(l.day), l.tech, l.started, l.finished, l.lunch ?? '', l.hours, l.travel, l.total, odometer, l.miles, l.meals ? money(l.meals) : '', l.note];
+}
+/** A total row: a tech's, or every tech's. */
+function totalCells(label: string, t: ReturnType<typeof timesheetTotals>): (string | number)[] {
+  return [label, `${t.days} day${t.days === 1 ? '' : 's'}`, '', '', '', t.hours, t.travel, t.total, '', t.miles, t.meals ? money(t.meals) : '', ''];
 }
 
 /** The header lines: who, where, which job, which dates. */
@@ -78,12 +98,12 @@ export function timesheetTable(h: TimesheetHead, lines: TimesheetLine[]): (strin
     ...headLines(h).map((x) => [x]),
     [],
     TIMESHEET_COLUMNS,
-    ...lines.map(cells),
-    ['Total', `${t.days} day${t.days === 1 ? '' : 's'}`, '', '', '', t.hours, t.travel, t.total, t.miles, t.meals ? money(t.meals) : '', ''],
+    ...timesheetByTech(lines).flatMap((g) => [...g.lines.map(cells), totalCells(`${g.tech} total`, g.total)]),
+    totalCells('All techs', t),
   ];
 }
 
-export const TIMESHEET_WIDTHS = [18, 20, 10, 10, 10, 11, 10, 10, 8, 10, 36];
+export const TIMESHEET_WIDTHS = [18, 20, 10, 10, 10, 11, 10, 10, 20, 8, 10, 36];
 
 /** "Timesheet WO 19101401 2026-10-19 to 2026-10-25.pdf" */
 export const timesheetFile = (h: TimesheetHead, ext: 'pdf' | 'xlsx') =>
@@ -114,7 +134,7 @@ export async function timesheetPdf(h: TimesheetHead, lines: TimesheetLine[], pho
   const [W, H, M] = [792, 612, 36];
   const navy = rgb(0.055, 0.106, 0.18), ink = rgb(0.1, 0.1, 0.12), grey = rgb(0.38, 0.4, 0.44), band = rgb(0.965, 0.957, 0.937), gold = rgb(0.79, 0.635, 0.294);
   // Column widths in points, the note taking what's left of the page.
-  const fixed = [78, 104, 52, 52, 44, 52, 48, 48, 42, 52];
+  const fixed = [70, 92, 50, 50, 40, 48, 46, 46, 92, 40, 48];
   const widths = [...fixed, W - 2 * M - fixed.reduce((a, b) => a + b, 0)];
   const size = 8.5, lineH = 11;
   const pages: ReturnType<typeof doc.addPage>[] = [];
@@ -151,10 +171,14 @@ export async function timesheetPdf(h: TimesheetHead, lines: TimesheetLine[], pho
   for (const ln of headLines(h)) { y -= 13; text(ln, M, y, 10, ln === headLines(h)[0] ? bold : regular); }
   y -= 12;
   header();
-  lines.forEach((l, i) => row(cells(l), { shade: i % 2 === 1 }));
+  // Each tech's days, then that tech's total; every tech's together at the end.
+  for (const g of timesheetByTech(lines)) {
+    g.lines.forEach((l, i) => row(cells(l), { shade: i % 2 === 1 }));
+    row(totalCells(`${g.tech} total`, g.total), { font: bold, shade: true });
+  }
   const t = timesheetTotals(lines);
   page.drawRectangle({ x: M, y: y - 1, width: W - 2 * M, height: 1, color: navy });
-  row(['Total', `${t.days} day${t.days === 1 ? '' : 's'}`, '', '', '', t.hours, t.travel, t.total, t.miles, t.meals ? money(t.meals) : '', ''], { font: bold });
+  row(totalCells('All techs', t), { font: bold });
   if (!lines.length) { y -= 16; text('No hours on these dates.', M, y, 10, regular, grey); }
 
   // The pictures: three across, each fitted in its box with the caption under it.

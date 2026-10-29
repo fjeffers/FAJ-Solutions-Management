@@ -171,11 +171,52 @@ describe('Field Sheet', () => {
     await user.click(await screen.findByRole('button', { name: /client report/i }));
     const report = document.getElementById('job-log-root')!;
     expect(within(report).getByText('FIELD SHEET')).toBeTruthy();
-    expect(within(report).getByText('7:44 AM – 5:18 PM')).toBeTruthy();
-    expect(within(report).getAllByText('9.57 h').length).toBeGreaterThan(0);
+    // Each tech's own days: clock in, clock out, the hours (Fred, 2026-10-29).
+    const day = within(report).getAllByText('Wed, 10/21')[0].closest('tr')!;
+    expect(within(day).getByText('7:44 AM')).toBeTruthy();
+    expect(within(day).getByText('5:18 PM')).toBeTruthy();
+    expect(within(day).getByText('9.57')).toBeTruthy();
     expect(report.textContent).not.toMatch(/Hotel → Hotel/);
     // Raja's blank day isn't on the client's copy.
     expect(report.textContent).not.toMatch(/Raja Bennett/);
+  });
+
+  // Fred, 2026-10-29: "show tech one hours and then tech 2 hours heading hours the head 2 milages ... head 3 materials".
+  it('breaks the week down by tech: hours, then mileage, then materials, on the sheet, the Excel and the client report', async () => {
+    const user = userEvent.setup();
+    tables.job_expenses = [...tables.job_expenses,
+      { id: 'x3', contractor_name: 'Raja Bennett', category: 'materials', vendor: "Lowe's", amount: 47.48, expense_date: '2026-10-21', note: null, receipt_path: null, status: 'approved', decline_reason: null, paid_by: 'tech' }];
+    try {
+      render(<FieldSheetView workOrders={[wo]} />);
+      await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+      const section = (await screen.findByText('By tech')).closest('section')!;
+      const heads = within(section).getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+      expect(heads).toEqual(['1. Hours', '2. Mileage', '3. Hotel', '4. Materials (not on the bill: the other receipts are not billed at cost on this job)']);
+      const [hours, miles, hotel, materials] = within(section).getAllByRole('table');
+      // Each tech's days, then their total, then every tech's.
+      expect(within(hours).getAllByRole('row').map((r) => r.textContent)).toEqual([
+        'TechnicianDayClock inClock outHours on siteTravel hours', 'Dwayne CudjoeWed, 10/217:44 AM5:18 PM9.570.25', 'Dwayne Cudjoe total1 day9.570.25', 'All techs9.570.25',
+      ]);
+      expect(within(miles).getByText('Dwayne Cudjoe total').closest('tr')!.textContent).toContain('$2.64');
+      // The hotel the office paid for, under Office; the fuel is in the mileage, not here.
+      expect(within(hotel).getAllByRole('row').map((r) => r.textContent)).toContain("OfficeWed, 10/21LodgingHampton Inn$226.00");
+      expect(within(materials).getAllByRole('row').map((r) => r.textContent)).toEqual([
+        'TechnicianDateForStoreAmount', "Raja BennettWed, 10/21MaterialsLowe's$47.48", 'Raja Bennett total$47.48', 'All techs$47.48',
+      ]);
+
+      await user.click(screen.getByRole('button', { name: /excel/i }));
+      const sheets = downloadXLSXBook.mock.calls.at(-1)![1] as { name: string; rows: unknown[][] }[];
+      expect(sheets.map((x) => x.name)).toEqual(['Field sheet', 'Receipts', 'By tech']);
+
+      await user.click(screen.getByRole('button', { name: /client report/i }));
+      const report = document.getElementById('job-log-root')!;
+      expect(within(report).getByText('By technician')).toBeTruthy();
+      // The client doesn't see materials it isn't billed for, and the office's hotel is under FAJ's name.
+      expect(within(report).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['1. Hours', '2. Mileage', '3. Hotel']);
+      expect(within(report).getByText('FAJ Solutions')).toBeTruthy();
+    } finally {
+      tables.job_expenses = tables.job_expenses.filter((e) => e.id !== 'x3');
+    }
   });
 
   it('lists who is still clocked in and clocks them out at the time the office types', async () => {

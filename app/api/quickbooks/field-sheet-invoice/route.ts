@@ -4,7 +4,7 @@ import { getValidQboSession } from '@/lib/quickbooks-session';
 import { attachToInvoice, findOrCreateCustomer, findOrCreateServiceItem, createInvoice, sendInvoice } from '@/lib/quickbooks';
 import { dayOf, parseDayEvents, type DayEvent } from '@/lib/project-day';
 import {
-  billRange, blocksBilling, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, qboItemFor, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
+  billRange, blocksBilling, byTech, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, qboItemFor, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
 } from '@/lib/field-sheet';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { timesheetFile, timesheetLines, timesheetPdf } from '@/lib/timesheet';
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
     supabase.from('job_day_events').select('id, contractor_name, kind, at, origin, dest, miles, miles_from_gps').eq('wo_id', wo.id).order('at'),
     supabase.from('job_punches').select('contractor_name, kind, at').eq('wo_id', wo.id).order('at'),
     supabase.from('job_odometer').select('wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', wo.id).order('at'),
-    supabase.from('job_expenses').select('id, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', wo.id),
+    supabase.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, status, receipt_path').eq('wo_id', wo.id),
     supabase.from('field_sheet_invoices').select('from_day, to_day, qbo_invoice_id, qbo_invoice_number').eq('wo_id', wo.id),
     supabase.from('wo_photos').select('url, taken_at').eq('wo_id', wo.id).order('taken_at'),
     supabase.from('user_settings').select('mileage_rate').maybeSingle(),
@@ -92,9 +92,9 @@ export async function POST(req: Request) {
   const techs = ((wo.contractor_names?.length ? wo.contractor_names : [wo.contractor_name]) as (string | null)[]).filter((t): t is string => !!t);
   const all = rowsFor({ events, readings, saved, techs, start: wo.start_date, end: wo.end_date, timeZone: TZ });
   const rows = all.filter((r) => inDates(r.day, fromIn, toIn));
-  const receipts: SheetReceipt[] = ((ex.data ?? []) as { id: string; category: string; vendor: string | null; amount: number; expense_date: string; status: string }[])
+  const receipts: SheetReceipt[] = ((ex.data ?? []) as { id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; status: string }[])
     .filter((e) => inDates(e.expense_date, fromIn, toIn))
-    .map((e) => ({ id: e.id, category: e.category, amount: Number(e.amount), status: e.status, vendor: e.vendor, date: e.expense_date }));
+    .map((e) => ({ id: e.id, category: e.category, amount: Number(e.amount), status: e.status, vendor: e.vendor, date: e.expense_date, tech: e.contractor_name }));
 
   // The dates billed: those picked, else the first to the last thing on the bill (days and receipts).
   const range = billRange(rows, receipts, fromIn, toIn);
@@ -125,6 +125,8 @@ export async function POST(req: Request) {
     customer, from, to, email, memo,
     lines: totals.lines.map((l) => ({ kind: l.kind, date: l.date, description: l.description, qty: l.qty, rate: l.rate, amount: l.amount })),
     total: totals.bill,
+    // Each tech's hours, miles and materials, for the week's workbook (Fred, 2026-10-29: "I need a break down from each tech").
+    perTech: byTech(rows, receipts, s), mileRate: s.mileRate,
   };
 
   // A bill from the QuickBooks import file, once Fred has imported it: recorded

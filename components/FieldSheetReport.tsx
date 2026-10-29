@@ -8,7 +8,8 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X } from 'lucide-react';
-import { clock, dayCalc, type SheetRow, type SheetSettings, type SheetTotals } from '@/lib/field-sheet';
+import { byTechRows, dayCalc, OFFICE, type SheetRow, type SheetSettings, type SheetTotals, type TechBreakdown } from '@/lib/field-sheet';
+import ByTechTables from './ByTechTables';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { fmtMoney } from '@/lib/utils';
 
@@ -21,9 +22,12 @@ const fmtLong = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en
 const h = (n: number) => (n ? `${n.toFixed(2)} h` : '—');
 const mi = (n: number) => (n ? `${n.toLocaleString('en-US', { maximumFractionDigits: 1 })} mi` : '—');
 
-export default function FieldSheetReport({ site, client, wo, clientWo, address, from, to, rows, s, totals, receipts, photos, onClose }: {
+export default function FieldSheetReport({ site, client, wo, clientWo, address, from, to, rows, s, totals, perTech = [], receipts, photos, onClose }: {
   site: string; client: string; wo: string; clientWo: string | null; address: string; from: string; to: string;
-  rows: SheetRow[]; s: SheetSettings; totals: SheetTotals; receipts: ReportReceipt[]; photos: { group: string; list: ReportPhoto[] }[];
+  rows: SheetRow[]; s: SheetSettings; totals: SheetTotals;
+  /** Each tech's hours, miles and materials (lib/field-sheet.ts byTech). */
+  perTech?: TechBreakdown[];
+  receipts: ReportReceipt[]; photos: { group: string; list: ReportPhoto[] }[];
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -36,6 +40,11 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
   const cell: React.CSSProperties = { padding: '8px 10px', borderBottom: `1px solid ${LINE}`, textAlign: 'left', verticalAlign: 'top' };
   const num: React.CSSProperties = { ...cell, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
   const th = (t: string, right = false) => <th key={t} style={{ ...(right ? num : cell), fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: SUBTLE, fontWeight: 600 }}>{t}</th>;
+  // The client sees only the materials on their bill, and the office's own receipts under FAJ's name.
+  const techRows = byTechRows(perTech.map((t) => ({
+    ...t, tech: t.tech === OFFICE ? 'FAJ Solutions' : t.tech, ...(t.materialsBilled ? {} : { materials: [], materialsTotal: 0 }),
+  })), s.mileRate, totals.lines);
+  const sub: React.CSSProperties = { fontSize: 13.5, fontWeight: 700, color: NAVY, margin: '14px 0 6px' };
   const H = ({ children }: { children: React.ReactNode }) => (
     <h2 style={{ fontSize: 16, fontWeight: 700, color: NAVY, margin: '26px 0 10px', paddingBottom: 6, borderBottom: `2px solid ${GOLD}` }}>{children}</h2>
   );
@@ -75,27 +84,13 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
             ))}
           </div>
 
-          <H>Day by day</H>
-          {days.length === 0 ? <div style={{ color: SUBTLE }}>No work recorded for these dates.</div> : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{th('Day')}{th('Technician')}{th('On site')}{th('Hours on site', true)}{th('Travel', true)}{th('Miles', true)}</tr></thead>
-              <tbody>
-                {days.map(({ r, c }) => {
-                  const on = r.values.arrived && r.values.leftSite ? `${clock(r.values.arrived)} – ${clock(r.values.leftSite)}` : r.values.arrived ? `from ${clock(r.values.arrived)}` : '—';
-                  return [
-                    <tr key={r.key} className="jl-avoid">
-                      <td style={{ ...cell, whiteSpace: 'nowrap', fontWeight: 600 }}>{fmtDay(r.day)}</td>
-                      <td style={{ ...cell, whiteSpace: 'nowrap' }}>{r.tech}</td>
-                      <td style={{ ...cell, whiteSpace: 'nowrap' }}>{c.hours ? on : c.travel ? 'Travel day' : '—'}</td>
-                      <td style={num}>{h(c.hours)}</td><td style={num}>{h(c.travel)}</td><td style={num}>{mi(c.miles)}</td>
-                    </tr>,
-                    r.values.note ? <tr key={`${r.key}-note`} className="jl-avoid"><td style={{ ...cell, paddingTop: 0, color: SUBTLE, fontSize: 12.5 }} colSpan={6}>{r.values.note}</td></tr> : null,
-                  ];
-                })}
-              </tbody>
-              <tfoot><tr style={{ fontWeight: 700 }}><td style={cell} colSpan={3}>Total</td><td style={num}>{h(totals.hours)}</td><td style={num}>{h(totals.travel)}</td><td style={num}>{mi(totals.miles)}</td></tr></tfoot>
-            </table>
-          )}
+          {/* Fred, 2026-10-29: "each tech get their own break down": under each heading, each tech's days and total, then the next tech. */}
+          <H>By technician</H>
+          {techRows.length > 1 ? (
+            <ByTechTables rows={techRows} heading={(title) => <h3 style={sub}>{title}</h3>}
+              th={{ ...cell, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: SUBTLE, fontWeight: 600 }}
+              td={cell} total={{ fontWeight: 700, background: '#FBF6EA' }} />
+          ) : <div style={{ color: SUBTLE }}>No work recorded for these dates.</div>}
 
           {totals.lines.length > 0 && <>
             <H>The bill</H>
@@ -108,7 +103,8 @@ export default function FieldSheetReport({ site, client, wo, clientWo, address, 
             </table>
           </>}
 
-          {receipts.length > 0 && <>
+          {/* By technician lists the hotel, meals and materials tech by tech; without it, the receipts as they came. */}
+          {perTech.length === 0 && receipts.length > 0 && <>
             <H>Receipts</H>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>{th('Day')}{th('For')}{th('Where')}{th('Amount', true)}</tr></thead>

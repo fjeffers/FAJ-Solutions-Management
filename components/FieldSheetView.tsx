@@ -22,8 +22,8 @@ import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  atCost, billRange, blocksBilling, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
-  withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals,
+  atCost, billRange, blocksBilling, byTech, byTechRows, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals, type TechBreakdown,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
 import { isNetviewJob, netviewAnswers, netviewFormUrl, NETVIEW_PAYROLL } from '@/lib/netview-form';
@@ -35,6 +35,7 @@ import { fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { EnrichedWorkOrder } from '@/lib/types';
 import { Section } from '@/components/wf/WfUi';
+import ByTechTables from '@/components/ByTechTables';
 import { loadEvents, OfficeReceiptDialog } from '@/components/wf/ProjectOffice';
 import FieldSheetReport from '@/components/FieldSheetReport';
 import { ClockPanel, StillOnSite } from '@/components/ClockFix';
@@ -70,9 +71,9 @@ async function sheetBill(wo: EnrichedWorkOrder, from?: string, to?: string): Pro
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wo_id: wo.id, from: from || undefined, to: to || undefined, dry_run: true }),
     });
-    const j = (await res.json().catch(() => ({}))) as { error?: string; customer?: string; from?: string; to?: string; memo?: string; lines?: QboSheetBill['lines'] };
+    const j = (await res.json().catch(() => ({}))) as { error?: string; customer?: string; from?: string; to?: string; memo?: string; lines?: QboSheetBill['lines'] } & Pick<QboSheetBill, 'perTech' | 'mileRate'>;
     if (!res.ok || j.error || !j.customer || !j.from || !j.to || !j.lines?.length) return { error: j.error ?? "Couldn't build the bill." };
-    return { bill: { woNumber: wo.wo_number, customerName: j.customer, from: j.from, to: j.to, memo: j.memo ?? '', lines: j.lines } };
+    return { bill: { woNumber: wo.wo_number, customerName: j.customer, from: j.from, to: j.to, memo: j.memo ?? '', lines: j.lines, perTech: j.perTech, mileRate: j.mileRate } };
   } catch {
     return { error: "Couldn't reach the app. Check your connection." };
   }
@@ -471,8 +472,10 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
   const visible = rows.filter((r) => showHidden || !r.hidden);
   const inRange = (d: string) => inDates(d, from, to);
   const receipts = expenses.filter((e) => inRange(e.expense_date));
-  const billed: SheetReceipt[] = receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date }));
+  const billed: SheetReceipt[] = receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date, tech: e.contractor_name }));
   const totals = sheetTotals(rows, billed, settings);
+  // Each tech's hours, miles and materials (Fred, 2026-10-29: "I need a break down from each tech").
+  const perTech = byTech(rows, billed, settings);
   const allTechs = [...new Set([...techs, ...rows.map((r) => r.tech)])];
 
   // ── saving: one write at a time per line, and for the rates, so an older save can't land after a newer one ──
@@ -563,6 +566,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
     await downloadXLSXBook(`${fileSafe(`WO ${wo.wo_number} ${wo.external_wo_id ?? ''} ${jobName(wo)}`)}.xlsx`, [
       { name: 'Field sheet', rows: fieldSheetRows(head, rows, totals, settings), colWidths: [11, 40, 12, 12, 11, 12, 8, 9, 9, 9, 11, 11, 9, 9, 11, 11, 50] },
       { name: 'Receipts', rows: rec, colWidths: [11, 18, 18, 18, 10, 10, 40] },
+      { name: 'By tech', rows: byTechRows(perTech, settings.mileRate, totals.lines), colWidths: [22, 11, 14, 14, 12, 12] },
     ]);
   };
 
@@ -683,6 +687,8 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
         </div>
       </Section>
 
+      <ByTechPanel list={perTech} s={settings} bill={totals.lines} />
+
       <ClockPanel wo={wo} techs={allTechs} from={from} to={to} onChanged={() => void loadEvents([wo.id]).then(setEvents)} />
 
       <Section title="Receipts" subtitle={`${approved.length} approved${waiting.length ? ` · ${waiting.length} waiting for you` : ''}`} right={
@@ -708,7 +714,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
       </Section>
 
       <FinishPanel wo={wo} s={settings} totals={totals} from={from} to={to} rows={rows} receipts={billed} invoices={invoices}
-        allRows={allRows} allReceipts={expenses.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date }))}
+        allRows={allRows} allReceipts={expenses.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date, tech: e.contractor_name }))}
         photoCount={shots.reduce((t, g) => t + g.list.length, 0)} flush={flush} onDone={() => void loadInvoices()} />
 
       <Section title="Photos" subtitle="time, place and GPS are stamped by the tech's phone">
@@ -735,7 +741,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
       {report && (
         <FieldSheetReport site={settings.site || jobName(wo)} client={settings.client || wo.customer_name || ''} wo={wo.wo_number} clientWo={wo.external_wo_id}
           address={address(wo)} from={from || rows.filter((r) => !r.hidden).map((r) => r.day).sort()[0] || ''} to={to || rows.filter((r) => !r.hidden).map((r) => r.day).sort().at(-1) || ''}
-          rows={rows} s={settings} totals={totals}
+          rows={rows} s={settings} totals={totals} perTech={perTech}
           receipts={approved.map((e) => ({ id: e.id, date: e.expense_date, category: e.category, vendor: e.vendor, amount: e.amount }))}
           photos={clientPhotos} onClose={() => setReport(false)} />
       )}
@@ -1178,6 +1184,26 @@ function num(s: string): number | null | undefined {
   if (t === '') return null;
   const n = Number(t);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+/**
+ * Each tech's own breakdown, the way the client reads it: under Hours, Mileage, Hotel, Meals and
+ * Materials, each tech's days and their total, then the next tech (Fred, 2026-10-29: "each tech get
+ * their own break down"). The same rows as the By tech tab of the Excel.
+ */
+function ByTechPanel({ list, s, bill }: { list: TechBreakdown[]; s: SheetSettings; bill: SheetTotals['lines'] }) {
+  if (!list.some((t) => t.days > 0 || t.hotels.length || t.meals > 0 || t.materials.length)) return null;
+  const notBilled = list.some((t) => t.materials.length && !t.materialsBilled);
+  return (
+    <Section title="By tech" subtitle="each tech's days and totals, as the client reads them">
+      <ByTechTables rows={byTechRows(list, s.mileRate, bill)}
+        heading={(title) => <h4 style={{ margin: '14px 0 6px', fontSize: 14.5 }}>{title}</h4>}
+        th={{ ...TH, position: 'static' }} td={{ ...TD, padding: '7px 6px' }} total={{ background: '#F6F1E4', fontWeight: 700 }} />
+      {notBilled && (
+        <div className="wf-subtle" style={{ fontSize: 12.5, marginTop: 6 }}>Materials aren&apos;t on this bill: tick <b>Bill the other receipts at cost</b> above to bill them. They&apos;re shown so you know who bought what.</div>
+      )}
+    </Section>
+  );
 }
 
 function Swatch({ bg }: { bg: string }) {

@@ -66,6 +66,8 @@ import {
   type JobRates, type RateRow,
 } from '@/lib/job-log-rates';
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
+import JobLogInvoice from '@/components/JobLogInvoice';
+import { buildInvoice, downloadInvoiceXlsx, parseInvoiceMeta, sameMeta, type InvoiceHead, type InvoiceMeta } from '@/lib/job-log-invoice';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
@@ -186,7 +188,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // The client's copy has each tech's rates and the dollars; the tech's copy has none (Fred, 2026-10-30: "i need a
   // copy i can entered how much per an hour the milage for each tech ... then i need a copy with out it for the
   // tech"). The rates are kept per job in job_log_rates, which only the office can read (migration 147).
-  const [copy, setCopy] = useState<'tech' | 'client'>('tech');
+  // And the invoice, laid out as the client's (Fred, 2026-10-30: "this how the client want the layout to look").
+  const [copy, setCopy] = useState<'tech' | 'client' | 'invoice'>('tech');
   // The rates table as the office is changing it (null: as saved).
   const [rateEdit, setRateEdit] = useState<RateRow[] | null>(null);
   const [savedRates, setSavedRates] = useState<JobRates>({});
@@ -194,6 +197,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // 60", "not a flat rate hourly"): as the office is changing it (null: as saved), and as saved (null: each tech's own).
   const [allEdit, setAllEdit] = useState<{ on: boolean; hour: number | null } | null>(null);
   const [savedAll, setSavedAll] = useState<number | null>(null);
+  // The invoice's number, date, terms, labor and meal allowance: as typed (null: as saved), and as saved with the rates.
+  const todayDay = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+  const [metaEdit, setMetaEdit] = useState<InvoiceMeta | null>(null);
+  const [savedMeta, setSavedMeta] = useState<InvoiceMeta>(() => parseInvoiceMeta(null, todayDay));
   // The saved rates didn't load: nothing to save over them, and no client copy, until they do (Greptile, CodeRabbit on PR #40).
   const [ratesFailed, setRatesFailed] = useState(false);
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
@@ -222,13 +229,14 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       afterSaves(w.id).then(() => db.from('work_orders').select('job_log_left_out, job_log_receipt_photos, job_log_sheet').eq('id', w.id).maybeSingle()),
       loadEvents([w.id]),
       db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', w.id),
-      afterSaves(w.id).then(() => db.from('job_log_rates').select('rates, all_hours_rate').eq('wo_id', w.id).maybeSingle()),
+      afterSaves(w.id).then(() => db.from('job_log_rates').select('rates, all_hours_rate, invoice').eq('wo_id', w.id).maybeSingle()),
     ]).then(async ([p, ph, l, ex, od, wo, ev, fs, jr]) => {
       if (jr.error) setRatesFailed(true);
       else {
-        const kept = jr.data as { rates?: unknown; all_hours_rate?: unknown } | null;
+        const kept = jr.data as { rates?: unknown; all_hours_rate?: unknown; invoice?: unknown } | null;
         setSavedRates(parseRates(kept?.rates));
         setSavedAll(parseRate(kept?.all_hours_rate));
+        setSavedMeta(parseInvoiceMeta(kept?.invoice, new Date().toLocaleDateString('en-CA', { timeZone: TZ })));
       }
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));
@@ -363,7 +371,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const worked = [...shown.time.map((r) => r.day), ...shown.miles.map((r) => r.day), ...days.filter((r) => !r.hidden && inRange(r.day, from, to)).map((r) => r.day)].sort();
   const logName = jobLogName(w, from || worked[0] || '', to || worked.at(-1) || '');
   // The client's copy is named so, so the two PDFs don't get mixed up.
-  const pdfName = copy === 'client' ? `${logName} · Client copy` : logName;
+  const pdfName = copy === 'client' ? `${logName} · Client copy` : copy === 'invoice' ? `${logName} · Invoice${savedMeta.number ? ` ${savedMeta.number}` : ''}` : logName;
   useEffect(() => {
     const was = document.title;
     document.title = pdfName;
@@ -382,16 +390,23 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // The rates each row is charged at: each tech's, or the one for all hours. As typed, and as saved.
   const typedRates = withAllHoursRate(shown, rates, typedAll);
   const billRates = withAllHoursRate(shown, savedRates, savedAll);
+  // The invoice, as saved: each tech's hours, meals, mileage and hotel at the rates saved.
+  const invoiceHead: InvoiceHead = { billTo: w.customer_name ?? '', shipTo: [w.title ?? '', where].filter(Boolean), meta: savedMeta };
+  const invoice = copy === 'invoice' ? buildInvoice(shown, billRates, crew, savedMeta, [w.site_city, w.site_state].filter(Boolean).join(' ')) : null;
   // The total under the table as the rates are typed; the page, the print and Excel with the rates saved, so a
   // print (the button, or the browser's own) is never of rates that aren't kept (CodeRabbit on PR #40).
   const typedCharges = chargesByTech(shown, typedRates, crew);
   const charges = chargesByTech(shown, billRates, crew);
   const unbilled = notCharged(shown, typedRates, crew);
-  const ratesChanged = !sameRates(rates, savedRates) || typedAll !== savedAll;
+  // The invoice's boxes as typed, and as they'd be saved.
+  const metaShown = metaEdit ?? savedMeta;
+  const typedMeta = parseInvoiceMeta(metaShown, todayDay);
+  const setMeta = (patch: Partial<InvoiceMeta>) => setMetaEdit({ ...metaShown, ...patch });
+  const ratesChanged = !sameRates(rates, savedRates) || typedAll !== savedAll || !sameMeta(typedMeta, savedMeta);
   // The client's copy prints and downloads only with its rates saved and loaded: never an empty "$0.00" copy, or
   // rates that aren't kept (CodeRabbit on PR #40).
   const noSavedRates = Object.keys(savedRates).length === 0 && savedAll == null;
-  const clientBlocked = copy === 'client' && (ratesChanged || ratesFailed || noSavedRates);
+  const clientBlocked = copy !== 'tech' && (ratesChanged || ratesFailed || noSavedRates);
   const rateNames = [...new Set([...crew, ...techsOnSheet])];
   const editRates = (change: (rows: RateRow[]) => RateRow[]) => setRateEdit(change(rateTable));
   // The client's copy: each row of the hours and of the miles with its rate and dollars, each tech's and the overall
@@ -406,17 +421,19 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const moneyCell = (n: number | null | undefined) => <td style={cell}>{n == null ? '—' : fmtMoney(n)}</td>;
   const setRate = (i: number, patch: Partial<RateRow>) => editRates((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const saveRates = async () => {
-    const clean = rates, cleanAll = typedAll;
+    const clean = rates, cleanAll = typedAll, cleanMeta = typedMeta;
     setSaving(true);
     const { error } = await queueSave(w.id, () => createClient().from('job_log_rates')
-      .upsert({ wo_id: w.id, rates: clean, all_hours_rate: cleanAll, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' }));
+      .upsert({ wo_id: w.id, rates: clean, all_hours_rate: cleanAll, invoice: cleanMeta, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' }));
     setSaving(false);
     if (error) { toastError("The rates didn't save. Check your connection and try again."); return; }
     setSavedRates(clean);
     setSavedAll(cleanAll);
+    setSavedMeta(cleanMeta);
     // Back to the table as saved, unless a rate was changed while it saved: that change stays, still to save (Greptile on PR #40).
     setRateEdit((now) => (now && !sameRates(ratesFromRows(now), clean) ? now : null));
     setAllEdit((now) => (now && (now.on ? now.hour : null) !== cleanAll ? now : null));
+    setMetaEdit((now) => (now && !sameMeta(parseInvoiceMeta(now, todayDay), cleanMeta) ? now : null));
     toastSuccess("Rates saved. They're on the client's copy only.");
   };
 
@@ -446,6 +463,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   };
   // Fred's workbook (job-log-timesheet.xlsx) with this log's rows, the days picked; its numbers are formulas.
   const downloadExcel = () => {
+    if (invoice) {
+      downloadInvoiceXlsx(`${pdfName}.xlsx`, invoice, invoiceHead).catch(() => toastError("The Excel file didn't download. Try again."));
+      return;
+    }
     const lines = [
       [w.customer_name && `Client: ${w.customer_name}`, w.external_wo_id && `Client WO #: ${w.external_wo_id}`, `FAJ WO #: ${w.wo_number}`].filter(Boolean).join(' · '),
       ...(w.site_name || where ? [`Site: ${[w.site_name, where].filter(Boolean).join(' — ')}`] : []),
@@ -677,8 +698,31 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F', marginRight: 4 }}>Copy:</span>
           <button type="button" aria-pressed={copy === 'tech'} className={`wf-btn wf-btn-sm ${copy === 'tech' ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setCopy('tech')}>Tech copy (no rates)</button>
           <button type="button" aria-pressed={copy === 'client'} className={`wf-btn wf-btn-sm ${copy === 'client' ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setCopy('client')}>Client copy (rates)</button>
+          <button type="button" aria-pressed={copy === 'invoice'} className={`wf-btn wf-btn-sm ${copy === 'invoice' ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setCopy('invoice')}>Invoice</button>
         </div>
-        {copy === 'client' && (
+        {copy === 'invoice' && (
+          <div style={{ flexBasis: '100%', background: '#fff', border: '1px solid #E3C987', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Invoice <span style={{ fontWeight: 400, color: '#5E6470' }}>(the client’s layout; saved with the rates below)</span></div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', fontSize: 12.5 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>Invoice #
+                <input className="wf-input" style={{ width: 110, minHeight: 36 }} value={metaShown.number} onChange={(e) => setMeta({ number: e.target.value })} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>Date
+                <input type="date" className="wf-input" style={{ minHeight: 36 }} value={metaShown.date} onChange={(e) => e.target.value && setMeta({ date: e.target.value })} />
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 90 }}>Terms (net days)
+                <NumBox label="Terms, net days" value={metaShown.terms} onChange={(n) => setMeta({ terms: n == null ? 30 : Math.round(n) })} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 130 }}>Meal allowance a day
+                <NumBox label="Meal allowance a day" value={metaShown.meal} onChange={(n) => setMeta({ meal: n })} />
+              </div>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 260px' }}>What the labor was (each day’s line)
+                <input className="wf-input" style={{ minHeight: 36 }} value={metaShown.labor} onChange={(e) => setMeta({ labor: e.target.value })} />
+              </label>
+            </div>
+          </div>
+        )}
+        {copy !== 'tech' && (
           <div style={{ flexBasis: '100%', background: '#fff', border: '1px solid #E3C987', borderRadius: 10, padding: '10px 12px' }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Rates <span style={{ fontWeight: 400, color: '#5E6470' }}>(on the client’s copy only; a box left empty isn’t charged)</span></div>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -712,7 +756,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 8 }}>
               <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" disabled={rateNames.every((n) => rateTable.some((r) => r.tech === n))}
                 onClick={() => editRates((rows) => [...rows, { tech: rateNames.find((n) => !rows.some((r) => r.tech === n)) ?? '', hour: null, mile: null }])}><Plus size={14} /> Add a rate</button>
-              <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged || ratesFailed} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : 'Save rates'}</button>
+              <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged || ratesFailed} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : copy === 'invoice' ? 'Save rates and invoice' : 'Save rates'}</button>
               {ratesChanged ? <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>
                 : noSavedRates && !ratesFailed && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Set a rate and save it to print the client’s copy.</span>}
               {/* The total as the rates are typed (Fred: "i enter the rates and it shows the total"). */}
@@ -744,7 +788,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         )}
       </div>
 
-      {/* The report itself */}
+      {/* The report itself; or the invoice, as the client lays it out. */}
+      {invoice ? (
+        <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#000', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+          <JobLogInvoice invoice={invoice} head={invoiceHead} />
+        </div>
+      ) : (
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>
         <div className="jl-band" style={{ background: 'linear-gradient(180deg, #13284A 0%, #0E1B2E 100%)', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -992,6 +1041,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           </div>
         </div>
       </div>
+      )}
     </div>,
     document.body,
   );

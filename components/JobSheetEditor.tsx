@@ -34,7 +34,7 @@ const Field = ({ name, children }: { name: string; children: React.ReactNode }) 
  * A number typed as text, so "47." can be typed on the way to "47.48"; anything that isn't a number isn't taken.
  * An empty box is `empty` (none, or 0 for an amount or a break), and shows empty.
  */
-function NumBox({ value, onChange, label, empty = null }: {
+export function NumBox({ value, onChange, label, empty = null }: {
   value: number | null; onChange: (n: number | null) => void; label: string; empty?: number | null;
 }) {
   const show = (n: number | null) => (n == null || n === empty ? '' : String(n));

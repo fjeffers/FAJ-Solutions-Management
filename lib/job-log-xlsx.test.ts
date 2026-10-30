@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import { jobLogCells, type XCell } from './job-log-xlsx';
 import type { JobSheet } from './job-log-sheet';
+import { chargesByTech } from './job-log-rates';
 
 const sheet: JobSheet = {
   time: [
@@ -74,6 +75,26 @@ describe('the job log in Excel', () => {
     // The Hours screen's own hours too, the break typed in Excel still coming off them.
     const typed = jobLogCells({ ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0.5, hours: 6.5 }] }, head);
     expect(typed[at - 1][5]).toEqual({ t: 'n', v: 6, z: '0.00', f: `ROUND(MAX(0,6.5-E${at}),2)` });
+  });
+
+  it("the tech's copy has no charges, the client's has each tech's hours and miles × their rates (Fred, 2026-10-30)", () => {
+    expect(find(rows, 'CHARGES')).toBe(-1);
+    const charges = chargesByTech(sheet, { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, head.crew);
+    const client = jobLogCells(sheet, head, charges);
+    const top = find(client, 'CHARGES');
+    expect(top).toBeGreaterThan(find(client, 'JOB TOTAL'));
+    expect(client[top + 1]).toEqual(['NAME', 'FOR', 'QUANTITY', 'RATE', 'AMOUNT']);
+    const at = top + 3;
+    // Paul's hours are his subtotal above, × $65 to the cent.
+    expect(client[top + 2]).toEqual(['Paul Gibbs', 'Hours', { t: 'n', v: 19.82, z: '0.00', f: `F${find(client, 'Paul Gibbs final hours') + 1}` },
+      { t: 'n', v: 65, z: '$#,##0.00" /hr"' }, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `ROUND(C${at}*D${at},2)` }]);
+    expect(client[top + 3]).toEqual(['Paul Gibbs', 'Miles', { t: 'n', v: 204.1, z: '#,##0.0', f: `E${find(client, 'Paul Gibbs total miles') + 1}` },
+      { t: 'n', v: 0.7, z: '$#,##0.00" /mi"' }, { t: 'n', v: 142.87, z: '$#,##0.00', f: `ROUND(C${at + 1}*D${at + 1},2)` }]);
+    // Kendell has no rate yet: the rate's empty, and typing one in Excel works the amount out. No miles, no line.
+    expect(client[top + 4].slice(0, 4)).toEqual(['Kendell Newbold', 'Hours', { t: 'n', v: 10, z: '0.00', f: `F${find(client, 'Kendell Newbold final hours') + 1}` }, '']);
+    expect(client[top + 5][0]).toBe('TOTAL CHARGES');
+    expect(client[top + 5][4]).toEqual({ t: 'n', v: 1431.17, z: '$#,##0.00', f: `SUM(E${top + 3}:E${top + 5})` });
+    expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(6);
   });
 
   it('opens in Excel with its formulas and the summary pointing at the totals', () => {

@@ -61,7 +61,8 @@ import {
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
-import JobSheetEditor from '@/components/JobSheetEditor';
+import { chargesByTech, chargesTotal, missingRates, parseRates, ratesToSave, type JobRates, type TechCharge } from '@/lib/job-log-rates';
+import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
@@ -179,6 +180,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [savedSheet, setSavedSheet] = useState<JobSheet | null>(null);
   const [draft, setDraft] = useState<JobSheet | null>(null);
   const [saving, setSaving] = useState(false);
+  // The client's copy has each tech's rates and the dollars; the tech's copy has none (Fred, 2026-10-30: "i need a
+  // copy i can entered how much per an hour the milage for each tech ... then i need a copy with out it for the
+  // tech"). The rates are kept per job in job_log_rates, which only the office can read (migration 147).
+  const [copy, setCopy] = useState<'tech' | 'client'>('tech');
+  const [rates, setRates] = useState<JobRates>({});
+  const [savedRates, setSavedRates] = useState<JobRates>({});
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -205,7 +212,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       afterSaves(w.id).then(() => db.from('work_orders').select('job_log_left_out, job_log_receipt_photos, job_log_sheet').eq('id', w.id).maybeSingle()),
       loadEvents([w.id]),
       db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', w.id),
-    ]).then(async ([p, ph, l, ex, od, wo, ev, fs]) => {
+      afterSaves(w.id).then(() => db.from('job_log_rates').select('rates').eq('wo_id', w.id).maybeSingle()),
+    ]).then(async ([p, ph, l, ex, od, wo, ev, fs, jr]) => {
+      const keptRates = parseRates((jr.data as { rates?: unknown } | null)?.rates);
+      setRates(keptRates);
+      setSavedRates(keptRates);
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));
       setLogs(Array.isArray(l) ? (l as TimeLog[]) : []);
@@ -338,11 +349,30 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // jobLogName). The days picked, else the job's first and last day on the Field Sheet.
   const worked = [...shown.time.map((r) => r.day), ...shown.miles.map((r) => r.day), ...days.filter((r) => !r.hidden && inRange(r.day, from, to)).map((r) => r.day)].sort();
   const logName = jobLogName(w, from || worked[0] || '', to || worked.at(-1) || '');
+  // The client's copy is named so, so the two PDFs don't get mixed up.
+  const pdfName = copy === 'client' ? `${logName} · Client copy` : logName;
   useEffect(() => {
     const was = document.title;
-    document.title = logName;
+    document.title = pdfName;
     return () => { document.title = was; };
-  }, [logName]);
+  }, [pdfName]);
+
+  // Each tech's hours and miles shown, × their rates, for the client's copy.
+  const charges = chargesByTech(shown, rates, crew);
+  const noRate = missingRates(charges);
+  const ratesChanged = JSON.stringify(ratesToSave(rates)) !== JSON.stringify(savedRates);
+  const setRate = (tech: string, k: 'hour' | 'mile', n: number | null) =>
+    setRates((r) => ({ ...r, [tech]: { hour: r[tech]?.hour ?? null, mile: r[tech]?.mile ?? null, [k]: n } }));
+  const saveRates = async () => {
+    const clean = ratesToSave(rates);
+    setSaving(true);
+    const { error } = await queueSave(w.id, () => createClient().from('job_log_rates')
+      .upsert({ wo_id: w.id, rates: clean, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' }));
+    setSaving(false);
+    if (error) { toastError("The rates didn't save. Check your connection and try again."); return; }
+    setSavedRates(clean);
+    toastSuccess("Rates saved. They're on the client's copy only.");
+  };
 
   // Saving an edit: the job keeps its own sheet, and the log, the print and Excel show it from then on.
   const saveSheet = async () => {
@@ -375,7 +405,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       ...(w.site_name || where ? [`Site: ${[w.site_name, where].filter(Boolean).join(' — ')}`] : []),
       ...(techs.length ? [`Technician${techs.length > 1 ? 's' : ''}: ${techs.join(', ')}`] : []),
     ];
-    downloadJobLogXlsx(`${logName} · Time sheet.xlsx`, shown, { title: w.title || 'Work order', lines, range, crew })
+    downloadJobLogXlsx(copy === 'client' ? `${logName} · Client time sheet.xlsx` : `${logName} · Time sheet.xlsx`,
+      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? charges : undefined)
       .catch(() => toastError("The Excel file didn't download. Try again."));
   };
 
@@ -394,6 +425,40 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const noneLine = (techs: string[], what: string) => techs.map((t) => (
     <div key={t} className="jl-avoid" style={{ color: '#5E6470', fontSize: 12, marginTop: 6 }}>{t}: no {what} {from || to ? 'in these dates' : 'on this job'}.</div>
   ));
+
+  /** The client's copy: a line for each tech's hours and miles, the rate and the dollars, then the total. */
+  const chargesTable = (list: TechCharge[]) => {
+    const rate = (r: number | null, unit: string) => (r == null ? 'No rate' : `${fmtMoney(r)}/${unit}`);
+    const lines = list.flatMap((c) => [
+      ...(c.hours > 0 || c.hourRate != null ? [{ tech: c.tech, what: 'Hours', qty: hrs(c.hours), rate: rate(c.hourRate, 'hr'), amount: c.labor }] : []),
+      ...(c.miles > 0 || c.mileRate != null ? [{ tech: c.tech, what: 'Miles', qty: c.miles.toLocaleString('en-US'), rate: rate(c.mileRate, 'mi'), amount: c.mileage }] : []),
+    ]);
+    return (
+      <div className="jl-sec">
+        <H>Charges</H>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr style={{ background: '#F6F4EF' }}>
+            {['Name', 'For', 'Quantity', 'Rate', 'Amount'].map((h) => <th key={h} style={headCell}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={i} className="jl-avoid">
+                <td style={cell}>{l.tech}</td>
+                <td style={cell}>{l.what}</td>
+                <td style={cell}>{l.qty}</td>
+                <td style={cell}>{l.rate}</td>
+                <td style={cell}>{l.amount == null ? '—' : fmtMoney(l.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="jl-band jl-avoid" style={{ marginTop: 10, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', fontSize: 13 }}>
+          <b style={{ color: '#E3C987', letterSpacing: 1 }}>TOTAL CHARGES</b>
+          <b>{fmtMoney(chargesTotal(list))}</b>
+        </div>
+      </div>
+    );
+  };
 
   /**
    * A table of receipts like the hours: each tech's receipts (name and date on every row), the tech's
@@ -530,8 +595,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <label style={{ fontSize: 13 }}>To <input type="date" className="wf-input" style={{ width: 150, minHeight: 36, padding: '4px 8px' }} value={to} onChange={(e) => setTo(e.target.value)} /></label>
         {/* Not until the job's days are in: the PDF's name has them (Greptile on PR #21). */}
         {/* While editing, save first: the print and Excel are what's saved. */}
-        <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
-        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
+        {/* And the rates saved first on the client's copy, so what's printed is what's kept. */}
+        <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft || (copy === 'client' && ratesChanged)} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft || (copy === 'client' && ratesChanged)} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
         {draft ? (
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>
@@ -543,6 +609,28 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
           day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <div role="group" aria-label="Which copy" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F', marginRight: 4 }}>Copy:</span>
+          <button type="button" aria-pressed={copy === 'tech'} className={`wf-btn wf-btn-sm ${copy === 'tech' ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setCopy('tech')}>Tech copy (no rates)</button>
+          <button type="button" aria-pressed={copy === 'client'} className={`wf-btn wf-btn-sm ${copy === 'client' ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setCopy('client')}>Client copy (rates)</button>
+        </div>
+        {copy === 'client' && (
+          <div style={{ flexBasis: '100%', background: '#fff', border: '1px solid #E3C987', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Each tech’s rates <span style={{ fontWeight: 400, color: '#5E6470' }}>(on the client’s copy only)</span></div>
+            {charges.length === 0 ? <div style={{ fontSize: 13, color: '#5E6470' }}>No hours or miles in these dates yet.</div> : charges.map((c) => (
+              <div key={c.tech} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'end', gap: '6px 12px', padding: '6px 0', borderTop: '1px solid #ECE8DF' }}>
+                <div style={{ flex: '1 1 160px', fontSize: 13 }}><b>{c.tech}</b><div style={{ color: '#5E6470', fontSize: 12 }}>{hrs(c.hours)} hours · {c.miles.toLocaleString('en-US')} miles</div></div>
+                <label style={{ fontSize: 12, width: 120 }}>$ per hour<NumBox label={`$ per hour, ${c.tech}`} value={rates[c.tech]?.hour ?? null} onChange={(n) => setRate(c.tech, 'hour', n)} /></label>
+                <label style={{ fontSize: 12, width: 120 }}>$ per mile<NumBox label={`$ per mile, ${c.tech}`} value={rates[c.tech]?.mile ?? null} onChange={(n) => setRate(c.tech, 'mile', n)} /></label>
+              </div>
+            ))}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 8 }}>
+              <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : 'Save rates'}</button>
+              {ratesChanged && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>}
+              {!ratesChanged && noRate.length > 0 && <span style={{ fontSize: 12.5, color: '#B42318' }}>No rate yet for {noRate.join(', ')}: {noRate.length === 1 ? 'that line shows' : 'those lines show'} no dollars.</span>}
+            </div>
+          </div>
+        )}
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
           {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{shown.miles.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
@@ -738,6 +826,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                   <span>Miles <b>{totalMiles.toLocaleString('en-US')}</b></span>
                 </div>
               )}
+
+              {/* The client's copy only: each tech's hours and miles × their rates, and the total ("Rates and the dollars"). */}
+              {copy === 'client' && charges.length > 0 && chargesTable(charges)}
             </>
           )}
 

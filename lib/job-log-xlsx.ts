@@ -3,8 +3,10 @@
 // receipts, each tech's rows and subtotal (the lead tech first), the overall total, and the JOB TOTAL.
 // Hours, miles and the totals are formulas, so a change typed in Excel adds up again: hours = MOD(out − in, 1)
 // × 24 − break, a day's miles = odometer end − start. No billable total ("No, keep it off"), and the JOB TOTAL
-// is hours and miles only, no dollars ("i dont want it mix").
+// is hours and miles only, no dollars ("i dont want it mix"). The client's copy adds CHARGES under it: each tech's
+// hours and miles × their rates (Fred, 2026-10-30: "the client just asked for this"; lib/job-log-rates.ts).
 import { byTechGroups } from './job-log';
+import { chargesTotal, type TechCharge } from './job-log-rates';
 import { fixedHours, hoursTotal, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
 
 /** A cell for SheetJS: text, or a number with its Excel format and, for a sum or a sum's part, its formula. */
@@ -23,8 +25,8 @@ const byDay = <T extends { day: string }>(rows: T[], then?: (a: T, b: T) => numb
 export const JOB_LOG_WIDTHS = [19, 11, 16, 14, 10, 10];
 export const JOB_LOG_MARGINS = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
 
-/** The workbook's one sheet, row by row. */
-export function jobLogCells(sheet: JobSheet, head: JobLogHead): XCell[][] {
+/** The workbook's one sheet, row by row; `charges` for the client's copy. */
+export function jobLogCells(sheet: JobSheet, head: JobLogHead, charges?: TechCharge[]): XCell[][] {
   const rows: XCell[][] = [];
   /** The Excel row number the next row gets. */
   const next = () => rows.length + 1;
@@ -40,15 +42,17 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead): XCell[][] {
   /**
    * A section: its title and column names, each tech's rows then the tech's subtotal, and the overall total.
    * `col` is the column of the number that's added up; `cells` makes a row's cells given its Excel row number.
+   * Gives the overall total's cell, and each tech's subtotal cell.
    */
   const section = <T extends { tech: string; day: string }>(
     title: string, columns: string[], list: T[], col: string, fmt: string,
     cells: (r: T, at: number) => XCell[], value: (rows: T[]) => number, subtotal: (tech: string) => string, overall: string,
-  ): string => {
+  ): { total: string; byTech: Map<string, string> } => {
     rows.push([]);
     rows.push([title]);
     rows.push(columns);
     const subs: string[] = [];
+    const byTech = new Map<string, string>();
     const pad = columns.length - 1;
     for (const g of byTechGroups(list, (r) => r.tech, head.crew)) {
       const first = next();
@@ -56,10 +60,11 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead): XCell[][] {
       const at = next();
       rows.push([subtotal(g.tech), ...Array(pad - 1).fill(null), num(value(g.items), fmt, `SUM(${col}${first}:${col}${at - 1})`)]);
       subs.push(`${col}${at}`);
+      byTech.set(g.tech, `${col}${at}`);
     }
     const at = next();
     rows.push([overall, ...Array(pad - 1).fill(null), num(value(list), fmt, subs.length ? subs.join('+') : '0')]);
-    return `${col}${at}`;
+    return { total: `${col}${at}`, byTech };
   };
 
   const hours = section('Time on site', ['NAME', 'DATE', 'CLOCK IN', 'CLOCK OUT', 'BREAK', 'HOURS'],
@@ -84,27 +89,46 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead): XCell[][] {
 
   const money = (title: string, what: string, list: MoneyRow[]) => section(title, ['NAME', 'DATE', 'STORE', 'AMOUNT'], byDay(list), 'D', USD,
     (r) => [r.tech, num(dayNumber(r.day), DATE), r.store || '—', num(r.amount, USD)],
-    moneyTotal, (t) => `${t} total ${what}`, `Overall total ${what}`);
+    moneyTotal, (t) => `${t} total ${what}`, `Overall total ${what}`).total;
   const meals = money('Meals', 'meals', sheet.meals);
   const materials = money('Materials', 'materials', sheet.materials);
   const other = section('Other receipts', ['NAME', 'DATE', 'FOR', 'STORE', 'AMOUNT'], byDay(sheet.other), 'E', USD,
     (r) => [r.tech, num(dayNumber(r.day), DATE), r.for || '—', r.store || '—', num(r.amount, USD)],
-    moneyTotal, (t) => `${t} total`, 'Overall total other receipts');
+    moneyTotal, (t) => `${t} total`, 'Overall total other receipts').total;
 
   const h = hoursTotal(sheet.time), mi = milesTotal(sheet.miles);
-  summary.push(num(h, HRS, hours), num(mi, MILES, miles), num(moneyTotal(sheet.meals), USD, meals),
+  summary.push(num(h, HRS, hours.total), num(mi, MILES, miles.total), num(moneyTotal(sheet.meals), USD, meals),
     num(moneyTotal(sheet.materials), USD, materials), num(moneyTotal(sheet.other), USD, other));
   rows.push([]);
   // One line that says what each number is ("72.56 hours", "458.0 miles"), so a page never splits it. Hours and
   // miles only: the receipts' dollars stay in their own sections, not added up with them (Fred: "i dont want it mix").
-  rows.push(['JOB TOTAL', num(h, `${HRS}" hours"`, hours), num(mi, `${MILES}" miles"`, miles)]);
+  rows.push(['JOB TOTAL', num(h, `${HRS}" hours"`, hours.total), num(mi, `${MILES}" miles"`, miles.total)]);
+
+  if (charges) {
+    // The client's copy: a tech's hours and miles are their subtotals above, so an edit there carries down; the
+    // amount is quantity × rate to the cent, and a rate typed in Excel works it out. A rate not set is left empty.
+    rows.push([]);
+    rows.push(['CHARGES']);
+    rows.push(['NAME', 'FOR', 'QUANTITY', 'RATE', 'AMOUNT']);
+    const first = next();
+    const line = (tech: string, what: string, qty: number, qtyFmt: string, ref: string | undefined, rate: number | null, unit: string, amount: number | null) => {
+      const at = next();
+      rows.push([tech, what, num(qty, qtyFmt, ref), rate == null ? '' : num(rate, `${USD}" ${unit}"`), num(amount ?? 0, USD, `ROUND(C${at}*D${at},2)`)]);
+    };
+    for (const c of charges) {
+      if (c.hours > 0 || c.hourRate != null) line(c.tech, 'Hours', c.hours, HRS, hours.byTech.get(c.tech), c.hourRate, '/hr', c.labor);
+      if (c.miles > 0 || c.mileRate != null) line(c.tech, 'Miles', c.miles, MILES, miles.byTech.get(c.tech), c.mileRate, '/mi', c.mileage);
+    }
+    const last = next() - 1;
+    rows.push(['TOTAL CHARGES', null, null, null, num(chargesTotal(charges), USD, last >= first ? `SUM(E${first}:E${last})` : '0')]);
+  }
   return rows;
 }
 
-/** Saves the workbook ("<the job log's name>.xlsx"). */
-export async function downloadJobLogXlsx(filename: string, sheet: JobSheet, head: JobLogHead) {
+/** Saves the workbook ("<the job log's name>.xlsx"); with `charges`, the client's copy. */
+export async function downloadJobLogXlsx(filename: string, sheet: JobSheet, head: JobLogHead, charges?: TechCharge[]) {
   const XLSX = await import('xlsx');
-  const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head));
+  const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head, charges));
   ws['!cols'] = JOB_LOG_WIDTHS.map((wch) => ({ wch }));
   ws['!margins'] = JOB_LOG_MARGINS;
   const wb = XLSX.utils.book_new();

@@ -28,6 +28,8 @@ const tables: Record<string, Record<string, unknown>[]> = {
   field_sheet_days: [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218 }, added: false, hidden: false }],
 };
 const updates: Record<string, unknown>[] = [];
+// Rows written with upsert (the rates), by table.
+const upserts: { table: string; row: Record<string, unknown>; onConflict?: string }[] = [];
 // How long each save takes; the first one slow, to check a quick run of taps still lands in order.
 let saveDelays: number[] = [];
 // Which saves fail, in order.
@@ -45,6 +47,10 @@ function query(table: string) {
   chain.then = (ok: (v: unknown) => unknown) => (table === 'job_punches' ? punchesHeld : Promise.resolve())
     .then(() => ({ data: tables[table] ?? [], error: null })).then(ok);
   chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
+  chain.upsert = async (row: Record<string, unknown>, opts?: { onConflict?: string }) => {
+    upserts.push({ table, row, onConflict: opts?.onConflict });
+    return { error: null };
+  };
   chain.update = (row: Record<string, unknown>) => ({
     eq: async () => {
       await new Promise((ok) => setTimeout(ok, saveDelays.shift() ?? 0));
@@ -69,7 +75,7 @@ const wo = {
   start_date: '2026-10-19', end_date: '2026-10-23', wo_status: 'Open', capture: [], custom_qa: [], wo_tasks: [],
 } as unknown as EnrichedWorkOrder;
 
-afterEach(() => { cleanup(); updates.length = 0; saveDelays = []; saveFails = []; });
+afterEach(() => { cleanup(); updates.length = 0; upserts.length = 0; saveDelays = []; saveFails = []; });
 
 describe('Job log pictures', () => {
   it('has the receipts, the odometer and the site photos; a declined receipt is marked and never printed', async () => {
@@ -698,6 +704,69 @@ describe('Job log edited by the office', () => {
         materials: [{ tech: 'Paul Gibbs', day: '2026-10-21', store: "Lowe's", amount: 104.17 }],
       }),
       { title: 'Gaffney', lines: ['Client: LDS · Client WO #: LDS-1110 · FAJ WO #: 19101401', 'Site: LDS Site 5011876 — Gaffney, SC', 'Technician: Paul Gibbs'], range: 'Whole job', crew: ['Paul Gibbs'] },
+      // The tech's copy: no rates.
+      undefined,
     );
   });
+
+  it("makes a client's copy with each tech's rates and the dollars, and a tech's copy without (Fred: \"the client just asked for this\")", () => withPunches(async () => {
+    vi.mocked(downloadJobLogXlsx).mockClear();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+    await waitFor(() => expect(print.disabled).toBe(false));
+    // The tech's copy first: no rates, no charges.
+    expect(screen.getByRole('button', { name: 'Tech copy (no rates)' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByLabelText('$ per hour, Paul Gibbs')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Charges' })).toBeNull();
+    const techTitle = document.title;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+    expect(document.title).toBe(`${techTitle} · Client copy`);
+    // No rate yet: the dollars are left off and Fred is told whose.
+    expect(screen.getByText('No rate yet for Paul Gibbs: that line shows no dollars.')).toBeTruthy();
+    expect(rowsOf(screen.getByRole('heading', { name: 'Charges' }))).toEqual([
+      ['Paul Gibbs', 'Hours', '9', 'No rate', '—'],
+      ['Paul Gibbs', 'Miles', '18', 'No rate', '—'],
+    ]);
+    fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '65' } });
+    fireEvent.change(screen.getByLabelText('$ per mile, Paul Gibbs'), { target: { value: '.70' } });
+    // Saved before it's printed, so what the client gets is what's kept.
+    expect(print.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
+    await waitFor(() => expect(print.disabled).toBe(false));
+    expect(upserts).toEqual([{ table: 'job_log_rates', row: expect.objectContaining({ wo_id: 'wo', rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }), onConflict: 'wo_id' }]);
+    // 9 h × $65 and 18 mi × $0.70, and the total.
+    expect(rowsOf(screen.getByRole('heading', { name: 'Charges' }))).toEqual([
+      ['Paul Gibbs', 'Hours', '9', '$65.00/hr', '$585.00'],
+      ['Paul Gibbs', 'Miles', '18', '$0.70/mi', '$12.60'],
+    ]);
+    expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGES$597.60');
+    // The hours and miles band stays as it was.
+    expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 18');
+
+    fireEvent.click(screen.getByRole('button', { name: /excel/i }));
+    expect(downloadJobLogXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Client time sheet\.xlsx$/), expect.anything(), expect.anything(),
+      [{ tech: 'Paul Gibbs', hours: 9, hourRate: 65, labor: 585, miles: 18, mileRate: 0.7, mileage: 12.6 }]);
+
+    // Back to the tech's copy: none of it.
+    fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
+    expect(document.title).toBe(techTitle);
+    expect(screen.queryByRole('heading', { name: 'Charges' })).toBeNull();
+    expect(screen.queryByText(/TOTAL CHARGES|\$585/)).toBeNull();
+  }));
+
+  it('keeps the rates on the job: the client copy has them when the log opens again', () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+      await waitFor(() => expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('65'));
+      expect(print.disabled).toBe(false);
+      expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGES$597.60');
+    } finally {
+      delete tables.job_log_rates;
+    }
+  }));
 });

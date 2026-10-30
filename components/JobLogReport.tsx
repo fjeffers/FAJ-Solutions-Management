@@ -256,7 +256,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Hours 19 hours ... Overall total worked 36"; "Don't show the money all we want to see is how much was on site").
   const hoursOf = (ms: number) => Math.round(ms / 36_000) / 100;
   const hrs = (h: number) => h.toLocaleString('en-US', { maximumFractionDigits: 2 });
-  const shortDay = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  // Month/day/year (Fred, 2026-10-30: "Date and year").
+  const dateText = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}/${d.slice(0, 4)}`;
   // Totals add the hours as each day shows them, so the column adds up the way the client reads it
   // (as the Field Sheet does), and the summary shows that same total (Greptile on PR #37).
   const siteHours = r2h(visits.reduce((t, v) => t + hoursOf(v.ms), 0));
@@ -472,7 +473,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                         {g.items.map((v, i) => (
                           <tr key={i} className="jl-avoid">
                             <td style={cell}>{v.tech}</td>
-                            <td style={cell}>{shortDay(v.day)}</td>
+                            <td style={cell}>{dateText(v.day)}</td>
                             <td style={cell}>{fmtTime(v.inAt)}</td>
                             <td style={cell}>{v.outAt ? fmtTime(v.outAt) : v.open ? 'On site now' : '—'}</td>
                             <td style={cell}>{hrs(hoursOf(v.ms))}</td>

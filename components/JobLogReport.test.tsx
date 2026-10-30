@@ -317,6 +317,30 @@ describe('Job log, each tech on their own', () => {
       tables.job_punches = before;
     }
   });
+  it('ends with the overall total worked when one tech did the job', async () => {
+    const before = tables.job_punches;
+    tables.job_punches = [
+      { contractor_name: 'Paul Gibbs', kind: 'in', at: at('19', '08:00'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Paul Gibbs', kind: 'out', at: at('19', '17:00'), lat: null, lng: null, accuracy: null },
+    ];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const heading = await screen.findByRole('heading', { name: 'Time on site' });
+      const table = await waitFor(() => {
+        const next = heading.nextElementSibling;
+        expect(next?.tagName).toBe('TABLE');
+        return next as HTMLElement;
+      });
+      const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+      expect(rows).toEqual([
+        ['Paul Gibbs', '10/19', '8:00 AM', '5:00 PM', '9'],
+        ['Paul Gibbs final hours · 1 day', '9'],
+        ['Overall total worked', '9'],
+      ]);
+    } finally {
+      tables.job_punches = before;
+    }
+  });
 });
 
 describe('Job log saved as a PDF', () => {

@@ -483,14 +483,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                         </tr>
                       </tbody>
                     ))}
-                    {visitGroups.length > 1 && (
-                      <tbody>
-                        <tr className="jl-avoid" style={{ fontWeight: 700 }}>
-                          <td style={cell} colSpan={4}>Overall total worked</td>
-                          <td style={cell}>{hrs(siteHours)}</td>
-                        </tr>
-                      </tbody>
-                    )}
+                    {/* At the bottom with one tech too, as the mileage table's total is (CodeRabbit on PR #37). */}
+                    <tbody>
+                      <tr className="jl-avoid" style={{ fontWeight: 700 }}>
+                        <td style={cell} colSpan={4}>Overall total worked</td>
+                        <td style={cell}>{hrs(siteHours)}</td>
+                      </tr>
+                    </tbody>
                   </table>
                 )}
             </>

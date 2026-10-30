@@ -137,9 +137,10 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
       <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0E1B2E', margin: '18px 0 0' }}>Time sheet</h2>
       <datalist id="job-sheet-crew">{crew.map((t) => <option key={t} value={t} />)}</datalist>
 
-      <div role="tablist" aria-label="Time sheet sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+      {/* Plain buttons, the one picked pressed: a screen reader isn't promised tabs' arrow keys (Greptile on PR #40). */}
+      <div role="group" aria-label="Time sheet sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
         {SECTIONS.map(({ k, tab }) => (
-          <button key={k} type="button" role="tab" aria-selected={shown === k} onClick={() => setShown(k)}
+          <button key={k} type="button" aria-pressed={shown === k} onClick={() => setShown(k)}
             className={`wf-btn wf-btn-sm ${shown === k ? 'wf-btn-navy' : 'wf-btn-outline'}`}>
             {tab} ({sheet[k].length})
           </button>

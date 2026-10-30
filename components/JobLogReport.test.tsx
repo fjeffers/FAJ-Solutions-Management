@@ -485,11 +485,11 @@ describe('Job log edited by the office', () => {
     // 8:00 to 5:30 less half an hour.
     expect(screen.getByText('Total 9 hours')).toBeTruthy();
     // The odometer's end typed again: the miles follow it.
-    fireEvent.click(screen.getByRole('tab', { name: 'Mileage (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mileage (1)' }));
     fireEvent.change(screen.getByLabelText('Odometer end, miles row 1'), { target: { value: '41230' } });
     expect((screen.getByLabelText('Miles, miles row 1') as HTMLInputElement).value).toBe('30');
     // A meal receipt added by hand: the job's tech and first day to start with.
-    fireEvent.click(screen.getByRole('tab', { name: 'Meals (0)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Meals (0)' }));
     const meals = screen.getByRole('heading', { name: 'Meals' }).parentElement!;
     fireEvent.click(within(meals).getByRole('button', { name: /add a row/i }));
     fireEvent.change(screen.getByLabelText('Store, meals row 1'), { target: { value: ' Waffle House ' } });
@@ -574,7 +574,7 @@ describe('Job log edited by the office', () => {
     const edit = await screen.findByRole('button', { name: /edit time sheet/i });
     await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(edit);
-    fireEvent.click(screen.getByRole('tab', { name: 'Materials (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Materials (1)' }));
     const amount = screen.getByLabelText('Amount, materials row 1') as HTMLInputElement;
     expect(amount.value).toBe('104.17');
     fireEvent.change(amount, { target: { value: '18..50' } });
@@ -590,26 +590,28 @@ describe('Job log edited by the office', () => {
     const edit = await screen.findByRole('button', { name: /edit time sheet/i });
     await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(edit);
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Hours (1)', 'Mileage (1)', 'Meals (0)', 'Materials (1)', 'Hotels & other (0)']);
+    const parts = screen.getByRole('group', { name: 'Time sheet sections' });
+    expect(within(parts).getAllByRole('button').map((t) => t.textContent)).toEqual(['Hours (1)', 'Mileage (1)', 'Meals (0)', 'Materials (1)', 'Hotels & other (0)']);
     // The hours first; one part at a time.
-    expect(screen.getByRole('tab', { name: 'Hours (1)' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Hours (1)' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Mileage (1)' }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByLabelText('Clock in, time row 1')).toBeTruthy();
     expect(screen.queryByLabelText('Odometer start, miles row 1')).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Mileage (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mileage (1)' }));
     expect(screen.getByLabelText('Odometer start, miles row 1')).toBeTruthy();
     expect(screen.queryByLabelText('Clock in, time row 1')).toBeNull();
     // A hotel added by hand: what it was for, the store and the amount; it counts on its button.
-    fireEvent.click(screen.getByRole('tab', { name: 'Hotels & other (0)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hotels & other (0)' }));
     const other = screen.getByRole('heading', { name: 'Hotels & other receipts' }).parentElement!;
     fireEvent.click(within(other).getByRole('button', { name: /add a row/i }));
     fireEvent.change(screen.getByLabelText('For, other row 1'), { target: { value: 'Hotel' } });
     fireEvent.change(screen.getByLabelText('Store, other row 1'), { target: { value: 'Hampton Inn' } });
     fireEvent.change(screen.getByLabelText('Amount, other row 1'), { target: { value: '129' } });
-    expect(screen.getByRole('tab', { name: 'Hotels & other (1)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hotels & other (1)' })).toBeTruthy();
     expect(within(other).getByText('Total $129.00')).toBeTruthy();
     // An edit stays when another part is opened and back.
-    fireEvent.click(screen.getByRole('tab', { name: 'Hours (1)' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Hotels & other (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hours (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hotels & other (1)' }));
     expect((screen.getByLabelText('Store, other row 1') as HTMLInputElement).value).toBe('Hampton Inn');
   }));
 

@@ -24,6 +24,8 @@ describe('a row of hours', () => {
     expect(rowHours(t('Paul Gibbs', '2026-10-19', '07:37', ''))).toBeNull();
     expect(rowHours({ ...t('Paul Gibbs', '2026-10-19', '07:37', ''), open: true, ms: 2.5 * 3_600_000 })).toBe(2.5);
     expect(rowHours({ ...t('Paul Gibbs', '2026-10-19', '07:37', '', 0.5), open: true, ms: 4 * 3_600_000 })).toBe(3.5);
+    // 1 h 18 s is 1.005 h: 1.01, as Excel's ROUND makes it (CodeRabbit on PR #39).
+    expect(rowHours({ ...t('Paul Gibbs', '2026-10-19', '07:37', ''), open: true, ms: 3_600_000 + 18_000 })).toBe(1.01);
   });
   it('reads "HH:MM" only', () => {
     expect(minutesOf('7:05')).toBe(425);
@@ -94,7 +96,11 @@ describe('the saved sheet', () => {
   it('is none when the job has not got one, and drops a row without a tech or a day', () => {
     expect(parseSheet(null)).toBeNull();
     expect(parseSheet([])).toBeNull();
-    const p = parseSheet({ time: [{ tech: '', day: '2026-10-19', in: '07:00', out: '15:00' }, { tech: 'Paul Gibbs', day: '10/19', in: '07:00' }, { tech: 'Paul Gibbs', day: '2026-10-19', in: '07:00', out: '15:00', brk: '0.5' }], miles: 'x' });
+    // Not a sheet the app saved: the log keeps the app's (CodeRabbit on PR #39).
+    expect(parseSheet({})).toBeNull();
+    expect(parseSheet({ time: [], miles: [] })).toBeNull();
+    expect(parseSheet({ time: [], miles: [], meals: [], materials: [], other: [] })).toEqual({ time: [], miles: [], meals: [], materials: [], other: [] });
+    const p = parseSheet({ time: [{ tech: '', day: '2026-10-19', in: '07:00', out: '15:00' }, { tech: 'Paul Gibbs', day: '10/19', in: '07:00' }, { tech: 'Paul Gibbs', day: '2026-10-19', in: '07:00', out: '15:00', brk: '0.5' }], miles: ['x'], meals: [], materials: [], other: [] });
     expect(p?.time).toEqual([t('Paul Gibbs', '2026-10-19', '07:00', '15:00', 0.5)]);
     expect(p?.miles).toEqual([]);
   });

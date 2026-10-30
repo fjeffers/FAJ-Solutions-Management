@@ -578,7 +578,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
         <div className="jl-body" style={{ padding: '20px 24px 28px' }}>
           <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{w.title || 'Work order'}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '6px 20px', marginTop: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '6px 20px', marginTop: 10 }}>
             {/* What the client reads first (Fred, 2026-10-30): "Client WO:#, site Number:, Site address:, schedule:
                 Mon Oct 19 thue Oct 23, technician:". FAJ's own WO number only when the client hasn't one. */}
             <div><b>{w.external_wo_id ? 'Client WO #' : 'WO #'}:</b> {w.external_wo_id || w.wo_number}</div>

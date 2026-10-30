@@ -56,6 +56,7 @@ describe('the job log’s name, which the saved PDF gets', () => {
     expect(siteNumber(gaffney)).toBe('5011876');
     expect(siteNumber({ ...gaffney, site_name: ' 5333202' })).toBe('5333202');
     expect(siteNumber({ ...gaffney, site_name: 'Site #42' })).toBe('42');
+    expect(siteNumber({ ...gaffney, site_name: 'Site #12/B' })).toBe('12/B');
     expect(siteNumber({ ...gaffney, site_name: 'Main Office' })).toBe('Main Office');
     // Whatever the client's name, or none on the job.
     expect(siteNumber({ ...gaffney, customer_name: null })).toBe('5011876');

@@ -37,7 +37,9 @@ export type SheetReceipt = {
   expense_date: string; note?: string | null; status: string;
 };
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
+// To 0.01 as Excel's ROUND does, so 1.005 is 1.01 here too, not the 1.00 binary floating point gives (CodeRabbit on
+// PR #39); the tolerance is far below a second of hours.
+const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
 /** "07:37" → 457; anything else → null. */
@@ -176,6 +178,8 @@ const rowsOf = (v: unknown) => (Array.isArray(v) ? v.filter((r): r is Record<str
 export function parseSheet(raw: unknown): JobSheet | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
+  // A sheet the app saved has all five sections; one without them isn't one, and the log keeps the app's (CodeRabbit on PR #39).
+  if (!(['time', 'miles', 'meals', 'materials', 'other'] as const).every((k) => Array.isArray(o[k]))) return null;
   const keep = <T extends { tech: string; day: string }>(r: T) => !!r.tech.trim() && isDay(r.day);
   const money = (r: Record<string, unknown>, withFor: boolean): MoneyRow => ({
     tech: str(r.tech), day: str(r.day), store: str(r.store), amount: num(r.amount) ?? 0, ...(withFor ? { for: str(r.for) } : {}),

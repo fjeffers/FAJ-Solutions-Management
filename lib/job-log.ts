@@ -137,7 +137,7 @@ function siteOf(w: LogJob): string {
  * A site named some other way keeps its name.
  */
 export function siteNumber(w: LogJob): string {
-  const numbered = /\bsite\s*(?:#|no\.?|number)?\s*:?\s*([\w-]*\d[\w-]*)/i.exec(siteOf(w));
+  const numbered = /\bsite\s*(?:#|no\.?|number)?\s*:?\s*([\w/-]*\d[\w/-]*)/i.exec(siteOf(w));
   return numbered ? numbered[1] : siteOf(w);
 }
 

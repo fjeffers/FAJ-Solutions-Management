@@ -3,7 +3,9 @@
 // The job log's tables to edit (Fred, 2026-10-30: "I need to edit all of it hours time milages materials etc all
 // of it"): every row's tech, date, clock in and out, break, odometer, miles, store and amount, a row added or
 // taken out, each section's hours, miles or money worked out as it's typed (lib/job-log-sheet.ts). Each row's
-// boxes go two to a line on a phone and the whole row on one line on a computer (.jse-row, app/wf.css).
+// boxes go two to a line on a phone and the whole row on one line on a computer (.jse-row, app/wf.css). One
+// section shows at a time, picked from the buttons on top (Fred, 2026-10-30: "where do i edit hotels materials and
+// meals and milages? i only see hours"): hotels are with the other receipts.
 import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import {
@@ -12,6 +14,10 @@ import {
 } from '@/lib/job-log-sheet';
 
 type Section = 'time' | 'miles' | 'meals' | 'materials' | 'other';
+const SECTIONS: { k: Section; tab: string }[] = [
+  { k: 'time', tab: 'Hours' }, { k: 'miles', tab: 'Mileage' }, { k: 'meals', tab: 'Meals' },
+  { k: 'materials', tab: 'Materials' }, { k: 'other', tab: 'Hotels & other' },
+];
 
 const box: React.CSSProperties = { boxSizing: 'border-box', width: '100%', minWidth: 0, minHeight: 36, padding: '5px 8px', border: '1px solid #D9D2C3', borderRadius: 6, fontSize: 14, background: '#fff', color: '#1B1C1F' };
 const fmt = (n: number | null) => (n == null ? '—' : n.toLocaleString('en-US', { maximumFractionDigits: 2 }));
@@ -28,7 +34,7 @@ const Field = ({ name, children }: { name: string; children: React.ReactNode }) 
  * A number typed as text, so "47." can be typed on the way to "47.48"; anything that isn't a number isn't taken.
  * An empty box is `empty` (none, or 0 for an amount or a break), and shows empty.
  */
-function NumBox({ value, onChange, label, empty = null }: {
+export function NumBox({ value, onChange, label, empty = null }: {
   value: number | null; onChange: (n: number | null) => void; label: string; empty?: number | null;
 }) {
   const show = (n: number | null) => (n == null || n === empty ? '' : String(n));
@@ -64,6 +70,7 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
   /** The day a new row starts on when its section has none yet. */
   firstDay: string;
 }) {
+  const [shown, setShown] = useState<Section>('time');
   const set = <K extends Section>(k: K, rows: JobSheet[K]) => onChange({ ...sheet, [k]: rows });
   const edit = <K extends Section>(k: K, i: number, patch: Partial<JobSheet[K][number]>) =>
     set(k, sheet[k].map((r, j) => (j === i ? { ...r, ...patch } : r)) as JobSheet[K]);
@@ -98,7 +105,7 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
     </div>
   );
   /** A number worked out from the boxes, where a box would be. */
-  const shown = (name: string, value: string) => (
+  const worked = (name: string, value: string) => (
     <Field name={name}><div style={{ ...box, border: '1px solid transparent', background: 'none', fontWeight: 700, paddingLeft: 2 }}>{value}</div></Field>
   );
 
@@ -130,26 +137,39 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
       <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0E1B2E', margin: '18px 0 0' }}>Time sheet</h2>
       <datalist id="job-sheet-crew">{crew.map((t) => <option key={t} value={t} />)}</datalist>
 
-      {part('Time on site', 'time', sheet.time.map((r: TimeRow, i) => row('time', i, r, (
+      {/* Plain buttons, the one picked pressed: a screen reader isn't promised tabs' arrow keys (Greptile on PR #40). */}
+      <div role="group" aria-label="Time sheet sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+        {SECTIONS.map(({ k, tab }) => (
+          <button key={k} type="button" aria-pressed={shown === k} onClick={() => setShown(k)}
+            className={`wf-btn wf-btn-sm ${shown === k ? 'wf-btn-navy' : 'wf-btn-outline'}`}>
+            {tab} ({sheet[k].length})
+          </button>
+        ))}
+      </div>
+
+      {/* Every part stays on the page, the ones not picked hidden, so a box keeps what's being typed in it ("47." on
+          the way to "47.48") when another part is opened and back (CodeRabbit on PR #40). */}
+      <div hidden={shown !== 'time'}>{part('Time on site', 'time', sheet.time.map((r: TimeRow, i) => row('time', i, r, (
         <>
           <Field name="Clock in"><input aria-label={`Clock in, time row ${i + 1}`} type="time" style={box} value={r.in} onChange={(e) => retime(i, r, { in: e.target.value })} /></Field>
           <Field name="Clock out"><input aria-label={`Clock out, time row ${i + 1}`} type="time" style={box} value={r.out} onChange={(e) => retime(i, r, { out: e.target.value })} /></Field>
           <Field name="Break (hours)"><NumBox label={`Break, time row ${i + 1}`} value={r.brk} empty={0} onChange={(n) => edit('time', i, { brk: n ?? 0 })} /></Field>
-          {shown('Hours', fmt(rowHours(r)))}
+          {worked('Hours', fmt(rowHours(r)))}
         </>
-      ))), `Total ${fmt(hoursTotal(sheet.time))} hours`)}
+      ))), `Total ${fmt(hoursTotal(sheet.time))} hours`)}</div>
 
-      {part('Mileage', 'miles', sheet.miles.map((r, i) => row('miles', i, r, (
+      <div hidden={shown !== 'miles'}>{part('Mileage', 'miles', sheet.miles.map((r, i) => row('miles', i, r, (
         <>
           <Field name="Odometer start"><NumBox label={`Odometer start, miles row ${i + 1}`} value={r.start} onChange={(n) => editMiles(i, r, { start: n })} /></Field>
           <Field name="Odometer end"><NumBox label={`Odometer end, miles row ${i + 1}`} value={r.end} onChange={(n) => editMiles(i, r, { end: n })} /></Field>
           <Field name="Miles"><NumBox label={`Miles, miles row ${i + 1}`} value={r.miles} empty={0} onChange={(n) => editMiles(i, r, { miles: n ?? 0 })} /></Field>
         </>
-      ))), `Total ${fmt(milesTotal(sheet.miles))} miles`)}
+      ))), `Total ${fmt(milesTotal(sheet.miles))} miles`)}</div>
 
-      {money('meals', 'Meals', sheet.meals)}
-      {money('materials', 'Materials', sheet.materials)}
-      {money('other', 'Other receipts', sheet.other)}
+      <div hidden={shown !== 'meals'}>{money('meals', 'Meals', sheet.meals)}</div>
+      <div hidden={shown !== 'materials'}>{money('materials', 'Materials', sheet.materials)}</div>
+      {/* The printed log calls these Other receipts; a hotel is one, its For saying Lodging. */}
+      <div hidden={shown !== 'other'}>{money('other', 'Hotels & other receipts', sheet.other)}</div>
     </div>
   );
 }

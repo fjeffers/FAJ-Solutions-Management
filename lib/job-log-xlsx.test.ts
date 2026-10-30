@@ -59,7 +59,7 @@ describe('the job log in Excel', () => {
     const total = rows[find(rows, 'JOB TOTAL')];
     // Hours and miles only: the receipts' dollars aren't added up with them (Fred: "i dont want it mix").
     expect(total.map((c) => (c && typeof c === 'object' ? c.v : c))).toEqual(['JOB TOTAL', 29.82, 204.1]);
-    expect(total.map((c) => (c && typeof c === 'object' ? c.z : null))).toEqual([null, '0.00" hours"', '#,##0.0" miles"']);
+    expect(total.map((c) => (c && typeof c === 'object' && 'z' in c ? c.z : null))).toEqual([null, '0.00" hours"', '#,##0.0" miles"']);
     // Six columns at most, so it prints one page wide.
     expect(Math.max(...rows.map((r) => r.length))).toBeLessThanOrEqual(6);
     expect(rows.flat().some((c) => typeof c === 'string' && /billable/i.test(c))).toBe(false);
@@ -74,6 +74,41 @@ describe('the job log in Excel', () => {
     // The Hours screen's own hours too, the break typed in Excel still coming off them.
     const typed = jobLogCells({ ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0.5, hours: 6.5 }] }, head);
     expect(typed[at - 1][5]).toEqual({ t: 'n', v: 6, z: '0.00', f: `ROUND(MAX(0,6.5-E${at}),2)` });
+  });
+
+  it("the tech's copy has no rates; the client's gives each row of the hours and miles its rate and dollars (Fred, 2026-10-30)", () => {
+    expect(find(rows, 'CHARGES')).toBe(-1);
+    expect(rows.flat().includes('RATE')).toBe(false);
+    const client = jobLogCells(sheet, head, { 'Paul Gibbs': { hour: 65, mile: 0.7 } });
+    const top = find(client, 'Time on site');
+    expect(client[top + 1]).toEqual(['NAME', 'DATE', 'CLOCK IN', 'CLOCK OUT', 'BREAK', 'HOURS', 'RATE/HR', 'AMOUNT']);
+    // Paul's 10/19, 10 hours × $65: the amount is the row's hours × its rate, to the cent.
+    const at = top + 3;
+    expect(client[top + 2].slice(6)).toEqual([{ t: 'n', v: 65, z: '$#,##0.00##' }, { t: 'n', v: 650, z: '$#,##0.00', f: `IF(G${at}="","",ROUND(F${at}*G${at},2))` }]);
+    // His total: the hours as before, and his dollars added up.
+    const paul = find(client, 'Paul Gibbs final hours');
+    expect(client[paul].slice(6)).toEqual([null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `IF(COUNT(H${at}:H${paul})=0,"",SUM(H${at}:H${paul}))` }]);
+    // Kendell has no rate: no rate and no dollars showing (not $0.00), but the formulas are there, so a rate typed in
+    // Excel works his amounts out and they reach the totals (Greptile on PR #40).
+    const kendell = find(client, 'Kendell Newbold final hours');
+    const k = kendell; // his one row is the Excel row before his total's
+    expect(client[kendell - 1].slice(6)).toEqual(['', { t: 's', v: '', f: `IF(G${k}="","",ROUND(F${k}*G${k},2))` }]);
+    expect(client[kendell].slice(6)).toEqual([null, { t: 's', v: '', f: `IF(COUNT(H${k}:H${k})=0,"",SUM(H${k}:H${k}))` }]);
+    const worked = find(client, 'Overall total worked');
+    expect(client[worked].slice(6)).toEqual([null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `SUM(H${paul + 1},H${kendell + 1})` }]);
+    // The miles, × the mileage rate.
+    const m = find(client, 'Mileage');
+    expect(client[m + 1]).toEqual(['NAME', 'DATE', 'ODO START', 'ODO END', 'MILES', 'RATE/MI', 'AMOUNT']);
+    expect(client[m + 2].slice(5)).toEqual([{ t: 'n', v: 0.7, z: '$#,##0.00##' }, { t: 'n', v: 5.6, z: '$#,##0.00', f: `IF(F${m + 3}="","",ROUND(E${m + 3}*F${m + 3},2))` }]);
+    const miles = find(client, 'Overall total miles');
+    expect(client[miles].slice(5)).toEqual([null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `SUM(G${find(client, 'Paul Gibbs total miles') + 1})` }]);
+    // At the end: the hours' and the miles' dollars, and the two added up.
+    const c = find(client, 'CHARGES');
+    expect(c).toBeGreaterThan(find(client, 'JOB TOTAL'));
+    expect(client[c + 1]).toEqual(['Hours', { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${worked + 1}` }]);
+    expect(client[c + 2]).toEqual(['Mileage', { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${miles + 1}` }]);
+    expect(client[c + 3]).toEqual(['TOTAL CHARGES', { t: 'n', v: 1431.17, z: '$#,##0.00', f: `B${c + 2}+B${c + 3}` }]);
+    expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(8);
   });
 
   it('opens in Excel with its formulas and the summary pointing at the totals', () => {

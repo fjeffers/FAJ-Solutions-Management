@@ -335,7 +335,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                 <td style={cell}>{techOf(e)}</td>
                 <td style={cell}>{dateText(e.expense_date)}</td>
                 {/* What the tech picked, and their own note on it when they wrote one (CodeRabbit on PR #38). */}
-                {forCol && <td style={cell}>{[expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ')}</td>}
+                {forCol && <td style={{ ...cell, overflowWrap: 'anywhere' }}>{[expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ')}</td>}
                 <td style={cell}>{e.vendor || '—'}</td>
                 <td style={cell}>{fmtMoney(Number(e.amount))}</td>
               </tr>

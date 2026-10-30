@@ -1007,6 +1007,30 @@ describe('Job log edited by the office', () => {
     }
   });
 
+  it("adds a drive to the lead's when the helper shares them, so the helper keeps them (CodeRabbit on PR #44)", async () => {
+    const before = tables.job_punches;
+    const punch = (contractor_name: string, kind: string, day: string, hhmm: string) => ({ contractor_name, kind, at: at(day, hhmm), lat: null, lng: null, accuracy: null });
+    tables.job_punches = [punch('Paul Gibbs', 'in', '19', '08:00'), punch('Kendell Newbold', 'in', '19', '08:00'), punch('Paul Gibbs', 'out', '19', '17:00'), punch('Kendell Newbold', 'out', '19', '17:00'),
+      punch('Paul Gibbs', 'in', '20', '08:00'), punch('Kendell Newbold', 'in', '20', '08:00'), punch('Paul Gibbs', 'out', '20', '17:00'), punch('Kendell Newbold', 'out', '20', '17:00')];
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 }, 'Kendell Newbold': { hour: 50, mile: 0.6 } } }];
+    try {
+      render(<JobLogReport w={{ ...wo, contractor_names: ['Paul Gibbs', 'Kendell Newbold'] } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
+      // Kendell has Paul's 18 miles on the 19th; a drive added on his section is Paul's, and both have it.
+      expect((screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026') as HTMLInputElement).value).toBe('18');
+      fireEvent.click(screen.getByRole('button', { name: 'Add a drive, Kendell Newbold' }));
+      expect((screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026') as HTMLInputElement).value).toBe('18');
+      fireEvent.change(screen.getByLabelText('Miles, Kendell Newbold, 10/21/2026'), { target: { value: '200' } });
+      expect((screen.getByLabelText('Miles, Paul Gibbs, 10/21/2026') as HTMLInputElement).value).toBe('200');
+    } finally {
+      tables.job_punches = before;
+      delete tables.job_log_rates;
+    }
+  });
+
   it('adds a line on a day in the dates picked, so it shows to fill in (Greptile on PR #44)', () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
     try {

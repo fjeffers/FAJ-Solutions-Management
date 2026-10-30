@@ -115,6 +115,9 @@ function Section({ s, tech, edit, rate, add }: { s: InvoiceSection; tech: string
 
 function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
   const rates = edit?.rateOf(t.tech);
+  // A helper's drives or hotel that are the lead's: a line added goes with the lead's, so the helper keeps sharing
+  // them (CodeRabbit on PR #44).
+  const ownerOf = (s: InvoiceSection) => s.lines.find((l) => l.tech && l.tech !== t.tech)?.tech ?? t.tech;
   return (
     <tbody className="jl-avoid" style={{ borderBottom: line }}>
       <tr style={{ fontWeight: 700 }}>
@@ -133,9 +136,9 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
       <Section s={t.meals} tech={t.tech} edit={edit} />
       <Section s={t.mileage} tech={t.tech} edit={edit}
         rate={edit && <NumBox label={`$ per mile, ${t.tech}`} value={rates?.mile ?? null} onChange={(n) => edit.setRate(t.tech, 'mile', n)} />}
-        add={edit && <AddRow name={`Add a drive, ${t.tech}`} onClick={() => edit.add(t.tech, 'Mileage')}>Add a drive</AddRow>} />
+        add={edit && <AddRow name={`Add a drive, ${t.tech}`} onClick={() => edit.add(ownerOf(t.mileage), 'Mileage')}>Add a drive</AddRow>} />
       <Section s={t.travel} tech={t.tech} edit={edit}
-        add={edit && <AddRow name={`Add a hotel, ${t.tech}`} onClick={() => edit.add(t.tech, 'Hotel')}>Add a hotel</AddRow>} />
+        add={edit && <AddRow name={`Add a hotel, ${t.tech}`} onClick={() => edit.add(ownerOf(t.travel), 'Hotel')}>Add a hotel</AddRow>} />
       <tr>
         <td style={td} colSpan={3} />
         <td style={{ ...center, fontWeight: 700, textDecoration: 'underline', borderTop: line }}>{t.role} Total</td>

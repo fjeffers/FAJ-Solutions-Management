@@ -243,6 +243,21 @@ textarea.wf-input { resize: vertical; }
   #job-log-root .jl-page { box-shadow: none !important; border-radius: 0 !important; max-width: none !important; margin: 0 !important; }
   #job-log-root .jl-band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   #job-log-root .jl-avoid { break-inside: avoid; }
+  /* Compact on paper, still easy to read (Fred, 2026-10-30: "Make it a 2 page ... Or compact"):
+     tighter rows and headings, each table kept whole on a page, the pictures on pages of their own. */
+  #job-log-root .jl-page { font-size: 11.5px !important; }
+  #job-log-root .jl-band { padding: 10px 16px !important; }
+  #job-log-root .jl-logo { height: 40px !important; }
+  #job-log-root .jl-body { padding: 10px 2px 0 !important; }
+  #job-log-root .jl-tile { padding: 4px 8px !important; }
+  #job-log-root .jl-tile > div:last-child { font-size: 15px !important; }
+  #job-log-root .jl-h { margin: 14px 0 5px !important; padding-bottom: 3px !important; font-size: 13px !important; break-after: avoid; }
+  #job-log-root .jl-page td, #job-log-root .jl-page th { padding: 3px 6px !important; }
+  #job-log-root .jl-page th { font-size: 9.5px !important; }
+  #job-log-root .jl-sec { break-inside: avoid; }
+  #job-log-root .jl-pics { break-before: page; }
+  /* Odometer and site photos four across; receipts stay three across so their print stays readable. */
+  #job-log-root .jl-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px !important; }
   @page { margin: 12mm; }
 }
 

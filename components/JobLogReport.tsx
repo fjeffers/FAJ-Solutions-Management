@@ -43,6 +43,7 @@ import { createPortal } from 'react-dom';
 import { Check, Download, FileText, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
+import { fmtMoney } from '@/lib/utils';
 import { dayCalc, leadFirst, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
 import type { OdoRow as Reading } from '@/lib/weekly-bill';
 import { loadEvents } from '@/components/wf/ProjectOffice';
@@ -56,7 +57,7 @@ import AddJobPhotos from '@/components/AddJobPhotos';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
 type PhotoRow = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; contractor_name: string | null };
-type ReceiptRow = { id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; status: string; decline_reason: string | null; receipt_path: string | null };
+type ReceiptRow = { id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; note?: string | null; status: string; decline_reason: string | null; receipt_path: string | null };
 type OdoRow = { id: string; contractor_name: string | null; at: string; moment: string; reading: number; photo_path: string | null };
 /** A picture on the log. `key` is how the job remembers it's left out: 'photo:<id>', 'receipt:<id>' or 'odo:<id>'. */
 type Pic = {
@@ -69,7 +70,7 @@ type Pic = {
   pdf?: boolean;
 };
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
-type Include = { gaps: boolean; time: boolean; mileage: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
+type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean; materials: boolean; otherReceipts: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -132,7 +133,7 @@ function useLogChoices(woId: string, left: string[] | null | undefined, receiptI
 
 /** A section heading on the printed page. */
 const H = ({ children }: { children: React.ReactNode }) => (
-  <h3 style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 15, fontWeight: 700, color: '#0E1B2E', margin: '22px 0 8px', paddingBottom: 6, borderBottom: '2px solid #C9A24B' }}>{children}</h3>
+  <h3 className="jl-h" style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 15, fontWeight: 700, color: '#0E1B2E', margin: '22px 0 8px', paddingBottom: 6, borderBottom: '2px solid #C9A24B' }}>{children}</h3>
 );
 
 export default function JobLogReport({ w, deliverables, onClose }: {
@@ -146,6 +147,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [photos, setPhotos] = useState<PhotoRow[]>([]);
   const [receipts, setReceipts] = useState<Pic[]>([]);
   const [odometer, setOdometer] = useState<Pic[]>([]);
+  // The approved receipts, for the meals, materials and other receipts tables.
+  const [spent, setSpent] = useState<ReceiptRow[]>([]);
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -157,7 +160,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // among the others (Fred, 2026-10-26: "when i add a photo it not saving on the job log").
   const [added, setAdded] = useState(0);
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
-  const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
+  const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, meals: true, materials: true, otherReceipts: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
 
   useEffect(() => {
     const db = createClient();
@@ -165,7 +168,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       db.from('job_punches').select('contractor_name, kind, at, lat, lng, accuracy').eq('wo_id', w.id).order('at'),
       db.from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id).order('taken_at'),
       fetch(`/api/wo-time-logs?wo_id=${w.id}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, status, decline_reason, receipt_path').eq('wo_id', w.id).order('expense_date'),
+      db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, note, status, decline_reason, receipt_path').eq('wo_id', w.id).order('expense_date'),
       db.from('job_odometer').select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', w.id).order('at'),
       // What's left out and labeled now: the job on screen may be older than the last change,
       // and a save from the log just closed may still be going.
@@ -180,6 +183,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       if (kept) loadedChoices({ leftOut: new Set(kept.job_log_left_out ?? []), receiptPhotos: new Set(kept.job_log_receipt_photos ?? []) });
       // Approved and declined; one still waiting on Fred isn't either yet.
       const rec = ((ex.data as ReceiptRow[] | null) ?? []).filter((e) => (e.status === 'approved' || e.status === 'declined') && e.receipt_path);
+      setSpent(((ex.data as ReceiptRow[] | null) ?? []).filter((e) => e.status === 'approved'));
       const readings = ((od.data as Reading[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
       const saved = ((fs.data as (Omit<SavedDay, 'edits'> & { edits: unknown })[] | null) ?? []).map((d) => ({ ...d, edits: parseEdits(d.edits) }));
       const crew = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter((t): t is string => !!t);
@@ -261,6 +265,18 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Totals add the hours as each day shows them, so the column adds up the way the client reads it
   // (as the Field Sheet does), and the summary shows that same total (Greptile on PR #37).
   const siteHours = r2h(visits.reduce((t, v) => t + hoursOf(v.ms), 0));
+  // Meals, materials and the other receipts, as each tech said what the receipt was for when
+  // uploading it (Fred, 2026-10-30: "meals get entered by receipt so does materials").
+  const shownSpent = spent.filter((e) => inRange(e.expense_date, from, to))
+    .sort((a, b) => a.expense_date.localeCompare(b.expense_date));
+  const mealReceipts = shownSpent.filter((e) => e.category === 'meals');
+  const materialReceipts = shownSpent.filter((e) => e.category === 'materials');
+  const otherReceipts = shownSpent.filter((e) => e.category !== 'meals' && e.category !== 'materials');
+  const sumOf = (list: ReceiptRow[]) => Math.round(list.reduce((t, e) => t + Number(e.amount), 0) * 100) / 100;
+  const receiptCount = (n: number) => `${n} receipt${n === 1 ? '' : 's'}`;
+  const techOf = (e: ReceiptRow) => e.contractor_name || 'Office';
+  // A tech on the job with nothing in a table gets a line under it, so the client sees why.
+  const without = (groups: { tech: string }[]) => crew.filter((t) => !groups.some((g) => g.tech === t));
   // Only a finished job has a "Not completed": on a job still going, it's just work still to do.
   const job = useMemo(() => wfJobFromOwner(w), [w]);
   // Waits for the photos to load, so it never says "No photos" too soon.
@@ -291,7 +307,54 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   );
 
   const cell: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #ECE8DF', textAlign: 'left', verticalAlign: 'top' };
-  const techHead: React.CSSProperties = { fontWeight: 700, color: '#0E1B2E', background: '#FBF6EA' };
+  const headCell: React.CSSProperties = { ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 };
+  // Each tech's total on cream; the overall total under a navy rule (the layout Fred okayed, 2026-10-30).
+  const techTotal: React.CSSProperties = { fontWeight: 700, background: '#FBF6EA' };
+  const overallRow: React.CSSProperties = { fontWeight: 700, borderTop: '2px solid #0E1B2E' };
+  // "In these dates" when only some of the job's days are shown (Greptile on PR #38).
+  const noneLine = (techs: string[], what: string) => techs.map((t) => (
+    <div key={t} className="jl-avoid" style={{ color: '#5E6470', fontSize: 12, marginTop: 6 }}>{t}: no {what} {from || to ? 'in these dates' : 'on this job'}.</div>
+  ));
+
+  /**
+   * A table of receipts like the hours: each tech's receipts (name and date on every row), the tech's
+   * total, then the overall total. `forCol`: a "For" column with what the tech said the receipt was for.
+   */
+  const receiptTable = (list: ReceiptRow[], what: string, forCol: boolean) => {
+    const groups = byTechGroups(list, techOf, crew);
+    const span = forCol ? 4 : 3;
+    return (
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr style={{ background: '#F6F4EF' }}>
+          {['Name', 'Date', ...(forCol ? ['For'] : []), 'Store', 'Amount'].map((h) => <th key={h} style={headCell}>{h}</th>)}
+        </tr></thead>
+        {groups.map((g) => (
+          <tbody key={g.tech} className="jl-avoid">
+            {g.items.map((e) => (
+              <tr key={e.id} className="jl-avoid">
+                <td style={cell}>{techOf(e)}</td>
+                <td style={cell}>{dateText(e.expense_date)}</td>
+                {/* What the tech picked, and their own note on it when they wrote one (CodeRabbit on PR #38). */}
+                {forCol && <td style={{ ...cell, overflowWrap: 'anywhere' }}>{[expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ')}</td>}
+                <td style={cell}>{e.vendor || '—'}</td>
+                <td style={cell}>{fmtMoney(Number(e.amount))}</td>
+              </tr>
+            ))}
+            <tr className="jl-avoid" style={techTotal}>
+              <td style={cell} colSpan={span}>{g.tech} total{what ? ` ${what}` : ''} · {receiptCount(g.items.length)}</td>
+              <td style={cell}>{fmtMoney(sumOf(g.items))}</td>
+            </tr>
+          </tbody>
+        ))}
+        <tbody>
+          <tr className="jl-avoid" style={overallRow}>
+            <td style={cell} colSpan={span}>Overall total {what || 'other receipts'}</td>
+            <td style={cell}>{fmtMoney(sumOf(list))}</td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  };
 
   /**
    * A section of pictures, each with its mark to take it out or put it back.
@@ -304,7 +367,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     return list.length > 0 && (
     <div className={list.some(printed) ? undefined : 'no-print'}>
       <H>{title}</H>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+      <div className={whole ? undefined : 'jl-grid-4'} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
         {list.map((p) => {
           const out = !printed(p);
           // Taken out with its ✗; a declined receipt can be too, though it never prints either way.
@@ -393,7 +456,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
-          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{mileage.length > 0 && toggle('mileage', 'Mileage')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
+          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{mileage.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
           {toggle('notes', "Tech's notes")}{(receipts.length > 0 || receiptPhotos.size > 0) && toggle('receipts', 'Receipts')}{odometer.length > 0 && toggle('odometer', 'Odometer')}
           {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}
         </div>
@@ -406,14 +469,14 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>
         <div className="jl-band" style={{ background: 'linear-gradient(180deg, #13284A 0%, #0E1B2E 100%)', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ height: 54, width: 'auto' }} />
+          <img className="jl-logo" src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ height: 54, width: 'auto' }} />
           <div style={{ textAlign: 'right', color: '#fff' }}>
             <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 1.5, color: '#E3C987' }}>JOB LOG</div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>{range}</div>
           </div>
         </div>
 
-        <div style={{ padding: '20px 24px 28px' }}>
+        <div className="jl-body" style={{ padding: '20px 24px 28px' }}>
           <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{w.title || 'Work order'}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '6px 20px', marginTop: 10 }}>
             {w.customer_name && <div><b>Client:</b> {w.customer_name}</div>}
@@ -429,11 +492,14 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               ...(totals.ms > 0 ? [['Hours on site', hrs(siteHours)]] : []),
               ...(totals.days > 0 ? [['Days', String(totals.days)]] : []),
               ...(totalMiles > 0 ? [['Miles', totalMiles.toLocaleString('en-US')]] : []),
+              ...(mealReceipts.length ? [['Meals', fmtMoney(sumOf(mealReceipts))]] : []),
+              ...(materialReceipts.length ? [['Materials', fmtMoney(sumOf(materialReceipts))]] : []),
+              ...(otherReceipts.length ? [['Other receipts', fmtMoney(sumOf(otherReceipts))]] : []),
               ...(pictureCount > 0 ? [['Pictures', String(pictureCount)]] : []),
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
             ].map(([label, value]) => (
-              <div key={label} style={{ border: '1px solid #E4DFD3', borderRadius: 10, padding: '8px 10px' }}>
+              <div key={label} className="jl-tile" style={{ border: '1px solid #E4DFD3', borderRadius: 10, padding: '8px 10px' }}>
                 <div style={{ fontSize: 11, color: '#5E6470', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
                 <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 18, fontWeight: 700 }}>{value}</div>
               </div>
@@ -457,7 +523,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           {inc.scope && w.description && (<><H>Scope of work</H><div style={{ whiteSpace: 'pre-wrap' }}>{w.description}</div></>)}
 
           {inc.time && (punches === null || visits.length > 0) && (
-            <>
+            <div className="jl-sec">
               <H>Time on site</H>
               {punches === null ? <div style={{ color: '#5E6470' }}>Loading…</div>
                 : (
@@ -465,7 +531,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                     {/* Fred's own sheet, 2026-10-30: Name | date | clock in | clock out | total. One row each time a tech
                         clocks in and out, so a day with a break shows both, and the gap between them. */}
                     <thead><tr style={{ background: '#F6F4EF' }}>
-                      {['Name', 'Date', 'Clock in', 'Clock out', 'Total'].map((h) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>)}
+                      {['Name', 'Date', 'Clock in', 'Clock out', 'Total'].map((h) => <th key={h} style={headCell}>{h}</th>)}
                     </tr></thead>
                     {/* Each tech's rows in their own body, kept on one page when they fit (Greptile on PR #35). */}
                     {visitGroups.map((g) => (
@@ -479,7 +545,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                             <td style={cell}>{hrs(hoursOf(v.ms))}</td>
                           </tr>
                         ))}
-                        <tr className="jl-avoid" style={{ fontWeight: 700, background: '#FBF6EA' }}>
+                        <tr className="jl-avoid" style={techTotal}>
                           <td style={cell} colSpan={4}>{g.tech} final hours · {dayCount(g.items.map((v) => v.day))}</td>
                           <td style={cell}>{hrs(r2h(g.items.reduce((t, v) => t + hoursOf(v.ms), 0)))}</td>
                         </tr>
@@ -487,45 +553,70 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                     ))}
                     {/* At the bottom with one tech too, as the mileage table's total is (CodeRabbit on PR #37). */}
                     <tbody>
-                      <tr className="jl-avoid" style={{ fontWeight: 700 }}>
+                      <tr className="jl-avoid" style={overallRow}>
                         <td style={cell} colSpan={4}>Overall total worked</td>
                         <td style={cell}>{hrs(siteHours)}</td>
                       </tr>
                     </tbody>
                   </table>
                 )}
-            </>
+            </div>
           )}
 
           {inc.mileage && mileage.length > 0 && (
-            <>
+            <div className="jl-sec">
               <H>Mileage</H>
+              {/* Like the hours: name and date on every row, each tech's total, then the overall total. */}
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr style={{ background: '#F6F4EF' }}>
-                  {['Date', 'Odometer start', 'Odometer end', 'Miles'].map((h) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>)}
+                  {['Name', 'Date', 'Odometer start', 'Odometer end', 'Miles'].map((h) => <th key={h} style={headCell}>{h}</th>)}
                 </tr></thead>
                 {mileGroups.map((g) => (
                   <tbody key={g.tech} className="jl-avoid">
-                    <tr className="jl-avoid"><td colSpan={4} style={{ ...cell, ...techHead }}>{g.tech}</td></tr>
                     {g.items.map(({ r, miles }) => (
                       <tr key={r.key} className="jl-avoid">
-                        <td style={cell}>{fmtDay(r.day)}</td>
+                        <td style={cell}>{r.tech}</td>
+                        <td style={cell}>{dateText(r.day)}</td>
                         <td style={cell}>{r.values.odoStart != null ? r.values.odoStart.toLocaleString('en-US') : '—'}</td>
                         <td style={cell}>{r.values.odoEnd != null ? r.values.odoEnd.toLocaleString('en-US') : '—'}</td>
                         <td style={cell}>{miles.toLocaleString('en-US')}</td>
                       </tr>
                     ))}
-                    <tr className="jl-avoid" style={{ fontWeight: 700 }}>
-                      <td style={cell} colSpan={3}>{g.tech} total · {dayCount(g.items.map((m) => m.r.day))}</td>
+                    <tr className="jl-avoid" style={techTotal}>
+                      <td style={cell} colSpan={4}>{g.tech} total miles · {dayCount(g.items.map((m) => m.r.day))}</td>
                       <td style={cell}>{r1(g.items.reduce((t, m) => t + m.miles, 0)).toLocaleString('en-US')}</td>
                     </tr>
                   </tbody>
                 ))}
                 <tbody>
-                  <tr><td style={{ ...cell, fontWeight: 700 }} colSpan={3}>{mileGroups.length > 1 ? 'All techs' : 'Total'}</td><td style={{ ...cell, fontWeight: 700 }}>{totalMiles.toLocaleString('en-US')}</td></tr>
+                  <tr className="jl-avoid" style={overallRow}><td style={cell} colSpan={4}>Overall total miles</td><td style={cell}>{totalMiles.toLocaleString('en-US')}</td></tr>
                 </tbody>
               </table>
-            </>
+              {noneLine(without(mileGroups), 'miles')}
+            </div>
+          )}
+
+          {inc.meals && mealReceipts.length > 0 && (
+            <div className="jl-sec">
+              <H>Meals</H>
+              {receiptTable(mealReceipts, 'meals', false)}
+              {noneLine(without(byTechGroups(mealReceipts, techOf, crew)), 'meals')}
+            </div>
+          )}
+
+          {inc.materials && materialReceipts.length > 0 && (
+            <div className="jl-sec">
+              <H>Materials</H>
+              {receiptTable(materialReceipts, 'materials', false)}
+              {noneLine(without(byTechGroups(materialReceipts, techOf, crew)), 'materials')}
+            </div>
+          )}
+
+          {inc.otherReceipts && otherReceipts.length > 0 && (
+            <div className="jl-sec">
+              <H>Other receipts</H>
+              {receiptTable(otherReceipts, '', true)}
+            </div>
           )}
 
           {inc.checklist && tasks.length > 0 && (
@@ -568,9 +659,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <><H>Technician&apos;s notes</H><div className="jl-avoid" style={{ whiteSpace: 'pre-wrap' }}>{w.closeout_notes}</div></>
           )}
 
-          {inc.receipts && pictures('Receipts', shownReceipts, true)}
-          {inc.odometer && pictures('Odometer', shownOdometer)}
-          {inc.photos && pictures('Photos', shownPhotos)}
+          {/* On paper the pictures start on a page of their own, after the tables (when any will print). */}
+          <div className={pictureCount > 0 ? 'jl-pics' : undefined}>
+            {inc.receipts && pictures('Receipts', shownReceipts, true)}
+            {inc.odometer && pictures('Odometer', shownOdometer)}
+            {inc.photos && pictures('Photos', shownPhotos)}
+          </div>
 
           <div style={{ marginTop: 28, paddingTop: 10, borderTop: '1px solid #E4DFD3', display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5, color: '#5E6470', flexWrap: 'wrap' }}>
             <span><b style={{ color: '#0E1B2E' }}>FAJ Solutions</b> · Bringing People and Technology Together</span>

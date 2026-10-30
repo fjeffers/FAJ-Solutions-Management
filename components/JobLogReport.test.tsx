@@ -262,12 +262,69 @@ describe('Job log pictures', () => {
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const table = (await screen.findByRole('heading', { name: 'Mileage' })).nextElementSibling as HTMLElement;
     const cells = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+    // Laid out like the hours (Fred, 2026-10-30): name and date on every row, the tech's total, then the overall total.
     expect(cells).toEqual([
-      ['Paul Gibbs'],
-      ['Mon, Oct 19, 2026', '41,200', '41,218', '18'],
-      ['Paul Gibbs total · 1 day', '18'],
-      ['Total', '18'],
+      ['Paul Gibbs', '10/19/2026', '41,200', '41,218', '18'],
+      ['Paul Gibbs total miles · 1 day', '18'],
+      ['Overall total miles', '18'],
     ]);
+  });
+});
+
+describe('Job log meals, materials and other receipts', () => {
+  // Fred, 2026-10-30: below the hours and the mileage, "the same with ... food then materials etc",
+  // and "meals get entered by receipt so does materials": what the tech said the receipt was for.
+  it("lists each tech's receipts and total, the lead tech first, then the overall total", async () => {
+    const before = tables.job_expenses;
+    const ex = (id: string, tech: string, category: string, vendor: string | null, amount: number, day: string, status = 'approved') =>
+      ({ id, contractor_name: tech, category, vendor, amount, expense_date: `2026-10-${day}`, status, decline_reason: null, receipt_path: `r/${id}.jpg` });
+    tables.job_expenses = [
+      ex('m1', 'Kendell Newbold', 'meals', 'Bojangles', 12.25, '19'),
+      ex('m2', 'Paul Gibbs', 'meals', 'Waffle House', 18.5, '19'),
+      ex('t1', 'Paul Gibbs', 'materials', "Lowe's", 47.48, '20'),
+      ex('t2', 'Paul Gibbs', 'materials', "Lowe's", 104.17, '21'),
+      ex('h1', 'Paul Gibbs', 'hotel', 'Quality Inn', 350.74, '18'),
+      { ...ex('f1', 'Paul Gibbs', 'fuel', null, 76.75, '21'), note: ' Van, drive home ' },
+      // Neither is on the log: one declined, one still waiting on Fred.
+      ex('f2', 'Paul Gibbs', 'fuel', 'Circle K', 76.75, '21', 'declined'),
+      ex('m3', 'Kendell Newbold', 'meals', 'Subway', 9.99, '20', 'submitted'),
+    ];
+    try {
+      render(<JobLogReport w={{ ...wo, contractor_names: ['Kendell Newbold', 'Paul Gibbs'], lead_contractor_name: 'Paul Gibbs' } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
+      const rows = async (name: string) => {
+        const table = (await screen.findByRole('heading', { name })).nextElementSibling as HTMLElement;
+        return [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+      };
+      expect(await rows('Meals')).toEqual([
+        ['Paul Gibbs', '10/19/2026', 'Waffle House', '$18.50'],
+        ['Paul Gibbs total meals · 1 receipt', '$18.50'],
+        ['Kendell Newbold', '10/19/2026', 'Bojangles', '$12.25'],
+        ['Kendell Newbold total meals · 1 receipt', '$12.25'],
+        ['Overall total meals', '$30.75'],
+      ]);
+      expect(await rows('Materials')).toEqual([
+        ['Paul Gibbs', '10/20/2026', "Lowe's", '$47.48'],
+        ['Paul Gibbs', '10/21/2026', "Lowe's", '$104.17'],
+        ['Paul Gibbs total materials · 2 receipts', '$151.65'],
+        ['Overall total materials', '$151.65'],
+      ]);
+      expect(screen.getByText('Kendell Newbold: no materials on this job.')).toBeTruthy();
+      expect(await rows('Other receipts')).toEqual([
+        ['Paul Gibbs', '10/18/2026', 'Lodging', 'Quality Inn', '$350.74'],
+        ['Paul Gibbs', '10/21/2026', 'Fuel · Van, drive home', '—', '$76.75'],
+        ['Paul Gibbs total · 2 receipts', '$427.49'],
+        ['Overall total other receipts', '$427.49'],
+      ]);
+      // The same totals at the top.
+      expect(screen.getByText('Meals', { selector: 'div' }).nextElementSibling!.textContent).toBe('$30.75');
+      expect(screen.getByText('Materials', { selector: 'div' }).nextElementSibling!.textContent).toBe('$151.65');
+      expect(screen.getByText('Other receipts', { selector: 'div' }).nextElementSibling!.textContent).toBe('$427.49');
+      // Only some days picked: the line speaks for those dates, not the whole job (Greptile on PR #38).
+      fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
+      expect(await screen.findByText('Kendell Newbold: no materials in these dates.')).toBeTruthy();
+    } finally {
+      tables.job_expenses = before;
+    }
   });
 });
 

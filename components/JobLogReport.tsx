@@ -62,12 +62,12 @@ import {
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
 import {
-  chargesByTech, chargesTotal, lineAmount, notCharged, parseRate, parseRates, rateRows, ratesFromRows, sameRates, sheetTechs, withAllHoursRate,
+  chargesByTech, chargesTotal, lineAmount, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, sheetTechs, withAllHoursRate,
   type JobRates, type RateRow,
 } from '@/lib/job-log-rates';
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
-import JobLogInvoice from '@/components/JobLogInvoice';
-import { buildInvoice, downloadInvoiceXlsx, parseInvoiceMeta, sameMeta, type InvoiceHead, type InvoiceMeta } from '@/lib/job-log-invoice';
+import JobLogInvoice, { type InvoiceEditor } from '@/components/JobLogInvoice';
+import { addLine, buildInvoice, downloadInvoiceXlsx, editLine, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceMeta } from '@/lib/job-log-invoice';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
@@ -197,10 +197,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // 60", "not a flat rate hourly"): as the office is changing it (null: as saved), and as saved (null: each tech's own).
   const [allEdit, setAllEdit] = useState<{ on: boolean; hour: number | null } | null>(null);
   const [savedAll, setSavedAll] = useState<number | null>(null);
-  // The invoice's number, date, terms, labor and meal allowance: as typed (null: as saved), and as saved with the rates.
+  // The invoice's number, date, terms, labor and meal allowance, as saved with the rates.
   const todayDay = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
-  const [metaEdit, setMetaEdit] = useState<InvoiceMeta | null>(null);
   const [savedMeta, setSavedMeta] = useState<InvoiceMeta>(() => parseInvoiceMeta(null, todayDay));
+  // The invoice as it's edited on the invoice itself (Fred, 2026-10-30: "the invoice need to be one ... so we edit job
+  // log it shows as an invoice"): the time sheet under it, the rates and the invoice's own boxes, saved together.
+  const [invDraft, setInvDraft] = useState<{ sheet: JobSheet; rates: JobRates; together: { on: boolean; hour: number | null }; meta: InvoiceMeta } | null>(null);
   // The saved rates didn't load: nothing to save over them, and no client copy, until they do (Greptile, CodeRabbit on PR #40).
   const [ratesFailed, setRatesFailed] = useState(false);
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
@@ -390,23 +392,23 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // The rates each row is charged at: each tech's, or the one for all hours. As typed, and as saved.
   const typedRates = withAllHoursRate(shown, rates, typedAll);
   const billRates = withAllHoursRate(shown, savedRates, savedAll);
-  // The invoice, as saved: each tech's hours, meals, mileage and hotel at the rates saved.
-  const invoiceHead: InvoiceHead = { billTo: w.customer_name ?? '', shipTo: [w.title ?? '', where].filter(Boolean), meta: savedMeta };
-  const invoice = copy === 'invoice' ? buildInvoice(shown, billRates, crew, savedMeta, [w.site_city, w.site_state].filter(Boolean).join(' ')) : null;
+  // The invoice: each tech's hours, meals, mileage and hotel at their rates, as saved or as it's being edited.
+  const invSheet = invDraft ? sheetSorted(sheetInDates(invDraft.sheet, from, to)) : shown;
+  const invRates = invDraft ? withAllHoursRate(invSheet, invDraft.rates, invDraft.together.on ? invDraft.together.hour : null) : billRates;
+  const invMeta = invDraft ? parseInvoiceMeta(invDraft.meta, todayDay) : savedMeta;
+  const invoiceHead: InvoiceHead = { billTo: w.customer_name ?? '', shipTo: [w.title ?? '', where].filter(Boolean), meta: invMeta };
+  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, invMeta, [w.site_city, w.site_state].filter(Boolean).join(' ')) : null;
   // The total under the table as the rates are typed; the page, the print and Excel with the rates saved, so a
   // print (the button, or the browser's own) is never of rates that aren't kept (CodeRabbit on PR #40).
   const typedCharges = chargesByTech(shown, typedRates, crew);
   const charges = chargesByTech(shown, billRates, crew);
   const unbilled = notCharged(shown, typedRates, crew);
-  // The invoice's boxes as typed, and as they'd be saved.
-  const metaShown = metaEdit ?? savedMeta;
-  const typedMeta = parseInvoiceMeta(metaShown, todayDay);
-  const setMeta = (patch: Partial<InvoiceMeta>) => setMetaEdit({ ...metaShown, ...patch });
-  const ratesChanged = !sameRates(rates, savedRates) || typedAll !== savedAll || !sameMeta(typedMeta, savedMeta);
+  const ratesChanged = !sameRates(rates, savedRates) || typedAll !== savedAll;
   // The client's copy prints and downloads only with its rates saved and loaded: never an empty "$0.00" copy, or
   // rates that aren't kept (CodeRabbit on PR #40).
   const noSavedRates = Object.keys(savedRates).length === 0 && savedAll == null;
-  const clientBlocked = copy !== 'tech' && (ratesChanged || ratesFailed || noSavedRates);
+  // The invoice prints with its rates saved, and not while it's being edited.
+  const clientBlocked = copy === 'client' ? ratesChanged || ratesFailed || noSavedRates : copy === 'invoice' ? ratesFailed || noSavedRates || !!invDraft : false;
   const rateNames = [...new Set([...crew, ...techsOnSheet])];
   const editRates = (change: (rows: RateRow[]) => RateRow[]) => setRateEdit(change(rateTable));
   // The client's copy: each row of the hours and of the miles with its rate and dollars, each tech's and the overall
@@ -421,20 +423,70 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const moneyCell = (n: number | null | undefined) => <td style={cell}>{n == null ? '—' : fmtMoney(n)}</td>;
   const setRate = (i: number, patch: Partial<RateRow>) => editRates((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const saveRates = async () => {
-    const clean = rates, cleanAll = typedAll, cleanMeta = typedMeta;
+    const clean = rates, cleanAll = typedAll;
     setSaving(true);
     const { error } = await queueSave(w.id, () => createClient().from('job_log_rates')
-      .upsert({ wo_id: w.id, rates: clean, all_hours_rate: cleanAll, invoice: cleanMeta, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' }));
+      .upsert({ wo_id: w.id, rates: clean, all_hours_rate: cleanAll, invoice: savedMeta, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' }));
     setSaving(false);
     if (error) { toastError("The rates didn't save. Check your connection and try again."); return; }
     setSavedRates(clean);
     setSavedAll(cleanAll);
-    setSavedMeta(cleanMeta);
     // Back to the table as saved, unless a rate was changed while it saved: that change stays, still to save (Greptile on PR #40).
     setRateEdit((now) => (now && !sameRates(ratesFromRows(now), clean) ? now : null));
     setAllEdit((now) => (now && (now.on ? now.hour : null) !== cleanAll ? now : null));
-    setMetaEdit((now) => (now && !sameMeta(parseInvoiceMeta(now, todayDay), cleanMeta) ? now : null));
     toastSuccess("Rates saved. They're on the client's copy only.");
+  };
+
+  // Editing on the invoice: each change is to the time sheet under it, a tech's rates or the invoice's own boxes.
+  const plusDay = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  /** A new line's day: the day after the tech's last (a day worked, a drive), or their first day (a hotel). */
+  const newDay = (s: JobSheet, tech: string, item: 'Labor' | 'Mileage' | 'Hotel') => {
+    const worked = s.time.filter((r) => r.tech === tech).map((r) => r.day).sort();
+    const all = [...worked, ...(item === 'Mileage' ? s.miles.filter((r) => r.tech === tech).map((r) => r.day) : [])].sort();
+    if (item === 'Hotel') return worked[0] ?? (from || todayDay);
+    return all.length ? plusDay(all.at(-1)!, 1) : (from || todayDay);
+  };
+  type InvDraft = NonNullable<typeof invDraft>;
+  const editInv = (f: (d: InvDraft) => InvDraft) => setInvDraft((d) => (d ? f(d) : d));
+  const invoiceEditor: InvoiceEditor | undefined = invDraft ? {
+    meta: invDraft.meta,
+    setMeta: (p) => editInv((d) => ({ ...d, meta: { ...d.meta, ...p } })),
+    together: invDraft.together,
+    setTogether: (t) => editInv((d) => ({ ...d, together: t })),
+    rateOf: (tech) => invDraft.rates[tech] ?? { hour: null, mile: null },
+    setRate: (tech, k, v) => editInv((d) => ({ ...d, rates: { ...d.rates, [tech]: { ...(d.rates[tech] ?? { hour: null, mile: null }), [k]: v } } })),
+    change: (l, p) => editInv((d) => ({ ...d, sheet: editLine(d.sheet, l, p) })),
+    remove: (l) => editInv((d) => ({ ...d, sheet: removeLine(d.sheet, l) })),
+    add: (tech, item) => editInv((d) => ({ ...d, sheet: addLine(d.sheet, tech, item, newDay(d.sheet, tech, item)) })),
+  } : undefined;
+  // Saved together: the time sheet (only when it changed, so the log still follows the app otherwise), then the rates
+  // and the invoice's boxes.
+  const saveInvoice = async () => {
+    if (!invDraft) return;
+    const problems = sheetProblems(invDraft.sheet);
+    if (problems.length) { toastError(`Each line needs a name and a date: ${problems.join(', ')}.`); return; }
+    // The sheet as it started (its rows in their order), so an invoice saved with no change to it doesn't save it.
+    const clean = sheetToSave(invDraft.sheet);
+    const cleanRates = ratesToSave(invDraft.rates), cleanAll = invDraft.together.on ? invDraft.together.hour : null;
+    const cleanMeta = parseInvoiceMeta(invDraft.meta, todayDay);
+    const db = createClient();
+    setSaving(true);
+    if (JSON.stringify(clean) !== JSON.stringify(sheetToSave(sheet))) {
+      const { error } = await queueSave(w.id, () => db.from('work_orders').update({ job_log_sheet: clean }).eq('id', w.id));
+      if (error) { setSaving(false); toastError("The invoice didn't save. Check your connection and try again."); return; }
+      setSavedSheet(clean);
+    }
+    const { error } = await queueSave(w.id, () => db.from('job_log_rates')
+      .upsert({ wo_id: w.id, rates: cleanRates, all_hours_rate: cleanAll, invoice: cleanMeta, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' }));
+    setSaving(false);
+    if (error) { toastError("The rates and the invoice's number didn't save. Check your connection and try again."); return; }
+    setSavedRates(cleanRates);
+    setSavedAll(cleanAll);
+    setSavedMeta(cleanMeta);
+    setRateEdit(null);
+    setAllEdit(null);
+    setInvDraft(null);
+    toastSuccess('Invoice saved. The job log and its time sheet show it.');
   };
 
   // Saving an edit: the job keeps its own sheet, and the log, the print and Excel show it from then on.
@@ -683,7 +735,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         {/* And the rates saved first on the client's copy, so what's printed is what's kept. */}
         <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft || clientBlocked} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
         <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft || clientBlocked} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
-        {draft ? (
+        {copy === 'invoice' ? (invDraft ? (
+          <>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveInvoice()}><Check size={16} /> {saving ? 'Saving…' : 'Save invoice'}</button>
+            <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => setInvDraft(null)}>Cancel</button>
+          </>
+        ) : (
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || ratesFailed}
+            onClick={() => setInvDraft({ sheet, rates: savedRates, together: { on: savedAll != null, hour: savedAll }, meta: savedMeta })}><Pencil size={16} /> Edit invoice</button>
+        )) : draft ? (
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => setDraft(null)}>Cancel</button>
@@ -696,33 +756,19 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div role="group" aria-label="Which copy" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F', marginRight: 4 }}>Copy:</span>
-          <button type="button" aria-pressed={copy === 'tech'} className={`wf-btn wf-btn-sm ${copy === 'tech' ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setCopy('tech')}>Tech copy (no rates)</button>
-          <button type="button" aria-pressed={copy === 'client'} className={`wf-btn wf-btn-sm ${copy === 'client' ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setCopy('client')}>Client copy (rates)</button>
-          <button type="button" aria-pressed={copy === 'invoice'} className={`wf-btn wf-btn-sm ${copy === 'invoice' ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => setCopy('invoice')}>Invoice</button>
+          <button type="button" aria-pressed={copy === 'tech'} className={`wf-btn wf-btn-sm ${copy === 'tech' ? 'wf-btn-navy' : 'wf-btn-outline'}`} disabled={!!draft || !!invDraft} onClick={() => setCopy('tech')}>Tech copy (no rates)</button>
+          <button type="button" aria-pressed={copy === 'client'} className={`wf-btn wf-btn-sm ${copy === 'client' ? 'wf-btn-navy' : 'wf-btn-outline'}`} disabled={!!draft || !!invDraft} onClick={() => setCopy('client')}>Client copy (rates)</button>
+          <button type="button" aria-pressed={copy === 'invoice'} className={`wf-btn wf-btn-sm ${copy === 'invoice' ? 'wf-btn-navy' : 'wf-btn-outline'}`} disabled={!!draft || !!invDraft} onClick={() => setCopy('invoice')}>Invoice</button>
         </div>
         {copy === 'invoice' && (
-          <div style={{ flexBasis: '100%', background: '#fff', border: '1px solid #E3C987', borderRadius: 10, padding: '10px 12px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Invoice <span style={{ fontWeight: 400, color: '#5E6470' }}>(the client’s layout; saved with the rates below)</span></div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', fontSize: 12.5 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>Invoice #
-                <input className="wf-input" style={{ width: 110, minHeight: 36 }} value={metaShown.number} onChange={(e) => setMeta({ number: e.target.value })} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>Date
-                <input type="date" className="wf-input" style={{ minHeight: 36 }} value={metaShown.date} onChange={(e) => e.target.value && setMeta({ date: e.target.value })} />
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 90 }}>Terms (net days)
-                <NumBox label="Terms, net days" value={metaShown.terms} onChange={(n) => setMeta({ terms: n == null ? 30 : Math.round(n) })} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 130 }}>Meal allowance a day
-                <NumBox label="Meal allowance a day" value={metaShown.meal} onChange={(n) => setMeta({ meal: n })} />
-              </div>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 260px' }}>What the labor was (each day’s line)
-                <input className="wf-input" style={{ minHeight: 36 }} value={metaShown.labor} onChange={(e) => setMeta({ labor: e.target.value })} />
-              </label>
-            </div>
+          <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
+            {invDraft ? <>Editing the invoice: change any day, hours, meals, miles, hotel or rate right on its lines, add or take out a line, then <b>Save invoice</b>. The job log’s time sheet changes with it.</>
+              : ratesFailed ? 'The saved rates didn’t load, so the invoice can’t be changed or printed right now. Close the job log and open it again.'
+                : noSavedRates ? <>Press <b>Edit invoice</b>, type each tech’s rates on it, then <b>Save invoice</b> to print it.</>
+                  : <>The invoice as the client lays it out. <b>Edit invoice</b> to change it right on its lines.</>}
           </div>
         )}
-        {copy !== 'tech' && (
+        {copy === 'client' && (
           <div style={{ flexBasis: '100%', background: '#fff', border: '1px solid #E3C987', borderRadius: 10, padding: '10px 12px' }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Rates <span style={{ fontWeight: 400, color: '#5E6470' }}>(on the client’s copy only; a box left empty isn’t charged)</span></div>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -756,7 +802,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 8 }}>
               <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" disabled={rateNames.every((n) => rateTable.some((r) => r.tech === n))}
                 onClick={() => editRates((rows) => [...rows, { tech: rateNames.find((n) => !rows.some((r) => r.tech === n)) ?? '', hour: null, mile: null }])}><Plus size={14} /> Add a rate</button>
-              <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged || ratesFailed} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : copy === 'invoice' ? 'Save rates and invoice' : 'Save rates'}</button>
+              <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged || ratesFailed} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : 'Save rates'}</button>
               {ratesChanged ? <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>
                 : noSavedRates && !ratesFailed && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Set a rate and save it to print the client’s copy.</span>}
               {/* The total as the rates are typed (Fred: "i enter the rates and it shows the total"). */}
@@ -791,7 +837,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       {/* The report itself; or the invoice, as the client lays it out. */}
       {invoice ? (
         <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#000', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
-          <JobLogInvoice invoice={invoice} head={invoiceHead} />
+          <JobLogInvoice invoice={invoice} head={invoiceHead} edit={invoiceEditor} />
         </div>
       ) : (
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>

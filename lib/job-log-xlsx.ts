@@ -159,11 +159,18 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
     rows.push([]);
     // The amounts in the third column, so a tech's whole name shows before them.
     rows.push(['CHARGES']);
-    for (const [tech, cell] of hours.amountByTech) if (rates[tech]?.hour != null) rows.push([`${tech} hours`, null, num(dollars(cell), USD, cell)]);
+    // A line for each tech with hours (or miles) to charge for, as the PDF has: one with no rate yet is blank, and
+    // fills in when a rate is typed above, so the total never has a charge the lines don't show (Greptile on PR #41).
+    const techLine = (tech: string, what: string, qty: number, cell: string) => {
+      if (qty <= 0) return;
+      const v = valueOf(cell);
+      rows.push([`${tech} ${what}`, null, typeof v === 'number' ? num(v, USD, cell) : { t: 's', v: '', f: cell }]);
+    };
+    for (const [tech, cell] of hours.amountByTech) techLine(tech, 'hours', hoursTotal(sheet.time.filter((r) => r.tech === tech)), cell);
     const labor = dollars(hours.amount), mileage = dollars(miles.amount);
     const hoursAt = next();
     rows.push(['Hours total', null, num(labor, USD, hours.amount)]);
-    for (const [tech, cell] of miles.amountByTech) if (rates[tech]?.mile != null) rows.push([`${tech} mileage`, null, num(dollars(cell), USD, cell)]);
+    for (const [tech, cell] of miles.amountByTech) techLine(tech, 'mileage', milesTotal(sheet.miles.filter((r) => r.tech === tech)), cell);
     const milesAt = next();
     rows.push(['Mileage total', null, num(mileage, USD, miles.amount)]);
     const chargesAt = next();

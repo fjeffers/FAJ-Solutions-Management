@@ -2,7 +2,8 @@
 // his own job-log-timesheet.xlsx: the summary at the top, then Time on site, Mileage, Meals, Materials and Other
 // receipts, each tech's rows and subtotal (the lead tech first), the overall total, and the JOB TOTAL.
 // Hours, miles and the totals are formulas, so a change typed in Excel adds up again: hours = MOD(out − in, 1)
-// × 24 − break, a day's miles = odometer end − start. No billable total ("No, keep it off").
+// × 24 − break, a day's miles = odometer end − start. No billable total ("No, keep it off"), and the JOB TOTAL
+// is hours and miles only, no dollars ("i dont want it mix").
 import { byTechGroups } from './job-log';
 import { hoursTotal, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
 
@@ -87,12 +88,12 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead): XCell[][] {
     moneyTotal, (t) => `${t} total`, 'Overall total other receipts');
 
   const h = hoursTotal(sheet.time), mi = milesTotal(sheet.miles);
-  const spent = Math.round((moneyTotal(sheet.meals) + moneyTotal(sheet.materials) + moneyTotal(sheet.other)) * 100) / 100;
   summary.push(num(h, HRS, hours), num(mi, MILES, miles), num(moneyTotal(sheet.meals), USD, meals),
     num(moneyTotal(sheet.materials), USD, materials), num(moneyTotal(sheet.other), USD, other));
   rows.push([]);
-  // One line that says what each number is ("72.56 hours", "458.0 miles"), so a page never splits it.
-  rows.push(['JOB TOTAL', num(h, `${HRS}" hours"`, hours), num(mi, `${MILES}" miles"`, miles), num(spent, USD, `${meals}+${materials}+${other}`)]);
+  // One line that says what each number is ("72.56 hours", "458.0 miles"), so a page never splits it. Hours and
+  // miles only: the receipts' dollars stay in their own sections, not added up with them (Fred: "i dont want it mix").
+  rows.push(['JOB TOTAL', num(h, `${HRS}" hours"`, hours), num(mi, `${MILES}" miles"`, miles)]);
   return rows;
 }
 

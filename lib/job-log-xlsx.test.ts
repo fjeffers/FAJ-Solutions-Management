@@ -52,13 +52,14 @@ describe('the job log in Excel', () => {
     expect((rows[find(rows, 'Overall total miles')][4] as { v: number }).v).toBe(204.1);
   });
 
-  it('has every section, an empty one with a nil total, and the job total; no billable total', () => {
+  it('has every section, an empty one with a nil total, and the job total with no money; no billable total', () => {
     expect((rows[find(rows, 'Overall total meals')][3] as { v: number; f: string })).toMatchObject({ v: 0, f: '0' });
     expect(rows[find(rows, 'Paul Gibbs total materials')][3]).toMatchObject({ v: 47.48 });
     expect(rows[find(rows, 'Other receipts') + 2]).toEqual(['Paul Gibbs', { t: 'n', v: 46313, z: 'mm/dd/yyyy' }, 'Lodging', 'Quality Inn', { t: 'n', v: 350.74, z: '$#,##0.00' }]);
     const total = rows[find(rows, 'JOB TOTAL')];
-    expect(total.map((c) => (c && typeof c === 'object' ? c.v : c))).toEqual(['JOB TOTAL', 29.82, 204.1, 398.22]);
-    expect(total.map((c) => (c && typeof c === 'object' ? c.z : null))).toEqual([null, '0.00" hours"', '#,##0.0" miles"', '$#,##0.00']);
+    // Hours and miles only: the receipts' dollars aren't added up with them (Fred: "i dont want it mix").
+    expect(total.map((c) => (c && typeof c === 'object' ? c.v : c))).toEqual(['JOB TOTAL', 29.82, 204.1]);
+    expect(total.map((c) => (c && typeof c === 'object' ? c.z : null))).toEqual([null, '0.00" hours"', '#,##0.0" miles"']);
     // Six columns at most, so it prints one page wide.
     expect(Math.max(...rows.map((r) => r.length))).toBeLessThanOrEqual(6);
     expect(rows.flat().some((c) => typeof c === 'string' && /billable/i.test(c))).toBe(false);

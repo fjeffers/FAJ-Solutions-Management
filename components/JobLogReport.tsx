@@ -297,7 +297,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const mealReceipts = shown.meals;
   const materialReceipts = shown.materials;
   const otherReceipts = shown.other;
-  const expenses = Math.round((moneyTotal(mealReceipts) + moneyTotal(materialReceipts) + moneyTotal(otherReceipts)) * 100) / 100;
   const receiptCount = (n: number) => `${n} receipt${n === 1 ? '' : 's'}`;
   // A tech on the job with nothing in a table gets a line under it, so the client sees why.
   const without = (groups: { tech: string }[]) => crew.filter((t) => !groups.some((g) => g.tech === t));
@@ -708,13 +707,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                 </div>
               )}
 
-              {/* The job's totals in one line, as on Fred's workbook; no billable total ("No, keep it off"). */}
-              {(siteHours > 0 || totalMiles > 0 || expenses > 0) && (
+              {/* The job's hours and miles in one line, as on Fred's workbook. No money on it: no billable total ("No, keep it off"),
+                  and the receipts' dollars stay in their own tables (Fred, 2026-10-30: "i dont want it mix"). */}
+              {(siteHours > 0 || totalMiles > 0) && (
                 <div className="jl-band jl-avoid" style={{ marginTop: 16, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', fontSize: 13 }}>
                   <b style={{ color: '#E3C987', letterSpacing: 1 }}>JOB TOTAL</b>
                   <span>Hours <b>{hrs(siteHours)}</b></span>
                   <span>Miles <b>{totalMiles.toLocaleString('en-US')}</b></span>
-                  <span>Expenses <b>{fmtMoney(expenses)}</b></span>
                 </div>
               )}
             </>

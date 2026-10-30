@@ -496,8 +496,8 @@ describe('Job log edited by the office', () => {
     expect(rowsOf(screen.getByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,230', '30']);
     expect(rowsOf(screen.getByRole('heading', { name: 'Meals' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', 'Waffle House', '$18.50']);
     expect(screen.getByText(/this job log shows your edits/i)).toBeTruthy();
-    // The job's totals in one line, and no billable total.
-    expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 30Expenses $122.67');
+    // The job's hours and miles in one line, no money on it (Fred: "i dont want it mix"), and no billable total.
+    expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 30');
     expect(screen.queryByText(/billable/i)).toBeNull();
   }));
 

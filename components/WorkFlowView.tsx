@@ -31,6 +31,8 @@ import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { type Contractor, type EnrichedWorkOrder, type WorkOrder } from '@/lib/types';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import JobLogReport from '@/components/JobLogReport';
+import SowDocument from '@/components/SowDocument';
+import { isLdsJob } from '@/lib/lds-sow';
 import AddJobPhotos from '@/components/AddJobPhotos';
 import { jobGaps } from '@/lib/job-gaps';
 import { buildVisits, logTotals, type Punch } from '@/lib/job-log';
@@ -378,6 +380,7 @@ function OwnerJob({
   const [picking, setPicking] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [sowOpen, setSowOpen] = useState(false);
   // The app's own "are you sure" for Delete: the browser's confirm box is
   // blocked in some browsers and installed apps, and then nothing happened.
   const [askDelete, setAskDelete] = useState(false);
@@ -513,6 +516,8 @@ function OwnerJob({
       </button>
       <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => onSend(w)}><Send size={15} /> Send to tech</button>
       <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setLogOpen(true)}><FileText size={15} /> Job log</button>
+      {/* Fred, 2026-10-29: the Installer SOW for an LDS church site, filled in from the job (lib/lds-sow.ts). */}
+      {isLdsJob(w) && <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setSowOpen(true)}><FileText size={15} /> Installer SOW</button>}
       {w.remaining > 0 && (
         <button className="wf-btn wf-btn-success wf-btn-sm" onClick={() => onPay(w)}><DollarSign size={15} /> Pay tech</button>
       )}
@@ -592,6 +597,7 @@ function OwnerJob({
         </>}
       />
       {logOpen && <JobLogReport w={w} deliverables={checklist.items} onClose={() => setLogOpen(false)} />}
+      {sowOpen && <SowDocument w={w} contractors={contractors} author={author} onClose={() => setSowOpen(false)} />}
       {askDelete && (
         <Dialog title={`Delete WO ${w.wo_number}?`} onClose={() => setAskDelete(false)}
           footer={<>

@@ -6,7 +6,7 @@
 // theirs. The hours and miles × each tech's rates (lib/job-log-rates.ts), as the client's copy charges them.
 import { byTechGroups } from './job-log';
 import { lineAmount, type JobRates } from './job-log-rates';
-import { hoursTotal, isHotel, rowHours, type JobSheet, type MileRow, type MoneyRow, type TimeRow } from './job-log-sheet';
+import { fixedHours, hoursTotal, isHotel, rowHours, type JobSheet, type MileRow, type MoneyRow, type TimeRow } from './job-log-sheet';
 import type { XCell } from './job-log-xlsx';
 
 /** What the office types for the invoice, kept with the rates (job_log_rates.invoice, migration 149). */
@@ -86,7 +86,9 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
   // What the lead has, the helpers have too (Fred, 2026-10-30: "everything the lead has the helpers has also ... 701
   // for hotels so 350 for each tech"): a helper with no drives or hotel of their own has the lead's, as the client's
   // own invoice gives the helper the lead's miles and hotel. A helper's line of the lead's is the lead's to change.
-  const lead = order[0] ?? '';
+  // The crew's lead, even with no lines in the dates picked: then a helper has none of theirs, never another helper's
+  // (Greptile on PR #44).
+  const lead = crew[0] ?? order[0] ?? '';
   const leadDrives = sheet.miles.filter((r) => r.tech === lead), leadHotels = sheet.other.filter((r) => r.tech === lead && isHotel(r));
   const techs = order.map((tech): InvoiceTech => {
     const { hour = null, mile = null } = rates[tech] ?? {};
@@ -174,7 +176,10 @@ export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty
     const r = l.row as TimeRow;
     const { open: _open, ms: _ms, ...kept } = r;
     void _open; void _ms;
-    const next: TimeRow = { ...kept, ...(p.day ? { day: p.day } : {}), ...('qty' in p ? { hours: r2((p.qty ?? 0) + (r.brk || 0)) } : {}) };
+    // The hours typed (before the break), else the day's own: a stretch still on site keeps its hours so far when only
+    // its date changes (Greptile on PR #44).
+    const hours = 'qty' in p ? r2((p.qty ?? 0) + (r.brk || 0)) : fixedHours(r);
+    const next: TimeRow = { ...kept, ...(p.day ? { day: p.day } : {}), ...(hours != null ? { hours } : {}) };
     return { ...sheet, time: swap(sheet.time, r, next) };
   }
   if (l.item === 'Hotel' && l.row) {

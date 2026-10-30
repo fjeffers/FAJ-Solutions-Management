@@ -74,6 +74,22 @@ describe('the invoice', () => {
     expect(own.techs[1]).toMatchObject({ mileage: { amount: 18 }, travel: { amount: 99 } });
   });
 
+  it('keeps a stretch still on site\'s hours when only its date changes (Greptile on PR #44)', () => {
+    const open = { ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '08:00', out: '', brk: 0, open: true, ms: 3 * 3_600_000 }] };
+    const line = buildInvoice(open, rates, crew, meta, '').techs[0].hours.lines[0];
+    expect(line.qty).toBe(3);
+    const moved = editLine(open, line, { day: '2026-10-20' });
+    expect(moved.time[0]).toEqual({ tech: 'Paul Gibbs', day: '2026-10-20', in: '08:00', out: '', brk: 0, hours: 3 });
+    expect(buildInvoice(moved, rates, crew, meta, '').techs[0].hours.lines[0].qty).toBe(3);
+  });
+
+  it('gives a helper the lead\'s drives only, never another helper\'s, when the lead has none in the dates (Greptile on PR #44)', () => {
+    const helpers: JobSheet = { time: [{ tech: 'Raja', day: '2026-10-19', in: '', out: '', brk: 0, hours: 5 }, { tech: 'Kendell', day: '2026-10-19', in: '', out: '', brk: 0, hours: 5 }],
+      miles: [{ tech: 'Raja', day: '2026-10-19', start: null, end: null, miles: 40 }], meals: [], materials: [], other: [] };
+    const both = buildInvoice(helpers, { ...rates, Kendell: { hour: 50, mile: 0.6 } }, crew, meta, '');
+    expect(both.techs.map((t) => [t.role, t.tech, t.mileage.amount])).toEqual([['Helper', 'Raja', 24], ['Helper', 'Kendell', 0]]);
+  });
+
   it('changes the time sheet under the line edited, added or taken off', () => {
     const [paul, raja] = inv.techs;
     // A day's hours: the break still comes off them, so the line reads what's typed.

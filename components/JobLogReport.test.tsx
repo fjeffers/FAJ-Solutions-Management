@@ -985,9 +985,20 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
       fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
       fireEvent.change(screen.getByLabelText('Invoice #'), { target: { value: '1241' } });
+      // The browser's own print, while it's edited, has a note and not the unsaved invoice (Greptile on PR #44).
+      expect(document.querySelector('.jl-print-only')!.textContent).toBe('The invoice is being changed. Save it, then print it.');
+      // A change while it saves stays, still to save (Greptile on PR #44).
+      saveDelays = [80];
+      fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
+      fireEvent.change(screen.getByLabelText('Invoice #'), { target: { value: '1242' } });
+      await waitFor(() => expect(upserts).toHaveLength(1));
+      expect(upserts[0].row).toMatchObject({ invoice: { number: '1241' } });
+      await waitFor(() => expect((screen.getByLabelText('Invoice #') as HTMLInputElement).value).toBe('1242'));
+      expect(print.disabled).toBe(true);
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
       await waitFor(() => expect(print.disabled).toBe(false));
-      expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1241' } });
+      expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1242' } });
+      expect(document.querySelector('.jl-print-only')).toBeNull();
       // The log still follows the app: a new clock-in will show.
       expect(updates.some((u) => 'job_log_sheet' in u)).toBe(false);
     } finally {
@@ -995,6 +1006,22 @@ describe('Job log edited by the office', () => {
       delete tables.job_log_rates;
     }
   });
+
+  it('adds a line on a day in the dates picked, so it shows to fill in (Greptile on PR #44)', () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-19' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add a day, Paul Gibbs' }));
+      expect(screen.getAllByLabelText('Hours, Paul Gibbs, 10/19/2026')).toHaveLength(2);
+    } finally {
+      delete tables.job_log_rates;
+    }
+  }));
 
   it('edits the hours, meals and days right on the invoice, and the time sheet with them', () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];

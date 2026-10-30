@@ -443,8 +443,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const newDay = (s: JobSheet, tech: string, item: 'Labor' | 'Mileage' | 'Hotel') => {
     const worked = s.time.filter((r) => r.tech === tech).map((r) => r.day).sort();
     const all = [...worked, ...(item === 'Mileage' ? s.miles.filter((r) => r.tech === tech).map((r) => r.day) : [])].sort();
-    if (item === 'Hotel') return worked[0] ?? (from || todayDay);
-    return all.length ? plusDay(all.at(-1)!, 1) : (from || todayDay);
+    const day = item === 'Hotel' ? worked[0] ?? (from || todayDay) : all.length ? plusDay(all.at(-1)!, 1) : (from || todayDay);
+    // In the dates picked, so the line added shows to be filled in (Greptile on PR #44).
+    return to && day > to ? to : from && day < from ? from : day;
   };
   type InvDraft = NonNullable<typeof invDraft>;
   const editInv = (f: (d: InvDraft) => InvDraft) => setInvDraft((d) => (d ? f(d) : d));
@@ -463,6 +464,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // and the invoice's boxes.
   const saveInvoice = async () => {
     if (!invDraft) return;
+    const draftSaved = invDraft;
     const problems = sheetProblems(invDraft.sheet);
     if (problems.length) { toastError(`Each line needs a name and a date: ${problems.join(', ')}.`); return; }
     // The sheet as it started (its rows in their order), so an invoice saved with no change to it doesn't save it.
@@ -485,7 +487,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     setSavedMeta(cleanMeta);
     setRateEdit(null);
     setAllEdit(null);
-    setInvDraft(null);
+    // Done editing, unless something was changed while it saved: that stays, still to save (Greptile on PR #44).
+    setInvDraft((now) => (now === draftSaved ? null : now));
     toastSuccess('Invoice saved. The job log and its time sheet show it.');
   };
 
@@ -837,7 +840,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       {/* The report itself; or the invoice, as the client lays it out. */}
       {invoice ? (
         <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#000', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
-          <JobLogInvoice invoice={invoice} head={invoiceHead} edit={invoiceEditor} />
+          {/* While it's edited, the browser's own print has none of it: only what's saved is ever printed (Greptile on PR #44). */}
+          <div className={invDraft ? 'no-print' : undefined}><JobLogInvoice invoice={invoice} head={invoiceHead} edit={invoiceEditor} /></div>
+          {invDraft && <div className="jl-print-only" style={{ padding: 24 }}>The invoice is being changed. Save it, then print it.</div>}
         </div>
       ) : (
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>

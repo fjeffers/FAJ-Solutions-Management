@@ -133,7 +133,7 @@ function useLogChoices(woId: string, left: string[] | null | undefined, receiptI
 
 /** A section heading on the printed page. */
 const H = ({ children }: { children: React.ReactNode }) => (
-  <h3 style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 15, fontWeight: 700, color: '#0E1B2E', margin: '22px 0 8px', paddingBottom: 6, borderBottom: '2px solid #C9A24B' }}>{children}</h3>
+  <h3 className="jl-h" style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 15, fontWeight: 700, color: '#0E1B2E', margin: '22px 0 8px', paddingBottom: 6, borderBottom: '2px solid #C9A24B' }}>{children}</h3>
 );
 
 export default function JobLogReport({ w, deliverables, onClose }: {
@@ -365,7 +365,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     return list.length > 0 && (
     <div className={list.some(printed) ? undefined : 'no-print'}>
       <H>{title}</H>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+      <div className={whole ? undefined : 'jl-grid-4'} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
         {list.map((p) => {
           const out = !printed(p);
           // Taken out with its ✗; a declined receipt can be too, though it never prints either way.
@@ -467,14 +467,14 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>
         <div className="jl-band" style={{ background: 'linear-gradient(180deg, #13284A 0%, #0E1B2E 100%)', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ height: 54, width: 'auto' }} />
+          <img className="jl-logo" src="/wf/logo-wide.png" alt="FAJ Solutions — Technology. Delivered." style={{ height: 54, width: 'auto' }} />
           <div style={{ textAlign: 'right', color: '#fff' }}>
             <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 1.5, color: '#E3C987' }}>JOB LOG</div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>{range}</div>
           </div>
         </div>
 
-        <div style={{ padding: '20px 24px 28px' }}>
+        <div className="jl-body" style={{ padding: '20px 24px 28px' }}>
           <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{w.title || 'Work order'}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '6px 20px', marginTop: 10 }}>
             {w.customer_name && <div><b>Client:</b> {w.customer_name}</div>}
@@ -497,7 +497,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
             ].map(([label, value]) => (
-              <div key={label} style={{ border: '1px solid #E4DFD3', borderRadius: 10, padding: '8px 10px' }}>
+              <div key={label} className="jl-tile" style={{ border: '1px solid #E4DFD3', borderRadius: 10, padding: '8px 10px' }}>
                 <div style={{ fontSize: 11, color: '#5E6470', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
                 <div style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 18, fontWeight: 700 }}>{value}</div>
               </div>
@@ -521,7 +521,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           {inc.scope && w.description && (<><H>Scope of work</H><div style={{ whiteSpace: 'pre-wrap' }}>{w.description}</div></>)}
 
           {inc.time && (punches === null || visits.length > 0) && (
-            <>
+            <div className="jl-sec">
               <H>Time on site</H>
               {punches === null ? <div style={{ color: '#5E6470' }}>Loading…</div>
                 : (
@@ -558,11 +558,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                     </tbody>
                   </table>
                 )}
-            </>
+            </div>
           )}
 
           {inc.mileage && mileage.length > 0 && (
-            <>
+            <div className="jl-sec">
               <H>Mileage</H>
               {/* Like the hours: name and date on every row, each tech's total, then the overall total. */}
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -591,30 +591,30 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                 </tbody>
               </table>
               {noneLine(without(mileGroups), 'miles')}
-            </>
+            </div>
           )}
 
           {inc.meals && mealReceipts.length > 0 && (
-            <>
+            <div className="jl-sec">
               <H>Meals</H>
               {receiptTable(mealReceipts, 'meals', false)}
               {noneLine(without(byTechGroups(mealReceipts, techOf, crew)), 'meals')}
-            </>
+            </div>
           )}
 
           {inc.materials && materialReceipts.length > 0 && (
-            <>
+            <div className="jl-sec">
               <H>Materials</H>
               {receiptTable(materialReceipts, 'materials', false)}
               {noneLine(without(byTechGroups(materialReceipts, techOf, crew)), 'materials')}
-            </>
+            </div>
           )}
 
           {inc.otherReceipts && otherReceipts.length > 0 && (
-            <>
+            <div className="jl-sec">
               <H>Other receipts</H>
               {receiptTable(otherReceipts, '', true)}
-            </>
+            </div>
           )}
 
           {inc.checklist && tasks.length > 0 && (
@@ -657,9 +657,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <><H>Technician&apos;s notes</H><div className="jl-avoid" style={{ whiteSpace: 'pre-wrap' }}>{w.closeout_notes}</div></>
           )}
 
-          {inc.receipts && pictures('Receipts', shownReceipts, true)}
-          {inc.odometer && pictures('Odometer', shownOdometer)}
-          {inc.photos && pictures('Photos', shownPhotos)}
+          {/* On paper the pictures start on a page of their own, after the tables (when any will print). */}
+          <div className={pictureCount > 0 ? 'jl-pics' : undefined}>
+            {inc.receipts && pictures('Receipts', shownReceipts, true)}
+            {inc.odometer && pictures('Odometer', shownOdometer)}
+            {inc.photos && pictures('Photos', shownPhotos)}
+          </div>
 
           <div style={{ marginTop: 28, paddingTop: 10, borderTop: '1px solid #E4DFD3', display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5, color: '#5E6470', flexWrap: 'wrap' }}>
             <span><b style={{ color: '#0E1B2E' }}>FAJ Solutions</b> · Bringing People and Technology Together</span>

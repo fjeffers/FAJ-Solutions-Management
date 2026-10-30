@@ -12,6 +12,7 @@ import type { EnrichedWorkOrder } from '@/lib/types';
 
 vi.mock('@/lib/toast', () => ({ toastError: vi.fn(), toastSuccess: vi.fn(), toastInfo: vi.fn() }));
 vi.mock('@/lib/job-log-xlsx', () => ({ downloadJobLogXlsx: vi.fn(async () => {}) }));
+vi.mock('@/lib/job-log-invoice', async (original) => ({ ...(await original<typeof import('@/lib/job-log-invoice')>()), downloadInvoiceXlsx: vi.fn(async () => {}) }));
 
 const at = (day: string, hhmm: string) => new Date(`2026-10-${day}T${hhmm}:00-04:00`).toISOString();
 const tables: Record<string, Record<string, unknown>[]> = {
@@ -73,6 +74,7 @@ vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: async () => new Blob(['jpeg'],
 const { default: JobLogReport } = await import('./JobLogReport');
 const { toastError } = await import('@/lib/toast');
 const { downloadJobLogXlsx } = await import('@/lib/job-log-xlsx');
+const { downloadInvoiceXlsx } = await import('@/lib/job-log-invoice');
 const wo = {
   id: 'wo', wo_number: '19101401', title: 'Gaffney', contractor_names: ['Paul Gibbs'], contractor_name: 'Paul Gibbs',
   start_date: '2026-10-19', end_date: '2026-10-23', wo_status: 'Open', capture: [], custom_qa: [], wo_tasks: [],
@@ -904,6 +906,63 @@ describe('Job log edited by the office', () => {
       expect(print.disabled).toBe(false);
       expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' }))[0]).toEqual(['All techs’ hours · 9 × $90.00/hr', '$810.00']);
     } finally {
+      delete tables.job_log_rates;
+    }
+  }));
+
+  it('makes the invoice in the client\'s own layout (Fred: "this how the client want the layout to look", "mirror it exactly")', () => withPunches(async () => {
+    const before = tables.job_expenses;
+    tables.job_expenses = [...before,
+      { id: 'm1', contractor_name: 'Paul Gibbs', category: 'meals', vendor: 'Waffle House', amount: 18.97, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/meal.jpg' },
+      { id: 'h1', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 402.5, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/hotel.jpg' }];
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
+    vi.mocked(downloadInvoiceXlsx).mockClear();
+    const goldsboro = { ...wo, customer_name: 'TeamNetView', title: 'LDS1106 Site 5006643 — Goldsboro, NC', site_address: '1000 Eleventh Street', site_city: 'Goldsboro', site_state: 'NC', site_zip: '27530' } as EnrichedWorkOrder;
+    try {
+      render(<JobLogReport w={goldsboro} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      await waitFor(() => expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('50'));
+      // The number typed, then saved with the rates before it's printed.
+      fireEvent.change(screen.getByLabelText('Invoice #'), { target: { value: '1240' } });
+      expect(print.disabled).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: /save rates and invoice/i }));
+      await waitFor(() => expect(print.disabled).toBe(false));
+      expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50 } });
+      expect(document.title).toMatch(/ · Invoice 1240$/);
+      // F.A.J at the top, who it's billed and shipped to, its terms.
+      expect(screen.getByText('F.A.J Solutions LLC')).toBeTruthy();
+      expect(screen.getByText('TeamNetView')).toBeTruthy();
+      expect(screen.getByText('1000 Eleventh Street, Goldsboro, NC 27530')).toBeTruthy();
+      expect(screen.getByText('Net 30')).toBeTruthy();
+      // Paul as the lead: his hours, meals, mileage and hotel day by day; the materials aren't on it, as theirs.
+      const rows = [...screen.getByRole('table').querySelectorAll('tr')].map((tr) => [...tr.querySelectorAll('th, td')].map((c) => c.textContent));
+      expect(rows).toEqual([
+        ['Date', 'Item', 'Description', 'Qty', 'Rate', 'Amount'],
+        ['Lead', 'Paul Gibbs', 'Total Hours', '9.00', '$50.00', '$450.00'],
+        ['10/19/2026', 'Labor', 'Installation of Cabling for refresh project', '9.00', '$50.00', '$450.00'],
+        ['', 'Total Meal Allowance', '', '$18.97'],
+        ['10/19/2026', 'Meal', 'Meal allowance up to $50.00 with Receipts', '1', '$18.97', '$18.97'],
+        ['', 'Total Milage', '', '$10.80'],
+        ['10/19/2026', 'Mileage', 'Mileage from Home to Goldsboro NC', '18', '$0.60', '$10.80'],
+        ['', 'Total Travel', '', '$402.50'],
+        ['10/19/2026', 'Hotel', 'Hotel charge for the week', '1', '$402.50', '$402.50'],
+        ['', 'Lead Total', '', '$882.27'],
+        ['Totals'],
+        ['Labor', '', '$450.00'], ['Mileage', '', '$10.80'], ['Meals', '', '$18.97'], ['Travel', '', '$402.50'], ['Total Invoice', '', '$882.27'],
+      ]);
+      // Not the job log: the invoice alone.
+      expect(screen.queryByText('JOB LOG')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /excel/i }));
+      expect(downloadInvoiceXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Invoice 1240\.xlsx$/), expect.objectContaining({ totals: { labor: 450, mileage: 10.8, meals: 18.97, travel: 402.5, total: 882.27 } }),
+        expect.objectContaining({ billTo: 'TeamNetView', shipTo: ['LDS1106 Site 5006643 — Goldsboro, NC', '1000 Eleventh Street, Goldsboro, NC 27530'] }));
+      // The tech's copy is the job log again.
+      fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
+      expect(screen.getByText('JOB LOG')).toBeTruthy();
+      expect(screen.queryByText('F.A.J Solutions LLC')).toBeNull();
+    } finally {
+      tables.job_expenses = before;
       delete tables.job_log_rates;
     }
   }));

@@ -20,9 +20,10 @@ describe('a row of hours', () => {
   it('goes past midnight, as the workbook does', () => {
     expect(rowHours(t('Paul Gibbs', '2026-10-22', '22:00', '02:30'))).toBe(4.5);
   });
-  it('has none without both times; a live stretch still on site counts its time so far', () => {
+  it('has none without both times; a live stretch still on site counts its time so far, less its break', () => {
     expect(rowHours(t('Paul Gibbs', '2026-10-19', '07:37', ''))).toBeNull();
     expect(rowHours({ ...t('Paul Gibbs', '2026-10-19', '07:37', ''), open: true, ms: 2.5 * 3_600_000 })).toBe(2.5);
+    expect(rowHours({ ...t('Paul Gibbs', '2026-10-19', '07:37', '', 0.5), open: true, ms: 4 * 3_600_000 })).toBe(3.5);
   });
   it('reads "HH:MM" only', () => {
     expect(minutesOf('7:05')).toBe(425);
@@ -130,8 +131,11 @@ describe('the saved sheet', () => {
     expect(sheetToSave({ ...sheet, time: [live] }).time[0]).toEqual({ tech: 'Paul Gibbs', day: '2026-10-30', in: '07:30', out: '', brk: 0, hours: 2.5 });
   });
 
-  it('has a row\'s own hours (from the Hours screen) count, until its times change', () => {
+  it('has a row\'s own hours (from the Hours screen) count less its break, and a break put back restores them', () => {
     expect(rowHours({ ...t('Paul Gibbs', '2026-10-20', '', ''), hours: 6 })).toBe(6);
+    // A break typed too big, then cleared: the six hours are back (Greptile on PR #39).
+    expect(rowHours({ ...t('Paul Gibbs', '2026-10-20', '', '', 7), hours: 6 })).toBe(0);
+    expect(rowHours({ ...t('Paul Gibbs', '2026-10-20', '', '', 0), hours: 6 })).toBe(6);
     const saved = sheetToSave({ ...sheet, time: [{ ...t('Paul Gibbs', '2026-10-20', '', ''), hours: 6 }] });
     expect(saved.time[0]).toEqual({ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 });
     expect(parseSheet(saved)!.time[0].hours).toBe(6);
@@ -159,6 +163,10 @@ describe('the Hours screen on the job log', () => {
       day('s6', '2026-10-22', 'Paul Gibbs', { hours: 0 }),
       // Only a lunch typed, no times: the break on that day's clock-ins (CodeRabbit on PR #39).
       day('s7', '2026-10-23', 'Kendell Newbold', { lunch: 30 }),
+      // The same, and the day's first clock-in is shorter than the lunch.
+      day('s8', '2026-10-24', 'Kendell Newbold', { lunch: 30 }),
+      // Hours typed with a lunch: the row keeps them before the lunch, and the break takes it off.
+      day('s9', '2026-10-24', 'Paul Gibbs', { hours: 6, lunch: 30 }),
     ],
   });
 
@@ -169,6 +177,8 @@ describe('the Hours screen on the job log', () => {
       { tech: 'Kendell Newbold', day: '2026-10-21', in: '', out: '', brk: 0, hidden: true },
       { tech: 'Paul Gibbs', day: '2026-10-22', in: '', out: '', brk: 0, hidden: true },
       { tech: 'Kendell Newbold', day: '2026-10-23', in: '', out: '', brk: 0.5, breakOnly: true },
+      { tech: 'Kendell Newbold', day: '2026-10-24', in: '', out: '', brk: 0.5, breakOnly: true },
+      { tech: 'Paul Gibbs', day: '2026-10-24', in: '', out: '', brk: 0.5, hours: 6.5 },
     ]);
   });
 
@@ -185,6 +195,8 @@ describe('the Hours screen on the job log', () => {
         visit('Paul Gibbs', '2026-10-22T11:36:00Z', '2026-10-22T21:00:00Z'),
         visit('Kendell Newbold', '2026-10-23T12:00:00Z', '2026-10-23T16:00:00Z'),
         visit('Kendell Newbold', '2026-10-23T17:00:00Z', '2026-10-23T21:00:00Z'),
+        visit('Kendell Newbold', '2026-10-24T12:00:00Z', '2026-10-24T12:15:00Z'),
+        visit('Kendell Newbold', '2026-10-24T13:00:00Z', '2026-10-24T17:00:00Z'),
       ],
       mileage: [], receipts: [], hoursScreen: hoursScreenDays(rows), timeZone: TZ,
     });
@@ -194,8 +206,12 @@ describe('the Hours screen on the job log', () => {
       // The lunch once, on the day's first clock-in.
       ['Kendell Newbold', '2026-10-23', '08:00', '12:00', 3.5],
       ['Kendell Newbold', '2026-10-23', '13:00', '17:00', 4],
+      // A 15-minute first clock-in takes what it can of the lunch; the rest comes off the next: 3.75 in all.
+      ['Kendell Newbold', '2026-10-24', '08:00', '08:15', 0],
+      ['Kendell Newbold', '2026-10-24', '09:00', '13:00', 3.75],
       ['Paul Gibbs', '2026-10-19', '08:00', '16:30', 8],
       ['Paul Gibbs', '2026-10-20', '', '', 6],
+      ['Paul Gibbs', '2026-10-24', '', '', 6],
     ]);
   });
 });

@@ -69,10 +69,11 @@ describe('the job log in Excel', () => {
 
   it('writes the hours so far of a stretch still on site as a number: the formula would make them 0 (Greptile, CodeRabbit on PR #39)', () => {
     const live = jobLogCells({ ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-30', in: '07:30', out: '', brk: 0, open: true, ms: 2.5 * 3_600_000 }] }, head);
-    expect(live[find(live, 'Time on site') + 2][5]).toEqual({ t: 'n', v: 2.5, z: '0.00' });
-    // The Hours screen's own hours too.
-    const typed = jobLogCells({ ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 }] }, head);
-    expect(typed[find(typed, 'Time on site') + 2][5]).toEqual({ t: 'n', v: 6, z: '0.00' });
+    const at = find(live, 'Time on site') + 3;
+    expect(live[at - 1][5]).toEqual({ t: 'n', v: 2.5, z: '0.00', f: `ROUND(MAX(0,2.5-E${at}),2)` });
+    // The Hours screen's own hours too, the break typed in Excel still coming off them.
+    const typed = jobLogCells({ ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0.5, hours: 6.5 }] }, head);
+    expect(typed[at - 1][5]).toEqual({ t: 'n', v: 6, z: '0.00', f: `ROUND(MAX(0,6.5-E${at}),2)` });
   });
 
   it('opens in Excel with its formulas and the summary pointing at the totals', () => {

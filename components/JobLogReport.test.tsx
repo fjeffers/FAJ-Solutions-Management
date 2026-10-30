@@ -572,7 +572,7 @@ describe('Job log edited by the office', () => {
     expect(within(materials).getByText('Total $1,018.50')).toBeTruthy();
   }));
 
-  it("keeps a row's Hours screen hours until both clock times replace them; a break moves them (Greptile on PR #39)", async () => {
+  it("keeps a row's Hours screen hours until both clock times replace them; the break comes off them (Greptile on PR #39)", async () => {
     const before = tables.work_orders;
     tables.work_orders = [{ job_log_left_out: [], job_log_receipt_photos: [], job_log_sheet: {
       time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 }], miles: [], meals: [], materials: [], other: [],
@@ -583,6 +583,11 @@ describe('Job log edited by the office', () => {
       await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
       fireEvent.click(edit);
       const time = screen.getByRole('heading', { name: 'Time on site' }).parentElement!;
+      expect(within(time).getByText('Total 6 hours')).toBeTruthy();
+      // A break typed too big, then cleared: the six hours are back, not more (Greptile on PR #39).
+      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '7' } });
+      expect(within(time).getByText('Total 0 hours')).toBeTruthy();
+      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '' } });
       expect(within(time).getByText('Total 6 hours')).toBeTruthy();
       fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '0.5' } });
       expect(within(time).getByText('Total 5.5 hours')).toBeTruthy();

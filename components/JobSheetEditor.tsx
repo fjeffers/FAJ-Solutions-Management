@@ -112,15 +112,12 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
     ))),
     `Total ${moneyTotal(rows).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}`);
 
-  // A row with the Hours screen's own hours (typed there, or two visits) keeps them until both clock times are
-  // there to replace them; a break changed moves them by the difference, as a lunch does on the Hours screen
-  // (Greptile on PR #39).
+  // A row with its own hours (the Hours screen's, before the break) keeps them until both clock times are there
+  // to replace them; the break comes off them, so changing it never moves them (Greptile on PR #39).
   const retime = (i: number, r: TimeRow, patch: { in: string } | { out: string }) => {
     const next = { ...r, ...patch };
     edit('time', i, { ...patch, ...(minutesOf(next.in) != null && minutesOf(next.out) != null ? { hours: undefined } : {}) });
   };
-  const rebreak = (i: number, r: TimeRow, brk: number) =>
-    edit('time', i, { brk, ...(r.hours != null ? { hours: Math.max(0, Math.round((r.hours - (brk - (r.brk || 0))) * 100) / 100) } : {}) });
 
   const editMiles = (i: number, r: MileRow, patch: Partial<MileRow>) => {
     const next = { ...r, ...patch };
@@ -137,7 +134,7 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
         <>
           <Field name="Clock in"><input aria-label={`Clock in, time row ${i + 1}`} type="time" style={box} value={r.in} onChange={(e) => retime(i, r, { in: e.target.value })} /></Field>
           <Field name="Clock out"><input aria-label={`Clock out, time row ${i + 1}`} type="time" style={box} value={r.out} onChange={(e) => retime(i, r, { out: e.target.value })} /></Field>
-          <Field name="Break (hours)"><NumBox label={`Break, time row ${i + 1}`} value={r.brk} empty={0} onChange={(n) => rebreak(i, r, n ?? 0)} /></Field>
+          <Field name="Break (hours)"><NumBox label={`Break, time row ${i + 1}`} value={r.brk} empty={0} onChange={(n) => edit('time', i, { brk: n ?? 0 })} /></Field>
           {shown('Hours', fmt(rowHours(r)))}
         </>
       ))), `Total ${fmt(hoursTotal(sheet.time))} hours`)}

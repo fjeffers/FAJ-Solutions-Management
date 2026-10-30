@@ -5,7 +5,7 @@
 // × 24 − break, a day's miles = odometer end − start. No billable total ("No, keep it off"), and the JOB TOTAL
 // is hours and miles only, no dollars ("i dont want it mix").
 import { byTechGroups } from './job-log';
-import { hoursTotal, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
+import { fixedHours, hoursTotal, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
 
 /** A cell for SheetJS: text, or a number with its Excel format and, for a sum or a sum's part, its formula. */
 export type XCell = string | null | { t: 'n'; v: number; z: string; f?: string };
@@ -66,11 +66,12 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead): XCell[][] {
     byDay(sheet.time, (a, b) => (minutesOf(a.in) ?? 0) - (minutesOf(b.in) ?? 0)), 'F', HRS,
     (r, at) => {
       const a = minutesOf(r.in), b = minutesOf(r.out);
+      // The row's own hours (the Hours screen's, or a stretch still on site's so far, with no clock out for the
+      // times' formula) less the break; else the times' (Greptile, CodeRabbit on PR #39).
+      const fixed = fixedHours(r);
       return [r.tech, num(dayNumber(r.day), DATE), a == null ? '' : num(a / 1440, TIME), b == null ? '' : num(b / 1440, TIME),
-        // The Hours screen's own hours (typed there, or two visits), or the hours so far of a stretch still on site
-        // (no clock out for the formula), as a number; else worked out from the times (Greptile, CodeRabbit on PR #39).
-        num(r.brk || 0, HRS), r.hours != null || (r.open && b == null) ? num(rowHours(r) ?? 0, HRS)
-          : num(rowHours(r) ?? 0, HRS, `IF(OR(C${at}="",D${at}=""),0,ROUND(MAX(0,MOD(D${at}-C${at},1)*24-E${at}),2))`)];
+        num(r.brk || 0, HRS), num(rowHours(r) ?? 0, HRS, fixed != null ? `ROUND(MAX(0,${fixed}-E${at}),2)`
+          : `IF(OR(C${at}="",D${at}=""),0,ROUND(MAX(0,MOD(D${at}-C${at},1)*24-E${at}),2))`)];
     },
     hoursTotal, (t) => `${t} final hours`, 'Overall total worked');
 

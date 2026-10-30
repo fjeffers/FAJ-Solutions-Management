@@ -19,8 +19,9 @@ export type TimeRow = {
   /** Still on site (live data only): the hours so far come from `ms`. */
   open?: boolean; ms?: number;
   /**
-   * The day's hours as the Hours screen has them, when they aren't clock out less clock in less the break
-   * (hours typed there, or a day with two visits): these count. Changing the times drops them.
+   * The hours before the break, when they aren't clock out less clock in: the Hours screen's (hours typed
+   * there, or a day with two visits), or a stretch still on site when it was saved. The break comes off them, so
+   * a break changed or put back never moves them (Greptile on PR #39). Both clock times typed drop them.
    */
   hours?: number;
 };
@@ -59,11 +60,17 @@ export function clockOf(iso: string, timeZone?: string): string {
  * to 0.01 h. Null without both times, unless it's a live stretch still on site.
  */
 export function rowHours(r: TimeRow): number | null {
-  if (r.hours != null) return r2(r.hours);
+  const less = (gross: number) => r2(Math.max(0, gross - (r.brk || 0)));
+  if (r.hours != null) return less(r.hours);
   const a = minutesOf(r.in), b = minutesOf(r.out);
-  if (a == null || b == null) return r.open && r.ms != null ? r2(r.ms / 3_600_000) : null;
-  return r2(Math.max(0, ((b - a + 1440) % 1440) / 60 - (r.brk || 0)));
+  // Still on site: the time so far, less the break too (Greptile on PR #39).
+  if (a == null || b == null) return r.open && r.ms != null ? less(r.ms / 3_600_000) : null;
+  return less(((b - a + 1440) % 1440) / 60);
 }
+
+/** A row's hours before the break when they aren't its clock times': its own, or a stretch still on site's so far. */
+export const fixedHours = (r: TimeRow): number | null =>
+  r.hours ?? (r.open && minutesOf(r.out) == null && r.ms != null ? r2(r.ms / 3_600_000) : null);
 
 /** A section's total, adding each row as it shows (so the column adds up for the client). */
 export const hoursTotal = (rows: TimeRow[]) => r2(rows.reduce((t, r) => t + (rowHours(r) ?? 0), 0));
@@ -75,7 +82,7 @@ export function milesFromOdometer(r: MileRow): number {
   return r.start != null && r.end != null && r.end >= r.start ? r1(r.end - r.start) : r.miles;
 }
 
-/** A tech's day as the office set it on the Hours screen: its time on site, or (hidden) none on the log. */
+/** A tech's day as the office set it on the Hours screen: its time on site, none on the log, or only a lunch. */
 export type HoursScreenDay = TimeRow & {
   /** Off the log: the day hidden there, or its hours typed as 0. */
   hidden?: boolean;
@@ -108,7 +115,8 @@ export function hoursScreenDays(rows: SheetRow[]): HoursScreenDay[] {
       if ('lunch' in r.edits && row.brk > 0) return [{ ...row, breakOnly: true }];
       return [];
     }
-    return [rowHours(row) === h ? row : { ...row, hours: h }];
+    // The Hours screen's hours are after the lunch: the row keeps them before it, and the break takes it off.
+    return [rowHours(row) === h ? row : { ...row, hours: r2(h + row.brk) }];
   });
 }
 
@@ -130,18 +138,22 @@ export function sheetFromApp(input: {
   const key = (d: { day: string; tech: string }) => `${d.day}|${d.tech}`;
   // The days the Hours screen sets or takes off: their clock-ins give way. A lunch alone goes on the day's first one.
   const setDays = new Set(office.filter((d) => !d.breakOnly).map(key));
-  const lunch = new Map(office.filter((d) => d.breakOnly).map((d) => [key(d), d.brk]));
-  const lunched = new Set<string>();
+  // A lunch alone comes off the day's clock-ins in turn, as much as each can take, so a short first one never
+  // loses part of it (Greptile on PR #39).
+  const lunchLeft = new Map(office.filter((d) => d.breakOnly).map((d) => [key(d), d.brk]));
   return {
     time: [
-      ...input.visits.filter((v) => !setDays.has(key(v))).map((v) => {
-        const first = lunch.has(key(v)) && !lunched.has(key(v));
-        if (first) lunched.add(key(v));
-        return {
+      ...input.visits.filter((v) => !setDays.has(key(v))).map((v): TimeRow => {
+        const row: TimeRow = {
           tech: v.tech, day: v.day, in: clockOf(v.inAt, input.timeZone),
-          out: v.outAt ? clockOf(v.outAt, input.timeZone) : '', brk: first ? lunch.get(key(v))! : 0,
+          out: v.outAt ? clockOf(v.outAt, input.timeZone) : '', brk: 0,
           ...(v.open ? { open: true, ms: v.ms } : {}),
         };
+        const owed = lunchLeft.get(key(v));
+        if (!owed) return row;
+        const take = r2(Math.min(owed, rowHours(row) ?? 0));
+        lunchLeft.set(key(v), r2(owed - take));
+        return { ...row, brk: take };
       }),
       ...office.filter((d) => !d.hidden && !d.breakOnly).map((d): TimeRow => ({ tech: d.tech, day: d.day, in: d.in, out: d.out, brk: d.brk, ...(d.hours != null ? { hours: d.hours } : {}) })),
     ],
@@ -202,7 +214,7 @@ export function sheetToSave(s: JobSheet): JobSheet {
   return {
     // A stretch still on site keeps its hours so far, so saving never drops them (Greptile, CodeRabbit on PR #39).
     time: o.time.map((r) => {
-      const hours = r.hours ?? (r.open && !r.out ? rowHours(r) : null);
+      const hours = fixedHours(r);
       return { tech: t(r.tech), day: r.day, in: r.in, out: r.out, brk: r.brk || 0, ...(hours != null ? { hours } : {}) };
     }),
     miles: o.miles.map(({ tech, day, start, end, miles }) => ({ tech: t(tech), day, start, end, miles })),

@@ -15,7 +15,7 @@ export type XCell = string | null | { t: 'n'; v: number; z: string; f?: string }
 
 export type JobLogHead = { title: string; lines: string[]; range: string; crew: string[] };
 
-const DATE = 'mm/dd/yyyy', TIME = 'h:mm AM/PM', HRS = '0.00', MILES = '#,##0.0', USD = '$#,##0.00';
+const DATE = 'mm/dd/yyyy', TIME = 'h:mm AM/PM', HRS = '0.00', MILES = '#,##0.0', USD = '$#,##0.00', RATE = '$#,##0.00##';
 const num = (v: number, z: string, f?: string): XCell => ({ t: 'n', v, z, ...(f ? { f } : {}) });
 /** "2026-10-19" → Excel's day number. */
 const dayNumber = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86_400_000 + 25_569;
@@ -73,7 +73,8 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
           // A tech with no rate isn't charged: their rows' rate and amount are left empty.
           const amount = lineAmount(priced.qty(r), rate);
           techAmount += amount ?? 0;
-          row.push(rate == null ? '' : num(rate, USD), amount == null ? '' : num(amount, USD, `ROUND(${col}${at}*${rateCol}${at},2)`));
+          // The rate as typed, to four places ($0.725), so the amount beside it can be checked (Greptile on PR #40).
+          row.push(rate == null ? '' : num(rate, RATE), amount == null ? '' : num(amount, USD, `ROUND(${col}${at}*${rateCol}${at},2)`));
         }
         rows.push(row);
       }

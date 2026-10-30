@@ -28,6 +28,8 @@ const tables: Record<string, Record<string, unknown>[]> = {
   field_sheet_days: [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218 }, added: false, hidden: false }],
 };
 const updates: Record<string, unknown>[] = [];
+// Tables whose read fails.
+const readFails = new Set<string>();
 // Rows written with upsert (the rates), by table.
 const upserts: { table: string; row: Record<string, unknown>; onConflict?: string }[] = [];
 // How long each save takes; the first one slow, to check a quick run of taps still lands in order.
@@ -46,7 +48,7 @@ function query(table: string) {
   for (const m of ['select', 'eq', 'in', 'order']) chain[m] = () => chain;
   chain.then = (ok: (v: unknown) => unknown) => (table === 'job_punches' ? punchesHeld : Promise.resolve())
     .then(() => ({ data: tables[table] ?? [], error: null })).then(ok);
-  chain.maybeSingle = async () => ({ data: (tables[table] ?? [])[0] ?? null, error: null });
+  chain.maybeSingle = async () => (readFails.has(table) ? { data: null, error: { message: 'offline' } } : { data: (tables[table] ?? [])[0] ?? null, error: null });
   chain.upsert = async (row: Record<string, unknown>, opts?: { onConflict?: string }) => {
     upserts.push({ table, row, onConflict: opts?.onConflict });
     return { error: null };
@@ -735,8 +737,10 @@ describe('Job log edited by the office', () => {
     expect(screen.queryByText('TOTAL CHARGES')).toBeNull();
     fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '65' } });
     fireEvent.change(screen.getByLabelText('$ per mile, Paul Gibbs'), { target: { value: '.70' } });
-    // The total as they're typed (Fred: "i enter the rates and it shows the total").
+    // The total as they're typed (Fred: "i enter the rates and it shows the total"); the page waits for the save, so
+    // even the browser's own print never has rates that aren't kept (CodeRabbit on PR #40).
     expect(screen.getByText('Total $597.60')).toBeTruthy();
+    expect(screen.queryByText('TOTAL CHARGES')).toBeNull();
     // Saved before it's printed, so what the client gets is what's kept.
     expect(print.disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
@@ -802,8 +806,8 @@ describe('Job log edited by the office', () => {
     }
   }));
 
-  it('keeps the rates on the job: the client copy has them when the log opens again', () => withPunches(async () => {
-    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
+  it('keeps the rates on the job: the client copy has them when the log opens again, to the decimal typed', () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.725 } } }];
     try {
       render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
@@ -811,9 +815,31 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
       await waitFor(() => expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('65'));
       expect(print.disabled).toBe(false);
-      expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $12.60Total $597.60');
+      // $0.725 a mile shows as typed, so 18 × it = $13.05 can be checked (Greptile on PR #40).
+      expect(rowsOf(screen.getByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,218', '18', '$0.725/mi', '$13.05']);
+      expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $13.05Total $598.05');
     } finally {
       delete tables.job_log_rates;
+    }
+  }));
+
+  it("won't save over the rates, or print a client copy, when the saved rates didn't load (Greptile, CodeRabbit on PR #40)", () => withPunches(async () => {
+    readFails.add('job_log_rates');
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+      expect(screen.getByRole('alert').textContent).toMatch(/saved rates didn’t load/);
+      expect(print.disabled).toBe(true);
+      expect((screen.getByRole('button', { name: /excel/i }) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '65' } });
+      expect((screen.getByRole('button', { name: /save rates/i }) as HTMLButtonElement).disabled).toBe(true);
+      // The tech's copy has no rates, so it prints as ever.
+      fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
+      expect(print.disabled).toBe(false);
+    } finally {
+      readFails.delete('job_log_rates');
     }
   }));
 });

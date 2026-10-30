@@ -189,6 +189,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // The rates table as the office is changing it (null: as saved).
   const [rateEdit, setRateEdit] = useState<RateRow[] | null>(null);
   const [savedRates, setSavedRates] = useState<JobRates>({});
+  // The saved rates didn't load: nothing to save over them, and no client copy, until they do (Greptile, CodeRabbit on PR #40).
+  const [ratesFailed, setRatesFailed] = useState(false);
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -217,8 +219,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', w.id),
       afterSaves(w.id).then(() => db.from('job_log_rates').select('rates').eq('wo_id', w.id).maybeSingle()),
     ]).then(async ([p, ph, l, ex, od, wo, ev, fs, jr]) => {
-      const keptRates = parseRates((jr.data as { rates?: unknown } | null)?.rates);
-      setSavedRates(keptRates);
+      if (jr.error) setRatesFailed(true);
+      else setSavedRates(parseRates((jr.data as { rates?: unknown } | null)?.rates));
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));
       setLogs(Array.isArray(l) ? (l as TimeLog[]) : []);
@@ -365,7 +367,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const techsOnSheet = sheetTechs(shown, crew);
   const rateTable = rateEdit ?? (Object.keys(savedRates).length ? rateRows(savedRates, crew) : techsOnSheet.map((tech) => ({ tech, hour: null, mile: null })));
   const rates = ratesFromRows(rateTable);
-  const charges = chargesByTech(shown, rates, crew);
+  // The total under the table as the rates are typed; the page, the print and Excel with the rates saved, so a
+  // print (the button, or the browser's own) is never of rates that aren't kept (CodeRabbit on PR #40).
+  const typedCharges = chargesByTech(shown, rates, crew);
+  const charges = chargesByTech(shown, savedRates, crew);
   const unbilled = notCharged(shown, rates, crew);
   const ratesChanged = !sameRates(rates, savedRates);
   const rateNames = [...new Set([...crew, ...techsOnSheet])];
@@ -376,7 +381,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const withRates = copy === 'client' && charges.length > 0;
   const chargeOf = (tech: string) => charges.find((c) => c.tech === tech);
   const sumOf = (k: 'labor' | 'mileage') => Math.round(charges.reduce((t, c) => t + (c[k] ?? 0), 0) * 100 + 1e-9) / 100;
-  const rateCell = (rate: number | null | undefined, unit: string) => <td style={cell}>{rate == null ? '—' : `${fmtMoney(rate)}/${unit}`}</td>;
+  // A rate as it was typed, to four places ($0.725/mi), so the amount beside it can be checked (Greptile on PR #40).
+  const rateText = (rate: number) => rate.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  const rateCell = (rate: number | null | undefined, unit: string) => <td style={cell}>{rate == null ? '—' : `${rateText(rate)}/${unit}`}</td>;
   const moneyCell = (n: number | null | undefined) => <td style={cell}>{n == null ? '—' : fmtMoney(n)}</td>;
   const setRate = (i: number, patch: Partial<RateRow>) => editRates((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const saveRates = async () => {
@@ -423,7 +430,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       ...(techs.length ? [`Technician${techs.length > 1 ? 's' : ''}: ${techs.join(', ')}`] : []),
     ];
     downloadJobLogXlsx(copy === 'client' ? `${logName} · Client time sheet.xlsx` : `${logName} · Time sheet.xlsx`,
-      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? rates : undefined)
+      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? savedRates : undefined)
       .catch(() => toastError("The Excel file didn't download. Try again."));
   };
 
@@ -579,8 +586,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         {/* Not until the job's days are in: the PDF's name has them (Greptile on PR #21). */}
         {/* While editing, save first: the print and Excel are what's saved. */}
         {/* And the rates saved first on the client's copy, so what's printed is what's kept. */}
-        <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft || (copy === 'client' && ratesChanged)} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
-        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft || (copy === 'client' && ratesChanged)} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
+        <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft || (copy === 'client' && (ratesChanged || ratesFailed))} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft || (copy === 'client' && (ratesChanged || ratesFailed))} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
         {draft ? (
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>
@@ -619,11 +626,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 8 }}>
               <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" disabled={rateNames.every((n) => rateTable.some((r) => r.tech === n))}
                 onClick={() => editRates((rows) => [...rows, { tech: rateNames.find((n) => !rows.some((r) => r.tech === n)) ?? '', hour: null, mile: null }])}><Plus size={14} /> Add a rate</button>
-              <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : 'Save rates'}</button>
+              <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged || ratesFailed} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : 'Save rates'}</button>
               {ratesChanged && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>}
               {/* The total as the rates are typed (Fred: "i enter the rates and it shows the total"). */}
-              <b style={{ marginLeft: 'auto', fontSize: 14 }}>Total {fmtMoney(chargesTotal(charges))}</b>
+              <b style={{ marginLeft: 'auto', fontSize: 14 }}>Total {fmtMoney(chargesTotal(typedCharges))}</b>
             </div>
+            {ratesFailed && <div role="alert" style={{ fontSize: 12.5, color: '#B42318', marginTop: 6 }}>The saved rates didn’t load, so they can’t be changed or printed right now. Close the job log and open it again.</div>}
             {unbilled.length > 0 && <div style={{ fontSize: 12.5, color: '#B42318', marginTop: 6 }}>Not charged (no rates): {unbilled.join(', ')}.</div>}
           </div>
         )}
@@ -736,7 +744,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                                   <td style={cell}>{r.out ? clock12(r.out) : r.open ? 'On site now' : '—'}</td>
                                   <td style={cell}>{r.brk ? hrs(r.brk) : '—'}</td>
                                   <td style={cell}>{h == null ? '—' : hrs(h)}</td>
-                                  {withRates && <>{rateCell(rates[r.tech]?.hour, 'hr')}{moneyCell(lineAmount(h, rates[r.tech]?.hour))}</>}
+                                  {withRates && <>{rateCell(savedRates[r.tech]?.hour, 'hr')}{moneyCell(lineAmount(h, savedRates[r.tech]?.hour))}</>}
                                 </tr>
                               );
                             })}
@@ -777,7 +785,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                             <td style={cell}>{r.start != null ? r.start.toLocaleString('en-US') : '—'}</td>
                             <td style={cell}>{r.end != null ? r.end.toLocaleString('en-US') : '—'}</td>
                             <td style={cell}>{r.miles.toLocaleString('en-US')}</td>
-                            {withRates && <>{rateCell(rates[r.tech]?.mile, 'mi')}{moneyCell(lineAmount(r.miles, rates[r.tech]?.mile))}</>}
+                            {withRates && <>{rateCell(savedRates[r.tech]?.mile, 'mi')}{moneyCell(lineAmount(r.miles, savedRates[r.tech]?.mile))}</>}
                           </tr>
                         ))}
                         <tr className="jl-avoid" style={techTotal}>

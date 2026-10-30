@@ -84,7 +84,7 @@ describe('the job log in Excel', () => {
     expect(client[top + 1]).toEqual(['NAME', 'DATE', 'CLOCK IN', 'CLOCK OUT', 'BREAK', 'HOURS', 'RATE/HR', 'AMOUNT']);
     // Paul's 10/19, 10 hours × $65: the amount is the row's hours × its rate, to the cent.
     const at = top + 3;
-    expect(client[top + 2].slice(6)).toEqual([{ t: 'n', v: 65, z: '$#,##0.00' }, { t: 'n', v: 650, z: '$#,##0.00', f: `ROUND(F${at}*G${at},2)` }]);
+    expect(client[top + 2].slice(6)).toEqual([{ t: 'n', v: 65, z: '$#,##0.00##' }, { t: 'n', v: 650, z: '$#,##0.00', f: `ROUND(F${at}*G${at},2)` }]);
     // His total: the hours as before, and his dollars added up.
     const paul = find(client, 'Paul Gibbs final hours');
     expect(client[paul].slice(6)).toEqual([null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `SUM(H${at}:H${paul})` }]);
@@ -97,7 +97,7 @@ describe('the job log in Excel', () => {
     // The miles, × the mileage rate.
     const m = find(client, 'Mileage');
     expect(client[m + 1]).toEqual(['NAME', 'DATE', 'ODO START', 'ODO END', 'MILES', 'RATE/MI', 'AMOUNT']);
-    expect(client[m + 2].slice(5)).toEqual([{ t: 'n', v: 0.7, z: '$#,##0.00' }, { t: 'n', v: 5.6, z: '$#,##0.00', f: `ROUND(E${m + 3}*F${m + 3},2)` }]);
+    expect(client[m + 2].slice(5)).toEqual([{ t: 'n', v: 0.7, z: '$#,##0.00##' }, { t: 'n', v: 5.6, z: '$#,##0.00', f: `ROUND(E${m + 3}*F${m + 3},2)` }]);
     const miles = find(client, 'Overall total miles');
     expect(client[miles].slice(5)).toEqual([null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Paul Gibbs total miles') + 1}` }]);
     // At the end: the hours' and the miles' dollars, and the two added up.

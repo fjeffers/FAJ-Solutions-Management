@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import type { EnrichedWorkOrder } from '@/lib/types';
 
 vi.mock('@/lib/toast', () => ({ toastError: vi.fn(), toastSuccess: vi.fn(), toastInfo: vi.fn() }));
+vi.mock('@/lib/job-log-xlsx', () => ({ downloadJobLogXlsx: vi.fn(async () => {}) }));
 
 const at = (day: string, hhmm: string) => new Date(`2026-10-${day}T${hhmm}:00-04:00`).toISOString();
 const tables: Record<string, Record<string, unknown>[]> = {
@@ -58,6 +59,8 @@ vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (ur
 vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: async () => new Blob(['jpeg'], { type: 'image/jpeg' }) }));
 
 const { default: JobLogReport } = await import('./JobLogReport');
+const { toastError } = await import('@/lib/toast');
+const { downloadJobLogXlsx } = await import('@/lib/job-log-xlsx');
 const wo = {
   id: 'wo', wo_number: '19101401', title: 'Gaffney', contractor_names: ['Paul Gibbs'], contractor_name: 'Paul Gibbs',
   start_date: '2026-10-19', end_date: '2026-10-23', wo_status: 'Open', capture: [], custom_qa: [], wo_tasks: [],
@@ -355,15 +358,15 @@ describe('Job log, each tech on their own', () => {
       });
       // Fred, 2026-10-29: "Paul 10/23 8am to 5pm total 9 ... Final Hours 19 hours ... Overall total worked 36",
       // and "Don't show the money all we want to see is how much was on site".
-      // Laid out like Fred's own sheet (2026-10-30): Name | date | clock in | clock out | total, the date with its year.
-      expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Name', 'Date', 'Clock in', 'Clock out', 'Total']);
+      // Laid out like Fred's own sheet (2026-10-30): Name | date | clock in | clock out | break | hours, the date with its year.
+      expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Name', 'Date', 'Clock in', 'Clock out', 'Break', 'Hours']);
       const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
       expect(rows).toEqual([
-        ['Paul Gibbs', '10/19/2026', '7:37 AM', '5:37 PM', '10'],
-        ['Paul Gibbs', '10/20/2026', '7:50 AM', '12:20 PM', '4.5'],
+        ['Paul Gibbs', '10/19/2026', '7:37 AM', '5:37 PM', '—', '10'],
+        ['Paul Gibbs', '10/20/2026', '7:50 AM', '12:20 PM', '—', '4.5'],
         ['Paul Gibbs final hours · 2 days', '14.5'],
-        ['Kendell Newbold', '10/19/2026', '7:37 AM', '5:37 PM', '10'],
-        ['Kendell Newbold', '10/20/2026', '7:50 AM', '6:09 PM', '10.32'],
+        ['Kendell Newbold', '10/19/2026', '7:37 AM', '5:37 PM', '—', '10'],
+        ['Kendell Newbold', '10/20/2026', '7:50 AM', '6:09 PM', '—', '10.32'],
         ['Kendell Newbold final hours · 2 days', '20.32'],
         ['Overall total worked', '34.82'],
       ]);
@@ -390,7 +393,7 @@ describe('Job log, each tech on their own', () => {
       });
       const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
       expect(rows).toEqual([
-        ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '9'],
+        ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9'],
         ['Paul Gibbs final hours · 1 day', '9'],
         ['Overall total worked', '9'],
       ]);
@@ -435,5 +438,122 @@ describe('Job log saved as a PDF', () => {
     } finally {
       punchesHeld = Promise.resolve();
     }
+  });
+});
+
+describe('Job log edited by the office', () => {
+  // Fred, 2026-10-30: "Used this layout with what we have and I need to edit all of it hours time milages
+  // materials etc all of it", in the app and in Excel ("Both"), with no billable total ("No, keep it off").
+  const rowsOf = (heading: HTMLElement) => [...(heading.nextElementSibling as HTMLElement).querySelectorAll('tbody tr')]
+    .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+  const withPunches = async (run: () => Promise<void>) => {
+    const before = tables.job_punches;
+    tables.job_punches = [
+      { contractor_name: 'Paul Gibbs', kind: 'in', at: at('19', '08:00'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Paul Gibbs', kind: 'out', at: at('19', '17:00'), lat: null, lng: null, accuracy: null },
+    ];
+    try { await run(); } finally { tables.job_punches = before; }
+  };
+
+  it('edits the hours, the miles and the receipts, saves them on the job, and the log shows them', () => withPunches(async () => {
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const edit = await screen.findByRole('button', { name: /edit job log/i });
+    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(edit);
+    // While editing, the print and Excel wait for the save.
+    expect((screen.getByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /excel/i }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '17:30' } });
+    fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '0.5' } });
+    // 8:00 to 5:30 less half an hour.
+    expect(screen.getByText('Total 9 hours')).toBeTruthy();
+    // The odometer's end typed again: the miles follow it.
+    fireEvent.change(screen.getByLabelText('Odometer end, miles row 1'), { target: { value: '41230' } });
+    expect((screen.getByLabelText('Miles, miles row 1') as HTMLInputElement).value).toBe('30');
+    // A meal receipt added by hand: the job's tech and first day to start with.
+    const meals = screen.getByRole('heading', { name: 'Meals' }).parentElement!;
+    fireEvent.click(within(meals).getByRole('button', { name: /add a row/i }));
+    fireEvent.change(screen.getByLabelText('Store, meals row 1'), { target: { value: ' Waffle House ' } });
+    fireEvent.change(screen.getByLabelText('Amount, meals row 1'), { target: { value: '18.50' } });
+    // And the declined fuel never was on it; the Lowe's receipt stays.
+    fireEvent.click(screen.getByRole('button', { name: /save job log/i }));
+
+    await waitFor(() => expect(updates.at(-1)).toEqual({
+      job_log_sheet: {
+        time: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '08:00', out: '17:30', brk: 0.5 }],
+        miles: [{ tech: 'Paul Gibbs', day: '2026-10-19', start: 41200, end: 41230, miles: 30 }],
+        meals: [{ tech: 'Paul Gibbs', day: '2026-10-19', store: 'Waffle House', amount: 18.5 }],
+        materials: [{ tech: 'Paul Gibbs', day: '2026-10-21', store: "Lowe's", amount: 104.17 }],
+        other: [],
+      },
+    }));
+    expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))).toEqual([
+      ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:30 PM', '0.5', '9'],
+      ['Paul Gibbs final hours · 1 day', '9'],
+      ['Overall total worked', '9'],
+    ]);
+    expect(rowsOf(screen.getByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,230', '30']);
+    expect(rowsOf(screen.getByRole('heading', { name: 'Meals' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', 'Waffle House', '$18.50']);
+    expect(screen.getByText(/this job log shows your edits/i)).toBeTruthy();
+    // The job's totals in one line, and no billable total.
+    expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 30Expenses $122.67');
+    expect(screen.queryByText(/billable/i)).toBeNull();
+  }));
+
+  it("won't save a row without a name, and says which", () => withPunches(async () => {
+    vi.mocked(toastError).mockClear();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const edit = await screen.findByRole('button', { name: /edit job log/i });
+    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(edit);
+    fireEvent.change(screen.getByLabelText('Name, time row 1'), { target: { value: '  ' } });
+    fireEvent.click(screen.getByRole('button', { name: /save job log/i }));
+    expect(toastError).toHaveBeenCalledWith('Each row needs a name and a date: Time on site row 1.');
+    expect(updates.some((u) => 'job_log_sheet' in u)).toBe(false);
+    // Cancel: back to the log as it was.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9']);
+  }));
+
+  it('shows the sheet the job has saved, and starts over from the app when asked', async () => {
+    const before = tables.work_orders;
+    tables.work_orders = [{ job_log_left_out: [], job_log_receipt_photos: [], job_log_sheet: {
+      time: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '07:00', out: '15:00', brk: 0 }], miles: [], meals: [], materials: [], other: [],
+    } }];
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '7:00 AM', '3:00 PM', '—', '8']);
+      // Its miles were taken out, so there's no mileage; the receipts too.
+      expect(screen.queryByRole('heading', { name: 'Mileage' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Materials' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /start over from the app/i }));
+      await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_sheet: null }));
+      // The app's again: no clock-ins on this job, the Field Sheet's 18 miles and the Lowe's receipt.
+      expect(rowsOf(await screen.findByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,218', '18']);
+      expect(screen.queryByRole('heading', { name: 'Time on site' })).toBeNull();
+      expect(screen.queryByText(/this job log shows your edits/i)).toBeNull();
+    } finally {
+      tables.work_orders = before;
+      confirm.mockRestore();
+    }
+  });
+
+  it("saves Excel as Fred's workbook with the log's rows, named like the PDF", async () => {
+    vi.mocked(downloadJobLogXlsx).mockClear();
+    const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
+    render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+    const excel = screen.getByRole('button', { name: /excel/i }) as HTMLButtonElement;
+    await waitFor(() => expect(excel.disabled).toBe(false));
+    fireEvent.click(excel);
+    expect(downloadJobLogXlsx).toHaveBeenCalledWith(
+      'LDS-1110 Site 5011876 — Gaffney, SC · 10-19-2026 – 10-23-2026.xlsx',
+      expect.objectContaining({
+        miles: [{ tech: 'Paul Gibbs', day: '2026-10-19', start: 41200, end: 41218, miles: 18 }],
+        materials: [{ tech: 'Paul Gibbs', day: '2026-10-21', store: "Lowe's", amount: 104.17 }],
+      }),
+      { title: 'Gaffney', lines: ['Client: LDS · Client WO #: LDS-1110 · FAJ WO #: 19101401', 'Site: LDS Site 5011876 — Gaffney, SC', 'Technician: Paul Gibbs'], range: 'Whole job', crew: ['Paul Gibbs'] },
+    );
   });
 });

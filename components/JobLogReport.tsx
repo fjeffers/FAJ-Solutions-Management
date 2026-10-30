@@ -745,7 +745,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           </>
         ) : (
           <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || ratesFailed}
-            onClick={() => setInvDraft({ sheet, rates: savedRates, together: { on: savedAll != null, hour: savedAll }, meta: savedMeta })}><Pencil size={16} /> Edit invoice</button>
+            // From the rates as they're typed on the client's copy, saved or not, so none are lost (CodeRabbit on PR #44).
+            onClick={() => setInvDraft({ sheet, rates, together: all, meta: savedMeta })}><Pencil size={16} /> Edit invoice</button>
         )) : draft ? (
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>

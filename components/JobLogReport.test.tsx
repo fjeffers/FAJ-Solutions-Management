@@ -1031,6 +1031,26 @@ describe('Job log edited by the office', () => {
     }
   });
 
+  it("carries rates typed on the client's copy, not yet saved, into the invoice and saves them with it (CodeRabbit on PR #44)", () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+      await waitFor(() => expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('50'));
+      fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '70' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
+      expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('70');
+      fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
+      await waitFor(() => expect(print.disabled).toBe(false));
+      expect(upserts.at(-1)!.row).toMatchObject({ rates: { 'Paul Gibbs': { hour: 70, mile: 0.6 } } });
+    } finally {
+      delete tables.job_log_rates;
+    }
+  }));
+
   it('adds a line on a day in the dates picked, so it shows to fill in (Greptile on PR #44)', () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
     try {

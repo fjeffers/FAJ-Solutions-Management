@@ -572,6 +572,31 @@ describe('Job log edited by the office', () => {
     expect(within(materials).getByText('Total $1,018.50')).toBeTruthy();
   }));
 
+  it("keeps a row's Hours screen hours until both clock times replace them; a break moves them (Greptile on PR #39)", async () => {
+    const before = tables.work_orders;
+    tables.work_orders = [{ job_log_left_out: [], job_log_receipt_photos: [], job_log_sheet: {
+      time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 }], miles: [], meals: [], materials: [], other: [],
+    } }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const edit = await screen.findByRole('button', { name: /edit time sheet/i });
+      await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(edit);
+      const time = screen.getByRole('heading', { name: 'Time on site' }).parentElement!;
+      expect(within(time).getByText('Total 6 hours')).toBeTruthy();
+      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '0.5' } });
+      expect(within(time).getByText('Total 5.5 hours')).toBeTruthy();
+      // One clock time isn't enough to replace them.
+      fireEvent.change(screen.getByLabelText('Clock in, time row 1'), { target: { value: '08:00' } });
+      expect(within(time).getByText('Total 5.5 hours')).toBeTruthy();
+      // Both: the hours follow the times.
+      fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '17:00' } });
+      expect(within(time).getByText('Total 8.5 hours')).toBeTruthy();
+    } finally {
+      tables.work_orders = before;
+    }
+  });
+
   it("won't save a row without a name, and says which", () => withPunches(async () => {
     vi.mocked(toastError).mockClear();
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);

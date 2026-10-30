@@ -76,7 +76,12 @@ export function milesFromOdometer(r: MileRow): number {
 }
 
 /** A tech's day as the office set it on the Hours screen: its time on site, or (hidden) none on the log. */
-export type HoursScreenDay = TimeRow & { hidden?: boolean };
+export type HoursScreenDay = TimeRow & {
+  /** Off the log: the day hidden there, or its hours typed as 0. */
+  hidden?: boolean;
+  /** Only a lunch, with no time on site there: the break on the day's first clock-in. */
+  breakOnly?: boolean;
+};
 
 /** The fields that set a day's time on site on the Hours screen. */
 const ON_SITE = ['arrived', 'leftSite', 'lunch', 'hours'] as const;
@@ -96,7 +101,13 @@ export function hoursScreenDays(rows: SheetRow[]): HoursScreenDay[] {
     const v = r.values;
     const row: TimeRow = { tech: r.tech, day: r.day, in: v.arrived ?? '', out: v.leftSite ?? '', brk: r2((v.lunch ?? 0) / 60) };
     const h = dayCalc(v, 0).hours;
-    if (!h && rowHours(row) == null) return [];
+    if (!h && rowHours(row) == null) {
+      // No time on site there. Hours typed as 0 take the day off the log; a lunch typed is the break on the day's
+      // clock-ins; else the clock-ins stand (Greptile, CodeRabbit on PR #39).
+      if (r.edits.hours === 0) return [{ ...row, hidden: true }];
+      if ('lunch' in r.edits && row.brk > 0) return [{ ...row, breakOnly: true }];
+      return [];
+    }
     return [rowHours(row) === h ? row : { ...row, hours: h }];
   });
 }
@@ -116,15 +127,23 @@ export function sheetFromApp(input: {
     ...(withFor ? { for: [expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ') } : {}),
   });
   const office = input.hoursScreen ?? [];
-  const setDays = new Set(office.map((d) => `${d.day}|${d.tech}`));
+  const key = (d: { day: string; tech: string }) => `${d.day}|${d.tech}`;
+  // The days the Hours screen sets or takes off: their clock-ins give way. A lunch alone goes on the day's first one.
+  const setDays = new Set(office.filter((d) => !d.breakOnly).map(key));
+  const lunch = new Map(office.filter((d) => d.breakOnly).map((d) => [key(d), d.brk]));
+  const lunched = new Set<string>();
   return {
     time: [
-      ...input.visits.filter((v) => !setDays.has(`${v.day}|${v.tech}`)).map((v) => ({
-        tech: v.tech, day: v.day, in: clockOf(v.inAt, input.timeZone),
-        out: v.outAt ? clockOf(v.outAt, input.timeZone) : '', brk: 0,
-        ...(v.open ? { open: true, ms: v.ms } : {}),
-      })),
-      ...office.filter((d) => !d.hidden).map((d): TimeRow => ({ tech: d.tech, day: d.day, in: d.in, out: d.out, brk: d.brk, ...(d.hours != null ? { hours: d.hours } : {}) })),
+      ...input.visits.filter((v) => !setDays.has(key(v))).map((v) => {
+        const first = lunch.has(key(v)) && !lunched.has(key(v));
+        if (first) lunched.add(key(v));
+        return {
+          tech: v.tech, day: v.day, in: clockOf(v.inAt, input.timeZone),
+          out: v.outAt ? clockOf(v.outAt, input.timeZone) : '', brk: first ? lunch.get(key(v))! : 0,
+          ...(v.open ? { open: true, ms: v.ms } : {}),
+        };
+      }),
+      ...office.filter((d) => !d.hidden && !d.breakOnly).map((d): TimeRow => ({ tech: d.tech, day: d.day, in: d.in, out: d.out, brk: d.brk, ...(d.hours != null ? { hours: d.hours } : {}) })),
     ],
     miles: input.mileage.map((m) => ({ ...m })),
     meals: approved.filter((e) => e.category === 'meals').map((e) => money(e, false)),

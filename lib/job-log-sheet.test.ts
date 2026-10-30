@@ -155,14 +155,20 @@ describe('the Hours screen on the job log', () => {
       day('s4', '2026-10-18', 'Paul Gibbs', { miles: 244 }, { added: true }),
       // Only a time leaving the site (WO 19101402, Dwayne on 10/19): no time on site there, so his clock-ins stay.
       day('s5', '2026-10-19', 'Dwayne Cudjoe', { leftSite: '15:07' }, { added: true }),
+      // Hours typed as 0, no times: no hours that day, whatever the clock-ins say (Greptile on PR #39).
+      day('s6', '2026-10-22', 'Paul Gibbs', { hours: 0 }),
+      // Only a lunch typed, no times: the break on that day's clock-ins (CodeRabbit on PR #39).
+      day('s7', '2026-10-23', 'Kendell Newbold', { lunch: 30 }),
     ],
   });
 
-  it('takes the days the office set: times, lunch as the break, hours typed; a hidden day is off', () => {
+  it('takes the days the office set: times, lunch as the break, hours typed; a hidden day or 0 hours is off', () => {
     expect(hoursScreenDays(rows)).toEqual([
       { tech: 'Paul Gibbs', day: '2026-10-19', in: '08:00', out: '16:30', brk: 0.5 },
       { tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 },
       { tech: 'Kendell Newbold', day: '2026-10-21', in: '', out: '', brk: 0, hidden: true },
+      { tech: 'Paul Gibbs', day: '2026-10-22', in: '', out: '', brk: 0, hidden: true },
+      { tech: 'Kendell Newbold', day: '2026-10-23', in: '', out: '', brk: 0.5, breakOnly: true },
     ]);
   });
 
@@ -176,12 +182,18 @@ describe('the Hours screen on the job log', () => {
         visit('Kendell Newbold', '2026-10-21T11:38:00Z', '2026-10-21T21:50:00Z'),
         visit('Kendell Newbold', '2026-10-22T11:44:00Z', '2026-10-22T23:15:00Z'),
         visit('Dwayne Cudjoe', '2026-10-19T12:36:00Z', '2026-10-19T19:14:00Z'),
+        visit('Paul Gibbs', '2026-10-22T11:36:00Z', '2026-10-22T21:00:00Z'),
+        visit('Kendell Newbold', '2026-10-23T12:00:00Z', '2026-10-23T16:00:00Z'),
+        visit('Kendell Newbold', '2026-10-23T17:00:00Z', '2026-10-23T21:00:00Z'),
       ],
       mileage: [], receipts: [], hoursScreen: hoursScreenDays(rows), timeZone: TZ,
     });
     expect(s.time.map((r) => [r.tech, r.day, r.in, r.out, rowHours(r)])).toEqual([
       ['Kendell Newbold', '2026-10-22', '07:44', '19:15', 11.52],
       ['Dwayne Cudjoe', '2026-10-19', '08:36', '15:14', 6.63],
+      // The lunch once, on the day's first clock-in.
+      ['Kendell Newbold', '2026-10-23', '08:00', '12:00', 3.5],
+      ['Kendell Newbold', '2026-10-23', '13:00', '17:00', 4],
       ['Paul Gibbs', '2026-10-19', '08:00', '16:30', 8],
       ['Paul Gibbs', '2026-10-20', '', '', 6],
     ]);

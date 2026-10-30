@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import {
-  hoursTotal, milesFromOdometer, milesTotal, moneyTotal, rowHours,
+  hoursTotal, milesFromOdometer, milesTotal, minutesOf, moneyTotal, rowHours,
   type JobSheet, type MileRow, type MoneyRow, type TimeRow,
 } from '@/lib/job-log-sheet';
 
@@ -112,6 +112,16 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
     ))),
     `Total ${moneyTotal(rows).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}`);
 
+  // A row with the Hours screen's own hours (typed there, or two visits) keeps them until both clock times are
+  // there to replace them; a break changed moves them by the difference, as a lunch does on the Hours screen
+  // (Greptile on PR #39).
+  const retime = (i: number, r: TimeRow, patch: { in: string } | { out: string }) => {
+    const next = { ...r, ...patch };
+    edit('time', i, { ...patch, ...(minutesOf(next.in) != null && minutesOf(next.out) != null ? { hours: undefined } : {}) });
+  };
+  const rebreak = (i: number, r: TimeRow, brk: number) =>
+    edit('time', i, { brk, ...(r.hours != null ? { hours: Math.max(0, Math.round((r.hours - (brk - (r.brk || 0))) * 100) / 100) } : {}) });
+
   const editMiles = (i: number, r: MileRow, patch: Partial<MileRow>) => {
     const next = { ...r, ...patch };
     edit('miles', i, { ...patch, miles: 'miles' in patch ? next.miles : milesFromOdometer(next) });
@@ -123,12 +133,11 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
       <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0E1B2E', margin: '18px 0 0' }}>Time sheet</h2>
       <datalist id="job-sheet-crew">{crew.map((t) => <option key={t} value={t} />)}</datalist>
 
-      {/* A new clock in, clock out or break: the hours follow them, not the Hours screen's figure any more. */}
       {part('Time on site', 'time', sheet.time.map((r: TimeRow, i) => row('time', i, r, (
         <>
-          <Field name="Clock in"><input aria-label={`Clock in, time row ${i + 1}`} type="time" style={box} value={r.in} onChange={(e) => edit('time', i, { in: e.target.value, hours: undefined })} /></Field>
-          <Field name="Clock out"><input aria-label={`Clock out, time row ${i + 1}`} type="time" style={box} value={r.out} onChange={(e) => edit('time', i, { out: e.target.value, hours: undefined })} /></Field>
-          <Field name="Break (hours)"><NumBox label={`Break, time row ${i + 1}`} value={r.brk} empty={0} onChange={(n) => edit('time', i, { brk: n ?? 0, hours: undefined })} /></Field>
+          <Field name="Clock in"><input aria-label={`Clock in, time row ${i + 1}`} type="time" style={box} value={r.in} onChange={(e) => retime(i, r, { in: e.target.value })} /></Field>
+          <Field name="Clock out"><input aria-label={`Clock out, time row ${i + 1}`} type="time" style={box} value={r.out} onChange={(e) => retime(i, r, { out: e.target.value })} /></Field>
+          <Field name="Break (hours)"><NumBox label={`Break, time row ${i + 1}`} value={r.brk} empty={0} onChange={(n) => rebreak(i, r, n ?? 0)} /></Field>
           {shown('Hours', fmt(rowHours(r)))}
         </>
       ))), `Total ${fmt(hoursTotal(sheet.time))} hours`)}

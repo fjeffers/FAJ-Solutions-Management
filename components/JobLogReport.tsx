@@ -57,7 +57,7 @@ import AddJobPhotos from '@/components/AddJobPhotos';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
 type PhotoRow = { id: string; url: string; taken_at: string; lat: number | null; lng: number | null; contractor_name: string | null };
-type ReceiptRow = { id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; status: string; decline_reason: string | null; receipt_path: string | null };
+type ReceiptRow = { id: string; contractor_name: string | null; category: string; vendor: string | null; amount: number; expense_date: string; note?: string | null; status: string; decline_reason: string | null; receipt_path: string | null };
 type OdoRow = { id: string; contractor_name: string | null; at: string; moment: string; reading: number; photo_path: string | null };
 /** A picture on the log. `key` is how the job remembers it's left out: 'photo:<id>', 'receipt:<id>' or 'odo:<id>'. */
 type Pic = {
@@ -168,7 +168,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       db.from('job_punches').select('contractor_name, kind, at, lat, lng, accuracy').eq('wo_id', w.id).order('at'),
       db.from('wo_photos').select('id, url, taken_at, lat, lng, contractor_name').eq('wo_id', w.id).order('taken_at'),
       fetch(`/api/wo-time-logs?wo_id=${w.id}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, status, decline_reason, receipt_path').eq('wo_id', w.id).order('expense_date'),
+      db.from('job_expenses').select('id, contractor_name, category, vendor, amount, expense_date, note, status, decline_reason, receipt_path').eq('wo_id', w.id).order('expense_date'),
       db.from('job_odometer').select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', w.id).order('at'),
       // What's left out and labeled now: the job on screen may be older than the last change,
       // and a save from the log just closed may still be going.
@@ -311,8 +311,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Each tech's total on cream; the overall total under a navy rule (the layout Fred okayed, 2026-10-30).
   const techTotal: React.CSSProperties = { fontWeight: 700, background: '#FBF6EA' };
   const overallRow: React.CSSProperties = { fontWeight: 700, borderTop: '2px solid #0E1B2E' };
+  // "In these dates" when only some of the job's days are shown (Greptile on PR #38).
   const noneLine = (techs: string[], what: string) => techs.map((t) => (
-    <div key={t} className="jl-avoid" style={{ color: '#5E6470', fontSize: 12, marginTop: 6 }}>{t}: no {what} on this job.</div>
+    <div key={t} className="jl-avoid" style={{ color: '#5E6470', fontSize: 12, marginTop: 6 }}>{t}: no {what} {from || to ? 'in these dates' : 'on this job'}.</div>
   ));
 
   /**
@@ -333,7 +334,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               <tr key={e.id} className="jl-avoid">
                 <td style={cell}>{techOf(e)}</td>
                 <td style={cell}>{dateText(e.expense_date)}</td>
-                {forCol && <td style={cell}>{expenseCategoryLabel(e.category)}</td>}
+                {/* What the tech picked, and their own note on it when they wrote one (CodeRabbit on PR #38). */}
+                {forCol && <td style={cell}>{[expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ')}</td>}
                 <td style={cell}>{e.vendor || '—'}</td>
                 <td style={cell}>{fmtMoney(Number(e.amount))}</td>
               </tr>

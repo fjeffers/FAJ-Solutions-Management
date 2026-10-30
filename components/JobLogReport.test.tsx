@@ -284,7 +284,7 @@ describe('Job log meals, materials and other receipts', () => {
       ex('t1', 'Paul Gibbs', 'materials', "Lowe's", 47.48, '20'),
       ex('t2', 'Paul Gibbs', 'materials', "Lowe's", 104.17, '21'),
       ex('h1', 'Paul Gibbs', 'hotel', 'Quality Inn', 350.74, '18'),
-      ex('f1', 'Paul Gibbs', 'fuel', null, 76.75, '21'),
+      { ...ex('f1', 'Paul Gibbs', 'fuel', null, 76.75, '21'), note: ' Van, drive home ' },
       // Neither is on the log: one declined, one still waiting on Fred.
       ex('f2', 'Paul Gibbs', 'fuel', 'Circle K', 76.75, '21', 'declined'),
       ex('m3', 'Kendell Newbold', 'meals', 'Subway', 9.99, '20', 'submitted'),
@@ -311,7 +311,7 @@ describe('Job log meals, materials and other receipts', () => {
       expect(screen.getByText('Kendell Newbold: no materials on this job.')).toBeTruthy();
       expect(await rows('Other receipts')).toEqual([
         ['Paul Gibbs', '10/18/2026', 'Lodging', 'Quality Inn', '$350.74'],
-        ['Paul Gibbs', '10/21/2026', 'Fuel', '—', '$76.75'],
+        ['Paul Gibbs', '10/21/2026', 'Fuel · Van, drive home', '—', '$76.75'],
         ['Paul Gibbs total · 2 receipts', '$427.49'],
         ['Overall total other receipts', '$427.49'],
       ]);
@@ -319,6 +319,9 @@ describe('Job log meals, materials and other receipts', () => {
       expect(screen.getByText('Meals', { selector: 'div' }).nextElementSibling!.textContent).toBe('$30.75');
       expect(screen.getByText('Materials', { selector: 'div' }).nextElementSibling!.textContent).toBe('$151.65');
       expect(screen.getByText('Other receipts', { selector: 'div' }).nextElementSibling!.textContent).toBe('$427.49');
+      // Only some days picked: the line speaks for those dates, not the whole job (Greptile on PR #38).
+      fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
+      expect(await screen.findByText('Kendell Newbold: no materials in these dates.')).toBeTruthy();
     } finally {
       tables.job_expenses = before;
     }

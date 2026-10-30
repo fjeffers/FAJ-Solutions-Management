@@ -32,6 +32,8 @@ const updates: Record<string, unknown>[] = [];
 let saveDelays: number[] = [];
 // Which saves fail, in order.
 let saveFails: boolean[] = [];
+// The job's saved sheet kept, as the database would, once a save lands.
+let persistSheet = false;
 // The punches come back only once this settles, to hold the log loading.
 let punchesHeld: Promise<void> = Promise.resolve();
 // How many times each table was read.
@@ -47,6 +49,7 @@ function query(table: string) {
     eq: async () => {
       await new Promise((ok) => setTimeout(ok, saveDelays.shift() ?? 0));
       updates.push(row);
+      if (persistSheet && table === 'work_orders' && 'job_log_sheet' in row) tables.work_orders = [{ ...tables.work_orders[0], job_log_sheet: row.job_log_sheet }];
       return { error: saveFails.shift() ? { message: 'offline' } : null };
     },
   });
@@ -528,6 +531,42 @@ describe('Job log edited by the office', () => {
     } finally {
       tables.field_sheet_days = before;
     }
+  }));
+
+  it('reads the saved sheet when the log is closed and opened again while the save is still going (Greptile on PR #39)', () => withPunches(async () => {
+    const before = tables.work_orders;
+    persistSheet = true;
+    saveDelays = [200];
+    try {
+      const first = render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const edit = await screen.findByRole('button', { name: /edit job log/i });
+      await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(edit);
+      fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '16:00' } });
+      fireEvent.click(screen.getByRole('button', { name: /save job log/i }));
+      first.unmount();
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const heading = await screen.findByRole('heading', { name: 'Time on site' });
+      await waitFor(() => expect(rowsOf(heading)[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '4:00 PM', '—', '8']));
+    } finally {
+      tables.work_orders = before;
+      persistSheet = false;
+    }
+  }));
+
+  it('takes only a number in a number box, so the box never shows one figure and saves another (Greptile on PR #39)', () => withPunches(async () => {
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const edit = await screen.findByRole('button', { name: /edit job log/i });
+    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(edit);
+    const amount = screen.getByLabelText('Amount, materials row 1') as HTMLInputElement;
+    expect(amount.value).toBe('104.17');
+    fireEvent.change(amount, { target: { value: '18..50' } });
+    expect(amount.value).toBe('104.17');
+    fireEvent.change(amount, { target: { value: '$1,018.50' } });
+    expect(amount.value).toBe('$1,018.50');
+    const materials = screen.getByRole('heading', { name: 'Materials' }).parentElement!;
+    expect(within(materials).getByText('Total $1,018.50')).toBeTruthy();
   }));
 
   it("won't save a row without a name, and says which", () => withPunches(async () => {

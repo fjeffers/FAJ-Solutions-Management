@@ -181,7 +181,11 @@ export function sheetToSave(s: JobSheet): JobSheet {
   const o = sheetSorted(s);
   const t = (v: string) => v.trim();
   return {
-    time: o.time.map(({ tech, day, in: i, out, brk, hours }) => ({ tech: t(tech), day, in: i, out, brk: brk || 0, ...(hours != null ? { hours } : {}) })),
+    // A stretch still on site keeps its hours so far, so saving never drops them (Greptile, CodeRabbit on PR #39).
+    time: o.time.map((r) => {
+      const hours = r.hours ?? (r.open && !r.out ? rowHours(r) : null);
+      return { tech: t(r.tech), day: r.day, in: r.in, out: r.out, brk: r.brk || 0, ...(hours != null ? { hours } : {}) };
+    }),
     miles: o.miles.map(({ tech, day, start, end, miles }) => ({ tech: t(tech), day, start, end, miles })),
     meals: o.meals.map(({ tech, day, store, amount }) => ({ tech: t(tech), day, store: t(store), amount })),
     materials: o.materials.map(({ tech, day, store, amount }) => ({ tech: t(tech), day, store: t(store), amount })),

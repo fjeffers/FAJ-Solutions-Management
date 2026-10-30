@@ -101,6 +101,12 @@ const fmtStamp = (iso: string) => new Date(iso).toLocaleString('en-US', { month:
  */
 const savesFor = new Map<string, Promise<void>>();
 const afterSaves = (woId: string) => savesFor.get(woId) ?? Promise.resolve();
+/** A save of the job's sheet, after the saves before it and before the log next reads the job (Greptile on PR #39). */
+function queueSave<T>(woId: string, write: () => PromiseLike<T>): Promise<T> {
+  const done = afterSaves(woId).then(write);
+  savesFor.set(woId, done.then(() => undefined, () => undefined));
+  return done;
+}
 
 /**
  * The pictures left out of the log and the photos labeled receipts, saved on
@@ -335,7 +341,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     if (problems.length) { toastError(`Each row needs a name and a date: ${problems.join(', ')}.`); return; }
     const clean = sheetToSave(draft);
     setSaving(true);
-    const { error } = await createClient().from('work_orders').update({ job_log_sheet: clean }).eq('id', w.id);
+    const { error } = await queueSave(w.id, () => createClient().from('work_orders').update({ job_log_sheet: clean }).eq('id', w.id));
     setSaving(false);
     if (error) { toastError("That didn't save. Check your connection and try again."); return; }
     setSavedSheet(clean);
@@ -346,7 +352,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const startOver = async () => {
     if (!window.confirm('Go back to what the app has (the clock-ins, the Field Sheet miles and the approved receipts)? Your edits to this job log will be gone.')) return;
     setSaving(true);
-    const { error } = await createClient().from('work_orders').update({ job_log_sheet: null }).eq('id', w.id);
+    const { error } = await queueSave(w.id, () => createClient().from('work_orders').update({ job_log_sheet: null }).eq('id', w.id));
     setSaving(false);
     if (error) { toastError("That didn't save. Check your connection and try again."); return; }
     setSavedSheet(null);

@@ -80,14 +80,14 @@ describe('the sheet from the app', () => {
 
 describe('the saved sheet', () => {
   const sheet: JobSheet = {
-    time: [t('Paul Gibbs', '2026-10-20', '07:50', '18:09', 0.5), { ...t('Paul Gibbs', '2026-10-19', '07:37', ''), open: true, ms: 5 }],
+    time: [t('Paul Gibbs', '2026-10-20', '07:50', '18:09', 0.5), { ...t('Paul Gibbs', '2026-10-19', '07:37', ''), open: true, ms: 3 * 3_600_000 }],
     miles: [{ tech: 'Paul Gibbs', day: '2026-10-19', start: 142109, end: 142117, miles: 8 }],
     meals: [], materials: [{ tech: 'Paul Gibbs', day: '2026-10-20', store: "Lowe's", amount: 47.48 }],
     other: [{ tech: 'Paul Gibbs', day: '2026-10-18', store: 'Quality Inn', amount: 350.74, for: 'Lodging' }],
   };
-  it('saves in day order, without what only the live log has', () => {
+  it('saves in day order, a stretch still on site with its hours so far and without what only the live log has', () => {
     const saved = sheetToSave(sheet);
-    expect(saved.time).toEqual([t('Paul Gibbs', '2026-10-19', '07:37', ''), t('Paul Gibbs', '2026-10-20', '07:50', '18:09', 0.5)]);
+    expect(saved.time).toEqual([{ ...t('Paul Gibbs', '2026-10-19', '07:37', ''), hours: 3 }, t('Paul Gibbs', '2026-10-20', '07:50', '18:09', 0.5)]);
     expect(parseSheet(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
   });
   it('is none when the job has not got one, and drops a row without a tech or a day', () => {
@@ -123,6 +123,11 @@ describe('the saved sheet', () => {
     expect(sheetByTech(mixed, ['Paul Gibbs', 'Kendell Newbold']).time.map((r) => `${r.tech} ${r.day}`)).toEqual([
       'Paul Gibbs 2026-10-19', 'Paul Gibbs 2026-10-20', 'Kendell Newbold 2026-10-19', 'Kendell Newbold 2026-10-20',
     ]);
+  });
+
+  it('keeps the hours so far of a stretch still on site when saved (Greptile, CodeRabbit on PR #39)', () => {
+    const live: TimeRow = { ...t('Paul Gibbs', '2026-10-30', '07:30', ''), open: true, ms: 2.5 * 3_600_000 };
+    expect(sheetToSave({ ...sheet, time: [live] }).time[0]).toEqual({ tech: 'Paul Gibbs', day: '2026-10-30', in: '07:30', out: '', brk: 0, hours: 2.5 });
   });
 
   it('has a row\'s own hours (from the Hours screen) count, until its times change', () => {

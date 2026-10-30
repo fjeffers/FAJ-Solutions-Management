@@ -65,6 +65,14 @@ describe('the job log in Excel', () => {
     expect(rows.flat().some((c) => typeof c === 'string' && /billable/i.test(c))).toBe(false);
   });
 
+  it('writes the hours so far of a stretch still on site as a number: the formula would make them 0 (Greptile, CodeRabbit on PR #39)', () => {
+    const live = jobLogCells({ ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-30', in: '07:30', out: '', brk: 0, open: true, ms: 2.5 * 3_600_000 }] }, head);
+    expect(live[find(live, 'Time on site') + 2][5]).toEqual({ t: 'n', v: 2.5, z: '0.00' });
+    // The Hours screen's own hours too.
+    const typed = jobLogCells({ ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 }] }, head);
+    expect(typed[find(typed, 'Time on site') + 2][5]).toEqual({ t: 'n', v: 6, z: '0.00' });
+  });
+
   it('opens in Excel with its formulas and the summary pointing at the totals', () => {
     const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head));
     const wb = XLSX.utils.book_new();

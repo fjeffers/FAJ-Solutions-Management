@@ -25,8 +25,8 @@ const Field = ({ name, children }: { name: string; children: React.ReactNode }) 
 );
 
 /**
- * A number typed as text, so "47." can be typed on the way to "47.48". An empty box is `empty` (none, or 0 for an
- * amount or a break), and shows empty.
+ * A number typed as text, so "47." can be typed on the way to "47.48"; anything that isn't a number isn't taken.
+ * An empty box is `empty` (none, or 0 for an amount or a break), and shows empty.
  */
 function NumBox({ value, onChange, label, empty = null }: {
   value: number | null; onChange: (n: number | null) => void; label: string; empty?: number | null;
@@ -43,10 +43,15 @@ function NumBox({ value, onChange, label, empty = null }: {
     <input aria-label={label} inputMode="decimal" style={box} value={text}
       onChange={(e) => {
         const t = e.target.value;
+        // Only what makes a number ("$1,234.5", "47."): a slip like "18..50" isn't taken, so the box never shows
+        // one figure while the sheet keeps another (Greptile on PR #39).
+        if (!/^\s*\$?[\d,]*\.?\d*\s*$/.test(t)) return;
         setText(t);
-        if (t.trim() === '') { setSeen(empty); onChange(empty); return; }
-        const n = Number(t.replace(/[$,\s]/g, ''));
-        if (Number.isFinite(n)) { setSeen(n); onChange(n); }
+        const digits = t.replace(/[$,\s]/g, '');
+        if (digits === '' || digits === '.') { setSeen(empty); onChange(empty); return; }
+        const n = Number(digits);
+        setSeen(n);
+        onChange(n);
       }} />
   );
 }

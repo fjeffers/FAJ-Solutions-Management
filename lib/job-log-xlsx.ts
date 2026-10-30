@@ -67,8 +67,9 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead): XCell[][] {
     (r, at) => {
       const a = minutesOf(r.in), b = minutesOf(r.out);
       return [r.tech, num(dayNumber(r.day), DATE), a == null ? '' : num(a / 1440, TIME), b == null ? '' : num(b / 1440, TIME),
-        // The Hours screen's own hours (typed there, or two visits) as a number; else worked out from the times.
-        num(r.brk || 0, HRS), r.hours != null ? num(r.hours, HRS)
+        // The Hours screen's own hours (typed there, or two visits), or the hours so far of a stretch still on site
+        // (no clock out for the formula), as a number; else worked out from the times (Greptile, CodeRabbit on PR #39).
+        num(r.brk || 0, HRS), r.hours != null || (r.open && b == null) ? num(rowHours(r) ?? 0, HRS)
           : num(rowHours(r) ?? 0, HRS, `IF(OR(C${at}="",D${at}=""),0,ROUND(MAX(0,MOD(D${at}-C${at},1)*24-E${at}),2))`)];
     },
     hoursTotal, (t) => `${t} final hours`, 'Overall total worked');

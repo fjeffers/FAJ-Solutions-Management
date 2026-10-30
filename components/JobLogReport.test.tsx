@@ -601,11 +601,17 @@ describe('Job log edited by the office', () => {
     // The hours first; one part at a time.
     expect(screen.getByRole('button', { name: 'Hours (1)' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Mileage (1)' }).getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByLabelText('Clock in, time row 1')).toBeTruthy();
-    expect(screen.queryByLabelText('Odometer start, miles row 1')).toBeNull();
+    const shownNow = (label: string) => !screen.getByLabelText(label).closest('[hidden]');
+    expect(shownNow('Clock in, time row 1')).toBe(true);
+    expect(shownNow('Odometer start, miles row 1')).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Mileage (1)' }));
-    expect(screen.getByLabelText('Odometer start, miles row 1')).toBeTruthy();
-    expect(screen.queryByLabelText('Clock in, time row 1')).toBeNull();
+    expect(shownNow('Odometer start, miles row 1')).toBe(true);
+    expect(shownNow('Clock in, time row 1')).toBe(false);
+    // A number half typed stays as typed when another part is opened and back (CodeRabbit on PR #40).
+    fireEvent.change(screen.getByLabelText('Odometer end, miles row 1'), { target: { value: '41230.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Hours (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mileage (1)' }));
+    expect((screen.getByLabelText('Odometer end, miles row 1') as HTMLInputElement).value).toBe('41230.');
     // A hotel added by hand: what it was for, the store and the amount; it counts on its button.
     fireEvent.click(screen.getByRole('button', { name: 'Hotels & other (0)' }));
     const other = screen.getByRole('heading', { name: 'Hotels & other receipts' }).parentElement!;
@@ -717,42 +723,83 @@ describe('Job log edited by the office', () => {
     // The tech's copy first: no rates, no charges.
     expect(screen.getByRole('button', { name: 'Tech copy (no rates)' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByLabelText('$ per hour, Paul Gibbs')).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Charges' })).toBeNull();
+    expect(screen.queryByText('Rate')).toBeNull();
+    expect(screen.queryByText('TOTAL CHARGES')).toBeNull();
     const techTitle = document.title;
 
     fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
     expect(document.title).toBe(`${techTitle} · Client copy`);
-    // No rate yet: the dollars are left off and Fred is told whose.
-    expect(screen.getByText('No rate yet for Paul Gibbs: that line shows no dollars.')).toBeTruthy();
-    expect(rowsOf(screen.getByRole('heading', { name: 'Charges' }))).toEqual([
-      ['Paul Gibbs', 'Hours', '9', 'No rate', '—'],
-      ['Paul Gibbs', 'Miles', '18', 'No rate', '—'],
-    ]);
+    // The rates table starts with a row for each tech on the sheet; with no rate set, nothing's charged, and Fred is told whose.
+    expect((screen.getByLabelText('Name, rate row 1') as HTMLSelectElement).value).toBe('Paul Gibbs');
+    expect(screen.getByText('Not charged (no rates): Paul Gibbs.')).toBeTruthy();
+    expect(screen.queryByText('TOTAL CHARGES')).toBeNull();
     fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '65' } });
     fireEvent.change(screen.getByLabelText('$ per mile, Paul Gibbs'), { target: { value: '.70' } });
+    // The total as they're typed (Fred: "i enter the rates and it shows the total").
+    expect(screen.getByText('Total $597.60')).toBeTruthy();
     // Saved before it's printed, so what the client gets is what's kept.
     expect(print.disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
     await waitFor(() => expect(print.disabled).toBe(false));
     expect(upserts).toEqual([{ table: 'job_log_rates', row: expect.objectContaining({ wo_id: 'wo', rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }), onConflict: 'wo_id' }]);
-    // 9 h × $65 and 18 mi × $0.70, and the total.
-    expect(rowsOf(screen.getByRole('heading', { name: 'Charges' }))).toEqual([
-      ['Paul Gibbs', 'Hours', '9', '$65.00/hr', '$585.00'],
-      ['Paul Gibbs', 'Miles', '18', '$0.70/mi', '$12.60'],
+    expect(screen.queryByText(/Not charged/)).toBeNull();
+    // Each row of the hours gets the rate and its dollars, and the miles the mileage rate (Fred: "in the hours should
+    // get the rate and the same for the milage gets the milages rate"); the totals have the dollars too.
+    expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))).toEqual([
+      ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9', '$65.00/hr', '$585.00'],
+      ['Paul Gibbs final hours · 1 day', '9', '', '$585.00'],
+      ['Overall total worked', '9', '', '$585.00'],
     ]);
-    expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGES$597.60');
+    expect(rowsOf(screen.getByRole('heading', { name: 'Mileage' }))).toEqual([
+      ['Paul Gibbs', '10/19/2026', '41,200', '41,218', '18', '$0.70/mi', '$12.60'],
+      ['Paul Gibbs total miles · 1 day', '18', '', '$12.60'],
+      ['Overall total miles', '18', '', '$12.60'],
+    ]);
+    expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $12.60Total $597.60');
     // The hours and miles band stays as it was.
     expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 18');
 
     fireEvent.click(screen.getByRole('button', { name: /excel/i }));
     expect(downloadJobLogXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Client time sheet\.xlsx$/), expect.anything(), expect.anything(),
-      [{ tech: 'Paul Gibbs', hours: 9, hourRate: 65, labor: 585, miles: 18, mileRate: 0.7, mileage: 12.6 }]);
+      { 'Paul Gibbs': { hour: 65, mile: 0.7 } });
 
     // Back to the tech's copy: none of it.
     fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
     expect(document.title).toBe(techTitle);
-    expect(screen.queryByRole('heading', { name: 'Charges' })).toBeNull();
-    expect(screen.queryByText(/TOTAL CHARGES|\$585/)).toBeNull();
+    expect(screen.queryByText(/TOTAL CHARGES|\$585|\$65\.00/)).toBeNull();
+    expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9']);
+  }));
+
+  it('has a table to add a tech\'s rates or take them out (Fred: "on the job log give me a table to add or remove rates")', () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
+    const helper = { ...wo, contractor_names: ['Paul Gibbs', 'Kendell Newbold'] } as EnrichedWorkOrder;
+    try {
+      render(<JobLogReport w={helper} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+      await waitFor(() => expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('65'));
+      // Kendell's on the job: added with his own rate, per hour only; an empty box isn't charged.
+      fireEvent.click(screen.getByRole('button', { name: /add a rate/i }));
+      expect((screen.getByLabelText('Name, rate row 2') as HTMLSelectElement).value).toBe('Kendell Newbold');
+      expect((screen.getByRole('button', { name: /add a rate/i }) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.change(screen.getByLabelText('$ per hour, Kendell Newbold'), { target: { value: '55' } });
+      expect(print.disabled).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
+      await waitFor(() => expect(print.disabled).toBe(false));
+      expect(upserts.at(-1)!.row).toMatchObject({ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 }, 'Kendell Newbold': { hour: 55, mile: null } } });
+      expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $12.60Total $597.60');
+      // Paul's rates taken out: he isn't charged, and Fred is told.
+      fireEvent.click(screen.getByRole('button', { name: 'Take out Paul Gibbs' }));
+      fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
+      await waitFor(() => expect(upserts.at(-1)!.row).toMatchObject({ rates: { 'Kendell Newbold': { hour: 55, mile: null } } }));
+      // His rows keep the columns with no rate or dollars on them.
+      expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9', '—', '—']);
+      expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $0.00Mileage $0.00Total $0.00');
+      expect(screen.getByText('Not charged (no rates): Paul Gibbs.')).toBeTruthy();
+    } finally {
+      delete tables.job_log_rates;
+    }
   }));
 
   it('keeps the rates on the job: the client copy has them when the log opens again', () => withPunches(async () => {
@@ -764,7 +811,7 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
       await waitFor(() => expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('65'));
       expect(print.disabled).toBe(false);
-      expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGES$597.60');
+      expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $12.60Total $597.60');
     } finally {
       delete tables.job_log_rates;
     }

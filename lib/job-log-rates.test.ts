@@ -1,7 +1,7 @@
 // Each tech's rates on the client's copy of the job log (Fred, 2026-10-30: "i need a copy i can entered how much
 // per an hour the milage for each tech"; "Rates and the dollars").
 import { describe, it, expect } from 'vitest';
-import { chargesByTech, chargesTotal, missingRates, parseRates, ratesToSave } from './job-log-rates';
+import { chargesByTech, chargesTotal, notCharged, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates } from './job-log-rates';
 import type { JobSheet } from './job-log-sheet';
 
 const sheet: JobSheet = {
@@ -31,13 +31,27 @@ describe('the client copy charges', () => {
     expect(chargesTotal(c)).toBe(2090.7);
   });
 
-  it("leaves a rate that isn't set without dollars, out of the total, and names the tech", () => {
-    const c = chargesByTech(sheet, { 'Paul Gibbs': { hour: 65, mile: null } }, crew);
-    expect(c[0]).toMatchObject({ labor: 1202.5, mileRate: null, mileage: null });
-    expect(c[1]).toMatchObject({ hourRate: null, labor: null, mileage: null });
+  it("charges only the techs in the rates table and the rates set, and names a tech who isn't charged", () => {
+    const rates = { 'Paul Gibbs': { hour: 65, mile: null } };
+    const c = chargesByTech(sheet, rates, crew);
+    expect(c).toEqual([{ tech: 'Paul Gibbs', hours: 18.5, hourRate: 65, labor: 1202.5, miles: 218, mileRate: null, mileage: null }]);
     expect(chargesTotal(c)).toBe(1202.5);
-    expect(missingRates(c)).toEqual(['Paul Gibbs', 'Kendell Newbold']);
-    expect(missingRates(chargesByTech(sheet, { 'Paul Gibbs': { hour: 65, mile: 0.7 }, 'Kendell Newbold': { hour: 55, mile: 0.7 } }, crew))).toEqual([]);
+    expect(notCharged(sheet, rates, crew)).toEqual(['Kendell Newbold']);
+    expect(notCharged(sheet, { 'Paul Gibbs': { hour: 65, mile: 0.7 }, 'Kendell Newbold': { hour: 55, mile: null } }, crew)).toEqual([]);
+  });
+
+  it('turns the table into rates and back: a row with no name or no rate is no rate', () => {
+    const rows = [
+      { tech: 'Kendell Newbold', hour: 55, mile: null }, { tech: '', hour: 40, mile: null },
+      { tech: 'Raja', hour: null, mile: null }, { tech: 'Paul Gibbs', hour: 65, mile: 0.7 },
+    ];
+    const rates = ratesFromRows(rows);
+    expect(rates).toEqual({ 'Kendell Newbold': { hour: 55, mile: null }, 'Paul Gibbs': { hour: 65, mile: 0.7 } });
+    // The lead first, as the log has them.
+    expect(rateRows(rates, crew).map((r) => r.tech)).toEqual(['Paul Gibbs', 'Kendell Newbold']);
+    // Saved, the database may give the names back in another order: still the same rates.
+    expect(sameRates(rates, { 'Paul Gibbs': { hour: 65, mile: 0.7 }, 'Kendell Newbold': { hour: 55, mile: null } })).toBe(true);
+    expect(sameRates(rates, { 'Paul Gibbs': { hour: 65, mile: 0.7 } })).toBe(false);
   });
 
   it('rounds each line to the cent as Excel does', () => {

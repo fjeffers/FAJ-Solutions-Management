@@ -4,7 +4,6 @@ import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import { jobLogCells, type XCell } from './job-log-xlsx';
 import type { JobSheet } from './job-log-sheet';
-import { chargesByTech } from './job-log-rates';
 
 const sheet: JobSheet = {
   time: [
@@ -77,24 +76,37 @@ describe('the job log in Excel', () => {
     expect(typed[at - 1][5]).toEqual({ t: 'n', v: 6, z: '0.00', f: `ROUND(MAX(0,6.5-E${at}),2)` });
   });
 
-  it("the tech's copy has no charges, the client's has each tech's hours and miles × their rates (Fred, 2026-10-30)", () => {
+  it("the tech's copy has no rates; the client's gives each row of the hours and miles its rate and dollars (Fred, 2026-10-30)", () => {
     expect(find(rows, 'CHARGES')).toBe(-1);
-    const charges = chargesByTech(sheet, { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, head.crew);
-    const client = jobLogCells(sheet, head, charges);
-    const top = find(client, 'CHARGES');
-    expect(top).toBeGreaterThan(find(client, 'JOB TOTAL'));
-    expect(client[top + 1]).toEqual(['NAME', 'FOR', 'QUANTITY', 'RATE', 'AMOUNT']);
+    expect(rows.flat().includes('RATE')).toBe(false);
+    const client = jobLogCells(sheet, head, { 'Paul Gibbs': { hour: 65, mile: 0.7 } });
+    const top = find(client, 'Time on site');
+    expect(client[top + 1]).toEqual(['NAME', 'DATE', 'CLOCK IN', 'CLOCK OUT', 'BREAK', 'HOURS', 'RATE/HR', 'AMOUNT']);
+    // Paul's 10/19, 10 hours × $65: the amount is the row's hours × its rate, to the cent.
     const at = top + 3;
-    // Paul's hours are his subtotal above, × $65 to the cent.
-    expect(client[top + 2]).toEqual(['Paul Gibbs', 'Hours', { t: 'n', v: 19.82, z: '0.00', f: `F${find(client, 'Paul Gibbs final hours') + 1}` },
-      { t: 'n', v: 65, z: '$#,##0.00" /hr"' }, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `ROUND(C${at}*D${at},2)` }]);
-    expect(client[top + 3]).toEqual(['Paul Gibbs', 'Miles', { t: 'n', v: 204.1, z: '#,##0.0', f: `E${find(client, 'Paul Gibbs total miles') + 1}` },
-      { t: 'n', v: 0.7, z: '$#,##0.00" /mi"' }, { t: 'n', v: 142.87, z: '$#,##0.00', f: `ROUND(C${at + 1}*D${at + 1},2)` }]);
-    // Kendell has no rate yet: the rate's empty, and typing one in Excel works the amount out. No miles, no line.
-    expect(client[top + 4].slice(0, 4)).toEqual(['Kendell Newbold', 'Hours', { t: 'n', v: 10, z: '0.00', f: `F${find(client, 'Kendell Newbold final hours') + 1}` }, '']);
-    expect(client[top + 5][0]).toBe('TOTAL CHARGES');
-    expect(client[top + 5][4]).toEqual({ t: 'n', v: 1431.17, z: '$#,##0.00', f: `SUM(E${top + 3}:E${top + 5})` });
-    expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(6);
+    expect(client[top + 2].slice(6)).toEqual([{ t: 'n', v: 65, z: '$#,##0.00' }, { t: 'n', v: 650, z: '$#,##0.00', f: `ROUND(F${at}*G${at},2)` }]);
+    // His total: the hours as before, and his dollars added up.
+    const paul = find(client, 'Paul Gibbs final hours');
+    expect(client[paul].slice(6)).toEqual([null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `SUM(H${at}:H${paul})` }]);
+    // Kendell has no rate: his rows have no rate or dollars, and he isn't in the total.
+    const kendell = find(client, 'Kendell Newbold final hours');
+    expect(client[kendell - 1].slice(6)).toEqual(['', '']);
+    expect(client[kendell].length).toBe(6);
+    const worked = find(client, 'Overall total worked');
+    expect(client[worked].slice(6)).toEqual([null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${paul + 1}` }]);
+    // The miles, × the mileage rate.
+    const m = find(client, 'Mileage');
+    expect(client[m + 1]).toEqual(['NAME', 'DATE', 'ODO START', 'ODO END', 'MILES', 'RATE/MI', 'AMOUNT']);
+    expect(client[m + 2].slice(5)).toEqual([{ t: 'n', v: 0.7, z: '$#,##0.00' }, { t: 'n', v: 5.6, z: '$#,##0.00', f: `ROUND(E${m + 3}*F${m + 3},2)` }]);
+    const miles = find(client, 'Overall total miles');
+    expect(client[miles].slice(5)).toEqual([null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Paul Gibbs total miles') + 1}` }]);
+    // At the end: the hours' and the miles' dollars, and the two added up.
+    const c = find(client, 'CHARGES');
+    expect(c).toBeGreaterThan(find(client, 'JOB TOTAL'));
+    expect(client[c + 1]).toEqual(['Hours', { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${worked + 1}` }]);
+    expect(client[c + 2]).toEqual(['Mileage', { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${miles + 1}` }]);
+    expect(client[c + 3]).toEqual(['TOTAL CHARGES', { t: 'n', v: 1431.17, z: '$#,##0.00', f: `B${c + 2}+B${c + 3}` }]);
+    expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(8);
   });
 
   it('opens in Excel with its formulas and the summary pointing at the totals', () => {

@@ -147,27 +147,29 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
         ))}
       </div>
 
-      {shown === 'time' && part('Time on site', 'time', sheet.time.map((r: TimeRow, i) => row('time', i, r, (
+      {/* Every part stays on the page, the ones not picked hidden, so a box keeps what's being typed in it ("47." on
+          the way to "47.48") when another part is opened and back (CodeRabbit on PR #40). */}
+      <div hidden={shown !== 'time'}>{part('Time on site', 'time', sheet.time.map((r: TimeRow, i) => row('time', i, r, (
         <>
           <Field name="Clock in"><input aria-label={`Clock in, time row ${i + 1}`} type="time" style={box} value={r.in} onChange={(e) => retime(i, r, { in: e.target.value })} /></Field>
           <Field name="Clock out"><input aria-label={`Clock out, time row ${i + 1}`} type="time" style={box} value={r.out} onChange={(e) => retime(i, r, { out: e.target.value })} /></Field>
           <Field name="Break (hours)"><NumBox label={`Break, time row ${i + 1}`} value={r.brk} empty={0} onChange={(n) => edit('time', i, { brk: n ?? 0 })} /></Field>
           {worked('Hours', fmt(rowHours(r)))}
         </>
-      ))), `Total ${fmt(hoursTotal(sheet.time))} hours`)}
+      ))), `Total ${fmt(hoursTotal(sheet.time))} hours`)}</div>
 
-      {shown === 'miles' && part('Mileage', 'miles', sheet.miles.map((r, i) => row('miles', i, r, (
+      <div hidden={shown !== 'miles'}>{part('Mileage', 'miles', sheet.miles.map((r, i) => row('miles', i, r, (
         <>
           <Field name="Odometer start"><NumBox label={`Odometer start, miles row ${i + 1}`} value={r.start} onChange={(n) => editMiles(i, r, { start: n })} /></Field>
           <Field name="Odometer end"><NumBox label={`Odometer end, miles row ${i + 1}`} value={r.end} onChange={(n) => editMiles(i, r, { end: n })} /></Field>
           <Field name="Miles"><NumBox label={`Miles, miles row ${i + 1}`} value={r.miles} empty={0} onChange={(n) => editMiles(i, r, { miles: n ?? 0 })} /></Field>
         </>
-      ))), `Total ${fmt(milesTotal(sheet.miles))} miles`)}
+      ))), `Total ${fmt(milesTotal(sheet.miles))} miles`)}</div>
 
-      {shown === 'meals' && money('meals', 'Meals', sheet.meals)}
-      {shown === 'materials' && money('materials', 'Materials', sheet.materials)}
+      <div hidden={shown !== 'meals'}>{money('meals', 'Meals', sheet.meals)}</div>
+      <div hidden={shown !== 'materials'}>{money('materials', 'Materials', sheet.materials)}</div>
       {/* The printed log calls these Other receipts; a hotel is one, its For saying Lodging. */}
-      {shown === 'other' && money('other', 'Hotels & other receipts', sheet.other)}
+      <div hidden={shown !== 'other'}>{money('other', 'Hotels & other receipts', sheet.other)}</div>
     </div>
   );
 }

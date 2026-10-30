@@ -47,7 +47,7 @@
 // receipts, odometer the one i edit is the time sheet that reflect on the job log".
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Download, FileSpreadsheet, FileText, Pencil, Printer, X } from 'lucide-react';
+import { Check, Download, FileSpreadsheet, FileText, Pencil, Plus, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { fmtMoney } from '@/lib/utils';
@@ -61,7 +61,9 @@ import {
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
-import { chargesByTech, chargesTotal, missingRates, parseRates, ratesToSave, type JobRates, type TechCharge } from '@/lib/job-log-rates';
+import {
+  chargesByTech, chargesTotal, lineAmount, notCharged, parseRates, rateRows, ratesFromRows, sameRates, sheetTechs, type JobRates, type RateRow,
+} from '@/lib/job-log-rates';
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
@@ -184,7 +186,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // copy i can entered how much per an hour the milage for each tech ... then i need a copy with out it for the
   // tech"). The rates are kept per job in job_log_rates, which only the office can read (migration 147).
   const [copy, setCopy] = useState<'tech' | 'client'>('tech');
-  const [rates, setRates] = useState<JobRates>({});
+  // The rates table as the office is changing it (null: as saved).
+  const [rateEdit, setRateEdit] = useState<RateRow[] | null>(null);
   const [savedRates, setSavedRates] = useState<JobRates>({});
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
@@ -215,7 +218,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       afterSaves(w.id).then(() => db.from('job_log_rates').select('rates').eq('wo_id', w.id).maybeSingle()),
     ]).then(async ([p, ph, l, ex, od, wo, ev, fs, jr]) => {
       const keptRates = parseRates((jr.data as { rates?: unknown } | null)?.rates);
-      setRates(keptRates);
       setSavedRates(keptRates);
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));
@@ -357,20 +359,35 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     return () => { document.title = was; };
   }, [pdfName]);
 
-  // Each tech's hours and miles shown, × their rates, for the client's copy.
+  // The rates table (Fred, 2026-10-30: "on the job log give me a table to add or remove rates"): as being changed,
+  // else as saved, else a row to fill in for each tech on the sheet. Each tech's hours and miles shown, × the rates
+  // set, are the client's charges; a tech taken off the table, or a box left empty, isn't charged.
+  const techsOnSheet = sheetTechs(shown, crew);
+  const rateTable = rateEdit ?? (Object.keys(savedRates).length ? rateRows(savedRates, crew) : techsOnSheet.map((tech) => ({ tech, hour: null, mile: null })));
+  const rates = ratesFromRows(rateTable);
   const charges = chargesByTech(shown, rates, crew);
-  const noRate = missingRates(charges);
-  const ratesChanged = JSON.stringify(ratesToSave(rates)) !== JSON.stringify(savedRates);
-  const setRate = (tech: string, k: 'hour' | 'mile', n: number | null) =>
-    setRates((r) => ({ ...r, [tech]: { hour: r[tech]?.hour ?? null, mile: r[tech]?.mile ?? null, [k]: n } }));
+  const unbilled = notCharged(shown, rates, crew);
+  const ratesChanged = !sameRates(rates, savedRates);
+  const rateNames = [...new Set([...crew, ...techsOnSheet])];
+  const editRates = (change: (rows: RateRow[]) => RateRow[]) => setRateEdit(change(rateTable));
+  // The client's copy: each row of the hours and of the miles with its rate and dollars, each tech's and the overall
+  // dollars on the totals (Fred, 2026-10-30: "in the hours should get the rate and the same for the milage gets the
+  // milages rate"). The tech's copy has none of it.
+  const withRates = copy === 'client' && charges.length > 0;
+  const chargeOf = (tech: string) => charges.find((c) => c.tech === tech);
+  const sumOf = (k: 'labor' | 'mileage') => Math.round(charges.reduce((t, c) => t + (c[k] ?? 0), 0) * 100 + 1e-9) / 100;
+  const rateCell = (rate: number | null | undefined, unit: string) => <td style={cell}>{rate == null ? '—' : `${fmtMoney(rate)}/${unit}`}</td>;
+  const moneyCell = (n: number | null | undefined) => <td style={cell}>{n == null ? '—' : fmtMoney(n)}</td>;
+  const setRate = (i: number, patch: Partial<RateRow>) => editRates((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const saveRates = async () => {
-    const clean = ratesToSave(rates);
+    const clean = rates;
     setSaving(true);
     const { error } = await queueSave(w.id, () => createClient().from('job_log_rates')
       .upsert({ wo_id: w.id, rates: clean, updated_at: new Date().toISOString() }, { onConflict: 'wo_id' }));
     setSaving(false);
     if (error) { toastError("The rates didn't save. Check your connection and try again."); return; }
     setSavedRates(clean);
+    setRateEdit(null);
     toastSuccess("Rates saved. They're on the client's copy only.");
   };
 
@@ -406,7 +423,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       ...(techs.length ? [`Technician${techs.length > 1 ? 's' : ''}: ${techs.join(', ')}`] : []),
     ];
     downloadJobLogXlsx(copy === 'client' ? `${logName} · Client time sheet.xlsx` : `${logName} · Time sheet.xlsx`,
-      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? charges : undefined)
+      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? rates : undefined)
       .catch(() => toastError("The Excel file didn't download. Try again."));
   };
 
@@ -425,40 +442,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const noneLine = (techs: string[], what: string) => techs.map((t) => (
     <div key={t} className="jl-avoid" style={{ color: '#5E6470', fontSize: 12, marginTop: 6 }}>{t}: no {what} {from || to ? 'in these dates' : 'on this job'}.</div>
   ));
-
-  /** The client's copy: a line for each tech's hours and miles, the rate and the dollars, then the total. */
-  const chargesTable = (list: TechCharge[]) => {
-    const rate = (r: number | null, unit: string) => (r == null ? 'No rate' : `${fmtMoney(r)}/${unit}`);
-    const lines = list.flatMap((c) => [
-      ...(c.hours > 0 || c.hourRate != null ? [{ tech: c.tech, what: 'Hours', qty: hrs(c.hours), rate: rate(c.hourRate, 'hr'), amount: c.labor }] : []),
-      ...(c.miles > 0 || c.mileRate != null ? [{ tech: c.tech, what: 'Miles', qty: c.miles.toLocaleString('en-US'), rate: rate(c.mileRate, 'mi'), amount: c.mileage }] : []),
-    ]);
-    return (
-      <div className="jl-sec">
-        <H>Charges</H>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr style={{ background: '#F6F4EF' }}>
-            {['Name', 'For', 'Quantity', 'Rate', 'Amount'].map((h) => <th key={h} style={headCell}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {lines.map((l, i) => (
-              <tr key={i} className="jl-avoid">
-                <td style={cell}>{l.tech}</td>
-                <td style={cell}>{l.what}</td>
-                <td style={cell}>{l.qty}</td>
-                <td style={cell}>{l.rate}</td>
-                <td style={cell}>{l.amount == null ? '—' : fmtMoney(l.amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="jl-band jl-avoid" style={{ marginTop: 10, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', fontSize: 13 }}>
-          <b style={{ color: '#E3C987', letterSpacing: 1 }}>TOTAL CHARGES</b>
-          <b>{fmtMoney(chargesTotal(list))}</b>
-        </div>
-      </div>
-    );
-  };
 
   /**
    * A table of receipts like the hours: each tech's receipts (name and date on every row), the tech's
@@ -616,19 +599,32 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         </div>
         {copy === 'client' && (
           <div style={{ flexBasis: '100%', background: '#fff', border: '1px solid #E3C987', borderRadius: 10, padding: '10px 12px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Each tech’s rates <span style={{ fontWeight: 400, color: '#5E6470' }}>(on the client’s copy only)</span></div>
-            {charges.length === 0 ? <div style={{ fontSize: 13, color: '#5E6470' }}>No hours or miles in these dates yet.</div> : charges.map((c) => (
-              <div key={c.tech} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'end', gap: '6px 12px', padding: '6px 0', borderTop: '1px solid #ECE8DF' }}>
-                <div style={{ flex: '1 1 160px', fontSize: 13 }}><b>{c.tech}</b><div style={{ color: '#5E6470', fontSize: 12 }}>{hrs(c.hours)} hours · {c.miles.toLocaleString('en-US')} miles</div></div>
-                <label style={{ fontSize: 12, width: 120 }}>$ per hour<NumBox label={`$ per hour, ${c.tech}`} value={rates[c.tech]?.hour ?? null} onChange={(n) => setRate(c.tech, 'hour', n)} /></label>
-                <label style={{ fontSize: 12, width: 120 }}>$ per mile<NumBox label={`$ per mile, ${c.tech}`} value={rates[c.tech]?.mile ?? null} onChange={(n) => setRate(c.tech, 'mile', n)} /></label>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Rates <span style={{ fontWeight: 400, color: '#5E6470' }}>(on the client’s copy only; a box left empty isn’t charged)</span></div>
+            <div className="jlr-row" style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, color: '#5E6470' }}>
+              <span>Name</span><span>$ per hour</span><span>$ per mile</span><span />
+            </div>
+            {rateTable.map((r, i) => (
+              <div key={`${i}-${r.tech}`} className="jlr-row" style={{ padding: '4px 0', borderTop: '1px solid #ECE8DF' }}>
+                <select aria-label={`Name, rate row ${i + 1}`} className="wf-input" style={{ minHeight: 36, padding: '4px 4px', fontSize: 13 }} value={r.tech}
+                  onChange={(e) => setRate(i, { tech: e.target.value })}>
+                  <option value="">Pick a tech</option>
+                  {rateNames.filter((n) => n === r.tech || !rateTable.some((o) => o.tech === n)).map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <NumBox label={`$ per hour, ${r.tech || `rate row ${i + 1}`}`} value={r.hour} onChange={(n) => setRate(i, { hour: n })} />
+                <NumBox label={`$ per mile, ${r.tech || `rate row ${i + 1}`}`} value={r.mile} onChange={(n) => setRate(i, { mile: n })} />
+                <button type="button" aria-label={`Take out ${r.tech || `rate row ${i + 1}`}`} title="Take this rate out" onClick={() => editRates((rows) => rows.filter((_, j) => j !== i))}
+                  style={{ width: 32, height: 32, border: 'none', background: 'none', color: '#B42318', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
               </div>
             ))}
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 8 }}>
+              <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" disabled={rateNames.every((n) => rateTable.some((r) => r.tech === n))}
+                onClick={() => editRates((rows) => [...rows, { tech: rateNames.find((n) => !rows.some((r) => r.tech === n)) ?? '', hour: null, mile: null }])}><Plus size={14} /> Add a rate</button>
               <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : 'Save rates'}</button>
               {ratesChanged && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>}
-              {!ratesChanged && noRate.length > 0 && <span style={{ fontSize: 12.5, color: '#B42318' }}>No rate yet for {noRate.join(', ')}: {noRate.length === 1 ? 'that line shows' : 'those lines show'} no dollars.</span>}
+              {/* The total as the rates are typed (Fred: "i enter the rates and it shows the total"). */}
+              <b style={{ marginLeft: 'auto', fontSize: 14 }}>Total {fmtMoney(chargesTotal(charges))}</b>
             </div>
+            {unbilled.length > 0 && <div style={{ fontSize: 12.5, color: '#B42318', marginTop: 6 }}>Not charged (no rates): {unbilled.join(', ')}.</div>}
           </div>
         )}
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
@@ -725,7 +721,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                         {/* Fred's own sheet, 2026-10-30: Name | date | clock in | clock out | (break) | hours. One row each time a tech
                             clocks in and out, so a day with a break shows both, and the gap between them. */}
                         <thead><tr style={{ background: '#F6F4EF' }}>
-                          {['Name', 'Date', 'Clock in', 'Clock out', 'Break', 'Hours'].map((h) => <th key={h} style={headCell}>{h}</th>)}
+                          {['Name', 'Date', 'Clock in', 'Clock out', 'Break', 'Hours', ...(withRates ? ['Rate', 'Amount'] : [])].map((h) => <th key={h} style={headCell}>{h}</th>)}
                         </tr></thead>
                         {/* Each tech's rows in their own body, kept on one page when they fit (Greptile on PR #35). */}
                         {timeGroups.map((g) => (
@@ -740,12 +736,14 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                                   <td style={cell}>{r.out ? clock12(r.out) : r.open ? 'On site now' : '—'}</td>
                                   <td style={cell}>{r.brk ? hrs(r.brk) : '—'}</td>
                                   <td style={cell}>{h == null ? '—' : hrs(h)}</td>
+                                  {withRates && <>{rateCell(rates[r.tech]?.hour, 'hr')}{moneyCell(lineAmount(h, rates[r.tech]?.hour))}</>}
                                 </tr>
                               );
                             })}
                             <tr className="jl-avoid" style={techTotal}>
                               <td style={cell} colSpan={5}>{g.tech} final hours · {dayCount(g.items.map((r) => r.day))}</td>
                               <td style={cell}>{hrs(hoursTotal(g.items))}</td>
+                              {withRates && <><td style={cell} />{moneyCell(chargeOf(g.tech)?.labor)}</>}
                             </tr>
                           </tbody>
                         ))}
@@ -754,6 +752,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                           <tr className="jl-avoid" style={overallRow}>
                             <td style={cell} colSpan={5}>Overall total worked</td>
                             <td style={cell}>{hrs(siteHours)}</td>
+                            {withRates && <><td style={cell} />{moneyCell(sumOf('labor'))}</>}
                           </tr>
                         </tbody>
                       </table>
@@ -767,7 +766,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                   {/* Like the hours: name and date on every row, each tech's total, then the overall total. */}
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead><tr style={{ background: '#F6F4EF' }}>
-                      {['Name', 'Date', 'Odometer start', 'Odometer end', 'Miles'].map((h) => <th key={h} style={headCell}>{h}</th>)}
+                      {['Name', 'Date', 'Odometer start', 'Odometer end', 'Miles', ...(withRates ? ['Rate', 'Amount'] : [])].map((h) => <th key={h} style={headCell}>{h}</th>)}
                     </tr></thead>
                     {mileGroups.map((g) => (
                       <tbody key={g.tech} className="jl-avoid">
@@ -778,16 +777,21 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                             <td style={cell}>{r.start != null ? r.start.toLocaleString('en-US') : '—'}</td>
                             <td style={cell}>{r.end != null ? r.end.toLocaleString('en-US') : '—'}</td>
                             <td style={cell}>{r.miles.toLocaleString('en-US')}</td>
+                            {withRates && <>{rateCell(rates[r.tech]?.mile, 'mi')}{moneyCell(lineAmount(r.miles, rates[r.tech]?.mile))}</>}
                           </tr>
                         ))}
                         <tr className="jl-avoid" style={techTotal}>
                           <td style={cell} colSpan={4}>{g.tech} total miles · {dayCount(g.items.map((r) => r.day))}</td>
                           <td style={cell}>{milesTotal(g.items).toLocaleString('en-US')}</td>
+                          {withRates && <><td style={cell} />{moneyCell(chargeOf(g.tech)?.mileage)}</>}
                         </tr>
                       </tbody>
                     ))}
                     <tbody>
-                      <tr className="jl-avoid" style={overallRow}><td style={cell} colSpan={4}>Overall total miles</td><td style={cell}>{totalMiles.toLocaleString('en-US')}</td></tr>
+                      <tr className="jl-avoid" style={overallRow}>
+                        <td style={cell} colSpan={4}>Overall total miles</td><td style={cell}>{totalMiles.toLocaleString('en-US')}</td>
+                        {withRates && <><td style={cell} />{moneyCell(sumOf('mileage'))}</>}
+                      </tr>
                     </tbody>
                   </table>
                   {noneLine(without(mileGroups), 'miles')}
@@ -827,8 +831,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                 </div>
               )}
 
-              {/* The client's copy only: each tech's hours and miles × their rates, and the total ("Rates and the dollars"). */}
-              {copy === 'client' && charges.length > 0 && chargesTable(charges)}
+              {/* The client's copy only: the hours' and the miles' dollars, and the two added up. */}
+              {withRates && (
+                <div className="jl-band jl-avoid" style={{ marginTop: 10, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', fontSize: 13 }}>
+                  <b style={{ color: '#E3C987', letterSpacing: 1 }}>TOTAL CHARGES</b>
+                  <span>Hours <b>{fmtMoney(sumOf('labor'))}</b></span>
+                  <span>Mileage <b>{fmtMoney(sumOf('mileage'))}</b></span>
+                  <span>Total <b>{fmtMoney(chargesTotal(charges))}</b></span>
+                </div>
+              )}
             </>
           )}
 

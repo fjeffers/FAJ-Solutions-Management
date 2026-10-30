@@ -34,8 +34,8 @@ const Field = ({ name, children }: { name: string; children: React.ReactNode }) 
  * A number typed as text, so "47." can be typed on the way to "47.48"; anything that isn't a number isn't taken.
  * An empty box is `empty` (none, or 0 for an amount or a break), and shows empty.
  */
-export function NumBox({ value, onChange, label, empty = null }: {
-  value: number | null; onChange: (n: number | null) => void; label: string; empty?: number | null;
+export function NumBox({ value, onChange, label, empty = null, disabled = false }: {
+  value: number | null; onChange: (n: number | null) => void; label: string; empty?: number | null; disabled?: boolean;
 }) {
   const show = (n: number | null) => (n == null || n === empty ? '' : String(n));
   const [text, setText] = useState(show(value));
@@ -46,7 +46,7 @@ export function NumBox({ value, onChange, label, empty = null }: {
     setText(show(value));
   }
   return (
-    <input aria-label={label} inputMode="decimal" style={box} value={text}
+    <input aria-label={label} inputMode="decimal" style={box} value={text} disabled={disabled}
       onChange={(e) => {
         const t = e.target.value;
         // Only what makes a number ("$1,234.5", "47."): a slip like "18..50" isn't taken, so the box never shows

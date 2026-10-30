@@ -716,6 +716,7 @@ describe('Job log edited by the office', () => {
       // The tech's copy: no rates.
       undefined,
       { meals: true, materials: true, other: true },
+      false,
     );
   });
 
@@ -781,7 +782,7 @@ describe('Job log edited by the office', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /excel/i }));
     expect(downloadJobLogXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Client time sheet\.xlsx$/), expect.anything(), expect.anything(),
-      { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, { meals: true, materials: true, other: true });
+      { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, { meals: true, materials: true, other: true }, false);
     // A receipt section taken off the log is off the Excel's charges too, as in the PDF (CodeRabbit on PR #41).
     fireEvent.click(screen.getByRole('checkbox', { name: 'Materials' }));
     expect(screen.queryByText('Materials · 1 receipt')).toBeNull();
@@ -841,6 +842,67 @@ describe('Job log edited by the office', () => {
       // $0.725 a mile shows as typed, so 18 × it = $13.05 can be checked (Greptile on PR #40).
       expect(rowsOf(screen.getByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,218', '18', '$0.725/mi', '$13.05']);
       expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $13.05Total $598.05');
+    } finally {
+      delete tables.job_log_rates;
+    }
+  }));
+
+  it('puts the hours together at one rate, or separate at each tech\'s (Fred: "give me the options for together or separate hours")', () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
+    vi.mocked(downloadJobLogXlsx).mockClear();
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+      await waitFor(() => expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('65'));
+      const separate = screen.getByRole('button', { name: 'Separate (each tech’s rate)' }), together = screen.getByRole('button', { name: 'Together (one rate)' });
+      expect(separate.getAttribute('aria-pressed')).toBe('true');
+      // Together: one $ per hour for all the hours (Fred: "the rate is changing 100, 90, 60", "not a flat rate hourly");
+      // each tech's own isn't used meanwhile.
+      fireEvent.click(together);
+      expect(together.getAttribute('aria-pressed')).toBe('true');
+      expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).disabled).toBe(true);
+      expect(screen.getByText('Type the $ per hour for all the hours.')).toBeTruthy();
+      fireEvent.change(screen.getByLabelText('$ per hour, all techs'), { target: { value: '100' } });
+      // 9 hours × $100 and 18 miles × $0.70, as typed; saved before it's printed.
+      expect(screen.getByText('Total $912.60')).toBeTruthy();
+      expect(print.disabled).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
+      await waitFor(() => expect(print.disabled).toBe(false));
+      expect(upserts.at(-1)!.row).toMatchObject({ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, all_hours_rate: 100 });
+      expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9', '$100.00/hr', '$900.00']);
+      expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' }))).toEqual([
+        ['All techs’ hours · 9 × $100.00/hr', '$900.00'],
+        ['Paul Gibbs mileage · 18 mi × $0.70/mi', '$12.60'],
+        ['Mileage total', '$12.60'],
+        ['Materials · 1 receipt', '$104.17'],
+      ]);
+      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,016.77');
+      fireEvent.click(screen.getByRole('button', { name: /excel/i }));
+      expect(downloadJobLogXlsx).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), expect.anything(),
+        { 'Paul Gibbs': { hour: 100, mile: 0.7 } }, { meals: true, materials: true, other: true }, true);
+      // Separate again: each tech's own rate, on their own line.
+      fireEvent.click(separate);
+      fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
+      await waitFor(() => expect(upserts.at(-1)!.row).toMatchObject({ all_hours_rate: null }));
+      await waitFor(() => expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' }))[0]).toEqual(['Paul Gibbs hours · 9 × $65.00/hr', '$585.00']));
+    } finally {
+      delete tables.job_log_rates;
+    }
+  }));
+
+  it('opens with the hours together when that was saved', () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, all_hours_rate: '90' }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Together (one rate)' }).getAttribute('aria-pressed')).toBe('true'));
+      expect((screen.getByLabelText('$ per hour, all techs') as HTMLInputElement).value).toBe('90');
+      expect(print.disabled).toBe(false);
+      expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' }))[0]).toEqual(['All techs’ hours · 9 × $90.00/hr', '$810.00']);
     } finally {
       delete tables.job_log_rates;
     }

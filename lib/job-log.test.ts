@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildVisits, inRange, logTotals, hoursText, dayOf, jobLogName, type Punch } from './job-log';
+import { buildVisits, byTechGroups, inRange, logTotals, hoursText, dayOf, jobLogName, type Punch } from './job-log';
 import type { TimeLog } from './types';
 
 const tz = 'America/New_York';
@@ -57,5 +57,20 @@ describe('the job log’s name, which the saved PDF gets', () => {
       .toBe('LDS-1110 Site 5333202 — Fayetteville, NC · 10-26-2026 – 10-30-2026');
     expect(jobLogName({ wo_number: '19101450', site_name: 'Store 12/B', site_city: 'Newark', site_state: null }, '', ''))
       .toBe('WO 19101450 Store 12-B — Newark');
+  });
+});
+
+describe('each tech on their own', () => {
+  // Fred, 2026-10-29: "Show all of Paul hours and total, Kendall total ... Paul and Kendall separated grouping".
+  it('groups the days by tech, the crew in its order first, each tech\u2019s days kept in order', () => {
+    const days = [
+      { tech: 'Kendell Newbold', day: '2026-10-19' }, { tech: 'Paul Gibbs', day: '2026-10-19' },
+      { tech: 'Kendell Newbold', day: '2026-10-20' }, { tech: 'Office', day: '2026-10-20' }, { tech: 'Paul Gibbs', day: '2026-10-20' },
+    ];
+    expect(byTechGroups(days, (d) => d.tech, ['Paul Gibbs', 'Kendell Newbold']).map((g) => [g.tech, g.items.map((d) => d.day)])).toEqual([
+      ['Paul Gibbs', ['2026-10-19', '2026-10-20']],
+      ['Kendell Newbold', ['2026-10-19', '2026-10-20']],
+      ['Office', ['2026-10-20']],
+    ]);
   });
 });

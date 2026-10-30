@@ -263,9 +263,48 @@ describe('Job log pictures', () => {
     const table = (await screen.findByRole('heading', { name: 'Mileage' })).nextElementSibling as HTMLElement;
     const cells = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
     expect(cells).toEqual([
-      ['Mon, Oct 19, 2026', 'Paul Gibbs', '41,200', '41,218', '18'],
+      ['Paul Gibbs'],
+      ['Mon, Oct 19, 2026', '41,200', '41,218', '18'],
+      ['Paul Gibbs total · 1 day', '18'],
       ['Total', '18'],
     ]);
+  });
+});
+
+describe('Job log, each tech on their own', () => {
+  // Fred, 2026-10-29: "Show all of Paul hours and total, Kendall total ... Paul and Kendall separated grouping".
+  it("lists the lead tech's days and total first, then the helper's, then all techs", async () => {
+    const before = tables.job_punches;
+    tables.job_punches = [
+      { contractor_name: 'Kendell Newbold', kind: 'in', at: at('19', '07:37'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Paul Gibbs', kind: 'in', at: at('19', '07:37'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Kendell Newbold', kind: 'out', at: at('19', '17:37'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Paul Gibbs', kind: 'out', at: at('19', '17:37'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Kendell Newbold', kind: 'in', at: at('20', '07:50'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Paul Gibbs', kind: 'in', at: at('20', '07:50'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Kendell Newbold', kind: 'out', at: at('20', '18:09'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Paul Gibbs', kind: 'out', at: at('20', '12:20'), lat: null, lng: null, accuracy: null },
+    ];
+    try {
+      // Fred, 2026-10-29: "Lead tech first and then helper tech": Paul leads, though Kendell is listed first.
+      render(<JobLogReport w={{ ...wo, contractor_names: ['Kendell Newbold', 'Paul Gibbs'], lead_contractor_name: 'Paul Gibbs' } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
+      const table = (await screen.findByRole('heading', { name: 'Time on site' })).nextElementSibling as HTMLElement;
+      await waitFor(() => expect(table.querySelectorAll('tbody tr').length).toBeGreaterThan(1));
+      const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent).slice(0, 4));
+      expect(rows).toEqual([
+        ['Paul Gibbs'],
+        ['Mon, Oct 19, 2026', '7:37 AM', '5:37 PM', '10h 00m'],
+        ['Tue, Oct 20, 2026', '7:50 AM', '12:20 PM', '4h 30m'],
+        ['Paul Gibbs total · 2 days', '14h 30m', ''],
+        ['Kendell Newbold'],
+        ['Mon, Oct 19, 2026', '7:37 AM', '5:37 PM', '10h 00m'],
+        ['Tue, Oct 20, 2026', '7:50 AM', '6:09 PM', '10h 19m'],
+        ['Kendell Newbold total · 2 days', '20h 19m', ''],
+        ['All techs', '34h 49m', ''],
+      ]);
+    } finally {
+      tables.job_punches = before;
+    }
   });
 });
 

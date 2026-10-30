@@ -27,9 +27,9 @@ export type InvoiceEditor = {
   setTogether: (t: { on: boolean; hour: number | null }) => void;
   rateOf: (tech: string) => { hour: number | null; mile: number | null };
   setRate: (tech: string, k: 'hour' | 'mile', v: number | null) => void;
-  change: (l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null }) => void;
+  change: (l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string }) => void;
   remove: (l: InvoiceLine) => void;
-  add: (tech: string, item: 'Labor' | 'Mileage' | 'Hotel') => void;
+  add: (tech: string, item: 'Labor' | 'Mileage' | 'Material' | 'Hotel') => void;
 };
 
 /** 10/19/2026 */
@@ -78,13 +78,17 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
           ? <NumBox label={`${l.item === 'Labor' ? 'Hours' : 'Miles'}, ${at}`} value={l.qty} onChange={(n) => edit.change(l, { qty: n })} />
           : qty(l.qty, l.item === 'Labor');
         const rateCell = edit && l.item === 'Meal' ? <NumBox label={`Meals, ${at}`} value={l.spent || null} onChange={(n) => edit.change(l, { amount: n })} />
-          : edit && l.item === 'Hotel' ? <NumBox label={`Hotel, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
+          : edit && (l.item === 'Hotel' || l.item === 'Material') ? <NumBox label={`${l.item}, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
             : <Money n={l.rate} rate />;
+        // A material's store, as typed.
+        const description = edit && l.item === 'Material'
+          ? <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
+          : l.description;
         return (
           <tr key={`${l.item}-${i}`}>
             <td style={td}>{dateCell}</td>
             <td style={center}>{l.item}</td>
-            <td style={td} colSpan={2}>{l.description}</td>
+            <td style={td} colSpan={2}>{description}</td>
             <td style={right}>{qtyCell}</td>
             <td style={right}>{rateCell}</td>
             <td style={right}><Money n={l.amount} /></td>
@@ -137,6 +141,11 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
       <Section s={t.mileage} tech={t.tech} edit={edit}
         rate={edit && <NumBox label={`$ per mile, ${t.tech}`} value={rates?.mile ?? null} onChange={(n) => edit.setRate(t.tech, 'mile', n)} />}
         add={edit && <AddRow name={`Add a drive, ${t.tech}`} onClick={() => edit.add(ownerOf(t.mileage), 'Mileage')}>Add a drive</AddRow>} />
+      {/* The materials, on the lead's part before the hotel (Fred: "under lead tech before hotel"). */}
+      {t.materials && (t.materials.lines.length > 0 || edit) && (
+        <Section s={t.materials} tech={t.tech} edit={edit}
+          add={edit && <AddRow name={`Add a material, ${t.tech}`} onClick={() => edit.add(t.tech, 'Material')}>Add a material</AddRow>} />
+      )}
       <Section s={t.travel} tech={t.tech} edit={edit}
         add={edit && <AddRow name={`Add a hotel, ${t.tech}`} onClick={() => edit.add(ownerOf(t.travel), 'Hotel')}>Add a hotel</AddRow>} />
       <tr>
@@ -223,7 +232,9 @@ export default function JobLogInvoice({ invoice, head, edit }: { invoice: Invoic
         {invoice.techs.map((t) => <Tech key={t.tech} t={t} edit={edit} />)}
         <tbody className="jl-avoid">
           <tr><td colSpan={7} style={{ ...center, fontWeight: 700, textDecoration: 'underline', borderBottom: '2px solid #000', paddingTop: 12 }}>Totals</td></tr>
-          {([['Labor', invoice.totals.labor], ['Mileage', invoice.totals.mileage], ['Meals', invoice.totals.meals], ['Travel', invoice.totals.travel]] as const).map(([k, v]) => (
+          {([['Labor', invoice.totals.labor], ['Mileage', invoice.totals.mileage], ['Meals', invoice.totals.meals],
+            ...(invoice.techs.some((t) => t.materials?.lines.length) ? [['Materials', invoice.totals.materials] as const] : []),
+            ['Travel', invoice.totals.travel]] as const).map(([k, v]) => (
             <tr key={k}><td colSpan={5} style={right}>{k}</td><td style={td} /><td style={right}><Money n={v} /></td></tr>
           ))}
           <tr>

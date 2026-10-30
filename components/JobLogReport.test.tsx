@@ -941,7 +941,7 @@ describe('Job log edited by the office', () => {
       expect(screen.getByText('TeamNetView')).toBeTruthy();
       expect(screen.getByText('1000 Eleventh Street, Goldsboro, NC 27530')).toBeTruthy();
       expect(screen.getByText('Net 30')).toBeTruthy();
-      // Paul as the lead: his hours, meals, mileage and hotel day by day; the materials aren't on it, as theirs.
+      // Paul as the lead: his hours, meals, mileage, the materials (before the hotel) and the hotel, day by day.
       const rows = [...screen.getByRole('table').querySelectorAll('tr')].map((tr) => [...tr.querySelectorAll('th, td')].map((c) => c.textContent));
       expect(rows).toEqual([
         ['Date', 'Item', 'Description', 'Qty', 'Rate', 'Amount'],
@@ -951,16 +951,18 @@ describe('Job log edited by the office', () => {
         ['10/19/2026', 'Meal', 'Meal allowance up to $50.00 with Receipts', '1', '$18.97', '$18.97'],
         ['', 'Total Milage', '', '$10.80'],
         ['10/19/2026', 'Mileage', 'Mileage from Home to Goldsboro NC', '18', '$0.60', '$10.80'],
+        ['', 'Total Materials', '', '$104.17'],
+        ['10/21/2026', 'Material', "Lowe's", '1', '$104.17', '$104.17'],
         ['', 'Total Travel', '', '$402.50'],
         ['10/19/2026', 'Hotel', 'Hotel charge for the week', '1', '$402.50', '$402.50'],
-        ['', 'Lead Total', '', '$882.27'],
+        ['', 'Lead Total', '', '$986.44'],
         ['Totals'],
-        ['Labor', '', '$450.00'], ['Mileage', '', '$10.80'], ['Meals', '', '$18.97'], ['Travel', '', '$402.50'], ['Total Invoice', '', '$882.27'],
+        ['Labor', '', '$450.00'], ['Mileage', '', '$10.80'], ['Meals', '', '$18.97'], ['Materials', '', '$104.17'], ['Travel', '', '$402.50'], ['Total Invoice', '', '$986.44'],
       ]);
       // Not the job log: the invoice alone.
       expect(screen.queryByText('JOB LOG')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: /excel/i }));
-      expect(downloadInvoiceXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Invoice 1240\.xlsx$/), expect.objectContaining({ totals: { labor: 450, mileage: 10.8, meals: 18.97, travel: 402.5, total: 882.27 } }),
+      expect(downloadInvoiceXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Invoice 1240\.xlsx$/), expect.objectContaining({ totals: { labor: 450, mileage: 10.8, meals: 18.97, materials: 104.17, travel: 402.5, total: 986.44 } }),
         expect.objectContaining({ billTo: 'TeamNetView', shipTo: ['LDS1106 Site 5006643 — Goldsboro, NC', '1000 Eleventh Street, Goldsboro, NC 27530'] }));
       // The tech's copy is the job log again.
       fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
@@ -1084,6 +1086,10 @@ describe('Job log edited by the office', () => {
       // A day added, then its hours.
       fireEvent.click(screen.getByRole('button', { name: 'Add a day, Paul Gibbs' }));
       fireEvent.change(screen.getByLabelText('Hours, Paul Gibbs, 10/20/2026'), { target: { value: '6' } });
+      // A material added on the lead's part, before the hotel (Fred: "under lead tech before hotel").
+      fireEvent.click(screen.getByRole('button', { name: 'Add a material, Paul Gibbs' }));
+      fireEvent.change(screen.getByLabelText('Material store, Paul Gibbs, 10/19/2026'), { target: { value: 'Home Depot' } });
+      fireEvent.change(screen.getByLabelText('Material, Paul Gibbs, 10/19/2026'), { target: { value: '25' } });
       const cells = (label: string) => [...screen.getByLabelText(label).closest('tr')!.querySelectorAll('td')].map((c) => c.textContent);
       expect(cells('Hours, Paul Gibbs, 10/20/2026').slice(1, 3)).toEqual(['Labor', 'Installation of Cabling for refresh project']);
       expect(screen.getByText('Total Hours').closest('tr')!.textContent).toContain('$700.00');
@@ -1093,6 +1099,8 @@ describe('Job log edited by the office', () => {
       const saved = updates.find((u) => 'job_log_sheet' in u)!.job_log_sheet as { time: { day: string; hours?: number }[]; meals: { amount: number }[] };
       expect(saved.time.map((r) => [r.day, r.hours])).toEqual([['2026-10-19', 8], ['2026-10-20', 6]]);
       expect(saved.meals.map((r) => r.amount)).toEqual([60]);
+      expect((saved as unknown as { materials: { day: string; store: string; amount: number }[] }).materials.map((r) => [r.day, r.store, r.amount]))
+        .toEqual([['2026-10-19', 'Home Depot', 25], ['2026-10-21', "Lowe's", 104.17]]);
       const rows = [...screen.getByRole('table').querySelectorAll('tr')].map((tr) => [...tr.querySelectorAll('th, td')].map((c) => c.textContent));
       expect(rows.slice(1, 6)).toEqual([
         ['Lead', 'Paul Gibbs', 'Total Hours', '14.00', '$50.00', '$700.00'],

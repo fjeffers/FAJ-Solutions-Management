@@ -55,7 +55,7 @@ import { dayCalc, leadFirst, parseEdits, rowsFor, type SavedDay, type SheetRow }
 import type { OdoRow as Reading } from '@/lib/weekly-bill';
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, type Punch } from '@/lib/job-log';
+import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
   hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
   type JobSheet, type MoneyRow,
@@ -323,6 +323,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const techs = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean);
   const where = [w.site_address, [w.site_city, [w.site_state, w.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');
   const isUrl = (v: string) => /^https?:\/\//.test(v);
+  const siteNo = siteNumber(w);
+  // The job's days, first to last: "Mon, Oct 19 – Fri, Oct 23, 2026", or the one day.
+  const schedule = (() => {
+    const first = (w.start_date || w.scheduled_date)?.slice(0, 10), last = w.end_date?.slice(0, 10);
+    if (!first) return '';
+    if (!last || last <= first) return fmtDay(first);
+    const short = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+    return `${first.slice(0, 4) === last.slice(0, 4) ? short(first) : fmtDay(first)} – ${fmtDay(last)}`;
+  })();
   const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: TZ });
   const range = from || to ? `${from ? fmtDay(from) : 'Start'} – ${to ? fmtDay(to) : 'today'}` : 'Whole job';
   // The saved PDF's name: the print window names it after the page (lib/job-log.ts
@@ -569,12 +578,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
         <div className="jl-body" style={{ padding: '20px 24px 28px' }}>
           <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{w.title || 'Work order'}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '6px 20px', marginTop: 10 }}>
-            {w.customer_name && <div><b>Client:</b> {w.customer_name}</div>}
-            {w.external_wo_id && <div><b>Client WO #:</b> {w.external_wo_id}</div>}
-            <div><b>FAJ WO #:</b> {w.wo_number}</div>
-            {(w.site_name || where) && <div><b>Site:</b> {[w.site_name, where].filter(Boolean).join(' — ')}</div>}
-            {(w.scheduled_date || w.start_date) && <div><b>Scheduled:</b> {fmtDay((w.scheduled_date || w.start_date)!.slice(0, 10))}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '6px 20px', marginTop: 10 }}>
+            {/* What the client reads first (Fred, 2026-10-30): "Client WO:#, site Number:, Site address:, schedule:
+                Mon Oct 19 thue Oct 23, technician:". FAJ's own WO number only when the client hasn't one. */}
+            <div><b>{w.external_wo_id ? 'Client WO #' : 'WO #'}:</b> {w.external_wo_id || w.wo_number}</div>
+            {siteNo && <div><b>Site number:</b> {siteNo}</div>}
+            {where && <div><b>Site address:</b> {where}</div>}
+            {schedule && <div><b>Schedule:</b> {schedule}</div>}
             {techs.length > 0 && <div><b>Technician{techs.length > 1 ? 's' : ''}:</b> {techs.join(', ')}</div>}
           </div>
 

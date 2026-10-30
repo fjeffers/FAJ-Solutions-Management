@@ -426,6 +426,16 @@ describe('Job log saved as a PDF', () => {
     }
   });
 
+  it('heads the page with the client WO, the site number and address, the schedule and the technicians (Fred, 2026-10-30)', async () => {
+    const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_address: '701 West Buford Street', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
+    render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+    const head = screen.getByText('Client WO #:').parentElement!.parentElement!;
+    expect([...head.children].map((d) => d.textContent)).toEqual([
+      'Client WO #: LDS-1110', 'Site number: 5011876', 'Site address: 701 West Buford Street, Gaffney, SC',
+      'Schedule: Mon, Oct 19 – Fri, Oct 23, 2026', 'Technician: Paul Gibbs',
+    ]);
+  });
+
   it('can’t be printed until the job’s days are in, so the PDF never goes without its dates', async () => {
     let release = () => {};
     punchesHeld = new Promise((ok) => { release = ok; });

@@ -124,6 +124,23 @@ export type LogJob = {
 /** "10-18-2026": a file name can't have a slash. */
 const fileDay = (d: string) => `${d.slice(5, 7)}-${d.slice(8, 10)}-${d.slice(0, 4)}`;
 
+/** The site without the client's name in front: "LDS Site 5011876" → "Site 5011876"; a bare number gets "Site". */
+function siteOf(w: LogJob): string {
+  const client = (w.customer_name ?? '').trim().toLowerCase();
+  let site = (w.site_name ?? '').trim();
+  if (client && site.toLowerCase().startsWith(`${client} `)) site = site.slice(client.length).trim();
+  return /^\d+$/.test(site) ? `Site ${site}` : site;
+}
+
+/**
+ * The site's number as the client knows it (Fred, 2026-10-30: "site Number:"): "LDS Site 5011876" → "5011876".
+ * A site named some other way keeps its name.
+ */
+export function siteNumber(w: LogJob): string {
+  const numbered = /\bsite\s*(?:#|no\.?|number)?\s*:?\s*([\w-]*\d[\w-]*)/i.exec(siteOf(w));
+  return numbered ? numbered[1] : siteOf(w);
+}
+
 /**
  * The job log's name, which the print window gives the PDF it saves (Fred,
  * 2026-10-26: "when i save the job log can it be the site number and city"):
@@ -132,10 +149,7 @@ const fileDay = (d: string) => `${d.slice(5, 7)}-${d.slice(8, 10)}-${d.slice(0, 
  * city, and the first and last day the log covers.
  */
 export function jobLogName(w: LogJob, first: string, last: string): string {
-  const client = (w.customer_name ?? '').trim().toLowerCase();
-  let site = (w.site_name ?? '').trim();
-  if (client && site.toLowerCase().startsWith(`${client} `)) site = site.slice(client.length).trim();
-  if (/^\d+$/.test(site)) site = `Site ${site}`;
+  const site = siteOf(w);
   const city = [w.site_city, w.site_state].map((s) => (s ?? '').trim()).filter(Boolean).join(', ');
   const head = [w.external_wo_id?.trim() || `WO ${w.wo_number}`, site].filter(Boolean).join(' ') + (city ? ` — ${city}` : '');
   const days = first && last && first !== last ? `${fileDay(first)} – ${fileDay(last)}` : first || last ? fileDay(first || last) : '';

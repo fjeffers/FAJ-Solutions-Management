@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildVisits, byTechGroups, inRange, logTotals, hoursText, dayOf, jobLogName, type Punch } from './job-log';
+import { buildVisits, byTechGroups, inRange, logTotals, hoursText, dayOf, jobLogName, siteNumber, type Punch } from './job-log';
 import type { TimeLog } from './types';
 
 const tz = 'America/New_York';
@@ -50,6 +50,16 @@ describe('the job log’s name, which the saved PDF gets', () => {
   it('is the client’s WO, the site number, the city and the days, with no slash a file name can’t have', () => {
     expect(jobLogName(gaffney, '2026-10-18', '2026-10-23')).toBe('LDS-1110 Site 5011876 — Gaffney, SC · 10-18-2026 – 10-23-2026');
     expect(jobLogName(gaffney, '2026-10-19', '2026-10-19')).toBe('LDS-1110 Site 5011876 — Gaffney, SC · 10-19-2026');
+  });
+
+  it('has the site number the job log heads its page with (Fred, 2026-10-30: "site Number:")', () => {
+    expect(siteNumber(gaffney)).toBe('5011876');
+    expect(siteNumber({ ...gaffney, site_name: ' 5333202' })).toBe('5333202');
+    expect(siteNumber({ ...gaffney, site_name: 'Site #42' })).toBe('42');
+    expect(siteNumber({ ...gaffney, site_name: 'Main Office' })).toBe('Main Office');
+    // Whatever the client's name, or none on the job.
+    expect(siteNumber({ ...gaffney, customer_name: null })).toBe('5011876');
+    expect(siteNumber({ ...gaffney, site_name: null })).toBe('');
   });
 
   it('makes a bare site number a site, and does without what the job doesn’t have', () => {

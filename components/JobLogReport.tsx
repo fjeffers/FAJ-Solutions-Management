@@ -435,7 +435,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       ...(techs.length ? [`Technician${techs.length > 1 ? 's' : ''}: ${techs.join(', ')}`] : []),
     ];
     downloadJobLogXlsx(copy === 'client' ? `${logName} · Client time sheet.xlsx` : `${logName} · Time sheet.xlsx`,
-      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? savedRates : undefined)
+      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? savedRates : undefined,
+      // The receipts the log shows are the ones its breakdown charges, in Excel as in the PDF (CodeRabbit on PR #41).
+      { meals: inc.meals, materials: inc.materials, other: inc.otherReceipts })
       .catch(() => toastError("The Excel file didn't download. Try again."));
   };
 

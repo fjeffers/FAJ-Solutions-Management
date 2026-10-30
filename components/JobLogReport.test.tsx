@@ -715,6 +715,7 @@ describe('Job log edited by the office', () => {
       { title: 'Gaffney', lines: ['Client: LDS · Client WO #: LDS-1110 · FAJ WO #: 19101401', 'Site: LDS Site 5011876 — Gaffney, SC', 'Technician: Paul Gibbs'], range: 'Whole job', crew: ['Paul Gibbs'] },
       // The tech's copy: no rates.
       undefined,
+      { meals: true, materials: true, other: true },
     );
   });
 
@@ -780,7 +781,13 @@ describe('Job log edited by the office', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /excel/i }));
     expect(downloadJobLogXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Client time sheet\.xlsx$/), expect.anything(), expect.anything(),
-      { 'Paul Gibbs': { hour: 65, mile: 0.7 } });
+      { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, { meals: true, materials: true, other: true });
+    // A receipt section taken off the log is off the Excel's charges too, as in the PDF (CodeRabbit on PR #41).
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Materials' }));
+    expect(screen.queryByText('Materials · 1 receipt')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /excel/i }));
+    expect(vi.mocked(downloadJobLogXlsx).mock.calls.at(-1)![4]).toEqual({ meals: true, materials: false, other: true });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Materials' }));
 
     // Back to the tech's copy: none of it.
     fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));

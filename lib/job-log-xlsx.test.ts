@@ -125,6 +125,19 @@ describe('the job log in Excel', () => {
     expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(8);
   });
 
+  it("charges only the receipts the log shows, as the PDF's breakdown does (CodeRabbit on PR #41)", () => {
+    const client = jobLogCells(sheet, head, { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, { meals: true, materials: false, other: true });
+    const c = find(client, 'CHARGES');
+    const labels = client.slice(c + 1).map((r) => r[0]);
+    expect(labels).toEqual(['Paul Gibbs hours', 'Kendell Newbold hours', 'Hours total', 'Paul Gibbs mileage', 'Mileage total',
+      'TOTAL CHARGES', 'Meals', 'Hotels', 'Other receipts', 'OVERALL TOTAL']);
+    // Other receipts is the other receipts' total less the Hotels line right above it.
+    const at = c + 1 + labels.indexOf('Hotels');
+    expect(client[at + 1][2]).toMatchObject({ f: `E${find(client, 'Overall total other receipts') + 1}-C${at + 1}` });
+    // $1,431.17 + $0 meals + $350.74 hotel + $0 other: no materials.
+    expect(client.at(-1)![2]).toMatchObject({ v: 1781.91, f: `C${c + 7}+C${c + 8}+C${c + 9}+C${c + 10}` });
+  });
+
   it('opens in Excel with its formulas and the summary pointing at the totals', () => {
     const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head));
     const wb = XLSX.utils.book_new();

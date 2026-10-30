@@ -31,8 +31,12 @@ export const JOB_LOG_WIDTHS = [19, 11, 16, 14, 10, 10];
 export const JOB_LOG_CLIENT_WIDTHS = [15, 11, 10, 9, 7, 7, 8, 10];
 export const JOB_LOG_MARGINS = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
 
-/** The workbook's one sheet, row by row; `rates` for the client's copy. */
-export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates): XCell[][] {
+/** Which receipts the client's copy charges: the ones the job log shows (its Show choices), as its PDF does. */
+export type ChargedReceipts = { meals: boolean; materials: boolean; other: boolean };
+const ALL_RECEIPTS: ChargedReceipts = { meals: true, materials: true, other: true };
+
+/** The workbook's one sheet, row by row; `rates` for the client's copy, charging the `charged` receipts. */
+export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates, charged: ChargedReceipts = ALL_RECEIPTS): XCell[][] {
   const rows: XCell[][] = [];
   /** The Excel row number the next row gets. */
   const next = () => rows.length + 1;
@@ -175,25 +179,30 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
     rows.push(['Mileage total', null, num(mileage, USD, miles.amount)]);
     const chargesAt = next();
     rows.push(['TOTAL CHARGES', null, num(r2(labor + mileage), USD, `C${hoursAt}+C${milesAt}`)]);
-    // The hotels on their own line, the other receipts less them on the next (Fred: "see it hotels also").
+    // The receipts the job log shows, as its PDF charges them (CodeRabbit on PR #41): the hotels on their own line,
+    // the other receipts less them on the next (Fred: "see it hotels also").
     const hotels = moneyTotal(sheet.other.filter(isHotel));
     const receiptsAt = next();
     const receipts: [string, number, string][] = [
-      ['Meals', moneyTotal(sheet.meals), meals], ['Materials', moneyTotal(sheet.materials), materials],
-      ['Hotels', hotels, hotelCells.length ? `SUM(${hotelCells.join(',')})` : '0'],
-      ['Other receipts', r2(moneyTotal(sheet.other) - hotels), `${other}-C${receiptsAt + 2}`],
+      ...(charged.meals ? [['Meals', moneyTotal(sheet.meals), meals] as [string, number, string]] : []),
+      ...(charged.materials ? [['Materials', moneyTotal(sheet.materials), materials] as [string, number, string]] : []),
     ];
+    if (charged.other) {
+      const hotelsAt = receiptsAt + receipts.length;
+      receipts.push(['Hotels', hotels, hotelCells.length ? `SUM(${hotelCells.join(',')})` : '0'],
+        ['Other receipts', r2(moneyTotal(sheet.other) - hotels), `${other}-C${hotelsAt}`]);
+    }
     for (const [what, v, cell] of receipts) rows.push([what, null, num(v, USD, cell)]);
     rows.push(['OVERALL TOTAL', null, num(r2(labor + mileage + receipts.reduce((t, [, v]) => t + v, 0)), USD,
-      `C${chargesAt}+${receipts.map((_, i) => `C${receiptsAt + i}`).join('+')}`)]);
+      [`C${chargesAt}`, ...receipts.map((_, i) => `C${receiptsAt + i}`)].join('+'))]);
   }
   return rows;
 }
 
 /** Saves the workbook ("<the job log's name>.xlsx"); with `rates`, the client's copy. */
-export async function downloadJobLogXlsx(filename: string, sheet: JobSheet, head: JobLogHead, rates?: JobRates) {
+export async function downloadJobLogXlsx(filename: string, sheet: JobSheet, head: JobLogHead, rates?: JobRates, charged?: ChargedReceipts) {
   const XLSX = await import('xlsx');
-  const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head, rates));
+  const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head, rates, charged));
   ws['!cols'] = (rates ? JOB_LOG_CLIENT_WIDTHS : JOB_LOG_WIDTHS).map((wch) => ({ wch }));
   ws['!margins'] = JOB_LOG_MARGINS;
   const wb = XLSX.utils.book_new();

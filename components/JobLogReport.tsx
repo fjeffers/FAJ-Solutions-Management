@@ -47,8 +47,7 @@ import { dayCalc, leadFirst, parseEdits, rowsFor, type SavedDay, type SheetRow }
 import type { OdoRow as Reading } from '@/lib/weekly-bill';
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { buildVisits, byTechGroups, inRange, logTotals, hoursText, dayOf, jobLogName, type Punch } from '@/lib/job-log';
-import { mapLink } from '@/lib/geo';
+import { buildVisits, byTechGroups, inRange, logTotals, dayOf, jobLogName, type Punch } from '@/lib/job-log';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
@@ -257,6 +256,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // Hours 19 hours ... Overall total worked 36"; "Don't show the money all we want to see is how much was on site").
   const hoursOf = (ms: number) => Math.round(ms / 36_000) / 100;
   const hrs = (h: number) => h.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const shortDay = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  // Totals add the hours as each day shows them, so the column adds up the way the client reads it
+  // (as the Field Sheet does), and the summary shows that same total (Greptile on PR #37).
+  const siteHours = r2h(visits.reduce((t, v) => t + hoursOf(v.ms), 0));
   // Only a finished job has a "Not completed": on a job still going, it's just work still to do.
   const job = useMemo(() => wfJobFromOwner(w), [w]);
   // Waits for the photos to load, so it never says "No photos" too soon.
@@ -389,7 +392,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
-          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Time & GPS')}{mileage.length > 0 && toggle('mileage', 'Mileage')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
+          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{mileage.length > 0 && toggle('mileage', 'Mileage')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
           {toggle('notes', "Tech's notes")}{(receipts.length > 0 || receiptPhotos.size > 0) && toggle('receipts', 'Receipts')}{odometer.length > 0 && toggle('odometer', 'Odometer')}
           {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}
         </div>
@@ -422,7 +425,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
           <div className="jl-avoid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginTop: 16 }}>
             {[
-              ...(totals.ms > 0 ? [['Time on site', hoursText(totals.ms)]] : []),
+              ...(totals.ms > 0 ? [['Hours on site', hrs(siteHours)]] : []),
               ...(totals.days > 0 ? [['Days', String(totals.days)]] : []),
               ...(totalMiles > 0 ? [['Miles', totalMiles.toLocaleString('en-US')]] : []),
               ...(pictureCount > 0 ? [['Pictures', String(pictureCount)]] : []),
@@ -458,37 +461,33 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {punches === null ? <div style={{ color: '#5E6470' }}>Loading…</div>
                 : (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    {/* Fred's own sheet, 2026-10-30: Name | date | clock in | clock out | total, one row a day. */}
                     <thead><tr style={{ background: '#F6F4EF' }}>
-                      {['Date', 'In', 'Out', 'Hours', 'Location (GPS)'].map((h) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>)}
+                      {['Name', 'Date', 'Clock in', 'Clock out', 'Total'].map((h) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>)}
                     </tr></thead>
-                    {/* Each tech's rows in their own body, kept on one page when they fit, so a name never prints alone (Greptile on PR #35). */}
+                    {/* Each tech's rows in their own body, kept on one page when they fit (Greptile on PR #35). */}
                     {visitGroups.map((g) => (
                       <tbody key={g.tech} className="jl-avoid">
-                        <tr className="jl-avoid"><td colSpan={5} style={{ ...cell, ...techHead }}>{g.tech}</td></tr>
                         {g.items.map((v, i) => (
                           <tr key={i} className="jl-avoid">
-                            <td style={cell}>{fmtDay(v.day)}</td>
+                            <td style={cell}>{v.tech}</td>
+                            <td style={cell}>{shortDay(v.day)}</td>
                             <td style={cell}>{fmtTime(v.inAt)}</td>
                             <td style={cell}>{v.outAt ? fmtTime(v.outAt) : v.open ? 'On site now' : '—'}</td>
                             <td style={cell}>{hrs(hoursOf(v.ms))}</td>
-                            <td style={{ ...cell, fontSize: 12 }}>
-                              {v.inGps ? <a href={mapLink(v.inGps.lat, v.inGps.lng)} target="_blank" rel="noopener noreferrer" style={{ color: '#0E1B2E' }}>{v.inGps.lat.toFixed(5)}, {v.inGps.lng.toFixed(5)}</a> : '—'}
-                            </td>
                           </tr>
                         ))}
-                        <tr className="jl-avoid" style={{ fontWeight: 700 }}>
-                          <td style={cell} colSpan={3}>{g.tech} final hours · {dayCount(g.items.map((v) => v.day))}</td>
+                        <tr className="jl-avoid" style={{ fontWeight: 700, background: '#FBF6EA' }}>
+                          <td style={cell} colSpan={4}>{g.tech} final hours · {dayCount(g.items.map((v) => v.day))}</td>
                           <td style={cell}>{hrs(r2h(g.items.reduce((t, v) => t + hoursOf(v.ms), 0)))}</td>
-                          <td style={cell} />
                         </tr>
                       </tbody>
                     ))}
                     {visitGroups.length > 1 && (
                       <tbody>
                         <tr className="jl-avoid" style={{ fontWeight: 700 }}>
-                          <td style={cell} colSpan={3}>Overall total worked</td>
-                          <td style={cell}>{hrs(r2h(visits.reduce((t, v) => t + hoursOf(v.ms), 0)))}</td>
-                          <td style={cell} />
+                          <td style={cell} colSpan={4}>Overall total worked</td>
+                          <td style={cell}>{hrs(siteHours)}</td>
                         </tr>
                       </tbody>
                     )}

@@ -88,7 +88,11 @@ function make(tech: string, i: Punch, o: Punch | null, now: Date, timeZone: stri
  */
 export function byTechGroups<T>(items: T[], techOf: (item: T) => string, crew: (string | null | undefined)[] = []): { tech: string; items: T[] }[] {
   const groups = new Map<string, T[]>();
-  for (const item of items) groups.set(techOf(item), [...(groups.get(techOf(item)) ?? []), item]);
+  for (const item of items) {
+    const list = groups.get(techOf(item));
+    if (list) list.push(item);
+    else groups.set(techOf(item), [item]);
+  }
   const rank = (t: string) => { const i = crew.indexOf(t); return i < 0 ? crew.length : i; };
   return [...groups].map(([tech, list]) => ({ tech, items: list })).sort((a, b) => rank(a.tech) - rank(b.tech) || a.tech.localeCompare(b.tech));
 }

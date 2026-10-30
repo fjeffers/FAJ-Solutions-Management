@@ -38,7 +38,7 @@
 // Fred, 2026-10-26: the PDF it saves is named for the site and its dates ("can
 // it be the site number and city"): "LDS-1110 Site 5011876 — Gaffney, SC ·
 // 10-18-2026 – 10-23-2026".
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Download, FileText, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -456,34 +456,35 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                     <thead><tr style={{ background: '#F6F4EF' }}>
                       {['Date', 'In', 'Out', 'Hours', 'Location (GPS)'].map((h) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>)}
                     </tr></thead>
-                    <tbody>
-                      {visitGroups.map((g) => (
-                        <Fragment key={g.tech}>
-                          <tr className="jl-avoid"><td colSpan={5} style={{ ...cell, ...techHead }}>{g.tech}</td></tr>
-                          {g.items.map((v, i) => (
-                            <tr key={i} className="jl-avoid">
-                              <td style={cell}>{fmtDay(v.day)}</td>
-                              <td style={cell}>{fmtTime(v.inAt)}</td>
-                              <td style={cell}>{v.outAt ? fmtTime(v.outAt) : v.open ? 'On site now' : '—'}</td>
-                              <td style={cell}>{hoursText(v.ms)}</td>
-                              <td style={{ ...cell, fontSize: 12 }}>
-                                {v.inGps ? <a href={mapLink(v.inGps.lat, v.inGps.lng)} target="_blank" rel="noopener noreferrer" style={{ color: '#0E1B2E' }}>{v.inGps.lat.toFixed(5)}, {v.inGps.lng.toFixed(5)}</a> : '—'}
-                              </td>
-                            </tr>
-                          ))}
-                          <tr className="jl-avoid" style={{ fontWeight: 700 }}>
-                            <td style={cell} colSpan={3}>{g.tech} total · {dayCount(g.items.map((v) => v.day))}</td>
-                            <td style={cell}>{hoursText(g.items.reduce((t, v) => t + v.ms, 0))}</td>
-                            <td style={cell} />
+                    {/* Each tech's rows in their own body, kept on one page when they fit, so a name never prints alone (Greptile on PR #35). */}
+                    {visitGroups.map((g) => (
+                      <tbody key={g.tech} className="jl-avoid">
+                        <tr className="jl-avoid"><td colSpan={5} style={{ ...cell, ...techHead }}>{g.tech}</td></tr>
+                        {g.items.map((v, i) => (
+                          <tr key={i} className="jl-avoid">
+                            <td style={cell}>{fmtDay(v.day)}</td>
+                            <td style={cell}>{fmtTime(v.inAt)}</td>
+                            <td style={cell}>{v.outAt ? fmtTime(v.outAt) : v.open ? 'On site now' : '—'}</td>
+                            <td style={cell}>{hoursText(v.ms)}</td>
+                            <td style={{ ...cell, fontSize: 12 }}>
+                              {v.inGps ? <a href={mapLink(v.inGps.lat, v.inGps.lng)} target="_blank" rel="noopener noreferrer" style={{ color: '#0E1B2E' }}>{v.inGps.lat.toFixed(5)}, {v.inGps.lng.toFixed(5)}</a> : '—'}
+                            </td>
                           </tr>
-                        </Fragment>
-                      ))}
-                      {visitGroups.length > 1 && (
+                        ))}
+                        <tr className="jl-avoid" style={{ fontWeight: 700 }}>
+                          <td style={cell} colSpan={3}>{g.tech} total · {dayCount(g.items.map((v) => v.day))}</td>
+                          <td style={cell}>{hoursText(g.items.reduce((t, v) => t + v.ms, 0))}</td>
+                          <td style={cell} />
+                        </tr>
+                      </tbody>
+                    ))}
+                    {visitGroups.length > 1 && (
+                      <tbody>
                         <tr className="jl-avoid" style={{ fontWeight: 700 }}>
                           <td style={cell} colSpan={3}>All techs</td><td style={cell}>{hoursText(totals.ms)}</td><td style={cell} />
                         </tr>
-                      )}
-                    </tbody>
+                      </tbody>
+                    )}
                   </table>
                 )}
             </>
@@ -496,24 +497,24 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                 <thead><tr style={{ background: '#F6F4EF' }}>
                   {['Date', 'Odometer start', 'Odometer end', 'Miles'].map((h) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>)}
                 </tr></thead>
-                <tbody>
-                  {mileGroups.map((g) => (
-                    <Fragment key={g.tech}>
-                      <tr className="jl-avoid"><td colSpan={4} style={{ ...cell, ...techHead }}>{g.tech}</td></tr>
-                      {g.items.map(({ r, miles }) => (
-                        <tr key={r.key} className="jl-avoid">
-                          <td style={cell}>{fmtDay(r.day)}</td>
-                          <td style={cell}>{r.values.odoStart != null ? r.values.odoStart.toLocaleString('en-US') : '—'}</td>
-                          <td style={cell}>{r.values.odoEnd != null ? r.values.odoEnd.toLocaleString('en-US') : '—'}</td>
-                          <td style={cell}>{miles.toLocaleString('en-US')}</td>
-                        </tr>
-                      ))}
-                      <tr className="jl-avoid" style={{ fontWeight: 700 }}>
-                        <td style={cell} colSpan={3}>{g.tech} total · {dayCount(g.items.map((m) => m.r.day))}</td>
-                        <td style={cell}>{r1(g.items.reduce((t, m) => t + m.miles, 0)).toLocaleString('en-US')}</td>
+                {mileGroups.map((g) => (
+                  <tbody key={g.tech} className="jl-avoid">
+                    <tr className="jl-avoid"><td colSpan={4} style={{ ...cell, ...techHead }}>{g.tech}</td></tr>
+                    {g.items.map(({ r, miles }) => (
+                      <tr key={r.key} className="jl-avoid">
+                        <td style={cell}>{fmtDay(r.day)}</td>
+                        <td style={cell}>{r.values.odoStart != null ? r.values.odoStart.toLocaleString('en-US') : '—'}</td>
+                        <td style={cell}>{r.values.odoEnd != null ? r.values.odoEnd.toLocaleString('en-US') : '—'}</td>
+                        <td style={cell}>{miles.toLocaleString('en-US')}</td>
                       </tr>
-                    </Fragment>
-                  ))}
+                    ))}
+                    <tr className="jl-avoid" style={{ fontWeight: 700 }}>
+                      <td style={cell} colSpan={3}>{g.tech} total · {dayCount(g.items.map((m) => m.r.day))}</td>
+                      <td style={cell}>{r1(g.items.reduce((t, m) => t + m.miles, 0)).toLocaleString('en-US')}</td>
+                    </tr>
+                  </tbody>
+                ))}
+                <tbody>
                   <tr><td style={{ ...cell, fontWeight: 700 }} colSpan={3}>{mileGroups.length > 1 ? 'All techs' : 'Total'}</td><td style={{ ...cell, fontWeight: 700 }}>{totalMiles.toLocaleString('en-US')}</td></tr>
                 </tbody>
               </table>

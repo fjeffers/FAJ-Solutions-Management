@@ -461,7 +461,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {punches === null ? <div style={{ color: '#5E6470' }}>Loading…</div>
                 : (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    {/* Fred's own sheet, 2026-10-30: Name | date | clock in | clock out | total, one row a day. */}
+                    {/* Fred's own sheet, 2026-10-30: Name | date | clock in | clock out | total. One row each time a tech
+                        clocks in and out, so a day with a break shows both, and the gap between them. */}
                     <thead><tr style={{ background: '#F6F4EF' }}>
                       {['Name', 'Date', 'Clock in', 'Clock out', 'Total'].map((h) => <th key={h} style={{ ...cell, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>)}
                     </tr></thead>

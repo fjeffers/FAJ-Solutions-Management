@@ -63,6 +63,8 @@ describe('the job log in Excel', () => {
     // Six columns at most, so it prints one page wide.
     expect(Math.max(...rows.map((r) => r.length))).toBeLessThanOrEqual(6);
     expect(rows.flat().some((c) => typeof c === 'string' && /billable/i.test(c))).toBe(false);
+    // The time sheet, the one Fred edits; the job log is the page with the pictures (Fred, 2026-10-30).
+    expect(rows[0]).toEqual(['TIME SHEET', 'Whole job']);
   });
 
   it('writes the hours so far of a stretch still on site as a number: the formula would make them 0 (Greptile, CodeRabbit on PR #39)', () => {

@@ -1,5 +1,5 @@
-// The job log as an Excel workbook (Fred, 2026-10-30: edit it "Both" in the app and in Excel), laid out like
-// his own job-log-timesheet.xlsx: the summary at the top, then Time on site, Mileage, Meals, Materials and Other
+// The job log's time sheet as an Excel workbook (Fred, 2026-10-30: edit it "Both" in the app and in Excel; "the
+// one i edit is the time sheet that reflect on the job log"), laid out like his own job-log-timesheet.xlsx: the summary at the top, then Time on site, Mileage, Meals, Materials and Other
 // receipts, each tech's rows and subtotal (the lead tech first), the overall total, and the JOB TOTAL.
 // Hours, miles and the totals are formulas, so a change typed in Excel adds up again: hours = MOD(out − in, 1)
 // × 24 − break, a day's miles = odometer end − start. No billable total ("No, keep it off"), and the JOB TOTAL
@@ -29,7 +29,7 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead): XCell[][] {
   /** The Excel row number the next row gets. */
   const next = () => rows.length + 1;
 
-  rows.push(['JOB LOG', head.range]);
+  rows.push(['TIME SHEET', head.range]);
   rows.push([head.title]);
   for (const l of head.lines) rows.push([l]);
   rows.push([]);

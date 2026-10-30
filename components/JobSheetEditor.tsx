@@ -119,6 +119,8 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
 
   return (
     <div className="no-print">
+      {/* The time sheet: what the office edits, and what the job log shows (Fred, 2026-10-30). */}
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0E1B2E', margin: '18px 0 0' }}>Time sheet</h2>
       <datalist id="job-sheet-crew">{crew.map((t) => <option key={t} value={t} />)}</datalist>
 
       {/* A new clock in, clock out or break: the hours follow them, not the Hours screen's figure any more. */}

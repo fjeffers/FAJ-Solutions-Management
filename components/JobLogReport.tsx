@@ -40,10 +40,11 @@
 // 10-18-2026 – 10-23-2026".
 //
 // Fred, 2026-10-30 ("I need to edit all of it hours time milages materials etc all of it", with his workbook
-// job-log-timesheet.xlsx): Edit job log opens every row of the five tables to change, add or take out; saved,
+// job-log-timesheet.xlsx): Edit time sheet opens every row of the five tables to change, add or take out; saved,
 // the job keeps its own sheet (lib/job-log-sheet.ts) and the log, the print and Excel show that. Excel saves
 // his workbook's layout with the log's rows, the numbers as formulas (lib/job-log-xlsx.ts). No billable
-// total ("No, keep it off").
+// total ("No, keep it off"). The names, Fred, 2026-10-30: "Keep the Name Job Log with the pictures of the
+// receipts, odometer the one i edit is the time sheet that reflect on the job log".
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Download, FileSpreadsheet, FileText, Pencil, Printer, X } from 'lucide-react';
@@ -346,11 +347,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     if (error) { toastError("That didn't save. Check your connection and try again."); return; }
     setSavedSheet(clean);
     setDraft(null);
-    toastSuccess('Job log saved. The print and Excel use your edits.');
+    toastSuccess('Time sheet saved. The job log, its PDF and Excel show it.');
   };
   // Back to what the app has: the clock-ins, the Field Sheet's miles and the approved receipts.
   const startOver = async () => {
-    if (!window.confirm('Go back to what the app has (the clock-ins, the Field Sheet miles and the approved receipts)? Your edits to this job log will be gone.')) return;
+    if (!window.confirm('Go back to what the app has (the clock-ins, the Field Sheet miles and the approved receipts)? Your edits to this time sheet will be gone.')) return;
     setSaving(true);
     const { error } = await queueSave(w.id, () => createClient().from('work_orders').update({ job_log_sheet: null }).eq('id', w.id));
     setSaving(false);
@@ -365,7 +366,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       ...(w.site_name || where ? [`Site: ${[w.site_name, where].filter(Boolean).join(' — ')}`] : []),
       ...(techs.length ? [`Technician${techs.length > 1 ? 's' : ''}: ${techs.join(', ')}`] : []),
     ];
-    downloadJobLogXlsx(`${logName}.xlsx`, shown, { title: w.title || 'Work order', lines, range, crew })
+    downloadJobLogXlsx(`${logName} · Time sheet.xlsx`, shown, { title: w.title || 'Work order', lines, range, crew })
       .catch(() => toastError("The Excel file didn't download. Try again."));
   };
 
@@ -521,14 +522,14 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         {/* Not until the job's days are in: the PDF's name has them (Greptile on PR #21). */}
         {/* While editing, save first: the print and Excel are what's saved. */}
         <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
-        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft} onClick={downloadExcel}><FileSpreadsheet size={16} /> Excel</button>
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
         {draft ? (
           <>
-            <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save job log'}</button>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => setDraft(null)}>Cancel</button>
           </>
         ) : (
-          <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded} onClick={() => setDraft(sheetByTech(sheet, crew))}><Pencil size={16} /> Edit job log</button>
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded} onClick={() => setDraft(sheetByTech(sheet, crew))}><Pencil size={16} /> Edit time sheet</button>
         )}
         <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
           day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />
@@ -544,12 +545,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         </div>
         {draft && (
           <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
-            Editing every day of the job: hours, miles, meals, materials and other receipts. Change any box, add a row or take one out, then <b>Save job log</b>. Only this job log changes: the clock-ins, the Field Sheet and the receipts stay as they are.
+            Editing the time sheet: every day’s hours, miles, meals, materials and other receipts. Change any box, add a row or take one out, then <b>Save time sheet</b>, and the job log shows it. The clock-ins, the Hours screen and the receipts stay as they are.
           </div>
         )}
         {savedSheet && !draft && (
           <div role="status" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
-            <span style={{ flex: '1 1 260px' }}>This job log shows your edits, so a new clock-in, a change on the Hours screen, or a new mile or receipt won’t show here.</span>
+            <span style={{ flex: '1 1 260px' }}>The job log shows your time sheet, so a new clock-in, a change on the Hours screen, or a new mile or receipt won’t show here.</span>
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => void startOver()}>Start over from the app</button>
           </div>
         )}

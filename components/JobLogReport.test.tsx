@@ -765,6 +765,16 @@ describe('Job log edited by the office', () => {
       ['Overall total miles', '18', '', '$12.60'],
     ]);
     expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $12.60Total $597.60');
+    // Under it, the breakdown: each tech's hours, the hours' total, the mileage, the receipts on the copy, and all of it
+    // added up (Fred: "the break down ... then all it all up together for an over all total").
+    expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' }))).toEqual([
+      ['Paul Gibbs hours · 9 × $65.00/hr', '$585.00'],
+      ['Hours total', '$585.00'],
+      ['Paul Gibbs mileage · 18 mi × $0.70/mi', '$12.60'],
+      ['Mileage total', '$12.60'],
+      ['Materials · 1 receipt', '$104.17'],
+    ]);
+    expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$701.77');
     // The hours and miles band stays as it was.
     expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 18');
 
@@ -775,7 +785,8 @@ describe('Job log edited by the office', () => {
     // Back to the tech's copy: none of it.
     fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
     expect(document.title).toBe(techTitle);
-    expect(screen.queryByText(/TOTAL CHARGES|\$585|\$65\.00/)).toBeNull();
+    expect(screen.queryByText(/TOTAL CHARGES|OVERALL TOTAL|\$585|\$65\.00/)).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Breakdown' })).toBeNull();
     expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9']);
   }));
 

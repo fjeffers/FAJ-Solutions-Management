@@ -55,12 +55,13 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
     title: string, columns: string[], list: T[], col: string, fmt: string,
     cells: (r: T, at: number) => XCell[], value: (rows: T[]) => number, subtotal: (tech: string) => string, overall: string,
     priced?: { qty: (r: T) => number | null; rate: (tech: string) => number | null; head: string },
-  ): { total: string; amount: string | null } => {
+  ): { total: string; amount: string | null; amountByTech: Map<string, string> } => {
     rows.push([]);
     rows.push([title]);
     rows.push(priced ? [...columns, priced.head, 'AMOUNT'] : columns);
     const subs: string[] = [];
     const amountSubs: string[] = [];
+    const amountByTech = new Map<string, string>();
     // The rate and amount columns, after the one added up.
     const rateCol = String.fromCharCode(col.charCodeAt(0) + 1), amountCol = String.fromCharCode(col.charCodeAt(0) + 2);
     let amountTotal = 0;
@@ -90,6 +91,7 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
         techAmount = Math.round(techAmount * 100 + 1e-9) / 100;
         sub.push(null, rate == null ? { t: 's', v: '', f } : num(techAmount, USD, f));
         amountSubs.push(`${amountCol}${at}`);
+        amountByTech.set(g.tech, `${amountCol}${at}`);
         amountTotal += techAmount;
       }
       rows.push(sub);
@@ -99,7 +101,7 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
     const total: XCell[] = [overall, ...Array(pad - 1).fill(null), num(value(list), fmt, subs.length ? subs.join('+') : '0')];
     if (priced) total.push(null, num(Math.round(amountTotal * 100 + 1e-9) / 100, USD, amountSubs.length ? `SUM(${amountSubs.join(',')})` : '0'));
     rows.push(total);
-    return { total: `${col}${at}`, amount: priced ? `${amountCol}${at}` : null };
+    return { total: `${col}${at}`, amount: priced ? `${amountCol}${at}` : null, amountByTech };
   };
   const rateOf = (k: 'hour' | 'mile') => (tech: string) => rates?.[tech]?.[k] ?? null;
 
@@ -142,15 +144,32 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
   rows.push(['JOB TOTAL', num(h, `${HRS}" hours"`, hours.total), num(mi, `${MILES}" miles"`, miles.total)]);
 
   if (rates && hours.amount && miles.amount) {
-    // The client's copy: the hours' and the miles' dollars, as their overall amounts above, and the two added up.
-    const amountOf = (cell: string) => rows[Number(cell.slice(1)) - 1][cell.charCodeAt(0) - 65] as { v: number };
-    const labor = amountOf(hours.amount).v, mileage = amountOf(miles.amount).v;
+    // The client's copy: each tech's hours' dollars and their total, each tech's mileage's and its total, the two
+    // (TOTAL CHARGES, as the PDF's band), then the receipts' totals and all of it added up (Fred, 2026-10-30: "the break
+    // down total paul hours total kendal hours ... milage paul ... same with kendal ... then OVERALL TOTAL"). Each is
+    // the cell it comes from above.
+    const valueOf = (cell: string) => (rows[Number(cell.slice(1)) - 1][cell.charCodeAt(0) - 65] as { v: number | '' }).v;
+    const dollars = (cell: string) => { const v = valueOf(cell); return typeof v === 'number' ? v : 0; };
+    const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
     rows.push([]);
+    // The amounts in the third column, so a tech's whole name shows before them.
     rows.push(['CHARGES']);
-    const first = next();
-    rows.push(['Hours', num(labor, USD, hours.amount)]);
-    rows.push(['Mileage', num(mileage, USD, miles.amount)]);
-    rows.push(['TOTAL CHARGES', num(Math.round((labor + mileage) * 100 + 1e-9) / 100, USD, `B${first}+B${first + 1}`)]);
+    for (const [tech, cell] of hours.amountByTech) if (rates[tech]?.hour != null) rows.push([`${tech} hours`, null, num(dollars(cell), USD, cell)]);
+    const labor = dollars(hours.amount), mileage = dollars(miles.amount);
+    const hoursAt = next();
+    rows.push(['Hours total', null, num(labor, USD, hours.amount)]);
+    for (const [tech, cell] of miles.amountByTech) if (rates[tech]?.mile != null) rows.push([`${tech} mileage`, null, num(dollars(cell), USD, cell)]);
+    const milesAt = next();
+    rows.push(['Mileage total', null, num(mileage, USD, miles.amount)]);
+    const chargesAt = next();
+    rows.push(['TOTAL CHARGES', null, num(r2(labor + mileage), USD, `C${hoursAt}+C${milesAt}`)]);
+    const receipts: [string, number, string][] = [
+      ['Meals', moneyTotal(sheet.meals), meals], ['Materials', moneyTotal(sheet.materials), materials], ['Other receipts', moneyTotal(sheet.other), other],
+    ];
+    const receiptsAt = next();
+    for (const [what, v, cell] of receipts) rows.push([what, null, num(v, USD, cell)]);
+    rows.push(['OVERALL TOTAL', null, num(r2(labor + mileage + receipts.reduce((t, [, v]) => t + v, 0)), USD,
+      `C${chargesAt}+${receipts.map((_, i) => `C${receiptsAt + i}`).join('+')}`)]);
   }
   return rows;
 }

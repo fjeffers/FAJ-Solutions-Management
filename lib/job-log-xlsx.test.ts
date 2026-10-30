@@ -102,12 +102,21 @@ describe('the job log in Excel', () => {
     expect(client[m + 2].slice(5)).toEqual([{ t: 'n', v: 0.7, z: '$#,##0.00##' }, { t: 'n', v: 5.6, z: '$#,##0.00', f: `IF(F${m + 3}="","",ROUND(E${m + 3}*F${m + 3},2))` }]);
     const miles = find(client, 'Overall total miles');
     expect(client[miles].slice(5)).toEqual([null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `SUM(G${find(client, 'Paul Gibbs total miles') + 1})` }]);
-    // At the end: the hours' and the miles' dollars, and the two added up.
+    // At the end: Paul's hours' dollars, the hours' and the miles' (TOTAL CHARGES), the receipts', and all of it added up
+    // (Fred: "the break down total paul hours total kendal hours ... then all it all up together for an over all total").
     const c = find(client, 'CHARGES');
     expect(c).toBeGreaterThan(find(client, 'JOB TOTAL'));
-    expect(client[c + 1]).toEqual(['Hours', { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${worked + 1}` }]);
-    expect(client[c + 2]).toEqual(['Mileage', { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${miles + 1}` }]);
-    expect(client[c + 3]).toEqual(['TOTAL CHARGES', { t: 'n', v: 1431.17, z: '$#,##0.00', f: `B${c + 2}+B${c + 3}` }]);
+    expect(client.slice(c + 1, c + 11)).toEqual([
+      ['Paul Gibbs hours', null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${paul + 1}` }],
+      ['Hours total', null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${worked + 1}` }],
+      ['Paul Gibbs mileage', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Paul Gibbs total miles') + 1}` }],
+      ['Mileage total', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${miles + 1}` }],
+      ['TOTAL CHARGES', null, { t: 'n', v: 1431.17, z: '$#,##0.00', f: `C${c + 3}+C${c + 5}` }],
+      ['Meals', null, { t: 'n', v: 0, z: '$#,##0.00', f: `D${find(client, 'Overall total meals') + 1}` }],
+      ['Materials', null, { t: 'n', v: 47.48, z: '$#,##0.00', f: `D${find(client, 'Overall total materials') + 1}` }],
+      ['Other receipts', null, { t: 'n', v: 350.74, z: '$#,##0.00', f: `E${find(client, 'Overall total other receipts') + 1}` }],
+      ['OVERALL TOTAL', null, { t: 'n', v: 1829.39, z: '$#,##0.00', f: `C${c + 6}+C${c + 7}+C${c + 8}+C${c + 9}` }],
+    ]);
     expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(8);
   });
 

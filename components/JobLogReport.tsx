@@ -456,6 +456,50 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   ));
 
   /**
+   * The client's copy, under TOTAL CHARGES: each tech's hours and their dollars, the hours' total, the mileage, then
+   * each tech's mileage and the mileage's total, then the receipts' totals as the copy shows them, and all of it added
+   * up (Fred, 2026-10-30: "the break down total paul hours total kendal hours and then amount ... then all it all up
+   * together for an over all total"; "milage paul mailge + rate same with kendal then the total amount the Meals,
+   * Materials and Other receipts ... then OVERALL TOTAL").
+   */
+  const breakdown = () => {
+    const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
+    const receiptLines = [
+      ...(inc.meals && mealReceipts.length > 0 ? [{ what: `Meals · ${receiptCount(mealReceipts.length)}`, amount: moneyTotal(mealReceipts) }] : []),
+      ...(inc.materials && materialReceipts.length > 0 ? [{ what: `Materials · ${receiptCount(materialReceipts.length)}`, amount: moneyTotal(materialReceipts) }] : []),
+      ...(inc.otherReceipts && otherReceipts.length > 0 ? [{ what: `Other receipts · ${receiptCount(otherReceipts.length)}`, amount: moneyTotal(otherReceipts) }] : []),
+    ];
+    const lines = [
+      // A tech's line when they've hours (or miles) to charge for: no "0 mi × $0.60 = $0.00".
+      ...charges.filter((c) => c.hourRate != null && c.hours > 0).map((c) => ({ what: `${c.tech} hours · ${hrs(c.hours)} × ${rateText(c.hourRate!)}/hr`, amount: c.labor ?? 0, bold: false })),
+      { what: 'Hours total', amount: sumOf('labor'), bold: true },
+      ...charges.filter((c) => c.mileRate != null && c.miles > 0).map((c) => ({ what: `${c.tech} mileage · ${c.miles.toLocaleString('en-US')} mi × ${rateText(c.mileRate!)}/mi`, amount: c.mileage ?? 0, bold: false })),
+      ...(charges.some((c) => c.mileRate != null) ? [{ what: 'Mileage total', amount: sumOf('mileage'), bold: true }] : []),
+      ...receiptLines.map((l) => ({ ...l, bold: false })),
+    ];
+    const overall = r2(chargesTotal(charges) + receiptLines.reduce((t, l) => t + l.amount, 0));
+    return (
+      <div className="jl-sec jl-avoid">
+        <H>Breakdown</H>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={i} className="jl-avoid" style={l.bold ? techTotal : undefined}>
+                <td style={cell}>{l.what}</td>
+                <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMoney(l.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="jl-band jl-avoid" style={{ marginTop: 10, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', justifyContent: 'space-between', fontSize: 14 }}>
+          <b style={{ color: '#E3C987', letterSpacing: 1 }}>OVERALL TOTAL</b>
+          <b>{fmtMoney(overall)}</b>
+        </div>
+      </div>
+    );
+  };
+
+  /**
    * A table of receipts like the hours: each tech's receipts (name and date on every row), the tech's
    * total, then the overall total. `forCol`: a "For" column with what the tech said the receipt was for.
    */
@@ -854,6 +898,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                   <span>Total <b>{fmtMoney(chargesTotal(charges))}</b></span>
                 </div>
               )}
+              {withRates && breakdown()}
             </>
           )}
 

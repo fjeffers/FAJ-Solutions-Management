@@ -1,7 +1,7 @@
 // The job log's invoice in the client's own layout (Fred, 2026-10-30: "this how the client want the layout to look",
 // "mirror it exactly").
 import { describe, it, expect } from 'vitest';
-import { buildInvoice, dueDate, invoiceCells, parseInvoiceMeta, type InvoiceHead } from './job-log-invoice';
+import { addLine, buildInvoice, dueDate, editLine, invoiceCells, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceLine } from './job-log-invoice';
 import type { JobSheet } from './job-log-sheet';
 import type { XCell } from './job-log-xlsx';
 
@@ -30,34 +30,87 @@ const crew = ['Paul Gibbs', 'Raja'];
 const rates = { 'Paul Gibbs': { hour: 50, mile: 0.6 }, Raja: { hour: 50, mile: 0.6 } };
 const meta = { labor: 'Installation of Cabling for refresh project', meal: 50 };
 const inv = buildInvoice(sheet, rates, crew, meta, 'Goldsboro NC');
+/** A line as it reads on the invoice, without what editing it needs. */
+const read = (lines: InvoiceLine[]) => lines.map(({ date, item, description, qty, rate, amount }) => ({ date, item, description, qty, rate, amount }));
 
 describe('the invoice', () => {
   it('has the lead then the helper, each with their hours, meals, mileage and hotel, as the client lays it out', () => {
     expect(inv.techs.map((t) => [t.role, t.tech])).toEqual([['Lead', 'Paul Gibbs'], ['Helper', 'Raja']]);
     const paul = inv.techs[0];
     expect(paul.hours).toMatchObject({ title: 'Total Hours', qty: 12.64, rate: 50, amount: 632 });
-    expect(paul.hours.lines).toEqual([
+    expect(read(paul.hours.lines)).toEqual([
       { date: '2026-10-19', item: 'Labor', description: 'Installation of Cabling for refresh project', qty: 6.32, rate: 50, amount: 316 },
       { date: '2026-10-20', item: 'Labor', description: 'Installation of Cabling for refresh project', qty: 6.32, rate: 50, amount: 316 },
     ]);
     // A meal a day worked, up to the $50 allowance: $58.97 of receipts on the 19th is $50; nothing on the 20th.
-    expect(paul.meals).toEqual({ title: 'Total Meal Allowance', amount: 50, lines: [
+    expect({ ...paul.meals, lines: read(paul.meals.lines) }).toEqual({ title: 'Total Meal Allowance', amount: 50, lines: [
       { date: '2026-10-19', item: 'Meal', description: 'Meal allowance up to $50.00 with Receipts', qty: 1, rate: 50, amount: 50 },
       { date: '2026-10-20', item: 'Meal', description: 'Meal allowance up to $50.00 with Receipts', qty: null, rate: null, amount: 0 },
     ] });
     // The drive there the day before, the days on site, and the drive home on the last day.
-    expect(paul.mileage).toEqual({ title: 'Total Milage', amount: 573.6, lines: [
+    expect({ ...paul.mileage, lines: read(paul.mileage.lines) }).toEqual({ title: 'Total Milage', amount: 573.6, lines: [
       { date: '2026-10-18', item: 'Mileage', description: 'Mileage from Home to Goldsboro NC', qty: 478, rate: 0.6, amount: 286.8 },
       { date: '2026-10-19', item: 'Mileage', description: '', qty: null, rate: 0.6, amount: 0 },
       { date: '2026-10-20', item: 'Mileage', description: 'Mileage from Goldsboro NC to Home', qty: 478, rate: 0.6, amount: 286.8 },
     ] });
     // The hotel only: no fuel, no materials, as theirs.
-    expect(paul.travel).toEqual({ title: 'Total Travel', amount: 402.5, lines: [
+    expect({ ...paul.travel, lines: read(paul.travel.lines) }).toEqual({ title: 'Total Travel', amount: 402.5, lines: [
       { date: '2026-10-20', item: 'Hotel', description: 'Hotel charge for the week', qty: 1, rate: 402.5, amount: 402.5 },
     ] });
     expect(paul.total).toBe(1658.1);
-    expect(inv.techs[1]).toMatchObject({ total: 328.54, mileage: { amount: 0 }, travel: { amount: 0, lines: [] } });
-    expect(inv.totals).toEqual({ labor: 948, mileage: 573.6, meals: 62.54, travel: 402.5, total: 1986.64 });
+    // Raja has the lead's drives there and home and his hotel, as the client's helper has (Fred: "everything the lead
+    // has the helpers has also"); his own hours and meals.
+    const raja = inv.techs[1];
+    expect(read(raja.mileage.lines).map((l) => [l.date, l.description, l.qty, l.amount])).toEqual([
+      ['2026-10-18', 'Mileage from Home to Goldsboro NC', 478, 286.8], ['2026-10-19', '', null, 0], ['2026-10-20', 'Mileage from Goldsboro NC to Home', 478, 286.8],
+    ]);
+    expect(raja).toMatchObject({ meals: { amount: 12.54 }, mileage: { amount: 573.6 }, travel: { amount: 402.5 }, total: 1304.64 });
+    expect(inv.totals).toEqual({ labor: 948, mileage: 1147.2, meals: 62.54, travel: 805, total: 2962.74 });
+  });
+
+  it('keeps a helper\'s own drives and hotel when they have them', () => {
+    const own = buildInvoice({ ...sheet, miles: [...sheet.miles, { tech: 'Raja', day: '2026-10-19', start: null, end: null, miles: 30 }],
+      other: [...sheet.other, { tech: 'Raja', day: '2026-10-19', store: 'Motel 6', amount: 99, for: 'Hotel' }] }, rates, crew, meta, 'Goldsboro NC');
+    expect(own.techs[1]).toMatchObject({ mileage: { amount: 18 }, travel: { amount: 99 } });
+  });
+
+  it('keeps a stretch still on site\'s hours when only its date changes (Greptile on PR #44)', () => {
+    const open = { ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '08:00', out: '', brk: 0, open: true, ms: 3 * 3_600_000 }] };
+    const line = buildInvoice(open, rates, crew, meta, '').techs[0].hours.lines[0];
+    expect(line.qty).toBe(3);
+    const moved = editLine(open, line, { day: '2026-10-20' });
+    expect(moved.time[0]).toEqual({ tech: 'Paul Gibbs', day: '2026-10-20', in: '08:00', out: '', brk: 0, hours: 3 });
+    expect(buildInvoice(moved, rates, crew, meta, '').techs[0].hours.lines[0].qty).toBe(3);
+  });
+
+  it('gives a helper the lead\'s drives only, never another helper\'s, when the lead has none in the dates (Greptile on PR #44)', () => {
+    const helpers: JobSheet = { time: [{ tech: 'Raja', day: '2026-10-19', in: '', out: '', brk: 0, hours: 5 }, { tech: 'Kendell', day: '2026-10-19', in: '', out: '', brk: 0, hours: 5 }],
+      miles: [{ tech: 'Raja', day: '2026-10-19', start: null, end: null, miles: 40 }], meals: [], materials: [], other: [] };
+    const both = buildInvoice(helpers, { ...rates, Kendell: { hour: 50, mile: 0.6 } }, crew, meta, '');
+    expect(both.techs.map((t) => [t.role, t.tech, t.mileage.amount])).toEqual([['Helper', 'Raja', 24], ['Helper', 'Kendell', 0]]);
+  });
+
+  it('changes the time sheet under the line edited, added or taken off', () => {
+    const [paul, raja] = inv.techs;
+    // A day's hours: the break still comes off them, so the line reads what's typed.
+    const withBreak = { ...sheet, time: sheet.time.map((r) => (r.tech === 'Paul Gibbs' && r.day === '2026-10-19' ? { ...r, brk: 0.5 } : r)) };
+    const hours = editLine(withBreak, buildInvoice(withBreak, rates, crew, meta, '').techs[0].hours.lines[0], { qty: 8 });
+    expect(hours.time.find((r) => r.tech === 'Paul Gibbs' && r.day === '2026-10-19')).toMatchObject({ hours: 8.5, brk: 0.5 });
+    expect(buildInvoice(hours, rates, crew, meta, '').techs[0].hours.lines[0]).toMatchObject({ qty: 8, amount: 400 });
+    const moved = editLine(sheet, paul.hours.lines[0], { day: '2026-10-21' });
+    expect(buildInvoice(moved, rates, crew, meta, '').techs[0].hours.lines.map((l) => l.date)).toEqual(['2026-10-20', '2026-10-21']);
+    // A day's meals as one amount: Paul's two receipts on the 19th become $45.
+    const meals = editLine(sheet, paul.meals.lines[0], { amount: 45 });
+    expect(meals.meals.filter((r) => r.tech === 'Paul Gibbs')).toEqual([{ tech: 'Paul Gibbs', day: '2026-10-19', store: 'Waffle House, Subway', amount: 45 }]);
+    // Raja's miles are the lead's: changing them changes Paul's drive.
+    const miles = editLine(sheet, raja.mileage.lines[0], { qty: 500 });
+    expect(miles.miles.find((r) => r.day === '2026-10-18')).toMatchObject({ tech: 'Paul Gibbs', miles: 500 });
+    // The hotel's amount; a hotel taken off; a day added to fill in.
+    expect(editLine(sheet, paul.travel.lines[0], { amount: 410 }).other.find((r) => r.store === 'Quality Inn')!.amount).toBe(410);
+    expect(removeLine(sheet, paul.travel.lines[0]).other.map((r) => r.store)).toEqual(['Circle K']);
+    expect(removeLine(sheet, paul.mileage.lines[2]).miles.map((r) => r.day)).toEqual(['2026-10-18']);
+    const added = addLine(sheet, 'Raja', 'Labor', '2026-10-20');
+    expect(buildInvoice(added, rates, crew, meta, '').techs[1].hours.lines.map((l) => [l.date, l.qty])).toEqual([['2026-10-19', 6.32], ['2026-10-20', 0]]);
   });
 
   it("charges the hours and miles of a tech with no rate as nothing, with the lines left blank", () => {
@@ -109,10 +162,10 @@ describe('the invoice in Excel', () => {
     expect(rows[miles]).toMatchObject([expect.anything(), 'Mileage', 'Mileage from Home to Goldsboro NC', null, { v: 478 }, { v: 0.6 }, { v: 286.8 }]);
     expect(cell(at('Lead Total'), 6)).toMatchObject({ v: 1658.1, f: `G${paul}+G${meals}+G${miles}+G${travel}` });
     // Raja's hours with no rate would be blank; his are $50, his total next.
-    expect(cell(at('Helper Total'), 6)).toMatchObject({ v: 328.54 });
+    expect(cell(at('Helper Total'), 6)).toMatchObject({ v: 1304.64 });
     const labor = at('Labor', 4);
     expect(rows.slice(labor - 1).map((r) => [r[4], (r[6] as { v: number }).v])).toEqual([
-      ['Labor', 948], ['Mileage', 573.6], ['Meals', 62.54], ['Travel', 402.5], ['Total Invoice', 1986.64],
+      ['Labor', 948], ['Mileage', 1147.2], ['Meals', 62.54], ['Travel', 805], ['Total Invoice', 2962.74],
     ]);
     // Labor is each tech's Total Hours.
     const hoursRows = rows.flatMap((r, i) => (r[3] === 'Total Hours' ? [i + 1] : []));

@@ -715,6 +715,7 @@ describe('Job log edited by the office', () => {
       { title: 'Gaffney', lines: ['Client: LDS · Client WO #: LDS-1110 · FAJ WO #: 19101401', 'Site: LDS Site 5011876 — Gaffney, SC', 'Technician: Paul Gibbs'], range: 'Whole job', crew: ['Paul Gibbs'] },
       // The tech's copy: no rates.
       undefined,
+      { meals: true, materials: true, other: true },
     );
   });
 
@@ -765,17 +766,34 @@ describe('Job log edited by the office', () => {
       ['Overall total miles', '18', '', '$12.60'],
     ]);
     expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $12.60Total $597.60');
+    // Under it, the breakdown: each tech's hours, the hours' total, the mileage, the receipts on the copy, and all of it
+    // added up (Fred: "the break down ... then all it all up together for an over all total").
+    expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' }))).toEqual([
+      ['Paul Gibbs hours · 9 × $65.00/hr', '$585.00'],
+      ['Hours total', '$585.00'],
+      ['Paul Gibbs mileage · 18 mi × $0.70/mi', '$12.60'],
+      ['Mileage total', '$12.60'],
+      ['Materials · 1 receipt', '$104.17'],
+    ]);
+    expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$701.77');
     // The hours and miles band stays as it was.
     expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 18');
 
     fireEvent.click(screen.getByRole('button', { name: /excel/i }));
     expect(downloadJobLogXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Client time sheet\.xlsx$/), expect.anything(), expect.anything(),
-      { 'Paul Gibbs': { hour: 65, mile: 0.7 } });
+      { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, { meals: true, materials: true, other: true });
+    // A receipt section taken off the log is off the Excel's charges too, as in the PDF (CodeRabbit on PR #41).
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Materials' }));
+    expect(screen.queryByText('Materials · 1 receipt')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /excel/i }));
+    expect(vi.mocked(downloadJobLogXlsx).mock.calls.at(-1)![4]).toEqual({ meals: true, materials: false, other: true });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Materials' }));
 
     // Back to the tech's copy: none of it.
     fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
     expect(document.title).toBe(techTitle);
-    expect(screen.queryByText(/TOTAL CHARGES|\$585|\$65\.00/)).toBeNull();
+    expect(screen.queryByText(/TOTAL CHARGES|OVERALL TOTAL|\$585|\$65\.00/)).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Breakdown' })).toBeNull();
     expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9']);
   }));
 
@@ -824,6 +842,31 @@ describe('Job log edited by the office', () => {
       expect(rowsOf(screen.getByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,218', '18', '$0.725/mi', '$13.05']);
       expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $585.00Mileage $13.05Total $598.05');
     } finally {
+      delete tables.job_log_rates;
+    }
+  }));
+
+  it('puts the hotels on their own line in the breakdown (Fred: "see it hotels also")', () => withPunches(async () => {
+    const before = tables.job_expenses;
+    tables.job_expenses = [...before,
+      { id: 'h1', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 350.74, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/hotel.jpg' },
+      { id: 'f1', contractor_name: 'Paul Gibbs', category: 'fuel', vendor: 'Circle K', amount: 40, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/fuel.jpg' }];
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Breakdown' })).toBeTruthy());
+      expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' })).slice(-3)).toEqual([
+        ['Materials · 1 receipt', '$104.17'],
+        ['Hotels · 1 receipt', '$350.74'],
+        ['Other receipts · 1 receipt', '$40.00'],
+      ]);
+      // $585 + $12.60 + $104.17 + $350.74 + $40.
+      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,092.51');
+    } finally {
+      tables.job_expenses = before;
       delete tables.job_log_rates;
     }
   }));

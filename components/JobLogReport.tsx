@@ -57,7 +57,7 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  hoursScreenDays, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
@@ -435,7 +435,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       ...(techs.length ? [`Technician${techs.length > 1 ? 's' : ''}: ${techs.join(', ')}`] : []),
     ];
     downloadJobLogXlsx(copy === 'client' ? `${logName} · Client time sheet.xlsx` : `${logName} · Time sheet.xlsx`,
-      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? savedRates : undefined)
+      shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? savedRates : undefined,
+      // The receipts the log shows are the ones its breakdown charges, in Excel as in the PDF (CodeRabbit on PR #41).
+      { meals: inc.meals, materials: inc.materials, other: inc.otherReceipts })
       .catch(() => toastError("The Excel file didn't download. Try again."));
   };
 
@@ -454,6 +456,53 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const noneLine = (techs: string[], what: string) => techs.map((t) => (
     <div key={t} className="jl-avoid" style={{ color: '#5E6470', fontSize: 12, marginTop: 6 }}>{t}: no {what} {from || to ? 'in these dates' : 'on this job'}.</div>
   ));
+
+  /**
+   * The client's copy, under TOTAL CHARGES: each tech's hours and their dollars, the hours' total, the mileage, then
+   * each tech's mileage and the mileage's total, then the receipts' totals as the copy shows them, and all of it added
+   * up (Fred, 2026-10-30: "the break down total paul hours total kendal hours and then amount ... then all it all up
+   * together for an over all total"; "milage paul mailge + rate same with kendal then the total amount the Meals,
+   * Materials and Other receipts ... then OVERALL TOTAL").
+   */
+  const breakdown = () => {
+    const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
+    const hotels = otherReceipts.filter(isHotel), restOther = otherReceipts.filter((r) => !isHotel(r));
+    const receiptLines = [
+      ...(inc.meals && mealReceipts.length > 0 ? [{ what: `Meals · ${receiptCount(mealReceipts.length)}`, amount: moneyTotal(mealReceipts) }] : []),
+      ...(inc.materials && materialReceipts.length > 0 ? [{ what: `Materials · ${receiptCount(materialReceipts.length)}`, amount: moneyTotal(materialReceipts) }] : []),
+      // The hotels on their own line, then the rest of the other receipts (Fred, 2026-10-30: "see it hotels also").
+      ...(inc.otherReceipts && hotels.length > 0 ? [{ what: `Hotels · ${receiptCount(hotels.length)}`, amount: moneyTotal(hotels) }] : []),
+      ...(inc.otherReceipts && restOther.length > 0 ? [{ what: `Other receipts · ${receiptCount(restOther.length)}`, amount: moneyTotal(restOther) }] : []),
+    ];
+    const lines = [
+      // A tech's line when they've hours (or miles) to charge for: no "0 mi × $0.60 = $0.00".
+      ...charges.filter((c) => c.hourRate != null && c.hours > 0).map((c) => ({ what: `${c.tech} hours · ${hrs(c.hours)} × ${rateText(c.hourRate!)}/hr`, amount: c.labor ?? 0, bold: false })),
+      { what: 'Hours total', amount: sumOf('labor'), bold: true },
+      ...charges.filter((c) => c.mileRate != null && c.miles > 0).map((c) => ({ what: `${c.tech} mileage · ${c.miles.toLocaleString('en-US')} mi × ${rateText(c.mileRate!)}/mi`, amount: c.mileage ?? 0, bold: false })),
+      ...(charges.some((c) => c.mileRate != null) ? [{ what: 'Mileage total', amount: sumOf('mileage'), bold: true }] : []),
+      ...receiptLines.map((l) => ({ ...l, bold: false })),
+    ];
+    const overall = r2(chargesTotal(charges) + receiptLines.reduce((t, l) => t + l.amount, 0));
+    return (
+      <div className="jl-sec jl-avoid">
+        <H>Breakdown</H>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={i} className="jl-avoid" style={l.bold ? techTotal : undefined}>
+                <td style={cell}>{l.what}</td>
+                <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMoney(l.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="jl-band jl-avoid" style={{ marginTop: 10, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', justifyContent: 'space-between', fontSize: 14 }}>
+          <b style={{ color: '#E3C987', letterSpacing: 1 }}>OVERALL TOTAL</b>
+          <b>{fmtMoney(overall)}</b>
+        </div>
+      </div>
+    );
+  };
 
   /**
    * A table of receipts like the hours: each tech's receipts (name and date on every row), the tech's
@@ -854,6 +903,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                   <span>Total <b>{fmtMoney(chargesTotal(charges))}</b></span>
                 </div>
               )}
+              {withRates && breakdown()}
             </>
           )}
 

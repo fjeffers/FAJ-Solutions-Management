@@ -2,7 +2,7 @@
 // materials etc all of it"), with the Gaffney job's own numbers (WO 19101401).
 import { describe, it, expect } from 'vitest';
 import {
-  clockOf, hoursScreenDays, hoursTotal, milesFromOdometer, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours,
+  clockOf, hoursScreenDays, hoursTotal, isHotel, milesFromOdometer, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours,
   sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetToSave, type JobSheet, type TimeRow,
 } from './job-log-sheet';
 import type { Visit } from './job-log';
@@ -223,5 +223,21 @@ describe('the Hours screen on the job log', () => {
       ['Paul Gibbs', '2026-10-20', '', '', 6],
       ['Paul Gibbs', '2026-10-24', '', '', 6],
     ]);
+  });
+});
+
+describe('a hotel among the other receipts', () => {
+  it('is one whose For says Lodging, hotel or motel (Fred: "see it hotels also")', () => {
+    const r = (f: string) => ({ tech: 'Paul Gibbs', day: '2026-10-18', store: 'Quality Inn', amount: 350.74, for: f });
+    expect(isHotel(r('Lodging'))).toBe(true);
+    expect(isHotel(r('Lodging · 2 nights'))).toBe(true);
+    expect(isHotel(r('Hotel'))).toBe(true);
+    expect(isHotel(r('motel for the crew'))).toBe(true);
+    expect(isHotel(r('Fuel'))).toBe(false);
+    expect(isHotel(r('Tolls & parking'))).toBe(false);
+    // The tech's note doesn't make it a hotel: only the category does.
+    expect(isHotel(r('Tolls & parking · parking at the hotel'))).toBe(false);
+    expect(isHotel(r('Fuel · motel gas station'))).toBe(false);
+    expect(isHotel({ tech: 'Paul Gibbs', day: '2026-10-18', store: 'Holiday Inn', amount: 10 })).toBe(false);
   });
 });

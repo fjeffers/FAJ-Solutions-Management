@@ -251,7 +251,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const visitGroups = byTechGroups(visits, (v) => v.tech, crew);
   const mileGroups = byTechGroups(mileage, (m) => m.r.tech, crew);
   const r1 = (n: number) => Math.round(n * 10) / 10;
+  const r2h = (n: number) => Math.round(n * 100) / 100;
   const dayCount = (days: string[]) => { const n = new Set(days).size; return `${n} day${n === 1 ? '' : 's'}`; };
+  // The hours on site as a number, no money (Fred, 2026-10-29: "Paul 10/23 8am to 5pm total 9 ... Final
+  // Hours 19 hours ... Overall total worked 36"; "Don't show the money all we want to see is how much was on site").
+  const hoursOf = (ms: number) => Math.round(ms / 36_000) / 100;
+  const hrs = (h: number) => h.toLocaleString('en-US', { maximumFractionDigits: 2 });
   // Only a finished job has a "Not completed": on a job still going, it's just work still to do.
   const job = useMemo(() => wfJobFromOwner(w), [w]);
   // Waits for the photos to load, so it never says "No photos" too soon.
@@ -465,15 +470,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                             <td style={cell}>{fmtDay(v.day)}</td>
                             <td style={cell}>{fmtTime(v.inAt)}</td>
                             <td style={cell}>{v.outAt ? fmtTime(v.outAt) : v.open ? 'On site now' : '—'}</td>
-                            <td style={cell}>{hoursText(v.ms)}</td>
+                            <td style={cell}>{hrs(hoursOf(v.ms))}</td>
                             <td style={{ ...cell, fontSize: 12 }}>
                               {v.inGps ? <a href={mapLink(v.inGps.lat, v.inGps.lng)} target="_blank" rel="noopener noreferrer" style={{ color: '#0E1B2E' }}>{v.inGps.lat.toFixed(5)}, {v.inGps.lng.toFixed(5)}</a> : '—'}
                             </td>
                           </tr>
                         ))}
                         <tr className="jl-avoid" style={{ fontWeight: 700 }}>
-                          <td style={cell} colSpan={3}>{g.tech} total · {dayCount(g.items.map((v) => v.day))}</td>
-                          <td style={cell}>{hoursText(g.items.reduce((t, v) => t + v.ms, 0))}</td>
+                          <td style={cell} colSpan={3}>{g.tech} final hours · {dayCount(g.items.map((v) => v.day))}</td>
+                          <td style={cell}>{hrs(r2h(g.items.reduce((t, v) => t + hoursOf(v.ms), 0)))}</td>
                           <td style={cell} />
                         </tr>
                       </tbody>
@@ -481,7 +486,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                     {visitGroups.length > 1 && (
                       <tbody>
                         <tr className="jl-avoid" style={{ fontWeight: 700 }}>
-                          <td style={cell} colSpan={3}>All techs</td><td style={cell}>{hoursText(totals.ms)}</td><td style={cell} />
+                          <td style={cell} colSpan={3}>Overall total worked</td>
+                          <td style={cell}>{hrs(r2h(visits.reduce((t, v) => t + hoursOf(v.ms), 0)))}</td>
+                          <td style={cell} />
                         </tr>
                       </tbody>
                     )}

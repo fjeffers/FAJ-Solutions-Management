@@ -296,18 +296,21 @@ describe('Job log, each tech on their own', () => {
         expect(next!.querySelectorAll('tbody tr').length).toBeGreaterThan(1);
         return next as HTMLElement;
       });
+      // Fred, 2026-10-29: "Paul 10/23 8am to 5pm total 9 ... Final Hours 19 hours ... Overall total worked 36",
+      // and "Don't show the money all we want to see is how much was on site".
       const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent).slice(0, 4));
       expect(rows).toEqual([
         ['Paul Gibbs'],
-        ['Mon, Oct 19, 2026', '7:37 AM', '5:37 PM', '10h 00m'],
-        ['Tue, Oct 20, 2026', '7:50 AM', '12:20 PM', '4h 30m'],
-        ['Paul Gibbs total · 2 days', '14h 30m', ''],
+        ['Mon, Oct 19, 2026', '7:37 AM', '5:37 PM', '10'],
+        ['Tue, Oct 20, 2026', '7:50 AM', '12:20 PM', '4.5'],
+        ['Paul Gibbs final hours · 2 days', '14.5', ''],
         ['Kendell Newbold'],
-        ['Mon, Oct 19, 2026', '7:37 AM', '5:37 PM', '10h 00m'],
-        ['Tue, Oct 20, 2026', '7:50 AM', '6:09 PM', '10h 19m'],
-        ['Kendell Newbold total · 2 days', '20h 19m', ''],
-        ['All techs', '34h 49m', ''],
+        ['Mon, Oct 19, 2026', '7:37 AM', '5:37 PM', '10'],
+        ['Tue, Oct 20, 2026', '7:50 AM', '6:09 PM', '10.32'],
+        ['Kendell Newbold final hours · 2 days', '20.32', ''],
+        ['Overall total worked', '34.82', ''],
       ]);
+      expect(within(table).queryByText(/\$/)).toBeNull();
     } finally {
       tables.job_punches = before;
     }

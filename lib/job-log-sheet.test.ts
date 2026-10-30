@@ -129,6 +129,10 @@ describe('the saved sheet', () => {
   it('keeps the hours so far of a stretch still on site when saved (Greptile, CodeRabbit on PR #39)', () => {
     const live: TimeRow = { ...t('Paul Gibbs', '2026-10-30', '07:30', ''), open: true, ms: 2.5 * 3_600_000 };
     expect(sheetToSave({ ...sheet, time: [live] }).time[0]).toEqual({ tech: 'Paul Gibbs', day: '2026-10-30', in: '07:30', out: '', brk: 0, hours: 2.5 });
+    // Saved, they come to just what they did live: 4 h 18.36 s less a 0.124 h break is 3.88 either way, not 3.89.
+    const odd: TimeRow = { ...t('Paul Gibbs', '2026-10-30', '07:30', '', 0.124), open: true, ms: 4 * 3_600_000 + 18_360 };
+    expect(rowHours(odd)).toBe(3.88);
+    expect(rowHours(sheetToSave({ ...sheet, time: [odd] }).time[0])).toBe(3.88);
   });
 
   it('has a row\'s own hours (from the Hours screen) count less its break, and a break put back restores them', () => {

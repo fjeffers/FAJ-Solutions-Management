@@ -68,9 +68,12 @@ export function rowHours(r: TimeRow): number | null {
   return less(((b - a + 1440) % 1440) / 60);
 }
 
-/** A row's hours before the break when they aren't its clock times': its own, or a stretch still on site's so far. */
+/**
+ * A row's hours before the break when they aren't its clock times': its own, or a stretch still on site's so far,
+ * unrounded so the break comes off them exactly as rowHours takes it off (Greptile on PR #39).
+ */
 export const fixedHours = (r: TimeRow): number | null =>
-  r.hours ?? (r.open && minutesOf(r.out) == null && r.ms != null ? r2(r.ms / 3_600_000) : null);
+  r.hours ?? (r.open && minutesOf(r.out) == null && r.ms != null ? r.ms / 3_600_000 : null);
 
 /** A section's total, adding each row as it shows (so the column adds up for the client). */
 export const hoursTotal = (rows: TimeRow[]) => r2(rows.reduce((t, r) => t + (rowHours(r) ?? 0), 0));

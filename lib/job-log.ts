@@ -82,6 +82,17 @@ function make(tech: string, i: Punch, o: Punch | null, now: Date, timeZone: stri
   };
 }
 
+/**
+ * Each tech's own rows, in the order given, the job's crew first (Fred, 2026-10-29: "Show all of Paul
+ * hours and total, Kendall total ... Paul and Kendall separated grouping").
+ */
+export function byTechGroups<T>(items: T[], techOf: (item: T) => string, crew: (string | null | undefined)[] = []): { tech: string; items: T[] }[] {
+  const groups = new Map<string, T[]>();
+  for (const item of items) groups.set(techOf(item), [...(groups.get(techOf(item)) ?? []), item]);
+  const rank = (t: string) => { const i = crew.indexOf(t); return i < 0 ? crew.length : i; };
+  return [...groups].map(([tech, list]) => ({ tech, items: list })).sort((a, b) => rank(a.tech) - rank(b.tech) || a.tech.localeCompare(b.tech));
+}
+
 /** Only what falls between two days (inclusive); either end may be left open. */
 export function inRange(day: string, from: string, to: string): boolean {
   return (!from || day >= from) && (!to || day <= to);

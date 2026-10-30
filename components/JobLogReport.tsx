@@ -394,7 +394,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     setSaving(false);
     if (error) { toastError("The rates didn't save. Check your connection and try again."); return; }
     setSavedRates(clean);
-    setRateEdit(null);
+    // Back to the table as saved, unless a rate was changed while it saved: that change stays, still to save (Greptile on PR #40).
+    setRateEdit((now) => (now && !sameRates(ratesFromRows(now), clean) ? now : null));
     toastSuccess("Rates saved. They're on the client's copy only.");
   };
 

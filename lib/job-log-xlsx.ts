@@ -10,8 +10,11 @@ import { byTechGroups } from './job-log';
 import { lineAmount, type JobRates } from './job-log-rates';
 import { fixedHours, hoursTotal, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
 
-/** A cell for SheetJS: text, or a number with its Excel format and, for a sum or a sum's part, its formula. */
-export type XCell = string | null | { t: 'n'; v: number; z: string; f?: string };
+/**
+ * A cell for SheetJS: text, or a number with its Excel format and, for a sum or a sum's part, its formula; or a
+ * formula that's blank for now (an amount with no rate yet).
+ */
+export type XCell = string | null | { t: 'n'; v: number; z: string; f?: string } | { t: 's'; v: ''; f: string };
 
 export type JobLogHead = { title: string; lines: string[]; range: string; crew: string[] };
 
@@ -70,19 +73,22 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
         const at = next();
         const row = cells(r, at);
         if (priced) {
-          // A tech with no rate isn't charged: their rows' rate and amount are left empty.
+          // Every row's amount is its quantity × its rate, blank while the rate is: a tech with no rate isn't charged
+          // (no $0.00), and a rate typed in Excel works it out (Greptile on PR #40). The rate as typed, to four places.
           const amount = lineAmount(priced.qty(r), rate);
           techAmount += amount ?? 0;
-          // The rate as typed, to four places ($0.725), so the amount beside it can be checked (Greptile on PR #40).
-          row.push(rate == null ? '' : num(rate, RATE), amount == null ? '' : num(amount, USD, `ROUND(${col}${at}*${rateCol}${at},2)`));
+          const f = `IF(${rateCol}${at}="","",ROUND(${col}${at}*${rateCol}${at},2))`;
+          row.push(rate == null ? '' : num(rate, RATE), amount == null ? { t: 's', v: '', f } : num(amount, USD, f));
         }
         rows.push(row);
       }
       const at = next();
       const sub: XCell[] = [subtotal(g.tech), ...Array(pad - 1).fill(null), num(value(g.items), fmt, `SUM(${col}${first}:${col}${at - 1})`)];
-      if (priced && rate != null) {
+      if (priced) {
+        // Blank too until one of the tech's rows has an amount; the overall amount adds every tech's.
+        const amounts = `${amountCol}${first}:${amountCol}${at - 1}`, f = `IF(COUNT(${amounts})=0,"",SUM(${amounts}))`;
         techAmount = Math.round(techAmount * 100 + 1e-9) / 100;
-        sub.push(null, num(techAmount, USD, `SUM(${amountCol}${first}:${amountCol}${at - 1})`));
+        sub.push(null, rate == null ? { t: 's', v: '', f } : num(techAmount, USD, f));
         amountSubs.push(`${amountCol}${at}`);
         amountTotal += techAmount;
       }
@@ -91,7 +97,7 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
     }
     const at = next();
     const total: XCell[] = [overall, ...Array(pad - 1).fill(null), num(value(list), fmt, subs.length ? subs.join('+') : '0')];
-    if (priced) total.push(null, num(Math.round(amountTotal * 100 + 1e-9) / 100, USD, amountSubs.length ? amountSubs.join('+') : '0'));
+    if (priced) total.push(null, num(Math.round(amountTotal * 100 + 1e-9) / 100, USD, amountSubs.length ? `SUM(${amountSubs.join(',')})` : '0'));
     rows.push(total);
     return { total: `${col}${at}`, amount: priced ? `${amountCol}${at}` : null };
   };

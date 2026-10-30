@@ -50,6 +50,7 @@ function query(table: string) {
     .then(() => ({ data: tables[table] ?? [], error: null })).then(ok);
   chain.maybeSingle = async () => (readFails.has(table) ? { data: null, error: { message: 'offline' } } : { data: (tables[table] ?? [])[0] ?? null, error: null });
   chain.upsert = async (row: Record<string, unknown>, opts?: { onConflict?: string }) => {
+    await new Promise((ok) => setTimeout(ok, saveDelays.shift() ?? 0));
     upserts.push({ table, row, onConflict: opts?.onConflict });
     return { error: null };
   };
@@ -798,7 +799,7 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
       await waitFor(() => expect(upserts.at(-1)!.row).toMatchObject({ rates: { 'Kendell Newbold': { hour: 55, mile: null } } }));
       // His rows keep the columns with no rate or dollars on them.
-      expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9', '—', '—']);
+      await waitFor(() => expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9', '—', '—']));
       expect(screen.getByText('TOTAL CHARGES').parentElement!.textContent).toBe('TOTAL CHARGESHours $0.00Mileage $0.00Total $0.00');
       expect(screen.getByText('Not charged (no rates): Paul Gibbs.')).toBeTruthy();
     } finally {
@@ -821,6 +822,24 @@ describe('Job log edited by the office', () => {
     } finally {
       delete tables.job_log_rates;
     }
+  }));
+
+  it('keeps a rate changed while the rates were saving (Greptile on PR #40)', () => withPunches(async () => {
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+    await waitFor(() => expect(print.disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+    fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '65' } });
+    saveDelays = [50];
+    fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
+    // Changed again before that save is back.
+    fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '70' } });
+    await waitFor(() => expect(upserts).toHaveLength(1));
+    expect(upserts[0].row).toMatchObject({ rates: { 'Paul Gibbs': { hour: 65, mile: null } } });
+    // The 70 stays in the box, still to save, so nothing prints until it is.
+    await waitFor(() => expect(screen.getByText('Save the rates, then print or download.')).toBeTruthy());
+    expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('70');
+    expect(print.disabled).toBe(true);
   }));
 
   it("won't save over the rates, or print a client copy, when the saved rates didn't load (Greptile, CodeRabbit on PR #40)", () => withPunches(async () => {

@@ -44,6 +44,22 @@ export function parseRates(raw: unknown): JobRates {
   return out;
 }
 
+/** job_log_rates.all_hours_rate from the database: a dollar figure, or none. */
+export const parseRate = (v: unknown) => rate(typeof v === 'string' && v.trim() !== '' ? Number(v) : v);
+
+/**
+ * One $ per hour for all the techs' hours (Fred, 2026-10-30: "72 hours + 100 i want to have it as an option ... the
+ * client is pushing back", "the rate is changing 100, 90, 60", "not a flat rate hourly"): every tech with hours on
+ * the sheet at that rate, in place of their own; their $ per mile as set. None: the rates as they are.
+ */
+export function withAllHoursRate(sheet: JobSheet, rates: JobRates, allHours: number | null): JobRates {
+  if (allHours == null) return rates;
+  const out: JobRates = {};
+  for (const [tech, r] of Object.entries(rates)) out[tech] = { hour: allHours, mile: r.mile };
+  for (const { tech } of sheet.time) if (tech && !out[tech]) out[tech] = { hour: allHours, mile: null };
+  return out;
+}
+
 /** The rates to save: names trimmed, a tech with no rate left out. */
 export const ratesToSave = (rates: JobRates): JobRates => parseRates(rates);
 

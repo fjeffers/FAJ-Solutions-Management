@@ -35,8 +35,12 @@ export const JOB_LOG_MARGINS = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, h
 export type ChargedReceipts = { meals: boolean; materials: boolean; other: boolean };
 const ALL_RECEIPTS: ChargedReceipts = { meals: true, materials: true, other: true };
 
-/** The workbook's one sheet, row by row; `rates` for the client's copy, charging the `charged` receipts. */
-export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates, charged: ChargedReceipts = ALL_RECEIPTS): XCell[][] {
+/**
+ * The workbook's one sheet, row by row; `rates` for the client's copy, charging the `charged` receipts. `allHours`:
+ * the rates give every tech's hours one rate (lib/job-log-rates.ts withAllHoursRate), so its charges have the hours
+ * together on one line (Fred, 2026-10-30: "give me the options for together or separate hours").
+ */
+export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates, charged: ChargedReceipts = ALL_RECEIPTS, allHours = false): XCell[][] {
   const rows: XCell[][] = [];
   /** The Excel row number the next row gets. */
   const next = () => rows.length + 1;
@@ -170,10 +174,10 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates,
       const v = valueOf(cell);
       rows.push([`${tech} ${what}`, null, typeof v === 'number' ? num(v, USD, cell) : { t: 's', v: '', f: cell }]);
     };
-    for (const [tech, cell] of hours.amountByTech) techLine(tech, 'hours', hoursTotal(sheet.time.filter((r) => r.tech === tech)), cell);
+    if (!allHours) for (const [tech, cell] of hours.amountByTech) techLine(tech, 'hours', hoursTotal(sheet.time.filter((r) => r.tech === tech)), cell);
     const labor = dollars(hours.amount), mileage = dollars(miles.amount);
     const hoursAt = next();
-    rows.push(['Hours total', null, num(labor, USD, hours.amount)]);
+    rows.push([allHours ? 'All techs’ hours' : 'Hours total', null, num(labor, USD, hours.amount)]);
     for (const [tech, cell] of miles.amountByTech) techLine(tech, 'mileage', milesTotal(sheet.miles.filter((r) => r.tech === tech)), cell);
     const milesAt = next();
     rows.push(['Mileage total', null, num(mileage, USD, miles.amount)]);
@@ -200,9 +204,9 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates,
 }
 
 /** Saves the workbook ("<the job log's name>.xlsx"); with `rates`, the client's copy. */
-export async function downloadJobLogXlsx(filename: string, sheet: JobSheet, head: JobLogHead, rates?: JobRates, charged?: ChargedReceipts) {
+export async function downloadJobLogXlsx(filename: string, sheet: JobSheet, head: JobLogHead, rates?: JobRates, charged?: ChargedReceipts, allHours = false) {
   const XLSX = await import('xlsx');
-  const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head, rates, charged));
+  const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head, rates, charged, allHours));
   ws['!cols'] = (rates ? JOB_LOG_CLIENT_WIDTHS : JOB_LOG_WIDTHS).map((wch) => ({ wch }));
   ws['!margins'] = JOB_LOG_MARGINS;
   const wb = XLSX.utils.book_new();

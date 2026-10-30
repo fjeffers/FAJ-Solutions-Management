@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import { jobLogCells, type XCell } from './job-log-xlsx';
 import type { JobSheet } from './job-log-sheet';
+import { withAllHoursRate } from './job-log-rates';
 
 const sheet: JobSheet = {
   time: [
@@ -123,6 +124,22 @@ describe('the job log in Excel', () => {
       ['OVERALL TOTAL', null, { t: 'n', v: 1829.39, z: '$#,##0.00', f: `C${c + 7}+C${c + 8}+C${c + 9}+C${c + 10}+C${c + 11}` }],
     ]);
     expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(8);
+  });
+
+  it('has all the techs\' hours on one line when they\'re together at one rate (Fred: "give me the options for together or separate hours")', () => {
+    const client = jobLogCells(sheet, head, withAllHoursRate(sheet, { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, 100), undefined, true);
+    // Every row of the hours at the one rate, Kendell's too; the miles at Paul's own.
+    const top = find(client, 'Time on site');
+    expect(client[top + 2][6]).toEqual({ t: 'n', v: 100, z: '$#,##0.00##' });
+    expect(client[find(client, 'Kendell Newbold final hours') - 1][6]).toEqual({ t: 'n', v: 100, z: '$#,##0.00##' });
+    // Paul's 19.82 hours and Kendell's 10 × $100, then the mileage as before.
+    const worked = find(client, 'Overall total worked'), c = find(client, 'CHARGES');
+    expect(client.slice(c + 1, c + 5)).toEqual([
+      ['All techs’ hours', null, { t: 'n', v: 2982, z: '$#,##0.00', f: `H${worked + 1}` }],
+      ['Paul Gibbs mileage', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Paul Gibbs total miles') + 1}` }],
+      ['Mileage total', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Overall total miles') + 1}` }],
+      ['TOTAL CHARGES', null, { t: 'n', v: 3124.87, z: '$#,##0.00', f: `C${c + 2}+C${c + 4}` }],
+    ]);
   });
 
   it("charges only the receipts the log shows, as the PDF's breakdown does (CodeRabbit on PR #41)", () => {

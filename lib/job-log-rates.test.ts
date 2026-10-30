@@ -1,7 +1,7 @@
 // Each tech's rates on the client's copy of the job log (Fred, 2026-10-30: "i need a copy i can entered how much
 // per an hour the milage for each tech"; "Rates and the dollars").
 import { describe, it, expect } from 'vitest';
-import { chargesByTech, chargesTotal, notCharged, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates } from './job-log-rates';
+import { chargesByTech, chargesTotal, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, withAllHoursRate } from './job-log-rates';
 import type { JobSheet } from './job-log-sheet';
 
 const sheet: JobSheet = {
@@ -61,11 +61,27 @@ describe('the client copy charges', () => {
     expect(c[0].labor).toBe(0.51);
   });
 
+  it('puts all the techs\' hours at one rate when they\'re together (Fred: "the rate is changing 100, 90, 60")', () => {
+    // Kendell has no rate of his own: with the hours together he's charged too; Paul's $ per mile stays.
+    const rates = withAllHoursRate(sheet, { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, 100);
+    expect(rates).toEqual({ 'Paul Gibbs': { hour: 100, mile: 0.7 }, 'Kendell Newbold': { hour: 100, mile: null } });
+    const c = chargesByTech(sheet, rates, crew);
+    // 18.5 + 10.32 hours × $100, and Paul's 218 miles × $0.70.
+    expect(c.map((t) => [t.tech, t.hours, t.labor, t.mileage])).toEqual([['Paul Gibbs', 18.5, 1850, 152.6], ['Kendell Newbold', 10.32, 1032, null]]);
+    expect(chargesTotal(c)).toBe(3034.6);
+    expect(notCharged(sheet, rates, crew)).toEqual([]);
+    // Separate: each tech's own, as they are.
+    const own = { 'Paul Gibbs': { hour: 65, mile: 0.7 } };
+    expect(withAllHoursRate(sheet, own, null)).toBe(own);
+  });
+
   it('keeps only rates that are numbers, from the database', () => {
     expect(parseRates(null)).toEqual({});
     expect(parseRates([])).toEqual({});
     expect(parseRates({ ' Paul Gibbs ': { hour: 65, mile: '0.7' }, Kendell: { hour: -1 }, '': { hour: 5 }, Raja: 'x' }))
       .toEqual({ 'Paul Gibbs': { hour: 65, mile: null } });
+    // The one rate for all hours: numeric comes back as a number or a string.
+    expect([parseRate(90), parseRate('62.5'), parseRate(null), parseRate(''), parseRate(-1), parseRate('x')]).toEqual([90, 62.5, null, null, null, null]);
     expect(ratesToSave({ 'Paul Gibbs': { hour: 65, mile: 0.7 }, Kendell: { hour: null, mile: null } }))
       .toEqual({ 'Paul Gibbs': { hour: 65, mile: 0.7 } });
   });

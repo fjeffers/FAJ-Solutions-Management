@@ -231,6 +231,17 @@ textarea.wf-input { resize: vertical; }
 /* Shown only on paper (the weekly bill's summary is edited in a box on screen). */
 .jl-print-only { display: none; }
 
+/* The job log's editor (components/JobSheetEditor.tsx): a row's boxes two to a
+   line on a phone, the whole row on one line on a computer, each box as wide
+   as what it holds (a name, a date, a time). */
+.jse-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; align-items: end; }
+@media (min-width: 820px) {
+  .jse-row.jse-time { grid-template-columns: 1.4fr 1.25fr 1.1fr 1.1fr 0.8fr 0.6fr; }
+  .jse-row.jse-miles { grid-template-columns: 1.4fr 1.25fr 1fr 1fr 0.8fr; }
+  .jse-row.jse-meals, .jse-row.jse-materials { grid-template-columns: 1.4fr 1.25fr 1.6fr 0.9fr; }
+  .jse-row.jse-other { grid-template-columns: 1.3fr 1.2fr 1.4fr 1.3fr 0.9fr; }
+}
+
 /* The job log (components/JobLogReport.tsx): printing shows only the report —
    the app behind it, the controls and the dim backdrop all drop away, and the
    navy header keeps its colour. */

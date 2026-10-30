@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import type { EnrichedWorkOrder } from '@/lib/types';
 
 vi.mock('@/lib/toast', () => ({ toastError: vi.fn(), toastSuccess: vi.fn(), toastInfo: vi.fn() }));
+vi.mock('@/lib/job-log-xlsx', () => ({ downloadJobLogXlsx: vi.fn(async () => {}) }));
 
 const at = (day: string, hhmm: string) => new Date(`2026-10-${day}T${hhmm}:00-04:00`).toISOString();
 const tables: Record<string, Record<string, unknown>[]> = {
@@ -31,6 +32,8 @@ const updates: Record<string, unknown>[] = [];
 let saveDelays: number[] = [];
 // Which saves fail, in order.
 let saveFails: boolean[] = [];
+// The job's saved sheet kept, as the database would, once a save lands.
+let persistSheet = false;
 // The punches come back only once this settles, to hold the log loading.
 let punchesHeld: Promise<void> = Promise.resolve();
 // How many times each table was read.
@@ -46,6 +49,7 @@ function query(table: string) {
     eq: async () => {
       await new Promise((ok) => setTimeout(ok, saveDelays.shift() ?? 0));
       updates.push(row);
+      if (persistSheet && table === 'work_orders' && 'job_log_sheet' in row) tables.work_orders = [{ ...tables.work_orders[0], job_log_sheet: row.job_log_sheet }];
       return { error: saveFails.shift() ? { message: 'offline' } : null };
     },
   });
@@ -58,6 +62,8 @@ vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (ur
 vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: async () => new Blob(['jpeg'], { type: 'image/jpeg' }) }));
 
 const { default: JobLogReport } = await import('./JobLogReport');
+const { toastError } = await import('@/lib/toast');
+const { downloadJobLogXlsx } = await import('@/lib/job-log-xlsx');
 const wo = {
   id: 'wo', wo_number: '19101401', title: 'Gaffney', contractor_names: ['Paul Gibbs'], contractor_name: 'Paul Gibbs',
   start_date: '2026-10-19', end_date: '2026-10-23', wo_status: 'Open', capture: [], custom_qa: [], wo_tasks: [],
@@ -355,15 +361,15 @@ describe('Job log, each tech on their own', () => {
       });
       // Fred, 2026-10-29: "Paul 10/23 8am to 5pm total 9 ... Final Hours 19 hours ... Overall total worked 36",
       // and "Don't show the money all we want to see is how much was on site".
-      // Laid out like Fred's own sheet (2026-10-30): Name | date | clock in | clock out | total, the date with its year.
-      expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Name', 'Date', 'Clock in', 'Clock out', 'Total']);
+      // Laid out like Fred's own sheet (2026-10-30): Name | date | clock in | clock out | break | hours, the date with its year.
+      expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Name', 'Date', 'Clock in', 'Clock out', 'Break', 'Hours']);
       const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
       expect(rows).toEqual([
-        ['Paul Gibbs', '10/19/2026', '7:37 AM', '5:37 PM', '10'],
-        ['Paul Gibbs', '10/20/2026', '7:50 AM', '12:20 PM', '4.5'],
+        ['Paul Gibbs', '10/19/2026', '7:37 AM', '5:37 PM', '—', '10'],
+        ['Paul Gibbs', '10/20/2026', '7:50 AM', '12:20 PM', '—', '4.5'],
         ['Paul Gibbs final hours · 2 days', '14.5'],
-        ['Kendell Newbold', '10/19/2026', '7:37 AM', '5:37 PM', '10'],
-        ['Kendell Newbold', '10/20/2026', '7:50 AM', '6:09 PM', '10.32'],
+        ['Kendell Newbold', '10/19/2026', '7:37 AM', '5:37 PM', '—', '10'],
+        ['Kendell Newbold', '10/20/2026', '7:50 AM', '6:09 PM', '—', '10.32'],
         ['Kendell Newbold final hours · 2 days', '20.32'],
         ['Overall total worked', '34.82'],
       ]);
@@ -390,7 +396,7 @@ describe('Job log, each tech on their own', () => {
       });
       const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
       expect(rows).toEqual([
-        ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '9'],
+        ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9'],
         ['Paul Gibbs final hours · 1 day', '9'],
         ['Overall total worked', '9'],
       ]);
@@ -420,6 +426,16 @@ describe('Job log saved as a PDF', () => {
     }
   });
 
+  it('heads the page with the client WO, the site number and address, the schedule and the technicians (Fred, 2026-10-30)', async () => {
+    const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_address: '701 West Buford Street', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
+    render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+    const head = screen.getByText('Client WO #:').parentElement!.parentElement!;
+    expect([...head.children].map((d) => d.textContent)).toEqual([
+      'Client WO #: LDS-1110', 'Site number: 5011876', 'Site address: 701 West Buford Street, Gaffney, SC',
+      'Schedule: Mon, Oct 19 – Fri, Oct 23, 2026', 'Technician: Paul Gibbs',
+    ]);
+  });
+
   it('can’t be printed until the job’s days are in, so the PDF never goes without its dates', async () => {
     let release = () => {};
     punchesHeld = new Promise((ok) => { release = ok; });
@@ -435,5 +451,220 @@ describe('Job log saved as a PDF', () => {
     } finally {
       punchesHeld = Promise.resolve();
     }
+  });
+});
+
+describe('Job log edited by the office', () => {
+  // Fred, 2026-10-30: "Used this layout with what we have and I need to edit all of it hours time milages
+  // materials etc all of it", in the app and in Excel ("Both"), with no billable total ("No, keep it off").
+  const rowsOf = (heading: HTMLElement) => [...(heading.nextElementSibling as HTMLElement).querySelectorAll('tbody tr')]
+    .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+  const withPunches = async (run: () => Promise<void>) => {
+    const before = tables.job_punches;
+    tables.job_punches = [
+      { contractor_name: 'Paul Gibbs', kind: 'in', at: at('19', '08:00'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Paul Gibbs', kind: 'out', at: at('19', '17:00'), lat: null, lng: null, accuracy: null },
+    ];
+    try { await run(); } finally { tables.job_punches = before; }
+  };
+
+  it('edits the hours, the miles and the receipts, saves them on the job, and the log shows them', () => withPunches(async () => {
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const edit = await screen.findByRole('button', { name: /edit time sheet/i });
+    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(edit);
+    // What's edited is the time sheet; the page keeps its name, Job log (Fred, 2026-10-30).
+    expect(screen.getByRole('heading', { name: 'Time sheet' })).toBeTruthy();
+    expect(screen.getByText('JOB LOG')).toBeTruthy();
+    // While editing, the print and Excel wait for the save.
+    expect((screen.getByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /excel/i }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '17:30' } });
+    fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '0.5' } });
+    // 8:00 to 5:30 less half an hour.
+    expect(screen.getByText('Total 9 hours')).toBeTruthy();
+    // The odometer's end typed again: the miles follow it.
+    fireEvent.change(screen.getByLabelText('Odometer end, miles row 1'), { target: { value: '41230' } });
+    expect((screen.getByLabelText('Miles, miles row 1') as HTMLInputElement).value).toBe('30');
+    // A meal receipt added by hand: the job's tech and first day to start with.
+    const meals = screen.getByRole('heading', { name: 'Meals' }).parentElement!;
+    fireEvent.click(within(meals).getByRole('button', { name: /add a row/i }));
+    fireEvent.change(screen.getByLabelText('Store, meals row 1'), { target: { value: ' Waffle House ' } });
+    fireEvent.change(screen.getByLabelText('Amount, meals row 1'), { target: { value: '18.50' } });
+    // And the declined fuel never was on it; the Lowe's receipt stays.
+    fireEvent.click(screen.getByRole('button', { name: /save time sheet/i }));
+
+    await waitFor(() => expect(updates.at(-1)).toEqual({
+      job_log_sheet: {
+        time: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '08:00', out: '17:30', brk: 0.5 }],
+        miles: [{ tech: 'Paul Gibbs', day: '2026-10-19', start: 41200, end: 41230, miles: 30 }],
+        meals: [{ tech: 'Paul Gibbs', day: '2026-10-19', store: 'Waffle House', amount: 18.5 }],
+        materials: [{ tech: 'Paul Gibbs', day: '2026-10-21', store: "Lowe's", amount: 104.17 }],
+        other: [],
+      },
+    }));
+    expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))).toEqual([
+      ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:30 PM', '0.5', '9'],
+      ['Paul Gibbs final hours · 1 day', '9'],
+      ['Overall total worked', '9'],
+    ]);
+    expect(rowsOf(screen.getByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,230', '30']);
+    expect(rowsOf(screen.getByRole('heading', { name: 'Meals' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', 'Waffle House', '$18.50']);
+    expect(screen.getByText(/the job log shows your time sheet/i)).toBeTruthy();
+    // The job's hours and miles in one line, no money on it (Fred: "i dont want it mix"), and no billable total.
+    expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 30');
+    expect(screen.queryByText(/billable/i)).toBeNull();
+  }));
+
+  it('shows a day as the office retimed it on the Hours screen, in place of its clock-ins (Fred: "edit the time sheet and it shows on the job logs")', () => withPunches(async () => {
+    const before = tables.field_sheet_days;
+    // Paul clocked 8:00 to 5:00 on 10/19; the office set 8:30 to 5:00 with a 30-minute lunch on the Hours screen.
+    tables.field_sheet_days = [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218, arrived: '08:30', leftSite: '17:00', lunch: 30 }, added: false, hidden: false }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const heading = await screen.findByRole('heading', { name: 'Time on site' });
+      await waitFor(() => expect(rowsOf(heading)[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:30 AM', '5:00 PM', '0.5', '8']));
+      expect(rowsOf(heading)).toHaveLength(3);
+      expect(screen.getByText('Hours on site').nextElementSibling!.textContent).toBe('8');
+    } finally {
+      tables.field_sheet_days = before;
+    }
+  }));
+
+  it('leaves a day hidden on the Hours screen off the job log', () => withPunches(async () => {
+    const before = tables.field_sheet_days;
+    tables.field_sheet_days = [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218 }, added: false, hidden: true }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      await screen.findByRole('button', { name: /edit time sheet/i });
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Materials' })).toBeTruthy());
+      expect(screen.queryByRole('heading', { name: 'Time on site' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Mileage' })).toBeNull();
+    } finally {
+      tables.field_sheet_days = before;
+    }
+  }));
+
+  it('reads the saved sheet when the log is closed and opened again while the save is still going (Greptile on PR #39)', () => withPunches(async () => {
+    const before = tables.work_orders;
+    persistSheet = true;
+    saveDelays = [200];
+    try {
+      const first = render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const edit = await screen.findByRole('button', { name: /edit time sheet/i });
+      await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(edit);
+      fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '16:00' } });
+      fireEvent.click(screen.getByRole('button', { name: /save time sheet/i }));
+      first.unmount();
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const heading = await screen.findByRole('heading', { name: 'Time on site' });
+      await waitFor(() => expect(rowsOf(heading)[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '4:00 PM', '—', '8']));
+    } finally {
+      tables.work_orders = before;
+      persistSheet = false;
+    }
+  }));
+
+  it('takes only a number in a number box, so the box never shows one figure and saves another (Greptile on PR #39)', () => withPunches(async () => {
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const edit = await screen.findByRole('button', { name: /edit time sheet/i });
+    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(edit);
+    const amount = screen.getByLabelText('Amount, materials row 1') as HTMLInputElement;
+    expect(amount.value).toBe('104.17');
+    fireEvent.change(amount, { target: { value: '18..50' } });
+    expect(amount.value).toBe('104.17');
+    fireEvent.change(amount, { target: { value: '$1,018.50' } });
+    expect(amount.value).toBe('$1,018.50');
+    const materials = screen.getByRole('heading', { name: 'Materials' }).parentElement!;
+    expect(within(materials).getByText('Total $1,018.50')).toBeTruthy();
+  }));
+
+  it("keeps a row's Hours screen hours until both clock times replace them; the break comes off them (Greptile on PR #39)", async () => {
+    const before = tables.work_orders;
+    tables.work_orders = [{ job_log_left_out: [], job_log_receipt_photos: [], job_log_sheet: {
+      time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 }], miles: [], meals: [], materials: [], other: [],
+    } }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const edit = await screen.findByRole('button', { name: /edit time sheet/i });
+      await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(edit);
+      const time = screen.getByRole('heading', { name: 'Time on site' }).parentElement!;
+      expect(within(time).getByText('Total 6 hours')).toBeTruthy();
+      // A break typed too big, then cleared: the six hours are back, not more (Greptile on PR #39).
+      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '7' } });
+      expect(within(time).getByText('Total 0 hours')).toBeTruthy();
+      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '' } });
+      expect(within(time).getByText('Total 6 hours')).toBeTruthy();
+      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '0.5' } });
+      expect(within(time).getByText('Total 5.5 hours')).toBeTruthy();
+      // One clock time isn't enough to replace them.
+      fireEvent.change(screen.getByLabelText('Clock in, time row 1'), { target: { value: '08:00' } });
+      expect(within(time).getByText('Total 5.5 hours')).toBeTruthy();
+      // Both: the hours follow the times.
+      fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '17:00' } });
+      expect(within(time).getByText('Total 8.5 hours')).toBeTruthy();
+    } finally {
+      tables.work_orders = before;
+    }
+  });
+
+  it("won't save a row without a name, and says which", () => withPunches(async () => {
+    vi.mocked(toastError).mockClear();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    const edit = await screen.findByRole('button', { name: /edit time sheet/i });
+    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(edit);
+    fireEvent.change(screen.getByLabelText('Name, time row 1'), { target: { value: '  ' } });
+    fireEvent.click(screen.getByRole('button', { name: /save time sheet/i }));
+    expect(toastError).toHaveBeenCalledWith('Each row needs a name and a date: Time on site row 1.');
+    expect(updates.some((u) => 'job_log_sheet' in u)).toBe(false);
+    // Cancel: back to the log as it was.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9']);
+  }));
+
+  it('shows the sheet the job has saved, and starts over from the app when asked', async () => {
+    const before = tables.work_orders;
+    tables.work_orders = [{ job_log_left_out: [], job_log_receipt_photos: [], job_log_sheet: {
+      time: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '07:00', out: '15:00', brk: 0 }], miles: [], meals: [], materials: [], other: [],
+    } }];
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '7:00 AM', '3:00 PM', '—', '8']);
+      // Its miles were taken out, so there's no mileage; the receipts too.
+      expect(screen.queryByRole('heading', { name: 'Mileage' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Materials' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /start over from the app/i }));
+      await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_sheet: null }));
+      // The app's again: no clock-ins on this job, the Field Sheet's 18 miles and the Lowe's receipt.
+      expect(rowsOf(await screen.findByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,218', '18']);
+      expect(screen.queryByRole('heading', { name: 'Time on site' })).toBeNull();
+      expect(screen.queryByText(/the job log shows your time sheet/i)).toBeNull();
+    } finally {
+      tables.work_orders = before;
+      confirm.mockRestore();
+    }
+  });
+
+  it("saves Excel as Fred's workbook with the log's rows, named like the PDF", async () => {
+    vi.mocked(downloadJobLogXlsx).mockClear();
+    const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
+    render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+    const excel = screen.getByRole('button', { name: /excel/i }) as HTMLButtonElement;
+    await waitFor(() => expect(excel.disabled).toBe(false));
+    fireEvent.click(excel);
+    expect(downloadJobLogXlsx).toHaveBeenCalledWith(
+      'LDS-1110 Site 5011876 — Gaffney, SC · 10-19-2026 – 10-23-2026 · Time sheet.xlsx',
+      expect.objectContaining({
+        miles: [{ tech: 'Paul Gibbs', day: '2026-10-19', start: 41200, end: 41218, miles: 18 }],
+        materials: [{ tech: 'Paul Gibbs', day: '2026-10-21', store: "Lowe's", amount: 104.17 }],
+      }),
+      { title: 'Gaffney', lines: ['Client: LDS · Client WO #: LDS-1110 · FAJ WO #: 19101401', 'Site: LDS Site 5011876 — Gaffney, SC', 'Technician: Paul Gibbs'], range: 'Whole job', crew: ['Paul Gibbs'] },
+    );
   });
 });

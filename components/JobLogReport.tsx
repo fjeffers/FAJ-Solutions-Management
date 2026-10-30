@@ -38,9 +38,16 @@
 // Fred, 2026-10-26: the PDF it saves is named for the site and its dates ("can
 // it be the site number and city"): "LDS-1110 Site 5011876 — Gaffney, SC ·
 // 10-18-2026 – 10-23-2026".
+//
+// Fred, 2026-10-30 ("I need to edit all of it hours time milages materials etc all of it", with his workbook
+// job-log-timesheet.xlsx): Edit time sheet opens every row of the five tables to change, add or take out; saved,
+// the job keeps its own sheet (lib/job-log-sheet.ts) and the log, the print and Excel show that. Excel saves
+// his workbook's layout with the log's rows, the numbers as formulas (lib/job-log-xlsx.ts). No billable
+// total ("No, keep it off"). The names, Fred, 2026-10-30: "Keep the Name Job Log with the pictures of the
+// receipts, odometer the one i edit is the time sheet that reflect on the job log".
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Download, FileText, Printer, X } from 'lucide-react';
+import { Check, Download, FileSpreadsheet, FileText, Pencil, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { fmtMoney } from '@/lib/utils';
@@ -48,7 +55,13 @@ import { dayCalc, leadFirst, parseEdits, rowsFor, type SavedDay, type SheetRow }
 import type { OdoRow as Reading } from '@/lib/weekly-bill';
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { buildVisits, byTechGroups, inRange, logTotals, dayOf, jobLogName, type Punch } from '@/lib/job-log';
+import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
+import {
+  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  type JobSheet, type MoneyRow,
+} from '@/lib/job-log-sheet';
+import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
+import JobSheetEditor from '@/components/JobSheetEditor';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
@@ -74,7 +87,13 @@ type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean;
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
+/** "17:37" → "5:37 PM". */
+const clock12 = (hhmm: string) => {
+  const m = minutesOf(hhmm);
+  if (m == null) return hhmm || '—';
+  const h = Math.floor(m / 60);
+  return `${h % 12 || 12}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
 const fmtStamp = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ });
 
 /**
@@ -83,6 +102,12 @@ const fmtStamp = (iso: string) => new Date(iso).toLocaleString('en-US', { month:
  */
 const savesFor = new Map<string, Promise<void>>();
 const afterSaves = (woId: string) => savesFor.get(woId) ?? Promise.resolve();
+/** A save of the job's sheet, after the saves before it and before the log next reads the job (Greptile on PR #39). */
+function queueSave<T>(woId: string, write: () => PromiseLike<T>): Promise<T> {
+  const done = afterSaves(woId).then(write);
+  savesFor.set(woId, done.then(() => undefined, () => undefined));
+  return done;
+}
 
 /**
  * The pictures left out of the log and the photos labeled receipts, saved on
@@ -149,10 +174,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [odometer, setOdometer] = useState<Pic[]>([]);
   // The approved receipts, for the meals, materials and other receipts tables.
   const [spent, setSpent] = useState<ReceiptRow[]>([]);
+  // The job log as the office edited it (work_orders.job_log_sheet), and the edit going on: Fred, 2026-10-30:
+  // "I need to edit all of it hours time milages materials etc all of it".
+  const [savedSheet, setSavedSheet] = useState<JobSheet | null>(null);
+  const [draft, setDraft] = useState<JobSheet | null>(null);
+  const [saving, setSaving] = useState(false);
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  // Each tech's days as the Hours screen and the Field Sheet have them, for the miles
+  // Each tech's days as the Hours screen and the Field Sheet have them, for the miles and the days the office retimed
   // (Fred, 2026-10-25: "i don't see the mileages on the job logs along with the pictures").
   const [days, setDays] = useState<SheetRow[]>([]);
   // Pictures added from the office: the log reads the job's photos again, and the
@@ -172,22 +202,24 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       db.from('job_odometer').select('id, wo_id, contractor_name, at, moment, reading, ai_reading, photo_path').eq('wo_id', w.id).order('at'),
       // What's left out and labeled now: the job on screen may be older than the last change,
       // and a save from the log just closed may still be going.
-      afterSaves(w.id).then(() => db.from('work_orders').select('job_log_left_out, job_log_receipt_photos').eq('id', w.id).maybeSingle()),
+      afterSaves(w.id).then(() => db.from('work_orders').select('job_log_left_out, job_log_receipt_photos, job_log_sheet').eq('id', w.id).maybeSingle()),
       loadEvents([w.id]),
       db.from('field_sheet_days').select('id, day, tech, edits, added, hidden').eq('wo_id', w.id),
     ]).then(async ([p, ph, l, ex, od, wo, ev, fs]) => {
       setPunches(((p.data as Punch[] | null) ?? []));
       setPhotos(((ph.data as PhotoRow[] | null) ?? []));
       setLogs(Array.isArray(l) ? (l as TimeLog[]) : []);
-      const kept = wo.data as { job_log_left_out?: string[] | null; job_log_receipt_photos?: string[] | null } | null;
+      const kept = wo.data as { job_log_left_out?: string[] | null; job_log_receipt_photos?: string[] | null; job_log_sheet?: unknown } | null;
       if (kept) loadedChoices({ leftOut: new Set(kept.job_log_left_out ?? []), receiptPhotos: new Set(kept.job_log_receipt_photos ?? []) });
+      setSavedSheet(parseSheet(kept?.job_log_sheet));
       // Approved and declined; one still waiting on Fred isn't either yet.
       const rec = ((ex.data as ReceiptRow[] | null) ?? []).filter((e) => (e.status === 'approved' || e.status === 'declined') && e.receipt_path);
       setSpent(((ex.data as ReceiptRow[] | null) ?? []).filter((e) => e.status === 'approved'));
       const readings = ((od.data as Reading[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
       const saved = ((fs.data as (Omit<SavedDay, 'edits'> & { edits: unknown })[] | null) ?? []).map((d) => ({ ...d, edits: parseEdits(d.edits) }));
       const crew = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter((t): t is string => !!t);
-      setDays(rowsFor({ events: ev, readings, saved, techs: crew, start: w.start_date, end: w.end_date, timeZone: TZ }).filter((r) => !r.hidden));
+      // Hidden days too: a day hidden on the Hours screen is off the log's hours as well.
+      setDays(rowsFor({ events: ev, readings, saved, techs: crew, start: w.start_date, end: w.end_date, timeZone: TZ }));
       const odo = ((od.data as OdoRow[] | null) ?? []).filter((o) => o.photo_path);
       const paths = [...rec.map((e) => e.receipt_path!), ...odo.map((o) => o.photo_path!)];
       if (!paths.length) return;
@@ -226,7 +258,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     return () => document.body.classList.remove('job-log-open');
   }, []);
 
-  const visits = useMemo(() => buildVisits(punches ?? [], logs, new Date(), TZ).filter((v) => inRange(v.day, from, to)), [punches, logs, from, to]);
   const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => ({
     key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
     caption: receiptPhotos.has(p.id) ? 'Receipt photo' : undefined,
@@ -241,40 +272,44 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const leftCount = [...shownReceipts, ...shownOdometer, ...shownPhotos].filter((p) => leftOut.has(p.key)).length;
   const pictureCount = [...(inc.receipts ? shownReceipts : []), ...(inc.odometer ? shownOdometer : []), ...(inc.photos ? shownPhotos : [])]
     .filter(printed).length;
-  const totals = logTotals(visits);
-  // A day's miles: the miles typed on the Hours screen, else the odometer, else the GPS.
-  const mileage = days.filter((r) => inRange(r.day, from, to))
-    .map((r) => ({ r, miles: dayCalc(r.values, 0).miles }))
-    .filter(({ r, miles }) => miles > 0 || r.values.odoStart != null || r.values.odoEnd != null)
-    .sort((a, b) => a.r.day.localeCompare(b.r.day) || a.r.tech.localeCompare(b.r.tech));
-  const totalMiles = Math.round(mileage.reduce((t, m) => t + m.miles, 0) * 10) / 10;
+  // The tables, from one sheet: what the app has (the clock-ins, the Field Sheet's miles, the approved
+  // receipts), or the job's own sheet once the office has edited it (lib/job-log-sheet.ts).
+  const appSheet = useMemo(() => sheetFromApp({
+    visits: buildVisits(punches ?? [], logs, new Date(), TZ),
+    // A day's miles: the miles typed on the Hours screen, else the odometer, else the GPS.
+    mileage: days.filter((r) => !r.hidden)
+      .map((r) => ({ tech: r.tech, day: r.day, start: r.values.odoStart ?? null, end: r.values.odoEnd ?? null, miles: dayCalc(r.values, 0).miles }))
+      .filter((m) => m.miles > 0 || m.start != null || m.end != null),
+    receipts: spent,
+    // A day's time on site as the office set it on the Hours screen, in place of that day's clock-ins
+    // (Fred, 2026-10-30: "I want to make sure I can edit the time sheet and it shows on the job logs").
+    hoursScreen: hoursScreenDays(days),
+    timeZone: TZ,
+  }), [punches, logs, days, spent]);
+  const sheet = savedSheet ?? appSheet;
+  const shown = sheetSorted(sheetInDates(sheet, from, to));
   // Each tech's own days and total, then the next tech (Fred, 2026-10-29: "Paul and Kendall separated grouping"),
   // the lead tech first and then the helpers ("Lead tech first and then helper tech").
   const crew = leadFirst(w);
-  const visitGroups = byTechGroups(visits, (v) => v.tech, crew);
-  const mileGroups = byTechGroups(mileage, (m) => m.r.tech, crew);
-  const r1 = (n: number) => Math.round(n * 10) / 10;
-  const r2h = (n: number) => Math.round(n * 100) / 100;
+  const timeGroups = byTechGroups(shown.time, (r) => r.tech, crew);
+  const mileGroups = byTechGroups(shown.miles, (r) => r.tech, crew);
   const dayCount = (days: string[]) => { const n = new Set(days).size; return `${n} day${n === 1 ? '' : 's'}`; };
   // The hours on site as a number, no money (Fred, 2026-10-29: "Paul 10/23 8am to 5pm total 9 ... Final
   // Hours 19 hours ... Overall total worked 36"; "Don't show the money all we want to see is how much was on site").
-  const hoursOf = (ms: number) => Math.round(ms / 36_000) / 100;
   const hrs = (h: number) => h.toLocaleString('en-US', { maximumFractionDigits: 2 });
   // Month/day/year (Fred, 2026-10-30: "Date and year").
   const dateText = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}/${d.slice(0, 4)}`;
-  // Totals add the hours as each day shows them, so the column adds up the way the client reads it
+  // Totals add the hours as each row shows them, so the column adds up the way the client reads it
   // (as the Field Sheet does), and the summary shows that same total (Greptile on PR #37).
-  const siteHours = r2h(visits.reduce((t, v) => t + hoursOf(v.ms), 0));
+  const siteHours = hoursTotal(shown.time);
+  const totalMiles = milesTotal(shown.miles);
+  const daysOnSite = new Set(shown.time.map((r) => r.day)).size;
   // Meals, materials and the other receipts, as each tech said what the receipt was for when
   // uploading it (Fred, 2026-10-30: "meals get entered by receipt so does materials").
-  const shownSpent = spent.filter((e) => inRange(e.expense_date, from, to))
-    .sort((a, b) => a.expense_date.localeCompare(b.expense_date));
-  const mealReceipts = shownSpent.filter((e) => e.category === 'meals');
-  const materialReceipts = shownSpent.filter((e) => e.category === 'materials');
-  const otherReceipts = shownSpent.filter((e) => e.category !== 'meals' && e.category !== 'materials');
-  const sumOf = (list: ReceiptRow[]) => Math.round(list.reduce((t, e) => t + Number(e.amount), 0) * 100) / 100;
+  const mealReceipts = shown.meals;
+  const materialReceipts = shown.materials;
+  const otherReceipts = shown.other;
   const receiptCount = (n: number) => `${n} receipt${n === 1 ? '' : 's'}`;
-  const techOf = (e: ReceiptRow) => e.contractor_name || 'Office';
   // A tech on the job with nothing in a table gets a line under it, so the client sees why.
   const without = (groups: { tech: string }[]) => crew.filter((t) => !groups.some((g) => g.tech === t));
   // Only a finished job has a "Not completed": on a job still going, it's just work still to do.
@@ -288,17 +323,61 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const techs = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter(Boolean);
   const where = [w.site_address, [w.site_city, [w.site_state, w.site_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ');
   const isUrl = (v: string) => /^https?:\/\//.test(v);
+  const siteNo = siteNumber(w);
+  // The job's days, first to last: "Mon, Oct 19 – Fri, Oct 23, 2026", or the one day.
+  const schedule = (() => {
+    const first = (w.start_date || w.scheduled_date)?.slice(0, 10), last = w.end_date?.slice(0, 10);
+    if (!first) return '';
+    if (!last || last <= first) return fmtDay(first);
+    const short = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+    return `${first.slice(0, 4) === last.slice(0, 4) ? short(first) : fmtDay(first)} – ${fmtDay(last)}`;
+  })();
   const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: TZ });
   const range = from || to ? `${from ? fmtDay(from) : 'Start'} – ${to ? fmtDay(to) : 'today'}` : 'Whole job';
   // The saved PDF's name: the print window names it after the page (lib/job-log.ts
   // jobLogName). The days picked, else the job's first and last day on the Field Sheet.
-  const worked = [...visits.map((v) => v.day), ...days.filter((r) => inRange(r.day, from, to)).map((r) => r.day)].sort();
+  const worked = [...shown.time.map((r) => r.day), ...shown.miles.map((r) => r.day), ...days.filter((r) => !r.hidden && inRange(r.day, from, to)).map((r) => r.day)].sort();
   const logName = jobLogName(w, from || worked[0] || '', to || worked.at(-1) || '');
   useEffect(() => {
     const was = document.title;
     document.title = logName;
     return () => { document.title = was; };
   }, [logName]);
+
+  // Saving an edit: the job keeps its own sheet, and the log, the print and Excel show it from then on.
+  const saveSheet = async () => {
+    if (!draft) return;
+    const problems = sheetProblems(draft);
+    if (problems.length) { toastError(`Each row needs a name and a date: ${problems.join(', ')}.`); return; }
+    const clean = sheetToSave(draft);
+    setSaving(true);
+    const { error } = await queueSave(w.id, () => createClient().from('work_orders').update({ job_log_sheet: clean }).eq('id', w.id));
+    setSaving(false);
+    if (error) { toastError("That didn't save. Check your connection and try again."); return; }
+    setSavedSheet(clean);
+    setDraft(null);
+    toastSuccess('Time sheet saved. The job log, its PDF and Excel show it.');
+  };
+  // Back to what the app has: the clock-ins, the Field Sheet's miles and the approved receipts.
+  const startOver = async () => {
+    if (!window.confirm('Go back to what the app has (the clock-ins, the Field Sheet miles and the approved receipts)? Your edits to this time sheet will be gone.')) return;
+    setSaving(true);
+    const { error } = await queueSave(w.id, () => createClient().from('work_orders').update({ job_log_sheet: null }).eq('id', w.id));
+    setSaving(false);
+    if (error) { toastError("That didn't save. Check your connection and try again."); return; }
+    setSavedSheet(null);
+    toastSuccess('The job log shows what the app has again.');
+  };
+  // Fred's workbook (job-log-timesheet.xlsx) with this log's rows, the days picked; its numbers are formulas.
+  const downloadExcel = () => {
+    const lines = [
+      [w.customer_name && `Client: ${w.customer_name}`, w.external_wo_id && `Client WO #: ${w.external_wo_id}`, `FAJ WO #: ${w.wo_number}`].filter(Boolean).join(' · '),
+      ...(w.site_name || where ? [`Site: ${[w.site_name, where].filter(Boolean).join(' — ')}`] : []),
+      ...(techs.length ? [`Technician${techs.length > 1 ? 's' : ''}: ${techs.join(', ')}`] : []),
+    ];
+    downloadJobLogXlsx(`${logName} · Time sheet.xlsx`, shown, { title: w.title || 'Work order', lines, range, crew })
+      .catch(() => toastError("The Excel file didn't download. Try again."));
+  };
 
   const toggle = (k: keyof Include, label: string) => (
     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
@@ -320,8 +399,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
    * A table of receipts like the hours: each tech's receipts (name and date on every row), the tech's
    * total, then the overall total. `forCol`: a "For" column with what the tech said the receipt was for.
    */
-  const receiptTable = (list: ReceiptRow[], what: string, forCol: boolean) => {
-    const groups = byTechGroups(list, techOf, crew);
+  const receiptTable = (list: MoneyRow[], what: string, forCol: boolean) => {
+    const groups = byTechGroups(list, (r) => r.tech, crew);
     const span = forCol ? 4 : 3;
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -330,26 +409,26 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         </tr></thead>
         {groups.map((g) => (
           <tbody key={g.tech} className="jl-avoid">
-            {g.items.map((e) => (
-              <tr key={e.id} className="jl-avoid">
-                <td style={cell}>{techOf(e)}</td>
-                <td style={cell}>{dateText(e.expense_date)}</td>
+            {g.items.map((e, i) => (
+              <tr key={i} className="jl-avoid">
+                <td style={cell}>{e.tech}</td>
+                <td style={cell}>{dateText(e.day)}</td>
                 {/* What the tech picked, and their own note on it when they wrote one (CodeRabbit on PR #38). */}
-                {forCol && <td style={{ ...cell, overflowWrap: 'anywhere' }}>{[expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ')}</td>}
-                <td style={cell}>{e.vendor || '—'}</td>
-                <td style={cell}>{fmtMoney(Number(e.amount))}</td>
+                {forCol && <td style={{ ...cell, overflowWrap: 'anywhere' }}>{e.for || '—'}</td>}
+                <td style={cell}>{e.store || '—'}</td>
+                <td style={cell}>{fmtMoney(e.amount)}</td>
               </tr>
             ))}
             <tr className="jl-avoid" style={techTotal}>
               <td style={cell} colSpan={span}>{g.tech} total{what ? ` ${what}` : ''} · {receiptCount(g.items.length)}</td>
-              <td style={cell}>{fmtMoney(sumOf(g.items))}</td>
+              <td style={cell}>{fmtMoney(moneyTotal(g.items))}</td>
             </tr>
           </tbody>
         ))}
         <tbody>
           <tr className="jl-avoid" style={overallRow}>
             <td style={cell} colSpan={span}>Overall total {what || 'other receipts'}</td>
-            <td style={cell}>{fmtMoney(sumOf(list))}</td>
+            <td style={cell}>{fmtMoney(moneyTotal(list))}</td>
           </tr>
         </tbody>
       </table>
@@ -450,19 +529,40 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <label style={{ fontSize: 13 }}>From <input type="date" className="wf-input" style={{ width: 150, minHeight: 36, padding: '4px 8px' }} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label style={{ fontSize: 13 }}>To <input type="date" className="wf-input" style={{ width: 150, minHeight: 36, padding: '4px 8px' }} value={to} onChange={(e) => setTo(e.target.value)} /></label>
         {/* Not until the job's days are in: the PDF's name has them (Greptile on PR #21). */}
-        <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
+        {/* While editing, save first: the print and Excel are what's saved. */}
+        <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
+        {draft ? (
+          <>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>
+            <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => setDraft(null)}>Cancel</button>
+          </>
+        ) : (
+          <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded} onClick={() => setDraft(sheetByTech(sheet, crew))}><Pencil size={16} /> Edit time sheet</button>
+        )}
         <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
           day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
-          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{mileage.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
+          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{shown.miles.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
           {toggle('notes', "Tech's notes")}{(receipts.length > 0 || receiptPhotos.size > 0) && toggle('receipts', 'Receipts')}{odometer.length > 0 && toggle('odometer', 'Odometer')}
           {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}
         </div>
         <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
           Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Receipt and it goes with the receipts. Declined receipts never print, and their ✗ takes them off the screen too. Nothing is deleted.
         </div>
+        {draft && (
+          <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
+            Editing the time sheet: every day’s hours, miles, meals, materials and other receipts. Change any box, add a row or take one out, then <b>Save time sheet</b>, and the job log shows it. The clock-ins, the Hours screen and the receipts stay as they are.
+          </div>
+        )}
+        {savedSheet && !draft && (
+          <div role="status" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
+            <span style={{ flex: '1 1 260px' }}>The job log shows your time sheet, so a new clock-in, a change on the Hours screen, or a new mile or receipt won’t show here.</span>
+            <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => void startOver()}>Start over from the app</button>
+          </div>
+        )}
       </div>
 
       {/* The report itself */}
@@ -478,23 +578,24 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
         <div className="jl-body" style={{ padding: '20px 24px 28px' }}>
           <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{w.title || 'Work order'}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '6px 20px', marginTop: 10 }}>
-            {w.customer_name && <div><b>Client:</b> {w.customer_name}</div>}
-            {w.external_wo_id && <div><b>Client WO #:</b> {w.external_wo_id}</div>}
-            <div><b>FAJ WO #:</b> {w.wo_number}</div>
-            {(w.site_name || where) && <div><b>Site:</b> {[w.site_name, where].filter(Boolean).join(' — ')}</div>}
-            {(w.scheduled_date || w.start_date) && <div><b>Scheduled:</b> {fmtDay((w.scheduled_date || w.start_date)!.slice(0, 10))}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '6px 20px', marginTop: 10 }}>
+            {/* What the client reads first (Fred, 2026-10-30): "Client WO:#, site Number:, Site address:, schedule:
+                Mon Oct 19 thue Oct 23, technician:". FAJ's own WO number only when the client hasn't one. */}
+            <div><b>{w.external_wo_id ? 'Client WO #' : 'WO #'}:</b> {w.external_wo_id || w.wo_number}</div>
+            {siteNo && <div><b>Site number:</b> {siteNo}</div>}
+            {where && <div><b>Site address:</b> {where}</div>}
+            {schedule && <div><b>Schedule:</b> {schedule}</div>}
             {techs.length > 0 && <div><b>Technician{techs.length > 1 ? 's' : ''}:</b> {techs.join(', ')}</div>}
           </div>
 
           <div className="jl-avoid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginTop: 16 }}>
             {[
-              ...(totals.ms > 0 ? [['Hours on site', hrs(siteHours)]] : []),
-              ...(totals.days > 0 ? [['Days', String(totals.days)]] : []),
+              ...(siteHours > 0 ? [['Hours on site', hrs(siteHours)]] : []),
+              ...(daysOnSite > 0 ? [['Days', String(daysOnSite)]] : []),
               ...(totalMiles > 0 ? [['Miles', totalMiles.toLocaleString('en-US')]] : []),
-              ...(mealReceipts.length ? [['Meals', fmtMoney(sumOf(mealReceipts))]] : []),
-              ...(materialReceipts.length ? [['Materials', fmtMoney(sumOf(materialReceipts))]] : []),
-              ...(otherReceipts.length ? [['Other receipts', fmtMoney(sumOf(otherReceipts))]] : []),
+              ...(mealReceipts.length ? [['Meals', fmtMoney(moneyTotal(mealReceipts))]] : []),
+              ...(materialReceipts.length ? [['Materials', fmtMoney(moneyTotal(materialReceipts))]] : []),
+              ...(otherReceipts.length ? [['Other receipts', fmtMoney(moneyTotal(otherReceipts))]] : []),
               ...(pictureCount > 0 ? [['Pictures', String(pictureCount)]] : []),
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
@@ -522,101 +623,122 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
           {inc.scope && w.description && (<><H>Scope of work</H><div style={{ whiteSpace: 'pre-wrap' }}>{w.description}</div></>)}
 
-          {inc.time && (punches === null || visits.length > 0) && (
-            <div className="jl-sec">
-              <H>Time on site</H>
-              {punches === null ? <div style={{ color: '#5E6470' }}>Loading…</div>
-                : (
+          {/* Editing: every row of the five tables, as Fred's workbook has them (components/JobSheetEditor.tsx). */}
+          {draft ? (
+            <JobSheetEditor sheet={draft} onChange={setDraft} crew={crew} firstDay={from || w.start_date?.slice(0, 10) || dayOf(new Date().toISOString(), TZ)} />
+          ) : (
+            <>
+              {inc.time && (punches === null || shown.time.length > 0) && (
+                <div className="jl-sec">
+                  <H>Time on site</H>
+                  {punches === null ? <div style={{ color: '#5E6470' }}>Loading…</div>
+                    : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        {/* Fred's own sheet, 2026-10-30: Name | date | clock in | clock out | (break) | hours. One row each time a tech
+                            clocks in and out, so a day with a break shows both, and the gap between them. */}
+                        <thead><tr style={{ background: '#F6F4EF' }}>
+                          {['Name', 'Date', 'Clock in', 'Clock out', 'Break', 'Hours'].map((h) => <th key={h} style={headCell}>{h}</th>)}
+                        </tr></thead>
+                        {/* Each tech's rows in their own body, kept on one page when they fit (Greptile on PR #35). */}
+                        {timeGroups.map((g) => (
+                          <tbody key={g.tech} className="jl-avoid">
+                            {g.items.map((r, i) => {
+                              const h = rowHours(r);
+                              return (
+                                <tr key={i} className="jl-avoid">
+                                  <td style={cell}>{r.tech}</td>
+                                  <td style={cell}>{dateText(r.day)}</td>
+                                  <td style={cell}>{clock12(r.in)}</td>
+                                  <td style={cell}>{r.out ? clock12(r.out) : r.open ? 'On site now' : '—'}</td>
+                                  <td style={cell}>{r.brk ? hrs(r.brk) : '—'}</td>
+                                  <td style={cell}>{h == null ? '—' : hrs(h)}</td>
+                                </tr>
+                              );
+                            })}
+                            <tr className="jl-avoid" style={techTotal}>
+                              <td style={cell} colSpan={5}>{g.tech} final hours · {dayCount(g.items.map((r) => r.day))}</td>
+                              <td style={cell}>{hrs(hoursTotal(g.items))}</td>
+                            </tr>
+                          </tbody>
+                        ))}
+                        {/* At the bottom with one tech too, as the mileage table's total is (CodeRabbit on PR #37). */}
+                        <tbody>
+                          <tr className="jl-avoid" style={overallRow}>
+                            <td style={cell} colSpan={5}>Overall total worked</td>
+                            <td style={cell}>{hrs(siteHours)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    )}
+                </div>
+              )}
+
+              {inc.mileage && shown.miles.length > 0 && (
+                <div className="jl-sec">
+                  <H>Mileage</H>
+                  {/* Like the hours: name and date on every row, each tech's total, then the overall total. */}
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    {/* Fred's own sheet, 2026-10-30: Name | date | clock in | clock out | total. One row each time a tech
-                        clocks in and out, so a day with a break shows both, and the gap between them. */}
                     <thead><tr style={{ background: '#F6F4EF' }}>
-                      {['Name', 'Date', 'Clock in', 'Clock out', 'Total'].map((h) => <th key={h} style={headCell}>{h}</th>)}
+                      {['Name', 'Date', 'Odometer start', 'Odometer end', 'Miles'].map((h) => <th key={h} style={headCell}>{h}</th>)}
                     </tr></thead>
-                    {/* Each tech's rows in their own body, kept on one page when they fit (Greptile on PR #35). */}
-                    {visitGroups.map((g) => (
+                    {mileGroups.map((g) => (
                       <tbody key={g.tech} className="jl-avoid">
-                        {g.items.map((v, i) => (
+                        {g.items.map((r, i) => (
                           <tr key={i} className="jl-avoid">
-                            <td style={cell}>{v.tech}</td>
-                            <td style={cell}>{dateText(v.day)}</td>
-                            <td style={cell}>{fmtTime(v.inAt)}</td>
-                            <td style={cell}>{v.outAt ? fmtTime(v.outAt) : v.open ? 'On site now' : '—'}</td>
-                            <td style={cell}>{hrs(hoursOf(v.ms))}</td>
+                            <td style={cell}>{r.tech}</td>
+                            <td style={cell}>{dateText(r.day)}</td>
+                            <td style={cell}>{r.start != null ? r.start.toLocaleString('en-US') : '—'}</td>
+                            <td style={cell}>{r.end != null ? r.end.toLocaleString('en-US') : '—'}</td>
+                            <td style={cell}>{r.miles.toLocaleString('en-US')}</td>
                           </tr>
                         ))}
                         <tr className="jl-avoid" style={techTotal}>
-                          <td style={cell} colSpan={4}>{g.tech} final hours · {dayCount(g.items.map((v) => v.day))}</td>
-                          <td style={cell}>{hrs(r2h(g.items.reduce((t, v) => t + hoursOf(v.ms), 0)))}</td>
+                          <td style={cell} colSpan={4}>{g.tech} total miles · {dayCount(g.items.map((r) => r.day))}</td>
+                          <td style={cell}>{milesTotal(g.items).toLocaleString('en-US')}</td>
                         </tr>
                       </tbody>
                     ))}
-                    {/* At the bottom with one tech too, as the mileage table's total is (CodeRabbit on PR #37). */}
                     <tbody>
-                      <tr className="jl-avoid" style={overallRow}>
-                        <td style={cell} colSpan={4}>Overall total worked</td>
-                        <td style={cell}>{hrs(siteHours)}</td>
-                      </tr>
+                      <tr className="jl-avoid" style={overallRow}><td style={cell} colSpan={4}>Overall total miles</td><td style={cell}>{totalMiles.toLocaleString('en-US')}</td></tr>
                     </tbody>
                   </table>
-                )}
-            </div>
-          )}
+                  {noneLine(without(mileGroups), 'miles')}
+                </div>
+              )}
 
-          {inc.mileage && mileage.length > 0 && (
-            <div className="jl-sec">
-              <H>Mileage</H>
-              {/* Like the hours: name and date on every row, each tech's total, then the overall total. */}
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ background: '#F6F4EF' }}>
-                  {['Name', 'Date', 'Odometer start', 'Odometer end', 'Miles'].map((h) => <th key={h} style={headCell}>{h}</th>)}
-                </tr></thead>
-                {mileGroups.map((g) => (
-                  <tbody key={g.tech} className="jl-avoid">
-                    {g.items.map(({ r, miles }) => (
-                      <tr key={r.key} className="jl-avoid">
-                        <td style={cell}>{r.tech}</td>
-                        <td style={cell}>{dateText(r.day)}</td>
-                        <td style={cell}>{r.values.odoStart != null ? r.values.odoStart.toLocaleString('en-US') : '—'}</td>
-                        <td style={cell}>{r.values.odoEnd != null ? r.values.odoEnd.toLocaleString('en-US') : '—'}</td>
-                        <td style={cell}>{miles.toLocaleString('en-US')}</td>
-                      </tr>
-                    ))}
-                    <tr className="jl-avoid" style={techTotal}>
-                      <td style={cell} colSpan={4}>{g.tech} total miles · {dayCount(g.items.map((m) => m.r.day))}</td>
-                      <td style={cell}>{r1(g.items.reduce((t, m) => t + m.miles, 0)).toLocaleString('en-US')}</td>
-                    </tr>
-                  </tbody>
-                ))}
-                <tbody>
-                  <tr className="jl-avoid" style={overallRow}><td style={cell} colSpan={4}>Overall total miles</td><td style={cell}>{totalMiles.toLocaleString('en-US')}</td></tr>
-                </tbody>
-              </table>
-              {noneLine(without(mileGroups), 'miles')}
-            </div>
-          )}
+              {inc.meals && mealReceipts.length > 0 && (
+                <div className="jl-sec">
+                  <H>Meals</H>
+                  {receiptTable(mealReceipts, 'meals', false)}
+                  {noneLine(without(byTechGroups(mealReceipts, (r) => r.tech, crew)), 'meals')}
+                </div>
+              )}
 
-          {inc.meals && mealReceipts.length > 0 && (
-            <div className="jl-sec">
-              <H>Meals</H>
-              {receiptTable(mealReceipts, 'meals', false)}
-              {noneLine(without(byTechGroups(mealReceipts, techOf, crew)), 'meals')}
-            </div>
-          )}
+              {inc.materials && materialReceipts.length > 0 && (
+                <div className="jl-sec">
+                  <H>Materials</H>
+                  {receiptTable(materialReceipts, 'materials', false)}
+                  {noneLine(without(byTechGroups(materialReceipts, (r) => r.tech, crew)), 'materials')}
+                </div>
+              )}
 
-          {inc.materials && materialReceipts.length > 0 && (
-            <div className="jl-sec">
-              <H>Materials</H>
-              {receiptTable(materialReceipts, 'materials', false)}
-              {noneLine(without(byTechGroups(materialReceipts, techOf, crew)), 'materials')}
-            </div>
-          )}
+              {inc.otherReceipts && otherReceipts.length > 0 && (
+                <div className="jl-sec">
+                  <H>Other receipts</H>
+                  {receiptTable(otherReceipts, '', true)}
+                </div>
+              )}
 
-          {inc.otherReceipts && otherReceipts.length > 0 && (
-            <div className="jl-sec">
-              <H>Other receipts</H>
-              {receiptTable(otherReceipts, '', true)}
-            </div>
+              {/* The job's hours and miles in one line, as on Fred's workbook. No money on it: no billable total ("No, keep it off"),
+                  and the receipts' dollars stay in their own tables (Fred, 2026-10-30: "i dont want it mix"). */}
+              {(siteHours > 0 || totalMiles > 0) && (
+                <div className="jl-band jl-avoid" style={{ marginTop: 16, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', fontSize: 13 }}>
+                  <b style={{ color: '#E3C987', letterSpacing: 1 }}>JOB TOTAL</b>
+                  <span>Hours <b>{hrs(siteHours)}</b></span>
+                  <span>Miles <b>{totalMiles.toLocaleString('en-US')}</b></span>
+                </div>
+              )}
+            </>
           )}
 
           {inc.checklist && tasks.length > 0 && (

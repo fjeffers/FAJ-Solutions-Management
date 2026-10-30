@@ -397,8 +397,9 @@ export const SOW_ESCALATION = [
 /**
  * The closeout checklist for an LDS church install: each day's deliverables and sign-off, then the
  * Vendor Guide's quality-criteria photos and required documents, in the order the days run. Ticked
- * on the tech's phone; the job isn't done until each is ticked or skipped with a reason. At most 60
- * items and 200 characters each (wf_tech_closeout).
+ * on the tech's phone; the job isn't done until each is ticked or skipped with a reason, so the
+ * guide's optional NetSpot PDF report is left off (Greptile on PR #34). At most 60 items and 200
+ * characters each (wf_tech_closeout).
  */
 export const LDS_INSTALL_CHECKLIST: string[] = [
   'Day 1 · Teams check-in on arrival; Smartsheet checkout before leaving',
@@ -433,7 +434,6 @@ export const LDS_INSTALL_CHECKLIST: string[] = [
   `Day 5 · NetSpot heatmap after cutover, dated, ${NETSPOT_MIN} or better everywhere`,
   'Day 5 · Floor plan / AP diagram: AP locations, MAC addresses, closet locations',
   'Day 5 · Fluke FLW project file and PDF report (final, with re-tests)',
-  'Day 5 · NetSpot full PDF report (optional)',
   ...SOW_QUALITY_PHOTOS.map((p) => `Day 5 · Photo: ${p}`),
   'Day 5 · Church acceptance checklist: all 15 items, signed',
   'Day 5 · Final Site Closure Checklist signed by the lead and second tech',

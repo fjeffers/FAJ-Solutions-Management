@@ -104,8 +104,10 @@ export default function SowDocument({ w, contractors, author, onClose }: {
   const box = (label: string, k: keyof SowFields, span = 1) => (
     <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 1, gridColumn: span > 1 ? `span ${span}` : undefined, minWidth: 0 }}>
       <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.5, color: SUBTLE, fontWeight: 600 }}>{label}</span>
-      <input value={f[k]} onChange={(e) => set(k, e.target.value)} aria-label={label}
+      <input className="no-print" value={f[k]} onChange={(e) => set(k, e.target.value)} aria-label={label}
         style={{ border: 'none', borderBottom: '1px solid #C9C3B6', padding: '3px 0', font: 'inherit', fontSize: 13.5, color: INK, background: 'transparent', outline: 'none', minWidth: 0, width: '100%' }} />
+      {/* On paper, the whole value wraps: a long access note or link isn't cut off at the box's width (Greptile on PR #34). */}
+      <span className="jl-print-only" style={{ borderBottom: '1px solid #C9C3B6', padding: '3px 0', fontSize: 13.5, minHeight: 24, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{f[k]}</span>
     </label>
   );
   const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 18px' };

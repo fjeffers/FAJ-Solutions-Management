@@ -78,6 +78,8 @@ describe('the techs’ checklist', () => {
     expect(LDS_INSTALL_CHECKLIST.length).toBeLessThanOrEqual(60);
     expect(LDS_INSTALL_CHECKLIST.every((i) => i.length <= 200)).toBe(true);
     expect(new Set(LDS_INSTALL_CHECKLIST).size).toBe(LDS_INSTALL_CHECKLIST.length);
+    // Every item holds up Work done, so nothing optional goes on it.
+    expect(LDS_INSTALL_CHECKLIST.filter((i) => /optional/i.test(i))).toEqual([]);
     const days = LDS_INSTALL_CHECKLIST.map((i) => Number(/^Day (\d) · /.exec(i)?.[1]));
     expect(days.every((d, k) => d >= 1 && d <= 5 && (k === 0 || d >= days[k - 1]))).toBe(true);
   });

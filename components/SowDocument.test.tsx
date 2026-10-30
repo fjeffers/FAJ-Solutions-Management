@@ -30,6 +30,9 @@ describe('the Installer SOW', () => {
     expect(box('Lead tech phone').value).toBe('910-555-0101');
     expect(box('Second tech').value).toBe('Kendell Newbold');
     expect(box('Lockbox / access').value).toBe('Lockbox 1234 on the east door');
+    // On paper the whole value wraps under the box (the box itself doesn't print).
+    expect(box('Lockbox / access').classList.contains('no-print')).toBe(true);
+    expect(box('Lockbox / access').nextElementSibling).toMatchObject({ className: 'jl-print-only', textContent: 'Lockbox 1234 on the east door' });
     expect(box('FAJ contact').value).toBe('Fred');
   });
 

@@ -734,6 +734,10 @@ describe('Job log edited by the office', () => {
     expect(document.title).toBe(`${techTitle} · Client copy`);
     // The rates table starts with a row for each tech on the sheet; with no rate set, nothing's charged, and Fred is told whose.
     expect((screen.getByLabelText('Name, rate row 1') as HTMLSelectElement).value).toBe('Paul Gibbs');
+    // No client copy with no rates on it, so never one saying $0.00 (CodeRabbit on PR #40).
+    expect(print.disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /excel/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Set a rate and save it to print the client’s copy.')).toBeTruthy();
     expect(screen.getByText('Not charged (no rates): Paul Gibbs.')).toBeTruthy();
     expect(screen.queryByText('TOTAL CHARGES')).toBeNull();
     fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '65' } });

@@ -373,6 +373,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const charges = chargesByTech(shown, savedRates, crew);
   const unbilled = notCharged(shown, rates, crew);
   const ratesChanged = !sameRates(rates, savedRates);
+  // The client's copy prints and downloads only with its rates saved and loaded: never an empty "$0.00" copy, or
+  // rates that aren't kept (CodeRabbit on PR #40).
+  const noSavedRates = Object.keys(savedRates).length === 0;
+  const clientBlocked = copy === 'client' && (ratesChanged || ratesFailed || noSavedRates);
   const rateNames = [...new Set([...crew, ...techsOnSheet])];
   const editRates = (change: (rows: RateRow[]) => RateRow[]) => setRateEdit(change(rateTable));
   // The client's copy: each row of the hours and of the miles with its rate and dollars, each tech's and the overall
@@ -587,8 +591,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         {/* Not until the job's days are in: the PDF's name has them (Greptile on PR #21). */}
         {/* While editing, save first: the print and Excel are what's saved. */}
         {/* And the rates saved first on the client's copy, so what's printed is what's kept. */}
-        <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft || (copy === 'client' && (ratesChanged || ratesFailed))} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
-        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft || (copy === 'client' && (ratesChanged || ratesFailed))} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
+        <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft || clientBlocked} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
+        <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft || clientBlocked} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
         {draft ? (
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>
@@ -628,7 +632,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" disabled={rateNames.every((n) => rateTable.some((r) => r.tech === n))}
                 onClick={() => editRates((rows) => [...rows, { tech: rateNames.find((n) => !rows.some((r) => r.tech === n)) ?? '', hour: null, mile: null }])}><Plus size={14} /> Add a rate</button>
               <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving || !ratesChanged || ratesFailed} onClick={() => void saveRates()}><Check size={16} /> {saving ? 'Saving…' : 'Save rates'}</button>
-              {ratesChanged && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>}
+              {ratesChanged ? <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>
+                : noSavedRates && !ratesFailed && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Set a rate and save it to print the client’s copy.</span>}
               {/* The total as the rates are typed (Fred: "i enter the rates and it shows the total"). */}
               <b style={{ marginLeft: 'auto', fontSize: 14 }}>Total {fmtMoney(chargesTotal(typedCharges))}</b>
             </div>

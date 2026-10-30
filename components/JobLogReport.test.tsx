@@ -296,17 +296,46 @@ describe('Job log, each tech on their own', () => {
         expect(next!.querySelectorAll('tbody tr').length).toBeGreaterThan(1);
         return next as HTMLElement;
       });
-      const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent).slice(0, 4));
+      // Fred, 2026-10-29: "Paul 10/23 8am to 5pm total 9 ... Final Hours 19 hours ... Overall total worked 36",
+      // and "Don't show the money all we want to see is how much was on site".
+      // Laid out like Fred's own sheet (2026-10-30): Name | date | clock in | clock out | total, the date with its year.
+      expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Name', 'Date', 'Clock in', 'Clock out', 'Total']);
+      const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
       expect(rows).toEqual([
-        ['Paul Gibbs'],
-        ['Mon, Oct 19, 2026', '7:37 AM', '5:37 PM', '10h 00m'],
-        ['Tue, Oct 20, 2026', '7:50 AM', '12:20 PM', '4h 30m'],
-        ['Paul Gibbs total · 2 days', '14h 30m', ''],
-        ['Kendell Newbold'],
-        ['Mon, Oct 19, 2026', '7:37 AM', '5:37 PM', '10h 00m'],
-        ['Tue, Oct 20, 2026', '7:50 AM', '6:09 PM', '10h 19m'],
-        ['Kendell Newbold total · 2 days', '20h 19m', ''],
-        ['All techs', '34h 49m', ''],
+        ['Paul Gibbs', '10/19/2026', '7:37 AM', '5:37 PM', '10'],
+        ['Paul Gibbs', '10/20/2026', '7:50 AM', '12:20 PM', '4.5'],
+        ['Paul Gibbs final hours · 2 days', '14.5'],
+        ['Kendell Newbold', '10/19/2026', '7:37 AM', '5:37 PM', '10'],
+        ['Kendell Newbold', '10/20/2026', '7:50 AM', '6:09 PM', '10.32'],
+        ['Kendell Newbold final hours · 2 days', '20.32'],
+        ['Overall total worked', '34.82'],
+      ]);
+      expect(within(table).queryByText(/\$/)).toBeNull();
+      // The summary at the top shows the same hours as the table's last line.
+      expect(screen.getByText('Hours on site').nextElementSibling!.textContent).toBe('34.82');
+    } finally {
+      tables.job_punches = before;
+    }
+  });
+  it('ends with the overall total worked when one tech did the job', async () => {
+    const before = tables.job_punches;
+    tables.job_punches = [
+      { contractor_name: 'Paul Gibbs', kind: 'in', at: at('19', '08:00'), lat: null, lng: null, accuracy: null },
+      { contractor_name: 'Paul Gibbs', kind: 'out', at: at('19', '17:00'), lat: null, lng: null, accuracy: null },
+    ];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const heading = await screen.findByRole('heading', { name: 'Time on site' });
+      const table = await waitFor(() => {
+        const next = heading.nextElementSibling;
+        expect(next?.tagName).toBe('TABLE');
+        return next as HTMLElement;
+      });
+      const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+      expect(rows).toEqual([
+        ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '9'],
+        ['Paul Gibbs final hours · 1 day', '9'],
+        ['Overall total worked', '9'],
       ]);
     } finally {
       tables.job_punches = before;

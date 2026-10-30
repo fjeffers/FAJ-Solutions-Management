@@ -4,7 +4,13 @@
 // end, miles), Meals, Materials and Other receipts. It starts from what the app has (the clock-ins, the
 // Field Sheet's miles, the approved receipts); once the office saves an edit, the job keeps its own sheet
 // (work_orders.job_log_sheet, migration 146) and the log shows that. Pure and unit-tested.
+//
+// Fred, 2026-10-30: "I want to make sure I can edit the time sheet and it shows on the job logs". A day whose
+// time on site the office set on the Hours screen (lib/field-sheet.ts: arrived, left site, lunch or hours
+// changed, or the day added) is on the log as the Hours screen has it, in place of that day's clock-ins; a
+// day hidden there is off the log.
 import { expenseCategoryLabel } from './expenses';
+import { dayCalc, type SheetRow } from './field-sheet';
 import { byTechGroups, dayOf, type Visit } from './job-log';
 
 /** A stretch on site: clock in and out as "HH:MM" (24-hour, the job's time zone), the break in hours. */
@@ -12,6 +18,11 @@ export type TimeRow = {
   tech: string; day: string; in: string; out: string; brk: number;
   /** Still on site (live data only): the hours so far come from `ms`. */
   open?: boolean; ms?: number;
+  /**
+   * The day's hours as the Hours screen has them, when they aren't clock out less clock in less the break
+   * (hours typed there, or a day with two visits): these count. Changing the times drops them.
+   */
+  hours?: number;
 };
 /** A day's drive: the odometer at each end when there is one; `miles` is what counts (a GPS-only day has no odometer). */
 export type MileRow = { tech: string; day: string; start: number | null; end: number | null; miles: number };
@@ -48,6 +59,7 @@ export function clockOf(iso: string, timeZone?: string): string {
  * to 0.01 h. Null without both times, unless it's a live stretch still on site.
  */
 export function rowHours(r: TimeRow): number | null {
+  if (r.hours != null) return r2(r.hours);
   const a = minutesOf(r.in), b = minutesOf(r.out);
   if (a == null || b == null) return r.open && r.ms != null ? r2(r.ms / 3_600_000) : null;
   return r2(Math.max(0, ((b - a + 1440) % 1440) / 60 - (r.brk || 0)));
@@ -63,11 +75,39 @@ export function milesFromOdometer(r: MileRow): number {
   return r.start != null && r.end != null && r.end >= r.start ? r1(r.end - r.start) : r.miles;
 }
 
+/** A tech's day as the office set it on the Hours screen: its time on site, or (hidden) none on the log. */
+export type HoursScreenDay = TimeRow & { hidden?: boolean };
+
+/** The fields that set a day's time on site on the Hours screen. */
+const ON_SITE = ['arrived', 'leftSite', 'lunch', 'hours'] as const;
+
+/**
+ * The days the office set on the Hours screen (its Field Sheet rows): arrived, left site, lunch or hours
+ * changed, or a day added, with a time on site there; or a day hidden. Arrived and left site are the clock in
+ * and out, the lunch (minutes) the break, and the day's hours are the Hours screen's whenever the times alone
+ * don't give them. A day the Hours screen has no time on site for (only a time leaving the site, say) leaves
+ * the clock-ins as they are: they're the better record of it.
+ */
+export function hoursScreenDays(rows: SheetRow[]): HoursScreenDay[] {
+  return rows.flatMap((r): HoursScreenDay[] => {
+    if (r.hidden) return [{ tech: r.tech, day: r.day, in: '', out: '', brk: 0, hidden: true }];
+    const set = ON_SITE.some((f) => f in r.edits);
+    if (!set && !r.added) return [];
+    const v = r.values;
+    const row: TimeRow = { tech: r.tech, day: r.day, in: v.arrived ?? '', out: v.leftSite ?? '', brk: r2((v.lunch ?? 0) / 60) };
+    const h = dayCalc(v, 0).hours;
+    if (!h && rowHours(row) == null) return [];
+    return [rowHours(row) === h ? row : { ...row, hours: h }];
+  });
+}
+
 /** The sheet from what the app has: clock-ins, the Field Sheet's days with miles, the approved receipts. */
 export function sheetFromApp(input: {
   visits: Visit[];
   mileage: { tech: string; day: string; start: number | null; end: number | null; miles: number }[];
   receipts: SheetReceipt[];
+  /** Days the office set on the Hours screen: they take the place of that day's clock-ins. */
+  hoursScreen?: HoursScreenDay[];
   timeZone?: string;
 }): JobSheet {
   const approved = input.receipts.filter((e) => e.status === 'approved');
@@ -75,12 +115,17 @@ export function sheetFromApp(input: {
     tech: e.contractor_name || 'Office', day: e.expense_date, store: e.vendor ?? '', amount: Number(e.amount) || 0,
     ...(withFor ? { for: [expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ') } : {}),
   });
+  const office = input.hoursScreen ?? [];
+  const setDays = new Set(office.map((d) => `${d.day}|${d.tech}`));
   return {
-    time: input.visits.map((v) => ({
-      tech: v.tech, day: v.day, in: clockOf(v.inAt, input.timeZone),
-      out: v.outAt ? clockOf(v.outAt, input.timeZone) : '', brk: 0,
-      ...(v.open ? { open: true, ms: v.ms } : {}),
-    })),
+    time: [
+      ...input.visits.filter((v) => !setDays.has(`${v.day}|${v.tech}`)).map((v) => ({
+        tech: v.tech, day: v.day, in: clockOf(v.inAt, input.timeZone),
+        out: v.outAt ? clockOf(v.outAt, input.timeZone) : '', brk: 0,
+        ...(v.open ? { open: true, ms: v.ms } : {}),
+      })),
+      ...office.filter((d) => !d.hidden).map((d): TimeRow => ({ tech: d.tech, day: d.day, in: d.in, out: d.out, brk: d.brk, ...(d.hours != null ? { hours: d.hours } : {}) })),
+    ],
     miles: input.mileage.map((m) => ({ ...m })),
     meals: approved.filter((e) => e.category === 'meals').map((e) => money(e, false)),
     materials: approved.filter((e) => e.category === 'materials').map((e) => money(e, false)),
@@ -102,7 +147,10 @@ export function parseSheet(raw: unknown): JobSheet | null {
     tech: str(r.tech), day: str(r.day), store: str(r.store), amount: num(r.amount) ?? 0, ...(withFor ? { for: str(r.for) } : {}),
   });
   return {
-    time: rowsOf(o.time).map((r) => ({ tech: str(r.tech), day: str(r.day), in: str(r.in), out: str(r.out), brk: num(r.brk) ?? 0 })).filter(keep),
+    time: rowsOf(o.time).map((r) => {
+      const hours = num(r.hours);
+      return { tech: str(r.tech), day: str(r.day), in: str(r.in), out: str(r.out), brk: num(r.brk) ?? 0, ...(hours != null ? { hours } : {}) };
+    }).filter(keep),
     miles: rowsOf(o.miles).map((r) => ({ tech: str(r.tech), day: str(r.day), start: num(r.start), end: num(r.end), miles: num(r.miles) ?? 0 })).filter(keep),
     meals: rowsOf(o.meals).map((r) => money(r, false)).filter(keep),
     materials: rowsOf(o.materials).map((r) => money(r, false)).filter(keep),
@@ -133,7 +181,7 @@ export function sheetToSave(s: JobSheet): JobSheet {
   const o = sheetSorted(s);
   const t = (v: string) => v.trim();
   return {
-    time: o.time.map(({ tech, day, in: i, out, brk }) => ({ tech: t(tech), day, in: i, out, brk: brk || 0 })),
+    time: o.time.map(({ tech, day, in: i, out, brk, hours }) => ({ tech: t(tech), day, in: i, out, brk: brk || 0, ...(hours != null ? { hours } : {}) })),
     miles: o.miles.map(({ tech, day, start, end, miles }) => ({ tech: t(tech), day, start, end, miles })),
     meals: o.meals.map(({ tech, day, store, amount }) => ({ tech: t(tech), day, store: t(store), amount })),
     materials: o.materials.map(({ tech, day, store, amount }) => ({ tech: t(tech), day, store: t(store), amount })),

@@ -2,10 +2,11 @@
 // materials etc all of it"), with the Gaffney job's own numbers (WO 19101401).
 import { describe, it, expect } from 'vitest';
 import {
-  clockOf, hoursTotal, milesFromOdometer, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours,
+  clockOf, hoursScreenDays, hoursTotal, milesFromOdometer, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours,
   sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetToSave, type JobSheet, type TimeRow,
 } from './job-log-sheet';
 import type { Visit } from './job-log';
+import { sheetRows } from './field-sheet';
 
 const TZ = 'America/New_York';
 const t = (tech: string, day: string, i: string, out: string, brk = 0): TimeRow => ({ tech, day, in: i, out, brk });
@@ -121,6 +122,63 @@ describe('the saved sheet', () => {
     ] };
     expect(sheetByTech(mixed, ['Paul Gibbs', 'Kendell Newbold']).time.map((r) => `${r.tech} ${r.day}`)).toEqual([
       'Paul Gibbs 2026-10-19', 'Paul Gibbs 2026-10-20', 'Kendell Newbold 2026-10-19', 'Kendell Newbold 2026-10-20',
+    ]);
+  });
+
+  it('has a row\'s own hours (from the Hours screen) count, until its times change', () => {
+    expect(rowHours({ ...t('Paul Gibbs', '2026-10-20', '', ''), hours: 6 })).toBe(6);
+    const saved = sheetToSave({ ...sheet, time: [{ ...t('Paul Gibbs', '2026-10-20', '', ''), hours: 6 }] });
+    expect(saved.time[0]).toEqual({ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 });
+    expect(parseSheet(saved)!.time[0].hours).toBe(6);
+  });
+});
+
+describe('the Hours screen on the job log', () => {
+  // Fred, 2026-10-30: "I want to make sure I can edit the time sheet and it shows on the job logs".
+  const day = (id: string, d: string, tech: string, edits: Record<string, unknown>, more: { added?: boolean; hidden?: boolean } = {}) =>
+    ({ id, day: d, tech, edits, added: more.added ?? false, hidden: more.hidden ?? false });
+  const rows = sheetRows({
+    app: [], techs: [], days: [],
+    saved: [
+      // Retimed: on site 8:00 to 4:30 with half an hour for lunch.
+      day('s1', '2026-10-19', 'Paul Gibbs', { arrived: '08:00', leftSite: '16:30', lunch: 30 }),
+      // Hours typed, no times.
+      day('s2', '2026-10-20', 'Paul Gibbs', { hours: 6 }),
+      // Hidden: not part of this job.
+      day('s3', '2026-10-21', 'Kendell Newbold', {}, { hidden: true }),
+      // Added for its miles only: no time on site.
+      day('s4', '2026-10-18', 'Paul Gibbs', { miles: 244 }, { added: true }),
+      // Only a time leaving the site (WO 19101402, Dwayne on 10/19): no time on site there, so his clock-ins stay.
+      day('s5', '2026-10-19', 'Dwayne Cudjoe', { leftSite: '15:07' }, { added: true }),
+    ],
+  });
+
+  it('takes the days the office set: times, lunch as the break, hours typed; a hidden day is off', () => {
+    expect(hoursScreenDays(rows)).toEqual([
+      { tech: 'Paul Gibbs', day: '2026-10-19', in: '08:00', out: '16:30', brk: 0.5 },
+      { tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 },
+      { tech: 'Kendell Newbold', day: '2026-10-21', in: '', out: '', brk: 0, hidden: true },
+    ]);
+  });
+
+  it('puts them on the log in place of those days\' clock-ins, and keeps every other clock-in', () => {
+    const visit = (tech: string, inAt: string, outAt: string): Visit =>
+      ({ tech, day: inAt.slice(0, 10), inAt, outAt, inGps: null, outGps: null, open: false, ms: Date.parse(outAt) - Date.parse(inAt) });
+    const s = sheetFromApp({
+      visits: [
+        visit('Paul Gibbs', '2026-10-19T11:37:00Z', '2026-10-19T21:37:00Z'),
+        visit('Paul Gibbs', '2026-10-20T11:50:00Z', '2026-10-20T22:09:00Z'),
+        visit('Kendell Newbold', '2026-10-21T11:38:00Z', '2026-10-21T21:50:00Z'),
+        visit('Kendell Newbold', '2026-10-22T11:44:00Z', '2026-10-22T23:15:00Z'),
+        visit('Dwayne Cudjoe', '2026-10-19T12:36:00Z', '2026-10-19T19:14:00Z'),
+      ],
+      mileage: [], receipts: [], hoursScreen: hoursScreenDays(rows), timeZone: TZ,
+    });
+    expect(s.time.map((r) => [r.tech, r.day, r.in, r.out, rowHours(r)])).toEqual([
+      ['Kendell Newbold', '2026-10-22', '07:44', '19:15', 11.52],
+      ['Dwayne Cudjoe', '2026-10-19', '08:36', '15:14', 6.63],
+      ['Paul Gibbs', '2026-10-19', '08:00', '16:30', 8],
+      ['Paul Gibbs', '2026-10-20', '', '', 6],
     ]);
   });
 });

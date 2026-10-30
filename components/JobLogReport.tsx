@@ -56,7 +56,7 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, type Punch } from '@/lib/job-log';
 import {
-  hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
@@ -175,7 +175,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  // Each tech's days as the Hours screen and the Field Sheet have them, for the miles
+  // Each tech's days as the Hours screen and the Field Sheet have them, for the miles and the days the office retimed
   // (Fred, 2026-10-25: "i don't see the mileages on the job logs along with the pictures").
   const [days, setDays] = useState<SheetRow[]>([]);
   // Pictures added from the office: the log reads the job's photos again, and the
@@ -211,7 +211,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       const readings = ((od.data as Reading[] | null) ?? []).map((o) => ({ ...o, reading: Number(o.reading), ai_reading: o.ai_reading == null ? null : Number(o.ai_reading) }));
       const saved = ((fs.data as (Omit<SavedDay, 'edits'> & { edits: unknown })[] | null) ?? []).map((d) => ({ ...d, edits: parseEdits(d.edits) }));
       const crew = (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter((t): t is string => !!t);
-      setDays(rowsFor({ events: ev, readings, saved, techs: crew, start: w.start_date, end: w.end_date, timeZone: TZ }).filter((r) => !r.hidden));
+      // Hidden days too: a day hidden on the Hours screen is off the log's hours as well.
+      setDays(rowsFor({ events: ev, readings, saved, techs: crew, start: w.start_date, end: w.end_date, timeZone: TZ }));
       const odo = ((od.data as OdoRow[] | null) ?? []).filter((o) => o.photo_path);
       const paths = [...rec.map((e) => e.receipt_path!), ...odo.map((o) => o.photo_path!)];
       if (!paths.length) return;
@@ -269,9 +270,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const appSheet = useMemo(() => sheetFromApp({
     visits: buildVisits(punches ?? [], logs, new Date(), TZ),
     // A day's miles: the miles typed on the Hours screen, else the odometer, else the GPS.
-    mileage: days.map((r) => ({ tech: r.tech, day: r.day, start: r.values.odoStart ?? null, end: r.values.odoEnd ?? null, miles: dayCalc(r.values, 0).miles }))
+    mileage: days.filter((r) => !r.hidden)
+      .map((r) => ({ tech: r.tech, day: r.day, start: r.values.odoStart ?? null, end: r.values.odoEnd ?? null, miles: dayCalc(r.values, 0).miles }))
       .filter((m) => m.miles > 0 || m.start != null || m.end != null),
     receipts: spent,
+    // A day's time on site as the office set it on the Hours screen, in place of that day's clock-ins
+    // (Fred, 2026-10-30: "I want to make sure I can edit the time sheet and it shows on the job logs").
+    hoursScreen: hoursScreenDays(days),
     timeZone: TZ,
   }), [punches, logs, days, spent]);
   const sheet = savedSheet ?? appSheet;
@@ -315,7 +320,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const range = from || to ? `${from ? fmtDay(from) : 'Start'} – ${to ? fmtDay(to) : 'today'}` : 'Whole job';
   // The saved PDF's name: the print window names it after the page (lib/job-log.ts
   // jobLogName). The days picked, else the job's first and last day on the Field Sheet.
-  const worked = [...shown.time.map((r) => r.day), ...shown.miles.map((r) => r.day), ...days.filter((r) => inRange(r.day, from, to)).map((r) => r.day)].sort();
+  const worked = [...shown.time.map((r) => r.day), ...shown.miles.map((r) => r.day), ...days.filter((r) => !r.hidden && inRange(r.day, from, to)).map((r) => r.day)].sort();
   const logName = jobLogName(w, from || worked[0] || '', to || worked.at(-1) || '');
   useEffect(() => {
     const was = document.title;
@@ -538,7 +543,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         )}
         {savedSheet && !draft && (
           <div role="status" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
-            <span style={{ flex: '1 1 260px' }}>This job log shows your edits, so a new clock-in, mile or receipt on the job won’t show here.</span>
+            <span style={{ flex: '1 1 260px' }}>This job log shows your edits, so a new clock-in, a change on the Hours screen, or a new mile or receipt won’t show here.</span>
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => void startOver()}>Start over from the app</button>
           </div>
         )}

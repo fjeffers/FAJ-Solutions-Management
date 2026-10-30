@@ -501,6 +501,35 @@ describe('Job log edited by the office', () => {
     expect(screen.queryByText(/billable/i)).toBeNull();
   }));
 
+  it('shows a day as the office retimed it on the Hours screen, in place of its clock-ins (Fred: "edit the time sheet and it shows on the job logs")', () => withPunches(async () => {
+    const before = tables.field_sheet_days;
+    // Paul clocked 8:00 to 5:00 on 10/19; the office set 8:30 to 5:00 with a 30-minute lunch on the Hours screen.
+    tables.field_sheet_days = [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218, arrived: '08:30', leftSite: '17:00', lunch: 30 }, added: false, hidden: false }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const heading = await screen.findByRole('heading', { name: 'Time on site' });
+      await waitFor(() => expect(rowsOf(heading)[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:30 AM', '5:00 PM', '0.5', '8']));
+      expect(rowsOf(heading)).toHaveLength(3);
+      expect(screen.getByText('Hours on site').nextElementSibling!.textContent).toBe('8');
+    } finally {
+      tables.field_sheet_days = before;
+    }
+  }));
+
+  it('leaves a day hidden on the Hours screen off the job log', () => withPunches(async () => {
+    const before = tables.field_sheet_days;
+    tables.field_sheet_days = [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218 }, added: false, hidden: true }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      await screen.findByRole('button', { name: /edit job log/i });
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Materials' })).toBeTruthy());
+      expect(screen.queryByRole('heading', { name: 'Time on site' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Mileage' })).toBeNull();
+    } finally {
+      tables.field_sheet_days = before;
+    }
+  }));
+
   it("won't save a row without a name, and says which", () => withPunches(async () => {
     vi.mocked(toastError).mockClear();
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);

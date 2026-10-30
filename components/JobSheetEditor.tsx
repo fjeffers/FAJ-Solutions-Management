@@ -116,11 +116,12 @@ export default function JobSheetEditor({ sheet, onChange, crew, firstDay }: {
     <div className="no-print">
       <datalist id="job-sheet-crew">{crew.map((t) => <option key={t} value={t} />)}</datalist>
 
+      {/* A new clock in, clock out or break: the hours follow them, not the Hours screen's figure any more. */}
       {part('Time on site', 'time', sheet.time.map((r: TimeRow, i) => row('time', i, r, (
         <>
-          <Field name="Clock in"><input aria-label={`Clock in, time row ${i + 1}`} type="time" style={box} value={r.in} onChange={(e) => edit('time', i, { in: e.target.value })} /></Field>
-          <Field name="Clock out"><input aria-label={`Clock out, time row ${i + 1}`} type="time" style={box} value={r.out} onChange={(e) => edit('time', i, { out: e.target.value })} /></Field>
-          <Field name="Break (hours)"><NumBox label={`Break, time row ${i + 1}`} value={r.brk} empty={0} onChange={(n) => edit('time', i, { brk: n ?? 0 })} /></Field>
+          <Field name="Clock in"><input aria-label={`Clock in, time row ${i + 1}`} type="time" style={box} value={r.in} onChange={(e) => edit('time', i, { in: e.target.value, hours: undefined })} /></Field>
+          <Field name="Clock out"><input aria-label={`Clock out, time row ${i + 1}`} type="time" style={box} value={r.out} onChange={(e) => edit('time', i, { out: e.target.value, hours: undefined })} /></Field>
+          <Field name="Break (hours)"><NumBox label={`Break, time row ${i + 1}`} value={r.brk} empty={0} onChange={(n) => edit('time', i, { brk: n ?? 0, hours: undefined })} /></Field>
           {shown('Hours', fmt(rowHours(r)))}
         </>
       ))), `Total ${fmt(hoursTotal(sheet.time))} hours`)}

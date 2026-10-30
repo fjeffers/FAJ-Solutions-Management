@@ -439,11 +439,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
   // Editing on the invoice: each change is to the time sheet under it, a tech's rates or the invoice's own boxes.
   const plusDay = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
-  /** A new line's day: the day after the tech's last (a day worked, a drive), or their first day (a hotel). */
-  const newDay = (s: JobSheet, tech: string, item: 'Labor' | 'Mileage' | 'Hotel') => {
+  /** A new line's day: the day after the tech's last (a day worked, a drive), or their first day (a hotel, a material). */
+  const newDay = (s: JobSheet, tech: string, item: 'Labor' | 'Mileage' | 'Material' | 'Hotel') => {
     const worked = s.time.filter((r) => r.tech === tech).map((r) => r.day).sort();
     const all = [...worked, ...(item === 'Mileage' ? s.miles.filter((r) => r.tech === tech).map((r) => r.day) : [])].sort();
-    const day = item === 'Hotel' ? worked[0] ?? (from || todayDay) : all.length ? plusDay(all.at(-1)!, 1) : (from || todayDay);
+    const day = item === 'Hotel' || item === 'Material' ? worked[0] ?? (from || todayDay) : all.length ? plusDay(all.at(-1)!, 1) : (from || todayDay);
     // In the dates picked, so the line added shows to be filled in (Greptile on PR #44).
     return to && day > to ? to : from && day < from ? from : day;
   };

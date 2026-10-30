@@ -67,10 +67,12 @@ export type InvoiceTech = {
   hours: InvoiceSection & { qty: number; rate: number | null };
   meals: InvoiceSection;
   mileage: InvoiceSection;
+  /** Total Materials: the lead's only, every material bought on the job, before the hotel. */
+  materials?: InvoiceSection;
   travel: InvoiceSection;
   total: number;
 };
-export type Invoice = { techs: InvoiceTech[]; totals: { labor: number; mileage: number; meals: number; travel: number; total: number } };
+export type Invoice = { techs: InvoiceTech[]; totals: { labor: number; mileage: number; meals: number; materials: number; travel: number; total: number } };
 
 const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
 const sum = (lines: InvoiceLine[]) => r2(lines.reduce((t, l) => t + (l.amount ?? 0), 0));
@@ -90,6 +92,12 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
   // (Greptile on PR #44).
   const lead = crew[0] ?? order[0] ?? '';
   const leadDrives = sheet.miles.filter((r) => r.tech === lead), leadHotels = sheet.other.filter((r) => r.tech === lead && isHotel(r));
+  // The materials, whoever bought them, once, under the lead before the hotel (Fred, 2026-10-30: "under lead tech
+  // before hotel"); the first tech's when the lead has no lines in the dates.
+  const host = order.includes(lead) ? lead : order[0];
+  const materialLines = [...sheet.materials].sort((a, b) => a.day.localeCompare(b.day)).map((r): InvoiceLine => ({
+    date: r.day, item: 'Material', description: r.store || '', qty: 1, rate: r.amount, amount: r2(r.amount || 0), tech: r.tech, row: r,
+  }));
   const techs = order.map((tech): InvoiceTech => {
     const { hour = null, mile = null } = rates[tech] ?? {};
     const time = sheet.time.filter((r) => r.tech === tech).sort((a, b) => a.day.localeCompare(b.day));
@@ -136,11 +144,13 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     const meals = { title: 'Total Meal Allowance', amount: sum(mealLines), lines: mealLines };
     const mileage = { title: 'Total Milage', amount: sum(mileLines), lines: mileLines };
     const travel = { title: 'Total Travel', amount: sum(travelLines), lines: travelLines };
-    return { role: tech === crew[0] ? 'Lead' : 'Helper', tech, hours, meals, mileage, travel, total: r2(hours.amount + meals.amount + mileage.amount + travel.amount) };
+    const materials = tech === host ? { title: 'Total Materials', amount: sum(materialLines), lines: materialLines } : undefined;
+    return { role: tech === crew[0] ? 'Lead' : 'Helper', tech, hours, meals, mileage, ...(materials ? { materials } : {}), travel,
+      total: r2(hours.amount + meals.amount + mileage.amount + (materials?.amount ?? 0) + travel.amount) };
   });
-  const of = (k: 'hours' | 'meals' | 'mileage' | 'travel') => r2(techs.reduce((t, x) => t + x[k].amount, 0));
-  const totals = { labor: of('hours'), mileage: of('mileage'), meals: of('meals'), travel: of('travel'), total: 0 };
-  totals.total = r2(totals.labor + totals.mileage + totals.meals + totals.travel);
+  const of = (k: 'hours' | 'meals' | 'mileage' | 'materials' | 'travel') => r2(techs.reduce((t, x) => t + (x[k]?.amount ?? 0), 0));
+  const totals = { labor: of('hours'), mileage: of('mileage'), meals: of('meals'), materials: of('materials'), travel: of('travel'), total: 0 };
+  totals.total = r2(totals.labor + totals.mileage + totals.meals + totals.materials + totals.travel);
   return { techs, totals };
 }
 
@@ -168,9 +178,9 @@ function dayMiles(rows: MileRow[], tech: string, day: string, miles: number | nu
 
 /**
  * A line changed on the invoice: its day; a day's hours (the break still comes off them), a day's miles, a meal's
- * receipts or a hotel's amount.
+ * receipts, a hotel's amount, or a material's store and amount.
  */
-export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null }): JobSheet {
+export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string }): JobSheet {
   const tech = l.tech ?? '';
   if (l.item === 'Labor' && l.row) {
     const r = l.row as TimeRow;
@@ -185,6 +195,11 @@ export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty
   if (l.item === 'Hotel' && l.row) {
     const r = l.row as MoneyRow;
     return { ...sheet, other: swap(sheet.other, r, { ...r, ...(p.day ? { day: p.day } : {}), ...('amount' in p ? { amount: p.amount ?? 0 } : {}) }) };
+  }
+  if (l.item === 'Material' && l.row) {
+    const r = l.row as MoneyRow;
+    return { ...sheet, materials: swap(sheet.materials, r, { ...r, ...(p.day ? { day: p.day } : {}), ...('amount' in p ? { amount: p.amount ?? 0 } : {}),
+      ...(p.description != null ? { store: p.description } : {}) }) };
   }
   if (l.item === 'Meal') {
     if (p.day) return { ...sheet, meals: sheet.meals.map((r) => (theirs(tech, l.date)(r) ? { ...r, day: p.day! } : r)) };
@@ -202,15 +217,17 @@ export function removeLine(sheet: JobSheet, l: InvoiceLine): JobSheet {
   const tech = l.tech ?? '';
   if (l.item === 'Labor' && l.row) return { ...sheet, time: swap(sheet.time, l.row as TimeRow, null) };
   if (l.item === 'Hotel' && l.row) return { ...sheet, other: swap(sheet.other, l.row as MoneyRow, null) };
+  if (l.item === 'Material' && l.row) return { ...sheet, materials: swap(sheet.materials, l.row as MoneyRow, null) };
   if (l.item === 'Meal') return { ...sheet, meals: sheet.meals.filter((r) => !theirs(tech, l.date)(r)) };
   if (l.item === 'Mileage') return { ...sheet, miles: sheet.miles.filter((r) => !theirs(tech, l.date)(r)) };
   return sheet;
 }
 
-/** A line added on the invoice for a tech on a day: a day worked, a drive or a hotel, to fill in. */
-export function addLine(sheet: JobSheet, tech: string, item: 'Labor' | 'Mileage' | 'Hotel', day: string): JobSheet {
+/** A line added on the invoice for a tech on a day: a day worked, a drive, a material or a hotel, to fill in. */
+export function addLine(sheet: JobSheet, tech: string, item: 'Labor' | 'Mileage' | 'Material' | 'Hotel', day: string): JobSheet {
   if (item === 'Labor') return { ...sheet, time: [...sheet.time, { tech, day, in: '', out: '', brk: 0, hours: 0 }] };
   if (item === 'Mileage') return { ...sheet, miles: [...sheet.miles, { tech, day, start: null, end: null, miles: 0 }] };
+  if (item === 'Material') return { ...sheet, materials: [...sheet.materials, { tech, day, store: '', amount: 0 }] };
   return { ...sheet, other: [...sheet.other, { tech, day, store: '', amount: 0, for: 'Lodging' }] };
 }
 
@@ -267,7 +284,7 @@ export function invoiceCells(inv: Invoice, head: InvoiceHead): XCell[][] {
     rows[at - 1][6] = num(s.amount, ACCT, s.lines.length ? `SUM(G${first}:G${next() - 1})` : '0');
     return at;
   };
-  const techAt: { hours: number; meals: number; mileage: number; travel: number }[] = [];
+  const techAt: { hours: number; meals: number; mileage: number; materials?: number; travel: number }[] = [];
   for (const t of inv.techs) {
     // The tech's first line: Lead or Helper, their name, Total Hours added up × their rate.
     const at = next();
@@ -277,19 +294,26 @@ export function invoiceCells(inv: Invoice, head: InvoiceHead): XCell[][] {
     const last = next() - 1;
     rows[at - 1][4] = num(t.hours.qty, HOURS, t.hours.lines.length ? `SUM(E${first}:E${last})` : '0');
     rows[at - 1][6] = num(t.hours.amount, ACCT, t.hours.lines.length ? `SUM(G${first}:G${last})` : '0');
-    const meals = section(t.meals, QTY), mileage = section(t.mileage, MILES), travel = section(t.travel, QTY);
-    rows.push([null, null, null, `${t.role} Total`, null, null, num(t.total, ACCT, `G${at}+G${meals}+G${mileage}+G${travel}`)]);
+    const meals = section(t.meals, QTY), mileage = section(t.mileage, MILES);
+    const materials = t.materials?.lines.length ? section(t.materials, QTY) : undefined;
+    const travel = section(t.travel, QTY);
+    rows.push([null, null, null, `${t.role} Total`, null, null,
+      num(t.total, ACCT, [at, meals, mileage, ...(materials ? [materials] : []), travel].map((r) => `G${r}`).join('+'))]);
     rows.push([]);
-    techAt.push({ hours: at, meals, mileage, travel });
+    techAt.push({ hours: at, meals, mileage, ...(materials ? { materials } : {}), travel });
   }
   rows.push([null, null, 'Totals']);
   const totalsAt = next();
-  const of = (k: keyof (typeof techAt)[number]) => (techAt.length ? techAt.map((t) => `G${t[k]}`).join('+') : '0');
+  const of = (k: keyof (typeof techAt)[number]) => {
+    const cells = techAt.flatMap((t) => (t[k] ? [`G${t[k]}`] : []));
+    return cells.length ? cells.join('+') : '0';
+  };
   rows.push([null, null, null, null, 'Labor', null, num(inv.totals.labor, ACCT, of('hours'))]);
   rows.push([null, null, null, null, 'Mileage', null, num(inv.totals.mileage, ACCT, of('mileage'))]);
   rows.push([null, null, null, null, 'Meals', null, num(inv.totals.meals, ACCT, of('meals'))]);
+  if (techAt.some((t) => t.materials)) rows.push([null, null, null, null, 'Materials', null, num(inv.totals.materials, ACCT, of('materials'))]);
   rows.push([null, null, null, null, 'Travel', null, num(inv.totals.travel, ACCT, of('travel'))]);
-  rows.push([null, null, null, null, 'Total Invoice', null, num(inv.totals.total, ACCT, `SUM(G${totalsAt}:G${totalsAt + 3})`)]);
+  rows.push([null, null, null, null, 'Total Invoice', null, num(inv.totals.total, ACCT, `SUM(G${totalsAt}:G${next() - 1})`)]);
   return rows;
 }
 

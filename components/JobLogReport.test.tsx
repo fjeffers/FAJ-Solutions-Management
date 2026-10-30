@@ -288,8 +288,14 @@ describe('Job log, each tech on their own', () => {
     try {
       // Fred, 2026-10-29: "Lead tech first and then helper tech": Paul leads, though Kendell is listed first.
       render(<JobLogReport w={{ ...wo, contractor_names: ['Kendell Newbold', 'Paul Gibbs'], lead_contractor_name: 'Paul Gibbs' } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
-      const table = (await screen.findByRole('heading', { name: 'Time on site' })).nextElementSibling as HTMLElement;
-      await waitFor(() => expect(table.querySelectorAll('tbody tr').length).toBeGreaterThan(1));
+      // The heading shows "Loading…" first; wait for the table itself (CodeRabbit on PR #35).
+      const heading = await screen.findByRole('heading', { name: 'Time on site' });
+      const table = await waitFor(() => {
+        const next = heading.nextElementSibling;
+        expect(next?.tagName).toBe('TABLE');
+        expect(next!.querySelectorAll('tbody tr').length).toBeGreaterThan(1);
+        return next as HTMLElement;
+      });
       const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent).slice(0, 4));
       expect(rows).toEqual([
         ['Paul Gibbs'],

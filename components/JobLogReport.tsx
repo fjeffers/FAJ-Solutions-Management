@@ -43,7 +43,7 @@ import { createPortal } from 'react-dom';
 import { Check, Download, FileText, Printer, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
-import { dayCalc, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
+import { dayCalc, leadFirst, parseEdits, rowsFor, type SavedDay, type SheetRow } from '@/lib/field-sheet';
 import type { OdoRow as Reading } from '@/lib/weekly-bill';
 import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
@@ -245,8 +245,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     .filter(({ r, miles }) => miles > 0 || r.values.odoStart != null || r.values.odoEnd != null)
     .sort((a, b) => a.r.day.localeCompare(b.r.day) || a.r.tech.localeCompare(b.r.tech));
   const totalMiles = Math.round(mileage.reduce((t, m) => t + m.miles, 0) * 10) / 10;
-  // Each tech's own days and total, then the next tech (Fred, 2026-10-29: "Paul and Kendall separated grouping").
-  const crew = w.contractor_names?.length ? w.contractor_names : [w.contractor_name];
+  // Each tech's own days and total, then the next tech (Fred, 2026-10-29: "Paul and Kendall separated grouping"),
+  // the lead tech first and then the helpers ("Lead tech first and then helper tech").
+  const crew = leadFirst(w);
   const visitGroups = byTechGroups(visits, (v) => v.tech, crew);
   const mileGroups = byTechGroups(mileage, (m) => m.r.tech, crew);
   const r1 = (n: number) => Math.round(n * 10) / 10;

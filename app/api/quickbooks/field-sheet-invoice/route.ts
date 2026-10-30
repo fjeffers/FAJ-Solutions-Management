@@ -4,7 +4,7 @@ import { getValidQboSession } from '@/lib/quickbooks-session';
 import { attachToInvoice, findOrCreateCustomer, findOrCreateServiceItem, createInvoice, sendInvoice } from '@/lib/quickbooks';
 import { dayOf, parseDayEvents, type DayEvent } from '@/lib/project-day';
 import {
-  billRange, blocksBilling, byTech, fieldSheetInvoice, inDates, overlaps, parseEdits, parseSettings, qboItemFor, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
+  billRange, blocksBilling, byTech, fieldSheetInvoice, inDates, leadFirst, overlaps, parseEdits, parseSettings, qboItemFor, rowsFor, sheetTotals, withAccountRate, type SavedDay, type SheetReceipt,
 } from '@/lib/field-sheet';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { timesheetFile, timesheetLines, timesheetPdf } from '@/lib/timesheet';
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
   if (fromIn && toIn && fromIn > toIn) return NextResponse.json({ error: 'The week starts after it ends. Pick the dates again.' }, { status: 400 });
 
   const { data: wo } = await supabase.from('work_orders')
-    .select('id, wo_number, external_wo_id, site_name, title, site_address, site_city, site_state, site_zip, customer_name, contractor_name, contractor_names, start_date, end_date')
+    .select('id, wo_number, external_wo_id, site_name, title, site_address, site_city, site_state, site_zip, customer_name, contractor_name, contractor_names, lead_contractor_name, start_date, end_date')
     .eq('id', wo_id).eq('user_id', user.id).maybeSingle();
   if (!wo) return NextResponse.json({ error: 'That work order was not found.' }, { status: 404 });
 
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
     lines: totals.lines.map((l) => ({ kind: l.kind, date: l.date, description: l.description, qty: l.qty, rate: l.rate, amount: l.amount })),
     total: totals.bill,
     // Each tech's hours, miles and materials, for the week's workbook (Fred, 2026-10-29: "I need a break down from each tech").
-    perTech: byTech(rows, receipts, s), mileRate: s.mileRate,
+    perTech: byTech(rows, receipts, s, leadFirst(wo)), mileRate: s.mileRate,
   };
 
   // A bill from the QuickBooks import file, once Fred has imported it: recorded

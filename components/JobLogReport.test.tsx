@@ -273,7 +273,7 @@ describe('Job log pictures', () => {
 
 describe('Job log, each tech on their own', () => {
   // Fred, 2026-10-29: "Show all of Paul hours and total, Kendall total ... Paul and Kendall separated grouping".
-  it("lists Paul's days and total, then Kendell's, then all techs", async () => {
+  it("lists the lead tech's days and total first, then the helper's, then all techs", async () => {
     const before = tables.job_punches;
     tables.job_punches = [
       { contractor_name: 'Kendell Newbold', kind: 'in', at: at('19', '07:37'), lat: null, lng: null, accuracy: null },
@@ -286,7 +286,8 @@ describe('Job log, each tech on their own', () => {
       { contractor_name: 'Paul Gibbs', kind: 'out', at: at('20', '12:20'), lat: null, lng: null, accuracy: null },
     ];
     try {
-      render(<JobLogReport w={{ ...wo, contractor_names: ['Paul Gibbs', 'Kendell Newbold'] } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
+      // Fred, 2026-10-29: "Lead tech first and then helper tech": Paul leads, though Kendell is listed first.
+      render(<JobLogReport w={{ ...wo, contractor_names: ['Kendell Newbold', 'Paul Gibbs'], lead_contractor_name: 'Paul Gibbs' } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
       const table = (await screen.findByRole('heading', { name: 'Time on site' })).nextElementSibling as HTMLElement;
       await waitFor(() => expect(table.querySelectorAll('tbody tr').length).toBeGreaterThan(1));
       const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent).slice(0, 4));

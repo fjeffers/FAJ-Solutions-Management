@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  atCost, billRange, blocksBilling, byTech, byTechRows, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  atCost, billRange, blocksBilling, byTech, byTechRows, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, leadFirst, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
   withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals, type TechBreakdown,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
@@ -475,7 +475,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
   const billed: SheetReceipt[] = receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date, tech: e.contractor_name }));
   const totals = sheetTotals(rows, billed, settings);
   // Each tech's hours, miles and materials (Fred, 2026-10-29: "I need a break down from each tech").
-  const perTech = byTech(rows, billed, settings);
+  const perTech = byTech(rows, billed, settings, leadFirst(wo));
   const allTechs = [...new Set([...techs, ...rows.map((r) => r.tech)])];
 
   // ── saving: one write at a time per line, and for the rates, so an older save can't land after a newer one ──

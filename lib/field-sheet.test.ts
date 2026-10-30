@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildDayLogs, parseDayEvents, type DayEvent } from './project-day';
 import { matchOdometer, type OdoRow } from './weekly-bill';
 import {
-  appDays, billRange, blocksBilling, byTech, byTechRows, clock, dayMiles, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
+  appDays, billRange, blocksBilling, byTech, leadFirst, byTechRows, clock, dayMiles, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
   withAccountRate,
   type SavedDay, type SheetReceipt, type SheetSettings,
 } from './field-sheet';
@@ -500,6 +500,14 @@ describe('by tech', () => {
   const s = bill({ labor: 'hourly', rate: 100, mileRate: 0.6, receiptsAtCost: true });
   const list = byTech(rows, receipts, s);
   const [kendell, paul, office] = list;
+
+  // Fred, 2026-10-29: "Lead tech first and then helper tech".
+  it('puts the lead tech first, then the helpers, the office last', () => {
+    const crew = leadFirst({ lead_contractor_name: 'Paul Gibbs', contractor_names: ['Kendell Newbold', 'Paul Gibbs'], contractor_name: 'Kendell Newbold' });
+    expect(crew).toEqual(['Paul Gibbs', 'Kendell Newbold']);
+    expect(byTech(rows, receipts, s, crew).map((t) => t.tech)).toEqual(['Paul Gibbs', 'Kendell Newbold', 'Office']);
+    expect(leadFirst({ lead_contractor_name: null, contractor_names: null, contractor_name: ' Dwayne Cudjoe ' })).toEqual(['Dwayne Cudjoe']);
+  });
 
   it('gives each tech their own days, oldest first, the office’s own receipts last', () => {
     expect(list.map((t) => t.tech)).toEqual(['Kendell Newbold', 'Paul Gibbs', 'Office']);

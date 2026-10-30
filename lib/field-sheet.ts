@@ -574,7 +574,13 @@ function billMoney(rows: SheetRow[], s: SheetSettings): { labor: number; mileage
  * flagged when the job doesn't bill them. Sorted by name, the office's own
  * receipts last.
  */
-export function byTech(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSettings): TechBreakdown[] {
+/** The job's techs, the lead tech first and then the helpers (Fred, 2026-10-29: "Lead tech first and then helper tech"). */
+export function leadFirst(w: { lead_contractor_name?: string | null; contractor_names?: string[] | null; contractor_name?: string | null }): string[] {
+  return [...new Set([w.lead_contractor_name, ...(w.contractor_names ?? []), w.contractor_name].map((n) => (n ?? '').trim()).filter(Boolean))];
+}
+
+/** Each tech's breakdown, in the crew's order (leadFirst): the lead tech, the helpers, anyone else by name, the office last. */
+export function byTech(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSettings, crew: string[] = []): TechBreakdown[] {
   const live = rows.filter((r) => !r.hidden);
   // Labor dollars when the job bills by the hour at a rate it has (a rate left empty bills nothing).
   const byHour = (s.labor === 'hourly' && (s.rate != null || s.travelRate != null)) || (s.labor === 'blended' && s.rate != null);
@@ -633,10 +639,11 @@ export function byTech(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSetti
     else if (atCost(e.category)) { const t = get(who); t.materials.push(item); t.materialsTotal += e.amount; }
   }
   const byDate = (a: TechMaterial, b: TechMaterial) => (a.date ?? '').localeCompare(b.date ?? '');
+  const rank = (tech: string) => { const i = crew.indexOf(tech); return i < 0 ? crew.length : i; };
   return [...out.values()].map((t) => ({
     ...t, hotelTotal: r2(t.hotelTotal), meals: r2(t.meals), materialsTotal: r2(t.materialsTotal),
     hotels: [...t.hotels].sort(byDate), mealReceipts: [...t.mealReceipts].sort(byDate), materials: [...t.materials].sort(byDate),
-  })).sort((a, b) => Number(a.tech === OFFICE) - Number(b.tech === OFFICE) || a.tech.localeCompare(b.tech));
+  })).sort((a, b) => Number(a.tech === OFFICE) - Number(b.tech === OFFICE) || rank(a.tech) - rank(b.tech) || a.tech.localeCompare(b.tech));
 }
 
 /**

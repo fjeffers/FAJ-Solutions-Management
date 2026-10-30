@@ -81,8 +81,11 @@ export const fixedHours = (r: TimeRow): number | null =>
 export const hoursTotal = (rows: TimeRow[]) => r2(rows.reduce((t, r) => t + (rowHours(r) ?? 0), 0));
 export const milesTotal = (rows: MileRow[]) => r1(rows.reduce((t, r) => t + (r.miles || 0), 0));
 export const moneyTotal = (rows: MoneyRow[]) => r2(rows.reduce((t, r) => t + (r.amount || 0), 0));
-/** An other receipt that's a hotel: what it was for says Lodging (the app's category), hotel or motel. */
-export const isHotel = (r: MoneyRow) => /\b(lodging|hotels?|motels?)\b/i.test(r.for ?? '');
+/**
+ * An other receipt that's a hotel: what it was for says Lodging (the app's category), hotel or motel. Only the
+ * category, before the tech's note (" · "): parking noted "at the hotel" is still parking (Greptile on PR #41).
+ */
+export const isHotel = (r: MoneyRow) => /\b(lodging|hotels?|motels?)\b/i.test((r.for ?? '').split(' · ')[0]);
 
 /** The miles of a row whose odometer was just typed: end less start when both are there, else as they were. */
 export function milesFromOdometer(r: MileRow): number {

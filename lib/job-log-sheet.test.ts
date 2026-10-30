@@ -235,6 +235,9 @@ describe('a hotel among the other receipts', () => {
     expect(isHotel(r('motel for the crew'))).toBe(true);
     expect(isHotel(r('Fuel'))).toBe(false);
     expect(isHotel(r('Tolls & parking'))).toBe(false);
+    // The tech's note doesn't make it a hotel: only the category does.
+    expect(isHotel(r('Tolls & parking · parking at the hotel'))).toBe(false);
+    expect(isHotel(r('Fuel · motel gas station'))).toBe(false);
     expect(isHotel({ tech: 'Paul Gibbs', day: '2026-10-18', store: 'Holiday Inn', amount: 10 })).toBe(false);
   });
 });

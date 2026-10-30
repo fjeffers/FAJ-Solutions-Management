@@ -8,7 +8,7 @@
 // ("in the hours should get the rate and the same for the milage gets the milages rate"), and TOTAL CHARGES at the end.
 import { byTechGroups } from './job-log';
 import { lineAmount, type JobRates } from './job-log-rates';
-import { fixedHours, hoursTotal, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
+import { fixedHours, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
 
 /**
  * A cell for SheetJS: text, or a number with its Excel format and, for a sum or a sum's part, its formula; or a
@@ -131,8 +131,13 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
     moneyTotal, (t) => `${t} total ${what}`, `Overall total ${what}`).total;
   const meals = money('Meals', 'meals', sheet.meals);
   const materials = money('Materials', 'materials', sheet.materials);
+  // The hotels' amount cells, for their own line under CHARGES.
+  const hotelCells: string[] = [];
   const other = section('Other receipts', ['NAME', 'DATE', 'FOR', 'STORE', 'AMOUNT'], byDay(sheet.other), 'E', USD,
-    (r) => [r.tech, num(dayNumber(r.day), DATE), r.for || '—', r.store || '—', num(r.amount, USD)],
+    (r, at) => {
+      if (isHotel(r)) hotelCells.push(`E${at}`);
+      return [r.tech, num(dayNumber(r.day), DATE), r.for || '—', r.store || '—', num(r.amount, USD)];
+    },
     moneyTotal, (t) => `${t} total`, 'Overall total other receipts').total;
 
   const h = hoursTotal(sheet.time), mi = milesTotal(sheet.miles);
@@ -163,10 +168,14 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates)
     rows.push(['Mileage total', null, num(mileage, USD, miles.amount)]);
     const chargesAt = next();
     rows.push(['TOTAL CHARGES', null, num(r2(labor + mileage), USD, `C${hoursAt}+C${milesAt}`)]);
-    const receipts: [string, number, string][] = [
-      ['Meals', moneyTotal(sheet.meals), meals], ['Materials', moneyTotal(sheet.materials), materials], ['Other receipts', moneyTotal(sheet.other), other],
-    ];
+    // The hotels on their own line, the other receipts less them on the next (Fred: "see it hotels also").
+    const hotels = moneyTotal(sheet.other.filter(isHotel));
     const receiptsAt = next();
+    const receipts: [string, number, string][] = [
+      ['Meals', moneyTotal(sheet.meals), meals], ['Materials', moneyTotal(sheet.materials), materials],
+      ['Hotels', hotels, hotelCells.length ? `SUM(${hotelCells.join(',')})` : '0'],
+      ['Other receipts', r2(moneyTotal(sheet.other) - hotels), `${other}-C${receiptsAt + 2}`],
+    ];
     for (const [what, v, cell] of receipts) rows.push([what, null, num(v, USD, cell)]);
     rows.push(['OVERALL TOTAL', null, num(r2(labor + mileage + receipts.reduce((t, [, v]) => t + v, 0)), USD,
       `C${chargesAt}+${receipts.map((_, i) => `C${receiptsAt + i}`).join('+')}`)]);

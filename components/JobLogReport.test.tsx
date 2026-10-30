@@ -839,6 +839,31 @@ describe('Job log edited by the office', () => {
     }
   }));
 
+  it('puts the hotels on their own line in the breakdown (Fred: "see it hotels also")', () => withPunches(async () => {
+    const before = tables.job_expenses;
+    tables.job_expenses = [...before,
+      { id: 'h1', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 350.74, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/hotel.jpg' },
+      { id: 'f1', contractor_name: 'Paul Gibbs', category: 'fuel', vendor: 'Circle K', amount: 40, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/fuel.jpg' }];
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Breakdown' })).toBeTruthy());
+      expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' })).slice(-3)).toEqual([
+        ['Materials · 1 receipt', '$104.17'],
+        ['Hotels · 1 receipt', '$350.74'],
+        ['Other receipts · 1 receipt', '$40.00'],
+      ]);
+      // $585 + $12.60 + $104.17 + $350.74 + $40.
+      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,092.51');
+    } finally {
+      tables.job_expenses = before;
+      delete tables.job_log_rates;
+    }
+  }));
+
   it('keeps a rate changed while the rates were saving (Greptile on PR #40)', () => withPunches(async () => {
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;

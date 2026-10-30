@@ -57,7 +57,7 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  hoursScreenDays, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
@@ -464,10 +464,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
    */
   const breakdown = () => {
     const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
+    const hotels = otherReceipts.filter(isHotel), restOther = otherReceipts.filter((r) => !isHotel(r));
     const receiptLines = [
       ...(inc.meals && mealReceipts.length > 0 ? [{ what: `Meals · ${receiptCount(mealReceipts.length)}`, amount: moneyTotal(mealReceipts) }] : []),
       ...(inc.materials && materialReceipts.length > 0 ? [{ what: `Materials · ${receiptCount(materialReceipts.length)}`, amount: moneyTotal(materialReceipts) }] : []),
-      ...(inc.otherReceipts && otherReceipts.length > 0 ? [{ what: `Other receipts · ${receiptCount(otherReceipts.length)}`, amount: moneyTotal(otherReceipts) }] : []),
+      // The hotels on their own line, then the rest of the other receipts (Fred, 2026-10-30: "see it hotels also").
+      ...(inc.otherReceipts && hotels.length > 0 ? [{ what: `Hotels · ${receiptCount(hotels.length)}`, amount: moneyTotal(hotels) }] : []),
+      ...(inc.otherReceipts && restOther.length > 0 ? [{ what: `Other receipts · ${receiptCount(restOther.length)}`, amount: moneyTotal(restOther) }] : []),
     ];
     const lines = [
       // A tech's line when they've hours (or miles) to charge for: no "0 mi × $0.60 = $0.00".

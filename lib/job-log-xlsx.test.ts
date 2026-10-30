@@ -106,7 +106,7 @@ describe('the job log in Excel', () => {
     // (Fred: "the break down total paul hours total kendal hours ... then all it all up together for an over all total").
     const c = find(client, 'CHARGES');
     expect(c).toBeGreaterThan(find(client, 'JOB TOTAL'));
-    expect(client.slice(c + 1, c + 11)).toEqual([
+    expect(client.slice(c + 1, c + 12)).toEqual([
       ['Paul Gibbs hours', null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${paul + 1}` }],
       ['Hours total', null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${worked + 1}` }],
       ['Paul Gibbs mileage', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Paul Gibbs total miles') + 1}` }],
@@ -114,8 +114,10 @@ describe('the job log in Excel', () => {
       ['TOTAL CHARGES', null, { t: 'n', v: 1431.17, z: '$#,##0.00', f: `C${c + 3}+C${c + 5}` }],
       ['Meals', null, { t: 'n', v: 0, z: '$#,##0.00', f: `D${find(client, 'Overall total meals') + 1}` }],
       ['Materials', null, { t: 'n', v: 47.48, z: '$#,##0.00', f: `D${find(client, 'Overall total materials') + 1}` }],
-      ['Other receipts', null, { t: 'n', v: 350.74, z: '$#,##0.00', f: `E${find(client, 'Overall total other receipts') + 1}` }],
-      ['OVERALL TOTAL', null, { t: 'n', v: 1829.39, z: '$#,##0.00', f: `C${c + 6}+C${c + 7}+C${c + 8}+C${c + 9}` }],
+      // The Quality Inn is Lodging: the hotels' line, the other receipts less it on the next (Fred: "see it hotels also").
+      ['Hotels', null, { t: 'n', v: 350.74, z: '$#,##0.00', f: `SUM(E${find(client, 'Other receipts') + 3})` }],
+      ['Other receipts', null, { t: 'n', v: 0, z: '$#,##0.00', f: `E${find(client, 'Overall total other receipts') + 1}-C${c + 9}` }],
+      ['OVERALL TOTAL', null, { t: 'n', v: 1829.39, z: '$#,##0.00', f: `C${c + 6}+C${c + 7}+C${c + 8}+C${c + 9}+C${c + 10}` }],
     ]);
     expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(8);
   });

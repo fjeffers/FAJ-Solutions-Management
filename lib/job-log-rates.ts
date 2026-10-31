@@ -44,13 +44,23 @@ export function parseRates(raw: unknown): JobRates {
   return out;
 }
 
+/** A number's decimal point moved, without the float slip of * 100 (0.57 * 100 is 56.99999…) (CodeRabbit on PR #48). */
+const shiftDecimal = (n: number, places: number) => {
+  const [coefficient, exponent = '0'] = String(n).split('e');
+  return Number(`${coefficient}e${Number(exponent) + places}`);
+};
 /**
- * The mileage rate typed in cents (Fred, 2026-10-31: "Cent per mile"): $0.60 a mile is 60, $0.725 is 72.5. Kept,
- * and on the invoice, in dollars as ever.
+ * A mileage rate as it's typed (Fred, 2026-10-31: "Cent per mile", ".50 per mile", ".652 per mile"): under 1 it's
+ * the dollars, .50 or .652; 1 or more, the cents, 50 or 65.2. Either way, $0.50 or $0.652 a mile is kept, exactly as
+ * typed, and the invoice shows it in dollars as ever.
  */
-export const toCents = (dollars: number | null) => (dollars == null ? null : Math.round(dollars * 1e6) / 1e4);
-/** Cents a mile as typed, as the dollars kept: 60 is $0.60. */
-export const fromCents = (cents: number | null) => (cents == null ? null : Math.round(cents * 1e4) / 1e6);
+export const mileRateTyped = (n: number) => (n >= 1 ? shiftDecimal(n, -2) : n);
+/** A kept mileage rate as its box shows it, as Fred writes it: .50, .652. */
+export const mileRateShown = (dollars: number) => {
+  if (!(dollars > 0 && dollars < 1)) return String(dollars);
+  const s = String(dollars).replace(/^0/, '');
+  return s.length === 2 ? `${s}0` : s;
+};
 
 /** job_log_rates.all_hours_rate from the database: a dollar figure, or none. */
 export const parseRate = (v: unknown) => rate(typeof v === 'string' && v.trim() !== '' ? Number(v) : v);

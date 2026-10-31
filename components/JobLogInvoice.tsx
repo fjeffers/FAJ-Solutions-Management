@@ -11,7 +11,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Plus, X } from 'lucide-react';
 import { NumBox } from '@/components/JobSheetEditor';
-import { fromCents, toCents } from '@/lib/job-log-rates';
+import { mileRateShown, mileRateTyped } from '@/lib/job-log-rates';
 import { dueDate, FAJ, type Invoice, type InvoiceHead, type InvoiceLine, type InvoiceMeta, type InvoiceSection, type InvoiceTech } from '@/lib/job-log-invoice';
 
 const line = '1px solid #000';
@@ -161,7 +161,7 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
 }
 
 /** The invoice's own boxes, at its top while it's edited: the number, date and terms, the labor, the meals, and each
- *  tech's $ per hour and ¢ per mile (or one $ per hour for all the hours). */
+ *  tech's $ per hour and rate per mile (or one $ per hour for all the hours). */
 function EditTop({ edit, techs }: { edit: InvoiceEditor; techs: InvoiceTech[] }) {
   const { meta, setMeta, together } = edit;
   const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 };
@@ -192,8 +192,8 @@ function EditTop({ edit, techs }: { edit: InvoiceEditor; techs: InvoiceTech[] })
         <button type="button" aria-pressed={together.on} className={`wf-btn wf-btn-sm ${together.on ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => edit.setTogether({ ...together, on: true })}>Together (one rate)</button>
         {together.on && <span style={{ width: 110 }}><NumBox label="$ per hour, all techs" value={together.hour} onChange={(n) => edit.setTogether({ on: true, hour: n })} /></span>}
       </div>
-      {/* Each tech's rates, the lead first: the $ per hour (unless all the hours are at one) and the mileage in cents
-          (Fred: "Cent per mile"). */}
+      {/* Each tech's rates, the lead first: the $ per hour (unless all the hours are at one) and the rate per mile, as
+          Fred writes it, .50 or .652, or in cents, 50 or 65.2 (Fred: "Cent per mile", ".50 per mile", ".652 per mile"). */}
       <div role="group" aria-label="Rates on the invoice" style={{ display: 'flex', flexDirection: 'column', gap: 6, flexBasis: '100%' }}>
         {techs.map((t) => {
           const r = edit.rateOf(t.tech);
@@ -205,8 +205,8 @@ function EditTop({ edit, techs }: { edit: InvoiceEditor; techs: InvoiceTech[] })
                   <NumBox label={`$ per hour, ${t.tech}`} value={r.hour} onChange={(n) => edit.setRate(t.tech, 'hour', n)} />
                 </div>
               )}
-              <div style={{ ...field, width: 100 }}>¢ per mile
-                <NumBox label={`¢ per mile, ${t.tech}`} value={toCents(r.mile)} onChange={(n) => edit.setRate(t.tech, 'mile', fromCents(n))} />
+              <div style={{ ...field, width: 100 }}>Per mile
+                <NumBox label={`Per mile, ${t.tech}`} value={r.mile} read={mileRateTyped} shown={mileRateShown} placeholder=".50" onChange={(n) => edit.setRate(t.tech, 'mile', n)} />
               </div>
             </div>
           );

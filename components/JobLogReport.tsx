@@ -62,8 +62,8 @@ import {
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
 import {
-  chargesByTech, chargesTotal, fromCents, lineAmount, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, sheetTechs, toCents,
-  withAllHoursRate,
+  chargesByTech, chargesTotal, lineAmount, mileRateShown, mileRateTyped, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates,
+  sheetTechs, withAllHoursRate,
   type JobRates, type RateRow,
 } from '@/lib/job-log-rates';
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
@@ -784,9 +784,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         </div>
         {copy === 'invoice' && (
           <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
-            {invDraft ? <>Editing the invoice: type each tech’s $ per hour and ¢ per mile in the box at its top, change any day, hours, meals, miles or hotel right on its lines, add or take out a line, then <b>Save invoice</b>. The job log’s time sheet changes with it.</>
+            {invDraft ? <>Editing the invoice: type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢) in the box at its top, change any day, hours, meals, miles or hotel right on its lines, add or take out a line, then <b>Save invoice</b>. The job log’s time sheet changes with it.</>
               : ratesFailed ? 'The saved rates didn’t load, so the invoice can’t be changed or printed right now. Close the job log and open it again.'
-                : noSavedRates ? <>Press <b>Edit invoice</b>, type each tech’s $ per hour and ¢ per mile in the box at its top, then <b>Save invoice</b> to print it.</>
+                : noSavedRates ? <>Press <b>Edit invoice</b>, type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢) in the box at its top, then <b>Save invoice</b> to print it.</>
                   : <>The invoice as the client lays it out. <b>Edit invoice</b> to change it right on its lines.</>}
           </div>
         )}
@@ -806,7 +806,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               </>}
             </div>
             <div className="jlr-row" style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, color: '#5E6470' }}>
-              <span>Name</span><span>$ per hour</span><span>¢ per mile</span><span />
+              <span>Name</span><span>$ per hour</span><span>Per mile</span><span />
             </div>
             {rateTable.map((r, i) => (
               <div key={`${i}-${r.tech}`} className="jlr-row" style={{ padding: '4px 0', borderTop: '1px solid #ECE8DF' }}>
@@ -816,8 +816,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                   {rateNames.filter((n) => n === r.tech || !rateTable.some((o) => o.tech === n)).map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
                 <NumBox label={`$ per hour, ${r.tech || `rate row ${i + 1}`}`} value={r.hour} onChange={(n) => setRate(i, { hour: n })} disabled={all.on} />
-                {/* In cents (Fred: "Cent per mile"). */}
-                <NumBox label={`¢ per mile, ${r.tech || `rate row ${i + 1}`}`} value={toCents(r.mile)} onChange={(n) => setRate(i, { mile: fromCents(n) })} />
+                {/* As Fred writes it, .50 or .652, or in cents, 50 or 65.2 (Fred: "Cent per mile", ".50 per mile"). */}
+                <NumBox label={`Per mile, ${r.tech || `rate row ${i + 1}`}`} value={r.mile} read={mileRateTyped} shown={mileRateShown} placeholder=".50"
+                  onChange={(n) => setRate(i, { mile: n })} />
                 <button type="button" aria-label={`Take out ${r.tech || `rate row ${i + 1}`}`} title="Take this rate out" onClick={() => editRates((rows) => rows.filter((_, j) => j !== i))}
                   style={{ width: 32, height: 32, border: 'none', background: 'none', color: '#B42318', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
               </div>

@@ -1,7 +1,7 @@
 // Each tech's rates on the client's copy of the job log (Fred, 2026-10-30: "i need a copy i can entered how much
 // per an hour the milage for each tech"; "Rates and the dollars").
 import { describe, it, expect } from 'vitest';
-import { chargesByTech, chargesTotal, fromCents, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, toCents, withAllHoursRate } from './job-log-rates';
+import { chargesByTech, chargesTotal, mileRateShown, mileRateTyped, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, withAllHoursRate } from './job-log-rates';
 import type { JobSheet } from './job-log-sheet';
 
 const sheet: JobSheet = {
@@ -86,8 +86,9 @@ describe('the client copy charges', () => {
       .toEqual({ 'Paul Gibbs': { hour: 65, mile: 0.7 } });
   });
 
-  it('types the mileage rate in cents and keeps it in dollars (Fred: "Cent per mile")', () => {
-    expect([0.6, 0.725, 0.57, 0.655, null].map(toCents)).toEqual([60, 72.5, 57, 65.5, null]);
-    expect([60, 72.5, 57, 65.5, 0, null].map(fromCents)).toEqual([0.6, 0.725, 0.57, 0.655, 0, null]);
+  it('takes a mileage rate as Fred writes it, .50 or .652, or in cents, 50 or 65.2 (Fred: "Cent per mile", ".652 per mile")', () => {
+    expect([0.5, 0.652, 50, 65.2, 72.5, 57, 0.1234567, 0].map(mileRateTyped)).toEqual([0.5, 0.652, 0.5, 0.652, 0.725, 0.57, 0.1234567, 0]);
+    // Shown as typed, in full, so opening it again and saving never changes it (CodeRabbit on PR #48).
+    expect([0.5, 0.652, 0.6, 0.1234567, 0, 1.25].map(mileRateShown)).toEqual(['.50', '.652', '.60', '.1234567', '0', '1.25']);
   });
 });

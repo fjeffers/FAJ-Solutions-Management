@@ -59,6 +59,7 @@ import Toaster from '@/components/Toaster';
 import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
+import { ArrivalPrompt, CheckInNow, HomeSpotCard } from '@/components/wf/DayPrompts';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
@@ -582,6 +583,9 @@ export default function TechPortalPage() {
             </div>
           )}
 
+          {!checkIn && !openJob && tab === 'project' && <CheckInNow jobs={jobs} busy={dayBusy} onCheckIn={setCheckIn} />}
+          {uid && <ArrivalPrompt jobs={jobs} uid={uid} busy={dayBusy} onArrive={(j) => void arriveFrom(j)} />}
+
           {openJob ? (
             <>
               <button type="button" className="fs-back-link" onClick={() => setOpenId(null)}><FsIcon name="back" size={16} />{TAB_TITLE[navKey]}</button>
@@ -634,6 +638,7 @@ export default function TechPortalPage() {
                 <PushSwitch onText="On. New work orders and messages pop up on this phone, even with the app closed."
                   offText="Turn on so new work orders and messages pop up on this phone, even with the app closed." />
               </div>
+              {uid && <div style={{ marginBottom: 18, maxWidth: 640 }}><HomeSpotCard uid={uid} /></div>}
               <ProfileTab
                 profile={profile} portalToken={portalToken} onSignOut={signOut} wide={wide} onWide={setWide}
                 onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }}

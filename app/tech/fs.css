@@ -395,3 +395,32 @@ html:has(.fs-phone) body { background: #E4E1DA; }
 .fs-icon-button { color: rgba(255, 255, 255, 0.8); }
 .fs-icon-button:hover { background: rgba(255, 255, 255, 0.1); }
 .fs-signout { background: transparent; border-color: rgba(255, 255, 255, 0.28); color: #fff; }
+
+/* Full-screen prompts (components/wf/DayPrompts.tsx). Under the dialogs (z 70), so Check in opens on top. */
+.fs-takeover { position: fixed; inset: 0; z-index: 65; background: var(--forest); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.fs-takeover-card { width: 100%; max-width: 420px; text-align: center; color: #fff; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.fs-takeover-icon { width: 84px; height: 84px; border-radius: 50%; background: var(--mint); color: var(--forest); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+.fs-takeover h2 { margin: 0; font-size: 32px; font-weight: 750; letter-spacing: -0.03em; color: #fff; }
+.fs-takeover-job { margin: 4px 0 0; font-size: 20px; font-weight: 650; }
+.fs-takeover-meta { margin: 0; font-size: 15px; color: rgba(255, 255, 255, 0.78); }
+.fs-takeover-go { margin-top: 24px; width: 100%; min-height: 64px; border: 0; border-radius: 16px; background: var(--mint); color: var(--forest); font-size: 20px; font-weight: 750; cursor: pointer; }
+.fs-takeover-go:disabled { opacity: 0.6; }
+.fs-takeover-later { margin-top: 6px; min-height: 48px; padding: 0 24px; border: 0; background: none; color: rgba(255, 255, 255, 0.8); font-size: 16px; text-decoration: underline; cursor: pointer; }
+
+/* Phone fixes (2026-10-31 review at 390 px wide). */
+.fs-form select { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; text-overflow: ellipsis; }
+.fs-signout span { white-space: nowrap; }
+/* No room for the words on a phone: the icon alone (the button keeps its "Log out" label). */
+.fs-phone .fs-signout span { display: none; }
+@media (max-width: 480px) { .fs-signout span { display: none; } }
+.fs-phone .fs-topbar { gap: 10px; }
+/* The two counts side by side, so the work orders show without scrolling past them. */
+.fs-phone .fs-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.fs-phone .fs-stat-card { padding: 14px 16px; gap: 2px; }
+.fs-phone .fs-stat-card strong { font-size: 26px; }
+@media (max-width: 768px) {
+  .fs-topbar { gap: 10px; }
+  .fs-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .fs-stat-card { padding: 14px 16px; gap: 2px; }
+  .fs-stat-card strong { font-size: 26px; }
+}

@@ -88,6 +88,8 @@ type Pic = {
   declined?: boolean;
   /** A receipt kept as a PDF (the office can add one): a link, not a picture. */
   pdf?: boolean;
+  /** A hotel's receipt (Lodging): on the invoice it has its own section. */
+  hotel?: boolean;
 };
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
 type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean; materials: boolean; otherReceipts: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
@@ -272,6 +274,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           + (e.status === 'declined' && e.decline_reason ? ` (${e.decline_reason})` : ''),
         declined: e.status === 'declined',
         pdf: /\.pdf$/i.test(e.receipt_path!),
+        hotel: e.category === 'hotel',
       })));
       setOdometer(odo.filter((o) => url.has(o.photo_path!)).map((o) => ({
         key: `odo:${o.id}`, src: url.get(o.photo_path!)!, day: dayOf(o.at, TZ), stamp: fmtStamp(o.at), tech: o.contractor_name,
@@ -307,7 +310,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePics.filter((p) => receiptPhotos.has(p.photoId!))]
     .sort((a, b) => a.day.localeCompare(b.day));
   const shownOdometer = odometer.filter((p) => inRange(p.day, from, to));
+  // The invoice ends with the odometer, the receipts and the hotels' receipts, each on its own (Fred, 2026-10-31:
+  // "at the end i want to add pictures of the odometer, receipt and hotels").
+  const hotelPics = shownReceipts.filter((p) => p.hotel);
+  const otherPics = shownReceipts.filter((p) => !p.hotel);
   const printed = (p: Pic) => !p.declined && !leftOut.has(p.key);
+  const invoicePicCount = [...(inc.odometer ? shownOdometer : []), ...(inc.receipts ? shownReceipts : [])].filter(printed).length;
   // The pictures taken out of the log: off the screen too, until "Pictures left out" is ticked.
   const leftCount = [...shownReceipts, ...shownOdometer, ...shownPhotos].filter((p) => leftOut.has(p.key)).length;
   const pictureCount = [...(inc.receipts ? shownReceipts : []), ...(inc.odometer ? shownOdometer : []), ...(inc.photos ? shownPhotos : [])]
@@ -857,6 +865,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             </div>
           </div>
           {invDraft && <div className="jl-print-only" style={{ padding: 24 }}>The invoice is being changed. Save it, then print it.</div>}
+          {/* On paper, on a page of their own after the invoice; not while it's being changed. */}
+          <div className={invDraft ? 'no-print' : invoicePicCount > 0 ? 'jl-pics' : undefined} style={{ padding: '0 28px 28px', fontSize: 13 }}>
+            {inc.odometer && pictures('Odometer', shownOdometer)}
+            {inc.receipts && pictures('Receipts', otherPics, true)}
+            {inc.receipts && pictures('Hotels', hotelPics, true)}
+          </div>
         </div>
       ) : (
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>

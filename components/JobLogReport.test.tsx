@@ -262,6 +262,31 @@ describe('Job log pictures', () => {
     }
   });
 
+  it('ends the invoice with the odometer, the receipts and the hotels (Fred: "at the end i want to add pictures of the odometer, receipt and hotels")', async () => {
+    const before = tables.job_expenses;
+    tables.job_expenses = [...before, { id: 'x5', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 402.5, expense_date: '2026-10-21', status: 'approved', receipt_path: 'r/hotel.jpg' }];
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      await screen.findByAltText(/lodging, quality inn/i);
+      fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      const page = screen.getByRole('table').closest('.jl-page') as HTMLElement;
+      expect(within(page).getAllByRole('heading').map((h) => h.textContent)).toEqual(['Odometer', 'Receipts', 'Hotels']);
+      const section = (name: string) => within(page).getByRole('heading', { name }).parentElement!;
+      expect(within(section('Odometer')).getByAltText(/odometer start: 41,200/i)).toBeTruthy();
+      expect(within(section('Receipts')).getByAltText(/materials, lowe's: \$104\.17/i)).toBeTruthy();
+      expect(within(section('Receipts')).queryByAltText(/quality inn/i)).toBeNull();
+      expect(within(section('Hotels')).getByAltText(/lodging, quality inn: \$402\.50/i)).toBeTruthy();
+      // The pictures start on a page of their own, after the invoice.
+      expect(section('Odometer').parentElement!.classList.contains('jl-pics')).toBe(true);
+      // A picture taken out of the job log is off the invoice too.
+      fireEvent.click(within(section('Hotels')).getByRole('button', { name: /leave out of the log: lodging/i }));
+      expect(within(page).queryByRole('heading', { name: 'Hotels' })).toBeNull();
+      await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['receipt:x5'], job_log_receipt_photos: [] }));
+    } finally {
+      tables.job_expenses = before;
+    }
+  });
+
   it('still saves a tap made while an earlier save fails', async () => {
     saveDelays = [80, 0];
     saveFails = [true, false];

@@ -872,6 +872,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     else if (a === 'mark-paid') set('wo_status', 'Paid');
     else if (a === 'invoice' || a === 'closeout') setLogOpen(true);
   };
+  const onHold = form.wo_status === 'On Hold';
+  const toggleHold = () => set('wo_status', !onHold ? 'On Hold'
+    : item?.checked_in_at ? 'In Progress' : contractorNames.length ? 'Assigned' : 'Open');
 
   return (
     <div className="modal-overlay">
@@ -915,6 +918,11 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             </span>
             {item?.id && ['done', 'approved', 'invoiced', 'paid'].includes(next.step) && next.action?.do !== 'invoice' && (
               <button type="button" className="btn btn-ghost" onClick={() => setLogOpen(true)}>Job log</button>
+            )}
+            {item?.id && form.wo_status !== 'Paid' && (
+              <button type="button" className={onHold ? 'btn btn-primary' : 'btn btn-ghost'} onClick={toggleHold}>
+                {onHold ? 'Take off hold' : 'Put on hold'}
+              </button>
             )}
             {next.action && (next.action.do !== 'invoice' || item?.id) && (
               <button type="button" className="btn btn-primary" onClick={() => runNext(next.action!.do)}>{next.action.label}</button>

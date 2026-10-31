@@ -36,3 +36,11 @@ describe('Waiting on you: tech receipts', () => {
     expect(r?.view).toBe('workorders');
   });
 });
+
+describe('held jobs stay off the tech app', () => {
+  it('drops On Hold rows and keeps the rest', async () => {
+    const { notOnHold } = await import('./wf');
+    const rows = [{ wo_number: '1', wo_status: 'Assigned' }, { wo_number: '2', wo_status: 'On Hold' }, { wo_number: '3', wo_status: null }];
+    expect(notOnHold(rows).map((r) => r.wo_number)).toEqual(['1', '3']);
+  });
+});

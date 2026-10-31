@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
   wfJobFromTech, clockedIn, clockedOut, withTask, answered, markedWorkDone, withReport, withCloseout, withTimeRequest,
   withDayEvent, wfReasonText, type WfJob,
+  notOnHold,
 } from './wf';
 import type { DayEvent, DayKind, Dest, Origin } from './project-day';
 import { closeoutOpFrom, parseCloseoutLists, type CloseoutList } from './closeout';
@@ -16,7 +17,7 @@ import type { TechJob } from './types';
 export async function fetchWfTechJobs(): Promise<WfJob[]> {
   const { data, error } = await createClient().rpc('wf_tech_jobs');
   if (error) throw new Error(error.message);
-  return Array.isArray(data) ? (data as Record<string, unknown>[]).map(wfJobFromTech) : [];
+  return Array.isArray(data) ? notOnHold(data as Record<string, unknown>[]).map(wfJobFromTech) : [];
 }
 
 /** How many office documents each of the tech's live jobs has (migration 126). */

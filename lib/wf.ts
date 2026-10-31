@@ -321,6 +321,11 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
   };
 }
 
+/** Jobs on hold stay off the tech's phone until the office takes them off hold (Fred, 2026-10-31). */
+export function notOnHold<T>(rows: T[]): T[] {
+  return rows.filter((r) => (r as { wo_status?: unknown } | null)?.wo_status !== 'On Hold');
+}
+
 /** A row from `wf_tech_jobs()`: the signed-in tech's own job. Never any money. */
 export function wfJobFromTech(r: Row): WfJob {
   return base(r, wfStatusFor(s(r, 'wo_status'), s(r, 'my_response'), true), false);

@@ -1059,6 +1059,33 @@ describe('Job log edited by the office', () => {
     }
   }));
 
+  it('shrinks the invoice to a phone\'s screen, or shows it full size to swipe (Fred: "This my phone view", "Both")', () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
+    // A phone: 428px for the invoice's 856.
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 428 });
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      const zoom = () => (document.querySelector('.jl-invoice-zoom') as HTMLElement).getAttribute('style') ?? '';
+      await waitFor(() => expect(zoom()).toContain('zoom: 0.5'));
+      fireEvent.click(screen.getByRole('button', { name: 'Full size (swipe sideways)' }));
+      expect(zoom()).not.toContain('zoom');
+      fireEvent.click(screen.getByRole('button', { name: 'Fit to screen' }));
+      expect(zoom()).toContain('zoom: 0.5');
+      // Full size while it's edited, so its boxes are big enough to type in.
+      fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
+      expect(zoom()).not.toContain('zoom');
+      expect(screen.queryByRole('button', { name: /fit to screen|full size/i })).toBeNull();
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+      vi.unstubAllGlobals();
+      delete tables.job_log_rates;
+    }
+  }));
+
   it('adds a line on a day in the dates picked, so it shows to fill in (Greptile on PR #44)', () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
     try {

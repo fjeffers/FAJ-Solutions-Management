@@ -203,6 +203,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // The invoice as it's edited on the invoice itself (Fred, 2026-10-30: "the invoice need to be one ... so we edit job
   // log it shows as an invoice"): the time sheet under it, the rates and the invoice's own boxes, saved together.
   const [invDraft, setInvDraft] = useState<{ sheet: JobSheet; rates: JobRates; together: { on: boolean; hour: number | null }; meta: InvoiceMeta } | null>(null);
+  // The invoice on a phone (Fred, 2026-10-31: "This my phone view", "Both"): shrunk to the screen's width like the PDF,
+  // or full size to swipe sideways. Full size while it's edited, so its boxes are big enough to type in.
+  const invoiceBox = useRef<HTMLDivElement | null>(null);
+  const [screenZoom, setScreenZoom] = useState(1);
+  const [fullSize, setFullSize] = useState(false);
   // The saved rates didn't load: nothing to save over them, and no client copy, until they do (Greptile, CodeRabbit on PR #40).
   const [ratesFailed, setRatesFailed] = useState(false);
   const { leftOut, receiptPhotos, loaded: loadedChoices, flip, label, savedOut } = useLogChoices(w.id, w.job_log_left_out, w.job_log_receipt_photos);
@@ -379,6 +384,16 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     document.title = pdfName;
     return () => { document.title = was; };
   }, [pdfName]);
+  // How much the invoice shrinks to fit the screen: its printed width (856px) into the width there is.
+  useEffect(() => {
+    const el = invoiceBox.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => setScreenZoom(el.clientWidth > 0 ? Math.min(1, el.clientWidth / 856) : 1);
+    measure();
+    const seen = new ResizeObserver(measure);
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [copy]);
 
   // The rates table (Fred, 2026-10-30: "on the job log give me a table to add or remove rates"): as being changed,
   // else as saved, else a row to fill in for each tech on the sheet. Each tech's hours and miles shown, × the rates
@@ -844,7 +859,16 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       {invoice ? (
         <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#000', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
           {/* While it's edited, the browser's own print has none of it: only what's saved is ever printed (Greptile on PR #44). */}
-          <div className={`jl-invoice-scroll${invDraft ? ' no-print' : ''}`}><JobLogInvoice invoice={invoice} head={invoiceHead} edit={invoiceEditor} /></div>
+          {screenZoom < 1 && !invDraft && (
+            <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 10px 0' }}>
+              <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setFullSize((f) => !f)}>{fullSize ? 'Fit to screen' : 'Full size (swipe sideways)'}</button>
+            </div>
+          )}
+          <div ref={invoiceBox} className={`jl-invoice-scroll${invDraft ? ' no-print' : ''}`}>
+            <div className="jl-invoice-zoom" style={screenZoom < 1 && !fullSize && !invDraft ? { zoom: screenZoom } : undefined}>
+              <JobLogInvoice invoice={invoice} head={invoiceHead} edit={invoiceEditor} />
+            </div>
+          </div>
           {invDraft && <div className="jl-print-only" style={{ padding: 24 }}>The invoice is being changed. Save it, then print it.</div>}
         </div>
       ) : (

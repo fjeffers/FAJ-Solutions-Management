@@ -250,6 +250,10 @@ textarea.wf-input { resize: vertical; }
   .jl-invoice-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .jl-invoice-scroll .jl-invoice { min-width: 800px; }
 }
+/* Shrunk to fit a phone's screen on screen only: printed, it's the page's own size. */
+@media print {
+  #job-log-root .jl-invoice-zoom { zoom: 1 !important; }
+}
 
 /* The job log (components/JobLogReport.tsx): printing shows only the report —
    the app behind it, the controls and the dim backdrop all drop away, and the

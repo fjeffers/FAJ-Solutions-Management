@@ -221,6 +221,25 @@ html:has(.fs-phone) body { background: #E4E1DA; }
 }
 .fs-form a { display: inline-flex; align-items: center; gap: 6px; color: var(--green); }
 .fs-scope { margin: 0; white-space: pre-wrap; padding: 12px; border-radius: 8px; background: #FAF8F3; }
+/* The tech's job screen (2026-10-31): a short header, the site in one card, then today's list. */
+.fs-job-head { display: grid; gap: 4px; padding: 16px 18px; }
+.fs-job-head h2 { margin: 2px 0 0; font-size: 20px; line-height: 1.2; color: var(--ink); overflow-wrap: anywhere; }
+.fs-job-head-top { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.fs-job-chip { background: var(--ink); color: #fff; border-radius: 7px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+.fs-job-when { margin: 4px 0 0; display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.fs-site-where { display: flex; gap: 8px; align-items: flex-start; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.fs-site-where svg { flex-shrink: 0; margin-top: 2px; color: #C9A24B; }
+.fs-nav-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.fs-nav-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.fs-nav-row .fs-btn { flex: 1 1 auto; min-height: 40px; padding: 0 10px; font-size: 13px; }
+.fs-form .fs-nav-row a { color: var(--ink); justify-content: center; }
+.fs-site-access { display: grid; gap: 2px; padding: 12px 14px; border-radius: 8px; background: var(--green-soft); }
+.fs-site-access span, .fs-site-contact > span, .fs-site-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.fs-site-access strong { font-size: 18px; line-height: 1.3; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.fs-site-special { padding: 10px 12px; border-radius: 8px; background: #fdf3f0; color: var(--red-text); font-size: 13.5px; white-space: pre-wrap; }
+.fs-site-contact { display: grid; gap: 6px; }
+.fs-site-label { margin-bottom: 6px; }
+.fs-group-label { margin: 6px 0 -8px; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .fs-stop { display: grid; gap: 6px; padding: 18px 20px; border-color: #efc9bf; background: #fdf3f0; color: var(--red-text); }
 .fs-stop p { margin: 0; }
 .fs-stage-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }

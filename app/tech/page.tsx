@@ -28,7 +28,7 @@ import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
   fullAddress, reportMissing, askedOnly, askedDeliverables, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
-  missingGoesTo,
+  missingGoesTo, wfStatusLabel,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
@@ -66,14 +66,15 @@ import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
 import { checkoutFormUrl, clock24, lastOffOrNow, linkPurpose, onSiteSince, parseSiteLinks, siteIdOf, type SiteLinks } from '@/lib/site-links';
-import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard } from '@/components/wf/WfJobDetail';
+import WfJobDetail, { ChecklistCard, InfoListCard, TimeClockCard } from '@/components/wf/WfJobDetail';
+import { NAV_APPS, navLink } from '@/lib/navigation';
 import SignaturePad from '@/components/wf/SignaturePad';
 import DirectionsButton from '@/components/wf/Directions';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechProfile } from '@/lib/types';
 import {
   CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown, Phone, Mail,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -1651,7 +1652,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   };
   return (
     <div className="fs-stack">
-      <DetailHeader job={job} ownerView={false} />
+      <TechJobHeader job={job} />
       <JobIcons job={job} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
         onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
@@ -1666,15 +1667,16 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         })} />
       )}
       {dayCard && <div id="fs-go-day" style={{ scrollMarginTop: 12, display: 'contents' }}>{dayCard}</div>}
-      {job.description && (
+      {/* The clients pay for the hours and the miles (Fred, 2026-10-31): they stay near the top. */}
+      {dayFlow && live && (
         <section className="fs-card fs-form">
-          <h3>Job description</h3>
-          <p className="fs-scope">{job.description}</p>
+          <h3>My time and travel</h3>
+          <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} />
         </section>
       )}
+      <SiteCard job={job} />
       <ClientLinksCard number={job.number} siteLinks={siteLinks} checkoutHref={() => checkoutHref(lastOffOrNow(job.myDay ?? [], new Date().toISOString(), 'America/New_York'))} />
-      <SiteInfoCard job={job} />
-      <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
+      {live && <div className="fs-group-label">Today&apos;s list</div>}
       {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
       {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
         <div id="fs-go-closeout" style={{ scrollMarginTop: 12 }}>
@@ -1694,12 +1696,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       {(ask('receipts') || expenses.length > 0) && (canReport || expenses.length > 0) && (
         <JobExpenses expenses={expenses} canAdd={canReport && ask('receipts')} onAdd={() => setExpenseOpen(true)} />
       )}
-      {dayFlow && live && (
-        <section className="fs-card fs-form">
-          <h3>My time and travel</h3>
-          <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} />
-        </section>
-      )}
+      <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
       <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
       {job.status !== 'offered' && bottom}
       {msgOpen && (
@@ -1717,6 +1714,78 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
 }
 
 type PhotoKind = 'odo_start' | 'odo_end' | 'receipt' | 'job';
+
+/** The job in a few lines: status, number, where and when. */
+function TechJobHeader({ job }: { job: WfJob }) {
+  const e = parseClockTime(job.endTime);
+  const end = parseClockTime(job.startTime) ? (e ? fmtClock12(e) : job.endTime) : '';
+  return (
+    <section className="fs-card fs-job-head">
+      <div className="fs-job-head-top">
+        <span className="fs-job-chip">{wfStatusLabel(job.status, false)}</span>
+        <span className="fs-muted">WO #{job.number}</span>
+      </div>
+      <h2>{job.siteName || job.title}</h2>
+      <p className="fs-muted">{[job.client, job.siteName ? job.title : '', job.serviceType].filter(Boolean).join(' · ')}</p>
+      <p className="fs-job-when"><CalendarDays size={15} /> {whenText(job)}{end ? ` – ${end}` : ''}</p>
+    </section>
+  );
+}
+
+/**
+ * Everything about the site in one card (Fred, 2026-10-31: "i dont want a tech
+ * looking for anything"): the address with Google Maps, Waze and Apple Maps,
+ * how to get in, parking, who to call, special instructions and the scope.
+ */
+function SiteCard({ job }: { job: WfJob }) {
+  const address = fullAddress(job);
+  const target = { address, lat: job.siteLat, lng: job.siteLng };
+  const phone = job.pocPhone.replace(/[^0-9+]/g, '');
+  const rows: [string, string][] = [['Parking', job.parking], ['Deliverables', job.deliverables]];
+  return (
+    <section className="fs-card fs-form fs-site-card" id="fs-go-site">
+      <h3>At the site</h3>
+      {address && (
+        <div className="fs-site-where">
+          <MapPin size={16} />
+          <span>{address}</span>
+        </div>
+      )}
+      {navLink('google', target) && (
+        <div className="fs-nav-row" role="group" aria-label="Directions">
+          {NAV_APPS.map((a) => (
+            <a key={a.key} className="fs-btn fs-btn-secondary" href={navLink(a.key, target) ?? undefined} target="_blank" rel="noopener noreferrer">
+              <Navigation size={15} /> {a.label.replace(' Maps', '')}
+            </a>
+          ))}
+        </div>
+      )}
+      {job.access && (
+        <div className="fs-site-access">
+          <span>How to get in</span>
+          <strong>{job.access}</strong>
+        </div>
+      )}
+      {job.special && <div className="fs-site-special"><b>Special instructions:</b> {job.special}</div>}
+      {(job.pocName || phone || job.pocEmail) && (
+        <div className="fs-site-contact">
+          <span>Site contact{job.pocName ? `: ${job.pocName}` : ''}</span>
+          <div className="fs-nav-row">
+            {phone && <a className="fs-btn fs-btn-secondary" href={`tel:${phone}`}><Phone size={15} /> Call {job.pocPhone}</a>}
+            {job.pocEmail && <a className="fs-btn fs-btn-secondary" href={`mailto:${job.pocEmail}`}><Mail size={15} /> Email</a>}
+          </div>
+        </div>
+      )}
+      {rows.filter(([, v]) => v).map(([k, v]) => <p key={k}><b>{k}:</b> {v}</p>)}
+      {job.description && (
+        <div>
+          <div className="fs-site-label">Scope of work</div>
+          <p className="fs-scope">{job.description}</p>
+        </div>
+      )}
+    </section>
+  );
+}
 
 /** The guided job day: every step in a row, the next one lit, and one button that takes the tech to it. */
 function JobDayGuide({ steps }: { steps: GuideStep[] }) {
@@ -1791,12 +1860,11 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onR
 }) {
   const tile: React.CSSProperties = {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
-    minHeight: 72, padding: '10px 6px', borderRadius: 14, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
-    font: 'inherit', fontWeight: 600, fontSize: 13.5, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
+    minHeight: 58, padding: '8px 4px', borderRadius: 12, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
+    font: 'inherit', fontWeight: 600, fontSize: 12.5, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
   };
-  const address = fullAddress(job);
   return (
-    <div role="toolbar" aria-label="Job icons" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: 8 }}>
+    <div role="toolbar" aria-label="Job icons" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(64px, 1fr))', gap: 6 }}>
       {canPhoto && (
         <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
           <Camera size={22} /> Photo
@@ -1813,7 +1881,6 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onR
       )}
       {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={22} /> Receipt</button>}
       <button type="button" style={tile} onClick={onMessages}><MessageSquare size={22} /> Messages</button>
-      {address && <DirectionsButton job={job} style={tile} icon={<Navigation size={22} />} />}
     </div>
   );
 }

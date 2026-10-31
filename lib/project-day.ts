@@ -40,8 +40,8 @@ const KINDS: DayKind[] = ['day_start', 'travel_start', 'travel_end', 'lunch_star
 const ORIGINS: Origin[] = ['home', 'hotel', 'site', 'other', 'fuel', 'materials'];
 const DESTS: Dest[] = ['site', 'hotel', 'home', 'next_site', 'fuel', 'materials'];
 
-export const ORIGIN_LABEL: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Other', fuel: 'Fuel stop', materials: 'Materials pickup' };
-export const DEST_LABEL: Record<Dest, string> = { site: 'Site', hotel: 'Hotel', home: 'Home', next_site: 'Next site', fuel: 'Fuel stop', materials: 'Materials pickup' };
+export const ORIGIN_LABEL: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Other', fuel: 'Fuel stop', materials: 'Vendor / materials' };
+export const DEST_LABEL: Record<Dest, string> = { site: 'Site', hotel: 'Hotel', home: 'Home', next_site: 'Next site', fuel: 'Fuel stop', materials: 'Vendor / materials' };
 
 /** "On the way home", "On the way to the hotel" (not "to the home", Fred's screenshot 2026-10-22). */
 export const onTheWay = (dest: Dest): string => (dest === 'home' ? 'On the way home' : `On the way to the ${DEST_LABEL[dest].toLowerCase()}`);
@@ -311,7 +311,7 @@ export const TRIPS: { key: Trip; label: string }[] = [
   { key: 'site', label: 'Site' },
   { key: 'between', label: 'Between sites' },
   { key: 'fuel', label: 'Fuel' },
-  { key: 'materials', label: 'Materials' },
+  { key: 'materials', label: 'Vendor / materials' },
 ];
 
 /**

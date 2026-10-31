@@ -20,6 +20,27 @@ export type Spot = { lat: number; lng: number };
 export type Fix = Spot & { accuracy?: number | null };
 
 const HOME = (uid: string) => `faj-tech-home:${uid}`;
+// The hotel is saved per job, the first time the tech taps Arrived there; a new job starts fresh.
+const HOTEL = (uid: string, jobId: string) => `faj-tech-hotel:${uid}:${jobId}`;
+
+function readSpot(kv: KeyValue | null, key: string): Spot | null {
+  if (!kv) return null;
+  try {
+    const v = JSON.parse(kv.getItem(key) ?? 'null') as Spot | null;
+    return v && Number.isFinite(v.lat) && Number.isFinite(v.lng) ? { lat: v.lat, lng: v.lng } : null;
+  } catch { return null; }
+}
+function writeSpot(kv: KeyValue | null, key: string, spot: Spot): void {
+  if (!kv) return;
+  try { kv.setItem(key, JSON.stringify({ lat: spot.lat, lng: spot.lng })); } catch { /* storage blocked */ }
+}
+
+export function loadHotel(kv: KeyValue | null, uid: string, jobId: string): Spot | null {
+  return uid && jobId ? readSpot(kv, HOTEL(uid, jobId)) : null;
+}
+export function saveHotel(kv: KeyValue | null, uid: string, jobId: string, spot: Spot): void {
+  if (uid && jobId) writeSpot(kv, HOTEL(uid, jobId), spot);
+}
 
 export function loadHome(kv: KeyValue | null, uid: string): Spot | null {
   if (!kv || !uid) return null;
@@ -50,13 +71,14 @@ export function isNear(here: Fix, spot: Spot | null): boolean {
   return milesBetween(here.lat, here.lng, spot.lat, spot.lng) <= ARRIVE_MILES + slack;
 }
 
-export type Arrival = 'site' | 'home';
+export type Arrival = 'site' | 'home' | 'hotel';
 
-/** On a drive and now where it was headed: the site, or home. */
-export function arrivalAt(st: DayState, here: Fix, site: Spot | null, home: Spot | null): Arrival | null {
+/** On a drive and now where it was headed: the site, home, or the job's saved hotel. */
+export function arrivalAt(st: DayState, here: Fix, site: Spot | null, home: Spot | null, hotel: Spot | null = null): Arrival | null {
   if (st.stage !== 'travel') return null;
   if (st.dest === 'site') return isNear(here, site) ? 'site' : null;
   if (st.dest === 'home') return isNear(here, home) ? 'home' : null;
+  if (st.dest === 'hotel') return isNear(here, hotel) ? 'hotel' : null;
   return null;
 }
 

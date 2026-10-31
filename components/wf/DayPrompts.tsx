@@ -4,13 +4,13 @@
 // arrived"):
 //   CheckInNow    full screen when there's a job today and the day hasn't started.
 //   ArrivalPrompt full screen when a drive is running and the phone is at the
-//                 site (or home). The tap records it, the same as "I have arrived".
+//                 site, home, or the hotel saved on the first arrival there. The tap records it, the same as "I have arrived".
 //   HomeSpotCard  Profile: save home where the phone is now (kept on this phone).
 // A web app only reads GPS while it is open, so the arrival shows when the app
 // is on screen, never in the background.
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, Home, MapPin } from 'lucide-react';
-import { arrivalAt, checkInDue, clearHome, drivingJob, loadHome, saveHome, siteSpot, type Fix, type Spot } from '@/lib/arrival';
+import { Clock, Home, Hotel, MapPin } from 'lucide-react';
+import { arrivalAt, checkInDue, clearHome, drivingJob, loadHome, loadHotel, saveHome, siteSpot, type Fix, type Spot } from '@/lib/arrival';
 import { getPosition, noGpsMessage, NO_GPS_MS } from '@/lib/geo';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { browserStorage } from '@/lib/wf-outbox';
@@ -79,22 +79,24 @@ export function ArrivalPrompt({ jobs, uid, busy, onArrive }: { jobs: WfJob[]; ui
   }, [driveKey, since]);
   // Read each time, so a home saved in Profile counts at once.
   const home = loadHome(browserStorage(), uid);
+  const hotel = driving ? loadHotel(browserStorage(), uid, driving.job.id) : null;
   const fix = here && here.drive === driveKey ? here : null;
-  const at = driving && fix ? arrivalAt(driving.st, fix, siteSpot(driving.job), home) : null;
+  const at = driving && fix ? arrivalAt(driving.st, fix, siteSpot(driving.job), home, hotel) : null;
   const [hidden, notYet] = useSnooze(driveKey ? `faj-arrive-later:${driveKey}` : '');
   const show = !!at && !hidden;
   useEffect(() => { if (show) navigator.vibrate?.([200, 100, 200]); }, [show]);
   if (!driving || !at || !show) return null;
   const site = at === 'site';
+  const title = site ? "You're at the site" : at === 'hotel' ? "You're at the hotel" : "You're home";
   return (
-    <div className="fs-takeover" role="dialog" aria-modal="true" aria-label={site ? "You're at the site" : "You're home"}>
+    <div className="fs-takeover" role="dialog" aria-modal="true" aria-label={title}>
       <div className="fs-takeover-card">
-        <span className="fs-takeover-icon">{site ? <MapPin size={40} /> : <Home size={40} />}</span>
-        <h2>{site ? "You're at the site" : "You're home"}</h2>
+        <span className="fs-takeover-icon">{site ? <MapPin size={40} /> : at === 'hotel' ? <Hotel size={40} /> : <Home size={40} />}</span>
+        <h2>{title}</h2>
         {site && <p className="fs-takeover-job">{jobName(driving.job)}</p>}
-        <p className="fs-takeover-meta">{site ? `WO ${driving.job.number}. Tap to stop the drive and start your time on site.` : 'Tap to end the drive and sign out for the day.'}</p>
+        <p className="fs-takeover-meta">{site ? `WO ${driving.job.number}. Tap to stop the drive and start your time on site.` : 'Tap to end the drive and sign off for the day.'}</p>
         <button type="button" className="fs-takeover-go" disabled={busy} onClick={() => onArrive(driving.job)}>
-          {site ? 'Start job' : 'Sign out for the day'}
+          {site ? 'Start job' : 'Sign off for the day'}
         </button>
         <button type="button" className="fs-takeover-later" onClick={() => notYet(NOT_YET_MS)}>Not yet</button>
       </div>

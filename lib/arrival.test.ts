@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { arrivalAt, checkInDue, clearHome, drivingJob, isNear, loadHome, saveHome } from './arrival';
+import { arrivalAt, checkInDue, clearHome, drivingJob, isNear, loadHome, loadHotel, saveHome, saveHotel } from './arrival';
 import { dayState, type DayEvent } from './project-day';
 import type { WfJob } from './wf';
 
@@ -10,7 +10,7 @@ const job = (o: Partial<WfJob>): WfJob => ({
   id: 'j1', number: '1', title: 'Job', siteName: 'Site', status: 'scheduled', date: '2026-10-31', endDate: null,
   dayFlow: true, myDay: [], siteLat: SITE.lat, siteLng: SITE.lng, startTime: '', endTime: '', ...o,
 } as WfJob);
-const drive = (dest: 'site' | 'home', origin: 'home' | 'site' = dest === 'site' ? 'home' : 'site'): DayEvent[] => [
+const drive = (dest: 'site' | 'home' | 'hotel', origin: 'home' | 'site' = dest === 'site' ? 'home' : 'site'): DayEvent[] => [
   { kind: 'day_start', at: '2026-10-31T13:00:00Z' },
   { kind: 'travel_start', at: '2026-10-31T13:00:01Z', origin, dest },
 ];
@@ -36,6 +36,12 @@ describe('arrivalAt', () => {
   });
   it('says home when driving home and there', () => {
     expect(arrivalAt(dayState(drive('home'), NOW), HOME, SITE, HOME)).toBe('home');
+  });
+  it('says hotel when driving to the hotel saved for this job and there', () => {
+    const HOTEL = { lat: 41.7, lng: -72.7 };
+    expect(arrivalAt(dayState(drive('hotel'), NOW), HOTEL, SITE, HOME, HOTEL)).toBe('hotel');
+    expect(arrivalAt(dayState(drive('hotel'), NOW), HOTEL, SITE, HOME, null)).toBeNull();
+    expect(arrivalAt(dayState(drive('hotel'), NOW), HOME, SITE, HOME, HOTEL)).toBeNull();
   });
   it('says nothing with no home saved, off target, or not driving', () => {
     expect(arrivalAt(dayState(drive('home'), NOW), HOME, SITE, null)).toBeNull();
@@ -75,5 +81,17 @@ describe('home spot', () => {
     expect(loadHome(kv, 'u2')).toBeNull();
     clearHome(kv, 'u1');
     expect(loadHome(kv, 'u1')).toBeNull();
+  });
+});
+
+describe('hotel spot', () => {
+  it('is kept per login and per job on the phone', () => {
+    const kv = mem();
+    const HOTEL = { lat: 41.7, lng: -72.7 };
+    expect(loadHotel(kv, 'u1', 'j1')).toBeNull();
+    saveHotel(kv, 'u1', 'j1', HOTEL);
+    expect(loadHotel(kv, 'u1', 'j1')).toEqual(HOTEL);
+    expect(loadHotel(kv, 'u1', 'j2')).toBeNull();
+    expect(loadHotel(kv, 'u2', 'j1')).toBeNull();
   });
 });

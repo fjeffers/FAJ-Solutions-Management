@@ -62,6 +62,7 @@ import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { ArrivalPrompt, CheckInNow, HomeSpotCard } from '@/components/wf/DayPrompts';
+import { saveHotel } from '@/lib/arrival';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
@@ -2254,9 +2255,11 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     if (st.stage === 'travel' && st.dest !== 'site') {
       const g = await where();
       if (!g) return false;
+      // The first arrival at the hotel saves it, so later drives there are spotted by GPS.
+      if (st.dest === 'hotel') saveHotel(browserStorage(), uid, job.id, g);
       await day('travel_end', {}, 'Arrived', new Date(), g,
         st.dest === 'hotel' || st.dest === 'home' ? `At the ${st.dest}. Signed out for the day.`
-          : st.dest === 'fuel' || st.dest === 'materials' ? `At the ${st.dest === 'fuel' ? 'fuel stop' : 'materials pickup'}. Tap Check in when you head out again.` : 'Arrived.');
+          : st.dest === 'fuel' || st.dest === 'materials' ? `At the ${st.dest === 'fuel' ? 'fuel stop' : 'vendor'}. Tap Check in when you head out again.` : 'Arrived.');
       return true;
     }
     return onSite();

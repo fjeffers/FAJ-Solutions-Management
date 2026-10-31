@@ -66,7 +66,7 @@ export const TRAVEL_TO: { dest: Dest; label: string }[] = [
   { dest: 'site', label: 'Site' },
   { dest: 'home', label: 'Home' },
   { dest: 'fuel', label: 'Fuel' },
-  { dest: 'materials', label: 'Materials' },
+  { dest: 'materials', label: 'Vendor / materials' },
   { dest: 'next_site', label: 'Next site' },
 ];
 
@@ -103,7 +103,7 @@ export function checkInDrive(key: string, from: Origin | null): Drive | null {
 /** A drive to the place the tech is already at (Hotel → Hotel): almost always the wrong pick. */
 export const samePlace = (drive: Drive | null): boolean =>
   !!drive && (drive.dest === 'hotel' || drive.dest === 'home') && drive.origin === drive.dest;
-const ORIGIN_LABEL_FOR: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Here', fuel: 'Fuel stop', materials: 'Materials pickup' };
+const ORIGIN_LABEL_FOR: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Here', fuel: 'Fuel stop', materials: 'Vendor / materials' };
 
 /**
  * Every drive needs the odometer, at the start and on arrival (Fred,

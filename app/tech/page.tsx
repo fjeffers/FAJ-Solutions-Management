@@ -595,7 +595,7 @@ export default function TechPortalPage() {
                 techName={profile?.name ?? ''} />
             </>
           ) : tab === 'project' ? (
-            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} />
+            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} act={act} />
           ) : underProfile ? (
             <>
               <button type="button" className="fs-back-link" onClick={() => go('profile')}><FsIcon name="back" size={16} />Profile</button>
@@ -739,8 +739,9 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
 // office to close it).
 type WoList = 'assigned' | 'available' | 'pending';
 
-function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
+function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy, act }: {
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
+  act: (a: PendingAction, sent?: string) => Promise<void>;
 }) {
   const today = todayISO();
   const live = sortTechJobs(jobs.filter(canWork), today);
@@ -792,6 +793,33 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
       <div style={{ marginBottom: 14 }}>
         <PushSwitch hideWhenOn offText="Turn on so you get an alert the moment you're put on a job, even with the app closed." />
       </div>
+      {/* New offers first, with the answer right here (Fred, 2026-10-31: "New job offers on the home screen"). */}
+      {lists.available.length > 0 && (
+        <section className="fs-card" aria-label="New jobs offered to you"
+          style={{ marginBottom: 14, borderColor: 'var(--wf-gold, #c9a24b)', borderWidth: 2, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 17 }}>
+            {lists.available.length === 1 ? 'New job offered to you' : `${lists.available.length} new jobs offered to you`}
+          </h3>
+          {lists.available.slice(0, 3).map((j) => {
+            const start = parseClockTime(j.startTime);
+            const day = !j.date ? 'Not scheduled yet'
+              : new Date(`${j.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            return (
+              <div key={j.id} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 10, borderTop: '1px solid var(--wf-line, #e5e7eb)' }}>
+                <button type="button" onClick={() => onOpen(j.id)}
+                  style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <strong>{j.siteName || j.title}</strong>
+                  <span className="fs-meta">{[`WO ${j.number}`, `${day}${start ? ` · ${fmtClock12(start)}` : ''}`, j.city].filter(Boolean).join(' · ')}</span>
+                </button>
+                <OfferButtons job={j} act={act} />
+              </div>
+            );
+          })}
+          {lists.available.length > 3 && (
+            <button type="button" className="wf-btn wf-btn-outline" onClick={() => setList('available')}>See all {lists.available.length}</button>
+          )}
+        </section>
+      )}
       <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">

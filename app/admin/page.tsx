@@ -9,6 +9,8 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
 import { CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, ChevronRight, Plus } from 'lucide-react';
+import TechInstall from '@/components/TechInstall';
+import { OFFICE_APP_URL } from '@/lib/install-help';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -1709,6 +1711,7 @@ Go ahead?`)) return;
 
       {/* ── Main Content ── */}
       <main className="main-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
+        <TechInstall appUrl={OFFICE_APP_URL} dismissKey="faj-office-install-dismissed" title="Install the FAJ app" style={{ margin: '16px 16px 0' }} />
         {view === 'dashboard' && (
           <DashboardView
             stats={stats}

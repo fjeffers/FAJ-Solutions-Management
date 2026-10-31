@@ -2,6 +2,10 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
+// FAJ works in Eastern time, and the tests that check times read the clock as
+// Eastern. Pinned so they give the same answer on any machine (servers usually run in UTC).
+process.env.TZ = 'America/New_York';
+
 // Logic tests run in plain node; anything that renders a component asks for
 // the jsdom environment with a docblock comment at the top of the file.
 export default defineConfig({

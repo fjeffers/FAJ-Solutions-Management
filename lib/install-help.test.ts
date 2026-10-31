@@ -7,6 +7,10 @@ const IOS_WEBVIEW = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Appl
 const CHROME = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36';
 const ANDROID_WV = 'Mozilla/5.0 (Linux; Android 14; SM-S918U; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0.0.0 Mobile Safari/537.36';
 const SAMSUNG = 'Mozilla/5.0 (Linux; Android 14; SM-S918U) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36';
+const MAC_SAFARI = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+const MAC_CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
+const EDGE = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0';
+const FIREFOX = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0';
 const DESKTOP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
 
 describe('putting the tech app on a phone (Fred, 2026-10-19)', () => {
@@ -17,7 +21,20 @@ describe('putting the tech app on a phone (Fred, 2026-10-19)', () => {
     expect(phoneKind(CHROME)).toBe('android');
     expect(phoneKind(ANDROID_WV)).toBe('android-inapp');
     expect(phoneKind(SAMSUNG)).toBe('samsung');
-    expect(phoneKind(DESKTOP)).toBe('other');
+    expect(phoneKind(DESKTOP)).toBe('desktop');
+  });
+
+  it('knows tablets and computers too (Fred, 2026-10-31: "app on the phones tablet and computer")', () => {
+    // An iPad on iPadOS says it is a Mac; only the touch screen gives it away.
+    expect(phoneKind(MAC_SAFARI, 5)).toBe('ios');
+    expect(phoneKind(MAC_SAFARI)).toBe('desktop-safari');
+    expect(phoneKind(MAC_CHROME)).toBe('desktop');
+    expect(phoneKind(EDGE)).toBe('desktop');
+    expect(phoneKind(FIREFOX)).toBe('desktop-firefox');
+    expect(installSteps('desktop', true)).toContain('Click Install');
+    expect(installSteps('desktop', false)).toContain('address bar');
+    expect(installSteps('desktop-safari', false)).toContain('Add to Dock');
+    expect(installSteps('desktop-firefox', false)).toContain('Chrome, Edge or Safari');
   });
 
   it('gives the steps for that phone', () => {

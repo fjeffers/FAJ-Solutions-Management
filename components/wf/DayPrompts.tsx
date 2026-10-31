@@ -20,21 +20,32 @@ import { Section } from './WfUi';
 const LATER_MS = 30 * 60 * 1000;
 const NOT_YET_MS = 5 * 60 * 1000;
 
-function snoozed(key: string): boolean {
-  try { return Number(window.sessionStorage.getItem(key)) > Date.now(); } catch { return false; }
+function snoozeLeft(key: string): number {
+  if (!key) return 0;
+  try { return Math.max(0, Number(window.sessionStorage.getItem(key)) - Date.now()); } catch { return 0; }
 }
-function snooze(key: string, ms: number): void {
-  try { window.sessionStorage.setItem(key, String(Date.now() + ms)); } catch { /* storage blocked */ }
+/** "Later" / "Not yet": hidden for a while, then back on its own when the time is up. */
+function useSnooze(key: string): [boolean, (ms: number) => void] {
+  const [tick, setTick] = useState(0);
+  const left = snoozeLeft(key);
+  useEffect(() => {
+    if (left <= 0) return;
+    const t = window.setTimeout(() => setTick((n) => n + 1), left + 50);
+    return () => window.clearTimeout(t);
+  }, [key, left > 0, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const later = (ms: number) => {
+    try { window.sessionStorage.setItem(key, String(Date.now() + ms)); } catch { /* storage blocked */ }
+    setTick((n) => n + 1);
+  };
+  return [left > 0, later];
 }
 const jobName = (j: WfJob) => j.siteName || j.title || `WO ${j.number}`;
 const jobAddress = (j: WfJob) => [j.street, j.city, [j.state, j.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 
 export function CheckInNow({ jobs, busy, onCheckIn }: { jobs: WfJob[]; busy: boolean; onCheckIn: (job: WfJob) => void }) {
   const job = useMemo(() => checkInDue(jobs), [jobs]);
-  const [, setTick] = useState(0);
-  if (!job) return null;
-  const key = `faj-checkin-later:${job.id}`;
-  if (snoozed(key)) return null;
+  const [hidden, later] = useSnooze(job ? `faj-checkin-later:${job.id}` : '');
+  if (!job || hidden) return null;
   const time = job.startTime ? ` · starts ${job.startTime}` : '';
   return (
     <div className="fs-takeover" role="dialog" aria-modal="true" aria-label="Time to check in">
@@ -45,7 +56,7 @@ export function CheckInNow({ jobs, busy, onCheckIn }: { jobs: WfJob[]; busy: boo
         <p className="fs-takeover-meta">WO {job.number}{time}</p>
         {jobAddress(job) && <p className="fs-takeover-meta">{jobAddress(job)}</p>}
         <button type="button" className="fs-takeover-go" disabled={busy} onClick={() => onCheckIn(job)}>Check in now</button>
-        <button type="button" className="fs-takeover-later" onClick={() => { snooze(key, LATER_MS); setTick((t) => t + 1); }}>Later</button>
+        <button type="button" className="fs-takeover-later" onClick={() => later(LATER_MS)}>Later</button>
       </div>
     </div>
   );
@@ -53,22 +64,25 @@ export function CheckInNow({ jobs, busy, onCheckIn }: { jobs: WfJob[]; busy: boo
 
 export function ArrivalPrompt({ jobs, uid, busy, onArrive }: { jobs: WfJob[]; uid: string; busy: boolean; onArrive: (job: WfJob) => void }) {
   const driving = useMemo(() => drivingJob(jobs), [jobs]);
-  const [here, setHere] = useState<Fix | null>(null);
-  const [, setTick] = useState(0);
-  const watching = !!driving;
+  // A fix only counts for the drive it was taken on, and only if taken after the drive started.
+  const driveKey = driving ? `${driving.job.id}:${driving.st.since}` : '';
+  const since = driving ? Date.parse(driving.st.since) : 0;
+  const [here, setHere] = useState<(Fix & { drive: string }) | null>(null);
   useEffect(() => {
-    if (!watching || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    if (!driveKey || typeof navigator === 'undefined' || !navigator.geolocation) return;
     const id = navigator.geolocation.watchPosition(
-      (p) => setHere({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
+      (p) => { if (p.timestamp >= since) setHere({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, drive: driveKey }); },
       () => { /* no fix: the "I have arrived" button still works */ },
       { enableHighAccuracy: true, maximumAge: 15_000, timeout: 30_000 },
     );
     return () => navigator.geolocation.clearWatch(id);
-  }, [watching]);
-  const home = useMemo(() => loadHome(browserStorage(), uid), [uid]);
-  const at = driving && here ? arrivalAt(driving.st, here, siteSpot(driving.job), home) : null;
-  const key = driving ? `faj-arrive-later:${driving.job.id}:${driving.st.since}` : '';
-  const show = !!at && !snoozed(key);
+  }, [driveKey, since]);
+  // Read each time, so a home saved in Profile counts at once.
+  const home = loadHome(browserStorage(), uid);
+  const fix = here && here.drive === driveKey ? here : null;
+  const at = driving && fix ? arrivalAt(driving.st, fix, siteSpot(driving.job), home) : null;
+  const [hidden, notYet] = useSnooze(driveKey ? `faj-arrive-later:${driveKey}` : '');
+  const show = !!at && !hidden;
   useEffect(() => { if (show) navigator.vibrate?.([200, 100, 200]); }, [show]);
   if (!driving || !at || !show) return null;
   const site = at === 'site';
@@ -82,7 +96,7 @@ export function ArrivalPrompt({ jobs, uid, busy, onArrive }: { jobs: WfJob[]; ui
         <button type="button" className="fs-takeover-go" disabled={busy} onClick={() => onArrive(driving.job)}>
           {site ? 'Start job' : 'Sign out for the day'}
         </button>
-        <button type="button" className="fs-takeover-later" onClick={() => { snooze(key, NOT_YET_MS); setTick((t) => t + 1); }}>Not yet</button>
+        <button type="button" className="fs-takeover-later" onClick={() => notYet(NOT_YET_MS)}>Not yet</button>
       </div>
     </div>
   );

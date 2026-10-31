@@ -37,7 +37,7 @@ const Field = ({ name, children }: { name: string; children: React.ReactNode }) 
  */
 export function NumBox({ value, onChange, label, empty = null, disabled = false, read = (n) => n, shown = String, placeholder }: {
   value: number | null; onChange: (n: number | null) => void; label: string; empty?: number | null; disabled?: boolean;
-  read?: (n: number) => number; shown?: (n: number) => string; placeholder?: string;
+  read?: (n: number, typed: string) => number; shown?: (n: number) => string; placeholder?: string;
 }) {
   const show = (n: number | null) => (n == null || n === empty ? '' : shown(n));
   const [text, setText] = useState(show(value));
@@ -57,7 +57,7 @@ export function NumBox({ value, onChange, label, empty = null, disabled = false,
         setText(t);
         const digits = t.replace(/[$,\s]/g, '');
         if (digits === '' || digits === '.') { setSeen(empty); onChange(empty); return; }
-        const n = read(Number(digits));
+        const n = read(Number(digits), t);
         setSeen(n);
         onChange(n);
       }} />

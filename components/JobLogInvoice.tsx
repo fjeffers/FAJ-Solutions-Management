@@ -5,7 +5,9 @@
 // its number, date, terms and due date; then each tech, the lead first, with their hours, meals, mileage and hotel
 // day by day and their total; then Labor, Mileage, Meals, Travel and the Total Invoice. lib/job-log-invoice.ts.
 // With `edit`, it's edited right on its lines ("the invoice need to be one ... so we edit job log it shows as an
-// invoice"): each day's date and hours, meals, miles and hotel, each tech's rates, and the invoice's number and dates.
+// invoice"): each day's date and hours, meals, miles and hotel, and the invoice's number and dates; each tech's rates in
+// the box at its top, where a phone shows them (Fred, 2026-10-31: "should be able to add the rates for per hour and
+// mileage" there).
 import type { CSSProperties, ReactNode } from 'react';
 import { Plus, X } from 'lucide-react';
 import { NumBox } from '@/components/JobSheetEditor';
@@ -103,13 +105,13 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
 }
 
 /** A section's title's line ("Total Meal Allowance … $ 106.02") with a rule over it, then its lines. */
-function Section({ s, tech, edit, rate, add }: { s: InvoiceSection; tech: string; edit?: InvoiceEditor; rate?: ReactNode; add?: ReactNode }) {
+function Section({ s, tech, edit, add }: { s: InvoiceSection; tech: string; edit?: InvoiceEditor; add?: ReactNode }) {
   return (
     <>
       <tr>
         <td style={td} colSpan={3} />
         <td style={{ ...center, fontWeight: 700, borderTop: line, whiteSpace: 'nowrap' }}>{s.title}</td>
-        {rate ? <><td style={{ ...td, borderTop: line }} /><td style={{ ...right, borderTop: line }}>{rate}</td></> : <td style={{ ...td, borderTop: line }} colSpan={2} />}
+        <td style={{ ...td, borderTop: line }} colSpan={2} />
         <td style={{ ...right, borderTop: line }}><Money n={s.amount} bold /></td>
         {edit && <td style={td} />}
       </tr>
@@ -120,7 +122,6 @@ function Section({ s, tech, edit, rate, add }: { s: InvoiceSection; tech: string
 }
 
 function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
-  const rates = edit?.rateOf(t.tech);
   // A helper's drives or hotel that are the lead's: a line added goes with the lead's, so the helper keeps sharing
   // them (CodeRabbit on PR #44).
   const ownerOf = (s: InvoiceSection) => s.lines.find((l) => l.tech && l.tech !== t.tech)?.tech ?? t.tech;
@@ -131,9 +132,7 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
         <td style={td}>{t.tech}</td>
         <td style={{ ...center, borderBottom: line }}>{t.hours.title}</td>
         <td style={right}>{qty(t.hours.qty, true)}</td>
-        <td style={right}>{edit && !edit.together.on
-          ? <NumBox label={`$ per hour, ${t.tech}`} value={rates?.hour ?? null} onChange={(n) => edit.setRate(t.tech, 'hour', n)} />
-          : <Money n={t.hours.rate} rate />}</td>
+        <td style={right}><Money n={t.hours.rate} rate /></td>
         <td style={right}><Money n={t.hours.amount} bold /></td>
         {edit && <td style={td} />}
       </tr>
@@ -141,7 +140,6 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
       {edit && <AddRow name={`Add a day, ${t.tech}`} onClick={() => edit.add(t.tech, 'Labor')}>Add a day</AddRow>}
       <Section s={t.meals} tech={t.tech} edit={edit} />
       <Section s={t.mileage} tech={t.tech} edit={edit}
-        rate={edit && <NumBox label={`$ per mile, ${t.tech}`} value={rates?.mile ?? null} onChange={(n) => edit.setRate(t.tech, 'mile', n)} />}
         add={edit && <AddRow name={`Add a drive, ${t.tech}`} onClick={() => edit.add(ownerOf(t.mileage), 'Mileage')}>Add a drive</AddRow>} />
       {/* The materials, on the lead's part before the hotel (Fred: "under lead tech before hotel"). */}
       {t.materials && (t.materials.lines.length > 0 || edit) && (
@@ -161,8 +159,9 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
   );
 }
 
-/** The invoice's own boxes, at its top while it's edited: the number, date and terms, the labor, the meals, the hours' rate. */
-function EditTop({ edit }: { edit: InvoiceEditor }) {
+/** The invoice's own boxes, at its top while it's edited: the number, date and terms, the labor, the meals, and each
+ *  tech's $ per hour and $ per mile (or one $ per hour for all the hours). */
+function EditTop({ edit, techs }: { edit: InvoiceEditor; techs: InvoiceTech[] }) {
   const { meta, setMeta, together } = edit;
   const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 };
   return (
@@ -192,6 +191,25 @@ function EditTop({ edit }: { edit: InvoiceEditor }) {
         <button type="button" aria-pressed={together.on} className={`wf-btn wf-btn-sm ${together.on ? 'wf-btn-navy' : 'wf-btn-outline'}`} onClick={() => edit.setTogether({ ...together, on: true })}>Together (one rate)</button>
         {together.on && <span style={{ width: 110 }}><NumBox label="$ per hour, all techs" value={together.hour} onChange={(n) => edit.setTogether({ on: true, hour: n })} /></span>}
       </div>
+      {/* Each tech's rates, the lead first: the $ per hour (unless all the hours are at one) and the $ per mile. */}
+      <div role="group" aria-label="Rates on the invoice" style={{ display: 'flex', flexDirection: 'column', gap: 6, flexBasis: '100%' }}>
+        {techs.map((t) => {
+          const r = edit.rateOf(t.tech);
+          return (
+            <div key={t.tech} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 10 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600, minWidth: 160, paddingBottom: 7 }}>{t.tech} <span style={{ fontWeight: 400, color: '#5E6470' }}>({t.role})</span></span>
+              {!together.on && (
+                <div style={{ ...field, width: 100 }}>$ per hour
+                  <NumBox label={`$ per hour, ${t.tech}`} value={r.hour} onChange={(n) => edit.setRate(t.tech, 'hour', n)} />
+                </div>
+              )}
+              <div style={{ ...field, width: 100 }}>$ per mile
+                <NumBox label={`$ per mile, ${t.tech}`} value={r.mile} onChange={(n) => edit.setRate(t.tech, 'mile', n)} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -218,7 +236,7 @@ export default function JobLogInvoice({ invoice, head, edit }: { invoice: Invoic
           ))}
         </div>
       </div>
-      {edit && <EditTop edit={edit} />}
+      {edit && <EditTop edit={edit} techs={invoice.techs} />}
 
       <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 18 }}>
         <colgroup>

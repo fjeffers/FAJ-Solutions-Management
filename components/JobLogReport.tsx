@@ -783,9 +783,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         </div>
         {copy === 'invoice' && (
           <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
-            {invDraft ? <>Editing the invoice: change any day, hours, meals, miles, hotel or rate right on its lines, add or take out a line, then <b>Save invoice</b>. The job log’s time sheet changes with it.</>
+            {invDraft ? <>Editing the invoice: type each tech’s $ per hour and $ per mile in the box at its top, change any day, hours, meals, miles or hotel right on its lines, add or take out a line, then <b>Save invoice</b>. The job log’s time sheet changes with it.</>
               : ratesFailed ? 'The saved rates didn’t load, so the invoice can’t be changed or printed right now. Close the job log and open it again.'
-                : noSavedRates ? <>Press <b>Edit invoice</b>, type each tech’s rates on it, then <b>Save invoice</b> to print it.</>
+                : noSavedRates ? <>Press <b>Edit invoice</b>, type each tech’s $ per hour and $ per mile in the box at its top, then <b>Save invoice</b> to print it.</>
                   : <>The invoice as the client lays it out. <b>Edit invoice</b> to change it right on its lines.</>}
           </div>
         )}

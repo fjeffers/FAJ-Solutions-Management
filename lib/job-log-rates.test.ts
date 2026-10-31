@@ -1,7 +1,7 @@
 // Each tech's rates on the client's copy of the job log (Fred, 2026-10-30: "i need a copy i can entered how much
 // per an hour the milage for each tech"; "Rates and the dollars").
 import { describe, it, expect } from 'vitest';
-import { chargesByTech, chargesTotal, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, withAllHoursRate } from './job-log-rates';
+import { chargesByTech, chargesTotal, fromCents, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, toCents, withAllHoursRate } from './job-log-rates';
 import type { JobSheet } from './job-log-sheet';
 
 const sheet: JobSheet = {
@@ -84,5 +84,10 @@ describe('the client copy charges', () => {
     expect([parseRate(90), parseRate('62.5'), parseRate(null), parseRate(''), parseRate(-1), parseRate('x')]).toEqual([90, 62.5, null, null, null, null]);
     expect(ratesToSave({ 'Paul Gibbs': { hour: 65, mile: 0.7 }, Kendell: { hour: null, mile: null } }))
       .toEqual({ 'Paul Gibbs': { hour: 65, mile: 0.7 } });
+  });
+
+  it('types the mileage rate in cents and keeps it in dollars (Fred: "Cent per mile")', () => {
+    expect([0.6, 0.725, 0.57, 0.655, null].map(toCents)).toEqual([60, 72.5, 57, 65.5, null]);
+    expect([60, 72.5, 57, 65.5, 0, null].map(fromCents)).toEqual([0.6, 0.725, 0.57, 0.655, 0, null]);
   });
 });

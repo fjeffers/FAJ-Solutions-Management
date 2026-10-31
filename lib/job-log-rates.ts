@@ -44,6 +44,14 @@ export function parseRates(raw: unknown): JobRates {
   return out;
 }
 
+/**
+ * The mileage rate typed in cents (Fred, 2026-10-31: "Cent per mile"): $0.60 a mile is 60, $0.725 is 72.5. Kept,
+ * and on the invoice, in dollars as ever.
+ */
+export const toCents = (dollars: number | null) => (dollars == null ? null : Math.round(dollars * 1e6) / 1e4);
+/** Cents a mile as typed, as the dollars kept: 60 is $0.60. */
+export const fromCents = (cents: number | null) => (cents == null ? null : Math.round(cents * 1e4) / 1e6);
+
 /** job_log_rates.all_hours_rate from the database: a dollar figure, or none. */
 export const parseRate = (v: unknown) => rate(typeof v === 'string' && v.trim() !== '' ? Number(v) : v);
 

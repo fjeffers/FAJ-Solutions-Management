@@ -745,7 +745,8 @@ describe('Job log edited by the office', () => {
     expect(screen.getByText('Not charged (no rates): Paul Gibbs.')).toBeTruthy();
     expect(screen.queryByText('TOTAL CHARGES')).toBeNull();
     fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '65' } });
-    fireEvent.change(screen.getByLabelText('$ per mile, Paul Gibbs'), { target: { value: '.70' } });
+    // The miles in cents (Fred: "Cent per mile"): 70 is $0.70 a mile.
+    fireEvent.change(screen.getByLabelText('Per mile, Paul Gibbs'), { target: { value: '70' } });
     // The total as they're typed (Fred: "i enter the rates and it shows the total"); the page waits for the save, so
     // even the browser's own print never has rates that aren't kept (CodeRabbit on PR #40).
     expect(screen.getByText('Total $597.60')).toBeTruthy();
@@ -1150,7 +1151,7 @@ describe('Job log edited by the office', () => {
     }
   }));
 
-  it('types each tech\'s $ per hour and $ per mile in the box at the invoice\'s top (Fred: "should be able to add the rates for per hour and mileage")', () => withPunches(async () => {
+  it('types each tech\'s $ per hour and rate per mile in the box at the invoice\'s top (Fred: "should be able to add the rates for per hour and mileage")', () => withPunches(async () => {
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
     await waitFor(() => expect(print.disabled).toBe(false));
@@ -1160,21 +1161,28 @@ describe('Job log edited by the office', () => {
     const box = screen.getByRole('group', { name: 'Rates on the invoice' });
     expect(within(screen.getByRole('table')).queryByLabelText('$ per hour, Paul Gibbs')).toBeNull();
     fireEvent.change(within(box).getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '50' } });
-    fireEvent.change(within(box).getByLabelText('$ per mile, Paul Gibbs'), { target: { value: '.6' } });
+    // In cents, 60, or as Fred writes it, .652 (Fred: "Cent per mile", ".652 per mile").
+    fireEvent.change(within(box).getByLabelText('Per mile, Paul Gibbs'), { target: { value: '60' } });
     expect(screen.getByText('Total Hours').closest('tr')!.textContent).toContain('$50.00');
     fireEvent.click(screen.getByRole('button', { name: 'Add a drive, Paul Gibbs' }));
     const miles = screen.getAllByLabelText(/^Miles, Paul Gibbs, /).at(-1)!;
     fireEvent.change(miles, { target: { value: '100' } });
     expect(miles.closest('tr')!.textContent).toContain('$0.60');
     expect(miles.closest('tr')!.textContent).toContain('$60.00');
-    // All the hours at one rate: that one box, and each tech's $ per mile still.
+    // All the hours at one rate: that one box, and each tech's rate per mile still.
     fireEvent.click(screen.getByRole('button', { name: 'Together (one rate)' }));
     expect(within(box).queryByLabelText('$ per hour, Paul Gibbs')).toBeNull();
-    expect((within(box).getByLabelText('$ per mile, Paul Gibbs') as HTMLInputElement).value).toBe('.6');
+    expect((within(box).getByLabelText('Per mile, Paul Gibbs') as HTMLInputElement).value).toBe('60');
     fireEvent.click(screen.getByRole('button', { name: 'Separate (each tech’s rate)' }));
+    fireEvent.change(within(box).getByLabelText('Per mile, Paul Gibbs'), { target: { value: '.652' } });
+    expect(miles.closest('tr')!.textContent).toContain('$0.652');
+    expect(miles.closest('tr')!.textContent).toContain('$65.20');
     fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
     await waitFor(() => expect(print.disabled).toBe(false));
-    expect(upserts.at(-1)!.row).toMatchObject({ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } }, all_hours_rate: null });
+    expect(upserts.at(-1)!.row).toMatchObject({ rates: { 'Paul Gibbs': { hour: 50, mile: 0.652 } }, all_hours_rate: null });
+    // Opened again: the rate kept, shown as Fred writes it.
+    fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
+    expect((screen.getByLabelText('Per mile, Paul Gibbs') as HTMLInputElement).value).toBe('.652');
   }));
 
   it('puts the hotels on their own line in the breakdown (Fred: "see it hotels also")', () => withPunches(async () => {

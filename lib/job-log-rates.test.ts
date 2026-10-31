@@ -1,7 +1,7 @@
 // Each tech's rates on the client's copy of the job log (Fred, 2026-10-30: "i need a copy i can entered how much
 // per an hour the milage for each tech"; "Rates and the dollars").
 import { describe, it, expect } from 'vitest';
-import { chargesByTech, chargesTotal, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, withAllHoursRate } from './job-log-rates';
+import { chargesByTech, chargesTotal, mileRateShown, mileRateTyped, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, withAllHoursRate } from './job-log-rates';
 import type { JobSheet } from './job-log-sheet';
 
 const sheet: JobSheet = {
@@ -84,5 +84,16 @@ describe('the client copy charges', () => {
     expect([parseRate(90), parseRate('62.5'), parseRate(null), parseRate(''), parseRate(-1), parseRate('x')]).toEqual([90, 62.5, null, null, null, null]);
     expect(ratesToSave({ 'Paul Gibbs': { hour: 65, mile: 0.7 }, Kendell: { hour: null, mile: null } }))
       .toEqual({ 'Paul Gibbs': { hour: 65, mile: 0.7 } });
+  });
+
+  it('takes a mileage rate as Fred writes it, .50 or .652, or in cents, 50 or 65.2 (Fred: "Cent per mile", ".652 per mile")', () => {
+    expect([0.5, 0.652, 50, 65.2, 72.5, 57, 0.1234567, 0].map((n) => mileRateTyped(n))).toEqual([0.5, 0.652, 0.5, 0.652, 0.725, 0.57, 0.1234567, 0]);
+    // With a $, the dollars as typed (CodeRabbit on PR #48).
+    expect([mileRateTyped(1.25, '$1.25'), mileRateTyped(0.5, '$.50'), mileRateTyped(125, '125')]).toEqual([1.25, 0.5, 1.25]);
+    // Shown as typed, in full, so opening it again and saving never changes it (CodeRabbit on PR #48).
+    // $1 or more in cents, as the box reads it back (Greptile on PR #48).
+    expect([0.5, 0.652, 0.6, 0.1234567, 0, 1.25, 1].map(mileRateShown)).toEqual(['.50', '.652', '.60', '.1234567', '0', '125', '100']);
+    // Whatever's kept reads back the same from its box.
+    for (const d of [0.5, 0.652, 0.57, 0.005, 0.1234567, 0, 1, 1.5, 1.6, 2.25]) expect(mileRateTyped(Number(mileRateShown(d)))).toBe(d);
   });
 });

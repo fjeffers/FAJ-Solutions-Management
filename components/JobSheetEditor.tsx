@@ -32,12 +32,14 @@ const Field = ({ name, children }: { name: string; children: React.ReactNode }) 
 
 /**
  * A number typed as text, so "47." can be typed on the way to "47.48"; anything that isn't a number isn't taken.
- * An empty box is `empty` (none, or 0 for an amount or a break), and shows empty.
+ * An empty box is `empty` (none, or 0 for an amount or a break), and shows empty. `read` turns what's typed into
+ * what's kept and `shown` back (a mileage rate typed .50 or 50, lib/job-log-rates.ts mileRateTyped).
  */
-export function NumBox({ value, onChange, label, empty = null, disabled = false }: {
+export function NumBox({ value, onChange, label, empty = null, disabled = false, read = (n) => n, shown = String, placeholder }: {
   value: number | null; onChange: (n: number | null) => void; label: string; empty?: number | null; disabled?: boolean;
+  read?: (n: number, typed: string) => number; shown?: (n: number) => string; placeholder?: string;
 }) {
-  const show = (n: number | null) => (n == null || n === empty ? '' : String(n));
+  const show = (n: number | null) => (n == null || n === empty ? '' : shown(n));
   const [text, setText] = useState(show(value));
   const [seen, setSeen] = useState(value);
   // A new value from outside (the miles worked out from the odometer): show it.
@@ -46,7 +48,7 @@ export function NumBox({ value, onChange, label, empty = null, disabled = false 
     setText(show(value));
   }
   return (
-    <input aria-label={label} inputMode="decimal" style={box} value={text} disabled={disabled}
+    <input aria-label={label} inputMode="decimal" style={box} value={text} disabled={disabled} placeholder={placeholder}
       onChange={(e) => {
         const t = e.target.value;
         // Only what makes a number ("$1,234.5", "47."): a slip like "18..50" isn't taken, so the box never shows
@@ -55,7 +57,7 @@ export function NumBox({ value, onChange, label, empty = null, disabled = false 
         setText(t);
         const digits = t.replace(/[$,\s]/g, '');
         if (digits === '' || digits === '.') { setSeen(empty); onChange(empty); return; }
-        const n = Number(digits);
+        const n = read(Number(digits), t);
         setSeen(n);
         onChange(n);
       }} />

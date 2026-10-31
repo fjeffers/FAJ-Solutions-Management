@@ -74,15 +74,14 @@ describe('Edit job', () => {
     });
   });
 
-  it('shows the whole job on Marketplace: location, schedule, techs, description, contact', async () => {
+  it('keeps each fact in one place: Client & ticket no longer repeats the address, date or techs', async () => {
     render(<WorkOrderModal item={{ ...NO_TECH, external_wo_id: 'LDS-1103', client_reference: '5333202', site_address: '6420 Morganton Road', site_city: 'Fayetteville',
       site_state: 'NC', site_zip: '28314', start_date: '2026-10-26', start_time: '08:00', contractor_names: ['Dwayne Cudjoe'], contractor_name: 'Dwayne Cudjoe' } as WorkOrder}
       contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
-    await userEvent.click(screen.getByRole('button', { name: /^Marketplace/ }));
-    expect((screen.getByLabelText('Marketplace street address') as HTMLInputElement).value).toBe('6420 Morganton Road');
-    expect((screen.getByLabelText('Marketplace start date') as HTMLInputElement).value).toBe('2026-10-26');
-    expect(screen.getByText('6420 Morganton Road, Fayetteville, NC 28314 · open in Maps')).toBeTruthy();
-    expect(screen.getAllByText('Dwayne Cudjoe').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: 'Client & ticket' })).toBeTruthy();
+    expect(screen.queryByLabelText('Marketplace street address')).toBeNull();
+    expect(screen.queryByLabelText('Marketplace start date')).toBeNull();
+    expect(screen.queryByText('Techs on site')).toBeNull();
   });
 
   it('removes a section: Marketplace and Pay come off, and what was in them is cleared on Save', async () => {

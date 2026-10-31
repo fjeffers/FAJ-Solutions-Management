@@ -229,9 +229,11 @@ export function OffSiteDialog({ missing, needs, signature = true, clientCheckout
   onClose: () => void;
   /** Coming back: what got done today and what's still left (Fred, 2026-10-14). */
   onBack: (report: { done: string; left: string }) => void;
-  onFinished: () => void;
+  /** `why`: finished with items missing, and the tech's reason for the office. */
+  onFinished: (why?: string) => void;
 }) {
   const [finish, setFinish] = useState(false);
+  const [why, setWhy] = useState('');
   const [back, setBack] = useState(false);
   const [done, setDone] = useState('');
   const [left, setLeft] = useState('');
@@ -260,9 +262,15 @@ export function OffSiteDialog({ missing, needs, signature = true, clientCheckout
     <Dialog title="Leaving the site" onClose={onClose}
       footer={finish ? <>
         <button className="wf-btn wf-btn-ghost" onClick={() => setFinish(false)}>Back</button>
-        <button className="wf-btn wf-btn-navy" disabled={missing.length > 0} onClick={onFinished}>
-          <CheckCircle2 size={17} /> Site finished — off site
-        </button>
+        {missing.length > 0 ? (
+          <button className="wf-btn wf-btn-navy" disabled={why.trim().length < 5} onClick={() => onFinished(why.trim())}>
+            <CheckCircle2 size={17} /> Finish anyway
+          </button>
+        ) : (
+          <button className="wf-btn wf-btn-navy" onClick={() => onFinished()}>
+            <CheckCircle2 size={17} /> Site finished — off site
+          </button>
+        )}
       </> : <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>}>
       {!finish ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -289,6 +297,9 @@ export function OffSiteDialog({ missing, needs, signature = true, clientCheckout
             Can&apos;t get a photo or the signature? Tap <b>Can&apos;t do it</b>{' '}next to it under Closeout and say why
             (for example &quot;Contact not on site&quot;).
           </div>
+          <label className="wf-label" htmlFor="off-why" style={{ marginTop: 12 }}>Or finish anyway: why can&apos;t these be done? The office sees this.</label>
+          <textarea id="off-why" className="wf-input" rows={2} value={why} maxLength={600} onChange={(e) => setWhy(e.target.value)}
+            style={{ fontSize: 16 }} placeholder="e.g. Customer left before signing" />
         </div>
       ) : (
         <p style={{ margin: 0 }}>Everything is in. This sends the job to the office and stops your time on site.</p>

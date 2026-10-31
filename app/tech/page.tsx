@@ -1391,7 +1391,13 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   };
   // A project site always needs the sign-off; an ordinary job only when the office asked for one.
   const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, jobForCloseout.signatureRequired)];
-  const leaveSite = async (finished: boolean, report?: { done: string; left: string }) => {
+  /** Sent in with items not done: what and why, on the job's messages for the office. */
+  const sendMissingWhy = (missing: string[], why: string) =>
+    act(makeAction('sitemsg', {
+      number: job.number, kind: 'report', to: 'Everyone',
+      body: `Sent in with items not done:\n${missing.map((m) => `• ${m}`).join('\n')}\nWhy: ${why}`,
+    }, `Items not done on WO ${job.number}`));
+  const leaveSite = async (finished: boolean, report?: { done: string; left: string }, why?: string) => {
     setOffOpen(false);
     const at = new Date();
     const g = await where();
@@ -1402,6 +1408,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     // Then the client's own checkout form, when the job has one (migration 133).
     if (siteLinks.checkout) setCheckoutAt(at.toISOString());
     if (finished) {
+      if (why) await sendMissingWhy(offSiteMissing, why);
       await act(makeAction('report', { number: job.number, notes, answers }, `Job report for WO ${job.number}`));
       setAnswers({});
       await act(makeAction('workdone', { number: job.number, notes, clockOut: isClockedIn(job), ...g }, `Site finished on WO ${job.number}`, at),
@@ -1556,7 +1563,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             ...(jobForCloseout.signatureRequired ? ['the signature'] : []),
           ]}
           clientCheckout={!!siteLinks.checkout} onGo={goTo}
-          onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
+          onBack={(report) => void leaveSite(false, report)} onFinished={(why) => void leaveSite(true, undefined, why)} />
       )}
       {checkoutAt && !offOpen && (
         <CheckoutLinkDialog href={checkoutHref(checkoutAt)} on={onSiteSince(job.myDay ?? [], checkoutAt, 'America/New_York')} off={checkoutAt}
@@ -1580,15 +1587,16 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         }} />
       )}
       {ph.pending && <PhotoLabelDialog preview={ph.pending.preview} choices={photoLabelChoices(deliverables)} onPick={ph.answer} onCancel={ph.cancel} />}
-      {doneOpen && (
+      {doneOpen && (() => { const doneMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, shown.signatureRequired)]; return (
         <WorkDoneDialog
           job={job}
-          missing={[...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, shown.signatureRequired)]}
+          missing={doneMissing}
           onClose={() => setDoneOpen(false)} onGo={goTo}
           onSaveDraft={async () => { setDoneOpen(false); await saveReport(); }}
-          onConfirm={async () => {
+          onConfirm={async (why) => {
             setDoneOpen(false);
             const at = new Date();
+            if (why) await sendMissingWhy(doneMissing, why);
             const clockOut = isClockedIn(job);
             const pos = await getPosition(6000);
             // The customer's signature is taken under Closeout now, with their name.
@@ -1602,7 +1610,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             );
           }}
         />
-      )}
+      ); })()}
     </>
   );
   if (!FS_JOB_SCREEN) return <>{detail}{dialogs}</>;
@@ -2056,9 +2064,30 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
  */
 function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm, onGo }: {
   job: WfJob; missing: string[]; onClose: () => void; onGo?: (item: string) => void;
-  onSaveDraft: () => Promise<void>; onConfirm: () => void | Promise<void>;
+  onSaveDraft: () => Promise<void>;
+  /** `why`: sent in with items missing, and the tech's reason (the office sees it on the job's messages). */
+  onConfirm: (why?: string) => void | Promise<void>;
 }) {
   const ready = missing.length === 0;
+  const [anyway, setAnyway] = useState(false);
+  const [why, setWhy] = useState('');
+  // Check-out that won't let a job end half done (Fred, 2026-10-31): missing items block it, unless
+  // the tech says why, in words the office reads.
+  if (anyway && missing.length > 0) {
+    return (
+      <Dialog title="Send it in anyway?" onClose={onClose}
+        footer={<>
+          <button className="wf-btn wf-btn-ghost" onClick={() => setAnyway(false)}>Back</button>
+          <button className="wf-btn wf-btn-navy" disabled={why.trim().length < 5} onClick={() => void onConfirm(why.trim())}>
+            <CheckCircle2 size={16} /> Send in anyway
+          </button>
+        </>}>
+        <label className="wf-label" htmlFor="done-why">Why can&apos;t these be done? The office sees this.</label>
+        <textarea id="done-why" className="wf-input" rows={3} autoFocus value={why} maxLength={600} onChange={(e) => setWhy(e.target.value)}
+          style={{ fontSize: 16 }} placeholder="e.g. Customer left before signing; photos blocked by site security" />
+      </Dialog>
+    );
+  }
   return (
     <Dialog
       title={missing.length ? 'Almost there' : 'Mark the work done?'}
@@ -2066,6 +2095,7 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm, onGo }:
       footer={missing.length ? <>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Back to the job</button>
         <button className="wf-btn wf-btn-outline" onClick={() => void onSaveDraft()}><Save size={16} /> Save what I have</button>
+        <button className="wf-btn wf-btn-ghost" onClick={() => setAnyway(true)}>Can&apos;t finish these</button>
       </> : <>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
         <button className="wf-btn wf-btn-navy" disabled={!ready} onClick={() => void onConfirm()}><CheckCircle2 size={16} /> Work done</button>

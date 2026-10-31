@@ -179,6 +179,12 @@ export default function HomePage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  // Tech receipts waiting for Fred to approve or decline (on Dispatch).
+  const [receiptCount, setReceiptCount] = useState(0);
+  useEffect(() => {
+    void supabase.from('job_expenses').select('id', { count: 'exact', head: true }).eq('status', 'submitted')
+      .then(({ count }) => setReceiptCount(count ?? 0));
+  }, [workOrders]); // eslint-disable-line react-hooks/exhaustive-deps -- recount when the jobs reload
   const [payments, setPayments] = useState<Payment[]>([]);
   const [questionTemplates, setQuestionTemplates] = useState<QuestionTemplate[]>([]);
   const [deliverableTemplates, setDeliverableTemplates] = useState<DeliverableTemplate[]>([]);
@@ -1747,7 +1753,7 @@ Go ahead?`)) return;
                 data={{
                   surveys, quotes, contracts, workOrders: enrichedWOs,
                   invoices, invoicePayments, siteVisits: dashboardVisits,
-                  waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount },
+                  waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount, receipts: receiptCount },
                 }}
                 onGo={(v) => setView(v as typeof view)}
               />

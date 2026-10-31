@@ -195,6 +195,7 @@ export const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string 
   'Work Done': { bg: 'rgba(16,185,129,0.15)',  color: '#047857' },
   Approved:    { bg: 'rgba(14,27,46,0.15)',  color: 'var(--teal)' },
   Paid:        { bg: 'rgba(5,150,105,0.2)',    color: '#065F46' },
+  'On Hold':   { bg: 'rgba(107,114,128,0.15)', color: '#4B5563' },
 };
 
 // ─── Dates in the timezone the business actually runs in ──────────────────────

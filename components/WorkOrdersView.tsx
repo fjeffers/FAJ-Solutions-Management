@@ -37,6 +37,7 @@ const WO_STATUS_META: Record<WorkOrderStatus, { bg: string; color: string; accen
   'Work Done':   { bg: 'rgba(99,102,241,0.12)',  color: '#4338ca',  accent: '#6366f1' },
   'Approved':    { bg: 'rgba(16,185,129,0.12)',  color: '#047857',  accent: '#10b981' },
   'Paid':        { bg: 'rgba(5,150,105,0.15)',   color: '#065f46',  accent: '#059669' },
+  'On Hold':     { bg: 'rgba(107,114,128,0.15)', color: '#4b5563',  accent: '#9ca3af' },
 };
 
 const PAY_META: Record<string, { bg: string; color: string }> = {
@@ -358,6 +359,8 @@ function WOCard({
   const canSendPortal = !!(contractor?.email && contractor?.portal_token);
 
   const isArchived = w.archived_at !== null;
+  // On hold (Fred, 2026-10-31: "add hold on work orders and it gray out").
+  const isHeld = w.wo_status === 'On Hold';
 
   return (
     <div
@@ -370,7 +373,8 @@ function WOCard({
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
         display: 'flex',
         flexDirection: 'column',
-        opacity: isArchived ? 0.82 : 1,
+        opacity: isHeld ? 0.55 : isArchived ? 0.82 : 1,
+        filter: isHeld ? 'grayscale(1)' : undefined,
         cursor: 'pointer',
         transition: 'box-shadow 0.2s, border-color 0.2s',
       }}

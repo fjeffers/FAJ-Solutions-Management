@@ -13,6 +13,7 @@ const WO_STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> =
   'Work Done':   { bg: 'rgba(99,102,241,0.15)', color: '#4338ca' },
   'Approved':    { bg: 'rgba(16,185,129,0.15)', color: '#047857' },
   'Paid':        { bg: 'rgba(5,150,105,0.2)',   color: '#065f46' },
+  'On Hold':     { bg: 'rgba(107,114,128,0.15)', color: '#4b5563' },
 };
 
 type Stats = { total: number; paid: number; remaining: number; paidCount: number; partialCount: number; pendingCount: number; jobCount: number };

@@ -89,10 +89,11 @@ export type WorkOrderStatus =
   | 'In Progress'
   | 'Work Done'
   | 'Approved'
-  | 'Paid';
+  | 'Paid'
+  | 'On Hold';
 
 export const WO_STATUSES: WorkOrderStatus[] = [
-  'Open', 'Assigned', 'In Progress', 'Work Done', 'Approved', 'Paid',
+  'Open', 'Assigned', 'In Progress', 'Work Done', 'Approved', 'Paid', 'On Hold',
 ];
 
 export type PayType = 'Fixed' | 'Hourly' | 'Per Device' | 'Blended';

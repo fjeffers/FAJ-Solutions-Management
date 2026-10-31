@@ -39,6 +39,10 @@ const names = (ns: string[]) => (ns.length <= 2 ? ns.join(' and ') : `${ns.slice
 
 export function woNextStep(f: WoNextFacts): WoNext {
   const status = f.status ?? 'Open';
+  // On hold (Fred, 2026-10-31): where it stood, greyed, with nothing to do until it's taken off hold.
+  if (status === 'On Hold') {
+    return { ...woNextStep({ ...f, status: f.checkedIn ? 'In Progress' : 'Open' }), note: 'On hold. Change the status to pick it back up.', action: null };
+  }
   if (status === 'Paid') return { step: 'paid', note: 'Paid. This job is finished.', action: null };
   if (status === 'Approved') {
     return f.invoiced

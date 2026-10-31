@@ -141,6 +141,7 @@ const STATUS_COLORS: Record<WorkOrderStatus, { bg: string; color: string }> = {
   'Work Done':   { bg: 'rgba(99,102,241,0.12)',   color: '#4338ca' },
   'Approved':    { bg: 'rgba(16,185,129,0.12)',   color: '#047857' },
   'Paid':        { bg: 'rgba(16,185,129,0.2)',    color: '#047857' },
+  'On Hold':     { bg: 'rgba(107,114,128,0.15)',  color: '#4b5563' },
 };
 
 /**
@@ -1745,59 +1746,6 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 </div>
               </PF>
             </div>
-
-            {/* The whole job in one place, the way a marketplace lists it: where, when, who, what
-                (Fred, 2026-10-24: "Marketplace should have the combined the location, addresses ... the
-                timing, the time, tech on site, the whole nine"). The same fields as the other tabs. */}
-            <section className="woe-card">
-              <h3><MapPin size={15} /> Location</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <PF label="Site name"><input className="input" value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="e.g. LDS Site 5333202" aria-label="Marketplace site name" /></PF>
-                <PF label="Street address"><input className="input" value={form.site_address ?? ''} onChange={(e) => setAddr('site_address', e.target.value)} placeholder="123 Main St" aria-label="Marketplace street address" /></PF>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginTop: 10 }}>
-                <PF label="City"><input className="input" value={form.site_city ?? ''} onChange={(e) => setAddr('site_city', e.target.value)} aria-label="Marketplace city" /></PF>
-                <PF label="State"><input className="input" value={form.site_state ?? ''} maxLength={2} onChange={(e) => setAddr('site_state', e.target.value.toUpperCase())} aria-label="Marketplace state" /></PF>
-                <PF label="ZIP"><input className="input" value={form.site_zip ?? ''} maxLength={10} onChange={(e) => setAddr('site_zip', e.target.value)} aria-label="Marketplace ZIP" /></PF>
-              </div>
-              {fullAddress(form) && (
-                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress(form))}`} target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'inline-block', marginTop: 8, fontSize: 13, color: 'var(--teal)' }}>
-                  {fullAddress(form)} · open in Maps
-                </a>
-              )}
-            </section>
-
-            <section className="woe-card">
-              <h3><Calendar size={15} /> Schedule</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
-                <PF label="Start date"><input className="input" type="date" value={form.start_date ?? ''} onChange={(e) => set('start_date', e.target.value)} aria-label="Marketplace start date" /></PF>
-                <PF label="Start time"><input className="input" type="time" value={form.start_time ?? ''} onChange={(e) => set('start_time', e.target.value)} aria-label="Marketplace start time" /></PF>
-                <PF label="End date"><input className="input" type="date" value={form.end_date ?? ''} onChange={(e) => set('end_date', e.target.value)} aria-label="Marketplace end date" /></PF>
-                <PF label="End time"><input className="input" type="time" value={form.end_time ?? ''} onChange={(e) => set('end_time', e.target.value)} aria-label="Marketplace end time" /></PF>
-              </div>
-            </section>
-
-            <section className="woe-card">
-              <h3><User size={15} /> Techs on site</h3>
-              {contractorNames.length
-                ? <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{contractorNames.map((n) => <span key={n} className="woe-badge" style={{ background: 'rgba(14,27,46,0.08)', color: '#0E1B2E', fontSize: 13 }}>{n}{n === resolvedLead && contractorNames.length > 1 ? ' (lead)' : ''}</span>)}</div>
-                : <div style={{ fontSize: 13, color: '#9ca3af' }}>No tech yet. Pick them on Details.</div>}
-            </section>
-
-            <section className="woe-card">
-              <h3><ClipboardList size={15} /> Site description and scope</h3>
-              <textarea className="input" rows={4} value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} placeholder="What the site is and what the job is" aria-label="Marketplace description" />
-            </section>
-
-            <section className="woe-card">
-              <h3><Phone size={15} /> Site contact</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-                <PF label="Name"><input className="input" value={form.poc_name ?? ''} onChange={(e) => set('poc_name', e.target.value)} aria-label="Marketplace contact name" /></PF>
-                <PF label="Phone"><input className="input" value={form.poc_phone ?? ''} onChange={(e) => set('poc_phone', e.target.value)} aria-label="Marketplace contact phone" /></PF>
-                <PF label="Email"><input className="input" value={form.poc_email ?? ''} onChange={(e) => set('poc_email', e.target.value)} aria-label="Marketplace contact email" /></PF>
-              </div>
-            </section>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
               <RequirementToggle label="Check-in required" checked={!!form.check_in_required} onChange={(v) => set('check_in_required', v)} />

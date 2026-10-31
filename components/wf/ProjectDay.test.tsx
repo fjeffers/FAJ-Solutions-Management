@@ -12,11 +12,14 @@ describe('OffSiteDialog', () => {
     render(<OffSiteDialog missing={['Add at least one photo of the work', 'Get the customer to sign off under Closeout']}
       onClose={() => {}} onBack={() => {}} onFinished={onFinished} onGo={onGo} />);
     fireEvent.click(screen.getByRole('button', { name: /this site is finished/i }));
-    expect((screen.getByRole('button', { name: /site finished/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /finish anyway/i }) as HTMLButtonElement).disabled).toBe(true);
     const go = screen.getAllByRole('button', { name: 'Go to it' });
     expect(go).toHaveLength(2);
     fireEvent.click(go[1]);
     expect(onGo).toHaveBeenCalledWith('Get the customer to sign off under Closeout');
     expect(onFinished).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(/finish anyway/i), { target: { value: 'Customer left before signing' } });
+    fireEvent.click(screen.getByRole('button', { name: /finish anyway/i }));
+    expect(onFinished).toHaveBeenCalledWith('Customer left before signing');
   });
 });

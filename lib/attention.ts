@@ -24,7 +24,8 @@ export type AttentionKind =
   | 'work_awaiting_review' | 'invoice_overdue'
   | 'tech_owed' | 'assignment_unanswered'
   | 'visit_unbilled' | 'visit_rate_unclear' | 'visit_hours_wrong'
-  | 'assignment_declined' | 'support_waiting' | 'import_waiting' | 'messages_unread';
+  | 'assignment_declined' | 'support_waiting' | 'import_waiting' | 'messages_unread'
+  | 'receipts_waiting';
 
 export type AttentionItem = {
   kind: AttentionKind;
@@ -63,7 +64,7 @@ export type AttentionInput = {
   /** Site log visits. Optional so an older caller keeps working. */
   siteVisits?: SiteVisit[];
   /** Counts the office already keeps: support tickets, imports waiting, unread tech messages. */
-  waiting?: { support?: number; imports?: number; messages?: number };
+  waiting?: { support?: number; imports?: number; messages?: number; receipts?: number };
   today?: string;
 };
 
@@ -338,6 +339,7 @@ export function attentionItems(input: AttentionInput): AttentionItem[] {
     ['messages_unread', kept.messages, 'unread tech message', 'Answer your techs', 'messages'],
     ['support_waiting', kept.support, 'support ticket', 'Support emails waiting for you to approve', 'support'],
     ['import_waiting', kept.imports, 'work order to bring in', 'From email and spreadsheets, waiting on you', 'import-queue'],
+    ['receipts_waiting', kept.receipts, 'receipt', 'From techs, waiting for you to approve or decline on Dispatch', 'workorders'],
   ];
   for (const [kind, n, one, detail, view] of counted) {
     if (n && n > 0) items.push({ kind, severity: 'action', title: `${n} ${plural(n, one)}`, detail, count: n, view });

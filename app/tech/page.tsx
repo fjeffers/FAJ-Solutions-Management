@@ -37,6 +37,7 @@ import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel'
 import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, openIssue, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
 import { FsDayLog, FsStageAction } from '@/components/wf/FsWork';
 import { FS_STAGE_NAME, fsStage, type FsStage } from '@/lib/fs-stage';
+import { jobDayGuide, type GuideStep } from '@/lib/job-day-guide';
 import { addNotes, clearNotes, loadNotes, markRead, messageNote, notesFromChanges, saveNotes, type TechNote } from '@/lib/tech-inbox';
 import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
@@ -1648,7 +1649,15 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
       {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
       {job.status === 'offered' && bottom}
-      {dayCard}
+      {live && working && (
+        <JobDayGuide steps={jobDayGuide({
+          stage, workDone: job.status === 'workDone', photos: ask('photos'),
+          report: ask('notes') || shown.questions.length > 0,
+          closeout: deliverables.length > 0 || jobForCloseout.signatureRequired,
+          missing: offSiteMissing,
+        })} />
+      )}
+      {dayCard && <div id="fs-go-day" style={{ scrollMarginTop: 12, display: 'contents' }}>{dayCard}</div>}
       {job.description && (
         <section className="fs-card fs-form">
           <h3>Job description</h3>
@@ -1700,6 +1709,35 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
 }
 
 type PhotoKind = 'odo_start' | 'odo_end' | 'receipt' | 'job';
+
+/** The guided job day: every step in a row, the next one lit, and one button that takes the tech to it. */
+function JobDayGuide({ steps }: { steps: GuideStep[] }) {
+  const next = steps.find((s) => s.state === 'now');
+  const go = () => {
+    if (!next) return;
+    const el = document.getElementById(`fs-go-${next.target}`);
+    (el?.firstElementChild ?? el)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  return (
+    <section className="fs-card" aria-label="Your job day" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <ol style={{ display: 'flex', gap: 4, listStyle: 'none', margin: 0, padding: 0, overflowX: 'auto' }}>
+        {steps.map((s) => (
+          <li key={s.key} aria-current={s.state === 'now' ? 'step' : undefined} style={{
+            flex: '1 0 auto', textAlign: 'center', padding: '5px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+            background: s.state === 'done' ? 'rgba(16,185,129,0.12)' : s.state === 'now' ? '#0E1B2E' : '#f3f4f6',
+            color: s.state === 'done' ? '#047857' : s.state === 'now' ? '#fff' : '#9ca3af',
+          }}>{s.state === 'done' ? '✓ ' : ''}{s.label}</li>
+        ))}
+      </ol>
+      {next ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ flex: 1 }}><small style={{ display: 'block', fontSize: 11, color: 'var(--wf-subtle, #6b7280)', fontWeight: 700 }}>NEXT STEP</small><b>{next.label}</b></span>
+          <button type="button" className="wf-btn wf-btn-navy" onClick={go}>Go</button>
+        </div>
+      ) : <b style={{ color: '#047857' }}>All done for this job.</b>}
+    </section>
+  );
+}
 
 /** "What's this photo for?" after the tech takes one: mileage, a receipt, or a job photo. */
 function PhotoKindDialog({ odometer, receipts, onPick, onCancel }: {

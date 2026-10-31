@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, WO_AI_MODEL, aiFailureReason, aiFailureText, type AiCustomField } from './wo-ai';
+import { tidyNotes, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, WO_AI_MODEL, aiFailureReason, aiFailureText, type AiCustomField } from './wo-ai';
 
 describe('Generate with AI', () => {
   it('uses a model that exists', () => {
@@ -174,5 +174,47 @@ describe('what the job needs, read by the AI (Fred, 2026-10-18: "asking whats ne
     expect(f.checkin_link).toBe('https://teams.microsoft.com/l/meetup-join/x');
     expect(f.checkout_link).toBeUndefined();
     expect(filledCount(f)).toBe(0);
+  });
+});
+
+describe('the scope alone in the description (Fred, 2026-10-31: "sow is the only thing goes into the documents or notes decription area")', () => {
+  it("leaves out the address, links, contacts and labeled lines that have their own fields", () => {
+    const out = sanitizeWoAi({
+      site_address: '1000 Eleventh Street', poc_phone: '(919) 555-0134', poc_email: 'mgr@store.com',
+      client_links: ['https://forms.example.com/checkout'],
+      description: [
+        'Replace the POS switch in the back office and re-terminate 6 drops.',
+        'Site address: 1000 Eleventh Street, Goldsboro NC',
+        'Call the manager at 919-555-0134 or mgr@store.com before arrival.',
+        'Check out here: https://forms.example.com/checkout',
+        '',
+        'Test each drop and label both ends.',
+        'Schedule: 10/19 8am',
+      ].join('\n'),
+      deliverable_instructions: 'Upload the photos to https://share.example.com/folder\nInclude a photo of the rack.',
+    });
+    expect(out.description).toBe('Replace the POS switch in the back office and re-terminate 6 drops.\n\nTest each drop and label both ends.');
+    expect(out.deliverable_instructions).toBe('Upload the photos\nInclude a photo of the rack.');
+    expect(out.client_links).toEqual(['https://forms.example.com/checkout']);
+  });
+
+  it('keeps a scope that says none of them as it is', () => {
+    const out: Record<string, unknown> = { description: 'Mount 4 cameras.\nRun Cat6 to the NVR.' };
+    tidyNotes(out);
+    expect(out.description).toBe('Mount 4 cameras.\nRun Cat6 to the NVR.');
+  });
+
+  it('tells the AI the description is the scope only', () => {
+    expect(buildWoPrompt('x', '2026-10-31')).toMatch(/"description": the SCOPE OF WORK ONLY/);
+  });
+
+  it('reads the survey and documents links into their own fields', () => {
+    const out = sanitizeWoAi({
+      client_links: ['https://survey.example.com/s', 'https://drive.example.com/f'],
+      survey_link: 'https://survey.example.com/s', deliverable_link: 'https://drive.example.com/f',
+    });
+    expect(out.survey_link).toBe('https://survey.example.com/s');
+    expect(out.deliverable_link).toBe('https://drive.example.com/f');
+    expect(buildWoPrompt('x', '2026-10-31')).toMatch(/"deliverable_link"/);
   });
 });

@@ -82,9 +82,27 @@ const wo = {
 
 afterEach(() => { cleanup(); updates.length = 0; upserts.length = 0; saveDelays = []; saveFails = []; });
 
+// The pictures are on the invoice only (Fred, 2026-10-31: "the pictures are only for the invioce nothing else").
+function renderInvoice() {
+  render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+}
+
 describe('Job log pictures', () => {
-  it('has the receipts, the odometer and the site photos; a declined receipt is marked and never printed', async () => {
+  it('has no pictures on the job log, only on the invoice', async () => {
     render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    await screen.findByRole('heading', { name: 'Mileage' });
+    expect(screen.queryByAltText(/odometer start/i)).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Receipts' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /add photos/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /client copy/i }));
+    expect(screen.queryByAltText(/odometer start/i)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+    expect(await screen.findByAltText(/odometer start/i)).toBeTruthy();
+  });
+
+  it('has the receipts, the odometer and the site photos; a declined receipt is marked and never printed', async () => {
+    renderInvoice();
     expect(await screen.findByRole('button', { name: /leave out of the log: materials, lowe's: \$104\.17/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /leave out of the log: odometer start: 41,200/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /leave out of the log: photo/i })).toBeTruthy();
@@ -96,7 +114,7 @@ describe('Job log pictures', () => {
 
   it('labels a site photo a receipt, and it moves to the receipts', async () => {
     const user = userEvent.setup();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     const chips = within(await screen.findByRole('group', { name: /label photo/i }));
     await user.click(chips.getByRole('button', { name: 'Receipt' }));
     await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: [], job_log_receipt_photos: ['ph1'] }));
@@ -107,7 +125,7 @@ describe('Job log pictures', () => {
 
   it('leaves a picture out with its check mark, and puts it back with the x, saved on the job', async () => {
     const user = userEvent.setup();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     await user.click(await screen.findByRole('button', { name: /leave out of the log: photo/i }));
     await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['photo:ph1'], job_log_receipt_photos: [] }));
     await user.click(screen.getByLabelText(/pictures left out \(1\)/i));
@@ -119,7 +137,7 @@ describe('Job log pictures', () => {
 
   it('takes a picture out with its ✗ and says the client won’t see it; a ✓ puts it back (Fred, 2026-10-26)', async () => {
     const user = userEvent.setup();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     const take = await screen.findByRole('button', { name: /leave out of the log: materials, lowe's/i });
     expect(take.getAttribute('title')).toMatch(/tap ✗ to take it out; it stays on the job/i);
     // The mark Fred sees: ✗ on a picture in the log, ✓ on one left out.
@@ -137,7 +155,7 @@ describe('Job log pictures', () => {
 
   it('takes a picture out of the log on screen too, until "Pictures left out" is ticked (Fred: "why am still see the one i removed")', async () => {
     const user = userEvent.setup();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     await user.click(await screen.findByRole('button', { name: /leave out of the log: materials, lowe's/i }));
     expect(screen.queryByAltText(/materials, lowe's/i)).toBeNull();
     expect(screen.queryByRole('button', { name: /put back in the log: materials, lowe's/i })).toBeNull();
@@ -158,7 +176,7 @@ describe('Job log pictures', () => {
 
   it('takes a declined receipt off the screen with its ✗ too (Fred: "remove on every photo and receipt")', async () => {
     const user = userEvent.setup();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     await user.click(await screen.findByRole('button', { name: /leave out of the log: declined: fuel, circle k/i }));
     await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: ['receipt:x2'], job_log_receipt_photos: [] }));
     expect(screen.queryByAltText(/circle k/i)).toBeNull();
@@ -172,7 +190,7 @@ describe('Job log pictures', () => {
     const toast = await import('@/lib/toast');
     (toast.toastSuccess as unknown as ReturnType<typeof vi.fn>).mockClear();
     saveFails = [true];
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     fireEvent.click(await screen.findByRole('button', { name: /leave out of the log: materials, lowe's/i }));
     await waitFor(() => expect(toast.toastError).toHaveBeenCalledWith(expect.stringMatching(/didn't save/i)));
     expect(toast.toastSuccess).not.toHaveBeenCalled();
@@ -182,7 +200,7 @@ describe('Job log pictures', () => {
 
   it('takes the next picture off the screen after the dates hide the ones left out (Greptile on PR #24)', async () => {
     const user = userEvent.setup();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     await user.click(await screen.findByRole('button', { name: /leave out of the log: materials, lowe's: \$104/i }));
     await user.click(screen.getByLabelText(/pictures left out \(1\)/i));
     // Only 10/19: the 10/21 receipt left out isn't in these dates, so neither is the box.
@@ -195,7 +213,7 @@ describe('Job log pictures', () => {
   });
 
   it('has Download on every picture, named for the job, what it is, whose and the day, and an Add photos button (Fred, 2026-10-26)', async () => {
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     const lowes = await screen.findByRole('link', { name: /download materials, lowe's: \$104\.17/i });
     expect(lowes.getAttribute('download')).toBe("WO 19101401 Materials Lowe's $104.17 Paul Gibbs 10-21-2026.jpg");
     expect(lowes.classList.contains('no-print')).toBe(true);
@@ -207,7 +225,7 @@ describe('Job log pictures', () => {
   it('reads only the photos again after the office adds some, so a choice tapped meanwhile stays (Greptile on PR #23)', async () => {
     const before = tables.wo_photos;
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderInvoice();
       await screen.findByRole('link', { name: /download photo/i });
       const choicesRead = reads.work_orders;
       tables.wo_photos = [...before, { id: 'ph2', url: 'https://example.test/added.jpg', taken_at: at('22', '12:00'), lat: null, lng: null, contractor_name: 'Office' }];
@@ -230,7 +248,7 @@ describe('Job log pictures', () => {
     const before = tables.job_expenses;
     tables.job_expenses = [{ id: 'x4', contractor_name: 'Paul Gibbs', category: 'materials', vendor: 'Home Depot', amount: 12.5, expense_date: '2026-10-20', status: 'approved', receipt_path: 'r/office_1.png' }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderInvoice();
       const link = await screen.findByRole('link', { name: /download materials, home depot/i });
       expect(link.getAttribute('download')).toBe('WO 19101401 Materials Home Depot $12.50 Paul Gibbs 10-20-2026.png');
     } finally {
@@ -240,7 +258,7 @@ describe('Job log pictures', () => {
 
   it('keeps every choice from a quick run of taps, even when a save is slow', async () => {
     saveDelays = [80, 0];
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     fireEvent.click(await screen.findByRole('button', { name: /leave out of the log: photo/i }));
     // The first save is still going when the second tap comes.
     await new Promise((ok) => setTimeout(ok, 20));
@@ -253,7 +271,7 @@ describe('Job log pictures', () => {
     const before = tables.job_expenses;
     tables.job_expenses = [{ id: 'x3', contractor_name: null, category: 'hotel', vendor: 'Quality Inn', amount: 350.74, expense_date: '2026-10-20', status: 'approved', receipt_path: 'r/hotel.pdf' }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderInvoice();
       const link = await screen.findByRole('link', { name: /^lodging, quality inn: \$350\.74/i });
       expect(link.getAttribute('href')).toBe('https://signed.test/r/hotel.pdf');
       expect(screen.queryByAltText(/quality inn/i)).toBeNull();
@@ -266,7 +284,7 @@ describe('Job log pictures', () => {
     const before = tables.job_expenses;
     tables.job_expenses = [...before, { id: 'x5', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 402.5, expense_date: '2026-10-21', status: 'approved', receipt_path: 'r/hotel.jpg' }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderInvoice();
       await screen.findByAltText(/lodging, quality inn/i);
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
       const page = screen.getByRole('table').closest('.jl-page') as HTMLElement;
@@ -289,7 +307,7 @@ describe('Job log pictures', () => {
 
   it('ends the invoice with the photos too, and a photo labeled there moves to its section (Fred: "any pictures i added also it need to be edited")', async () => {
     const user = userEvent.setup();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     await screen.findByAltText(/odometer start/i);
     fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
     const page = screen.getByRole('table').closest('.jl-page') as HTMLElement;
@@ -309,7 +327,7 @@ describe('Job log pictures', () => {
   it('still saves a tap made while an earlier save fails', async () => {
     saveDelays = [80, 0];
     saveFails = [true, false];
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderInvoice();
     fireEvent.click(await screen.findByRole('button', { name: /leave out of the log: photo/i }));
     await new Promise((ok) => setTimeout(ok, 20));
     fireEvent.click(screen.getByRole('button', { name: /leave out of the log: odometer start/i }));

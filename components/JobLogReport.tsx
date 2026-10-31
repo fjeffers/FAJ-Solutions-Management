@@ -776,8 +776,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         ) : (
           <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded} onClick={() => setDraft(sheetByTech(sheet, crew))}><Pencil size={16} /> Edit time sheet</button>
         )}
-        <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
-          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />
+        {copy === 'invoice' && <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
+          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />}
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div role="group" aria-label="Which copy" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F', marginRight: 4 }}>Copy:</span>
@@ -842,12 +842,16 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
           {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{shown.miles.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
-          {toggle('notes', "Tech's notes")}{(receipts.length > 0 || sitePicsOf('receipt', 'hotel').length > 0) && toggle('receipts', 'Receipts')}{(odometer.length > 0 || sitePicsOf('odometer').length > 0) && toggle('odometer', 'Odometer')}
-          {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}
+          {toggle('notes', "Tech's notes")}{toggle('scope', 'Scope of work')}
+          {/* The pictures are on the invoice only (Fred, 2026-10-31: "the pictures are only for the invioce nothing else"). */}
+          {copy === 'invoice' && <>{(receipts.length > 0 || sitePicsOf('receipt', 'hotel').length > 0) && toggle('receipts', 'Receipts')}{(odometer.length > 0 || sitePicsOf('odometer').length > 0) && toggle('odometer', 'Odometer')}
+            {toggle('photos', 'Photos')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}</>}
         </div>
-        <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
-          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Odometer, Receipt or Hotel and it goes there, on the job log and the invoice. Declined receipts never print, and their ✗ takes them off the screen too. Nothing is deleted.
-        </div>
+        {copy === 'invoice' && (
+          <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
+            The pictures are on the invoice only, on their own pages after it. Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it off: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Odometer, Receipt or Hotel and it goes there. Declined receipts never print, and their ✗ takes them off the screen too. Nothing is deleted.
+          </div>
+        )}
         {draft && (
           <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
             Editing the time sheet: every day’s hours, miles, meals, materials and other receipts. Change any box, add a row or take one out, then <b>Save time sheet</b>, and the job log shows it. The clock-ins, the Hours screen and the receipts stay as they are.
@@ -915,7 +919,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               ...(mealReceipts.length ? [['Meals', fmtMoney(moneyTotal(mealReceipts))]] : []),
               ...(materialReceipts.length ? [['Materials', fmtMoney(moneyTotal(materialReceipts))]] : []),
               ...(otherReceipts.length ? [['Other receipts', fmtMoney(moneyTotal(otherReceipts))]] : []),
-              ...(pictureCount > 0 ? [['Pictures', String(pictureCount)]] : []),
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
             ].map(([label, value]) => (
@@ -1119,12 +1122,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <><H>Technician&apos;s notes</H><div className="jl-avoid" style={{ whiteSpace: 'pre-wrap' }}>{w.closeout_notes}</div></>
           )}
 
-          {/* On paper the pictures start on a page of their own, after the tables (when any will print). */}
-          <div className={pictureCount > 0 ? 'jl-pics' : undefined}>
-            {inc.receipts && pictures('Receipts', shownReceipts, true)}
-            {inc.odometer && pictures('Odometer', shownOdometer)}
-            {inc.photos && pictures('Photos', shownPhotos)}
-          </div>
 
           <div style={{ marginTop: 28, paddingTop: 10, borderTop: '1px solid #E4DFD3', display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5, color: '#5E6470', flexWrap: 'wrap' }}>
             <span><b style={{ color: '#0E1B2E' }}>FAJ Solutions</b> · Bringing People and Technology Together</span>

@@ -1265,15 +1265,17 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
                 )}
               </div>
               <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {tasks.map((t, i) => (
-                  <div key={t.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <select className="select input" style={{ width: 120, flexShrink: 0, fontSize: 12, padding: '6px 8px' }} value={t.category}
-                      onChange={(e) => setTasks((ts) => ts.map((x, j) => (j === i ? { ...x, category: e.target.value as WoTask['category'] } : x)))}>
-                      {(['Pre Visit', 'On Site', 'Post Site'] as const).map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <input className="input" style={{ flex: 1, textDecoration: t.completed ? 'line-through' : 'none' }} value={t.label}
-                      onChange={(e) => setTasks((ts) => ts.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
-                    <button type="button" className="icon-btn" title="Remove" onClick={() => setTasks((ts) => ts.filter((_, j) => j !== i))}><X size={14} /></button>
+                {(['Pre Visit', 'On Site', 'Post Site'] as const).map((cat) => tasks.some((t) => t.category === cat) && (
+                  <div key={cat} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4 }}>{cat}</div>
+                    {tasks.map((t, i) => t.category !== cat ? null : (
+                      <div key={t.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span aria-label={t.completed ? 'Done' : 'Not done'} style={{ width: 18, textAlign: 'center', fontWeight: 700, color: t.completed ? '#059669' : '#d1d5db' }}>{t.completed ? '✓' : '○'}</span>
+                        <input className="input" style={{ flex: 1, textDecoration: t.completed ? 'line-through' : 'none' }} value={t.label}
+                          onChange={(e) => setTasks((ts) => ts.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
+                        <button type="button" className="icon-btn" title="Remove" onClick={() => setTasks((ts) => ts.filter((_, j) => j !== i))}><X size={14} /></button>
+                      </div>
+                    ))}
                   </div>
                 ))}
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -1317,17 +1319,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               </PF>
             </div>
 
-            {/* Service Type + Required Skills */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <PF label="Service Type" icon={<Wrench size={13} />}>
-                <div style={{ position: 'relative' }}>
-                  <select className="select input" value={form.service_type ?? ''} onChange={(e) => set('service_type', e.target.value)}>
-                    <option value="">Select type</option>
-                    {choicesFor('serviceTypes', form.service_type).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                  <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
-                </div>
-              </PF>
+            {/* Required skills (the type of work is set once, under Job) */}
+            <div>
               <PF label="Required Skills">
                 <input className="input" value={form.required_skills ?? ''} onChange={(e) => set('required_skills', e.target.value)} placeholder="e.g. Cat6, fiber, CCTV" />
               </PF>
@@ -1340,143 +1333,74 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* ── QUESTIONS TAB ── */}
         {onPage('questions') && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Built-in packets */}
-            <div style={{ padding: '12px 16px', background: 'rgba(14,27,46,0.05)', borderRadius: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
-                Built-in Paperwork
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-                {BUILT_IN_QA_PACKETS.map((packet) => (
-                  <button
-                    key={packet.id}
-                    onClick={() => applyBuiltInPacket(packet.id)}
-                    style={{
-                      padding: '12px 14px',
-                      borderRadius: 10,
-                      border: '1.5px solid rgba(14,27,46,0.22)',
-                      background: 'white',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 5,
-                    }}
-                  >
-                    <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <FileText size={14} /> {packet.name}
-                    </span>
-                    <span style={{ fontSize: 11, color: '#667085', lineHeight: 1.45 }}>{packet.detail}</span>
-                    <span style={{ fontSize: 10, color: '#98a2b3', fontWeight: 700 }}>{packet.questions.length} questions</span>
-                  </button>
-                ))}
-              </div>
+            {/* Templates and paperwork live in one picker; each question shows its answer under it
+                (Fred, 2026-10-31: "a better or cleaner view" of what templates put in the work order). */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12.5, color: '#6b7280', flex: 1 }}>
+                {customQA.length
+                  ? `${customQA.length} ${customQA.length === 1 ? 'question' : 'questions'} for the tech · ${customQA.filter((q) => q.answer !== null && q.answer !== undefined && String(q.answer).trim() !== '').length} answered`
+                  : 'No questions yet. Load a set or add your own.'}
+              </span>
+              <select className="select input" aria-label="Load questions" value="" style={{ width: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--teal)' }}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v || (customQA.length > 0 && !window.confirm('Replace the questions on this job?'))) return;
+                  if (v.startsWith('b:')) applyBuiltInPacket(v.slice(2)); else applyTemplate(v.slice(2));
+                }}>
+                <option value="">Load questions…</option>
+                <optgroup label="Built-in paperwork">
+                  {BUILT_IN_QA_PACKETS.map((pk) => <option key={pk.id} value={`b:${pk.id}`}>{pk.name} ({pk.questions.length})</option>)}
+                </optgroup>
+                {questionTemplates.length > 0 && (
+                  <optgroup label="Your templates">
+                    {questionTemplates.map((tpl) => (
+                      <option key={tpl.id} value={`t:${tpl.id}`}>{tpl.name} ({tpl.questions.length}){tpl.attachment_url ? ' + paperwork' : ''}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
             </div>
 
-            {/* Template picker */}
-            {questionTemplates.length > 0 && (
-              <div style={{ padding: '12px 16px', background: 'rgba(14,27,46,0.05)', borderRadius: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#555', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
-                  Load from Template
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {questionTemplates.map((tpl) => (
-                    <button
-                      key={tpl.id}
-                      onClick={() => applyTemplate(tpl.id)}
-                      style={{
-                        padding: '6px 14px', borderRadius: 20, border: '1.5px solid rgba(14,27,46,0.3)',
-                        background: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                        color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 6,
-                      }}
-                    >
-                      {tpl.attachment_url && <Paperclip size={11} />}
-                      {tpl.name}
-                      <span style={{ fontSize: 10, color: '#aaa' }}>({tpl.questions.length})</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Vendor attachment (from template or WO) */}
-            {form.attachment_url && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(201,162,75,0.08)', border: '1.5px solid rgba(201,162,75,0.2)' }}>
-                <Paperclip size={13} color="#b8944a" />
-                <a href={form.attachment_url} target="_blank" rel="noopener noreferrer"
-                  style={{ flex: 1, fontSize: 13, color: '#b8944a', fontWeight: 600, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  Vendor Paperwork attached
-                </a>
-                <button onClick={() => set('attachment_url', null)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#aaa' }}>
-                  <X size={13} />
-                </button>
-              </div>
-            )}
-
-            {/* ── Contractor Responses (read-only) ── */}
-            {customQA.some((q) => q.answer !== null && q.answer !== undefined && String(q.answer).trim() !== '') && (
-              <div style={{ padding: '14px 16px', background: 'rgba(16,185,129,0.05)', borderRadius: 10, border: '1.5px solid rgba(16,185,129,0.25)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#047857', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>
-                  ✓ Contractor Responses
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {customQA.filter((q) => q.answer !== null && q.answer !== undefined && String(q.answer).trim() !== '').map((q) => (
-                    <div key={q.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.3 }}>{q.label}</div>
-                      {(q.type === 'photo' || q.type === 'document' || q.type === 'signature') && String(q.answer).startsWith('http') ? (
-                        /\.(png|jpe?g|gif|webp)(\?|$)/i.test(String(q.answer)) || q.type === 'photo' || q.type === 'signature' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {customQA.map((q, i) => {
+                const done = q.answer !== null && q.answer !== undefined && String(q.answer).trim() !== '';
+                const file = (q.type === 'photo' || q.type === 'document' || q.type === 'signature') && String(q.answer ?? '').startsWith('http');
+                const img = file && (/\.(png|jpe?g|gif|webp)(\?|$)/i.test(String(q.answer)) || q.type === 'photo' || q.type === 'signature');
+                return (
+                  <div key={q.id} style={{ padding: '8px 10px', borderRadius: 10, background: done ? 'rgba(16,185,129,0.05)' : '#fafafa', border: `1.5px solid ${done ? 'rgba(16,185,129,0.3)' : '#e5e7eb'}` }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: done ? '#047857' : '#9ca3af', width: 18, textAlign: 'center' }}>{done ? '✓' : i + 1}</span>
+                      <input className="input" value={q.label} onChange={(e) => updateQALabel(q.id, e.target.value)}
+                        placeholder={`Question ${i + 1} label`} style={{ flex: 1, fontSize: 13 }} />
+                      <select className="select input" value={q.type} onChange={(e) => updateQAType(q.id, e.target.value as QuestionFieldType)} style={{ fontSize: 12, width: 130 }}>
+                        <option value="text">Short Text</option>
+                        <option value="textarea">Long Text</option>
+                        <option value="number">Number</option>
+                        <option value="yes_no">Yes / No</option>
+                        <option value="photo">Photo</option>
+                        <option value="document">Document Upload</option>
+                        <option value="signature">Signature</option>
+                      </select>
+                      <button onClick={() => removeQA(q.id)} aria-label={`Remove question ${i + 1}`} style={{ padding: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc' }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {done && (
+                      <div style={{ margin: '6px 0 2px 26px', fontSize: 13.5, color: '#1a1a1a' }}>
+                        {img ? (
                           <a href={String(q.answer)} target="_blank" rel="noopener noreferrer">
                             <img src={String(q.answer)} alt={q.label} style={{ maxWidth: 200, maxHeight: 140, borderRadius: 6, border: '1px solid #e5e7eb', objectFit: 'cover' }} />
                           </a>
+                        ) : file ? (
+                          <a href={String(q.answer)} target="_blank" rel="noopener noreferrer" style={{ color: '#1565c0', fontWeight: 600 }}>View uploaded file</a>
                         ) : (
-                          <a href={String(q.answer)} target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: 13, color: '#1565c0', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                            📎 View Uploaded File
-                          </a>
-                        )
-                      ) : (
-                        <div style={{ fontSize: 14, color: '#1a1a1a', background: 'white', padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', lineHeight: 1.5 }}>
-                          {String(q.answer)}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Q list — question definitions editor */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {customQA.map((q, i) => (
-                <div key={q.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', borderRadius: 10, background: '#fafafa', border: '1.5px solid #e5e7eb' }}>
-                  <input
-                    className="input"
-                    value={q.label}
-                    onChange={(e) => updateQALabel(q.id, e.target.value)}
-                    placeholder={`Question ${i + 1} label`}
-                    style={{ flex: 1, fontSize: 13 }}
-                  />
-                  <div style={{ position: 'relative' }}>
-                    <select
-                      className="select input"
-                      value={q.type}
-                      onChange={(e) => updateQAType(q.id, e.target.value as QuestionFieldType)}
-                      style={{ fontSize: 12, width: 130 }}
-                    >
-                      <option value="text">Short Text</option>
-                      <option value="textarea">Long Text</option>
-                      <option value="number">Number</option>
-                      <option value="yes_no">Yes / No</option>
-                      <option value="photo">Photo</option>
-                      <option value="document">Document Upload</option>
-                      <option value="signature">Signature</option>
-                    </select>
-                    <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#aaa' }} />
+                          <><span style={{ fontSize: 11, fontWeight: 700, color: '#047857', marginRight: 6 }}>Tech answered:</span>{String(q.answer)}</>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <button onClick={() => removeQA(q.id)} style={{ padding: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#ccc' }}>
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <button onClick={addCustomQuestion} className="btn btn-ghost" style={{ alignSelf: 'flex-start', fontSize: 12, padding: '7px 14px' }}>

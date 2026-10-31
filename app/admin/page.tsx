@@ -63,6 +63,7 @@ import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
 import { splitMore } from '@/lib/office-menu';
+import HoursTabs, { isHoursView } from '@/components/HoursTabs';
 import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
 import MessagesView from '@/components/MessagesView';
 import { sectionOfView, type ResolvedLayout, screenLabel } from '@/lib/app-layout';
@@ -1818,6 +1819,7 @@ Go ahead?`)) return;
         {view === 'customers' && <CustomersView startNew={createIntent === 'customer'} onStarted={() => setCreateIntent(null)} />}
         {view === 'portal-admin' && <PortalAdminView />}
         {view === 'network' && <NetworkView />}
+        {isHoursView(view) && <HoursTabs view={view} onGo={(v) => navigate(v as View)} />}
         {view === 'sitelog' && <SiteLogView />}
         {view === 'projects' && <ProjectsView workOrders={enrichedWOs} onOpen={(id) => openJobFrom(id, 'projects')} />}
         {view === 'fieldsheet' && <FieldSheetView workOrders={enrichedWOs} />}

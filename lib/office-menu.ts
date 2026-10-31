@@ -42,10 +42,11 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     title: 'Jobs',
     items: [
       // Fred, 2026-10-24: "build the simpler hours screen one card per day and way for me to edit the hours on each work orders".
-      { view: 'hours', label: 'Hours', hint: 'Each job day by day: start, finish, hours, miles, meals — change any of them and Save' },
+      { view: 'hours', label: 'Hours & miles', hint: 'Hours, miles and receipts in one place: by day, by job, projects and site visits' },
       // Fred, 2026-10-13: projects — travel, time on site, miles, receipts, the client report.
       { view: 'projects', label: 'Projects', hint: 'Multi-day sites: travel, time on site, miles, receipts and the weekly bill' },
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
+      { view: 'fieldsheet', label: 'Field Sheet', hint: 'Pull a job by WO number: fix hours, miles and receipts, see the photos, bill it' },
       { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },
       { view: 'import-queue', label: 'Import', hint: 'Work orders from email and spreadsheets waiting to come in' },
       { view: 'dispatch', label: 'Dispatch Map', hint: 'Techs and jobs on a map' },
@@ -60,7 +61,6 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     items: [
       // Fred, 2026-10-24: "add it under office and i can pull it by the app work order number and edit whats needed";
       // "field sheet in under money".
-      { view: 'fieldsheet', label: 'Field Sheet', hint: 'Pull a job by WO number: fix hours, miles and receipts, see the photos, bill it' },
       // Fred, 2026-10-24: "payment made, Financials, and ledger ... combine it and call it Financials dashboard";
       // "all money under one place financials dashboard including pay tech". Invoices, Pay Techs, Payments Made
       // and the Ledger are its tabs (components/MoneyHub).
@@ -106,7 +106,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
 ];
 
 /** Screens used now and then: under their section's More, so each section shows its everyday screens. */
-export const MORE_SCREENS: ReadonlySet<string> = new Set(['maintenance', 'network', '1099', 'w9']);
+export const MORE_SCREENS: ReadonlySet<string> = new Set(['maintenance', 'network', '1099', 'w9', 'projects', 'sitelog', 'fieldsheet']);
 
 /** A section's screens split into the everyday ones and the ones under More (the open screen always shows). */
 export function splitMore<T extends { key: string }>(items: T[], current?: string): { main: T[]; more: T[] } {

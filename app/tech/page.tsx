@@ -28,6 +28,7 @@ import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
   fullAddress, reportMissing, askedOnly, askedDeliverables, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
+  missingGoesTo,
 } from '@/lib/wf';
 import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
@@ -1533,6 +1534,16 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         bottom={simple && job.status !== 'offered' ? undefined : bottom}
       />
   );
+  /** Check-out's "Go to it": close the dialog and scroll to where the missing item gets done. */
+  const goTo = (m: string) => {
+    setDoneOpen(false);
+    setOffOpen(false);
+    const order = [missingGoesTo(m), 'report', 'closeout', 'photos'];
+    setTimeout(() => {
+      const el = order.map((k) => document.getElementById(`fs-go-${k}`)).find(Boolean);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  };
   const dialogs = (
     <>
       {offOpen && (
@@ -1543,7 +1554,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             ...(shown.photoRequired || deliverables.length ? ['the photos'] : []),
             ...(jobForCloseout.signatureRequired ? ['the signature'] : []),
           ]}
-          clientCheckout={!!siteLinks.checkout}
+          clientCheckout={!!siteLinks.checkout} onGo={goTo}
           onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
       )}
       {checkoutAt && !offOpen && (
@@ -1572,7 +1583,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         <WorkDoneDialog
           job={job}
           missing={[...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, shown.signatureRequired)]}
-          onClose={() => setDoneOpen(false)}
+          onClose={() => setDoneOpen(false)} onGo={goTo}
           onSaveDraft={async () => { setDoneOpen(false); await saveReport(); }}
           onConfirm={async () => {
             setDoneOpen(false);
@@ -1649,15 +1660,19 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
       {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
       {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
-        <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
+        <div id="fs-go-closeout" style={{ scrollMarginTop: 12 }}>
+          <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
+        </div>
       )}
-      {ask('photos') && <JobPhotos canAdd={canReport} ph={phPicked} />}
+      {ask('photos') && <div id="fs-go-photos" style={{ scrollMarginTop: 12 }}><JobPhotos canAdd={canReport} ph={phPicked} /></div>}
       {live && (ask('notes') || shown.questions.length > 0) && (
-        <JobReport
-          job={shown} uid={uid} canEdit={canReport}
-          notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
-          dirty={dirty} onSave={(extra) => saveReport(extra)}
-        />
+        <div id="fs-go-report" style={{ scrollMarginTop: 12 }}>
+          <JobReport
+            job={shown} uid={uid} canEdit={canReport}
+            notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
+            dirty={dirty} onSave={(extra) => saveReport(extra)}
+          />
+        </div>
       )}
       {(ask('receipts') || expenses.length > 0) && (canReport || expenses.length > 0) && (
         <JobExpenses expenses={expenses} canAdd={canReport && ask('receipts')} onAdd={() => setExpenseOpen(true)} />
@@ -2001,8 +2016,8 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
  * Work done: says plainly what is still missing (the same rules as the
  * emailed job link), and takes the customer's signature when the job needs one.
  */
-function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
-  job: WfJob; missing: string[]; onClose: () => void;
+function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm, onGo }: {
+  job: WfJob; missing: string[]; onClose: () => void; onGo?: (item: string) => void;
   onSaveDraft: () => Promise<void>; onConfirm: () => void | Promise<void>;
 }) {
   const ready = missing.length === 0;
@@ -2022,7 +2037,11 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
         <>
           <p style={{ marginTop: 0 }}>Before you send the job in, finish these under <b>Closeout</b>, <b>Job report</b> and <b>Photos</b>:</p>
           <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {missing.map((m) => <li key={m}>{m}</li>)}
+            {missing.map((m) => (
+              <li key={m}>
+                {m}{onGo && <>{' '}<button type="button" className="wf-btn wf-btn-sm wf-btn-outline" onClick={() => onGo(m)}>Go to it</button></>}
+              </li>
+            ))}
           </ul>
         </>
       ) : (

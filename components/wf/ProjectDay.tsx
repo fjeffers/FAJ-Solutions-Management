@@ -208,8 +208,10 @@ function DayLines({ log, drives }: { log: DayLog; drives: Map<string, DriveMiles
  * finished site needs everything the job asks for first — each photo taken or
  * a reason why not, the signature or a reason why not.
  */
-export function OffSiteDialog({ missing, needs, signature = true, clientCheckout = false, onClose, onBack, onFinished }: {
+export function OffSiteDialog({ missing, needs, signature = true, clientCheckout = false, onClose, onBack, onFinished, onGo }: {
   missing: string[];
+  /** Takes the tech to where a missing item gets done. */
+  onGo?: (item: string) => void;
   /**
    * What this job needs before it can be finished, in words ("the photos", "the
    * signature"). Nothing listed says nothing (Fred, 2026-10-18: "Check list not
@@ -277,7 +279,11 @@ export function OffSiteDialog({ missing, needs, signature = true, clientCheckout
         <div>
           <p style={{ marginTop: 0, fontWeight: 600 }}>Before you can leave a finished site:</p>
           <ul style={{ margin: '0 0 10px', paddingLeft: 20 }}>
-            {missing.map((m) => <li key={m} style={{ marginBottom: 4 }}>{m}</li>)}
+            {missing.map((m) => (
+              <li key={m} style={{ marginBottom: 6 }}>
+                {m}{onGo && <>{' '}<button type="button" className="wf-btn wf-btn-sm wf-btn-outline" onClick={() => onGo(m)}>Go to it</button></>}
+              </li>
+            ))}
           </ul>
           <div className="wf-subtle" style={{ fontSize: 12.5 }}>
             Can&apos;t get a photo or the signature? Tap <b>Can&apos;t do it</b>{' '}next to it under Closeout and say why

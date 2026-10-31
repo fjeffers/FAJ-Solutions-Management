@@ -613,6 +613,13 @@ export function reportMissing(j: WfJob, notes: string, answers: Record<string, s
   return missing;
 }
 
+/** Where on the job screen a missing item gets done (reportMissing / closeoutMissing wording). */
+export function missingGoesTo(m: string): 'closeout' | 'photos' | 'report' {
+  if (/under Closeout/.test(m)) return 'closeout';
+  if (/photo/i.test(m)) return 'photos';
+  return 'report';
+}
+
 export function markedWorkDone(j: WfJob, notes: string, at: Date): WfJob {
   const out = clockedOut(j, at);
   return { ...out, status: 'workDone', officeStatus: 'Work Done', closeoutNotes: notes || out.closeoutNotes };

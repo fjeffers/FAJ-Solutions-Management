@@ -82,15 +82,21 @@ const wo = {
 
 afterEach(() => { cleanup(); updates.length = 0; upserts.length = 0; saveDelays = []; saveFails = []; });
 
-// The pictures are on the invoice only (Fred, 2026-10-31: "the pictures are only for the invioce nothing else").
+// The pictures are on the invoice only, which the log opens on (Fred, 2026-10-31: "the pictures are only for the invioce nothing else").
 function renderInvoice() {
   render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+}
+
+// The log opens on the invoice (Fred, 2026-10-31: "make invoice the default view"); these check the tech copy.
+function renderLog(ui: React.ReactElement) {
+  const r = render(ui);
+  fireEvent.click(screen.getAllByRole('button', { name: /tech copy/i })[0]);
+  return r;
 }
 
 describe('Job log pictures', () => {
   it('has no pictures on the job log, only on the invoice', async () => {
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     await screen.findByRole('heading', { name: 'Mileage' });
     expect(screen.queryByAltText(/odometer start/i)).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Receipts' })).toBeNull();
@@ -338,7 +344,7 @@ describe('Job log pictures', () => {
   });
 
   it("shows each day's miles with the odometer, and the total (Fred: \"i don't see the mileages on the job logs\")", async () => {
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const table = (await screen.findByRole('heading', { name: 'Mileage' })).nextElementSibling as HTMLElement;
     const cells = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
     // Laid out like the hours (Fred, 2026-10-30): name and date on every row, the tech's total, then the overall total.
@@ -369,7 +375,7 @@ describe('Job log meals, materials and other receipts', () => {
       ex('m3', 'Kendell Newbold', 'meals', 'Subway', 9.99, '20', 'submitted'),
     ];
     try {
-      render(<JobLogReport w={{ ...wo, contractor_names: ['Kendell Newbold', 'Paul Gibbs'], lead_contractor_name: 'Paul Gibbs' } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={{ ...wo, contractor_names: ['Kendell Newbold', 'Paul Gibbs'], lead_contractor_name: 'Paul Gibbs' } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
       const rows = async (name: string) => {
         const table = (await screen.findByRole('heading', { name })).nextElementSibling as HTMLElement;
         return [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
@@ -423,7 +429,7 @@ describe('Job log, each tech on their own', () => {
     ];
     try {
       // Fred, 2026-10-29: "Lead tech first and then helper tech": Paul leads, though Kendell is listed first.
-      render(<JobLogReport w={{ ...wo, contractor_names: ['Kendell Newbold', 'Paul Gibbs'], lead_contractor_name: 'Paul Gibbs' } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={{ ...wo, contractor_names: ['Kendell Newbold', 'Paul Gibbs'], lead_contractor_name: 'Paul Gibbs' } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
       // The heading shows "Loading…" first; wait for the table itself (CodeRabbit on PR #35).
       const heading = await screen.findByRole('heading', { name: 'Time on site' });
       const table = await waitFor(() => {
@@ -460,7 +466,7 @@ describe('Job log, each tech on their own', () => {
       { contractor_name: 'Paul Gibbs', kind: 'out', at: at('19', '17:00'), lat: null, lng: null, accuracy: null },
     ];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const heading = await screen.findByRole('heading', { name: 'Time on site' });
       const table = await waitFor(() => {
         const next = heading.nextElementSibling;
@@ -487,7 +493,7 @@ describe('Job log saved as a PDF', () => {
     document.title = 'FAJ Solutions';
     try {
       const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
-      const { unmount } = render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+      const { unmount } = renderLog(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
       await waitFor(() => expect(document.title).toBe('LDS-1110 Site 5011876 — Gaffney, SC · 10-18-2026 – 10-23-2026'));
       fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-19' } });
       fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-19' } });
@@ -501,7 +507,7 @@ describe('Job log saved as a PDF', () => {
 
   it('heads the page with the client WO, the site number and address, the schedule and the technicians (Fred, 2026-10-30)', async () => {
     const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_address: '701 West Buford Street', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
-    render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
     const head = screen.getByText('Client WO #:').parentElement!.parentElement!;
     expect([...head.children].map((d) => d.textContent)).toEqual([
       'Client WO #: LDS-1110', 'Site number: 5011876', 'Site address: 701 West Buford Street, Gaffney, SC',
@@ -514,7 +520,7 @@ describe('Job log saved as a PDF', () => {
     punchesHeld = new Promise((ok) => { release = ok; });
     try {
       const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
-      render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
       const print = screen.getByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       expect(print.disabled).toBe(true);
       expect(document.title).toBe('LDS-1110 Site 5011876 — Gaffney, SC');
@@ -542,7 +548,7 @@ describe('Job log edited by the office', () => {
   };
 
   it('edits the hours, the miles and the receipts, saves them on the job, and the log shows them', () => withPunches(async () => {
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const edit = await screen.findByRole('button', { name: /edit time sheet/i });
     await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(edit);
@@ -597,7 +603,7 @@ describe('Job log edited by the office', () => {
     // Paul clocked 8:00 to 5:00 on 10/19; the office set 8:30 to 5:00 with a 30-minute lunch on the Hours screen.
     tables.field_sheet_days = [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218, arrived: '08:30', leftSite: '17:00', lunch: 30 }, added: false, hidden: false }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const heading = await screen.findByRole('heading', { name: 'Time on site' });
       await waitFor(() => expect(rowsOf(heading)[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:30 AM', '5:00 PM', '0.5', '8']));
       expect(rowsOf(heading)).toHaveLength(3);
@@ -611,7 +617,7 @@ describe('Job log edited by the office', () => {
     const before = tables.field_sheet_days;
     tables.field_sheet_days = [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218 }, added: false, hidden: true }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       await screen.findByRole('button', { name: /edit time sheet/i });
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Materials' })).toBeTruthy());
       expect(screen.queryByRole('heading', { name: 'Time on site' })).toBeNull();
@@ -626,14 +632,14 @@ describe('Job log edited by the office', () => {
     persistSheet = true;
     saveDelays = [200];
     try {
-      const first = render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const first = renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const edit = await screen.findByRole('button', { name: /edit time sheet/i });
       await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
       fireEvent.click(edit);
       fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '16:00' } });
       fireEvent.click(screen.getByRole('button', { name: /save time sheet/i }));
       first.unmount();
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const heading = await screen.findByRole('heading', { name: 'Time on site' });
       await waitFor(() => expect(rowsOf(heading)[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '4:00 PM', '—', '8']));
     } finally {
@@ -643,7 +649,7 @@ describe('Job log edited by the office', () => {
   }));
 
   it('takes only a number in a number box, so the box never shows one figure and saves another (Greptile on PR #39)', () => withPunches(async () => {
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const edit = await screen.findByRole('button', { name: /edit time sheet/i });
     await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(edit);
@@ -659,7 +665,7 @@ describe('Job log edited by the office', () => {
   }));
 
   it('opens each part of the time sheet from its button, hotels with the other receipts (Fred: "where do i edit hotels materials and meals and milages? i only see hours")', () => withPunches(async () => {
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const edit = await screen.findByRole('button', { name: /edit time sheet/i });
     await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(edit);
@@ -700,7 +706,7 @@ describe('Job log edited by the office', () => {
       time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 }], miles: [], meals: [], materials: [], other: [],
     } }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const edit = await screen.findByRole('button', { name: /edit time sheet/i });
       await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
       fireEvent.click(edit);
@@ -726,7 +732,7 @@ describe('Job log edited by the office', () => {
 
   it("won't save a row without a name, and says which", () => withPunches(async () => {
     vi.mocked(toastError).mockClear();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const edit = await screen.findByRole('button', { name: /edit time sheet/i });
     await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(edit);
@@ -746,7 +752,7 @@ describe('Job log edited by the office', () => {
     } }];
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '7:00 AM', '3:00 PM', '—', '8']);
       // Its miles were taken out, so there's no mileage; the receipts too.
       expect(screen.queryByRole('heading', { name: 'Mileage' })).toBeNull();
@@ -766,7 +772,7 @@ describe('Job log edited by the office', () => {
   it("saves Excel as Fred's workbook with the log's rows, named like the PDF", async () => {
     vi.mocked(downloadJobLogXlsx).mockClear();
     const gaffney = { ...wo, external_wo_id: 'LDS-1110', customer_name: 'LDS', site_name: 'LDS Site 5011876', site_city: 'Gaffney', site_state: 'SC' } as EnrichedWorkOrder;
-    render(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={gaffney} deliverables={[]} onClose={() => {}} />);
     const excel = screen.getByRole('button', { name: /excel/i }) as HTMLButtonElement;
     await waitFor(() => expect(excel.disabled).toBe(false));
     fireEvent.click(excel);
@@ -785,7 +791,7 @@ describe('Job log edited by the office', () => {
 
   it("makes a client's copy with each tech's rates and the dollars, and a tech's copy without (Fred: \"the client just asked for this\")", () => withPunches(async () => {
     vi.mocked(downloadJobLogXlsx).mockClear();
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
     await waitFor(() => expect(print.disabled).toBe(false));
     // The tech's copy first: no rates, no charges.
@@ -867,7 +873,7 @@ describe('Job log edited by the office', () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
     const helper = { ...wo, contractor_names: ['Paul Gibbs', 'Kendell Newbold'] } as EnrichedWorkOrder;
     try {
-      render(<JobLogReport w={helper} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={helper} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
@@ -898,7 +904,7 @@ describe('Job log edited by the office', () => {
   it('keeps the rates on the job: the client copy has them when the log opens again, to the decimal typed', () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.725 } } }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
@@ -916,7 +922,7 @@ describe('Job log edited by the office', () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
     vi.mocked(downloadJobLogXlsx).mockClear();
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
@@ -960,7 +966,7 @@ describe('Job log edited by the office', () => {
   it('opens with the hours together when that was saved', () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, all_hours_rate: '90' }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
@@ -982,7 +988,7 @@ describe('Job log edited by the office', () => {
     vi.mocked(downloadInvoiceXlsx).mockClear();
     const goldsboro = { ...wo, customer_name: 'TeamNetView', title: 'LDS1106 Site 5006643 — Goldsboro, NC', site_address: '1000 Eleventh Street', site_city: 'Goldsboro', site_state: 'NC', site_zip: '27530' } as EnrichedWorkOrder;
     try {
-      render(<JobLogReport w={goldsboro} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={goldsboro} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
@@ -1048,7 +1054,7 @@ describe('Job log edited by the office', () => {
     tables.job_punches = [punch('Kendell Newbold', 'in', '08:00'), punch('Paul Gibbs', 'in', '08:00'), punch('Kendell Newbold', 'out', '16:30'), punch('Paul Gibbs', 'out', '17:00')];
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 }, 'Kendell Newbold': { hour: 50, mile: 0.6 } } }];
     try {
-      render(<JobLogReport w={{ ...wo, contractor_names: ['Paul Gibbs', 'Kendell Newbold'] } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={{ ...wo, contractor_names: ['Paul Gibbs', 'Kendell Newbold'] } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
@@ -1085,7 +1091,7 @@ describe('Job log edited by the office', () => {
       punch('Paul Gibbs', 'in', '20', '08:00'), punch('Kendell Newbold', 'in', '20', '08:00'), punch('Paul Gibbs', 'out', '20', '17:00'), punch('Kendell Newbold', 'out', '20', '17:00')];
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 }, 'Kendell Newbold': { hour: 50, mile: 0.6 } } }];
     try {
-      render(<JobLogReport w={{ ...wo, contractor_names: ['Paul Gibbs', 'Kendell Newbold'] } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={{ ...wo, contractor_names: ['Paul Gibbs', 'Kendell Newbold'] } as EnrichedWorkOrder} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
@@ -1105,7 +1111,7 @@ describe('Job log edited by the office', () => {
   it("carries rates typed on the client's copy, not yet saved, into the invoice and saves them with it (CodeRabbit on PR #44)", () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
@@ -1128,7 +1134,7 @@ describe('Job log edited by the office', () => {
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 428 });
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
@@ -1152,7 +1158,7 @@ describe('Job log edited by the office', () => {
   it('adds a line on a day in the dates picked, so it shows to fill in (Greptile on PR #44)', () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-19' } });
@@ -1171,7 +1177,7 @@ describe('Job log edited by the office', () => {
     tables.job_expenses = [...before,
       { id: 'm1', contractor_name: 'Paul Gibbs', category: 'meals', vendor: 'Waffle House', amount: 18.97, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/meal.jpg' }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
@@ -1214,7 +1220,7 @@ describe('Job log edited by the office', () => {
   }));
 
   it('types each tech\'s $ per hour and rate per mile in the box at the invoice\'s top (Fred: "should be able to add the rates for per hour and mileage")', () => withPunches(async () => {
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
     await waitFor(() => expect(print.disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
@@ -1254,7 +1260,7 @@ describe('Job log edited by the office', () => {
       { id: 'f1', contractor_name: 'Paul Gibbs', category: 'fuel', vendor: 'Circle K', amount: 40, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/fuel.jpg' }];
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 65, mile: 0.7 } } }];
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
@@ -1272,7 +1278,7 @@ describe('Job log edited by the office', () => {
   }));
 
   it('keeps a rate changed while the rates were saving (Greptile on PR #40)', () => withPunches(async () => {
-    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
     const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
     await waitFor(() => expect(print.disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
@@ -1292,7 +1298,7 @@ describe('Job log edited by the office', () => {
   it("won't save over the rates, or print a client copy, when the saved rates didn't load (Greptile, CodeRabbit on PR #40)", () => withPunches(async () => {
     readFails.add('job_log_rates');
     try {
-      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));

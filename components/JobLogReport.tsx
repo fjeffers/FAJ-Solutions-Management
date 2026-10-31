@@ -200,7 +200,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // copy i can entered how much per an hour the milage for each tech ... then i need a copy with out it for the
   // tech"). The rates are kept per job in job_log_rates, which only the office can read (migration 147).
   // And the invoice, laid out as the client's (Fred, 2026-10-30: "this how the client want the layout to look").
-  const [copy, setCopy] = useState<'tech' | 'client' | 'invoice'>('tech');
+  const [copy, setCopy] = useState<'tech' | 'client' | 'invoice'>('invoice');
   // The rates table as the office is changing it (null: as saved).
   const [rateEdit, setRateEdit] = useState<RateRow[] | null>(null);
   const [savedRates, setSavedRates] = useState<JobRates>({});

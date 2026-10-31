@@ -10,6 +10,7 @@
 // Pure and unit-tested (lib/capture.test.ts).
 
 import { parseStartAsks, type StartAsk } from './checkin';
+import { parseFill, type TemplateFill } from './template-fill';
 
 export type CaptureItem =
   | 'travel' | 'lunch' | 'odometer' | 'receipts' | 'photos'
@@ -46,6 +47,8 @@ export type JobTemplate = {
   id: string; name: string; items: CaptureItem[];
   /** What else to ask at check-in (lib/checkin.ts). */
   startAsks?: StartAsk[];
+  /** A client template: what this client's work orders always say (lib/template-fill.ts). */
+  fill?: TemplateFill;
 };
 
 /** None: Fred builds his own from blank ("remove the old style"). */
@@ -67,7 +70,8 @@ export function parseTemplates(raw: unknown): JobTemplate[] {
     if (!id || !name || ids.has(id)) continue;
     ids.add(id);
     const startAsks = parseStartAsks(o.startAsks);
-    out.push(startAsks.length ? { id, name, items, startAsks } : { id, name, items });
+    const fill = parseFill(o.fill);
+    out.push({ id, name, items, ...(startAsks.length ? { startAsks } : {}), ...(fill ? { fill } : {}) });
     if (out.length >= TEMPLATE_MAX) break;
   }
   return out.length ? out : STARTER_TEMPLATES;
@@ -123,7 +127,33 @@ export const removeTemplate = (list: JobTemplate[], id: string): JobTemplate[] =
 
 /** Change one's check-in items. */
 export const setTemplateStartAsks = (list: JobTemplate[], id: string, startAsks: StartAsk[]): JobTemplate[] =>
-  list.map((t) => (t.id === id ? (startAsks.length ? { ...t, startAsks } : { id: t.id, name: t.name, items: t.items }) : t));
+  list.map((t) => {
+    if (t.id !== id) return t;
+    const { startAsks: _old, ...rest } = t; // eslint-disable-line @typescript-eslint/no-unused-vars
+    return startAsks.length ? { ...rest, startAsks } : rest;
+  });
+
+/** Change what a client template fills in on the work order (none: it only sets the items). */
+export const setTemplateFill = (list: JobTemplate[], id: string, fill: TemplateFill | undefined): JobTemplate[] =>
+  list.map((t) => {
+    if (t.id !== id) return t;
+    const { fill: _old, ...rest } = t; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const clean = parseFill(fill);
+    return clean ? { ...rest, fill: clean } : rest;
+  });
+
+/** Add the starter client templates (LDS, Wendy's, Dunkin) that aren't there yet, by name. */
+export function addStarterClients(list: JobTemplate[], starters: { name: string; items: string[]; fill: TemplateFill }[], idSeed: string): JobTemplate[] {
+  let out = list;
+  for (const st of starters) {
+    if (out.some((t) => sameName(t.name, st.name))) continue;
+    const next = addTemplate(out, st.name, parseCapture(st.items) ?? [], idSeed);
+    if (!next) continue;
+    const added = next[next.length - 1];
+    out = setTemplateFill(next, added.id, st.fill);
+  }
+  return out;
+}
 
 /**
  * The one saved template whose name appears in a pasted job as a whole word

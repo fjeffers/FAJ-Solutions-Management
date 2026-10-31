@@ -8,6 +8,7 @@ import {
   CreditCard, Trash2, CheckCircle2, Timer, Printer, MessageSquare, Edit2, Package, Layers,
   Link2,
   ClipboardPaste,
+  LayoutTemplate,
 } from 'lucide-react';
 import { linkLabel, parseClientLinks } from '@/lib/client-links';
 import { parseTrackerRow } from '@/lib/tracker-row';
@@ -41,7 +42,8 @@ import CustomFieldInputs from '@/components/CustomFieldInputs';
 import { StartAsksEditor } from '@/components/CaptureEditor';
 import { parseStartAsks, type StartAsk } from '@/lib/checkin';
 import { useJobTemplates } from '@/components/useJobTemplates';
-import { CAPTURE_ITEMS, parseCapture, templateOf, toggleItem, type CaptureItem } from '@/lib/capture';
+import { CAPTURE_ITEMS, parseCapture, setTemplateFill, templateOf, toggleItem, type CaptureItem } from '@/lib/capture';
+import { FILL_TEXT_FIELDS, fillFromJob, planFill, planSize, type FillTextField } from '@/lib/template-fill';
 import { createClient } from '@/lib/supabase/client';
 import AddressCheck from '@/components/AddressCheck';
 
@@ -218,7 +220,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // like like how we have a check and out like and one for survey and one doe documents").
   const [surveyLink, setSurveyLink] = useState(() => item?.survey_link ?? (!item ? prefill?.survey_link : null) ?? '');
   const [deliverableLink, setDeliverableLink] = useState(() => item?.deliverable_link ?? (!item ? prefill?.deliverable_link : null) ?? '');
-  const { templates: jobTemplates } = useJobTemplates();
+  const { templates: jobTemplates, update: updateTemplates } = useJobTemplates();
+  const [tplPick, setTplPick] = useState('');
   const [form, setForm] = useState<Partial<WorkOrder>>({
     wo_number:       item?.wo_number       ?? nextWoNumber ?? '',
     title:           item?.title           ?? '',
@@ -728,6 +731,48 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   const hiddenTabs = TABS.filter((t) => !shownTabs.includes(t));
   // One page in job order (Fred, 2026-10-31: "work order as one page, in job order"): every section this
   // job uses is on the page; the chips jump to it. Chat loads only when opened, so it stays a toggle.
+  // ── Client template (lib/template-fill.ts): fills in only what is still empty ──
+  const linkState: Partial<Record<FillTextField, [string, (v: string) => void]>> = {
+    checkin_link: [checkinLink, setCheckinLink], checkout_link: [checkoutLink, setCheckoutLink],
+    survey_link: [surveyLink, setSurveyLink], deliverable_link: [deliverableLink, setDeliverableLink],
+  };
+  const fieldNow = (k: FillTextField) => linkState[k]?.[0] ?? String((form as Record<string, unknown>)[k] ?? '');
+  const applyClientTemplate = (id: string) => {
+    setTplPick(id);
+    const t = jobTemplates.find((x) => x.id === id);
+    if (!t) return;
+    const plan = planFill(t.fill, {
+      ...Object.fromEntries(FILL_TEXT_FIELDS.map((k) => [k, fieldNow(k)])),
+      client_links: parseClientLinks(linksText), tasks: tasks.length, questions: customQA.length,
+    });
+    const formFields: Partial<WorkOrder> = {};
+    for (const [k, v] of Object.entries(plan.fields) as [FillTextField, string][]) {
+      const ls = linkState[k];
+      if (ls) ls[1](v); else (formFields as Record<string, string>)[k] = v;
+    }
+    setForm((f) => ({ ...f, ...formFields }));
+    if (plan.links.length) setLinksText((now) => [...new Set([...parseClientLinks(now), ...plan.links])].join('\n'));
+    if (plan.tasks.length) setTasks(plan.tasks.map((x) => ({ id: crypto.randomUUID(), category: x.category, label: x.label, completed: false, completed_at: null })));
+    if (plan.questions.length) setCustomQA(plan.questions.map((label) => ({ id: crypto.randomUUID(), label, type: 'text', answer: null })));
+    // What the tech records and the check-in items, only on a job that has none yet.
+    let more = 0;
+    if (t.items.length && (!capture || capture.length === 0) && !item?.id) { setCapture(t.items); more++; }
+    if (t.startAsks?.length && startAsks.length === 0) { setStartAsks(t.startAsks); more++; }
+    const n = planSize(plan) + more;
+    toastSuccess(n ? `${t.name}: filled in ${n} ${n === 1 ? 'part' : 'parts'}. Anything you had typed was kept.` : `${t.name}: nothing to fill in; those parts were already filled.`);
+  };
+  const saveIntoTemplate = () => {
+    const t = jobTemplates.find((x) => x.id === tplPick);
+    if (!t) return;
+    if (!window.confirm(`Save this work order's client, type of work, scope, deliverables, tools, links, checklist and questions into "${t.name}"? It replaces what "${t.name}" filled in before. Site, dates and techs are not saved.`)) return;
+    const fill = fillFromJob({
+      ...Object.fromEntries(FILL_TEXT_FIELDS.map((k) => [k, fieldNow(k)])),
+      client_links: parseClientLinks(linksText), tasks, questions: customQA.map((q) => q.label),
+    });
+    updateTemplates(setTemplateFill(jobTemplates, t.id, fill));
+    toastSuccess(`Saved into ${t.name}. New work orders with ${t.name} start with it.`);
+  };
+
   const onPage = (k: Tab) => k !== 'chat' && shownTabs.some((t) => t.key === k);
   const goSection = (k: Tab) => {
     setTab(k);
@@ -965,6 +1010,26 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {onPage('details') && (
           <div className="woe-stack">
             {!item && trackerBox}
+            {/* General work order, or a client's template (Fred, 2026-10-31: "templates for each like wendys dunkin LDS"). */}
+            <section className="woe-card">
+              <h3><LayoutTemplate size={15} /> Template</h3>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select className="select input" aria-label="Client template" value={tplPick} style={{ flex: '1 1 220px' }}
+                  onChange={(e) => applyClientTemplate(e.target.value)}>
+                  <option value="">General work order</option>
+                  {jobTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                {tplPick && (
+                  <button type="button" className="btn btn-ghost" onClick={saveIntoTemplate}>
+                    Save this job into {jobTemplates.find((t) => t.id === tplPick)?.name ?? 'the template'}
+                  </button>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+                Picking a client fills in what is still empty: client, type of work, scope, deliverables, tools, links, checklist and questions.
+                Set templates up in Setup → Job templates.
+              </div>
+            </section>
             <section className="woe-card">
               <h3><FileText size={15} /> Job</h3>
               <div className="woe-grid woe-grid-job">

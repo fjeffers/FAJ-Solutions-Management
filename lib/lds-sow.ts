@@ -448,3 +448,8 @@ export const LDS_INSTALL_CHECKLIST: string[] = [
  * which is in "fields" and "builds". Seeded by supabase-migration-145-lds-install-list.sql.
  */
 export const LDS_INSTALL_LIST = { name: 'LDS church install (5 days)', keywords: ['lds-', 'meetinghouse'], sort: 3 };
+
+/** The LDS client template's scope (lib/template-fill.ts): the SOW's purpose and in-scope work. */
+export const LDS_SCOPE_TEXT = [SOW_SCOPE.purpose, '', ...SOW_SCOPE.inScope.map((s) => `- ${s}`)].join('\n');
+/** The LDS client template's tools: the SOW's pre-arrival tool list. */
+export const LDS_TOOLS_TEXT = (SOW_PRE_ARRIVAL.groups.find(([g]) => g === 'Tools')?.[1] ?? []).join('\n');

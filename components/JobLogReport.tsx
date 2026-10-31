@@ -92,6 +92,12 @@ type Pic = {
   hotel?: boolean;
 };
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
+/** What a site photo is on the log. Saved in work_orders.job_log_receipt_photos: '<id>' a receipt, 'hotel:<id>' a
+ *  hotel's receipt, 'odo:<id>' an odometer; none of them, a photo. */
+type PhotoKind = 'photo' | 'odometer' | 'receipt' | 'hotel';
+const kindKey: Record<Exclude<PhotoKind, 'photo'>, (id: string) => string> = { receipt: (id) => id, hotel: (id) => `hotel:${id}`, odometer: (id) => `odo:${id}` };
+const photoKind = (labels: Set<string>, id: string): PhotoKind =>
+  labels.has(id) ? 'receipt' : labels.has(`hotel:${id}`) ? 'hotel' : labels.has(`odo:${id}`) ? 'odometer' : 'photo';
 type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean; materials: boolean; otherReceipts: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
 
 const TZ = 'America/New_York';
@@ -156,10 +162,12 @@ function useLogChoices(woId: string, left: string[] | null | undefined, receiptI
   };
   /** The job has it saved as left out. */
   const savedOut = (key: string) => kept.current.leftOut.has(key);
-  /** Label a site photo a receipt, or not one. */
-  const label = (photoId: string, receipt: boolean) => {
+  /** Label a site photo a photo, an odometer, a receipt or a hotel's receipt (Fred, 2026-10-31: "any pictures i
+   *  added also it need to be edited"). */
+  const label = (photoId: string, kind: PhotoKind) => {
     const r = new Set(tapped.current.receiptPhotos);
-    if (receipt) r.add(photoId); else r.delete(photoId);
+    for (const k of Object.values(kindKey)) r.delete(k(photoId));
+    if (kind !== 'photo') r.add(kindKey[kind](photoId));
     void choose({ ...tapped.current, receiptPhotos: r });
   };
   return { ...now, loaded, flip, label, savedOut };
@@ -303,19 +311,22 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
   const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => ({
     key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
-    caption: receiptPhotos.has(p.id) ? 'Receipt photo' : undefined,
+    caption: ({ photo: undefined, receipt: 'Receipt photo', hotel: 'Hotel receipt photo', odometer: 'Odometer photo' } as const)[photoKind(receiptPhotos, p.id)],
+    hotel: photoKind(receiptPhotos, p.id) === 'hotel',
   }));
-  const shownPhotos = sitePics.filter((p) => !receiptPhotos.has(p.photoId!));
+  const sitePicsOf = (...kinds: PhotoKind[]) => sitePics.filter((p) => kinds.includes(photoKind(receiptPhotos, p.photoId!)));
+  const shownPhotos = sitePicsOf('photo');
   // The receipts, then the site photos labeled receipts, by day.
-  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePics.filter((p) => receiptPhotos.has(p.photoId!))]
+  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('receipt', 'hotel')]
     .sort((a, b) => a.day.localeCompare(b.day));
-  const shownOdometer = odometer.filter((p) => inRange(p.day, from, to));
-  // The invoice ends with the odometer, the receipts and the hotels' receipts, each on its own (Fred, 2026-10-31:
-  // "at the end i want to add pictures of the odometer, receipt and hotels").
+  const shownOdometer = [...odometer.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('odometer')]
+    .sort((a, b) => a.day.localeCompare(b.day));
+  // The invoice ends with the odometer, the receipts and the hotels' receipts, each on its own, then the photos, the
+  // office's added ones too (Fred, 2026-10-31: "at the end i want to add pictures of the odometer, receipt and hotels",
+  // "any pictures i added").
   const hotelPics = shownReceipts.filter((p) => p.hotel);
   const otherPics = shownReceipts.filter((p) => !p.hotel);
   const printed = (p: Pic) => !p.declined && !leftOut.has(p.key);
-  const invoicePicCount = [...(inc.odometer ? shownOdometer : []), ...(inc.receipts ? shownReceipts : [])].filter(printed).length;
   // The pictures taken out of the log: off the screen too, until "Pictures left out" is ticked.
   const leftCount = [...shownReceipts, ...shownOdometer, ...shownPhotos].filter((p) => leftOut.has(p.key)).length;
   const pictureCount = [...(inc.receipts ? shownReceipts : []), ...(inc.odometer ? shownOdometer : []), ...(inc.photos ? shownPhotos : [])]
@@ -667,7 +678,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           // Taken out with its ✗; a declined receipt can be too, though it never prints either way.
           const taken = leftOut.has(p.key);
           const what = `${p.caption ?? 'Photo'} ${p.stamp}`;
-          const isReceipt = p.photoId ? receiptPhotos.has(p.photoId) : false;
+          const kind = p.photoId ? photoKind(receiptPhotos, p.photoId) : null;
           return (
             <div key={p.key} className={out ? 'jl-avoid no-print' : 'jl-avoid'} style={{ position: 'relative' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -719,10 +730,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               })()}
               {p.photoId && (
                 <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  {([[true, 'Receipt'], [false, 'Not a receipt']] as const).map(([r, text]) => (
-                    <button key={text} type="button" aria-pressed={isReceipt === r} onClick={() => { if (isReceipt !== r) label(p.photoId!, r); }}
-                      style={{ flex: 1, fontSize: 11.5, padding: '3px 4px', borderRadius: 8, cursor: 'pointer',
-                        border: `1px solid ${isReceipt === r ? '#0E1B2E' : '#D8D3C8'}`, background: isReceipt === r ? '#0E1B2E' : '#fff', color: isReceipt === r ? '#fff' : '#1B1C1F' }}>
+                  {([['photo', 'Photo'], ['odometer', 'Odometer'], ['receipt', 'Receipt'], ['hotel', 'Hotel']] as const).map(([r, text]) => (
+                    <button key={text} type="button" aria-pressed={kind === r} onClick={() => { if (kind !== r) label(p.photoId!, r); }}
+                      style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '3px 2px', borderRadius: 8, cursor: 'pointer',
+                        border: `1px solid ${kind === r ? '#0E1B2E' : '#D8D3C8'}`, background: kind === r ? '#0E1B2E' : '#fff', color: kind === r ? '#fff' : '#1B1C1F' }}>
                       {text}
                     </button>
                   ))}
@@ -831,11 +842,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
           {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{shown.miles.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
-          {toggle('notes', "Tech's notes")}{(receipts.length > 0 || receiptPhotos.size > 0) && toggle('receipts', 'Receipts')}{odometer.length > 0 && toggle('odometer', 'Odometer')}
+          {toggle('notes', "Tech's notes")}{(receipts.length > 0 || sitePicsOf('receipt', 'hotel').length > 0) && toggle('receipts', 'Receipts')}{(odometer.length > 0 || sitePicsOf('odometer').length > 0) && toggle('odometer', 'Odometer')}
           {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}
         </div>
         <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
-          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Receipt and it goes with the receipts. Declined receipts never print, and their ✗ takes them off the screen too. Nothing is deleted.
+          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Odometer, Receipt or Hotel and it goes there, on the job log and the invoice. Declined receipts never print, and their ✗ takes them off the screen too. Nothing is deleted.
         </div>
         {draft && (
           <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
@@ -866,10 +877,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           </div>
           {invDraft && <div className="jl-print-only" style={{ padding: 24 }}>The invoice is being changed. Save it, then print it.</div>}
           {/* On paper, on a page of their own after the invoice; not while it's being changed. */}
-          <div className={invDraft ? 'no-print' : invoicePicCount > 0 ? 'jl-pics' : undefined} style={{ padding: '0 28px 28px', fontSize: 13 }}>
+          <div className={invDraft ? 'no-print' : pictureCount > 0 ? 'jl-pics' : undefined} style={{ padding: '0 28px 28px', fontSize: 13 }}>
             {inc.odometer && pictures('Odometer', shownOdometer)}
             {inc.receipts && pictures('Receipts', otherPics, true)}
             {inc.receipts && pictures('Hotels', hotelPics, true)}
+            {inc.photos && pictures('Photos', shownPhotos)}
           </div>
         </div>
       ) : (

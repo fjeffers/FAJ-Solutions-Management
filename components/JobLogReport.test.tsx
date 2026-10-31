@@ -270,7 +270,7 @@ describe('Job log pictures', () => {
       await screen.findByAltText(/lodging, quality inn/i);
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
       const page = screen.getByRole('table').closest('.jl-page') as HTMLElement;
-      expect(within(page).getAllByRole('heading').map((h) => h.textContent)).toEqual(['Odometer', 'Receipts', 'Hotels']);
+      expect(within(page).getAllByRole('heading').map((h) => h.textContent)).toEqual(['Odometer', 'Receipts', 'Hotels', 'Photos']);
       const section = (name: string) => within(page).getByRole('heading', { name }).parentElement!;
       expect(within(section('Odometer')).getByAltText(/odometer start: 41,200/i)).toBeTruthy();
       expect(within(section('Receipts')).getByAltText(/materials, lowe's: \$104\.17/i)).toBeTruthy();
@@ -285,6 +285,25 @@ describe('Job log pictures', () => {
     } finally {
       tables.job_expenses = before;
     }
+  });
+
+  it('ends the invoice with the photos too, and a photo labeled there moves to its section (Fred: "any pictures i added also it need to be edited")', async () => {
+    const user = userEvent.setup();
+    render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+    await screen.findByAltText(/odometer start/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+    const page = screen.getByRole('table').closest('.jl-page') as HTMLElement;
+    expect(within(page).getAllByRole('heading').map((h) => h.textContent)).toEqual(['Odometer', 'Receipts', 'Photos']);
+    await user.click(within(page).getByRole('group', { name: /label photo/i }).querySelector('button:nth-child(4)')!);
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: [], job_log_receipt_photos: ['hotel:ph1'] }));
+    expect(within(page).getAllByRole('heading').map((h) => h.textContent)).toEqual(['Odometer', 'Receipts', 'Hotels']);
+    expect(within(within(page).getByRole('heading', { name: 'Hotels' }).parentElement!).getByAltText(/hotel receipt photo/i)).toBeTruthy();
+    await user.click(within(page).getByRole('group', { name: /label hotel receipt photo/i }).querySelector('button:nth-child(2)')!);
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: [], job_log_receipt_photos: ['odo:ph1'] }));
+    expect(within(within(page).getByRole('heading', { name: 'Odometer' }).parentElement!).getByAltText(/odometer photo/i)).toBeTruthy();
+    await user.click(within(page).getByRole('group', { name: /label odometer photo/i }).querySelector('button:nth-child(1)')!);
+    await waitFor(() => expect(updates.at(-1)).toEqual({ job_log_left_out: [], job_log_receipt_photos: [] }));
+    expect(within(page).getAllByRole('heading').map((h) => h.textContent)).toEqual(['Odometer', 'Receipts', 'Photos']);
   });
 
   it('still saves a tap made while an earlier save fails', async () => {

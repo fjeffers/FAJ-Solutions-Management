@@ -62,6 +62,7 @@ import { quoteFromSurvey } from '@/lib/surveys';
 import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
+import { splitMore } from '@/lib/office-menu';
 import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
 import MessagesView from '@/components/MessagesView';
 import { sectionOfView, type ResolvedLayout, screenLabel } from '@/lib/app-layout';
@@ -162,6 +163,7 @@ export default function HomePage() {
   // opens to its sections; one section open at a time. Going to a screen opens
   // the Office dropdown and the section that holds it.
   const [officeOpen, setOfficeOpen] = useState<boolean>(() => sectionOfView(appLayout.resolved, viewFromUrl()) !== null);
+  const [moreSection, setMoreSection] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<string | null>(() => sectionOfView(appLayout.resolved, viewFromUrl()));
   function openOfficeFor(v: View) {
     const g = sectionOfView(layoutRef.current, isMoneyView(v) ? 'financials' : v);
@@ -1634,7 +1636,7 @@ Go ahead?`)) return;
                     </button>
                     {open && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 16 }}>
-                        {g.items.map((i) => {
+                        {(() => { const sp = splitMore(g.items, view); return moreSection === g.id ? g.items : sp.main; })().map((i) => {
                           const count = badgeFor(i.view);
                           const sub = { padding: '8px 12px', fontSize: 13 };
                           if (!i.view) {
@@ -1657,6 +1659,11 @@ Go ahead?`)) return;
                             </button>
                           );
                         })}
+                        {moreSection !== g.id && splitMore(g.items, view).more.length > 0 && (
+                          <button className="nav-btn" onClick={() => setMoreSection(g.id)} style={{ padding: '8px 12px', fontSize: 12.5, opacity: 0.75 }}>
+                            <ChevronDown size={13} /> More
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

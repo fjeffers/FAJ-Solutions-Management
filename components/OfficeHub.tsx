@@ -3,10 +3,11 @@
 // the owner app on one page, grouped like the sidebar, with a search box.
 import { useEffect, useState } from 'react';
 import {
-  Award, Banknote, BarChart3, BookOpen, Building2, Calendar, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, Construction, CreditCard, ExternalLink, FileCheck2, Folder, Handshake, HardHat, KanbanSquare, LayoutGrid, Plus, SquarePlus, Sun,
+  Award, Banknote, BarChart3, BookOpen, Building2, Calendar, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, Construction, CreditCard, ExternalLink, FileCheck2, Folder, Handshake, HardHat, KanbanSquare, LayoutGrid, Plus, SquarePlus,
   FileSignature, FileText, Inbox, LifeBuoy, Map as MapIcon, MessageSquare, Network, PencilRuler, Package, Receipt, Search, Settings, ShieldCheck,
   Clock, Sheet, Timer, TrendingUp, UserCog, Users, Wallet, Wrench, type LucideIcon,
 } from 'lucide-react';
+import { splitMore } from '@/lib/office-menu';
 import { searchSections, type ResolvedSection, type Screen } from '@/lib/app-layout';
 import { Empty } from '@/components/wf/WfUi';
 import { PrimioBar } from '@/components/wf/PrimioScreens';
@@ -33,7 +34,7 @@ export function OfficeIcon({ k, size = 20 }: { k: string; size?: number }) {
 
 /** By section id, so a renamed section keeps its icon; Fred's own sections get a folder. */
 const GROUP_ICONS: Record<string, LucideIcon> = {
-  everyday: Sun, money: Banknote, techs: HardHat, winning: Handshake, onsite: Construction, settings: Settings,
+  everyday: ClipboardList, money: Banknote, techs: HardHat, winning: Handshake, onsite: Construction, setup: Settings, settings: Settings,
 };
 
 /**
@@ -68,6 +69,7 @@ export default function OfficeHub({ sections, title = 'Office', onOpen, onNewOrd
     return next;
   });
   const searching = query.trim().length > 0;
+  const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({});
 
   const row = (i: Screen) => {
     const key = i.key;
@@ -118,7 +120,21 @@ export default function OfficeHub({ sections, title = 'Office', onOpen, onNewOrd
                 )}
                 <ChevronDown size={20} color="var(--wf-subtle)" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
               </button>
-              {isOpen && <div style={{ paddingBottom: 6 }}>{g.items.map(row)}</div>}
+              {isOpen && (() => {
+                const { main, more } = searching ? { main: g.items, more: [] } : splitMore(g.items);
+                return (
+                  <div style={{ paddingBottom: 6 }}>
+                    {main.map(row)}
+                    {more.length > 0 && (moreOpen[g.id] ? more.map(row) : (
+                      <button className="wf-office-row" onClick={() => setMoreOpen((m) => ({ ...m, [g.id]: true }))}
+                        style={{ color: 'var(--wf-subtle)' }}>
+                        <span style={{ flex: 1 }}>More ({more.map((i) => i.label).join(', ')})</span>
+                        <ChevronDown size={20} color="var(--wf-subtle)" />
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </section>
           );
         })}

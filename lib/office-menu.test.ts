@@ -22,7 +22,7 @@ describe('Office hub', () => {
   it('knows which Office section a screen is in', () => {
     expect(officeGroupOf('financials')).toBe('Money');
     expect(officeGroupOf('payments')).toBeNull(); // a tab of the Financials dashboard
-    expect(officeGroupOf('sitelog')).toBe('Every day');
+    expect(officeGroupOf('sitelog')).toBe('Jobs');
     expect(new Set(OFFICE_GROUPS.map((g) => g.id)).size).toBe(OFFICE_GROUPS.length);
     expect(officeGroupOf('dashboard')).toBeNull();
   });

@@ -36,18 +36,22 @@ export const MONEY_TAB_VIEWS = ['invoices', 'payables', 'payments', 'ledger'] as
 
 export const OFFICE_GROUPS: OfficeGroup[] = [
   {
+    // Fred, 2026-10-31: "a shorter office menu": Jobs, Money, Techs, Sales, Setup;
+    // the screens used now and then sit under each section's More (MORE_SCREENS).
     id: 'everyday',
-    title: 'Every day',
+    title: 'Jobs',
     items: [
       // Fred, 2026-10-24: "build the simpler hours screen one card per day and way for me to edit the hours on each work orders".
       { view: 'hours', label: 'Hours', hint: 'Each job day by day: start, finish, hours, miles, meals — change any of them and Save' },
       // Fred, 2026-10-13: projects — travel, time on site, miles, receipts, the client report.
       { view: 'projects', label: 'Projects', hint: 'Multi-day sites: travel, time on site, miles, receipts and the weekly bill' },
       { view: 'sitelog', label: 'Site Log', hint: 'Every site visit, ready to bill' },
-      { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },
       { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },
       { view: 'import-queue', label: 'Import', hint: 'Work orders from email and spreadsheets waiting to come in' },
       { view: 'dispatch', label: 'Dispatch Map', hint: 'Techs and jobs on a map' },
+      { view: 'materials', label: 'Materials', hint: 'Stock, and materials used on jobs' },
+      { view: 'maintenance', label: 'Maintenance', hint: 'Recurring maintenance visits' },
+      { view: 'network', label: 'Network', hint: 'Network equipment and site records' },
     ],
   },
   {
@@ -62,7 +66,6 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
       // and the Ledger are its tabs (components/MoneyHub).
       { view: 'financials', label: 'Financials dashboard', hint: 'All the money: invoices and money in, paying techs, payments made, the ledger, trends' },
       { view: 'customers', label: 'Customers', hint: 'Clients and what each one brings in' },
-      { view: 'quickbooks', label: 'QuickBooks', hint: 'Connection to QuickBooks' },
       { view: null, href: 'netview', label: 'NetView Invoice', hint: "NetView's vendor payment form (opens their site)" },
     ],
   },
@@ -72,7 +75,6 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     items: [
       { view: 'contractors', label: 'Contractors', hint: 'Your techs: contact details, on hold, paperwork' },
       { view: 'contractor-analytics', label: 'Performance', hint: 'Jobs done and on-time record per tech' },
-      { view: 'portal-admin', label: 'Portal & Review', hint: 'Tech portal logins and sign-up review' },
       { view: 'statements', label: 'Statements', hint: 'Pay statements for techs' },
       { view: '1099', label: '1099s', hint: 'Year-end 1099 reports' },
       { view: 'w9', label: 'W-9s', hint: 'W-9 forms on file' },
@@ -93,15 +95,24 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
     ],
   },
   {
-    id: 'onsite',
-    title: 'On site',
+    id: 'setup',
+    title: 'Setup',
     items: [
-      { view: 'materials', label: 'Materials', hint: 'Stock, and materials used on jobs' },
-      { view: 'maintenance', label: 'Maintenance', hint: 'Recurring maintenance visits' },
-      { view: 'network', label: 'Network', hint: 'Network equipment and site records' },
+      { view: 'team', label: 'Team', hint: 'Office staff logins and what they can see' },
+      { view: 'portal-admin', label: 'Portal & Review', hint: 'Tech portal logins and sign-up review' },
+      { view: 'quickbooks', label: 'QuickBooks', hint: 'Connection to QuickBooks' },
     ],
   },
 ];
+
+/** Screens used now and then: under their section's More, so each section shows its everyday screens. */
+export const MORE_SCREENS: ReadonlySet<string> = new Set(['maintenance', 'network', '1099', 'w9']);
+
+/** A section's screens split into the everyday ones and the ones under More (the open screen always shows). */
+export function splitMore<T extends { key: string }>(items: T[], current?: string): { main: T[]; more: T[] } {
+  const rare = (i: T) => MORE_SCREENS.has(i.key) && i.key !== current;
+  return { main: items.filter((i) => !rare(i)), more: items.filter(rare) };
+}
 
 /** The Office section a screen is in ("Money"…), or null for the left menu's own. */
 export function officeGroupOf(view: string): string | null {

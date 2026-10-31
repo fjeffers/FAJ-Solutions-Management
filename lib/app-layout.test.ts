@@ -13,7 +13,7 @@ describe('menu layout (Settings -> Menu & screens)', () => {
   it('the standard menu: Dashboard, Dispatch, Schedule, Messages, Office, Settings — everything else in Office', () => {
     const r = visibleLayout(resolveLayout(std()));
     expect(r.main.map((s) => s.label)).toEqual(['Dashboard', 'Dispatch', 'Schedule', 'Messages', 'Office', 'Settings']);
-    expect(r.sections.map((s) => s.title)).toEqual(['Every day', 'Money', 'Techs', 'Sales', 'On site']);
+    expect(r.sections.map((s) => s.title)).toEqual(['Jobs', 'Money', 'Techs', 'Sales', 'Setup']);
     expect(isStandard(STANDARD_LAYOUT)).toBe(true);
   });
 
@@ -70,8 +70,8 @@ describe('menu layout (Settings -> Menu & screens)', () => {
   });
 
   it('a section with everything hidden drops off the menu', () => {
-    const l = setHidden(setHidden(setHidden(std(), 'materials', true), 'maintenance', true), 'network', true);
-    expect(visibleLayout(resolveLayout(l)).sections.map((s) => s.id)).not.toContain('onsite');
+    const l = setHidden(setHidden(setHidden(std(), 'team', true), 'portal-admin', true), 'quickbooks', true);
+    expect(visibleLayout(resolveLayout(l)).sections.map((s) => s.id)).not.toContain('setup');
   });
 
   it('move a screen to the left menu, to another section, and back', () => {

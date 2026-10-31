@@ -55,9 +55,13 @@ const shiftDecimal = (n: number, places: number) => {
  * typed, and the invoice shows it in dollars as ever.
  */
 export const mileRateTyped = (n: number) => (n >= 1 ? shiftDecimal(n, -2) : n);
-/** A kept mileage rate as its box shows it, as Fred writes it: .50, .652. */
+/**
+ * A kept mileage rate as its box shows it, as Fred writes it: .50, .652. One of $1 or more shows in cents, 150, as
+ * the box reads it back, so opening it and changing it never changes its units (Greptile on PR #48).
+ */
 export const mileRateShown = (dollars: number) => {
-  if (!(dollars > 0 && dollars < 1)) return String(dollars);
+  if (dollars >= 1) return String(shiftDecimal(dollars, 2));
+  if (!(dollars > 0)) return String(dollars);
   const s = String(dollars).replace(/^0/, '');
   return s.length === 2 ? `${s}0` : s;
 };

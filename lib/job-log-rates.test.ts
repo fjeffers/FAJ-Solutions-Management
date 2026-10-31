@@ -89,6 +89,9 @@ describe('the client copy charges', () => {
   it('takes a mileage rate as Fred writes it, .50 or .652, or in cents, 50 or 65.2 (Fred: "Cent per mile", ".652 per mile")', () => {
     expect([0.5, 0.652, 50, 65.2, 72.5, 57, 0.1234567, 0].map(mileRateTyped)).toEqual([0.5, 0.652, 0.5, 0.652, 0.725, 0.57, 0.1234567, 0]);
     // Shown as typed, in full, so opening it again and saving never changes it (CodeRabbit on PR #48).
-    expect([0.5, 0.652, 0.6, 0.1234567, 0, 1.25].map(mileRateShown)).toEqual(['.50', '.652', '.60', '.1234567', '0', '1.25']);
+    // $1 or more in cents, as the box reads it back (Greptile on PR #48).
+    expect([0.5, 0.652, 0.6, 0.1234567, 0, 1.25, 1].map(mileRateShown)).toEqual(['.50', '.652', '.60', '.1234567', '0', '125', '100']);
+    // Whatever's kept reads back the same from its box.
+    for (const d of [0.5, 0.652, 0.57, 0.005, 0.1234567, 0, 1, 1.5, 1.6, 2.25]) expect(mileRateTyped(Number(mileRateShown(d)))).toBe(d);
   });
 });

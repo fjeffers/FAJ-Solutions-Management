@@ -715,10 +715,9 @@ describe('Job log edited by the office', () => {
         materials: [{ tech: 'Paul Gibbs', day: '2026-10-21', store: "Lowe's", amount: 104.17 }],
       }),
       { title: 'Gaffney', lines: ['Client: LDS · Client WO #: LDS-1110 · FAJ WO #: 19101401', 'Site: LDS Site 5011876 — Gaffney, SC', 'Technician: Paul Gibbs'], range: 'Whole job', crew: ['Paul Gibbs'] },
-      // The tech's copy: no rates.
+      // The tech's copy: no rates, no charges.
       undefined,
-      { meals: true, materials: true, other: true },
-      false,
+      undefined,
     );
   });
 
@@ -747,9 +746,10 @@ describe('Job log edited by the office', () => {
     fireEvent.change(screen.getByLabelText('$ per hour, Paul Gibbs'), { target: { value: '65' } });
     // The miles in cents (Fred: "Cent per mile"): 70 is $0.70 a mile.
     fireEvent.change(screen.getByLabelText('Per mile, Paul Gibbs'), { target: { value: '70' } });
-    // The total as they're typed (Fred: "i enter the rates and it shows the total"); the page waits for the save, so
-    // even the browser's own print never has rates that aren't kept (CodeRabbit on PR #40).
-    expect(screen.getByText('Total $597.60')).toBeTruthy();
+    // The total as they're typed (Fred: "i enter the rates and it shows the total"), the invoice's: the hours, the miles
+    // and the materials. The page waits for the save, so even the browser's own print never has rates that aren't kept
+    // (CodeRabbit on PR #40).
+    expect(screen.getByText('Total $701.77')).toBeTruthy();
     expect(screen.queryByText('TOTAL CHARGES')).toBeNull();
     // Saved before it's printed, so what the client gets is what's kept.
     expect(print.disabled).toBe(true);
@@ -777,7 +777,7 @@ describe('Job log edited by the office', () => {
       ['Hours total', '$585.00'],
       ['Paul Gibbs mileage · 18 mi × $0.70/mi', '$12.60'],
       ['Mileage total', '$12.60'],
-      ['Materials · 1 receipt', '$104.17'],
+      ['Materials', '$104.17'],
     ]);
     expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$701.77');
     // The hours and miles band stays as it was.
@@ -785,12 +785,12 @@ describe('Job log edited by the office', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /excel/i }));
     expect(downloadJobLogXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Client time sheet\.xlsx$/), expect.anything(), expect.anything(),
-      { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, { meals: true, materials: true, other: true }, false);
-    // A receipt section taken off the log is off the Excel's charges too, as in the PDF (CodeRabbit on PR #41).
+      { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, expect.objectContaining({ total: 701.77 }));
+    // The receipts' tables can come off the log; the charges stay the invoice's (Fred, 2026-10-31: "the job log and
+    // invoice is not matching up").
     fireEvent.click(screen.getByRole('checkbox', { name: 'Materials' }));
-    expect(screen.queryByText('Materials · 1 receipt')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /excel/i }));
-    expect(vi.mocked(downloadJobLogXlsx).mock.calls.at(-1)![4]).toEqual({ meals: true, materials: false, other: true });
+    expect(screen.queryByRole('heading', { name: 'Materials' })).toBeNull();
+    expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$701.77');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Materials' }));
 
     // Back to the tech's copy: none of it.
@@ -868,8 +868,8 @@ describe('Job log edited by the office', () => {
       expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).disabled).toBe(true);
       expect(screen.getByText('Type the $ per hour for all the hours.')).toBeTruthy();
       fireEvent.change(screen.getByLabelText('$ per hour, all techs'), { target: { value: '100' } });
-      // 9 hours × $100 and 18 miles × $0.70, as typed; saved before it's printed.
-      expect(screen.getByText('Total $912.60')).toBeTruthy();
+      // 9 hours × $100, 18 miles × $0.70 and the materials, as typed; saved before it's printed.
+      expect(screen.getByText('Total $1,016.77')).toBeTruthy();
       expect(print.disabled).toBe(true);
       fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
       await waitFor(() => expect(print.disabled).toBe(false));
@@ -879,12 +879,12 @@ describe('Job log edited by the office', () => {
         ['All techs’ hours · 9 × $100.00/hr', '$900.00'],
         ['Paul Gibbs mileage · 18 mi × $0.70/mi', '$12.60'],
         ['Mileage total', '$12.60'],
-        ['Materials · 1 receipt', '$104.17'],
+        ['Materials', '$104.17'],
       ]);
       expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,016.77');
       fireEvent.click(screen.getByRole('button', { name: /excel/i }));
       expect(downloadJobLogXlsx).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), expect.anything(),
-        { 'Paul Gibbs': { hour: 100, mile: 0.7 } }, { meals: true, materials: true, other: true }, true);
+        { 'Paul Gibbs': { hour: 100, mile: 0.7 } }, expect.objectContaining({ total: 1016.77 }));
       // Separate again: each tech's own rate, on their own line.
       fireEvent.click(separate);
       fireEvent.click(screen.getByRole('button', { name: /save rates/i }));
@@ -1185,7 +1185,7 @@ describe('Job log edited by the office', () => {
     expect((screen.getByLabelText('Per mile, Paul Gibbs') as HTMLInputElement).value).toBe('.652');
   }));
 
-  it('puts the hotels on their own line in the breakdown (Fred: "see it hotels also")', () => withPunches(async () => {
+  it('puts the hotels on their own line in the breakdown, and leaves the fuel off as the invoice does (Fred: "see it hotels also"; "the job log and invoice is not matching up")', () => withPunches(async () => {
     const before = tables.job_expenses;
     tables.job_expenses = [...before,
       { id: 'h1', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 350.74, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/hotel.jpg' },
@@ -1197,13 +1197,12 @@ describe('Job log edited by the office', () => {
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Breakdown' })).toBeTruthy());
-      expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' })).slice(-3)).toEqual([
-        ['Materials · 1 receipt', '$104.17'],
-        ['Hotels · 1 receipt', '$350.74'],
-        ['Other receipts · 1 receipt', '$40.00'],
+      expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' })).slice(-2)).toEqual([
+        ['Materials', '$104.17'],
+        ['Paul Gibbs hotel', '$350.74'],
       ]);
-      // $585 + $12.60 + $104.17 + $350.74 + $40.
-      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,092.51');
+      // $585 + $12.60 + $104.17 + $350.74, as the invoice: no fuel.
+      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,052.51');
     } finally {
       tables.job_expenses = before;
       delete tables.job_log_rates;

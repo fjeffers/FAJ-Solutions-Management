@@ -57,18 +57,18 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
 import {
-  chargesByTech, chargesTotal, lineAmount, mileRateShown, mileRateTyped, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates,
+  chargesByTech, lineAmount, mileRateShown, mileRateTyped, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates,
   sheetTechs, withAllHoursRate,
   type JobRates, type RateRow,
 } from '@/lib/job-log-rates';
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
 import JobLogInvoice, { type InvoiceEditor } from '@/components/JobLogInvoice';
-import { addLine, buildInvoice, downloadInvoiceXlsx, editLine, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceMeta } from '@/lib/job-log-invoice';
+import { addLine, buildInvoice, downloadInvoiceXlsx, editLine, invoiceCharges, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceMeta } from '@/lib/job-log-invoice';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
@@ -414,10 +414,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const invMeta = invDraft ? parseInvoiceMeta(invDraft.meta, todayDay) : savedMeta;
   // Billed to as typed on the invoice (Fred's sample: TeamNetView), else the work order's customer.
   const invoiceHead: InvoiceHead = { billTo: invMeta.billTo || (w.customer_name ?? ''), shipTo: [w.title ?? '', where].filter(Boolean), meta: invMeta };
-  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, invMeta, [w.site_city, w.site_state].filter(Boolean).join(' ')) : null;
+  const place = [w.site_city, w.site_state].filter(Boolean).join(' ');
+  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, invMeta, place) : null;
+  // The client copy's charges are the invoice's, so the two always have the same total (Fred, 2026-10-31: "the job log
+  // and invoice is not matching up"): with the rates saved, and as they're typed.
+  const clientInvoice = buildInvoice(shown, billRates, crew, savedMeta, place);
+  const clientCharges = invoiceCharges(clientInvoice, savedAll);
+  const typedTotal = invoiceCharges(buildInvoice(shown, typedRates, crew, savedMeta, place), typedAll).total;
   // The total under the table as the rates are typed; the page, the print and Excel with the rates saved, so a
   // print (the button, or the browser's own) is never of rates that aren't kept (CodeRabbit on PR #40).
-  const typedCharges = chargesByTech(shown, typedRates, crew);
   const charges = chargesByTech(shown, billRates, crew);
   const unbilled = notCharged(shown, typedRates, crew);
   const ratesChanged = !sameRates(rates, savedRates) || typedAll !== savedAll;
@@ -547,8 +552,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     ];
     downloadJobLogXlsx(copy === 'client' ? `${logName} · Client time sheet.xlsx` : `${logName} · Time sheet.xlsx`,
       shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? billRates : undefined,
-      // The receipts the log shows are the ones its breakdown charges, in Excel as in the PDF (CodeRabbit on PR #41).
-      { meals: inc.meals, materials: inc.materials, other: inc.otherReceipts }, copy === 'client' && savedAll != null)
+      copy === 'client' ? clientCharges : undefined)
       .catch(() => toastError("The Excel file didn't download. Try again."));
   };
 
@@ -570,33 +574,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
   /**
    * The client's copy, under TOTAL CHARGES: each tech's hours and their dollars, the hours' total, the mileage, then
-   * each tech's mileage and the mileage's total, then the receipts' totals as the copy shows them, and all of it added
-   * up (Fred, 2026-10-30: "the break down total paul hours total kendal hours and then amount ... then all it all up
+   * each tech's mileage and the mileage's total, then the meals, materials and hotels, all as the invoice has them,
+   * and all of it added up (Fred, 2026-10-30: "the break down total paul hours total kendal hours and then amount ... then all it all up
    * together for an over all total"; "milage paul mailge + rate same with kendal then the total amount the Meals,
    * Materials and Other receipts ... then OVERALL TOTAL").
    */
   const breakdown = () => {
-    const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
-    const hotels = otherReceipts.filter(isHotel), restOther = otherReceipts.filter((r) => !isHotel(r));
-    const receiptLines = [
-      ...(inc.meals && mealReceipts.length > 0 ? [{ what: `Meals · ${receiptCount(mealReceipts.length)}`, amount: moneyTotal(mealReceipts) }] : []),
-      ...(inc.materials && materialReceipts.length > 0 ? [{ what: `Materials · ${receiptCount(materialReceipts.length)}`, amount: moneyTotal(materialReceipts) }] : []),
-      // The hotels on their own line, then the rest of the other receipts (Fred, 2026-10-30: "see it hotels also").
-      ...(inc.otherReceipts && hotels.length > 0 ? [{ what: `Hotels · ${receiptCount(hotels.length)}`, amount: moneyTotal(hotels) }] : []),
-      ...(inc.otherReceipts && restOther.length > 0 ? [{ what: `Other receipts · ${receiptCount(restOther.length)}`, amount: moneyTotal(restOther) }] : []),
-    ];
-    const lines = [
-      // A tech's line when they've hours (or miles) to charge for: no "0 mi × $0.60 = $0.00".
-      // One rate for all hours: all the techs' hours on one line at it.
-      ...(savedAll != null ? [{ what: `All techs’ hours · ${hrs(r2(charges.reduce((t, c) => t + c.hours, 0)))} × ${rateText(savedAll)}/hr`, amount: sumOf('labor'), bold: true }] : [
-        ...charges.filter((c) => c.hourRate != null && c.hours > 0).map((c) => ({ what: `${c.tech} hours · ${hrs(c.hours)} × ${rateText(c.hourRate!)}/hr`, amount: c.labor ?? 0, bold: false })),
-        { what: 'Hours total', amount: sumOf('labor'), bold: true },
-      ]),
-      ...charges.filter((c) => c.mileRate != null && c.miles > 0).map((c) => ({ what: `${c.tech} mileage · ${c.miles.toLocaleString('en-US')} mi × ${rateText(c.mileRate!)}/mi`, amount: c.mileage ?? 0, bold: false })),
-      ...(charges.some((c) => c.mileRate != null) ? [{ what: 'Mileage total', amount: sumOf('mileage'), bold: true }] : []),
-      ...receiptLines.map((l) => ({ ...l, bold: false })),
-    ];
-    const overall = r2(chargesTotal(charges) + receiptLines.reduce((t, l) => t + l.amount, 0));
+    const { lines, total: overall } = clientCharges;
     return (
       <div className="jl-sec jl-avoid">
         <H>Breakdown</H>
@@ -830,7 +814,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {ratesChanged ? <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>
                 : noSavedRates && !ratesFailed && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Set a rate and save it to print the client’s copy.</span>}
               {/* The total as the rates are typed (Fred: "i enter the rates and it shows the total"). */}
-              <b style={{ marginLeft: 'auto', fontSize: 14 }}>Total {fmtMoney(chargesTotal(typedCharges))}</b>
+              <b style={{ marginLeft: 'auto', fontSize: 14 }}>Total {fmtMoney(typedTotal)}</b>
             </div>
             {ratesFailed && <div role="alert" style={{ fontSize: 12.5, color: '#B42318', marginTop: 6 }}>The saved rates didn’t load, so they can’t be changed or printed right now. Close the job log and open it again.</div>}
             {unbilled.length > 0 && <div style={{ fontSize: 12.5, color: '#B42318', marginTop: 6 }}>Not charged (no rates): {unbilled.join(', ')}.</div>}
@@ -1060,9 +1044,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {withRates && (
                 <div className="jl-band jl-avoid" style={{ marginTop: 10, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', fontSize: 13 }}>
                   <b style={{ color: '#E3C987', letterSpacing: 1 }}>TOTAL CHARGES</b>
-                  <span>Hours <b>{fmtMoney(sumOf('labor'))}</b></span>
-                  <span>Mileage <b>{fmtMoney(sumOf('mileage'))}</b></span>
-                  <span>Total <b>{fmtMoney(chargesTotal(charges))}</b></span>
+                  <span>Hours <b>{fmtMoney(clientInvoice.totals.labor)}</b></span>
+                  <span>Mileage <b>{fmtMoney(clientInvoice.totals.mileage)}</b></span>
+                  <span>Total <b>{fmtMoney(Math.round((clientInvoice.totals.labor + clientInvoice.totals.mileage) * 100 + 1e-9) / 100)}</b></span>
                 </div>
               )}
               {withRates && breakdown()}

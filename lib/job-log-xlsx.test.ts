@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { jobLogCells, type XCell } from './job-log-xlsx';
 import type { JobSheet } from './job-log-sheet';
 import { withAllHoursRate } from './job-log-rates';
+import { buildInvoice, invoiceCharges } from './job-log-invoice';
 
 const sheet: JobSheet = {
   time: [
@@ -103,56 +104,36 @@ describe('the job log in Excel', () => {
     expect(client[m + 2].slice(5)).toEqual([{ t: 'n', v: 0.7, z: '$#,##0.00##' }, { t: 'n', v: 5.6, z: '$#,##0.00', f: `IF(F${m + 3}="","",ROUND(E${m + 3}*F${m + 3},2))` }]);
     const miles = find(client, 'Overall total miles');
     expect(client[miles].slice(5)).toEqual([null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `SUM(G${find(client, 'Paul Gibbs total miles') + 1})` }]);
-    // At the end: Paul's hours' dollars, the hours' and the miles' (TOTAL CHARGES), the receipts', and all of it added up
-    // (Fred: "the break down total paul hours total kendal hours ... then all it all up together for an over all total").
-    const c = find(client, 'CHARGES');
-    expect(c).toBeGreaterThan(find(client, 'JOB TOTAL'));
-    expect(client.slice(c + 1, c + 13)).toEqual([
-      ['Paul Gibbs hours', null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${paul + 1}` }],
-      // Kendell has hours and no rate yet: his line's blank, and fills in when a rate's typed (Greptile on PR #41).
-      ['Kendell Newbold hours', null, { t: 's', v: '', f: `H${kendell + 1}` }],
-      ['Hours total', null, { t: 'n', v: 1288.3, z: '$#,##0.00', f: `H${worked + 1}` }],
-      // No miles for Kendell, so no mileage line for him.
-      ['Paul Gibbs mileage', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Paul Gibbs total miles') + 1}` }],
-      ['Mileage total', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${miles + 1}` }],
-      ['TOTAL CHARGES', null, { t: 'n', v: 1431.17, z: '$#,##0.00', f: `C${c + 4}+C${c + 6}` }],
-      ['Meals', null, { t: 'n', v: 0, z: '$#,##0.00', f: `D${find(client, 'Overall total meals') + 1}` }],
-      ['Materials', null, { t: 'n', v: 47.48, z: '$#,##0.00', f: `D${find(client, 'Overall total materials') + 1}` }],
-      // The Quality Inn is Lodging: the hotels' line, the other receipts less it on the next (Fred: "see it hotels also").
-      ['Hotels', null, { t: 'n', v: 350.74, z: '$#,##0.00', f: `SUM(E${find(client, 'Other receipts') + 3})` }],
-      ['Other receipts', null, { t: 'n', v: 0, z: '$#,##0.00', f: `E${find(client, 'Overall total other receipts') + 1}-C${c + 10}` }],
-      ['OVERALL TOTAL', null, { t: 'n', v: 1829.39, z: '$#,##0.00', f: `C${c + 7}+C${c + 8}+C${c + 9}+C${c + 10}+C${c + 11}` }],
-    ]);
     expect(Math.max(...client.map((r) => r.length))).toBeLessThanOrEqual(8);
   });
 
   it('has all the techs\' hours on one line when they\'re together at one rate (Fred: "give me the options for together or separate hours")', () => {
-    const client = jobLogCells(sheet, head, withAllHoursRate(sheet, { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, 100), undefined, true);
+    const client = jobLogCells(sheet, head, withAllHoursRate(sheet, { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, 100));
     // Every row of the hours at the one rate, Kendell's too; the miles at Paul's own.
     const top = find(client, 'Time on site');
     expect(client[top + 2][6]).toEqual({ t: 'n', v: 100, z: '$#,##0.00##' });
     expect(client[find(client, 'Kendell Newbold final hours') - 1][6]).toEqual({ t: 'n', v: 100, z: '$#,##0.00##' });
-    // Paul's 19.82 hours and Kendell's 10 × $100, then the mileage as before.
-    const worked = find(client, 'Overall total worked'), c = find(client, 'CHARGES');
-    expect(client.slice(c + 1, c + 5)).toEqual([
-      ['All techs’ hours', null, { t: 'n', v: 2982, z: '$#,##0.00', f: `H${worked + 1}` }],
-      ['Paul Gibbs mileage', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Paul Gibbs total miles') + 1}` }],
-      ['Mileage total', null, { t: 'n', v: 142.87, z: '$#,##0.00', f: `G${find(client, 'Overall total miles') + 1}` }],
-      ['TOTAL CHARGES', null, { t: 'n', v: 3124.87, z: '$#,##0.00', f: `C${c + 2}+C${c + 4}` }],
-    ]);
   });
 
-  it("charges only the receipts the log shows, as the PDF's breakdown does (CodeRabbit on PR #41)", () => {
-    const client = jobLogCells(sheet, head, { 'Paul Gibbs': { hour: 65, mile: 0.7 } }, { meals: true, materials: false, other: true });
+  it('ends with the charges as the invoice has them, all added up (Fred, 2026-10-31: "the job log and invoice is not matching up")', () => {
+    const rates = { 'Paul Gibbs': { hour: 65, mile: 0.7 } };
+    expect(find(jobLogCells(sheet, head, rates), 'CHARGES')).toBe(-1);
+    const charges = invoiceCharges(buildInvoice(sheet, rates, head.crew, { labor: 'Labor', meal: 50 }, 'Gaffney SC'), null);
+    const client = jobLogCells(sheet, head, rates, charges);
     const c = find(client, 'CHARGES');
-    const labels = client.slice(c + 1).map((r) => r[0]);
-    expect(labels).toEqual(['Paul Gibbs hours', 'Kendell Newbold hours', 'Hours total', 'Paul Gibbs mileage', 'Mileage total',
-      'TOTAL CHARGES', 'Meals', 'Hotels', 'Other receipts', 'OVERALL TOTAL']);
-    // Other receipts is the other receipts' total less the Hotels line right above it.
-    const at = c + 1 + labels.indexOf('Hotels');
-    expect(client[at + 1][2]).toMatchObject({ f: `E${find(client, 'Overall total other receipts') + 1}-C${at + 1}` });
-    // $1,431.17 + $0 meals + $350.74 hotel + $0 other: no materials.
-    expect(client.at(-1)![2]).toMatchObject({ v: 1781.91, f: `C${c + 7}+C${c + 8}+C${c + 9}+C${c + 10}` });
+    expect(c).toBeGreaterThan(find(client, 'JOB TOTAL'));
+    const usd = (v: number, f?: string) => ({ t: 'n', v, z: '$#,##0.00', ...(f ? { f } : {}) });
+    expect(client.slice(c + 1)).toEqual([
+      ['Paul Gibbs hours · 19.82 × $65.00/hr', null, usd(1288.3)],
+      ['Hours total', null, usd(1288.3)],
+      ['Paul Gibbs mileage · 204.1 mi × $0.70/mi', null, usd(142.87)],
+      ['Mileage total', null, usd(142.87)],
+      ['Materials', null, usd(47.48)],
+      ['Paul Gibbs hotel', null, usd(350.74)],
+      // Kendell has the lead's hotel, as on the invoice; his hours have no rate yet, so no line for them.
+      ['Kendell Newbold hotel (same as Paul Gibbs)', null, usd(350.74)],
+      ['OVERALL TOTAL', null, usd(2180.13, `C${c + 3}+C${c + 5}+C${c + 6}+C${c + 7}+C${c + 8}`)],
+    ]);
   });
 
   it('opens in Excel with its formulas and the summary pointing at the totals', () => {

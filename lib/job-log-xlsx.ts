@@ -7,8 +7,9 @@
 // asked for this"; lib/job-log-rates.ts) gives each row of the hours and of the miles its tech's rate and dollars
 // ("in the hours should get the rate and the same for the milage gets the milages rate"), and TOTAL CHARGES at the end.
 import { byTechGroups } from './job-log';
+import type { InvoiceCharges } from './job-log-invoice';
 import { lineAmount, type JobRates } from './job-log-rates';
-import { fixedHours, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
+import { fixedHours, hoursTotal, milesTotal, minutesOf, moneyTotal, rowHours, type JobSheet, type MileRow, type MoneyRow } from './job-log-sheet';
 
 /**
  * A cell for SheetJS: text, or a number with its Excel format and, for a sum or a sum's part, its formula; or a
@@ -31,16 +32,12 @@ export const JOB_LOG_WIDTHS = [19, 11, 16, 14, 10, 10];
 export const JOB_LOG_CLIENT_WIDTHS = [15, 11, 10, 9, 7, 7, 8, 10];
 export const JOB_LOG_MARGINS = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
 
-/** Which receipts the client's copy charges: the ones the job log shows (its Show choices), as its PDF does. */
-export type ChargedReceipts = { meals: boolean; materials: boolean; other: boolean };
-const ALL_RECEIPTS: ChargedReceipts = { meals: true, materials: true, other: true };
 
 /**
- * The workbook's one sheet, row by row; `rates` for the client's copy, charging the `charged` receipts. `allHours`:
- * the rates give every tech's hours one rate (lib/job-log-rates.ts withAllHoursRate), so its charges have the hours
- * together on one line (Fred, 2026-10-30: "give me the options for together or separate hours").
+ * The workbook's one sheet, row by row; `rates` for the client's copy, with its `charges` (lib/job-log-invoice.ts
+ * invoiceCharges) at the end.
  */
-export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates, charged: ChargedReceipts = ALL_RECEIPTS, allHours = false): XCell[][] {
+export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates, charges?: InvoiceCharges): XCell[][] {
   const rows: XCell[][] = [];
   /** The Excel row number the next row gets. */
   const next = () => rows.length + 1;
@@ -139,13 +136,8 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates,
     moneyTotal, (t) => `${t} total ${what}`, `Overall total ${what}`).total;
   const meals = money('Meals', 'meals', sheet.meals);
   const materials = money('Materials', 'materials', sheet.materials);
-  // The hotels' amount cells, for their own line under CHARGES.
-  const hotelCells: string[] = [];
   const other = section('Other receipts', ['NAME', 'DATE', 'FOR', 'STORE', 'AMOUNT'], byDay(sheet.other), 'E', USD,
-    (r, at) => {
-      if (isHotel(r)) hotelCells.push(`E${at}`);
-      return [r.tech, num(dayNumber(r.day), DATE), r.for || '—', r.store || '—', num(r.amount, USD)];
-    },
+    (r) => [r.tech, num(dayNumber(r.day), DATE), r.for || '—', r.store || '—', num(r.amount, USD)],
     moneyTotal, (t) => `${t} total`, 'Overall total other receipts').total;
 
   const h = hoursTotal(sheet.time), mi = milesTotal(sheet.miles);
@@ -156,57 +148,26 @@ export function jobLogCells(sheet: JobSheet, head: JobLogHead, rates?: JobRates,
   // miles only: the receipts' dollars stay in their own sections, not added up with them (Fred: "i dont want it mix").
   rows.push(['JOB TOTAL', num(h, `${HRS}" hours"`, hours.total), num(mi, `${MILES}" miles"`, miles.total)]);
 
-  if (rates && hours.amount && miles.amount) {
-    // The client's copy: each tech's hours' dollars and their total, each tech's mileage's and its total, the two
-    // (TOTAL CHARGES, as the PDF's band), then the receipts' totals and all of it added up (Fred, 2026-10-30: "the break
-    // down total paul hours total kendal hours ... milage paul ... same with kendal ... then OVERALL TOTAL"). Each is
-    // the cell it comes from above.
-    const valueOf = (cell: string) => (rows[Number(cell.slice(1)) - 1][cell.charCodeAt(0) - 65] as { v: number | '' }).v;
-    const dollars = (cell: string) => { const v = valueOf(cell); return typeof v === 'number' ? v : 0; };
-    const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
+  if (rates && charges) {
+    // The client's copy: the breakdown as the job log shows it, read off the invoice so the two have the same total
+    // (Fred, 2026-10-31: "the job log and invoice is not matching up"), then all of it added up.
     rows.push([]);
     // The amounts in the third column, so a tech's whole name shows before them.
     rows.push(['CHARGES']);
-    // A line for each tech with hours (or miles) to charge for, as the PDF has: one with no rate yet is blank, and
-    // fills in when a rate is typed above, so the total never has a charge the lines don't show (Greptile on PR #41).
-    const techLine = (tech: string, what: string, qty: number, cell: string) => {
-      if (qty <= 0) return;
-      const v = valueOf(cell);
-      rows.push([`${tech} ${what}`, null, typeof v === 'number' ? num(v, USD, cell) : { t: 's', v: '', f: cell }]);
-    };
-    if (!allHours) for (const [tech, cell] of hours.amountByTech) techLine(tech, 'hours', hoursTotal(sheet.time.filter((r) => r.tech === tech)), cell);
-    const labor = dollars(hours.amount), mileage = dollars(miles.amount);
-    const hoursAt = next();
-    rows.push([allHours ? 'All techs’ hours' : 'Hours total', null, num(labor, USD, hours.amount)]);
-    for (const [tech, cell] of miles.amountByTech) techLine(tech, 'mileage', milesTotal(sheet.miles.filter((r) => r.tech === tech)), cell);
-    const milesAt = next();
-    rows.push(['Mileage total', null, num(mileage, USD, miles.amount)]);
-    const chargesAt = next();
-    rows.push(['TOTAL CHARGES', null, num(r2(labor + mileage), USD, `C${hoursAt}+C${milesAt}`)]);
-    // The receipts the job log shows, as its PDF charges them (CodeRabbit on PR #41): the hotels on their own line,
-    // the other receipts less them on the next (Fred: "see it hotels also").
-    const hotels = moneyTotal(sheet.other.filter(isHotel));
-    const receiptsAt = next();
-    const receipts: [string, number, string][] = [
-      ...(charged.meals ? [['Meals', moneyTotal(sheet.meals), meals] as [string, number, string]] : []),
-      ...(charged.materials ? [['Materials', moneyTotal(sheet.materials), materials] as [string, number, string]] : []),
-    ];
-    if (charged.other) {
-      const hotelsAt = receiptsAt + receipts.length;
-      receipts.push(['Hotels', hotels, hotelCells.length ? `SUM(${hotelCells.join(',')})` : '0'],
-        ['Other receipts', r2(moneyTotal(sheet.other) - hotels), `${other}-C${hotelsAt}`]);
+    const counted: string[] = [];
+    for (const l of charges.lines) {
+      if (l.counted) counted.push(`C${next()}`);
+      rows.push([l.what, null, num(l.amount, USD)]);
     }
-    for (const [what, v, cell] of receipts) rows.push([what, null, num(v, USD, cell)]);
-    rows.push(['OVERALL TOTAL', null, num(r2(labor + mileage + receipts.reduce((t, [, v]) => t + v, 0)), USD,
-      [`C${chargesAt}`, ...receipts.map((_, i) => `C${receiptsAt + i}`)].join('+'))]);
+    rows.push(['OVERALL TOTAL', null, num(charges.total, USD, counted.length ? counted.join('+') : '0')]);
   }
   return rows;
 }
 
 /** Saves the workbook ("<the job log's name>.xlsx"); with `rates`, the client's copy. */
-export async function downloadJobLogXlsx(filename: string, sheet: JobSheet, head: JobLogHead, rates?: JobRates, charged?: ChargedReceipts, allHours = false) {
+export async function downloadJobLogXlsx(filename: string, sheet: JobSheet, head: JobLogHead, rates?: JobRates, charges?: InvoiceCharges) {
   const XLSX = await import('xlsx');
-  const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head, rates, charged, allHours));
+  const ws = XLSX.utils.aoa_to_sheet(jobLogCells(sheet, head, rates, charges));
   ws['!cols'] = (rates ? JOB_LOG_CLIENT_WIDTHS : JOB_LOG_WIDTHS).map((wch) => ({ wch }));
   ws['!margins'] = JOB_LOG_MARGINS;
   const wb = XLSX.utils.book_new();

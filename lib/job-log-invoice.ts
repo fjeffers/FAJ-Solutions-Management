@@ -157,6 +157,41 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
   return { techs, totals };
 }
 
+export type ChargeLine = { what: string; amount: number; bold: boolean; counted: boolean };
+
+/**
+ * The job log's client copy's breakdown, read off the invoice so the two always have the same total (Fred,
+ * 2026-10-31: "the job log and invoice is not matching up"): a helper's ride with the lead and hotel, the meals up to
+ * the allowance, and no fuel or other receipts, as the invoice has them. `counted` lines add up to the total.
+ */
+export type InvoiceCharges = { lines: ChargeLine[]; total: number };
+export function invoiceCharges(inv: Invoice, allHoursRate: number | null): InvoiceCharges {
+  const num = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const rate = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  const lines: ChargeLine[] = [];
+  const line = (what: string, amount: number, counted = false, bold = counted) => lines.push({ what, amount, bold, counted });
+  const qtyOf = (s: InvoiceSection) => r2(s.lines.reduce((t, l) => t + (l.qty ?? 0), 0));
+  if (allHoursRate != null) line(`All techs’ hours · ${num(r2(inv.techs.reduce((t, x) => t + x.hours.qty, 0)))} × ${rate(allHoursRate)}/hr`, inv.totals.labor, true);
+  else {
+    for (const t of inv.techs) if (t.hours.rate != null && t.hours.qty > 0) line(`${t.tech} hours · ${num(t.hours.qty)} × ${rate(t.hours.rate)}/hr`, t.hours.amount);
+    line('Hours total', inv.totals.labor, true);
+  }
+  const mileRate = (t: InvoiceTech) => t.mileage.lines.find((l) => l.rate != null)?.rate ?? null;
+  for (const t of inv.techs) {
+    const miles = qtyOf(t.mileage), r = mileRate(t), driver = t.mileage.lines.find((l) => l.qty)?.tech;
+    if (r != null && miles > 0) line(`${t.tech} mileage · ${miles.toLocaleString('en-US')} mi${driver && driver !== t.tech ? ` (with ${driver})` : ''} × ${rate(r)}/mi`, t.mileage.amount);
+  }
+  if (inv.techs.some((t) => mileRate(t) != null)) line('Mileage total', inv.totals.mileage, true);
+  const spent = r2(inv.techs.reduce((t, x) => t + x.meals.lines.reduce((s, l) => s + (l.spent ?? 0), 0), 0));
+  if (spent > 0) {
+    const allowance = inv.techs[0]?.meals.lines[0]?.description.match(/up to (\S+)/)?.[1];
+    line(`Meals${allowance ? ` · up to ${allowance} a day` : ''}${spent !== inv.totals.meals ? ` (receipts ${money(spent)})` : ''}`, inv.totals.meals, true, false);
+  }
+  if (inv.totals.materials > 0) line('Materials', inv.totals.materials, true, false);
+  for (const t of inv.techs) if (t.travel.amount > 0) line(`${t.tech} hotel${t.travel.lines.some((l) => l.tech && l.tech !== t.tech) ? ` (same as ${t.travel.lines[0].tech})` : ''}`, t.travel.amount, true, false);
+  return { lines, total: inv.totals.total };
+}
+
 // Editing on the invoice (Fred, 2026-10-30: "the invoice need to be one ... so we edit job log it shows as an
 // invoice"): each change is to the job log's time sheet under it, so the time sheet, the job log and the invoice
 // stay one. A day's hours and a hotel are their own rows; a day's meals and miles are the tech's rows that day.

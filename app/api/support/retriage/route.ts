@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sortSafely, triageColumns } from '@/lib/support-intake';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/support/retriage { id } — "Sort again" on a ticket the bot
 // couldn't sort (or sorted badly). Only a ticket still waiting for approval:
@@ -11,6 +12,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const id = String((await req.json().catch(() => ({})))?.id ?? '');
   const { data: t } = await supabase.from('support_tickets')

@@ -2,11 +2,14 @@ import { createClient } from '@/lib/supabase/server';
 import { getValidQboSession } from '@/lib/quickbooks-session';
 import { listAccounts } from '@/lib/quickbooks';
 import { NextResponse } from 'next/server';
+import { ownerOnly } from '@/lib/security';
 
 export async function GET() {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const session = await getValidQboSession(user.id);
   if (!session) return NextResponse.json({ error: 'Not connected' }, { status: 404 });

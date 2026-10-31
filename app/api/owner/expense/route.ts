@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { expenseReasonText, parseExpenseAmount } from '@/lib/expenses';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/owner/expense — Fred adds a receipt to a job himself (Fred,
 // 2026-10-13: "me being as an admin, I could basically add the hotels ... at a
@@ -38,6 +39,8 @@ export async function POST(req: Request) {
 
   const { supabase, user } = await owner();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
   const { data: wo } = await supabase.from('work_orders').select('id').eq('id', woId).eq('user_id', user.id).maybeSingle();
   if (!wo) return NextResponse.json({ ok: false, error: 'That job was not found.' }, { status: 404 });
 
@@ -70,6 +73,8 @@ export async function DELETE(req: Request) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ ok: false, error: 'Bad request' }, { status: 400 });
   const { supabase, user } = await owner();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
   const { data, error } = await supabase.rpc('wf_owner_remove_expense', { p_id: id });
   const r = (data ?? {}) as { ok?: boolean; reason?: string; receipt_path?: string | null };
   if (error || !r.ok) return NextResponse.json({ ok: false, error: expenseReasonText(r.reason ?? '') }, { status: 400 });

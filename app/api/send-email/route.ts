@@ -10,6 +10,7 @@ import {
 import { techPayToShow } from '@/lib/utils';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import type { WorkOrder, Payment, Contractor, Invoice } from '@/lib/types';
+import { ownerOnly } from '@/lib/security';
 
 // Techs assigned to the WO, so each address gets ITS OWN email with that
 // tech's pay and personal accept/decline links (never another tech's).
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
   const authClient = await createServerClient('admin');
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(authClient);
+  if (denied) return denied;
 
   const resend = emailClient();
   if (!resend) return NextResponse.json({ error: emailNotSetUp() }, { status: 503 });

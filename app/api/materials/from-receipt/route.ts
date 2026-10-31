@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { parseReceiptText, type ReceiptItem } from '@/lib/receipt';
 import { anthropicHeaders } from '@/lib/anthropic-headers';
+import { ownerOnly } from '@/lib/security';
 
 // Receipt → line items. Two doors:
 //   JSON  { text }  — regex parser, works with no AI key (emailed receipts)
@@ -33,6 +34,8 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const contentType = req.headers.get('content-type') ?? '';
 

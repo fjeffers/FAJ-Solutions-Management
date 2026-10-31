@@ -6,7 +6,6 @@
   "start_url": "/admin",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
   "theme_color": "#0E1B2E",
   "background_color": "#F6F4EF",
   "categories": ["business", "finance"],

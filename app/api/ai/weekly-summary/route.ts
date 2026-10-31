@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { workspaceHeader } from '@/lib/anthropic-headers';
 import { aiFailureReason } from '@/lib/wo-ai';
 import { SUMMARY_MODEL, summaryPrompt, type summaryFacts } from '@/lib/weekly-bill';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/ai/weekly-summary — the AI writes the short summary at the top of
 // the weekly bill (Fred, 2026-10-18: "Write the weekly summary"), from the
@@ -14,6 +15,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   let facts: ReturnType<typeof summaryFacts>;
   try { facts = (await req.json())?.facts; } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }); }

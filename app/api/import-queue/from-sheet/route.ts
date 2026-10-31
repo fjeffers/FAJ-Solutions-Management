@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createHash } from 'crypto';
 import { createClient } from '@/lib/supabase/server';
+import { ownerOnly } from '@/lib/security';
 
 // Imports rows from a shared Google Sheet (or text from a Google Doc) into the
 // import_queue for review — same approve/reject flow as email imports. Nothing
@@ -122,6 +123,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const body = await req.json().catch(() => ({}));
   const raw: string = body?.url ?? '';

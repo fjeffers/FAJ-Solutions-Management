@@ -2,12 +2,15 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { deriveSiteName } from '@/lib/visits';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
+import { ownerOnly } from '@/lib/security';
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const { data: item } = await supabase
     .from('import_queue')

@@ -788,6 +788,10 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   return (
     <>
       <FsPageHeader title="Work orders" subtitle="Your assigned work, one tap away." />
+      {/* Up front until it's on, so a new job reaches the phone (Fred, 2026-10-31: "when a tech is assign if the app is on the phobe he gets an alert"). */}
+      <div style={{ marginBottom: 14 }}>
+        <PushSwitch hideWhenOn offText="Turn on so you get an alert the moment you're put on a job, even with the app closed." />
+      </div>
       <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">

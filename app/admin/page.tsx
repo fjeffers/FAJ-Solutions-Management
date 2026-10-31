@@ -54,7 +54,7 @@ import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
 import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export1099CSV } from '@/lib/export';
 import { logAudit } from '@/lib/audit';
-import { notifyContractor, sendPortalLink, sendOnboarding, sendTechApp } from '@/lib/notify';
+import { notifyContractor, sendNewJobNotice, sendPortalLink, sendOnboarding, sendTechApp } from '@/lib/notify';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { stockAdjustments } from '@/lib/materials-used';
 import type { StockInPlan } from '@/lib/stock-in';
@@ -572,6 +572,19 @@ export default function HomePage() {
       // from before it, or a job saved with Pay removed opens with its mileage worked out again
       // and Pay back (Fred, 2026-10-25: "but the pay still is popping up"). loadAll refreshes the rest.
       setWorkOrders((list) => list.map((x) => (x.id === w.id ? ({ ...x, ...payload } as WorkOrder) : x)));
+      // A tech added to a job that already exists hears about it too, on his phone if the app is on it
+      // (Fred, 2026-10-31: "when a tech is assign if the app is on the phobe he gets an alert").
+      if (prev) {
+        const was = new Set([...(prev.contractor_names ?? []), ...(prev.contractor_name ? [prev.contractor_name] : [])]);
+        const now = (w.contractor_names?.length ? w.contractor_names : w.contractor_name ? [w.contractor_name] : []);
+        for (const name of now.filter((n) => !was.has(n))) {
+          const c = contractors.find((x) => x.name === name);
+          if (!c) continue;
+          if (c.on_hold) { toastInfo(`${c.name} is on hold, so he wasn't told about the job.`); continue; }
+          void sendNewJobNotice({ ...prev, ...(payload as unknown as WorkOrder), id: w.id }, c,
+            techPayToShow({ ...prev, ...(payload as unknown as WorkOrder) }, name));
+        }
+      }
       if (prev && prev.wo_status !== w.wo_status) {
         const c = contractors.find((x) => x.name === w.contractor_name);
         if (c?.email) notifyContractor({ type: 'status_change', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined, status: w.wo_status ?? '' });
@@ -601,12 +614,13 @@ export default function HomePage() {
       const refId = w.external_wo_id || w.client_reference || null;
       for (const name of assignedNames) {
         const c = contractors.find((x) => x.name === name);
-        if (!c?.email) continue;
+        // No email is fine: a tech with the app still gets the phone alert.
+        if (!c) continue;
         // On hold (migration-104): saved on the job, but no email until released.
         if (c.on_hold) { toastInfo(`${c.name} is on hold, so no job email was sent.`); continue; }
         notifyContractor({
           type: 'wo_assigned',
-          contractor_email: c.email,
+          contractor_email: c.email ?? '',
           contractor_name: c.name,
           wo_number: w.wo_number!,
           title: w.title ?? undefined,
@@ -827,10 +841,10 @@ Go ahead?`)) return;
 
     // Tell the incoming tech, the same way a new assignment is announced.
     const c = contractors.find((x) => x.name === to);
-    if (c?.email) {
+    if (c) {
       notifyContractor({
         type: 'wo_assigned',
-        contractor_email: c.email,
+        contractor_email: c.email ?? '',
         contractor_name: c.name,
         wo_number: w.wo_number,
         title: w.title ?? undefined,

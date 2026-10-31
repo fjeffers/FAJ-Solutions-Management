@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
     wo_id, portal_token, pay, reference, site, schedule } = body;
 
   // Contractor email only required for contractor-facing notification types
-  if (!OWNER_TYPES.has(type) && !contractor_email) {
+  // A new job can still reach a tech with no email: the phone alert and the text.
+  if (!OWNER_TYPES.has(type) && type !== 'wo_assigned' && !contractor_email) {
     return NextResponse.json({ error: 'No contractor email' }, { status: 400 });
   }
 
@@ -197,6 +198,7 @@ export async function POST(req: NextRequest) {
     if (!newJobNeedsEmail({ inApp, pushed, texted })) {
       return NextResponse.json({ ok: true, pushed, texted, emailed: false });
     }
+    if (!contractor_email) return NextResponse.json({ error: 'No contractor email', pushed, texted, emailed: false }, { status: 400 });
     // First time (not in the app yet): the email also shows how to get the app.
     html = html.replace('__APP_INVITE__', inApp ? '' : techAppInviteBlock(`${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.fajsolutions.com'}/tech`));
   }

@@ -94,3 +94,15 @@
   .woe-grid, .woe-grid-job { grid-template-columns: 1fr; }
   .woe-title { font-size: 21px; }
 }
+
+.woe-sec-title {
+  margin: 22px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid #e8e3d6;
+  font: 800 12px Inter, system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b8944a;
+  scroll-margin-top: 12px;
+}
+.woe-sec-anchor { scroll-margin-top: 12px; }

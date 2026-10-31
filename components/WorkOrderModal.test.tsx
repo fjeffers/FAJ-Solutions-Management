@@ -82,7 +82,7 @@ describe('Edit job', () => {
     expect((screen.getByLabelText('Marketplace street address') as HTMLInputElement).value).toBe('6420 Morganton Road');
     expect((screen.getByLabelText('Marketplace start date') as HTMLInputElement).value).toBe('2026-10-26');
     expect(screen.getByText('6420 Morganton Road, Fayetteville, NC 28314 · open in Maps')).toBeTruthy();
-    expect(screen.getByText('Dwayne Cudjoe')).toBeTruthy();
+    expect(screen.getAllByText('Dwayne Cudjoe').length).toBeGreaterThan(0);
   });
 
   it('removes a section: Marketplace and Pay come off, and what was in them is cleared on Save', async () => {

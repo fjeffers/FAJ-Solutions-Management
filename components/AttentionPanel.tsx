@@ -39,7 +39,7 @@ export default function AttentionPanel({
   return (
     <div style={{ marginBottom: flush ? 0 : 22 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-        <h2 className="serif" style={{ fontSize: 21, fontWeight: 600, margin: 0 }}>Needs you</h2>
+        <h2 className="serif" style={{ fontSize: 21, fontWeight: 600, margin: 0 }}>Waiting on you</h2>
         {summary && <div style={{ fontSize: 12.5, color: '#8a8578' }}>{summary}</div>}
       </div>
 

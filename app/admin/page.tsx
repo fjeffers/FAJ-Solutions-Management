@@ -1746,6 +1746,7 @@ Go ahead?`)) return;
                 data={{
                   surveys, quotes, contracts, workOrders: enrichedWOs,
                   invoices, invoicePayments, siteVisits: dashboardVisits,
+                  waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount },
                 }}
                 onGo={(v) => setView(v as typeof view)}
               />

@@ -133,9 +133,9 @@ describe('the invoice', () => {
   });
 
   it('keeps what the office typed, with the client\'s defaults', () => {
-    expect(parseInvoiceMeta(null, '2026-10-25')).toEqual({ number: '', date: '2026-10-25', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50 });
-    expect(parseInvoiceMeta({ number: ' 1240 ', date: '2026-10-24', terms: 15, labor: 'Cabling', meal: null }, '2026-10-25'))
-      .toEqual({ number: '1240', date: '2026-10-24', terms: 15, labor: 'Cabling', meal: null });
+    expect(parseInvoiceMeta(null, '2026-10-25')).toEqual({ number: '', date: '2026-10-25', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50, billTo: '' });
+    expect(parseInvoiceMeta({ number: ' 1240 ', date: '2026-10-24', terms: 15, labor: 'Cabling', meal: null, billTo: ' TeamNetView ' }, '2026-10-25'))
+      .toEqual({ number: '1240', date: '2026-10-24', terms: 15, labor: 'Cabling', meal: null, billTo: 'TeamNetView' });
     expect(parseInvoiceMeta({ date: 'soon', terms: -2 }, '2026-10-25')).toMatchObject({ date: '2026-10-25', terms: 30 });
     expect(dueDate('2026-10-25', 30)).toBe('2026-11-24');
   });
@@ -144,7 +144,7 @@ describe('the invoice', () => {
 describe('the invoice in Excel', () => {
   const head: InvoiceHead = {
     billTo: 'TeamNetView', shipTo: ['LDS1106 Site 5006643 — Goldsboro, NC', '1000 Eleventh Street, Goldsboro, NC 27530'],
-    meta: { number: '1240', date: '2026-10-25', terms: 30, ...meta },
+    meta: { number: '1240', date: '2026-10-25', terms: 30, billTo: 'TeamNetView', ...meta },
   };
   const rows = invoiceCells(inv, head);
   const at = (label: string, col = 3) => rows.findIndex((r) => r[col] === label) + 1;

@@ -21,6 +21,8 @@ const input: CSSProperties = { boxSizing: 'border-box', width: '100%', minHeight
 /** What editing on the invoice can change, and how; lib/job-log-invoice.ts editLine and the rest change the time sheet. */
 export type InvoiceEditor = {
   meta: InvoiceMeta;
+  /** Who it's billed to when none is typed: the work order's customer. */
+  billToDefault?: string;
   setMeta: (p: Partial<InvoiceMeta>) => void;
   /** All the hours at one rate (on), or each tech's. */
   together: { on: boolean; hour: number | null };
@@ -165,6 +167,9 @@ function EditTop({ edit }: { edit: InvoiceEditor }) {
   const field: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 };
   return (
     <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', marginTop: 12, padding: '10px 12px', background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10 }}>
+      <label style={{ ...field, width: 180 }}>Bill to
+        <input style={input} value={meta.billTo} placeholder={edit.billToDefault} onChange={(e) => setMeta({ billTo: e.target.value })} />
+      </label>
       <label style={{ ...field, width: 110 }}>Invoice #
         <input style={input} value={meta.number} onChange={(e) => setMeta({ number: e.target.value })} />
       </label>

@@ -396,7 +396,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const invSheet = invDraft ? sheetSorted(sheetInDates(invDraft.sheet, from, to)) : shown;
   const invRates = invDraft ? withAllHoursRate(invSheet, invDraft.rates, invDraft.together.on ? invDraft.together.hour : null) : billRates;
   const invMeta = invDraft ? parseInvoiceMeta(invDraft.meta, todayDay) : savedMeta;
-  const invoiceHead: InvoiceHead = { billTo: w.customer_name ?? '', shipTo: [w.title ?? '', where].filter(Boolean), meta: invMeta };
+  // Billed to as typed on the invoice (Fred's sample: TeamNetView), else the work order's customer.
+  const invoiceHead: InvoiceHead = { billTo: invMeta.billTo || (w.customer_name ?? ''), shipTo: [w.title ?? '', where].filter(Boolean), meta: invMeta };
   const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, invMeta, [w.site_city, w.site_state].filter(Boolean).join(' ')) : null;
   // The total under the table as the rates are typed; the page, the print and Excel with the rates saved, so a
   // print (the button, or the browser's own) is never of rates that aren't kept (CodeRabbit on PR #40).
@@ -451,6 +452,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const editInv = (f: (d: InvDraft) => InvDraft) => setInvDraft((d) => (d ? f(d) : d));
   const invoiceEditor: InvoiceEditor | undefined = invDraft ? {
     meta: invDraft.meta,
+    billToDefault: w.customer_name ?? '',
     setMeta: (p) => editInv((d) => ({ ...d, meta: { ...d.meta, ...p } })),
     together: invDraft.together,
     setTogether: (t) => editInv((d) => ({ ...d, together: t })),
@@ -842,7 +844,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       {invoice ? (
         <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#000', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
           {/* While it's edited, the browser's own print has none of it: only what's saved is ever printed (Greptile on PR #44). */}
-          <div className={invDraft ? 'no-print' : undefined}><JobLogInvoice invoice={invoice} head={invoiceHead} edit={invoiceEditor} /></div>
+          <div className={`jl-invoice-scroll${invDraft ? ' no-print' : ''}`}><JobLogInvoice invoice={invoice} head={invoiceHead} edit={invoiceEditor} /></div>
           {invDraft && <div className="jl-print-only" style={{ padding: 24 }}>The invoice is being changed. Save it, then print it.</div>}
         </div>
       ) : (

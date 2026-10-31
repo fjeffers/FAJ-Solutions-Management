@@ -21,6 +21,8 @@ export type InvoiceMeta = {
   labor: string;
   /** The meal allowance a day, up to which the receipts are charged; none: the receipts as they are. */
   meal: number | null;
+  /** Who it's billed to (the client's sample: TeamNetView); empty: the work order's customer. */
+  billTo: string;
 };
 
 export const DEFAULT_LABOR = 'Installation of Cabling for refresh project';
@@ -38,6 +40,7 @@ export function parseInvoiceMeta(raw: unknown, today: string): InvoiceMeta {
     labor: (text(o.labor) || DEFAULT_LABOR).slice(0, 200),
     // An allowance of null, typed as empty, is kept as no cap; one never set is the client's $50.
     meal: 'meal' in o ? n(o.meal) : 50,
+    billTo: text(o.billTo).slice(0, 120),
   };
 }
 

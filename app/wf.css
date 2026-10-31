@@ -244,6 +244,13 @@ textarea.wf-input { resize: vertical; }
   .jse-row.jse-other { grid-template-columns: 1.3fr 1.2fr 1.4fr 1.3fr 0.9fr; }
 }
 
+/* The job log's invoice (components/JobLogInvoice.tsx) on a phone: the whole invoice, its columns side by side as
+   it prints, scrolls sideways instead of being cut off (Fred, 2026-10-31, a phone screenshot). */
+@media screen {
+  .jl-invoice-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .jl-invoice-scroll .jl-invoice { min-width: 800px; }
+}
+
 /* The job log (components/JobLogReport.tsx): printing shows only the report —
    the app behind it, the controls and the dim backdrop all drop away, and the
    navy header keeps its colour. */

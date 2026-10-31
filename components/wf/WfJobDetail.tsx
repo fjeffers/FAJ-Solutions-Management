@@ -71,7 +71,7 @@ export function DetailHeader({ job, ownerView, loggedMs, billedHours }: {
             ? [`Hours on site: ${billedHours.toFixed(2)} h (as billed)`, `Techs' clock: ${logged ? formatDuration(logged) : '0m'}`]
             : [`Time logged: ${logged ? formatDuration(logged) : '0m'}`]} />
         <InfoItem icon={<MapPin size={16} />} title={`Location: ${(ownerView ? city || job.siteName : job.siteName || city) || 'not set'}`} lines={[fullAddress(job)]} />
-        <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], `${job.priorityLabel} priority`]} />
+        <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], ...(job.priorityLabel ? [`${job.priorityLabel} priority`] : [])]} />
         <InfoItem icon={<CalendarDays size={16} />} title="Schedule" lines={[whenDay(job), times || 'No set time']} />
       </div>
     </div>

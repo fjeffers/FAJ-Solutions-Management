@@ -930,9 +930,13 @@ describe('Job log edited by the office', () => {
       expect(print.disabled).toBe(true);
       expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('50');
       fireEvent.change(screen.getByLabelText('Invoice #'), { target: { value: '1240' } });
+      // Billed to the job's customer until another is typed (Fred's sample: TeamNetView).
+      expect((screen.getByLabelText('Bill to') as HTMLInputElement).placeholder).toBe('TeamNetView');
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
       await waitFor(() => expect(print.disabled).toBe(false));
-      expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50 } });
+      expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50, billTo: '' } });
+      // On a phone it scrolls sideways rather than being cut off.
+      expect(screen.getByRole('table').closest('.jl-invoice-scroll')).toBeTruthy();
       // The time sheet wasn't changed, so it isn't saved: the log still follows the app.
       expect(updates.some((u) => 'job_log_sheet' in u)).toBe(false);
       expect(document.title).toMatch(/ · Invoice 1240$/);
@@ -987,6 +991,8 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
       fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
       fireEvent.change(screen.getByLabelText('Invoice #'), { target: { value: '1241' } });
+      // Billed to as typed.
+      fireEvent.change(screen.getByLabelText('Bill to'), { target: { value: 'TeamNetView' } });
       // The browser's own print, while it's edited, has a note and not the unsaved invoice (Greptile on PR #44).
       expect(document.querySelector('.jl-print-only')!.textContent).toBe('The invoice is being changed. Save it, then print it.');
       // A change while it saves stays, still to save (Greptile on PR #44).
@@ -994,7 +1000,7 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
       fireEvent.change(screen.getByLabelText('Invoice #'), { target: { value: '1242' } });
       await waitFor(() => expect(upserts).toHaveLength(1));
-      expect(upserts[0].row).toMatchObject({ invoice: { number: '1241' } });
+      expect(upserts[0].row).toMatchObject({ invoice: { number: '1241', billTo: 'TeamNetView' } });
       await waitFor(() => expect((screen.getByLabelText('Invoice #') as HTMLInputElement).value).toBe('1242'));
       expect(print.disabled).toBe(true);
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
@@ -1049,6 +1055,33 @@ describe('Job log edited by the office', () => {
       await waitFor(() => expect(print.disabled).toBe(false));
       expect(upserts.at(-1)!.row).toMatchObject({ rates: { 'Paul Gibbs': { hour: 70, mile: 0.6 } } });
     } finally {
+      delete tables.job_log_rates;
+    }
+  }));
+
+  it('shrinks the invoice to a phone\'s screen, or shows it full size to swipe (Fred: "This my phone view", "Both")', () => withPunches(async () => {
+    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
+    // A phone: 428px for the invoice's 856.
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 428 });
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    try {
+      render(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
+      const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
+      await waitFor(() => expect(print.disabled).toBe(false));
+      fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      const zoom = () => (document.querySelector('.jl-invoice-zoom') as HTMLElement).getAttribute('style') ?? '';
+      await waitFor(() => expect(zoom()).toContain('zoom: 0.5'));
+      fireEvent.click(screen.getByRole('button', { name: 'Full size (swipe sideways)' }));
+      expect(zoom()).not.toContain('zoom');
+      fireEvent.click(screen.getByRole('button', { name: 'Fit to screen' }));
+      expect(zoom()).toContain('zoom: 0.5');
+      // Full size while it's edited, so its boxes are big enough to type in.
+      fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
+      expect(zoom()).not.toContain('zoom');
+      expect(screen.queryByRole('button', { name: /fit to screen|full size/i })).toBeNull();
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+      vi.unstubAllGlobals();
       delete tables.job_log_rates;
     }
   }));

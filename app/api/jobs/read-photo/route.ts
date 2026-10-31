@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { aiReadPhoto } from '@/lib/photo-read-ai';
 import { todayISO } from '@/lib/utils';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/jobs/read-photo — AI reads the odometer on a picture the office is
 // adding to a tech's day (components/DayPictures; Fred, 2026-10-26: the app was
@@ -23,6 +24,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
   const { data: wo } = await supabase.from('work_orders').select('id').eq('id', woId).eq('user_id', user.id).maybeSingle();
   if (!wo) return NextResponse.json({ ok: false, error: 'That work order was not found.' }, { status: 404 });
 

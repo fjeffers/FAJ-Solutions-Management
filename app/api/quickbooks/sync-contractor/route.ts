@@ -2,12 +2,15 @@ import { createClient } from '@/lib/supabase/server';
 import { getValidQboSession } from '@/lib/quickbooks-session';
 import { upsertVendorFromW9 } from '@/lib/quickbooks';
 import { NextResponse } from 'next/server';
+import { ownerOnly } from '@/lib/security';
 
 // Body: { contractorId } — pushes a filed W-9 into QuickBooks as a 1099 vendor.
 export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const { contractorId } = await req.json();
   if (!contractorId) return NextResponse.json({ error: 'Missing contractorId' }, { status: 400 });

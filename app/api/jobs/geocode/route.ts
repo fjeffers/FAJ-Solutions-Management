@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { geocodeSite, siteLine } from '@/lib/geocode-server';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/jobs/geocode — find the map position of live jobs that have a
 // street address but no position yet, so techs see how far away a job is
@@ -13,6 +14,8 @@ export async function POST() {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const { data: rows, error } = await supabase.from('work_orders')
     .select('id, site_address, site_city, site_state, site_zip, wo_status')

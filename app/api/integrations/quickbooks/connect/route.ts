@@ -1,11 +1,14 @@
 import { createClient } from '@/lib/supabase/server';
 import { getQuickBooksAuthUrl } from '@/lib/quickbooks';
 import { NextResponse } from 'next/server';
+import { ownerOnly } from '@/lib/security';
 
 export async function GET() {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   // Without these the redirect still happens, but with client_id=undefined —
   // Intuit answers with its own error page, which says nothing about the real

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { scanGmailConnection } from '@/lib/email-import-scan';
 import { NextResponse } from 'next/server';
+import { ownerOnly } from '@/lib/security';
 
 // User-triggered on-demand scan — the "Check Now" button. The scheduled cron only runs
 // once a day (Vercel Hobby plan limit), so this is how near-real-time checking actually
@@ -10,6 +11,8 @@ export async function POST() {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const admin = createAdminClient();
   const { data: conn } = await admin.from('gmail_connections').select('*').eq('user_id', user.id).single();

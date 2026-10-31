@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/alerts/test { project_name } — Fred sends himself (and everyone on
 // that project's list) a test alert, to check pop-ups and email work. Owner
@@ -9,6 +10,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Sign in first.' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
   const body = (await req.json().catch(() => ({}))) as { project_name?: string };
   const project = String(body.project_name ?? '').trim();
   if (!project) return NextResponse.json({ ok: false, error: 'Pick a project.' }, { status: 400 });

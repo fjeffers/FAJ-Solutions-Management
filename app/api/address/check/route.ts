@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { parseCensusMatch, parseNominatimMatch } from '@/lib/address-check';
+import { ownerOnly } from '@/lib/security';
 
 // GET /api/address/check?q=<address> — the address in its standard form and
 // its map position, for the job form's Check address (lib/address-check.ts).
@@ -9,6 +10,8 @@ export async function GET(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const q = (new URL(req.url).searchParams.get('q') ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
   if (q.length < 5) return NextResponse.json({ ok: false, error: 'Type the street, city and state first.' }, { status: 400 });

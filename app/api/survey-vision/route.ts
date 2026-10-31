@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { sanitizeVision } from '@/lib/survey-vision';
 import { CAMERA_TYPES, CAMERA_MOUNTS } from '@/lib/types';
 import { anthropicHeaders } from '@/lib/anthropic-headers';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/survey-vision — read a walk-through photo and SUGGEST the row.
 //
@@ -26,6 +27,8 @@ export async function POST(req: Request) {
     const supabase = await createClient('admin');
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const denied = await ownerOnly(supabase);
+    if (denied) return denied;
 
     const body = await req.json();
     const imageUrl: string = body?.image_url ?? '';

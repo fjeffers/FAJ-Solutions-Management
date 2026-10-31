@@ -63,7 +63,7 @@ function query(table: string) {
 // What another press of Imported does in the moment before this one saves.
 let beforeUpdate: (() => void) | null = null;
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'fred' } } }) }, from: query }),
+  createClient: async () => ({ rpc: async () => ({ data: { role: 'owner' }, error: null }), auth: { getUser: async () => ({ data: { user: { id: 'fred' } } }) }, from: query }),
 }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ from: query }) }));
 // A saved connection whose refresh fails.

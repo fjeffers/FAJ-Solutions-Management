@@ -2026,6 +2026,7 @@ Go ahead?`)) return;
           questionTemplates={questionTemplates}
           deliverableTemplates={deliverableTemplates}
           payments={payments}
+          invoiced={!!modal.item?.id && invoices.some((i) => i.status !== 'void' && i.work_order_ids.includes(modal.item!.id))}
           onSave={(w) => { saveWorkOrder(w); setModal(null); }}
           onClose={() => { ticketForNextJob.current = null; setModal(null); }}
           // Delete from the edit window too (Fred, 2026-10-18: "that's something I

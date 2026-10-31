@@ -13,8 +13,11 @@ import { linkLabel, parseClientLinks } from '@/lib/client-links';
 import { parseTrackerRow } from '@/lib/tracker-row';
 import { fullAddress } from '@/lib/site-info';
 import { tabsInUse, type WoTab } from '@/lib/wo-tabs';
+import { woNextStep, WO_STEPS, type WoNextAction } from '@/lib/wo-next-step';
+import { listFor } from '@/lib/closeout';
+import JobLogReport from '@/components/JobLogReport';
 import './work-order-editor.css';
-import type { WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
+import type { EnrichedWorkOrder, WorkOrder, Contractor, WorkOrderStatus, QuestionTemplate, CustomQAItem, QuestionFieldType, Payment, SiteContact, DeliverableTemplate, Material, MaterialUsed, MaterialKit, MileageLog, PayAddon, PayAddonKind, WoTask } from '@/lib/types';
 import { materialsUsedCost } from '@/lib/materials-used';
 import { kitToMaterialsUsed, materialsUsedToKitItems, kitCost } from '@/lib/material-kits';
 import { mileageReimbursement, totalMiles, DEFAULT_MILEAGE_RATE, mileageForTech } from '@/lib/mileage';
@@ -170,6 +173,8 @@ type Props = {
   contractors: Contractor[];
   questionTemplates: QuestionTemplate[];
   deliverableTemplates?: DeliverableTemplate[];
+  /** A live invoice already bills this job (the next-step strip's Invoiced step). */
+  invoiced?: boolean;
   payments?: Payment[];
   onSave: (w: Partial<WorkOrder>) => void;
   onClose: () => void;
@@ -185,9 +190,11 @@ type Props = {
   onSaveKit?: (k: Partial<MaterialKit>) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], payments = [], onSave, onClose, onDelete, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, materials = [], kits = [], onSaveKit }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], invoiced = false, payments = [], onSave, onClose, onDelete, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, materials = [], kits = [], onSaveKit }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [askDelete, setAskDelete] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const techCardRef = useRef<HTMLElement>(null);
   const [docUploading, setDocUploading] = useState(false);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
   const docFileRef = useRef<HTMLInputElement>(null);
@@ -843,9 +850,27 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   };
 
   const statusStyle = STATUS_COLORS[form.wo_status as WorkOrderStatus] ?? STATUS_COLORS['Open'];
+  const next = woNextStep({
+    saved: !!item?.id, status: form.wo_status, techs: contractorNames, responses: item?.assignment_responses,
+    checkedIn: !!item?.checked_in_at, invoiced,
+  });
+  const nextAt = WO_STEPS.findIndex((st) => st.key === next.step);
+  const unsavedStatus = !!item?.id && form.wo_status !== item.wo_status;
+  const runNext = (a: WoNextAction) => {
+    if (a === 'pick-tech') {
+      setTab('details');
+      setTimeout(() => techCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+    } else if (a === 'approve') set('wo_status', 'Approved');
+    else if (a === 'mark-paid') set('wo_status', 'Paid');
+    else if (a === 'invoice' || a === 'closeout') setLogOpen(true);
+  };
 
   return (
     <div className="modal-overlay">
+      {logOpen && item?.id && (
+        <JobLogReport w={{ ...item, ...form } as EnrichedWorkOrder}
+          deliverables={listFor([], form.title ?? '', form.description ?? '').items} onClose={() => setLogOpen(false)} />
+      )}
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
         {/* Header: what it is, its status, and when, once (Fred, 2026-10-18:
             "just need the date and time at the top once"). */}
@@ -866,6 +891,26 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             <label><span><Calendar size={13} /> Last day (if more than one)</span>
               <input className="input" type="date" value={form.end_date ?? ''} onChange={(e) => set('end_date', e.target.value)} />
             </label>
+          </div>
+        </div>
+
+        {/* Next step (lib/wo-next-step.ts): where the job is, and one button for what's next. */}
+        <div className="woe-next" aria-label="Next step">
+          <ol className="woe-steps">
+            {WO_STEPS.map((st, i) => (
+              <li key={st.key} data-state={i < nextAt ? 'done' : i === nextAt ? 'now' : 'later'}>{st.label}</li>
+            ))}
+          </ol>
+          <div className="woe-next-row">
+            <span className="woe-next-note">
+              {next.note}{unsavedStatus && <b> Press Save changes to keep it.</b>}
+            </span>
+            {item?.id && ['done', 'approved', 'invoiced', 'paid'].includes(next.step) && next.action?.do !== 'invoice' && (
+              <button type="button" className="btn btn-ghost" onClick={() => setLogOpen(true)}>Job log</button>
+            )}
+            {next.action && (next.action.do !== 'invoice' || item?.id) && (
+              <button type="button" className="btn btn-primary" onClick={() => runNext(next.action!.do)}>{next.action.label}</button>
+            )}
           </div>
         </div>
 
@@ -930,7 +975,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
             </section>
 
             {/* Who's on it. No money on this page (Fred: "remove money"); tech pay is under Pay. */}
-            <section className="woe-card">
+            <section className="woe-card" ref={techCardRef}>
               <h3><User size={15} /> Tech</h3>
               {contractorNames.map((name) => {
                 const isLead = name === resolvedLead;

@@ -117,3 +117,28 @@ describe('Edit job', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('Next step strip', () => {
+  it('a job with no tech says so and the button opens the Tech card', async () => {
+    render(<WorkOrderModal item={NO_TECH} contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
+    expect(screen.getByText('No tech on this job yet.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pick a tech' })).toBeTruthy();
+  });
+
+  it('work done: Review and approve moves the status, saved with Save', async () => {
+    const onSave = vi.fn();
+    const done = { ...NO_TECH, contractor_name: 'Paul Gibbs', contractor_names: ['Paul Gibbs'], wo_status: 'Work Done' } as unknown as WorkOrder;
+    render(<WorkOrderModal item={done} contractors={[]} questionTemplates={[]} onSave={onSave} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Review and approve' }));
+    expect(screen.getByText(/Press Save changes to keep it/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Make the invoice' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(onSave.mock.calls[0][0]).toMatchObject({ wo_status: 'Approved' });
+  });
+
+  it('an invoiced job asks to mark it paid', () => {
+    const appr = { ...NO_TECH, contractor_name: 'Paul Gibbs', contractor_names: ['Paul Gibbs'], wo_status: 'Approved' } as unknown as WorkOrder;
+    render(<WorkOrderModal item={appr} invoiced contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Mark paid' })).toBeTruthy();
+  });
+});

@@ -31,6 +31,7 @@ import {
   missingGoesTo, wfStatusLabel,
 } from '@/lib/wf';
 import HotelCard from '@/components/wf/HotelCard';
+import TechAlerts from '@/components/wf/TechAlerts';
 import UploadReminder from '@/components/wf/UploadReminder';
 import { closeoutArgs, closeoutMissing, listFor, parseCloseoutLists, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
@@ -600,7 +601,8 @@ export default function TechPortalPage() {
                 techName={profile?.name ?? ''} />
             </>
           ) : tab === 'project' ? (
-            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} act={act} />
+            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} act={act}
+              alerts={<TechAlerts jobs={jobs} unread={unread} onOpen={openFromList} onChat={() => go('chat')} />} />
           ) : underProfile ? (
             <>
               <button type="button" className="fs-back-link" onClick={() => go('profile')}><FsIcon name="back" size={16} />Profile</button>
@@ -744,7 +746,9 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
 // office to close it).
 type WoList = 'assigned' | 'available' | 'pending';
 
-function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy, act }: {
+function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy, act, alerts }: {
+  /** The Alerts bar (components/wf/TechAlerts.tsx), first on the screen. */
+  alerts?: React.ReactNode;
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
   act: (a: PendingAction, sent?: string) => Promise<void>;
 }) {
@@ -794,6 +798,7 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy, act }: {
   return (
     <>
       <FsPageHeader title="Work orders" subtitle="Your assigned work, one tap away." />
+      {alerts}
       {/* Up front until it's on, so a new job reaches the phone (Fred, 2026-10-31: "when a tech is assign if the app is on the phobe he gets an alert"). */}
       <div style={{ marginBottom: 14 }}>
         <PushSwitch hideWhenOn offText="Turn on so you get an alert the moment you're put on a job, even with the app closed." />

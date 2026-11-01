@@ -42,6 +42,7 @@ import CustomFieldInputs from '@/components/CustomFieldInputs';
 import { StartAsksEditor } from '@/components/CaptureEditor';
 import { parseStartAsks, type StartAsk } from '@/lib/checkin';
 import { useJobTemplates } from '@/components/useJobTemplates';
+import { EMPTY_HOTEL, hasHotel, hotelToDb, parseHotel, type Hotel } from '@/lib/hotel';
 import { CAPTURE_ITEMS, parseCapture, setTemplateFill, templateOf, toggleItem, type CaptureItem } from '@/lib/capture';
 import { FILL_TEXT_FIELDS, fillFromJob, planFill, planSize, type FillTextField } from '@/lib/template-fill';
 import { createClient } from '@/lib/supabase/client';
@@ -207,6 +208,9 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
   // the same way blank"). null (a job made before) still asks for everything.
   const [capture, setCapture] = useState<CaptureItem[] | null>(() =>
     item?.id ? parseCapture(item?.capture) : (parseCapture(item?.capture ?? prefill?.capture) ?? []));
+  // The hotel the tech sees on his home screen (lib/hotel.ts, migration 152).
+  const [hotel, setHotel] = useState<Hotel>(() => parseHotel(item?.hotel ?? (!item ? prefill?.hotel : undefined)) ?? EMPTY_HOTEL);
+  const setH = (k: keyof Hotel, v: string) => setHotel((h) => ({ ...h, [k]: v }));
   // What else to ask at check-in (lib/checkin.ts).
   const [startAsks, setStartAsks] = useState<StartAsk[]>(() => parseStartAsks(item?.start_asks ?? (!item ? prefill?.start_asks : undefined)));
   // The client's links, one per line (lib/client-links.ts, migration 130).
@@ -887,6 +891,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
       // Sent only once a job has a list, so saving works before migration 128.
       ...(capture || item?.capture ? { capture } : {}),
       ...(startAsks.length || item?.start_asks ? { start_asks: startAsks } : {}),
+      // Sent only once a job has a hotel, so saving works before migration 152.
+      ...(hasHotel(hotel) || item?.hotel ? { hotel: hotelToDb(hotel) } : {}),
       ...(linksText.trim() || item?.client_links ? { client_links: parseClientLinks(linksText) } : {}),
       // Only a link that is still on the list; sent once either has been used, so saving works before migration 133.
       ...(checkinLink || checkoutLink || item?.checkin_link || item?.checkout_link ? {
@@ -1382,6 +1388,22 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
               <PF label="Parking / Site Notes">
                 <textarea className="input" rows={3} value={form.parking_instructions ?? ''} onChange={(e) => set('parking_instructions', e.target.value)} placeholder="Loading dock, paid parking, rear entrance..." />
               </PF>
+            </div>
+
+            {/* Hotel: the tech sees it on his home screen with Navigate and Call (Fred, 2026-11-01). */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 13.5 }}>Hotel <span style={{ fontWeight: 400, color: '#888' }}>· the tech sees this on his home screen</span></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <PF label="Hotel name"><input className="input" value={hotel.name} onChange={(e) => setH('name', e.target.value)} placeholder="e.g. Hampton Inn Fayetteville" /></PF>
+                <PF label="Hotel phone"><input className="input" value={hotel.phone} onChange={(e) => setH('phone', e.target.value)} placeholder="(910) 555-0100" /></PF>
+              </div>
+              <PF label="Hotel address"><input className="input" value={hotel.address} onChange={(e) => setH('address', e.target.value)} placeholder="Street, city, state" /></PF>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                <PF label="Confirmation #"><input className="input" value={hotel.confirmation} onChange={(e) => setH('confirmation', e.target.value)} /></PF>
+                <PF label="Check in"><input className="input" type="date" value={hotel.checkIn} onChange={(e) => setH('checkIn', e.target.value)} /></PF>
+                <PF label="Check out"><input className="input" type="date" value={hotel.checkOut} onChange={(e) => setH('checkOut', e.target.value)} /></PF>
+              </div>
+              <PF label="Hotel notes"><textarea className="input" rows={2} value={hotel.notes} onChange={(e) => setH('notes', e.target.value)} placeholder="Room under FAJ Solutions, parking, breakfast..." /></PF>
             </div>
 
             {/* Required skills (the type of work is set once, under Job) */}

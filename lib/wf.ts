@@ -12,6 +12,7 @@
 import { isUrgent, labelOf, stageName } from './app-lists';
 import type { EnrichedWorkOrder } from './types';
 import { asks, parseCapture, type CaptureItem } from './capture';
+import { parseHotel, type Hotel } from './hotel';
 import { parseStartAsks, type StartAsk } from './checkin';
 import { todayISO } from './utils';
 import { parseDayEvents, sortEvents, type DayEvent } from './project-day';
@@ -163,6 +164,8 @@ export type WfJob = {
   /** Office only: the links opened on site and at check-out (migration 133). The tech app reads them with wf_tech_site_links. */
   checkinLink?: string | null;
   checkoutLink?: string | null;
+  /** Where the tech stays for this job (lib/hotel.ts, migration 152). */
+  hotel?: Hotel | null;
 };
 
 type Row = Record<string, unknown>;
@@ -318,6 +321,7 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     clientLinks: owner && Array.isArray(r.client_links) ? (r.client_links as unknown[]).filter((l): l is string => typeof l === 'string' && /^https?:\/\//i.test(l)) : [],
     checkinLink: owner ? s(r, 'checkin_link') || null : null,
     checkoutLink: owner ? s(r, 'checkout_link') || null : null,
+    hotel: parseHotel(r.hotel),
   };
 }
 

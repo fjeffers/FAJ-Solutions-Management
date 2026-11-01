@@ -30,6 +30,7 @@ import {
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
   missingGoesTo, wfStatusLabel,
 } from '@/lib/wf';
+import HotelCard from '@/components/wf/HotelCard';
 import { closeoutArgs, closeoutMissing, listFor, parseCloseoutLists, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
@@ -824,6 +825,7 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy, act }: {
         </section>
       )}
       <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
+      <HotelCard jobs={live} today={today} onOpen={onOpen} />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">
           <div>Open work orders<FsIcon name="sheet" size={18} /></div>

@@ -443,7 +443,9 @@ export default function HomePage() {
 
   // Before migrations 128/130 the database has no capture / start_asks / client_links columns.
   const notYet128 = (e: { code?: string; message: string }) =>
-    e.code === 'PGRST204' && /capture|start_asks|client_links|checkin_link|checkout_link|survey_link|deliverable_link/.test(e.message)
+    e.code === 'PGRST204' && /hotel/.test(e.message)
+      ? 'the hotel needs the database update supabase-migration-152-hotel.sql first (Supabase → SQL Editor → paste → Run).'
+      : e.code === 'PGRST204' && /capture|start_asks|client_links|checkin_link|checkout_link|survey_link|deliverable_link/.test(e.message)
       ? "what the tech records, the check-in items and the client links aren't switched on yet. Ask to switch them on."
       : e.message;
 
@@ -565,6 +567,8 @@ export default function HomePage() {
       ...(w.billable_miles !== undefined ? { billable_miles: w.billable_miles ?? null } : {}),
       // Fred's own fields (Settings -> Custom fields, migration 110).
       ...(w.custom !== undefined ? { custom: w.custom ?? {} } : {}),
+      // The tech's hotel (migration 152); sent only when the job has one.
+      ...(w.hotel !== undefined ? { hotel: w.hotel ?? null } : {}),
       // What the tech records and what check-in asks for (migration 128). The
       // form sends them only when set, so a job saved before 128 still saves.
       ...(w.capture !== undefined ? { capture: w.capture ?? null } : {}),

@@ -7,14 +7,18 @@ import { fullAddress, type WfJob } from '@/lib/wf';
 import { NAV_APPS, navLink } from '@/lib/navigation';
 import { Dialog } from './WfUi';
 
-export default function DirectionsButton({ job, className, style, icon, label = 'Directions' }: {
-  job: WfJob; className?: string; style?: CSSProperties;
+export default function DirectionsButton({ job, to, className, style, icon, label = 'Directions' }: {
+  job?: WfJob;
+  /** Somewhere other than the job's site (the hotel). */
+  to?: { address: string; lat?: number | null; lng?: number | null };
+  className?: string; style?: CSSProperties;
   /** The icon as the button shows it; a plain navigation arrow otherwise. */
   icon?: ReactNode;
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const target = { address: fullAddress(job), lat: job.siteLat, lng: job.siteLng };
+  const target = to ? { address: to.address, lat: to.lat ?? null, lng: to.lng ?? null }
+    : job ? { address: fullAddress(job), lat: job.siteLat, lng: job.siteLng } : { address: '', lat: null, lng: null };
   if (!navLink('google', target)) return null;
   return (
     <>

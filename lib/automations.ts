@@ -6,7 +6,7 @@ import type { WorkOrder } from './types';
 import { addDays } from './week-view';
 import { techsOf } from './job-sheet';
 
-export type AutoRuleId = 'checkout_done' | 'remind_tech' | 'no_tech' | 'done_invoice';
+export type AutoRuleId = 'checkout_done' | 'remind_tech' | 'no_tech' | 'done_invoice' | 'upload_photos';
 export type AutoRule = { id: AutoRuleId; on: boolean; days: number };
 
 export const AUTO_RULES: { id: AutoRuleId; when: string; then: string; days: number | null; on: boolean }[] = [
@@ -14,6 +14,7 @@ export const AUTO_RULES: { id: AutoRuleId; when: string; then: string; days: num
   { id: 'remind_tech', when: 'Days before the start date', then: 'send the tech a reminder (phone alert, or email)', days: 1, on: true },
   { id: 'no_tech', when: 'A job starts within these days with no tech', then: 'show it under Automations on Home', days: 3, on: true },
   { id: 'done_invoice', when: 'Work Done for this many days', then: 'remind me to invoice it on Home', days: 2, on: true },
+  { id: 'upload_photos', when: 'At 5 PM on a day a tech worked a job', then: 'send him a phone reminder to upload his pictures', days: null, on: true },
 ];
 
 export function parseRules(raw: unknown): AutoRule[] {
@@ -62,4 +63,23 @@ export function waitingInvoice<T extends Wo>(rows: readonly T[], rules: AutoRule
   const cutoff = addDays(today, -r.days);
   return rows.filter((w) => live(w) && w.wo_status === 'Work Done' && (w.checked_out_at || w.updated_at || '').slice(0, 10) <= cutoff
     && !!(w.checked_out_at || w.updated_at));
+}
+
+/** The day (YYYY-MM-DD) and hour of a moment in Eastern time, where the business runs. */
+export function easternNow(d: Date = new Date()): { day: string; hour: number } {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(d);
+  const v = (t: string) => p.find((x) => x.type === t)?.value ?? '';
+  return { day: `${v('year')}-${v('month')}-${v('day')}`, hour: Number(v('hour')) };
+}
+
+/**
+ * Jobs whose techs get the "upload your pictures" reminder now (Fred, 2026-11-01: "just reminders for
+ * them to upload the pictures"): from 5 PM Eastern, on a day the tech checked in or the job is in progress.
+ */
+export function dueUploadReminders<T extends Wo>(rows: readonly T[], rules: AutoRule[], now: Date = new Date()): T[] {
+  if (!rule(rules, 'upload_photos')) return [];
+  const { day, hour } = easternNow(now);
+  if (hour < 17) return [];
+  return rows.filter((w) => live(w) && techsOf(w).length > 0
+    && (w.wo_status === 'In Progress' || (!!w.checked_in_at && easternNow(new Date(w.checked_in_at)).day === day)));
 }

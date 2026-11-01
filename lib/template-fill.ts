@@ -5,7 +5,7 @@
 // nothing typed for this site is overwritten. General is no template: the blank work order.
 //
 // Pure; unit-tested in lib/template-fill.test.ts.
-import { DELIVERABLES_SITE, LDS_SCOPE_TEXT, LDS_TOOLS_TEXT, TOOLS_HUB } from './lds-sow';
+import { LDS_SCOPE_TEXT, LDS_TOOLS_TEXT, TOOLS_HUB } from './lds-sow';
 
 export type FillTaskCategory = 'Pre Visit' | 'On Site' | 'Post Site';
 export const FILL_TASK_CATEGORIES: FillTaskCategory[] = ['Pre Visit', 'On Site', 'Post Site'];
@@ -113,7 +113,7 @@ export const STARTER_CLIENTS: StarterClient[] = [
   {
     name: 'LDS', items: FIELD_ITEMS, fill: {
       customer_name: 'NetView', service_type: 'Network install', description: LDS_SCOPE_TEXT, tools_required: LDS_TOOLS_TEXT,
-      client_links: [TOOLS_HUB, DELIVERABLES_SITE],
+      client_links: [TOOLS_HUB],
     },
   },
   { name: "Wendy's", items: FIELD_ITEMS, fill: { customer_name: "Wendy's" } },

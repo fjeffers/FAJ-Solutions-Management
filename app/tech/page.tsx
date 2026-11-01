@@ -31,6 +31,7 @@ import {
   missingGoesTo, wfStatusLabel,
 } from '@/lib/wf';
 import HotelCard from '@/components/wf/HotelCard';
+import UploadReminder from '@/components/wf/UploadReminder';
 import { closeoutArgs, closeoutMissing, listFor, parseCloseoutLists, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
@@ -1254,6 +1255,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   // The client's links for the day (migration 133): the checkout form opens when they go off site.
   const siteLinks = useSiteLinks(job.number);
   const [checkoutAt, setCheckoutAt] = useState<string | null>(null);
+  // The pictures reminder when he leaves the site for the day (Fred, 2026-11-01).
+  const [uploadAsk, setUploadAsk] = useState(false);
   /** The client's checkout form, filled in with this job and today's times (lib/site-links.ts). */
   const checkoutHref = (off: string) => siteLinks.checkout ? checkoutFormUrl(siteLinks.checkout, {
     // The client's own numbers (migration 135): their Site ID, and their ticket, never FAJ's WO number.
@@ -1410,6 +1413,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     }
     // Then the client's own checkout form, when the job has one (migration 133).
     if (siteLinks.checkout) setCheckoutAt(at.toISOString());
+    setUploadAsk(true);
     if (finished) {
       if (why) await sendMissingWhy(offSiteMissing, why);
       await act(makeAction('report', { number: job.number, notes, answers }, `Job report for WO ${job.number}`));
@@ -1568,6 +1572,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           clientCheckout={!!siteLinks.checkout} onGo={goTo}
           onBack={(report) => void leaveSite(false, report)} onFinished={(why) => void leaveSite(true, undefined, why)} />
       )}
+      {uploadAsk && !checkoutAt && !offOpen && <UploadReminder href={siteLinks.deliverable} onClose={() => setUploadAsk(false)} />}
       {checkoutAt && !offOpen && (
         <CheckoutLinkDialog href={checkoutHref(checkoutAt)} on={onSiteSince(job.myDay ?? [], checkoutAt, 'America/New_York')} off={checkoutAt}
           onClose={() => setCheckoutAt(null)} />

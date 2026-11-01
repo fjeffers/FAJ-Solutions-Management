@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dueCheckoutDone, dueReminders, noTechSoon, parseRules, waitingInvoice } from './automations';
+import { dueCheckoutDone, dueReminders, dueUploadReminders, noTechSoon, parseRules, waitingInvoice } from './automations';
 import type { WorkOrder } from './types';
 
 const wo = (o: Partial<WorkOrder>) => ({
@@ -10,7 +10,7 @@ const rules = parseRules(null);
 
 describe('Automations', () => {
   it('starts with every rule on and its default days, and keeps saved choices', () => {
-    expect(rules.map((r) => [r.id, r.on, r.days])).toEqual([['checkout_done', true, 0], ['remind_tech', true, 1], ['no_tech', true, 3], ['done_invoice', true, 2]]);
+    expect(rules.map((r) => [r.id, r.on, r.days])).toEqual([['checkout_done', true, 0], ['remind_tech', true, 1], ['no_tech', true, 3], ['done_invoice', true, 2], ['upload_photos', true, 0]]);
     const saved = parseRules([{ id: 'remind_tech', on: false, days: 2 }, { id: 'no_tech', days: 999 }]);
     expect(saved[1]).toEqual({ id: 'remind_tech', on: false, days: 2 });
     expect(saved[2].days).toBe(3);
@@ -45,5 +45,16 @@ describe('Automations', () => {
     ];
     expect(noTechSoon(rows, rules, '2026-10-31').map((w) => w.wo_number)).toEqual(['1']);
     expect(waitingInvoice(rows, rules, '2026-10-31').map((w) => w.wo_number)).toEqual(['3']);
+  });
+
+  it('reminds techs who worked today to upload their pictures, from 5 PM Eastern', () => {
+    const rows = [
+      wo({ wo_number: '1', wo_status: 'In Progress', contractor_names: ['Dwayne'] }),
+      wo({ wo_number: '2', wo_status: 'Assigned', contractor_names: ['Kendel'], checked_in_at: '2026-11-01T14:00:00Z' }),
+      wo({ wo_number: '3', wo_status: 'Assigned', contractor_names: ['Kendel'], checked_in_at: '2026-10-30T14:00:00Z' }),
+      wo({ wo_number: '4', wo_status: 'In Progress' }),
+    ];
+    expect(dueUploadReminders(rows, rules, new Date('2026-11-01T22:30:00Z')).map((w) => w.wo_number)).toEqual(['1', '2']);
+    expect(dueUploadReminders(rows, rules, new Date('2026-11-01T19:00:00Z'))).toEqual([]);
   });
 });

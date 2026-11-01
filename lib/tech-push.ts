@@ -36,6 +36,16 @@ export function messagePush(o: { woId: string; woNumber: string; content: string
   };
 }
 
+/** 5 PM: upload today's pictures (Automations, lib/automations.ts). */
+export function photoReminderPush(o: { woId: string; woNumber: string; title?: string | null }): TechPush {
+  return {
+    title: `Upload today's pictures · WO ${o.woNumber}`,
+    body: [o.title || null, "Put today's photos and documents in the job's upload folder."].filter(Boolean).join('\n'),
+    url: `/tech?wo=${encodeURIComponent(o.woId)}`,
+    tag: `photos-${o.woId}`,
+  };
+}
+
 /** The day-before reminder (Automations, lib/automations.ts). */
 export function jobReminderPush(o: { woId: string; woNumber: string; title?: string | null; schedule?: string | null }): TechPush {
   return {

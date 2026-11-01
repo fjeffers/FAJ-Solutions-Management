@@ -13,8 +13,6 @@ import type { EnrichedWorkOrder } from './types';
 export const VENDOR_GUIDE = 'Vendor Installation & Quality Standards Guide v10.11.4';
 export const NETSPOT_MIN = '-67 dBm';
 export const TOOLS_HUB = 'https://lds-tools-hub.ldsqa.fyi/';
-/** The customer's Site Deliverables page (Fred, 2026-11-01), a button on every LDS job. */
-export const DELIVERABLES_SITE = 'https://deliverables.ldsqa.fyi/';
 
 /** An LDS church job, by its own words: its title, description, client ticket or project. */
 export function isLdsJob(w: Pick<EnrichedWorkOrder, 'title' | 'description' | 'external_wo_id' | 'project_name'>): boolean {

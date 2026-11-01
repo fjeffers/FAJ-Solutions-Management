@@ -1315,7 +1315,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   // The day of travel, lunch and time on site: project jobs, and every job once
   // the database sends the day for it (migration 127) on the Field Service screen.
   const dayFlow = project || (FS_JOB_SCREEN && !!job.dayFlow);
-  const jobForCloseout = project && ask('signature') ? { ...shown, signatureRequired: true } : shown;
+  const jobForCloseout = project && ask('signature') && !shown.noSignature ? { ...shown, signatureRequired: true } : shown;
   // The live sheet's messages: No access, the PM's questions (migration 121).
   const talk = useSiteTalk(job.number, dayFlow && job.status !== 'offered' && job.status !== 'declined');
   // Running late, and stepped off site (migration 122).

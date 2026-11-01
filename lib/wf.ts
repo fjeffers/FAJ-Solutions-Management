@@ -129,6 +129,8 @@ export type WfJob = {
   questions: WfQuestion[];
   photoRequired: boolean;
   signatureRequired: boolean;
+  /** No one on site to sign (LDS churches; Fred, 2026-11-01: "there no one there to get signature"). */
+  noSignature?: boolean;
   deliverableInstructions: string;
   checkedInAt: string | null;
   checkedOutAt: string | null;
@@ -172,6 +174,12 @@ export type WfJob = {
 };
 
 type Row = Record<string, unknown>;
+
+/** LDS jobs (same test as lib/lds-sow.ts isLdsJob): the church is empty, so no customer signature. */
+export function noSignatureJob(r: Row): boolean {
+  const text = ['title', 'description', 'external_wo_id', 'project_name'].map((k) => (typeof r[k] === 'string' ? r[k] : '')).join(' ');
+  return /\bLDS\b|\bLDS-\d|meetinghouse/i.test(text);
+}
 
 /** `moment`: a start or an end photo (migration 144); missing from before it. */
 export type OdometerReading = { at: string; reading: number; moment?: 'start' | 'end' };
@@ -302,7 +310,8 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     tasks: taskList(r),
     questions: questionList(r),
     photoRequired: r.photo_required === true,
-    signatureRequired: r.signature_required === true,
+    signatureRequired: r.signature_required === true && !noSignatureJob(r),
+    noSignature: noSignatureJob(r),
     deliverableInstructions: s(r, 'deliverable_instructions'),
     checkedInAt: s(r, 'checked_in_at') || null,
     checkedOutAt: s(r, 'checked_out_at') || null,

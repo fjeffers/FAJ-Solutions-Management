@@ -5,7 +5,7 @@ import { emailClient, emailNotSetUp } from '@/lib/email-client';
 import { portalInviteEmail, type PortalWOSummary } from '@/lib/email-templates';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { newWorkOrderPush, pushToTech } from '@/lib/tech-push';
+import { jobReminderPush, newWorkOrderPush, pushToTech } from '@/lib/tech-push';
 import { newJobNeedsEmail, newWorkOrderText, textPhone, type TextResult } from '@/lib/tech-text';
 
 const OWNER_EMAIL = 'fajsolutions@gmail.com';
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
   // Contractor email only required for contractor-facing notification types
   // A new job can still reach a tech with no email: the phone alert and the text.
-  if (!OWNER_TYPES.has(type) && type !== 'wo_assigned' && !contractor_email) {
+  if (!OWNER_TYPES.has(type) && type !== 'wo_assigned' && type !== 'job_reminder' && !contractor_email) {
     return NextResponse.json({ error: 'No contractor email' }, { status: 400 });
   }
 
@@ -80,6 +80,18 @@ export async function POST(req: NextRequest) {
         <p>Hi ${contractor_name},</p>
         <p>Work Order <strong>#${wo_number}</strong>${title ? ` (${title})` : ''} has been updated to: <strong>${status}</strong></p>
         <p>Log in to the contractor portal for details.</p>
+        <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
+      </div>
+    `;
+  } else if (type === 'job_reminder') {
+    // Automations (lib/automations.ts): a day or so before the start date.
+    subject = `Reminder: WO #${wo_number} starts ${schedule || 'soon'}`;
+    html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <h2 style="color:#0D7377;">Job reminder</h2>
+        <p>Hi ${contractor_name},</p>
+        <p>Work Order <strong>#${wo_number}</strong>${title ? ` (${title})` : ''} starts <strong>${schedule || 'soon'}</strong>${site ? ` at ${site}` : ''}.</p>
+        <p>Open the FAJ tech app for the details.</p>
         <p style="color:#888;font-size:12px;">— FAJ Solutions</p>
       </div>
     `;
@@ -179,6 +191,14 @@ export async function POST(req: NextRequest) {
   // texting yet), the email still goes, so a job is never missed.
   let pushed = 0;
   let texted: TextResult | 'not_tried' = 'not_tried';
+  // A reminder goes to the phone when the tech has the app; the email only when it can't.
+  if (type === 'job_reminder' && wo_id && signedInId && contractor_name) {
+    try {
+      pushed = await pushToTech(createAdminClient(), signedInId, contractor_name, jobReminderPush({ woId: wo_id, woNumber: wo_number, title, schedule }));
+    } catch { /* email below */ }
+    if (pushed > 0) return NextResponse.json({ ok: true, pushed, emailed: false });
+    if (!contractor_email) return NextResponse.json({ error: 'No contractor email', pushed, emailed: false }, { status: 400 });
+  }
   if (type === 'wo_assigned') {
     let inApp = false;
     if (wo_id && signedInId && contractor_name) {

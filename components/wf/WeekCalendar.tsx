@@ -4,12 +4,13 @@
 // its day, the tech app's look; a job over several days shows on each one.
 // Jobs with no date wait above the calendar. Tap a card to open the job.
 // The dates and the grouping are lib/week-view.ts.
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, MapPin, UserX, Users } from 'lucide-react';
 import { WF_STATUS_COLOR, parseClockTime, fmtClock12, type WfJob } from '@/lib/wf';
 import { todayISO } from '@/lib/utils';
 import { dayOfJob, periodDays, periodJobs, periodLabel, periodStart, shiftPeriod, spanOf, undated, weekJobs, weekStartOf, type Span } from '@/lib/week-view';
 import { StatusChip } from './WfUi';
+import Timeline from './Timeline';
 
 type Row = { job: WfJob };
 
@@ -88,8 +89,10 @@ function PeriodList({ rows, onOpen }: { rows: Row[]; onOpen: (job: WfJob) => voi
  * Home's calendar: a Day, a Week or a Month, as cards or a list (Fred, 2026-10-31:
  * "i need to see the view by week, day, month cards and list").
  */
-export default function WeekCalendar({ rows, onOpen, span = 'week', layout = 'cards' }: {
-  rows: Row[]; onOpen: (job: WfJob) => void; span?: Span; layout?: 'cards' | 'list';
+export default function WeekCalendar({ rows, onOpen, span = 'week', layout = 'cards', sheet }: {
+  rows: Row[]; onOpen: (job: WfJob) => void; span?: Span; layout?: 'cards' | 'list' | 'sheet' | 'timeline';
+  /** The Sheet for these jobs (components/wf/JobSheet.tsx), when the office has it. */
+  sheet?: (jobs: WfJob[]) => ReactNode;
 }) {
   const today = todayISO();
   const [anchor, setAnchor] = useState(today);
@@ -111,7 +114,7 @@ export default function WeekCalendar({ rows, onOpen, span = 'week', layout = 'ca
         <span className="wf-subtle" style={{ marginLeft: 'auto', fontSize: 13 }}>{inPeriod.length} job{inPeriod.length === 1 ? '' : 's'} {isNow ? NOUN[span] : ''}</span>
       </div>
 
-      {noDate.length > 0 && (
+      {noDate.length > 0 && layout !== 'sheet' && (
         <section className="wf-card" style={{ padding: 12 }}>
           <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>No date yet ({noDate.length})</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))', gap: 8 }}>
@@ -120,7 +123,12 @@ export default function WeekCalendar({ rows, onOpen, span = 'week', layout = 'ca
         </section>
       )}
 
-      {layout === 'list' ? (
+      {layout === 'sheet' && sheet ? sheet([...noDate, ...inPeriod].map((r) => r.job))
+      : layout === 'timeline' ? (
+        inPeriod.length === 0
+          ? <div className="wf-card wf-subtle" style={{ padding: 16, textAlign: 'center' }}>No jobs {isNow ? NOUN[span] : 'in this ' + span}</div>
+          : <Timeline rows={inPeriod} days={periodDays(span, start)} today={today} onOpen={onOpen} />
+      ) : layout === 'list' ? (
         inPeriod.length === 0
           ? <div className="wf-card wf-subtle" style={{ padding: 16, textAlign: 'center' }}>No jobs {isNow ? NOUN[span] : 'in this ' + span}</div>
           : <PeriodList rows={inPeriod} onOpen={onOpen} />

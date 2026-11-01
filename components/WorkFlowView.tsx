@@ -41,6 +41,7 @@ import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos
 import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseStatus } from '@/lib/expenses';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
+import JobUpdates from '@/components/wf/JobUpdates';
 import { listsNow } from '@/lib/app-lists';
 import { shown as partShown } from '@/lib/screen-parts';
 import { designNow } from '@/lib/screen-design';
@@ -596,6 +597,7 @@ function OwnerJob({
               <WorkOrderChatPanel woNumber={w.wo_number} />
             </Section>
           )}
+          <JobUpdates woId={w.id} createdAt={w.created_at} checkedInAt={w.checked_in_at} checkedOutAt={w.checked_out_at} />
           {jobDesign.jobBelow.filter(partShown).map((k) => <Fragment key={k}>{jobCards[k]}</Fragment>)}
         </>}
       />

@@ -11,6 +11,9 @@ import WorkBoard from '@/components/WorkBoard';
 import WorkFlowView, { OwnerAlerts } from '@/components/WorkFlowView';
 import { Dialog } from '@/components/wf/WfUi';
 import { DispatchBoard, type BoardRow } from '@/components/wf/PrimioScreens';
+import JobSheet from '@/components/wf/JobSheet';
+import type { AutoPatch } from '@/components/useAutomations';
+import type { FieldKind } from '@/lib/custom-fields';
 import { wfJobFromOwner, type WfJob } from '@/lib/wf';
 import type { BoardColumn, Move } from '@/lib/dispatch-columns';
 import { createClient } from '@/lib/supabase/client';
@@ -52,7 +55,14 @@ export default function WorkOrdersView({
   initialSearch = '',
   siteVisits = [],
   onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed, home,
+  onPatch, onAddField, automations,
 }: {
+  /** Changes from the Sheet (status, date, tech, price, Fred's columns); without it there's no Sheet. */
+  onPatch?: AutoPatch;
+  /** The Sheet's "Add a column": a new job field. */
+  onAddField?: (label: string, kind: FieldKind, options: string[]) => void;
+  /** Home's Automations card; it opens a job with the function it's given. */
+  automations?: (openJob: (id: string) => void) => ReactNode;
   /** Open this job straight away (a job tapped on the Schedule). */
   startOpenId?: string;
   /** The job opened with startOpenId was closed (back to the Schedule). */
@@ -141,6 +151,8 @@ export default function WorkOrdersView({
     await onRefresh();
   };
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
+  const openJob = (id: string) => { setWfOpen(id); window.scrollTo({ top: 0 }); };
+  const woById = useMemo(() => new Map(workOrders.map((w) => [w.id, w])), [workOrders]);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
   // looking at that work order rather than at a list to hunt through.
   const [search, setSearch] = useState(initialSearch);
@@ -236,8 +248,13 @@ export default function WorkOrdersView({
             )}
           </>}
           title={home ? 'Home' : undefined}
+          sheet={onPatch ? (jobs) => (
+            <JobSheet rows={jobs.map((j) => woById.get(j.id)).filter((w): w is EnrichedWorkOrder => !!w)} contractors={contractors}
+              fields={activeFields('jobs')} onPatch={(ids, make) => onPatch(ids, make)} onOpen={openJob}
+              onReassign={(w) => setReassigning(w as EnrichedWorkOrder)} onAddField={onAddField} />
+          ) : undefined}
           // Home: Dashboard and Dispatch in one (Fred, 2026-10-31): what needs you, the field and notes above the jobs.
-          between={<>{home}{shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}</>}
+          between={<>{home}{automations?.(openJob)}{shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}</>}
         />
       )}
 

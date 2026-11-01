@@ -2,7 +2,7 @@ import { scheduleLine } from './email-templates';
 import type { Contractor, WorkOrder } from './types';
 
 export async function notifyContractor(params: {
-  type: 'wo_assigned' | 'status_change' | 'payment_recorded';
+  type: 'wo_assigned' | 'status_change' | 'payment_recorded' | 'job_reminder';
   contractor_email: string;
   contractor_name: string;
   wo_number: string;

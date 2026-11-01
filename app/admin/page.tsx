@@ -70,6 +70,9 @@ import { sectionOfView, type ResolvedLayout, screenLabel } from '@/lib/app-layou
 import { useAppLayout } from '@/components/useAppLayout';
 import { useAppLists } from '@/components/useAppLists';
 import { useCustomFields } from '@/components/useCustomFields';
+import { useAutomations, type AutoPatch } from '@/components/useAutomations';
+import AutomationsCard from '@/components/wf/Automations';
+import { describeChanges } from '@/lib/job-sheet';
 import { shown } from '@/lib/screen-parts';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
 import { PrimioBar } from '@/components/wf/PrimioScreens';
@@ -577,7 +580,8 @@ export default function HomePage() {
     if (w.id) {
       const { error } = await supabase.from('work_orders').update(payload).eq('id', w.id);
       if (error) { toastError(`Couldn't save WO#${w.wo_number}: ${notYet128(error)}`); return; }
-      logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}` });
+      logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}`,
+        ...(prevWO ? { changes: { changes: describeChanges(prevWO, payload as Partial<WorkOrder>) } } : {}) });
       // Notify contractor on status change
       const prev = workOrders.find((x) => x.id === w.id);
       // The job as saved, straight away: Edit job opened right after Save must not get the copy
@@ -819,6 +823,46 @@ It goes to ${c.email}.`)) return;
     logAudit({ action: 'update', entityType: 'work_order', entityId: id, entityLabel: `WO#${wo?.wo_number ?? ''}` });
     loadAll();
   };
+
+  // The Sheet's edits and the automations (Fred, 2026-10-31): each job as it is now goes to
+  // `make`; what changed is written, logged for the job's Updates, and a tech newly put on
+  // the job or a status change is told, the same as saving the job form.
+  const patchJobs: AutoPatch = async (ids, make, by) => {
+    let done = 0;
+    const failed: string[] = [];
+    for (const id of ids) {
+      const prev = workOrders.find((x) => x.id === id);
+      if (!prev) continue;
+      const patch = make(prev);
+      if (!patch || Object.keys(patch).length === 0) continue;
+      const { error } = await supabase.from('work_orders').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+      if (error) { failed.push(`WO#${prev.wo_number}: ${error.message}`); continue; }
+      done += 1;
+      setWorkOrders((list) => list.map((x) => (x.id === id ? ({ ...x, ...patch } as WorkOrder) : x)));
+      logAudit({ action: by === 'auto' ? 'auto' : 'update', entityType: 'work_order', entityId: id,
+        entityLabel: `WO#${prev.wo_number}${by === 'auto' ? ' (automation)' : ' (Sheet)'}`, changes: { changes: describeChanges(prev, patch) } });
+      const next = { ...prev, ...patch } as WorkOrder;
+      if (patch.contractor_names) {
+        const was = new Set([...(prev.contractor_names ?? []), ...(prev.contractor_name ? [prev.contractor_name] : [])]);
+        for (const name of patch.contractor_names.filter((n) => !was.has(n))) {
+          const c = contractors.find((x) => x.name === name);
+          if (!c) continue;
+          if (c.on_hold) { toastInfo(`${c.name} is on hold, so he wasn't told about WO#${prev.wo_number}.`); continue; }
+          void sendNewJobNotice(next, c, techPayToShow(next, name));
+        }
+      }
+      if (patch.wo_status && patch.wo_status !== prev.wo_status) {
+        const c = contractors.find((x) => x.name === next.contractor_name);
+        if (c?.email) notifyContractor({ type: 'status_change', contractor_email: c.email, contractor_name: c.name, wo_number: prev.wo_number, title: prev.title ?? undefined, status: patch.wo_status });
+      }
+    }
+    if (failed.length) toastError(`Couldn't change ${failed.join('; ')}`);
+    else if (done > 1 && by !== 'auto') toastSuccess(`${done} jobs changed`);
+    else if (done > 0 && by === 'auto') toastInfo(`Automation: ${done} job${done === 1 ? '' : 's'} moved to Work Done`);
+    void loadAll();
+    return done;
+  };
+  const autoRules = useAutomations(workOrders, contractors, patchJobs, !loading);
 
   // FieldNation-style close: fully-paid jobs close as Paid; jobs closed early
   // close as Approved. Either way they leave the active board (archived, not
@@ -1906,6 +1950,10 @@ Go ahead?`)) return;
             onCloseJob={closeWorkOrder}
             onUnarchive={handleUnarchive}
             onRefresh={loadAll}
+            onPatch={patchJobs}
+            onAddField={(label, kind, options) => customFields.update({ ...customFields.fields,
+              jobs: [...customFields.fields.jobs, { id: `f${Date.now().toString(36)}`, label, kind, options, hidden: false }] })}
+            automations={(open) => <AutomationsCard rules={autoRules.rules} onChange={autoRules.update} workOrders={workOrders} onOpenJob={open} saveError={autoRules.saveError} />}
             home={(
               <DashboardView
                 home

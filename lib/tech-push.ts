@@ -25,6 +25,16 @@ export function newWorkOrderPush(o: { woId: string; woNumber: string; title?: st
   };
 }
 
+/** The day-before reminder (Automations, lib/automations.ts). */
+export function jobReminderPush(o: { woId: string; woNumber: string; title?: string | null; schedule?: string | null }): TechPush {
+  return {
+    title: `Reminder · WO ${o.woNumber} starts ${o.schedule || 'soon'}`,
+    body: o.title || 'Tap to open it.',
+    url: `/tech?wo=${encodeURIComponent(o.woId)}`,
+    tag: `remind-${o.woId}`,
+  };
+}
+
 type Sub = { id: string; endpoint: string; p256dh: string; auth: string };
 
 /** What the office's pop-up says when a tech turns a job down (Fred, 2026-10-18:

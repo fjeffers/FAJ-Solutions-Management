@@ -119,3 +119,35 @@ export const STARTER_CLIENTS: StarterClient[] = [
   { name: "Wendy's", items: FIELD_ITEMS, fill: { customer_name: "Wendy's" } },
   { name: 'Dunkin', items: FIELD_ITEMS, fill: { customer_name: 'Dunkin' } },
 ];
+
+// The parts every job for this client shares. When Generate with AI picks the client's template, these
+// come from the template, not from the email (Fred, 2026-10-31: the LDS SOW is the same on every job
+// "excluding the name address and site numbers ... especially for the ai generator").
+const SHARED_FIELDS = ['service_type', 'description', 'deliverables', 'deliverable_instructions', 'tools_required', 'required_skills'] as const;
+
+type AiJob = Partial<Record<FillTextField, string | null>> & {
+  client_links?: string[] | null;
+  wo_tasks?: unknown[] | null;
+  custom_qa?: unknown[] | null;
+};
+
+/**
+ * A job Generate with AI read from an email, with the picked client template laid over it: the
+ * template's shared parts (scope/SOW, deliverables, tools...) replace what the AI wrote, the AI keeps
+ * the site's own details (name, address, site and ticket numbers, dates, contacts, lockbox), and the
+ * client, links, checklist and questions are filled from the template where the AI found none.
+ */
+export function withTemplate<T extends AiJob>(job: T, fill: TemplateFill | undefined, newId: () => string): T {
+  if (!fill) return job;
+  const out: AiJob = { ...job };
+  for (const k of SHARED_FIELDS) if (fill[k]) out[k] = fill[k];
+  for (const k of FILL_TEXT_FIELDS) if (fill[k] && !(out[k] ?? '').trim()) out[k] = fill[k];
+  if (fill.client_links?.length) out.client_links = [...new Set([...(job.client_links ?? []), ...fill.client_links])];
+  if (fill.tasks?.length && !job.wo_tasks?.length) {
+    out.wo_tasks = fill.tasks.map((t) => ({ id: newId(), category: t.category, label: t.label, completed: false, completed_at: null }));
+  }
+  if (fill.questions?.length && !job.custom_qa?.length) {
+    out.custom_qa = fill.questions.map((label) => ({ id: newId(), label, type: 'text' as const, answer: null }));
+  }
+  return out as T;
+}

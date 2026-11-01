@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { fillCount, fillFromJob, parseFill, planFill, planSize, STARTER_CLIENTS } from './template-fill';
-import { addStarterClients, parseTemplates, setTemplateFill, setTemplateStartAsks, type JobTemplate } from './capture';
+import { fillCount, fillFromJob, parseFill, planFill, planSize, STARTER_CLIENTS, withTemplate } from './template-fill';
+import { addStarterClients, parseTemplates, templateForText, setTemplateFill, setTemplateStartAsks, type JobTemplate } from './capture';
 
 const EMPTY = { client_links: [], tasks: 0, questions: 0 };
 
@@ -62,5 +62,24 @@ describe('client templates on job templates', () => {
     const lds = addStarterClients([], STARTER_CLIENTS, 'abc')[0];
     expect(lds.fill?.description).toContain('Cat6A');
     expect(lds.items).not.toContain('deliverables');
+  });
+});
+
+describe('Generate with AI + a client template', () => {
+  const fill = { customer_name: 'NetView', description: 'Standard LDS SOW', tools_required: 'Fluke', client_links: ['https://hub'], tasks: [{ category: 'On Site' as const, label: 'Rack photo' }], questions: ['Lockbox works?'] };
+  let n = 0;
+  const id = () => `id${++n}`;
+  it("uses the template's SOW and keeps the site's details from the email", () => {
+    const out = withTemplate({ site_name: 'Fayetteville', address: '1 Main', description: 'Scope copied from the email', customer_name: '', client_links: ['https://smartsheet'] } as never, fill, id) as Record<string, unknown>;
+    expect(out).toMatchObject({ site_name: 'Fayetteville', address: '1 Main', description: 'Standard LDS SOW', tools_required: 'Fluke', customer_name: 'NetView', client_links: ['https://smartsheet', 'https://hub'] });
+    expect(out.wo_tasks).toEqual([{ id: 'id1', category: 'On Site', label: 'Rack photo', completed: false, completed_at: null }]);
+    expect(out.custom_qa).toEqual([{ id: 'id2', label: 'Lockbox works?', type: 'text', answer: null }]);
+  });
+  it('keeps what the AI found when the template says nothing about it', () => {
+    expect(withTemplate({ description: 'From the email', customer_name: "Wendy's Inc" }, { customer_name: "Wendy's" }, id)).toEqual({ description: 'From the email', customer_name: "Wendy's Inc" });
+    expect(withTemplate({ description: 'x' }, undefined, id)).toEqual({ description: 'x' });
+  });
+  it('an LDS ticket number picks the LDS template', () => {
+    expect(templateForText('LDS-1103 - 5333202 - FAYETTEVILLE', [{ id: 'lds', name: 'LDS', items: [] }])?.id).toBe('lds');
   });
 });

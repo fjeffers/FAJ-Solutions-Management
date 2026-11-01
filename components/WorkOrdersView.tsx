@@ -22,6 +22,7 @@ import { aiFailureText } from '@/lib/wo-ai';
 import { parseTrackerRow } from '@/lib/tracker-row';
 import { useJobTemplates } from '@/components/useJobTemplates';
 import { templateForText } from '@/lib/capture';
+import { withTemplate } from '@/lib/template-fill';
 import AiNeedsReview from '@/components/AiNeedsReview';
 import { applyNeeds, defaultNeeds, type Found, type NeedChoices } from '@/lib/ai-needs';
 
@@ -714,9 +715,10 @@ export function AIGenerateModal({
       const tpl = templateForText(prompt, templates);
       const fields: Found = { ...row };
       if (tpl) fields.start_asks = tpl.startAsks ?? [];
+      const job = tpl ? withTemplate(fields, tpl.fill, () => crypto.randomUUID()) : fields;
       setError(null);
-      setFound(fields);
-      setChoices(defaultNeeds(fields, tpl && tpl.items.length ? tpl.items : null));
+      setFound(job);
+      setChoices(defaultNeeds(job, tpl && tpl.items.length ? tpl.items : null));
       setReadBy({ source: 'tracker' });
       return;
     }
@@ -745,8 +747,10 @@ export function AIGenerateModal({
       // empty template starts from what the AI read the job needs.
       const tpl = templates.find((t) => t.id === picked) ?? templateForText(prompt, templates);
       if (tpl) fields.start_asks = tpl.startAsks ?? [];
-      setFound(fields);
-      setChoices(defaultNeeds(fields, tpl && tpl.items.length ? tpl.items : null));
+      // A client template's SOW, deliverables and tools are the same on every job; the AI keeps the site's details.
+      const job = tpl ? withTemplate(fields, tpl.fill, () => crypto.randomUUID()) : fields;
+      setFound(job);
+      setChoices(defaultNeeds(job, tpl && tpl.items.length ? tpl.items : null));
       setReadBy({ source: data.source, why: data.why, filled: data.filled });
     } catch {
       setError('Could not reach the AI service — try again.');

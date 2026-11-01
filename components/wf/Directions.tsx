@@ -7,10 +7,11 @@ import { fullAddress, type WfJob } from '@/lib/wf';
 import { NAV_APPS, navLink } from '@/lib/navigation';
 import { Dialog } from './WfUi';
 
-export default function DirectionsButton({ job, className, style, icon }: {
+export default function DirectionsButton({ job, className, style, icon, label = 'Directions' }: {
   job: WfJob; className?: string; style?: CSSProperties;
   /** The icon as the button shows it; a plain navigation arrow otherwise. */
   icon?: ReactNode;
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const target = { address: fullAddress(job), lat: job.siteLat, lng: job.siteLng };
@@ -18,10 +19,10 @@ export default function DirectionsButton({ job, className, style, icon }: {
   return (
     <>
       <button type="button" className={className} style={style} onClick={() => setOpen(true)}>
-        {icon ?? <Navigation size={15} />} Directions
+        {icon ?? <Navigation size={15} />} {label}
       </button>
       {open && (
-        <Dialog title="Directions" onClose={() => setOpen(false)}>
+        <Dialog title={label} onClose={() => setOpen(false)}>
           <p className="wf-subtle" style={{ margin: '0 0 12px', fontSize: 13.5 }}>{target.address || 'The site\'s GPS point'}</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {NAV_APPS.map((a) => (

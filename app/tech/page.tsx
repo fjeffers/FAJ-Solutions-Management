@@ -68,7 +68,6 @@ import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/
 import { linkLabel } from '@/lib/client-links';
 import { checkoutFormUrl, clock24, lastOffOrNow, linkPurpose, onSiteSince, parseSiteLinks, siteIdOf, type SiteLinks } from '@/lib/site-links';
 import WfJobDetail, { ChecklistCard, InfoListCard, TimeClockCard } from '@/components/wf/WfJobDetail';
-import { NAV_APPS, navLink } from '@/lib/navigation';
 import SignaturePad from '@/components/wf/SignaturePad';
 import DirectionsButton from '@/components/wf/Directions';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
@@ -1735,12 +1734,11 @@ function TechJobHeader({ job }: { job: WfJob }) {
 
 /**
  * Everything about the site in one card (Fred, 2026-10-31: "i dont want a tech
- * looking for anything"): the address with Google Maps, Waze and Apple Maps,
+ * looking for anything"): the address with one Navigate button (Google Maps, Waze or Apple Maps),
  * how to get in, parking, who to call, special instructions and the scope.
  */
 function SiteCard({ job }: { job: WfJob }) {
   const address = fullAddress(job);
-  const target = { address, lat: job.siteLat, lng: job.siteLng };
   const phone = job.pocPhone.replace(/[^0-9+]/g, '');
   const rows: [string, string][] = [['Parking', job.parking], ['Deliverables', job.deliverables]];
   return (
@@ -1752,15 +1750,8 @@ function SiteCard({ job }: { job: WfJob }) {
           <span>{address}</span>
         </div>
       )}
-      {navLink('google', target) && (
-        <div className="fs-nav-row" role="group" aria-label="Directions">
-          {NAV_APPS.map((a) => (
-            <a key={a.key} className="fs-btn fs-btn-secondary" href={navLink(a.key, target) ?? undefined} target="_blank" rel="noopener noreferrer">
-              <Navigation size={15} /> {a.label.replace(' Maps', '')}
-            </a>
-          ))}
-        </div>
-      )}
+      {/* One Navigate button, then the choice of Google Maps, Waze or Apple Maps (Fred, 2026-10-31). */}
+      <DirectionsButton job={job} label="Navigate" className="fs-btn fs-btn-secondary" style={{ width: '100%' }} />
       {job.access && (
         <div className="fs-site-access">
           <span>How to get in</span>

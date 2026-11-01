@@ -25,6 +25,17 @@ export function newWorkOrderPush(o: { woId: string; woNumber: string; title?: st
   };
 }
 
+/** A message from the office in a job's thread (Fred, 2026-11-01: "when i send a message they not getting the alert"). */
+export function messagePush(o: { woId: string; woNumber: string; content: string }): TechPush {
+  const text = o.content.replace(/\s+/g, ' ').trim();
+  return {
+    title: `Message from FAJ · WO ${o.woNumber}`,
+    body: text.length > 140 ? `${text.slice(0, 137)}…` : text || 'Tap to read it.',
+    url: `/tech?wo=${encodeURIComponent(o.woId)}`,
+    tag: `msg-${o.woId}`,
+  };
+}
+
 /** The day-before reminder (Automations, lib/automations.ts). */
 export function jobReminderPush(o: { woId: string; woNumber: string; title?: string | null; schedule?: string | null }): TechPush {
   return {

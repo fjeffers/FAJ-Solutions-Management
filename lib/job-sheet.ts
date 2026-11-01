@@ -103,3 +103,12 @@ export function describeChanges(prev: Partial<WorkOrder>, next: Partial<WorkOrde
   }
   return out;
 }
+
+/** The day a job counts as: its start, else its calendar day, else the day it was made. */
+export const jobDay = (w: Pick<WorkOrder, 'start_date' | 'scheduled_date' | 'created_at'>): string =>
+  (w.start_date || w.scheduled_date || w.created_at || '').slice(0, 10);
+
+/** Open jobs dated before a day (Close old jobs; Fred, 2026-10-31: everything before October). */
+export function jobsBefore<T extends Pick<WorkOrder, 'start_date' | 'scheduled_date' | 'created_at' | 'archived_at'>>(rows: readonly T[], cutoff: string): T[] {
+  return rows.filter((w) => !w.archived_at && !!jobDay(w) && jobDay(w) < cutoff);
+}

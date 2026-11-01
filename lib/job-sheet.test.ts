@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignPatch, datePatch, describeChanges, groupSheet, sheetTotals, techsOf, type SheetWo } from './job-sheet';
+import { assignPatch, datePatch, describeChanges, groupSheet, jobsBefore, sheetTotals, techsOf, type SheetWo } from './job-sheet';
 
 const wo = (o: Partial<SheetWo>): SheetWo => ({
   id: o.wo_number ?? 'x', wo_number: 'x', wo_status: 'Open', customer_name: null, contractor_name: '', contractor_names: [],
@@ -49,5 +49,16 @@ describe('Sheet', () => {
     expect(describeChanges({ wo_status: 'Open', total_amount: 100, contractor_names: [] }, { wo_status: 'Assigned', total_amount: 250, contractor_names: ['Dwayne'], updated_at: 'x' }))
       .toEqual(['Status: Open → Assigned', 'Client pays: $100.00 → $250.00', 'Techs: — → Dwayne']);
     expect(describeChanges({ wo_status: 'Open' }, { wo_status: 'Open' })).toEqual([]);
+  });
+
+  it('Close old jobs: open jobs dated before the day, by start, calendar day or when made', () => {
+    const rows = [
+      { id: 'a', start_date: '2026-09-30', scheduled_date: null, created_at: '2026-09-01T00:00:00Z', archived_at: null },
+      { id: 'b', start_date: '2026-10-01', scheduled_date: null, created_at: '2026-09-01T00:00:00Z', archived_at: null },
+      { id: 'c', start_date: null, scheduled_date: '2026-09-15', created_at: '2026-10-05T00:00:00Z', archived_at: null },
+      { id: 'd', start_date: null, scheduled_date: null, created_at: '2026-08-20T00:00:00Z', archived_at: null },
+      { id: 'e', start_date: '2026-09-01', scheduled_date: null, created_at: '2026-09-01T00:00:00Z', archived_at: '2026-09-02T00:00:00Z' },
+    ];
+    expect(jobsBefore(rows, '2026-10-01').map((w) => w.id)).toEqual(['a', 'c', 'd']);
   });
 });

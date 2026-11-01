@@ -15,6 +15,7 @@ import Timeline from './Timeline';
 type Row = { job: WfJob };
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const ANCHOR_KEY = 'home-period-day';
 const dayNum = (d: string) => Number(d.slice(8, 10));
 
 function WeekCard({ job, day, onOpen }: { job: WfJob; day: string | null; onOpen: () => void }) {
@@ -95,7 +96,12 @@ export default function WeekCalendar({ rows, onOpen, span = 'week', layout = 'ca
   sheet?: (jobs: WfJob[]) => ReactNode;
 }) {
   const today = todayISO();
-  const [anchor, setAnchor] = useState(today);
+  // Opening a job and coming back keeps the day, week or month Fred was on (Fred, 2026-10-31:
+  // "then i go back it goes back to the current date"). For this visit only.
+  const [anchor, setAnchorState] = useState(() => {
+    try { return (typeof window !== 'undefined' && sessionStorage.getItem(ANCHOR_KEY)) || today; } catch { return today; }
+  });
+  const setAnchor = (d: string) => { setAnchorState(d); try { sessionStorage.setItem(ANCHOR_KEY, d); } catch { /* private window */ } };
   const start = periodStart(span, anchor);
   // Cancelled and declined jobs stay off the calendar; closed ones show dimmed.
   const live = useMemo(() => rows.filter((r) => r.job.status !== 'declined'), [rows]);

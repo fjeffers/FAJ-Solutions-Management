@@ -928,6 +928,24 @@ Go ahead?`)) return;
     loadAll();
   };
 
+  // Close old jobs (Fred, 2026-10-31): the same close as one job, for many, with one message.
+  const closeJobs = async (list: EnrichedWorkOrder[]) => {
+    let done = 0;
+    const failed: string[] = [];
+    const at = new Date().toISOString();
+    for (const w of list) {
+      const finalStatus = w.remaining <= 0 && w.paid > 0 ? 'Paid' : 'Approved';
+      const { error } = await supabase.from('work_orders').update({ wo_status: finalStatus, archived_at: at, updated_at: at }).eq('id', w.id);
+      if (error) { failed.push(`WO#${w.wo_number}`); continue; }
+      done += 1;
+      logAudit({ action: 'archive', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number} closed as ${finalStatus} (Close old jobs)` });
+    }
+    if (failed.length) toastError(`Couldn't close ${failed.join(', ')}`);
+    if (done) toastSuccess(`${done} job${done === 1 ? '' : 's'} closed. They're under Closed.`);
+    await loadAll();
+    return done;
+  };
+
   const handleArchive = async (id: string) => {
     const wo = workOrders.find((x) => x.id === id);
     const { error } = await supabase.from('work_orders').update({ archived_at: new Date().toISOString() }).eq('id', id);
@@ -1951,6 +1969,7 @@ Go ahead?`)) return;
             onUnarchive={handleUnarchive}
             onRefresh={loadAll}
             onPatch={patchJobs}
+            onCloseJobs={closeJobs}
             onAddField={(label, kind, options) => customFields.update({ ...customFields.fields,
               jobs: [...customFields.fields.jobs, { id: `f${Date.now().toString(36)}`, label, kind, options, hidden: false }] })}
             automations={(open) => <AutomationsCard rules={autoRules.rules} onChange={autoRules.update} workOrders={workOrders} onOpenJob={open} saveError={autoRules.saveError} />}

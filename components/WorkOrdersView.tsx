@@ -12,6 +12,8 @@ import WorkFlowView, { OwnerAlerts } from '@/components/WorkFlowView';
 import { Dialog } from '@/components/wf/WfUi';
 import { DispatchBoard, type BoardRow } from '@/components/wf/PrimioScreens';
 import JobSheet from '@/components/wf/JobSheet';
+import CloseOldJobs from '@/components/wf/CloseOldJobs';
+import { datePatch } from '@/lib/job-sheet';
 import type { AutoPatch } from '@/components/useAutomations';
 import type { FieldKind } from '@/lib/custom-fields';
 import { wfJobFromOwner, type WfJob } from '@/lib/wf';
@@ -55,8 +57,10 @@ export default function WorkOrdersView({
   initialSearch = '',
   siteVisits = [],
   onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed, home,
-  onPatch, onAddField, automations,
+  onPatch, onAddField, automations, onCloseJobs,
 }: {
+  /** Close old jobs: close these in one go; returns how many closed. */
+  onCloseJobs?: (jobs: EnrichedWorkOrder[]) => Promise<number>;
   /** Changes from the Sheet (status, date, tech, price, Fred's columns); without it there's no Sheet. */
   onPatch?: AutoPatch;
   /** The Sheet's "Add a column": a new job field. */
@@ -151,6 +155,7 @@ export default function WorkOrdersView({
     await onRefresh();
   };
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
+  const [closingOld, setClosingOld] = useState(false);
   const openJob = (id: string) => { setWfOpen(id); window.scrollTo({ top: 0 }); };
   const woById = useMemo(() => new Map(workOrders.map((w) => [w.id, w])), [workOrders]);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
@@ -235,6 +240,7 @@ export default function WorkOrdersView({
           onMove={(job, move, target) => void moveJob(job, move, target)}
           onOpen={(j) => { setWfOpen(j.id); window.scrollTo({ top: 0 }); }}
           right={<>
+            {onCloseJobs && <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setClosingOld(true)}><Archive size={15} /> Old jobs</button>}
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAiOpen(true)}><Sparkles size={15} /> Generate with AI</button>
             <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={onAdd}><Plus size={16} /> New order</button>
             {onCreate && (
@@ -258,6 +264,8 @@ export default function WorkOrdersView({
         />
       )}
 
+      {closingOld && onCloseJobs && <div className="wf"><CloseOldJobs workOrders={workOrders} onClose={() => setClosingOld(false)} onCloseJobs={onCloseJobs}
+        onMoveJobs={onPatch ? (jobs, day) => onPatch(jobs.map((w) => w.id), (cur) => datePatch(cur, day)) : undefined} /></div>}
       {aiOpen && (
         <div className="wf">
         <AIGenerateModal

@@ -30,7 +30,7 @@ import {
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
   missingGoesTo, wfStatusLabel,
 } from '@/lib/wf';
-import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
+import { closeoutArgs, closeoutMissing, listFor, parseCloseoutLists, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
@@ -313,7 +313,7 @@ export default function TechPortalPage() {
       if (cp && cj) {
         setProfile(cp.value);
         setOfficeJobs(cj.value);
-        setLists(loadCopy<CloseoutList[]>(kv, u, 'lists')?.value ?? []);
+        setLists(parseCloseoutLists(loadCopy<CloseoutList[]>(kv, u, 'lists')?.value ?? []));
         setSavedAt(cj.at);
         setPhase('ready');
       }

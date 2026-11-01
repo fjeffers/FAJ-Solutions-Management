@@ -293,6 +293,13 @@ export function keepTimePatch(wo: WoForTime, name: string, now: Date = new Date(
 
 export type CloseoutList = { id: string; name: string; keywords: string[]; items: string[]; sort: number };
 
+/**
+ * Lists taken off every job for now (Fred, 2026-10-31: the LDS 47-item list, "i need it remove and
+ * we work on it later"). The row stays in closeout_lists and a copy is in lib/lds-sow.ts
+ * (LDS_INSTALL_CHECKLIST); drop the name from here to bring it back.
+ */
+export const REMOVED_LISTS: ReadonlySet<string> = new Set(['LDS church install (5 days)']);
+
 /** closeout_lists rows (or wf_tech_closeout_lists()) → clean lists, in order. */
 export function parseCloseoutLists(raw: unknown): CloseoutList[] {
   if (!Array.isArray(raw)) return [];
@@ -304,7 +311,7 @@ export function parseCloseoutLists(raw: unknown): CloseoutList[] {
       keywords: words(r.keywords).map((k) => k.toLowerCase()), items: words(r.items),
       sort: Number.isFinite(Number(r.sort)) ? Number(r.sort) : 0,
     }))
-    .filter((l) => l.items.length > 0)
+    .filter((l) => l.items.length > 0 && !REMOVED_LISTS.has(l.name))
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
 }
 

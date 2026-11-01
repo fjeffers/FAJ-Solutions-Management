@@ -92,15 +92,18 @@ describe('the techs’ checklist', () => {
     expect(sql).toContain(`'${LDS_INSTALL_LIST.name}'`);
   });
 
+  // Fred, 2026-10-31: the 47-item list is off every job for now ("we work on it later"); a rebuilt
+  // list under a new name is picked by the same words.
   it('is picked for an LDS install; a survey keeps the survey list; other jobs keep theirs', () => {
+    const rebuilt = 'LDS church install (rebuilt)';
     const lists = parseCloseoutLists([
       { id: 'k', name: 'Kiosk install', keywords: ['kiosk'], items: ['Completed kiosk'], sort: 1 },
       { id: 's', name: 'Site survey', keywords: ['survey'], items: ['Completed site survey form'], sort: 2 },
-      { id: 'l', ...LDS_INSTALL_LIST, items: LDS_INSTALL_CHECKLIST },
+      { id: 'l', ...LDS_INSTALL_LIST, name: rebuilt, items: LDS_INSTALL_CHECKLIST },
       { id: 'd', name: 'Standard job', keywords: [], items: ['Work area cleaned up'], sort: 99 },
     ]);
-    expect(listFor(lists, fayetteville.title!, fayetteville.description ?? '').name).toBe(LDS_INSTALL_LIST.name);
-    expect(listFor(lists, 'LDS-1105 Cabling Site 5330467 — Rockingham, NC', 'LDS-1105 Installation at site 5330467').name).toBe(LDS_INSTALL_LIST.name);
+    expect(listFor(lists, fayetteville.title!, fayetteville.description ?? '').name).toBe(rebuilt);
+    expect(listFor(lists, 'LDS-1105 Cabling Site 5330467 — Rockingham, NC', 'LDS-1105 Installation at site 5330467').name).toBe(rebuilt);
     expect(listFor(lists, 'LDS-1075 Survey Site 5003326 — Scarsdale, NY', 'NetView LDS survey, Site ID 5003326.').name).toBe('Site survey');
     expect(listFor(lists, 'Fields office cabling', 'Builds out the IDF').name).toBe('Standard job');
   });

@@ -56,3 +56,47 @@ export function weekLabel(start: string): string {
   const right = a.getUTCMonth() === b.getUTCMonth() ? `${b.getUTCDate()}` : `${m(b)} ${b.getUTCDate()}`;
   return `${m(a)} ${a.getUTCDate()} – ${right}, ${b.getUTCFullYear()}`;
 }
+
+// Day, Week or Month on Home (Fred, 2026-10-31: "i need to see the view by week, day, month cards and list").
+export type Span = 'day' | 'week' | 'month';
+
+/** The first day of the day, week (Sunday) or month a day falls in. */
+export function periodStart(span: Span, day: string): string {
+  return span === 'day' ? day : span === 'week' ? weekStartOf(day) : `${day.slice(0, 7)}-01`;
+}
+
+/** Every day of the period starting on `start`. */
+export function periodDays(span: Span, start: string): string[] {
+  if (span === 'day') return [start];
+  if (span === 'week') return weekDays(start);
+  const days: string[] = [];
+  for (let d = start; d.slice(0, 7) === start.slice(0, 7); d = addDays(d, 1)) days.push(d);
+  return days;
+}
+
+/** The period before (-1) or after (1). */
+export function shiftPeriod(span: Span, start: string, dir: 1 | -1): string {
+  if (span === 'day') return addDays(start, dir);
+  if (span === 'week') return addDays(start, 7 * dir);
+  const y = Number(start.slice(0, 4)), m = Number(start.slice(5, 7)) - 1 + dir;
+  const d = new Date(Date.UTC(y, m, 1));
+  return d.toISOString().slice(0, 10);
+}
+
+/** "Fri, Oct 31, 2026", "Oct 25 – 31, 2026" or "October 2026". */
+export function periodLabel(span: Span, start: string): string {
+  const d = new Date(toUTC(start));
+  if (span === 'day') return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  if (span === 'week') return weekLabel(start);
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** The jobs on any day of the period, each once, by first day then start time. */
+export function periodJobs<T extends Dated>(rows: readonly T[], span: Span, start: string): T[] {
+  const days = periodDays(span, start);
+  const first = days[0], last = days[days.length - 1];
+  const time = (t: string) => (/^\d{1,2}:\d{2}/.test(t) ? t.padStart(5, '0') : '99:99');
+  return rows
+    .filter((r) => { const s = spanOf(r.job); return !!s && s.start <= last && s.end >= first; })
+    .sort((a, b) => a.job.date!.localeCompare(b.job.date!) || time(a.job.startTime).localeCompare(time(b.job.startTime)) || a.job.number.localeCompare(b.job.number));
+}

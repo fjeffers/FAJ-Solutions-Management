@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addDays, dayOfJob, spanOf, undated, weekDays, weekJobs, weekLabel, weekStartOf } from './week-view';
+import { addDays, dayOfJob, periodDays, periodJobs, periodLabel, periodStart, shiftPeriod, spanOf, undated, weekDays, weekJobs, weekLabel, weekStartOf } from './week-view';
 
 const row = (number: string, date: string | null, endDate: string | null = null, startTime = '') => ({ job: { number, date, endDate, startTime } });
 
@@ -36,5 +36,37 @@ describe('the Work orders week calendar (Fred, 2026-10-18)', () => {
   it('names the week', () => {
     expect(weekLabel('2026-10-18')).toBe('Oct 18 – 24, 2026');
     expect(weekLabel('2026-11-29')).toBe('Nov 29 – Dec 5, 2026');
+  });
+});
+
+describe('Day / Week / Month periods', () => {
+  it('finds where a period starts', () => {
+    expect(periodStart('day', '2026-10-31')).toBe('2026-10-31');
+    expect(periodStart('week', '2026-10-31')).toBe('2026-10-25');
+    expect(periodStart('month', '2026-10-31')).toBe('2026-10-01');
+  });
+  it('lists its days', () => {
+    expect(periodDays('day', '2026-10-31')).toEqual(['2026-10-31']);
+    expect(periodDays('week', '2026-10-25')).toHaveLength(7);
+    expect(periodDays('month', '2026-02-01')).toHaveLength(28);
+    expect(periodDays('month', '2026-10-01').at(-1)).toBe('2026-10-31');
+  });
+  it('pages back and forward, across years', () => {
+    expect(shiftPeriod('day', '2026-10-31', 1)).toBe('2026-11-01');
+    expect(shiftPeriod('week', '2026-10-25', -1)).toBe('2026-10-18');
+    expect(shiftPeriod('month', '2026-12-01', 1)).toBe('2027-01-01');
+    expect(shiftPeriod('month', '2026-01-01', -1)).toBe('2025-12-01');
+  });
+  it('labels it', () => {
+    expect(periodLabel('day', '2026-10-31')).toBe('Sat, Oct 31, 2026');
+    expect(periodLabel('week', '2026-10-25')).toBe('Oct 25 – 31, 2026');
+    expect(periodLabel('month', '2026-10-01')).toBe('October 2026');
+  });
+  it('picks the jobs on any of its days, each once, in date order', () => {
+    const r = (number: string, date: string | null, endDate?: string) => ({ job: { number, date, endDate, startTime: '' } });
+    const rows = [r('3', '2026-11-02'), r('1', '2026-10-28', '2026-11-03'), r('2', '2026-10-31'), r('4', null), r('5', '2026-12-01')];
+    expect(periodJobs(rows, 'month', '2026-11-01').map((x) => x.job.number)).toEqual(['1', '3']);
+    expect(periodJobs(rows, 'week', '2026-10-25').map((x) => x.job.number)).toEqual(['1', '2']);
+    expect(periodJobs(rows, 'day', '2026-11-03').map((x) => x.job.number)).toEqual(['1']);
   });
 });

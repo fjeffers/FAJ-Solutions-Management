@@ -20,6 +20,7 @@ import { boardColumns, columnOf, moveTo, type BoardColumn, type Move } from '@/l
 import { shown as partShown } from '@/lib/screen-parts';
 import { Empty } from './WfUi';
 import WeekCalendar from './WeekCalendar';
+import type { Span } from '@/lib/week-view';
 
 // ── App bar ─────────────────────────────────────────────────────────────────
 
@@ -237,7 +238,8 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
   );
 }
 
-export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
+export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'Dispatch board' }: {
+  title?: string;
   rows: BoardRow[];
   onOpen: (job: WfJob) => void;
   /** Moving a job to another column (drag on the Board, or Move to). Without it the board is look-only. */
@@ -252,11 +254,20 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
   // "i need a grid, list view". The choice is remembered on this device.
   // Week is where Work orders opens (Fred, 2026-10-18: "the view sucks" ... "week
   // calendar card like view"); a new key, so every device starts on it.
-  const [view, setView] = useState<DispatchView>('week');
+  // Fred, 2026-10-31: "i need to see the view by week, day, month cards and list". When: Day, Week,
+  // Month or By stage; Show as: Cards or List (and Board, by stage). Remembered on this device.
+  const [when, setWhen] = useState<Span | 'stage'>('week');
+  const [layout, setLayout] = useState<'cards' | 'list' | 'board'>('cards');
   useEffect(() => {
-    try { const v = localStorage.getItem('dispatch-view-2'); if (v === 'board' || v === 'grid' || v === 'list') setView(v); } catch { /* private window */ }
+    try {
+      const v = JSON.parse(localStorage.getItem('dispatch-view-3') ?? 'null') as { when?: string; layout?: string } | null;
+      if (v?.when === 'day' || v?.when === 'week' || v?.when === 'month' || v?.when === 'stage') setWhen(v.when);
+      if (v?.layout === 'cards' || v?.layout === 'list' || v?.layout === 'board') setLayout(v.layout);
+    } catch { /* private window */ }
   }, []);
-  const chooseView = (v: DispatchView) => { setView(v); try { localStorage.setItem('dispatch-view-2', v); } catch { /* private window */ } };
+  const remember = (w: Span | 'stage', l: 'cards' | 'list' | 'board') => { setWhen(w); setLayout(l); try { localStorage.setItem('dispatch-view-3', JSON.stringify({ when: w, layout: l })); } catch { /* private window */ } };
+  const shape = when !== 'stage' && layout === 'board' ? 'cards' : layout;
+  const view: DispatchView = when !== 'stage' ? 'week' : shape === 'cards' ? 'grid' : shape;
   const live = rows.filter((r) => r.job.status !== 'closed');
   const count = (s: WfStatus) => live.filter((r) => r.job.status === s).length;
   const urgent = live.filter((r) => r.job.highPriority).length;
@@ -286,7 +297,7 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <PrimioBar title="Dispatch board" right={right} />
+      <PrimioBar title={title} right={right} />
       {partShown('dispatch.tiles') && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
         <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />
         <StatTile label={stageName('open')} value={count('open')} color={WF_STATUS_COLOR.open} onClick={() => toggle('stage:open')} active={focus === 'stage:open'} />
@@ -308,16 +319,24 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
           <input className="wf-input" value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by ID, client, location or title" aria-label="Search the dispatch board" style={{ paddingLeft: 40 }} />
         </div>
-        <div className="wf-filters" role="group" aria-label="How to show jobs" style={{ flexWrap: 'nowrap' }}>
-          {([['week', 'Week', <CalendarDays key="w" size={15} />], ['board', 'Board', <Columns3 key="b" size={15} />], ['grid', 'Grid', <LayoutGrid key="g" size={15} />], ['list', 'List', <ListIcon key="l" size={15} />]] as const).map(([v, label, icon]) => (
-            <button key={v} className="wf-filter" aria-pressed={view === v} onClick={() => chooseView(v)}
+        <div className="wf-filters" role="group" aria-label="Which days" style={{ flexWrap: 'nowrap' }}>
+          {([['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['stage', 'By stage']] as const).map(([v, label]) => (
+            <button key={v} className="wf-filter" aria-pressed={when === v} onClick={() => remember(v, layout)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{v === 'stage' ? <Columns3 size={15} /> : <CalendarDays size={15} />}{label}</button>
+          ))}
+        </div>
+        <div className="wf-filters" role="group" aria-label="Show as" style={{ flexWrap: 'nowrap' }}>
+          {([['cards', 'Cards', <LayoutGrid key="g" size={15} />], ['list', 'List', <ListIcon key="l" size={15} />], ['board', 'Board', <Columns3 key="b" size={15} />]] as const)
+            .filter(([v]) => v !== 'board' || when === 'stage').map(([v, label, icon]) => (
+            <button key={v} className="wf-filter" aria-pressed={shape === v} onClick={() => remember(when, v)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{label}</button>
           ))}
         </div>
       </div>
       {view === 'week' && (
         // The same jobs the tiles and the search leave showing, each once.
-        <WeekCalendar rows={[...new Map(groups.flatMap((g) => g.list).map((r) => [r.job.id, r])).values()]} onOpen={onOpen} />
+        <WeekCalendar rows={[...new Map(groups.flatMap((g) => g.list).map((r) => [r.job.id, r])).values()]} onOpen={onOpen}
+          span={when === 'stage' ? 'week' : when} layout={shape === 'list' ? 'list' : 'cards'} />
       )}
       {view === 'board' && (
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>

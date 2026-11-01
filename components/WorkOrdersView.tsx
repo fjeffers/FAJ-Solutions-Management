@@ -214,7 +214,6 @@ export default function WorkOrdersView({
             onReassign={(w) => setReassigning(w)}
             onRefresh={onRefresh}
             openId={wfOpen}
-            home={home}
             onOpenChange={setWfOpen}
           />
         </div>
@@ -236,7 +235,9 @@ export default function WorkOrdersView({
               ]} />
             )}
           </>}
-          between={shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}
+          title={home ? 'Home' : undefined}
+          // Home: Dashboard and Dispatch in one (Fred, 2026-10-31): what needs you, the field and notes above the jobs.
+          between={<>{home}{shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}</>}
         />
       )}
 

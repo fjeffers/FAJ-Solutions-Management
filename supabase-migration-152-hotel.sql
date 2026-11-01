@@ -89,3 +89,6 @@ BEGIN
   ), '[]'::jsonb);
 END;
 $$;
+
+-- Make the app see the new column straight away.
+NOTIFY pgrst, 'reload schema';

@@ -26,7 +26,10 @@ export const NOTE_STYLE: Record<string, { bg: string; edge: string }> = {
   red: { bg: '#FDEEEE', edge: '#C62828' },
 };
 
-export default function DashboardView({ stats, workOrders, payments, onView, attention, field, coming, screenName }: {
+// Money parts left off Home; they live under Money (Fred, 2026-10-31: merge Dashboard and Dispatch).
+const MONEY_PARTS = new Set(['dash.kpis', 'dash.status', 'dash.outstanding', 'dash.payments']);
+
+export default function DashboardView({ stats, workOrders, payments, onView, attention, field, coming, screenName, home }: {
   stats: Stats; workOrders: EnrichedWorkOrder[]; payments: Payment[]; onView: (v: string) => void;
   /** "Needs your attention" — built by the owner app, placed here like any other block. */
   attention?: ReactNode;
@@ -35,6 +38,8 @@ export default function DashboardView({ stats, workOrders, payments, onView, att
   coming?: ReactNode;
   /** A screen's name in Fred's menu, for shortcut buttons. */
   screenName?: (view: string) => string;
+  /** On Home, above the job board: no title and no money parts. */
+  home?: boolean;
 }) {
   const recentPayments = [...payments].slice(0, 5);
   // Closed jobs are done with. They used to stay in Outstanding Jobs forever,
@@ -170,6 +175,18 @@ export default function DashboardView({ stats, workOrders, payments, onView, att
   };
 
 
+  const grid = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: home ? 16 : 24 }}>
+        {dashRows(designNow().dash.filter((b) => !(home && b.kind === 'part' && MONEY_PARTS.has(b.key)) && (b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.attention' || attention) && (b.key !== 'dash.field' || field) && (b.key !== 'dash.coming' || coming))))).map((row) => (
+          <div key={row.map((b) => b.key).join('|')} className={row.length === 2 ? 'dash-row dash-row-2' : 'dash-row'}
+            style={{ display: 'grid', gridTemplateColumns: row.length === 2 ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
+            {row.map((b) => <div key={b.key} style={{ minWidth: 0 }}>{block(b)}</div>)}
+          </div>
+        ))}
+      </div>
+  );
+  if (home) return grid;
+
   return (
     <div className="view-inner" style={{ maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ marginBottom: 28 }}>
@@ -178,16 +195,8 @@ export default function DashboardView({ stats, workOrders, payments, onView, att
         <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Your business at a glance</p>
       </div>
 
-      {/* Arranged in Settings -> Screen designer (lib/screen-design.ts); parts
-          switched off in "What each screen shows" are left out. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        {dashRows(designNow().dash.filter((b) => b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.attention' || attention) && (b.key !== 'dash.field' || field) && (b.key !== 'dash.coming' || coming)))).map((row) => (
-          <div key={row.map((b) => b.key).join('|')} className={row.length === 2 ? 'dash-row dash-row-2' : 'dash-row'}
-            style={{ display: 'grid', gridTemplateColumns: row.length === 2 ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
-            {row.map((b) => <div key={b.key} style={{ minWidth: 0 }}>{block(b)}</div>)}
-          </div>
-        ))}
-      </div>
+      {/* Arranged in Settings -> Screen designer (lib/screen-design.ts). */}
+      {grid}
     </div>
   );
 }

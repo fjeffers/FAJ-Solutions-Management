@@ -50,7 +50,7 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onCreate, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed,
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed, home,
 }: {
   /** Open this job straight away (a job tapped on the Schedule). */
   startOpenId?: string;
@@ -83,6 +83,8 @@ export default function WorkOrdersView({
   onRefresh: () => Promise<void> | void;
   /** For the WorkFlow greeting. */
   ownerFirstName?: string;
+  /** Home's blocks (the old Dashboard's), under the greeting. */
+  home?: ReactNode;
 }) {
   // The jobs screen is Primio's Dispatch board (Fred, 2026-10-04: "i asked for
   // every to mirror primio"); a card opens the job screen.
@@ -211,6 +213,7 @@ export default function WorkOrdersView({
             onReassign={(w) => setReassigning(w)}
             onRefresh={onRefresh}
             openId={wfOpen}
+            home={home}
             onOpenChange={setWfOpen}
           />
         </div>

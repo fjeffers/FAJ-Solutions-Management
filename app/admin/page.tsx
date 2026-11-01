@@ -92,9 +92,11 @@ function woFromUrlParam(): string {
 }
 
 function viewFromUrl(): View {
-  if (typeof window === 'undefined') return 'dashboard';
+  // Dashboard and Dispatch are one Home screen now (Fred, 2026-10-31): the job board, with the
+  // Dashboard's Waiting on you, Today in the field, notes and shortcuts under the greeting.
+  if (typeof window === 'undefined') return 'workorders';
   const v = new URLSearchParams(window.location.search).get('view');
-  return VIEWS.includes(v as View) ? (v as View) : 'dashboard';
+  return VIEWS.includes(v as View) && v !== 'dashboard' ? (v as View) : 'workorders';
 }
 
 
@@ -114,10 +116,11 @@ export default function HomePage() {
   const [view, setViewState] = useState<View>(viewFromUrl);
   // Dispatch -> Create: which screen should open with a new, blank form.
   const [createIntent, setCreateIntent] = useState<'customer' | 'quote' | 'invoice' | null>(null);
-  const setView = (v: View) => {
+  const setView = (to: View) => {
+    const v: View = to === 'dashboard' ? 'workorders' : to;
     setViewState(v);
     openOfficeFor(v);
-    const url = v === 'dashboard' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
+    const url = v === 'workorders' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
     window.history.pushState(null, '', url);
   };
   useEffect(() => {
@@ -1740,31 +1743,6 @@ Go ahead?`)) return;
       {/* ── Main Content ── */}
       <main className="main-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
         <TechInstall appUrl={OFFICE_APP_URL} dismissKey="faj-office-install-dismissed" title="Install the FAJ app" style={{ margin: '16px 16px 0' }} />
-        {view === 'dashboard' && (
-          <DashboardView
-            stats={stats}
-            workOrders={enrichedWOs}
-            payments={payments}
-            onView={(v) => setView(v as typeof view)}
-            // Placed and sized like any other block (Settings -> Screen designer).
-            attention={shown('dash.attention') ? (
-              <AttentionPanel
-                flush
-                data={{
-                  surveys, quotes, contracts, workOrders: enrichedWOs,
-                  invoices, invoicePayments, siteVisits: dashboardVisits,
-                  waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount, receipts: receiptCount },
-                }}
-                onGo={(v) => setView(v as typeof view)}
-              />
-            ) : undefined}
-            field={shown('dash.field') ? (
-              <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'dashboard')} onGo={(v) => setView(v as typeof view)} />
-            ) : undefined}
-            coming={shown('dash.coming') ? <ComingUp jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'dashboard')} /> : undefined}
-            screenName={(k) => screenLabel(appLayout.layout, k)}
-          />
-        )}
         {/* The Financials dashboard: the money in and out on top, a tab for each money screen below. */}
         {isMoneyView(view) && (
           <MoneyHub view={view} onGo={navigate} invoices={invoices} invoicePayments={invoicePayments} payments={payments} workOrders={enrichedWOs} />
@@ -1928,6 +1906,32 @@ Go ahead?`)) return;
             onCloseJob={closeWorkOrder}
             onUnarchive={handleUnarchive}
             onRefresh={loadAll}
+            home={(
+              <DashboardView
+                home
+                stats={stats}
+                workOrders={enrichedWOs}
+                payments={payments}
+                onView={(v) => setView(v as typeof view)}
+                // Placed and sized like any other block (Settings -> Screen designer).
+                attention={shown('dash.attention') ? (
+                  <AttentionPanel
+                    flush
+                    data={{
+                      surveys, quotes, contracts, workOrders: enrichedWOs,
+                      invoices, invoicePayments, siteVisits: dashboardVisits,
+                      waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount, receipts: receiptCount },
+                    }}
+                    onGo={(v) => setView(v as typeof view)}
+                  />
+                ) : undefined}
+                field={shown('dash.field') ? (
+                  <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'workorders')} onGo={(v) => setView(v as typeof view)} />
+                ) : undefined}
+                coming={shown('dash.coming') ? <ComingUp jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'workorders')} /> : undefined}
+                screenName={(k) => screenLabel(appLayout.layout, k)}
+              />
+            )}
           />
         )}
         {view === 'payments' && (

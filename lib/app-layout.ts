@@ -55,8 +55,8 @@ export const SETTINGS_KEY = 'settings';
 export const LABEL_MAX = 40;
 
 const MAIN_SCREENS: Record<string, { label: string; hint: string }> = {
-  dashboard: { label: 'Dashboard', hint: 'Money, jobs and what needs you today' },
-  workorders: { label: 'Dispatch', hint: 'The job board: every job by stage' },
+  dashboard: { label: 'Dashboard', hint: 'Now part of Home' },
+  workorders: { label: 'Home', hint: 'What needs you, today in the field, and every job by stage' },
   scheduling: { label: 'Schedule', hint: 'Jobs on the calendar' },
   messages: { label: 'Messages', hint: 'Every conversation with your techs' },
   office: { label: 'Office', hint: 'Every other screen, in sections' },
@@ -188,7 +188,8 @@ export function resolveLayout(l: Layout): ResolvedLayout {
 /** What the menu shows: hidden screens out, and sections left empty out. */
 export function visibleLayout(r: ResolvedLayout): ResolvedLayout {
   return {
-    main: r.main.filter((s) => !s.hidden),
+    // Dashboard is part of Home now (Fred, 2026-10-31: merge Dashboard and Dispatch).
+    main: r.main.filter((s) => !s.hidden && s.key !== 'dashboard'),
     sections: r.sections.map((s) => ({ ...s, items: s.items.filter((i) => !i.hidden) })).filter((s) => s.items.length > 0),
   };
 }

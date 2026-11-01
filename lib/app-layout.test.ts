@@ -10,9 +10,9 @@ const std = () => normalizeLayout(STANDARD_LAYOUT);
 const keysOf = (l: ReturnType<typeof std>) => [...l.main, ...l.sections.flatMap((s) => s.items)];
 
 describe('menu layout (Settings -> Menu & screens)', () => {
-  it('the standard menu: Dashboard, Dispatch, Schedule, Messages, Office, Settings — everything else in Office', () => {
+  it('the standard menu: Home (Dashboard is part of it), Schedule, Messages, Office, Settings — everything else in Office', () => {
     const r = visibleLayout(resolveLayout(std()));
-    expect(r.main.map((s) => s.label)).toEqual(['Dashboard', 'Dispatch', 'Schedule', 'Messages', 'Office', 'Settings']);
+    expect(r.main.map((s) => s.label)).toEqual(['Home', 'Schedule', 'Messages', 'Office', 'Settings']);
     expect(r.sections.map((s) => s.title)).toEqual(['Jobs', 'Money', 'Techs', 'Sales', 'Setup']);
     expect(isStandard(STANDARD_LAYOUT)).toBe(true);
   });

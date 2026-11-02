@@ -27,7 +27,7 @@ export default function DirectionsButton({ job, to, className, style, icon, labe
       </button>
       {open && (
         <Dialog title={label} onClose={() => setOpen(false)}>
-          <p className="wf-subtle" style={{ margin: '0 0 12px', fontSize: 13.5 }}>{target.address || 'The site\'s GPS point'}</p>
+          <p className="wf-subtle" style={{ margin: '0 0 12px', fontSize: 13.5 }}>{target.address || 'The saved GPS point'}</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {NAV_APPS.map((a) => (
               <a key={a.key} className="wf-btn wf-btn-outline" href={navLink(a.key, target) ?? undefined}

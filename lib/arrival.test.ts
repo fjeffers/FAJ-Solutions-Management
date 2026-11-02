@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { arrivalAt, checkInDue, clearHome, drivingJob, isNear, loadHome, loadHotel, saveHome, saveHotel } from './arrival';
+import { arrivalAt, checkInDue, driveTarget, clearHome, drivingJob, isNear, loadHome, loadHotel, saveHome, saveHotel } from './arrival';
 import { dayState, type DayEvent } from './project-day';
 import type { WfJob } from './wf';
 
@@ -69,6 +69,23 @@ describe('checkInDue', () => {
     expect(checkInDue([job({ myDay: drive('site') })], NOW)).toBeNull();
     expect(checkInDue([job({ status: 'offered' })], NOW)).toBeNull();
     expect(checkInDue([job({ date: '2026-11-01' })], NOW)).toBeNull();
+  });
+});
+
+describe('Sunday hotel drive', () => {
+  const hotel = { name: 'Hampton Inn', address: '1 Main St, Hartford, CT', phone: '', confirmation: '', checkIn: '2026-10-31', checkOut: '', notes: '' };
+  it('asks for check-in on the hotel check-in day before the job starts', () => {
+    expect(checkInDue([job({ date: '2026-11-01', hotel })], NOW)?.id).toBe('j1');
+    expect(checkInDue([job({ date: '2026-11-01', hotel: { ...hotel, checkIn: '2026-11-01' } })], NOW)).toBeNull();
+  });
+  it('navigates to the site, the hotel or home', () => {
+    const j = job({ hotel, street: '5 Elm St', city: 'Hartford', state: 'CT', zip: '06103' });
+    expect(driveTarget(j, 'site', null)).toMatchObject({ lat: SITE.lat, lng: SITE.lng });
+    expect(driveTarget(j, 'hotel', null)).toEqual({ address: '1 Main St, Hartford, CT', lat: null, lng: null });
+    expect(driveTarget(j, 'home', HOME)).toEqual({ address: '', lat: HOME.lat, lng: HOME.lng });
+    expect(driveTarget(j, 'home', null)).toBeNull();
+    expect(driveTarget(job({}), 'hotel', null)).toBeNull();
+    expect(driveTarget(j, 'fuel', null)).toBeNull();
   });
 });
 

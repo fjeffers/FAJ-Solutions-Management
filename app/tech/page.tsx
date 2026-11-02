@@ -65,7 +65,8 @@ import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
 import { ArrivalPrompt, CheckInNow, HomeSpotCard } from '@/components/wf/DayPrompts';
-import { saveHotel } from '@/lib/arrival';
+import { driveTarget, loadHome, saveHotel } from '@/lib/arrival';
+import { hotelDriveDay } from '@/lib/hotel';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
@@ -546,6 +547,7 @@ export default function TechPortalPage() {
         const st = fsStage(checkIn.myDay ?? [], {}, undefined, 'America/New_York');
         return (
           <CheckInDialog job={checkIn} startOfDay={st === 'ready' || st === 'done'} afterWork={checkIn.status === 'workDone'}
+            hotelDrive={(st === 'ready' || st === 'done') && hotelDriveDay(checkIn, todayISO())}
             from={lastPlace(checkIn.myDay ?? [])} send={sendFor(checkIn)} onClose={() => setCheckIn(null)} />
         );
       })()}
@@ -601,7 +603,7 @@ export default function TechPortalPage() {
                 techName={profile?.name ?? ''} />
             </>
           ) : tab === 'project' ? (
-            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} act={act}
+            <ProjectTab jobs={jobs} uid={uid ?? ''} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} act={act}
               alerts={<TechAlerts jobs={jobs} unread={unread} onOpen={openFromList} onChat={() => go('chat')} />} />
           ) : underProfile ? (
             <>
@@ -678,7 +680,8 @@ function DayStrip({ job, busy, onSignOut }: { job: WfJob; busy: boolean; onSignO
  * The first thing after logging in (Fred, 2026-10-18: "when they log in it should ask"):
  * Check in for today's job, or the one step that's next on the job they're in the middle of.
  */
-function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
+function TodayCard({ jobs, uid, onOpen, onCheckIn, onArrive, busy }: {
+  uid: string;
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
 }) {
   const today = todayISO();
@@ -693,15 +696,21 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   const choices = sortTechJobs(jobs.filter((j) => canWork(j) && j.dayFlow), today);
   const [pick, setPick] = useState<string>('');
   if (!inProgress && choices.length === 0) return null;
-  const job = inProgress?.j ?? choices.find((j) => j.id === pick) ?? choices[0];
+  // On Sunday's drive out to the hotel (lib/hotel.ts hotelDriveDay), that job comes first.
+  const job = inProgress?.j ?? choices.find((j) => j.id === pick) ?? choices.find((j) => hotelDriveDay(j, today)) ?? choices[0];
+  const hotelDrive = !inProgress && hotelDriveDay(job, today);
   const stage = inProgress?.st ?? fsStage(job.myDay ?? [], {}, now, 'America/New_York');
   const st = dayState(job.myDay ?? [], now);
   const since = 'since' in st ? new Date(st.since).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
   const name = job.siteName || job.title || `WO ${job.number}`;
   let line: string;
   let action: React.ReactNode;
+  // Navigate to where the drive is headed (Fred, 2026-11-02: "update navigation and hotel drive on
+  // sunday"): the site, the job's hotel, or home; before Sunday's drive, the hotel.
+  let navTo: { address: string; lat: number | null; lng: number | null } | null = null;
   if (stage === 'outbound' || stage === 'returning') {
     const dest = st.stage === 'travel' ? st.dest : 'site';
+    navTo = driveTarget(job, dest, dest === 'home' ? loadHome(browserStorage(), uid) : null);
     line = `${onTheWay(dest)}${since ? ` since ${since}` : ''}.`;
     action = (
       <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy} onClick={() => onArrive(job)}>
@@ -713,7 +722,9 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
     action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" onClick={() => onOpen(job.id)}>Open the job</button>;
   } else {
     // Ready for the day, off site, or signed out at the hotel: the next check-in.
-    line = stage === 'offsite' ? `Off site at ${name}. Where to now?`
+    if (hotelDrive) navTo = driveTarget(job, 'hotel', null);
+    line = hotelDrive && stage !== 'clocked' ? `Travel day: drive to ${job.hotel?.name || 'the hotel'}. Check in when you leave home.`
+      : stage === 'offsite' ? `Off site at ${name}. Where to now?`
       : stage === 'clocked' ? 'Checked in. Where are you driving?' : 'Ready to go? Check in before you drive off.';
     action = (
       <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy || job.status === 'offered'} onClick={() => onCheckIn(job)}>
@@ -736,6 +747,7 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
       )}
       <p>{line}</p>
       {action}
+      {navTo && <DirectionsButton to={navTo} label="Navigate" className="fs-btn fs-btn-secondary" style={{ width: '100%', marginTop: 8 }} />}
     </section>
   );
 }
@@ -746,9 +758,10 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
 // office to close it).
 type WoList = 'assigned' | 'available' | 'pending';
 
-function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy, act, alerts }: {
+function ProjectTab({ jobs, uid, onOpen, onCheckIn, onArrive, busy, act, alerts }: {
   /** The Alerts bar (components/wf/TechAlerts.tsx), first on the screen. */
   alerts?: React.ReactNode;
+  uid: string;
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
   act: (a: PendingAction, sent?: string) => Promise<void>;
 }) {
@@ -830,7 +843,7 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy, act, alerts }: {
           )}
         </section>
       )}
-      <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
+      <TodayCard jobs={jobs} uid={uid} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
       <HotelCard jobs={live} today={today} onOpen={onOpen} />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">

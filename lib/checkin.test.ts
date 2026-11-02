@@ -99,6 +99,8 @@ describe('the four activities at check-in (Fred, 2026-10-18)', async () => {
     // The next site only when leaving a site; after Work done only the drive back.
     expect(checkInChoices('site')[0].options.map((o) => o.label)).toContain('Next site');
     expect(checkInChoices('site', true).map((g) => g.options.map((o) => o.label))).toEqual([['Hotel', 'Home', 'Fuel']]);
+    // Sunday's drive out to the hotel: Hotel first, even leaving home.
+    expect(checkInChoices('home', false, true)[0].options.map((o) => o.label)).toEqual(['Hotel', 'Site', "Home (you're here now)", 'Fuel', 'Vendor / materials']);
     // Leaving from where the tech is now.
     expect(checkInDrive('to-site', 'hotel')).toMatchObject({ origin: 'hotel', dest: 'site', label: 'Hotel → Site' });
     expect(checkInDrive('to-fuel', 'site')).toMatchObject({ origin: 'site', dest: 'fuel', label: 'Site → Fuel' });

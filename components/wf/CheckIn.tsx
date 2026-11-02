@@ -38,12 +38,14 @@ export type CheckInSend = {
 
 type Step = 'drive' | 'mileage' | 'asks';
 
-export default function CheckInDialog({ job, startOfDay, afterWork = false, from, send, onClose }: {
+export default function CheckInDialog({ job, startOfDay, afterWork = false, hotelDrive = false, from, send, onClose }: {
   job: WfJob;
   /** The first check-in of the day: the day starts, and the office's items are asked. */
   startOfDay: boolean;
   /** Work done: only the drive back to the hotel or home. */
   afterWork?: boolean;
+  /** The drive out to the hotel the day before the job (lib/hotel.ts hotelDriveDay): Hotel first. */
+  hotelDrive?: boolean;
   /** Where the tech is now (their last drive), to list the likely drives first. */
   from: Origin | null;
   send: CheckInSend;
@@ -143,10 +145,15 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
       {counter}
       {step === 'drive' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {travel && hotelDrive && (
+            <p style={{ margin: 0, fontSize: 13.5, padding: '8px 10px', borderRadius: 8, background: '#EEF3FA', color: '#13284A' }}>
+              Travel day: drive to <b>{job.hotel?.name || 'the hotel'}</b>. Pick <b>Hotel</b>; arriving there signs you off for the day.
+            </p>
+          )}
           {travel && (
             // Big buttons, not a drop-down (Fred, 2026-10-31: "keep" the mockup's Where are you driving? screen).
             <div role="radiogroup" aria-label="What are you doing?" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {checkInChoices(from, afterWork).map((g) => (
+              {checkInChoices(from, afterWork, hotelDrive).map((g) => (
                 <div key={g.group}>
                   {g.group === 'on_site' && <div className="wf-subtle" style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>Already there?</div>}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>

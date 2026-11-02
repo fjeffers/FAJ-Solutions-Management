@@ -12,6 +12,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Clock, Home, Hotel, MapPin } from 'lucide-react';
 import { arrivalAt, checkInDue, clearHome, drivingJob, loadHome, loadHotel, saveHome, siteSpot, type Fix, type Spot } from '@/lib/arrival';
 import { getPosition, noGpsMessage, NO_GPS_MS } from '@/lib/geo';
+import { geocodeAddress } from '@/lib/geocode';
+import { hotelDay, hotelDriveDay } from '@/lib/hotel';
+import { todayISO } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { browserStorage } from '@/lib/wf-outbox';
 import type { WfJob } from '@/lib/wf';
@@ -46,6 +49,22 @@ export function CheckInNow({ jobs, busy, onCheckIn }: { jobs: WfJob[]; busy: boo
   const job = useMemo(() => checkInDue(jobs), [jobs]);
   const [hidden, later] = useSnooze(job ? `faj-checkin-later:${job.id}` : '');
   if (!job || hidden) return null;
+  // Sunday's drive out to the hotel for a Monday start (lib/hotel.ts hotelDriveDay).
+  if (hotelDriveDay(job, todayISO()) && job.hotel) {
+    return (
+      <div className="fs-takeover" role="dialog" aria-modal="true" aria-label="Travel day">
+        <div className="fs-takeover-card">
+          <span className="fs-takeover-icon"><Hotel size={40} /></span>
+          <h2>Travel day: drive to the hotel</h2>
+          <p className="fs-takeover-job">{job.hotel.name || 'Your hotel'}</p>
+          {job.hotel.address && <p className="fs-takeover-meta">{job.hotel.address}</p>}
+          <p className="fs-takeover-meta">For WO {job.number}, {jobName(job)}{job.date ? `, starting ${hotelDay(job.date)}` : ''}</p>
+          <button type="button" className="fs-takeover-go" disabled={busy} onClick={() => onCheckIn(job)}>Check in for the drive</button>
+          <button type="button" className="fs-takeover-later" onClick={() => later(LATER_MS)}>Later</button>
+        </div>
+      </div>
+    );
+  }
   const time = job.startTime ? ` · starts ${job.startTime}` : '';
   return (
     <div className="fs-takeover" role="dialog" aria-modal="true" aria-label="Time to check in">
@@ -79,7 +98,18 @@ export function ArrivalPrompt({ jobs, uid, busy, onArrive }: { jobs: WfJob[]; ui
   }, [driveKey, since]);
   // Read each time, so a home saved in Profile counts at once.
   const home = loadHome(browserStorage(), uid);
-  const hotel = driving ? loadHotel(browserStorage(), uid, driving.job.id) : null;
+  // Until the first arrival saves the hotel's own GPS point, its spot is looked up from the
+  // address the office put on the job, so the first drive there (often Sunday's) is spotted too.
+  const savedHotel = driving ? loadHotel(browserStorage(), uid, driving.job.id) : null;
+  const hotelAddress = driving && driving.st.dest === 'hotel' && !savedHotel ? driving.job.hotel?.address ?? '' : '';
+  const [looked, setLooked] = useState<{ address: string; spot: Spot } | null>(null);
+  useEffect(() => {
+    if (!hotelAddress) return;
+    let live = true;
+    void geocodeAddress(hotelAddress).then((spot) => { if (live && spot) setLooked({ address: hotelAddress, spot }); });
+    return () => { live = false; };
+  }, [hotelAddress]);
+  const hotel = savedHotel ?? (looked && looked.address === hotelAddress ? looked.spot : null);
   const fix = here && here.drive === driveKey ? here : null;
   const at = driving && fix ? arrivalAt(driving.st, fix, siteSpot(driving.job), home, hotel) : null;
   const [hidden, notYet] = useSnooze(driveKey ? `faj-arrive-later:${driveKey}` : '');

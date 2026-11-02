@@ -81,11 +81,13 @@ export const ON_SITE_KEY = 'on-site';
  * Leaving the hotel or home, Site comes first and the place the tech is at
  * says so: on 2026-10-21 Paul Gibbs picked Hotel (then first on the list) for
  * the drive from the hotel to the site, and the app signed him out on arrival.
+ * On the drive out to the hotel the day before the job (lib/hotel.ts hotelDriveDay), Hotel comes first.
  */
-export function checkInChoices(from: Origin | null, afterWork = false): { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] {
+export function checkInChoices(from: Origin | null, afterWork = false, hotelDrive = false): { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] {
   const all = TRAVEL_TO.filter((t) => (afterWork ? ['hotel', 'home', 'fuel'].includes(t.dest) : t.dest !== 'next_site' || from === 'site'));
   const leaving = from === 'hotel' || from === 'home';
-  const to = leaving ? [...all.filter((t) => t.dest === 'site'), ...all.filter((t) => t.dest !== 'site')] : all;
+  const first: Dest | null = hotelDrive ? 'hotel' : leaving ? 'site' : null;
+  const to = first ? [...all.filter((t) => t.dest === first), ...all.filter((t) => t.dest !== first)] : all;
   const groups: { group: 'travel' | 'on_site'; label: string; options: { key: string; label: string }[] }[] = [
     { group: 'travel', label: 'Traveling to', options: to.map((t) => ({ key: `to-${t.dest}`, label: t.dest === from ? `${t.label} (you're here now)` : t.label })) },
   ];

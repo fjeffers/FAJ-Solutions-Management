@@ -7,9 +7,11 @@
 // Pure and unit-tested (lib/arrival.test.ts).
 import { milesBetween } from './geo';
 import { fsStage } from './fs-stage';
-import { dayState, type DayState } from './project-day';
+import { hotelDriveDay } from './hotel';
+import type { NavTarget } from './navigation';
+import { dayState, type DayState, type Dest } from './project-day';
 import { todayISO } from './utils';
-import { canWork, sortTechJobs, type WfJob } from './wf';
+import { canWork, fullAddress, sortTechJobs, type WfJob } from './wf';
 import type { KeyValue } from './wf-outbox';
 
 /** About 250 m: a parking lot away, not the next block. */
@@ -94,8 +96,20 @@ export function drivingJob(jobs: WfJob[], now: Date = new Date()): { job: WfJob;
 }
 
 /**
+ * Where Navigate takes the tech on a drive: the site, the hotel the office put on the job, or the
+ * home saved on this phone. Null when the app doesn't know the place (a fuel stop, the next site).
+ */
+export function driveTarget(job: WfJob, dest: Dest, home: Spot | null): NavTarget | null {
+  if (dest === 'site') return { address: fullAddress(job), lat: job.siteLat, lng: job.siteLng };
+  if (dest === 'hotel') return job.hotel?.address ? { address: job.hotel.address, lat: null, lng: null } : null;
+  if (dest === 'home') return home ? { address: '', lat: home.lat, lng: home.lng } : null;
+  return null;
+}
+
+/**
  * The job to check in for, when the tech hasn't started their day: a job of
- * theirs on today's date, and nothing under way on any job. Null otherwise.
+ * theirs on today's date, or the drive out to its hotel the day before
+ * (lib/hotel.ts hotelDriveDay), and nothing under way on any job. Null otherwise.
  */
 export function checkInDue(jobs: WfJob[], now: Date = new Date()): WfJob | null {
   const today = todayISO(now);
@@ -103,7 +117,7 @@ export function checkInDue(jobs: WfJob[], now: Date = new Date()): WfJob | null 
     && !['ready', 'done'].includes(fsStage(j.myDay ?? [], {}, now, 'America/New_York')));
   if (underWay) return null;
   const todays = jobs.filter((j) => j.dayFlow && canWork(j) && j.status !== 'offered'
-    && j.date != null && j.date <= today && (j.endDate ?? j.date) >= today
+    && ((j.date != null && j.date <= today && (j.endDate ?? j.date) >= today) || hotelDriveDay(j, today))
     && fsStage(j.myDay ?? [], {}, now, 'America/New_York') === 'ready');
   return sortTechJobs(todays, today)[0] ?? null;
 }

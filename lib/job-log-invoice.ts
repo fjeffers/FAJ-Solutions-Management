@@ -88,13 +88,14 @@ const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', curr
 export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], meta: Pick<InvoiceMeta, 'labor' | 'meal'>, place: string): Invoice {
   const names = [...sheet.time, ...sheet.miles, ...sheet.meals, ...sheet.other.filter(isHotel)].map((r) => r.tech).filter(Boolean);
   const order = byTechGroups(names, (t) => t, crew).map((g) => g.tech);
-  // What the lead has, the helpers have too (Fred, 2026-10-30: "everything the lead has the helpers has also ... 701
-  // for hotels so 350 for each tech"): a helper with no drives or hotel of their own has the lead's, as the client's
-  // own invoice gives the helper the lead's miles and hotel. A helper's line of the lead's is the lead's to change.
+  // The lead's hotel, the helpers' too (Fred, 2026-10-30: "everything the lead has the helpers has also ... 701 for
+  // hotels so 350 for each tech"): a helper with no hotel of their own has the lead's, and that line is the lead's to
+  // change. Each tech's mileage and hours are their own, as they entered them (Fred, 2026-11-02: "i need each tech
+  // milage to be individually", "all tech separately milage and hours they entered"; hotels "just mileage").
   // The crew's lead, even with no lines in the dates picked: then a helper has none of theirs, never another helper's
   // (Greptile on PR #44).
   const lead = crew[0] ?? order[0] ?? '';
-  const leadDrives = sheet.miles.filter((r) => r.tech === lead), leadHotels = sheet.other.filter((r) => r.tech === lead && isHotel(r));
+  const leadHotels = sheet.other.filter((r) => r.tech === lead && isHotel(r));
   // The materials, whoever bought them, once, under the lead before the hotel (Fred, 2026-10-30: "under lead tech
   // before hotel"); the first tech's when the lead has no lines in the dates.
   const host = order.includes(lead) ? lead : order[0];
@@ -122,8 +123,7 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     });
     // Total Milage: a line a day, from the drive there to the drive home, at the tech's mileage rate; the first drive
     // is from home to the site, the last one home, when they're before and after the days worked.
-    const own = sheet.miles.filter((r) => r.tech === tech);
-    const drives = own.length ? own : leadDrives, driver = own.length ? tech : lead;
+    const drives = sheet.miles.filter((r) => r.tech === tech);
     const milesOf = (d: string) => Math.round(drives.filter((r) => r.day === d).reduce((t, r) => t + (r.miles || 0), 0) * 10) / 10;
     const mileDays = [...new Set([...laborDays, ...drives.map((r) => r.day)])].sort();
     const driven = mileDays.filter((d) => milesOf(d) > 0);
@@ -134,7 +134,7 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
       const where = place || 'the site';
       const description = d === there ? `Mileage from Home to ${where}` : d === home ? `Mileage from ${where} to Home` : '';
       return { date: d, item: 'Mileage', description: miles > 0 ? description : '', qty: miles > 0 ? miles : null, rate: mile,
-        amount: miles > 0 ? lineAmount(miles, mile) : mile == null ? null : 0, tech: driver };
+        amount: miles > 0 ? lineAmount(miles, mile) : mile == null ? null : 0, tech };
     });
     // Total Travel: their hotel.
     const ownHotels = sheet.other.filter((r) => r.tech === tech && isHotel(r));

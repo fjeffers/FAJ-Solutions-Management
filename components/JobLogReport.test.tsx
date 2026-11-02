@@ -1084,7 +1084,7 @@ describe('Job log edited by the office', () => {
     }
   });
 
-  it("adds a drive to the lead's when the helper shares them, so the helper keeps them (CodeRabbit on PR #44)", async () => {
+  it('keeps each tech\'s mileage their own: a helper\'s drive added or changed is his only (Fred: "i need each tech milage to be individually")', async () => {
     const before = tables.job_punches;
     const punch = (contractor_name: string, kind: string, day: string, hhmm: string) => ({ contractor_name, kind, at: at(day, hhmm), lat: null, lng: null, accuracy: null });
     tables.job_punches = [punch('Paul Gibbs', 'in', '19', '08:00'), punch('Kendell Newbold', 'in', '19', '08:00'), punch('Paul Gibbs', 'out', '19', '17:00'), punch('Kendell Newbold', 'out', '19', '17:00'),
@@ -1096,12 +1096,16 @@ describe('Job log edited by the office', () => {
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
       fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
-      // Kendell has Paul's 18 miles on the 19th; a drive added on his section is Paul's, and both have it.
-      expect((screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026') as HTMLInputElement).value).toBe('18');
+      // Paul drove 18 miles on the 19th; Kendell entered none, so his are his own: none.
+      expect((screen.getByLabelText('Miles, Paul Gibbs, 10/19/2026') as HTMLInputElement).value).toBe('18');
+      expect((screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026') as HTMLInputElement).value).toBe('');
+      // His miles typed, and a drive added on his section, are his only; Paul's stay as they are.
+      fireEvent.change(screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026'), { target: { value: '30' } });
       fireEvent.click(screen.getByRole('button', { name: 'Add a drive, Kendell Newbold' }));
-      expect((screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026') as HTMLInputElement).value).toBe('18');
       fireEvent.change(screen.getByLabelText('Miles, Kendell Newbold, 10/21/2026'), { target: { value: '200' } });
-      expect((screen.getByLabelText('Miles, Paul Gibbs, 10/21/2026') as HTMLInputElement).value).toBe('200');
+      expect((screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026') as HTMLInputElement).value).toBe('30');
+      expect((screen.getByLabelText('Miles, Paul Gibbs, 10/19/2026') as HTMLInputElement).value).toBe('18');
+      expect(screen.queryByLabelText('Miles, Paul Gibbs, 10/21/2026')).toBeNull();
     } finally {
       tables.job_punches = before;
       delete tables.job_log_rates;

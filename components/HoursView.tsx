@@ -409,10 +409,13 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
   const typedDrives = drivesOf(drives);
   const drivesChanged = JSON.stringify(typedDrives ?? drives) !== JSON.stringify(baseDrives(row));
   // The app's own drives already make its figures; drives count here once the office types or corrects them.
+  const timeline = driveDay(drives.map((d) => ({ from: d.from, to: d.to, miles: num(d.miles) ?? 0, start: d.start || undefined, end: d.end || undefined })), vals.leftSite || null);
+  // The app's hours for a day of two visits give way to the drives once they're typed with their times, as on save.
+  const appFigure = (f: 'hours' | 'travel') => drivesChanged && timeline.timed && row.source[f] === 'app' && vals[f] === String(row.values[f]);
   const typed = { ...row.values, ...Object.fromEntries(BOXES.map(({ f, time }) => [f, time ? (vals[f] || null) : (num(vals[f]) ?? null)])),
+    ...(appFigure('hours') ? { hours: null } : {}), ...(appFigure('travel') ? { travel: null } : {}),
     drives: drivesChanged ? typedDrives ?? row.values.drives : row.values.drives } as SheetRow['values'];
   const c = dayCalc(typed, 0);
-  const timeline = driveDay(drives.map((d) => ({ from: d.from, to: d.to, miles: num(d.miles) ?? 0, start: d.start || undefined, end: d.end || undefined })), vals.leftSite || null);
   const changed = BOXES.some(({ f }) => vals[f] !== (row.values[f] == null ? '' : String(row.values[f]))) || vals.note.trim() !== (row.values.note ?? '') || drivesChanged;
   const edited = Object.keys(row.edits).length > 0;
   const pending = changed ? cardEdits(row, vals, drives) : undefined;

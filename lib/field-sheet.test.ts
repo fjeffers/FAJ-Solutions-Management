@@ -677,3 +677,30 @@ describe('drives with their times (Fred, 2026-11-02: home to site, time on site,
     expect(driveDay(drives.slice(0, 1), '15:30').stops[0]).toEqual({ from: '08:00', until: '15:30', hours: 7.5 });
   });
 });
+
+describe('drives with their times on the timesheet and the job log (Fred, 2026-11-02: "make sure it all adds up correctly")', async () => {
+  const { timesheetLines } = await import('./timesheet');
+  const { hoursScreenDays } = await import('./job-log-sheet');
+  const drives = [
+    { from: 'Home', to: 'Site', miles: 30, start: '07:00', end: '08:00' },
+    { from: 'Site', to: 'Next site', miles: 12, start: '11:00', end: '11:30' },
+    { from: 'Next site', to: 'Hotel', miles: 20, start: '15:00', end: '16:00' },
+  ];
+  const [row] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives, lunch: 30 }, added: true, hidden: false }], techs: [], days: [] });
+  it('the drives set the day\'s times: out, first site, last site, back', () => {
+    expect(row.values).toMatchObject({ left: '07:00', arrived: '08:00', leftSite: '15:00', back: '16:00' });
+  });
+  it('the timesheet line has the same hours on site, travel and miles as the card', () => {
+    expect(timesheetLines([row])[0]).toMatchObject({ started: '8:00 AM', finished: '3:00 PM', hours: 6, travel: 2.5, total: 8.5, miles: 62 });
+  });
+  it('the job log takes the day, with the hours on site less lunch', () => {
+    expect(hoursScreenDays([row])).toEqual([{ tech: 'Ana', day: '2026-11-02', in: '08:00', out: '15:00', brk: 0.5, hours: 6.5 }]);
+  });
+  it('times the office typed itself stay, and drives without times leave the day\'s times alone', () => {
+    const [typed] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives, arrived: '08:15' }, added: true, hidden: false }], techs: [], days: [] });
+    expect(typed.values).toMatchObject({ arrived: '08:15', leftSite: '15:00' });
+    const [untimed] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives: [{ from: 'Site', to: 'Home', miles: 105 }], arrived: '14:22', leftSite: '17:45' }, added: true, hidden: false }], techs: [], days: [] });
+    expect(untimed.values).toMatchObject({ arrived: '14:22', leftSite: '17:45', left: null, back: null });
+    expect(dayCalc(untimed.values, 0)).toMatchObject({ hours: 3.38, miles: 105 });
+  });
+});

@@ -277,8 +277,10 @@ export function sheetRows(input: { app: AppDay[]; saved: SavedDay[]; techs: stri
     const edits: Edits = s?.edits ?? {};
     const values: Values = { ...EMPTY };
     const source: SheetRow['source'] = {};
-    // Once the office retimes the day, hours and travel follow its times, not the app's visit totals.
-    const retimed = TIME_FIELDS.some((t) => t in edits);
+    // Once the office retimes the day (or types its drives with their times), hours and travel follow
+    // its times, not the app's visit totals.
+    const timedDrives = 'drives' in edits && driveDay(parseDrives(edits.drives)).timed;
+    const retimed = TIME_FIELDS.some((t) => t in edits) || timedDrives;
     for (const f of [...TIME_FIELDS, 'lunch', 'odoStart', 'odoEnd', 'gps', 'hours', 'travel'] as const) {
       if ((f === 'hours' || f === 'travel') && retimed) continue;
       const v = appValue(a, f);
@@ -295,6 +297,20 @@ export function sheetRows(input: { app: AppDay[]; saved: SavedDay[]; techs: stri
       else if ((TIME_FIELDS as readonly string[]).includes(f)) (values as Record<string, unknown>)[f] = minutesOf(v as string) != null ? v : null;
       else (values as Record<string, unknown>)[f] = isNum(v) ? v : null;
       source[f] = 'office';
+    }
+    // Drives typed with both times set the day's times as well, unless the office typed them: out the door at the
+    // first drive, Started on getting to the first site, Finished on leaving the last, back at the last drive's end.
+    // So the timesheet and the job log show the same day the drives make (Fred, 2026-11-02: "make sure it all adds
+    // up correctly and also reflect on the time sheet or job logs").
+    if (timedDrives && values.drives?.length) {
+      const d = values.drives;
+      const stops = driveDay(d, 'leftSite' in edits ? values.leftSite : null).stops.filter((x): x is SiteStop => x != null);
+      const fill = (f: TimeField, v: string | null | undefined) => {
+        if (v && !(f in edits)) { values[f] = v; source[f] = 'office'; }
+      };
+      if (!SITE_PLACES.includes(d[0].from)) fill('left', d[0].start);
+      if (!SITE_PLACES.includes(d.at(-1)!.to)) fill('back', d.at(-1)!.end);
+      if (stops.length) { fill('arrived', stops[0].from); fill('leftSite', stops.at(-1)!.until); }
     }
     // The drives' miles, unless the office typed the GPS figure itself on the Field Sheet.
     values.driveMiles = 'gps' in edits ? null : a?.driveMiles ?? null;

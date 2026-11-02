@@ -123,8 +123,8 @@ function Section({ s, tech, edit, add }: { s: InvoiceSection; tech: string; edit
 }
 
 function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
-  // A helper's drives or hotel that are the lead's: a line added goes with the lead's, so the helper keeps sharing
-  // them (CodeRabbit on PR #44).
+  // A helper's hotel that's the lead's: a hotel added goes with the lead's, so the helper keeps sharing it (CodeRabbit
+  // on PR #44). Each tech's drives are their own (Fred: "i need each tech milage to be individually").
   const ownerOf = (s: InvoiceSection) => s.lines.find((l) => l.tech && l.tech !== t.tech)?.tech ?? t.tech;
   return (
     <tbody className="jl-avoid" style={{ borderBottom: line }}>
@@ -141,7 +141,7 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
       {edit && <AddRow name={`Add a day, ${t.tech}`} onClick={() => edit.add(t.tech, 'Labor')}>Add a day</AddRow>}
       <Section s={t.meals} tech={t.tech} edit={edit} />
       <Section s={t.mileage} tech={t.tech} edit={edit}
-        add={edit && <AddRow name={`Add a drive, ${t.tech}`} onClick={() => edit.add(ownerOf(t.mileage), 'Mileage')}>Add a drive</AddRow>} />
+        add={edit && <AddRow name={`Add a drive, ${t.tech}`} onClick={() => edit.add(t.tech, 'Mileage')}>Add a drive</AddRow>} />
       {/* The materials, on the lead's part before the hotel (Fred: "under lead tech before hotel"). */}
       {t.materials && (t.materials.lines.length > 0 || edit) && (
         <Section s={t.materials} tech={t.tech} edit={edit}

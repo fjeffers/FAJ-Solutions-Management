@@ -9,6 +9,7 @@
 //
 // The grouping and totalling below is pure and unit-tested; the components
 // call it rather than re-deriving money inline.
+import { notOnHold } from './wf';
 import { createClient } from '@/lib/supabase/client';
 import type {
   TechDirectMessage, TechDirectoryEntry, TechJob, TechMessage, TechOpenJob,
@@ -26,7 +27,7 @@ export async function fetchTechJobs(): Promise<TechJob[]> {
   const supabase = createClient();
   const { data, error } = await supabase.rpc('tech_my_jobs');
   if (error) throw new Error(error.message);
-  return (data as TechJob[] | null) ?? [];
+  return notOnHold((data as TechJob[] | null) ?? []);
 }
 
 export async function fetchTechPayments(): Promise<TechPayment[]> {
@@ -206,7 +207,7 @@ export async function fetchTechOpenJobs(): Promise<TechOpenJob[]> {
   const supabase = createClient();
   const { data, error } = await supabase.rpc('tech_open_jobs');
   if (error) throw new Error(error.message);
-  return (data as TechOpenJob[] | null) ?? [];
+  return notOnHold((data as TechOpenJob[] | null) ?? []);
 }
 
 /**

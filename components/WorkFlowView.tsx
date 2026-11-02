@@ -41,6 +41,7 @@ import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos
 import { EXPENSE_STATUS, expenseCategoryLabel, expenseReasonText, type ExpenseStatus } from '@/lib/expenses';
 import { Banner, BucketTabs, Dialog, Empty, Hero, JobCard, Section, greeting } from '@/components/wf/WfUi';
 import WfJobDetail, { mapsDirections } from '@/components/wf/WfJobDetail';
+import JobUpdates from '@/components/wf/JobUpdates';
 import { listsNow } from '@/lib/app-lists';
 import { shown as partShown } from '@/lib/screen-parts';
 import { designNow } from '@/lib/screen-design';
@@ -115,7 +116,7 @@ export function WorkFlowTop({
 export default function WorkFlowView({
   workOrders, contractors, ownerFirstName, initialSearch = '', owedToTechs, modeSwitch, search: searchIn, onSearch, initialBucket,
   onAdd, onAI, onEdit, onDelete, onDuplicate, onPay, onSend, onSendPortal, onArchive, onUnarchive, onCloseJob,
-  onReassign, onRefresh, openId, onOpenChange,
+  onReassign, onRefresh, openId, onOpenChange, home,
 }: {
   workOrders: EnrichedWorkOrder[];
   contractors: Contractor[];
@@ -146,6 +147,8 @@ export default function WorkFlowView({
   /** The job open on the job screen, or null for the list. */
   openId: string | null;
   onOpenChange: (id: string | null) => void;
+  /** Home (Dashboard and Dispatch merged): Waiting on you, Today in the field, notes and shortcuts, under the greeting. */
+  home?: ReactNode;
 }) {
   const [ownSearch, setOwnSearch] = useState(initialSearch);
   const search = searchIn ?? ownSearch;
@@ -211,6 +214,7 @@ export default function WorkFlowView({
         onNeedTech={() => setBucket('available')} onWorkDone={() => setBucket('pending')}
         modeSwitch={modeSwitch} search={search} onSearch={setSearch}
         between={<>
+      {home}
 
       {waitingExp.length > 0 && (
         <button className="wf-card wf-card-click wf-rise" onClick={() => setInboxOpen(true)}
@@ -593,6 +597,7 @@ function OwnerJob({
               <WorkOrderChatPanel woNumber={w.wo_number} />
             </Section>
           )}
+          <JobUpdates woId={w.id} createdAt={w.created_at} checkedInAt={w.checked_in_at} checkedOutAt={w.checked_out_at} />
           {jobDesign.jobBelow.filter(partShown).map((k) => <Fragment key={k}>{jobCards[k]}</Fragment>)}
         </>}
       />

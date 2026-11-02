@@ -57,18 +57,18 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
 import {
-  chargesByTech, chargesTotal, lineAmount, mileRateShown, mileRateTyped, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates,
+  chargesByTech, lineAmount, mileRateShown, mileRateTyped, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates,
   sheetTechs, withAllHoursRate,
   type JobRates, type RateRow,
 } from '@/lib/job-log-rates';
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
 import JobLogInvoice, { type InvoiceEditor } from '@/components/JobLogInvoice';
-import { addLine, buildInvoice, downloadInvoiceXlsx, editLine, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceMeta } from '@/lib/job-log-invoice';
+import { addLine, buildInvoice, downloadInvoiceXlsx, editLine, invoiceCharges, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceMeta } from '@/lib/job-log-invoice';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
@@ -88,8 +88,16 @@ type Pic = {
   declined?: boolean;
   /** A receipt kept as a PDF (the office can add one): a link, not a picture. */
   pdf?: boolean;
+  /** A hotel's receipt (Lodging): on the invoice it has its own section. */
+  hotel?: boolean;
 };
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
+/** What a site photo is on the log. Saved in work_orders.job_log_receipt_photos: '<id>' a receipt, 'hotel:<id>' a
+ *  hotel's receipt, 'odo:<id>' an odometer; none of them, a photo. */
+type PhotoKind = 'photo' | 'odometer' | 'receipt' | 'hotel';
+const kindKey: Record<Exclude<PhotoKind, 'photo'>, (id: string) => string> = { receipt: (id) => id, hotel: (id) => `hotel:${id}`, odometer: (id) => `odo:${id}` };
+const photoKind = (labels: Set<string>, id: string): PhotoKind =>
+  labels.has(id) ? 'receipt' : labels.has(`hotel:${id}`) ? 'hotel' : labels.has(`odo:${id}`) ? 'odometer' : 'photo';
 type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean; materials: boolean; otherReceipts: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
 
 const TZ = 'America/New_York';
@@ -154,10 +162,12 @@ function useLogChoices(woId: string, left: string[] | null | undefined, receiptI
   };
   /** The job has it saved as left out. */
   const savedOut = (key: string) => kept.current.leftOut.has(key);
-  /** Label a site photo a receipt, or not one. */
-  const label = (photoId: string, receipt: boolean) => {
+  /** Label a site photo a photo, an odometer, a receipt or a hotel's receipt (Fred, 2026-10-31: "any pictures i
+   *  added also it need to be edited"). */
+  const label = (photoId: string, kind: PhotoKind) => {
     const r = new Set(tapped.current.receiptPhotos);
-    if (receipt) r.add(photoId); else r.delete(photoId);
+    for (const k of Object.values(kindKey)) r.delete(k(photoId));
+    if (kind !== 'photo') r.add(kindKey[kind](photoId));
     void choose({ ...tapped.current, receiptPhotos: r });
   };
   return { ...now, loaded, flip, label, savedOut };
@@ -190,7 +200,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   // copy i can entered how much per an hour the milage for each tech ... then i need a copy with out it for the
   // tech"). The rates are kept per job in job_log_rates, which only the office can read (migration 147).
   // And the invoice, laid out as the client's (Fred, 2026-10-30: "this how the client want the layout to look").
-  const [copy, setCopy] = useState<'tech' | 'client' | 'invoice'>('tech');
+  const [copy, setCopy] = useState<'tech' | 'client' | 'invoice'>('invoice');
   // The rates table as the office is changing it (null: as saved).
   const [rateEdit, setRateEdit] = useState<RateRow[] | null>(null);
   const [savedRates, setSavedRates] = useState<JobRates>({});
@@ -272,6 +282,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           + (e.status === 'declined' && e.decline_reason ? ` (${e.decline_reason})` : ''),
         declined: e.status === 'declined',
         pdf: /\.pdf$/i.test(e.receipt_path!),
+        hotel: e.category === 'hotel',
       })));
       setOdometer(odo.filter((o) => url.has(o.photo_path!)).map((o) => ({
         key: `odo:${o.id}`, src: url.get(o.photo_path!)!, day: dayOf(o.at, TZ), stamp: fmtStamp(o.at), tech: o.contractor_name,
@@ -300,13 +311,21 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
   const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => ({
     key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
-    caption: receiptPhotos.has(p.id) ? 'Receipt photo' : undefined,
+    caption: ({ photo: undefined, receipt: 'Receipt photo', hotel: 'Hotel receipt photo', odometer: 'Odometer photo' } as const)[photoKind(receiptPhotos, p.id)],
+    hotel: photoKind(receiptPhotos, p.id) === 'hotel',
   }));
-  const shownPhotos = sitePics.filter((p) => !receiptPhotos.has(p.photoId!));
+  const sitePicsOf = (...kinds: PhotoKind[]) => sitePics.filter((p) => kinds.includes(photoKind(receiptPhotos, p.photoId!)));
+  const shownPhotos = sitePicsOf('photo');
   // The receipts, then the site photos labeled receipts, by day.
-  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePics.filter((p) => receiptPhotos.has(p.photoId!))]
+  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('receipt', 'hotel')]
     .sort((a, b) => a.day.localeCompare(b.day));
-  const shownOdometer = odometer.filter((p) => inRange(p.day, from, to));
+  const shownOdometer = [...odometer.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('odometer')]
+    .sort((a, b) => a.day.localeCompare(b.day));
+  // The invoice ends with the odometer, the receipts and the hotels' receipts, each on its own, then the photos, the
+  // office's added ones too (Fred, 2026-10-31: "at the end i want to add pictures of the odometer, receipt and hotels",
+  // "any pictures i added").
+  const hotelPics = shownReceipts.filter((p) => p.hotel);
+  const otherPics = shownReceipts.filter((p) => !p.hotel);
   const printed = (p: Pic) => !p.declined && !leftOut.has(p.key);
   // The pictures taken out of the log: off the screen too, until "Pictures left out" is ticked.
   const leftCount = [...shownReceipts, ...shownOdometer, ...shownPhotos].filter((p) => leftOut.has(p.key)).length;
@@ -414,10 +433,15 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const invMeta = invDraft ? parseInvoiceMeta(invDraft.meta, todayDay) : savedMeta;
   // Billed to as typed on the invoice (Fred's sample: TeamNetView), else the work order's customer.
   const invoiceHead: InvoiceHead = { billTo: invMeta.billTo || (w.customer_name ?? ''), shipTo: [w.title ?? '', where].filter(Boolean), meta: invMeta };
-  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, invMeta, [w.site_city, w.site_state].filter(Boolean).join(' ')) : null;
+  const place = [w.site_city, w.site_state].filter(Boolean).join(' ');
+  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, invMeta, place) : null;
+  // The client copy's charges are the invoice's, so the two always have the same total (Fred, 2026-10-31: "the job log
+  // and invoice is not matching up"): with the rates saved, and as they're typed.
+  const clientInvoice = buildInvoice(shown, billRates, crew, savedMeta, place);
+  const clientCharges = invoiceCharges(clientInvoice, savedAll);
+  const typedTotal = invoiceCharges(buildInvoice(shown, typedRates, crew, savedMeta, place), typedAll).total;
   // The total under the table as the rates are typed; the page, the print and Excel with the rates saved, so a
   // print (the button, or the browser's own) is never of rates that aren't kept (CodeRabbit on PR #40).
-  const typedCharges = chargesByTech(shown, typedRates, crew);
   const charges = chargesByTech(shown, billRates, crew);
   const unbilled = notCharged(shown, typedRates, crew);
   const ratesChanged = !sameRates(rates, savedRates) || typedAll !== savedAll;
@@ -547,8 +571,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     ];
     downloadJobLogXlsx(copy === 'client' ? `${logName} · Client time sheet.xlsx` : `${logName} · Time sheet.xlsx`,
       shown, { title: w.title || 'Work order', lines, range, crew }, copy === 'client' ? billRates : undefined,
-      // The receipts the log shows are the ones its breakdown charges, in Excel as in the PDF (CodeRabbit on PR #41).
-      { meals: inc.meals, materials: inc.materials, other: inc.otherReceipts }, copy === 'client' && savedAll != null)
+      copy === 'client' ? clientCharges : undefined)
       .catch(() => toastError("The Excel file didn't download. Try again."));
   };
 
@@ -570,33 +593,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
 
   /**
    * The client's copy, under TOTAL CHARGES: each tech's hours and their dollars, the hours' total, the mileage, then
-   * each tech's mileage and the mileage's total, then the receipts' totals as the copy shows them, and all of it added
-   * up (Fred, 2026-10-30: "the break down total paul hours total kendal hours and then amount ... then all it all up
+   * each tech's mileage and the mileage's total, then the meals, materials and hotels, all as the invoice has them,
+   * and all of it added up (Fred, 2026-10-30: "the break down total paul hours total kendal hours and then amount ... then all it all up
    * together for an over all total"; "milage paul mailge + rate same with kendal then the total amount the Meals,
    * Materials and Other receipts ... then OVERALL TOTAL").
    */
   const breakdown = () => {
-    const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
-    const hotels = otherReceipts.filter(isHotel), restOther = otherReceipts.filter((r) => !isHotel(r));
-    const receiptLines = [
-      ...(inc.meals && mealReceipts.length > 0 ? [{ what: `Meals · ${receiptCount(mealReceipts.length)}`, amount: moneyTotal(mealReceipts) }] : []),
-      ...(inc.materials && materialReceipts.length > 0 ? [{ what: `Materials · ${receiptCount(materialReceipts.length)}`, amount: moneyTotal(materialReceipts) }] : []),
-      // The hotels on their own line, then the rest of the other receipts (Fred, 2026-10-30: "see it hotels also").
-      ...(inc.otherReceipts && hotels.length > 0 ? [{ what: `Hotels · ${receiptCount(hotels.length)}`, amount: moneyTotal(hotels) }] : []),
-      ...(inc.otherReceipts && restOther.length > 0 ? [{ what: `Other receipts · ${receiptCount(restOther.length)}`, amount: moneyTotal(restOther) }] : []),
-    ];
-    const lines = [
-      // A tech's line when they've hours (or miles) to charge for: no "0 mi × $0.60 = $0.00".
-      // One rate for all hours: all the techs' hours on one line at it.
-      ...(savedAll != null ? [{ what: `All techs’ hours · ${hrs(r2(charges.reduce((t, c) => t + c.hours, 0)))} × ${rateText(savedAll)}/hr`, amount: sumOf('labor'), bold: true }] : [
-        ...charges.filter((c) => c.hourRate != null && c.hours > 0).map((c) => ({ what: `${c.tech} hours · ${hrs(c.hours)} × ${rateText(c.hourRate!)}/hr`, amount: c.labor ?? 0, bold: false })),
-        { what: 'Hours total', amount: sumOf('labor'), bold: true },
-      ]),
-      ...charges.filter((c) => c.mileRate != null && c.miles > 0).map((c) => ({ what: `${c.tech} mileage · ${c.miles.toLocaleString('en-US')} mi × ${rateText(c.mileRate!)}/mi`, amount: c.mileage ?? 0, bold: false })),
-      ...(charges.some((c) => c.mileRate != null) ? [{ what: 'Mileage total', amount: sumOf('mileage'), bold: true }] : []),
-      ...receiptLines.map((l) => ({ ...l, bold: false })),
-    ];
-    const overall = r2(chargesTotal(charges) + receiptLines.reduce((t, l) => t + l.amount, 0));
+    const { lines, total: overall } = clientCharges;
     return (
       <div className="jl-sec jl-avoid">
         <H>Breakdown</H>
@@ -675,7 +678,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           // Taken out with its ✗; a declined receipt can be too, though it never prints either way.
           const taken = leftOut.has(p.key);
           const what = `${p.caption ?? 'Photo'} ${p.stamp}`;
-          const isReceipt = p.photoId ? receiptPhotos.has(p.photoId) : false;
+          const kind = p.photoId ? photoKind(receiptPhotos, p.photoId) : null;
           return (
             <div key={p.key} className={out ? 'jl-avoid no-print' : 'jl-avoid'} style={{ position: 'relative' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -727,10 +730,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               })()}
               {p.photoId && (
                 <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  {([[true, 'Receipt'], [false, 'Not a receipt']] as const).map(([r, text]) => (
-                    <button key={text} type="button" aria-pressed={isReceipt === r} onClick={() => { if (isReceipt !== r) label(p.photoId!, r); }}
-                      style={{ flex: 1, fontSize: 11.5, padding: '3px 4px', borderRadius: 8, cursor: 'pointer',
-                        border: `1px solid ${isReceipt === r ? '#0E1B2E' : '#D8D3C8'}`, background: isReceipt === r ? '#0E1B2E' : '#fff', color: isReceipt === r ? '#fff' : '#1B1C1F' }}>
+                  {([['photo', 'Photo'], ['odometer', 'Odometer'], ['receipt', 'Receipt'], ['hotel', 'Hotel']] as const).map(([r, text]) => (
+                    <button key={text} type="button" aria-pressed={kind === r} onClick={() => { if (kind !== r) label(p.photoId!, r); }}
+                      style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '3px 2px', borderRadius: 8, cursor: 'pointer',
+                        border: `1px solid ${kind === r ? '#0E1B2E' : '#D8D3C8'}`, background: kind === r ? '#0E1B2E' : '#fff', color: kind === r ? '#fff' : '#1B1C1F' }}>
                       {text}
                     </button>
                   ))}
@@ -773,8 +776,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         ) : (
           <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded} onClick={() => setDraft(sheetByTech(sheet, crew))}><Pencil size={16} /> Edit time sheet</button>
         )}
-        <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
-          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />
+        {copy === 'invoice' && <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
+          day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />}
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div role="group" aria-label="Which copy" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F', marginRight: 4 }}>Copy:</span>
@@ -830,7 +833,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {ratesChanged ? <span style={{ fontSize: 12.5, color: '#5E6470' }}>Save the rates, then print or download.</span>
                 : noSavedRates && !ratesFailed && <span style={{ fontSize: 12.5, color: '#5E6470' }}>Set a rate and save it to print the client’s copy.</span>}
               {/* The total as the rates are typed (Fred: "i enter the rates and it shows the total"). */}
-              <b style={{ marginLeft: 'auto', fontSize: 14 }}>Total {fmtMoney(chargesTotal(typedCharges))}</b>
+              <b style={{ marginLeft: 'auto', fontSize: 14 }}>Total {fmtMoney(typedTotal)}</b>
             </div>
             {ratesFailed && <div role="alert" style={{ fontSize: 12.5, color: '#B42318', marginTop: 6 }}>The saved rates didn’t load, so they can’t be changed or printed right now. Close the job log and open it again.</div>}
             {unbilled.length > 0 && <div style={{ fontSize: 12.5, color: '#B42318', marginTop: 6 }}>Not charged (no rates): {unbilled.join(', ')}.</div>}
@@ -839,12 +842,16 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
           {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{shown.miles.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
-          {toggle('notes', "Tech's notes")}{(receipts.length > 0 || receiptPhotos.size > 0) && toggle('receipts', 'Receipts')}{odometer.length > 0 && toggle('odometer', 'Odometer')}
-          {toggle('photos', 'Photos')}{toggle('scope', 'Scope of work')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}
+          {toggle('notes', "Tech's notes")}{toggle('scope', 'Scope of work')}
+          {/* The pictures are on the invoice only (Fred, 2026-10-31: "the pictures are only for the invioce nothing else"). */}
+          {copy === 'invoice' && <>{(receipts.length > 0 || sitePicsOf('receipt', 'hotel').length > 0) && toggle('receipts', 'Receipts')}{(odometer.length > 0 || sitePicsOf('odometer').length > 0) && toggle('odometer', 'Odometer')}
+            {toggle('photos', 'Photos')}{leftCount > 0 && toggle('leftOut', `Pictures left out (${leftCount})`)}</>}
         </div>
-        <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
-          Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it out of the job log: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Receipt and it goes with the receipts. Declined receipts never print, and their ✗ takes them off the screen too. Nothing is deleted.
-        </div>
+        {copy === 'invoice' && (
+          <div style={{ flexBasis: '100%', fontSize: 12.5, color: '#5E6470' }}>
+            The pictures are on the invoice only, on their own pages after it. Tap <b style={{ color: '#B42318' }}>✗</b> on a picture to take it off: the client won’t see it, and it stays on the job. Tick “Pictures left out” to see those again, and tap <b style={{ color: '#047857' }}>✓</b> to put one back. Label a photo Odometer, Receipt or Hotel and it goes there. Declined receipts never print, and their ✗ takes them off the screen too. Nothing is deleted.
+          </div>
+        )}
         {draft && (
           <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
             Editing the time sheet: every day’s hours, miles, meals, materials and other receipts. Change any box, add a row or take one out, then <b>Save time sheet</b>, and the job log shows it. The clock-ins, the Hours screen and the receipts stay as they are.
@@ -873,6 +880,13 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             </div>
           </div>
           {invDraft && <div className="jl-print-only" style={{ padding: 24 }}>The invoice is being changed. Save it, then print it.</div>}
+          {/* On paper, on a page of their own after the invoice; not while it's being changed. */}
+          <div className={invDraft ? 'no-print' : pictureCount > 0 ? 'jl-pics' : undefined} style={{ padding: '0 28px 28px', fontSize: 13 }}>
+            {inc.odometer && pictures('Odometer', shownOdometer)}
+            {inc.receipts && pictures('Receipts', otherPics, true)}
+            {inc.receipts && pictures('Hotels', hotelPics, true)}
+            {inc.photos && pictures('Photos', shownPhotos)}
+          </div>
         </div>
       ) : (
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>
@@ -905,7 +919,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               ...(mealReceipts.length ? [['Meals', fmtMoney(moneyTotal(mealReceipts))]] : []),
               ...(materialReceipts.length ? [['Materials', fmtMoney(moneyTotal(materialReceipts))]] : []),
               ...(otherReceipts.length ? [['Other receipts', fmtMoney(moneyTotal(otherReceipts))]] : []),
-              ...(pictureCount > 0 ? [['Pictures', String(pictureCount)]] : []),
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
             ].map(([label, value]) => (
@@ -1060,9 +1073,9 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               {withRates && (
                 <div className="jl-band jl-avoid" style={{ marginTop: 10, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', fontSize: 13 }}>
                   <b style={{ color: '#E3C987', letterSpacing: 1 }}>TOTAL CHARGES</b>
-                  <span>Hours <b>{fmtMoney(sumOf('labor'))}</b></span>
-                  <span>Mileage <b>{fmtMoney(sumOf('mileage'))}</b></span>
-                  <span>Total <b>{fmtMoney(chargesTotal(charges))}</b></span>
+                  <span>Hours <b>{fmtMoney(clientInvoice.totals.labor)}</b></span>
+                  <span>Mileage <b>{fmtMoney(clientInvoice.totals.mileage)}</b></span>
+                  <span>Total <b>{fmtMoney(Math.round((clientInvoice.totals.labor + clientInvoice.totals.mileage) * 100 + 1e-9) / 100)}</b></span>
                 </div>
               )}
               {withRates && breakdown()}
@@ -1109,12 +1122,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             <><H>Technician&apos;s notes</H><div className="jl-avoid" style={{ whiteSpace: 'pre-wrap' }}>{w.closeout_notes}</div></>
           )}
 
-          {/* On paper the pictures start on a page of their own, after the tables (when any will print). */}
-          <div className={pictureCount > 0 ? 'jl-pics' : undefined}>
-            {inc.receipts && pictures('Receipts', shownReceipts, true)}
-            {inc.odometer && pictures('Odometer', shownOdometer)}
-            {inc.photos && pictures('Photos', shownPhotos)}
-          </div>
 
           <div style={{ marginTop: 28, paddingTop: 10, borderTop: '1px solid #E4DFD3', display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5, color: '#5E6470', flexWrap: 'wrap' }}>
             <span><b style={{ color: '#0E1B2E' }}>FAJ Solutions</b> · Bringing People and Technology Together</span>

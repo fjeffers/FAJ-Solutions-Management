@@ -1,4 +1,5 @@
-import type { User } from '@supabase/supabase-js';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 type AdminResult =
@@ -39,4 +40,21 @@ export function parseEmailList(value: unknown): string[] {
     .split(',')
     .map((email) => email.trim())
     .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+}
+
+/**
+ * Office-only server routes: signed in is not enough, it must be the business
+ * owner's login (Fred, 2026-10-31: "tech only see the tech app and admin only
+ * me"). A tech or staff login gets 403. If the role can't be checked, the
+ * route refuses rather than guessing. Returns the refusal, or null to go on.
+ */
+export async function ownerOnly(supabase: Pick<SupabaseClient, 'rpc'>): Promise<NextResponse | null> {
+  const { data, error } = await supabase.rpc('wf_role');
+  if (error) {
+    return NextResponse.json({ ok: false, error: "Couldn't check who is signed in. Try again." }, { status: 503 });
+  }
+  if ((data as { role?: string } | null)?.role !== 'owner') {
+    return NextResponse.json({ ok: false, error: 'Only the administrator login can do this.' }, { status: 403 });
+  }
+  return null;
 }

@@ -9,7 +9,7 @@
 //                   the chosen day's jobs underneath
 // The office sees money (the client price) on a card; techs never see these.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, Columns3, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck, CalendarDays, Users, MessageSquare, Camera, GripVertical, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Columns3, GanttChart, Table2, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck, CalendarDays, Users, MessageSquare, Camera, GripVertical, Clock } from 'lucide-react';
 import {
   WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12,
   type WfJob, type WfStatus,
@@ -20,6 +20,7 @@ import { boardColumns, columnOf, moveTo, type BoardColumn, type Move } from '@/l
 import { shown as partShown } from '@/lib/screen-parts';
 import { Empty } from './WfUi';
 import WeekCalendar from './WeekCalendar';
+import type { Span } from '@/lib/week-view';
 
 // ── App bar ─────────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ export const DISPATCH_COLUMNS: { key: WfStatus; label: string }[] = [
   { key: 'declined', label: 'Declined' },
 ];
 
-export type DispatchView = 'week' | 'board' | 'grid' | 'list';
+export type DispatchView = 'week' | 'board' | 'grid' | 'list' | 'sheet';
 
 /** Fred's own board columns in use (Settings -> Lists & stages; hidden ones left out). */
 export function boardHolds(): { key: string; label: string }[] {
@@ -237,7 +238,13 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
   );
 }
 
-export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
+export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'Dispatch board', sheet, query: queryProp, onQuery }: {
+  title?: string;
+  /** The search, when the screen around keeps it (so it's still there after a job is opened and closed). */
+  query?: string;
+  onQuery?: (q: string) => void;
+  /** The Sheet (components/wf/JobSheet.tsx) for the jobs showing; without it there's no Sheet button. */
+  sheet?: (jobs: WfJob[]) => ReactNode;
   rows: BoardRow[];
   onOpen: (job: WfJob) => void;
   /** Moving a job to another column (drag on the Board, or Move to). Without it the board is look-only. */
@@ -247,16 +254,28 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
   /** Anything that needs Fred, between the numbers and the search (expenses, time asks). */
   between?: ReactNode;
 }) {
-  const [query, setQuery] = useState('');
+  const [ownQuery, setOwnQuery] = useState('');
+  const query = queryProp ?? ownQuery;
+  const setQuery = onQuery ?? setOwnQuery;
   // Board (Primio's columns), Grid (cards) or List (a table) — Fred, 2026-10-04:
   // "i need a grid, list view". The choice is remembered on this device.
   // Week is where Work orders opens (Fred, 2026-10-18: "the view sucks" ... "week
   // calendar card like view"); a new key, so every device starts on it.
-  const [view, setView] = useState<DispatchView>('week');
+  // Fred, 2026-10-31: "i need to see the view by week, day, month cards and list". When: Day, Week,
+  // Month or By stage; Show as: Cards or List (and Board, by stage). Remembered on this device.
+  const [when, setWhen] = useState<Span | 'stage'>('week');
+  type Layout = 'cards' | 'list' | 'board' | 'sheet' | 'timeline';
+  const [layout, setLayout] = useState<Layout>('cards');
   useEffect(() => {
-    try { const v = localStorage.getItem('dispatch-view-2'); if (v === 'board' || v === 'grid' || v === 'list') setView(v); } catch { /* private window */ }
+    try {
+      const v = JSON.parse(localStorage.getItem('dispatch-view-3') ?? 'null') as { when?: string; layout?: string } | null;
+      if (v?.when === 'day' || v?.when === 'week' || v?.when === 'month' || v?.when === 'stage') setWhen(v.when);
+      if (v?.layout === 'cards' || v?.layout === 'list' || v?.layout === 'board' || v?.layout === 'sheet' || v?.layout === 'timeline') setLayout(v.layout);
+    } catch { /* private window */ }
   }, []);
-  const chooseView = (v: DispatchView) => { setView(v); try { localStorage.setItem('dispatch-view-2', v); } catch { /* private window */ } };
+  const remember = (w: Span | 'stage', l: Layout) => { setWhen(w); setLayout(l); try { localStorage.setItem('dispatch-view-3', JSON.stringify({ when: w, layout: l })); } catch { /* private window */ } };
+  const shape: Layout = when !== 'stage' && layout === 'board' ? 'cards' : when === 'stage' && layout === 'timeline' ? 'list' : layout === 'sheet' && !sheet ? 'list' : layout;
+  const view: DispatchView = when !== 'stage' ? 'week' : shape === 'cards' ? 'grid' : (shape as DispatchView);
   const live = rows.filter((r) => r.job.status !== 'closed');
   const count = (s: WfStatus) => live.filter((r) => r.job.status === s).length;
   const urgent = live.filter((r) => r.job.highPriority).length;
@@ -286,7 +305,7 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <PrimioBar title="Dispatch board" right={right} />
+      <PrimioBar title={title} right={right} />
       {partShown('dispatch.tiles') && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
         <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />
         <StatTile label={stageName('open')} value={count('open')} color={WF_STATUS_COLOR.open} onClick={() => toggle('stage:open')} active={focus === 'stage:open'} />
@@ -306,18 +325,32 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
         <div style={{ position: 'relative', flex: '1 1 280px' }}>
           <Search size={18} color="var(--wf-subtle)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
           <input className="wf-input" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by ID, client, location or title" aria-label="Search the dispatch board" style={{ paddingLeft: 40 }} />
+            placeholder="Search by ID, client, location, title or tech" aria-label="Search the dispatch board" style={{ paddingLeft: 40 }} />
         </div>
-        <div className="wf-filters" role="group" aria-label="How to show jobs" style={{ flexWrap: 'nowrap' }}>
-          {([['week', 'Week', <CalendarDays key="w" size={15} />], ['board', 'Board', <Columns3 key="b" size={15} />], ['grid', 'Grid', <LayoutGrid key="g" size={15} />], ['list', 'List', <ListIcon key="l" size={15} />]] as const).map(([v, label, icon]) => (
-            <button key={v} className="wf-filter" aria-pressed={view === v} onClick={() => chooseView(v)}
+        {query.trim() && (
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setQuery('')}>
+            <ChevronLeft size={15} /> {title === 'Home' ? 'Back to Home' : 'Show all jobs'}
+          </button>
+        )}
+        <div className="wf-filters" role="group" aria-label="Which days" style={{ flexWrap: 'nowrap' }}>
+          {([['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['stage', 'By stage']] as const).map(([v, label]) => (
+            <button key={v} className="wf-filter" aria-pressed={when === v} onClick={() => remember(v, layout)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{v === 'stage' ? <Columns3 size={15} /> : <CalendarDays size={15} />}{label}</button>
+          ))}
+        </div>
+        <div className="wf-filters" role="group" aria-label="Show as" style={{ flexWrap: 'nowrap' }}>
+          {([['cards', 'Cards', <LayoutGrid key="g" size={15} />], ['list', 'List', <ListIcon key="l" size={15} />], ['sheet', 'Sheet', <Table2 key="s" size={15} />],
+            ['timeline', 'Timeline', <GanttChart key="t" size={15} />], ['board', 'Board', <Columns3 key="b" size={15} />]] as const)
+            .filter(([v]) => (v !== 'board' || when === 'stage') && (v !== 'timeline' || when !== 'stage') && (v !== 'sheet' || !!sheet)).map(([v, label, icon]) => (
+            <button key={v} className="wf-filter" aria-pressed={shape === v} onClick={() => remember(when, v)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{label}</button>
           ))}
         </div>
       </div>
       {view === 'week' && (
         // The same jobs the tiles and the search leave showing, each once.
-        <WeekCalendar rows={[...new Map(groups.flatMap((g) => g.list).map((r) => [r.job.id, r])).values()]} onOpen={onOpen} />
+        <WeekCalendar rows={[...new Map(groups.flatMap((g) => g.list).map((r) => [r.job.id, r])).values()]} onOpen={onOpen}
+          span={when === 'stage' ? 'week' : when} layout={shape === 'list' || shape === 'sheet' || shape === 'timeline' ? shape : 'cards'} sheet={sheet} />
       )}
       {view === 'board' && (
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 16, alignItems: 'stretch' }}>
@@ -366,6 +399,7 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove }: {
           ))}
         </div>
       )}
+      {view === 'sheet' && sheet?.([...new Map(groups.flatMap((g) => g.list).map((r) => [r.job.id, r.job])).values()])}
       {view === 'list' && <DispatchTable groups={groups} onOpen={onOpen} onStage={toggle} focus={focus} />}
     </div>
   );

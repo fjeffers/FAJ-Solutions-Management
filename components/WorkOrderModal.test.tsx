@@ -74,15 +74,14 @@ describe('Edit job', () => {
     });
   });
 
-  it('shows the whole job on Marketplace: location, schedule, techs, description, contact', async () => {
+  it('keeps each fact in one place: Client & ticket no longer repeats the address, date or techs', async () => {
     render(<WorkOrderModal item={{ ...NO_TECH, external_wo_id: 'LDS-1103', client_reference: '5333202', site_address: '6420 Morganton Road', site_city: 'Fayetteville',
       site_state: 'NC', site_zip: '28314', start_date: '2026-10-26', start_time: '08:00', contractor_names: ['Dwayne Cudjoe'], contractor_name: 'Dwayne Cudjoe' } as WorkOrder}
       contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
-    await userEvent.click(screen.getByRole('button', { name: /^Marketplace/ }));
-    expect((screen.getByLabelText('Marketplace street address') as HTMLInputElement).value).toBe('6420 Morganton Road');
-    expect((screen.getByLabelText('Marketplace start date') as HTMLInputElement).value).toBe('2026-10-26');
-    expect(screen.getByText('6420 Morganton Road, Fayetteville, NC 28314 · open in Maps')).toBeTruthy();
-    expect(screen.getByText('Dwayne Cudjoe')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Client & ticket' })).toBeTruthy();
+    expect(screen.queryByLabelText('Marketplace street address')).toBeNull();
+    expect(screen.queryByLabelText('Marketplace start date')).toBeNull();
+    expect(screen.queryByText('Techs on site')).toBeNull();
   });
 
   it('removes a section: Marketplace and Pay come off, and what was in them is cleared on Save', async () => {
@@ -115,5 +114,30 @@ describe('Edit job', () => {
     render(<WorkOrderModal item={saved} contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
     expect(screen.queryByRole('button', { name: /^Pay/ })).toBeNull();
     vi.restoreAllMocks();
+  });
+});
+
+describe('Next step strip', () => {
+  it('a job with no tech says so and the button opens the Tech card', async () => {
+    render(<WorkOrderModal item={NO_TECH} contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
+    expect(screen.getByText('No tech on this job yet.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pick a tech' })).toBeTruthy();
+  });
+
+  it('work done: Review and approve moves the status, saved with Save', async () => {
+    const onSave = vi.fn();
+    const done = { ...NO_TECH, contractor_name: 'Paul Gibbs', contractor_names: ['Paul Gibbs'], wo_status: 'Work Done' } as unknown as WorkOrder;
+    render(<WorkOrderModal item={done} contractors={[]} questionTemplates={[]} onSave={onSave} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Review and approve' }));
+    expect(screen.getByText(/Press Save changes to keep it/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Make the invoice' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(onSave.mock.calls[0][0]).toMatchObject({ wo_status: 'Approved' });
+  });
+
+  it('an invoiced job asks to mark it paid', () => {
+    const appr = { ...NO_TECH, contractor_name: 'Paul Gibbs', contractor_names: ['Paul Gibbs'], wo_status: 'Approved' } as unknown as WorkOrder;
+    render(<WorkOrderModal item={appr} invoiced contractors={[]} questionTemplates={[]} onSave={() => {}} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Mark paid' })).toBeTruthy();
   });
 });

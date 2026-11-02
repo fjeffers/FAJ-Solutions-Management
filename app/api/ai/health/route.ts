@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { WO_AI_MODEL, aiFailureReason, aiFailureText } from '@/lib/wo-ai';
 import { anthropicHeaders } from '@/lib/anthropic-headers';
+import { ownerOnly } from '@/lib/security';
 
 // GET /api/ai/health — does the live site's Claude key work? (Fred,
 // 2026-10-17: "Generate with AI needs fixing".) One tiny request with the same
@@ -14,6 +15,8 @@ export async function GET() {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return NextResponse.json({ ok: false, why: 'no_key', says: aiFailureText('no_key') });
   try {

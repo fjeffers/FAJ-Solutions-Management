@@ -57,11 +57,13 @@ function customLines(defs: AiCustomField[]): string {
 export function buildWoPrompt(text: string, today: string, custom: AiCustomField[] = [], templates: AiTemplate[] = []): string {
   return `You fill in work orders for FAJ Solutions, an IT and low-voltage field services company in Easton, PA (network installs, cabling, cameras, POS, Starlink, site surveys). Work comes from clients (Wendy's, State Farm, Trulieve, …) and from work marketplaces (Field Nation, NetView, WorkMarket, Insight, …).
 
+Put each fact in ONE key only, the one made for it — never repeat an address, a link or a contact in a notes or description key.
+
 Read the job below and fill in EVERY field of the work order the text supports — read it all, including signatures, footers and fine print. Return one JSON object with these keys. For anything the text does not say, use "" for text, dates, times and choices, null for numbers and true/false answers, and an empty list for lists. NEVER invent names, phone numbers, addresses, prices or dates. Today is ${today}; resolve words like "next Tuesday".
 
 {
   "title": short summary, max 70 chars, lead with the brand/site, e.g. "Wendy's #5798 — POS network refresh",
-  "description": the full scope of work, cleaned up — keep every technical detail, counts, models, rooms,
+  "description": the SCOPE OF WORK ONLY, cleaned up — what the tech will do, with every technical detail, counts, models, rooms. NOTHING that has its own key here: no address, city or ZIP, no dates or times, no names, phone numbers or emails, no web links, no pay, no WO or ticket numbers, no access or parking notes, no tools or deliverables lists,
   "service_type": one of ${JSON.stringify(SERVICE_TYPES)},
   "priority": one of ${JSON.stringify(WORK_ORDER_PRIORITIES)},
   "source_platform": where the work came from, one of ${JSON.stringify(WORK_ORDER_SOURCES)} ("FieldNation" for Field Nation, "NetView", "WorkMarket", "Direct" for a client emailing FAJ directly),
@@ -110,6 +112,8 @@ Read the job below and fill in EVERY field of the work order the text supports �
   "client_links": EVERY web link in the text the tech or the office needs — upload / deliverable folders, check-in or check-out forms, portals — exactly as written, each starting with http,
   "checkin_link": the one link from client_links the tech must open on arriving on site (e.g. a Teams meeting to stay on all day), or "",
   "checkout_link": the one link from client_links the tech must use to check out each day (e.g. a checkout form), or "",
+  "survey_link": the one link from client_links where the tech fills in the site survey, or "",
+  "deliverable_link": the one link from client_links where the tech uploads the photos and documents (e.g. a Google Drive or SharePoint folder), or "",
   "capture": what the tech must record on THIS job, only what the text calls for, from ${JSON.stringify(CAPTURE_ITEMS.map((c) => c.key))}: "travel" (driving to an out-of-town site, hotel stays), "odometer" (mileage photos), "lunch", "receipts" (fuel, hotel, meals, materials), "photos", "checklist" (only if the text lists steps the tech must tick off), "questions", "deliverables", "signature", "notes",
   "capture_why": one short sentence on why, e.g. "Out-of-town job with a hotel stay, so travel, mileage photos and receipts.",${templates.length ? `
   "template": the id of the ONE of FAJ's job templates below that fits this job, or "" if none clearly does: ${JSON.stringify(templates.map((t) => ({ id: t.id, name: t.name })))},` : ''}
@@ -143,6 +147,48 @@ const clean = (v: unknown, max = 4000): string | null => {
 
 function newId(): string {
   try { return crypto.randomUUID(); } catch { return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+}
+
+const URL_RE = /https?:\/\/\S+/gi;
+/** A line that's only a label for something with its own field ("Site address:", "Contact:", "Link:"). */
+const OWN_FIELD_LINE = /^\s*[-*•]?\s*(site\s+)?(address|location|city|zip|contact|poc|phone|tel|cell|e-?mail|link|url|portal|schedule|date|time|start|end|arrival|wo|work order|ticket|po|pay|rate|price|budget|parking|access)\b[^:]{0,20}:/i;
+const digits = (s: string) => s.replace(/\D/g, '');
+
+/**
+ * The scope of work alone in the description, and no links in the notes: an address, a link or a contact that has
+ * its own field isn't said again (Fred, 2026-10-31: "sow is the only thing goes into the documents or notes
+ * decription area i done see to see the address and links again if it has it own section to go too").
+ */
+export function tidyNotes(out: Record<string, unknown>, raw: Record<string, unknown> = {}): void {
+  const contacts = Array.isArray(raw.contacts) ? raw.contacts as Record<string, unknown>[] : [];
+  const phones = [out.poc_phone, out.support_contact, ...contacts.map((c) => c?.phone)]
+    .map((p) => digits(String(p ?? ''))).filter((p) => p.length >= 7);
+  const emails = [out.poc_email, ...contacts.map((c) => c?.email)].map((e) => String(e ?? '').toLowerCase()).filter((e) => e.includes('@'));
+  const address = String(out.site_address ?? '').toLowerCase().trim();
+  const own = (line: string) => {
+    const l = line.toLowerCase();
+    return OWN_FIELD_LINE.test(line)
+      || (address.length > 5 && l.includes(address))
+      || phones.some((p) => digits(line).includes(p))
+      || emails.some((e) => l.includes(e));
+  };
+  const strip = (v: string, scope: boolean) => v.split('\n')
+    .flatMap((line) => {
+      const hadUrl = /https?:\/\//i.test(line);
+      let l = line.replace(URL_RE, '').trimEnd();
+      if (hadUrl) {
+        l = l.replace(/(\s+(here|at|to|via|using|on|in))?[\s:\-–]*$/i, '');
+        if (l.trim().split(/\s+/).length <= 2) return [];
+      }
+      return scope && own(l) ? [] : [l];
+    })
+    .filter((line, i, all) => !(line.trim() === '' && (i === 0 || (all[i - 1] ?? '').trim() === '')))
+    .join('\n').trim();
+  for (const k of ['description', 'access_instructions', 'parking_instructions', 'deliverables', 'deliverable_instructions', 'tools_required', 'parts_materials', 'required_skills'] as const) {
+    if (typeof out[k] !== 'string') continue;
+    const v = strip(out[k] as string, k === 'description');
+    if (v) out[k] = v; else delete out[k];
+  }
 }
 
 /** Only what the form understands, in the shapes it expects. */
@@ -197,10 +243,12 @@ export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = [], templat
   if (capture) out.capture = capture;
   const why = clean(r.capture_why, 240);
   if (why) out.capture_why = why;
-  for (const k of ['checkin_link', 'checkout_link'] as const) {
+  for (const k of ['checkin_link', 'checkout_link', 'survey_link', 'deliverable_link'] as const) {
     const v = clean(r[k], 2000);
     if (v && /^https?:\/\/\S+$/i.test(v)) out[k] = v;
   }
+
+  tidyNotes(out, r);
 
   if (Array.isArray(r.wo_tasks)) {
     const tasks: WoTask[] = [];
@@ -269,7 +317,7 @@ export function sanitizeWoAi(raw: unknown, custom: AiCustomField[] = [], templat
 /** How many fields were filled, for the "filled 18 fields" message. Each of Fred's own fields counts once. */
 export function filledCount(f: Partial<WorkOrder>): number {
   const own = f.custom && typeof f.custom === 'object' ? Object.keys(f.custom).length : 0;
-  return Object.keys(f).filter((k) => !['scheduled_date', 'wo_tasks', 'custom', 'capture', 'capture_why', 'checkin_link', 'checkout_link'].includes(k)).length + own;
+  return Object.keys(f).filter((k) => !['scheduled_date', 'wo_tasks', 'custom', 'capture', 'capture_why', 'checkin_link', 'checkout_link', 'survey_link', 'deliverable_link'].includes(k)).length + own;
 }
 
 /**

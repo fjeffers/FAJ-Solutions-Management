@@ -12,6 +12,7 @@
 import { isUrgent, labelOf, stageName } from './app-lists';
 import type { EnrichedWorkOrder } from './types';
 import { asks, parseCapture, type CaptureItem } from './capture';
+import { parseHotel, type Hotel } from './hotel';
 import { parseStartAsks, type StartAsk } from './checkin';
 import { todayISO } from './utils';
 import { parseDayEvents, sortEvents, type DayEvent } from './project-day';
@@ -128,6 +129,8 @@ export type WfJob = {
   questions: WfQuestion[];
   photoRequired: boolean;
   signatureRequired: boolean;
+  /** No one on site to sign (LDS churches; Fred, 2026-11-01: "there no one there to get signature"). */
+  noSignature?: boolean;
   deliverableInstructions: string;
   checkedInAt: string | null;
   checkedOutAt: string | null;
@@ -163,9 +166,20 @@ export type WfJob = {
   /** Office only: the links opened on site and at check-out (migration 133). The tech app reads them with wf_tech_site_links. */
   checkinLink?: string | null;
   checkoutLink?: string | null;
+  /** Office only: the survey form and where the documents are uploaded (migration 142). */
+  surveyLink?: string | null;
+  deliverableLink?: string | null;
+  /** Where the tech stays for this job (lib/hotel.ts, migration 152). */
+  hotel?: Hotel | null;
 };
 
 type Row = Record<string, unknown>;
+
+/** LDS jobs (same test as lib/lds-sow.ts isLdsJob): the church is empty, so no customer signature. */
+export function noSignatureJob(r: Row): boolean {
+  const text = ['title', 'description', 'external_wo_id', 'project_name'].map((k) => (typeof r[k] === 'string' ? r[k] : '')).join(' ');
+  return /\bLDS\b|\bLDS-\d|meetinghouse/i.test(text);
+}
 
 /** `moment`: a start or an end photo (migration 144); missing from before it. */
 export type OdometerReading = { at: string; reading: number; moment?: 'start' | 'end' };
@@ -296,7 +310,8 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     tasks: taskList(r),
     questions: questionList(r),
     photoRequired: r.photo_required === true,
-    signatureRequired: r.signature_required === true,
+    signatureRequired: r.signature_required === true && !noSignatureJob(r),
+    noSignature: noSignatureJob(r),
     deliverableInstructions: s(r, 'deliverable_instructions'),
     checkedInAt: s(r, 'checked_in_at') || null,
     checkedOutAt: s(r, 'checked_out_at') || null,
@@ -318,7 +333,15 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     clientLinks: owner && Array.isArray(r.client_links) ? (r.client_links as unknown[]).filter((l): l is string => typeof l === 'string' && /^https?:\/\//i.test(l)) : [],
     checkinLink: owner ? s(r, 'checkin_link') || null : null,
     checkoutLink: owner ? s(r, 'checkout_link') || null : null,
+    surveyLink: owner ? s(r, 'survey_link') || null : null,
+    deliverableLink: owner ? s(r, 'deliverable_link') || null : null,
+    hotel: parseHotel(r.hotel),
   };
+}
+
+/** Jobs on hold stay off the tech's phone until the office takes them off hold (Fred, 2026-10-31). */
+export function notOnHold<T>(rows: T[]): T[] {
+  return rows.filter((r) => (r as { wo_status?: unknown } | null)?.wo_status !== 'On Hold');
 }
 
 /** A row from `wf_tech_jobs()`: the signed-in tech's own job. Never any money. */
@@ -611,6 +634,13 @@ export function reportMissing(j: WfJob, notes: string, answers: Record<string, s
   }
   if (j.photoRequired && photoCount === 0) missing.push('Add at least one photo of the work');
   return missing;
+}
+
+/** Where on the job screen a missing item gets done (reportMissing / closeoutMissing wording). */
+export function missingGoesTo(m: string): 'closeout' | 'photos' | 'report' {
+  if (/under Closeout/.test(m)) return 'closeout';
+  if (/photo/i.test(m)) return 'photos';
+  return 'report';
 }
 
 export function markedWorkDone(j: WfJob, notes: string, at: Date): WfJob {

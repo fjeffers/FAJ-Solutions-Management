@@ -1,7 +1,7 @@
 // The job log's invoice in the client's own layout (Fred, 2026-10-30: "this how the client want the layout to look",
 // "mirror it exactly").
 import { describe, it, expect } from 'vitest';
-import { addLine, buildInvoice, dueDate, editLine, invoiceCells, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceLine } from './job-log-invoice';
+import { addLine, buildInvoice, dueDate, editLine, invoiceCells, invoiceCharges, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceLine } from './job-log-invoice';
 import type { JobSheet } from './job-log-sheet';
 import type { XCell } from './job-log-xlsx';
 
@@ -138,6 +138,33 @@ describe('the invoice', () => {
       .toEqual({ number: '1240', date: '2026-10-24', terms: 15, labor: 'Cabling', meal: null, billTo: 'TeamNetView' });
     expect(parseInvoiceMeta({ date: 'soon', terms: -2 }, '2026-10-25')).toMatchObject({ date: '2026-10-25', terms: 30 });
     expect(dueDate('2026-10-25', 30)).toBe('2026-11-24');
+  });
+});
+
+describe("the job log's client copy", () => {
+  it('has the same lines and total as the invoice (Fred, 2026-10-31: "the job log and invoice is not matching up")', () => {
+    // Raja rides with Paul and has his hotel; the meals up to $50 a day; the fuel isn't charged.
+    const { lines, total } = invoiceCharges(inv, null);
+    expect(lines.map((l) => [l.what, l.amount, l.counted])).toEqual([
+      ['Paul Gibbs hours · 12.64 × $50.00/hr', 632, false],
+      ['Raja hours · 6.32 × $50.00/hr', 316, false],
+      ['Hours total', 948, true],
+      ['Paul Gibbs mileage · 956 mi × $0.60/mi', 573.6, false],
+      ['Raja mileage · 956 mi (with Paul Gibbs) × $0.60/mi', 573.6, false],
+      ['Mileage total', 1147.2, true],
+      ['Meals · up to $50.00 a day (receipts $71.51)', 62.54, true],
+      ['Materials', 47.48, true],
+      ['Paul Gibbs hotel', 402.5, true],
+      ['Raja hotel (same as Paul Gibbs)', 402.5, true],
+    ]);
+    expect(total).toBe(inv.totals.total);
+    expect(Math.round(lines.filter((l) => l.counted).reduce((t, l) => t + l.amount, 0) * 100) / 100).toBe(total);
+  });
+
+  it('has all the hours on one line at one rate', () => {
+    const { lines } = invoiceCharges(inv, 50);
+    expect(lines[0]).toEqual({ what: 'All techs’ hours · 18.96 × $50.00/hr', amount: 948, bold: true, counted: true });
+    expect(lines.some((l) => l.what === 'Hours total')).toBe(false);
   });
 });
 

@@ -362,3 +362,26 @@ describe('a clock nobody stopped', () => {
     expect(items.find((i) => i.kind === 'visit_hours_wrong')).toBeUndefined();
   });
 });
+
+describe('Waiting on you', () => {
+  const base: AttentionInput = { surveys: [], quotes: [], contracts: [], workOrders: [], invoices: [], invoicePayments: [], today: TODAY };
+
+  it('lists a job a tech turned down, and leaves out one that is closed', () => {
+    const wo = (id: string, status: string) => ({
+      id, wo_status: status, archived_at: null, contractor_name: 'Paul Gibbs', contractor_names: ['Paul Gibbs'],
+      assignment_responses: { 'Paul Gibbs': { status: 'declined', at: '2026-08-24T12:00:00Z' } },
+    }) as unknown as EnrichedWorkOrder;
+    const items = attentionItems({ ...base, workOrders: [wo('a', 'Assigned'), wo('b', 'Paid')] });
+    const d = items.find((i) => i.kind === 'assignment_declined');
+    expect(d).toMatchObject({ count: 1, view: 'workorders', title: '1 job turned down' });
+    expect(items.some((i) => i.kind === 'assignment_unanswered')).toBe(false);
+  });
+
+  it('adds unread messages, support tickets and imports, each opening its own screen', () => {
+    const items = attentionItems({ ...base, waiting: { messages: 2, support: 1, imports: 0 } });
+    expect(items.map((i) => [i.kind, i.view, i.title])).toEqual([
+      ['messages_unread', 'messages', '2 unread tech messages'],
+      ['support_waiting', 'support', '1 support ticket'],
+    ]);
+  });
+});

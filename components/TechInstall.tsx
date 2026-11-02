@@ -15,6 +15,9 @@ import { installSteps, phoneKind, TECH_APP_URL, type PhoneKind } from '@/lib/ins
  *
  * Hidden once installed (display-mode: standalone) or once dismissed, so it is
  * never nagging a tech who already did it.
+ *
+ * The office app uses it too (Fred, 2026-10-31: "i need to make it downloadable"),
+ * with its own address and its own Not now.
  */
 type InstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -24,7 +27,9 @@ type InstallPrompt = Event & {
 // A new key: techs who closed the old, vaguer help see this one once.
 const DISMISS_KEY = 'faj-tech-install-dismissed-2';
 
-export default function TechInstall() {
+type Props = { appUrl?: string; dismissKey?: string; title?: string; style?: React.CSSProperties };
+
+export default function TechInstall({ appUrl = TECH_APP_URL, dismissKey = DISMISS_KEY, title = 'Put this on your phone', style }: Props = {}) {
   const [deferred, setDeferred] = useState<InstallPrompt | null>(null);
   const [kind, setKind] = useState<PhoneKind | null>(null);
   const [copied, setCopied] = useState(false);
@@ -37,21 +42,21 @@ export default function TechInstall() {
     if (standalone) return;
 
     let dismissed = false;
-    try { dismissed = localStorage.getItem(DISMISS_KEY) === '1'; } catch { /* private mode */ }
+    try { dismissed = localStorage.getItem(dismissKey) === '1'; } catch { /* private mode */ }
     if (dismissed) return;
 
-    setKind(phoneKind(navigator.userAgent));
+    setKind(phoneKind(navigator.userAgent, navigator.maxTouchPoints));
     const onPrompt = (e: Event) => {
       e.preventDefault();
       setDeferred(e as InstallPrompt);
     };
     window.addEventListener('beforeinstallprompt', onPrompt);
     return () => window.removeEventListener('beforeinstallprompt', onPrompt);
-  }, []);
+  }, [dismissKey]);
 
   const dismiss = () => {
     setKind(null);
-    try { localStorage.setItem(DISMISS_KEY, '1'); } catch { /* private mode */ }
+    try { localStorage.setItem(dismissKey, '1'); } catch { /* private mode */ }
   };
 
   const install = async () => {
@@ -63,7 +68,7 @@ export default function TechInstall() {
   };
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(TECH_APP_URL); setCopied(true); } catch { /* the address is shown to copy by hand */ }
+    try { await navigator.clipboard.writeText(appUrl); setCopied(true); } catch { /* the address is shown to copy by hand */ }
   };
 
   const steps = kind ? installSteps(kind, !!deferred) : '';
@@ -74,22 +79,22 @@ export default function TechInstall() {
     <div style={{
       display: 'flex', alignItems: 'flex-start', gap: 11, marginBottom: 16,
       background: 'rgba(14,27,46,0.06)', border: '1px solid rgba(14,27,46,0.15)',
-      borderRadius: 12, padding: '12px 14px',
+      borderRadius: 12, padding: '12px 14px', ...style,
     }}>
       <Download size={18} color="var(--teal)" style={{ flexShrink: 0, marginTop: 2 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 13 }}>Put this on your phone</div>
+        <div style={{ fontWeight: 700, fontSize: 13 }}>{title}</div>
         <div style={{ fontSize: 12.5, color: '#555', marginTop: 3, lineHeight: 1.5 }}>{steps}</div>
         {inApp && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            <code style={{ fontSize: 12.5, background: 'white', border: '1px solid #ddd', borderRadius: 6, padding: '3px 8px' }}>{TECH_APP_URL.replace('https://', '')}</code>
+            <code style={{ fontSize: 12.5, background: 'white', border: '1px solid #ddd', borderRadius: 6, padding: '3px 8px' }}>{appUrl.replace('https://', '')}</code>
             <button className="btn btn-primary" onClick={() => void copy()} style={{ fontSize: 12, padding: '6px 12px' }}>
               {copied ? 'Copied' : 'Copy the link'}
             </button>
           </div>
         )}
         <div style={{ fontSize: 11.5, color: '#777', marginTop: 6, lineHeight: 1.45 }}>
-          You don&apos;t have to install it: you can sign in and use it right here. Installing only puts an icon on your phone.
+          You don&apos;t have to install it: you can sign in and use it right here. Installing only puts an icon on your phone, tablet or computer.
         </div>
       </div>
       {deferred && (

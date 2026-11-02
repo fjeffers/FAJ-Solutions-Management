@@ -89,6 +89,7 @@ export function applyNeeds(f: Found, n: NeedChoices): Partial<WorkOrder> {
   delete out.checkout_link;
   if (n.checkin && links.includes(n.checkin)) out.checkin_link = n.checkin;
   if (n.checkout && links.includes(n.checkout)) out.checkout_link = n.checkout;
+  for (const k of ['survey_link', 'deliverable_link'] as const) if (out[k] && !links.includes(out[k])) delete out[k];
 
   const drop = (keys: readonly (keyof WorkOrder)[]) => { for (const k of keys) delete out[k]; };
   if (!n.access) drop(ACCESS);

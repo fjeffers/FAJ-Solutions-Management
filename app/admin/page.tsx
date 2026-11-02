@@ -9,6 +9,8 @@ import { geocodeAddress } from '@/lib/geocode';
 import { useDarkMode } from '@/lib/useDarkMode';
 import type { Contractor, WorkOrder, Payment, QuestionTemplate, DeliverableTemplate, EnrichedWorkOrder, ContractorTimeLog, Material, MaterialKit, Quote, Survey, Contract, Invoice, InvoicePayment, ImportQueueItem, GmailConnection, QuickBooksConnection, SiteVisit } from '@/lib/types';
 import { CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, ClipboardCheck, Sparkles, Settings, Wallet, Search, Moon, Sun, Download, Award, Map, Package, FileSignature, Inbox, ChevronDown, Receipt, Network, Timer, Building2, ShieldCheck, Wrench, ClipboardList, FileCheck2, UserCog, Workflow, LifeBuoy, LayoutGrid, SquarePlus, ChevronRight, Plus } from 'lucide-react';
+import TechInstall from '@/components/TechInstall';
+import { OFFICE_APP_URL } from '@/lib/install-help';
 
 import DashboardView from '@/components/DashboardView';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
@@ -52,7 +54,7 @@ import WorkOrderModal from '@/components/WorkOrderModal';
 import PaymentModal from '@/components/PaymentModal';
 import { exportWorkOrdersCSV, exportPaymentsCSV, exportContractorsCSV, export1099CSV } from '@/lib/export';
 import { logAudit } from '@/lib/audit';
-import { notifyContractor, sendPortalLink, sendOnboarding, sendTechApp } from '@/lib/notify';
+import { notifyContractor, sendNewJobNotice, sendPortalLink, sendOnboarding, sendTechApp } from '@/lib/notify';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { stockAdjustments } from '@/lib/materials-used';
 import type { StockInPlan } from '@/lib/stock-in';
@@ -60,12 +62,17 @@ import { quoteFromSurvey } from '@/lib/surveys';
 import { contractFromQuote, nextContractNumber } from '@/lib/contracts';
 import Toaster from '@/components/Toaster';
 import { NETVIEW_FORM_URL } from '@/lib/netview-payroll';
+import { splitMore } from '@/lib/office-menu';
+import HoursTabs, { isHoursView } from '@/components/HoursTabs';
 import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
 import MessagesView from '@/components/MessagesView';
 import { sectionOfView, type ResolvedLayout, screenLabel } from '@/lib/app-layout';
 import { useAppLayout } from '@/components/useAppLayout';
 import { useAppLists } from '@/components/useAppLists';
 import { useCustomFields } from '@/components/useCustomFields';
+import { useAutomations, type AutoPatch } from '@/components/useAutomations';
+import AutomationsCard from '@/components/wf/Automations';
+import { describeChanges } from '@/lib/job-sheet';
 import { shown } from '@/lib/screen-parts';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
 import { PrimioBar } from '@/components/wf/PrimioScreens';
@@ -88,9 +95,11 @@ function woFromUrlParam(): string {
 }
 
 function viewFromUrl(): View {
-  if (typeof window === 'undefined') return 'dashboard';
+  // Dashboard and Dispatch are one Home screen now (Fred, 2026-10-31): the job board, with the
+  // Dashboard's Waiting on you, Today in the field, notes and shortcuts under the greeting.
+  if (typeof window === 'undefined') return 'workorders';
   const v = new URLSearchParams(window.location.search).get('view');
-  return VIEWS.includes(v as View) ? (v as View) : 'dashboard';
+  return VIEWS.includes(v as View) && v !== 'dashboard' ? (v as View) : 'workorders';
 }
 
 
@@ -110,10 +119,11 @@ export default function HomePage() {
   const [view, setViewState] = useState<View>(viewFromUrl);
   // Dispatch -> Create: which screen should open with a new, blank form.
   const [createIntent, setCreateIntent] = useState<'customer' | 'quote' | 'invoice' | null>(null);
-  const setView = (v: View) => {
+  const setView = (to: View) => {
+    const v: View = to === 'dashboard' ? 'workorders' : to;
     setViewState(v);
     openOfficeFor(v);
-    const url = v === 'dashboard' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
+    const url = v === 'workorders' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
     window.history.pushState(null, '', url);
   };
   useEffect(() => {
@@ -160,6 +170,7 @@ export default function HomePage() {
   // opens to its sections; one section open at a time. Going to a screen opens
   // the Office dropdown and the section that holds it.
   const [officeOpen, setOfficeOpen] = useState<boolean>(() => sectionOfView(appLayout.resolved, viewFromUrl()) !== null);
+  const [moreSection, setMoreSection] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<string | null>(() => sectionOfView(appLayout.resolved, viewFromUrl()));
   function openOfficeFor(v: View) {
     const g = sectionOfView(layoutRef.current, isMoneyView(v) ? 'financials' : v);
@@ -174,6 +185,12 @@ export default function HomePage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  // Tech receipts waiting for Fred to approve or decline (on Dispatch).
+  const [receiptCount, setReceiptCount] = useState(0);
+  useEffect(() => {
+    void supabase.from('job_expenses').select('id', { count: 'exact', head: true }).eq('status', 'submitted')
+      .then(({ count }) => setReceiptCount(count ?? 0));
+  }, [workOrders]); // eslint-disable-line react-hooks/exhaustive-deps -- recount when the jobs reload
   const [payments, setPayments] = useState<Payment[]>([]);
   const [questionTemplates, setQuestionTemplates] = useState<QuestionTemplate[]>([]);
   const [deliverableTemplates, setDeliverableTemplates] = useState<DeliverableTemplate[]>([]);
@@ -426,7 +443,9 @@ export default function HomePage() {
 
   // Before migrations 128/130 the database has no capture / start_asks / client_links columns.
   const notYet128 = (e: { code?: string; message: string }) =>
-    e.code === 'PGRST204' && /capture|start_asks|client_links|checkin_link|checkout_link|survey_link|deliverable_link/.test(e.message)
+    e.code === 'PGRST204' && /hotel/.test(e.message)
+      ? 'the hotel needs the database update supabase-migration-152-hotel.sql first (Supabase → SQL Editor → paste → Run).'
+      : e.code === 'PGRST204' && /capture|start_asks|client_links|checkin_link|checkout_link|survey_link|deliverable_link/.test(e.message)
       ? "what the tech records, the check-in items and the client links aren't switched on yet. Ask to switch them on."
       : e.message;
 
@@ -548,6 +567,8 @@ export default function HomePage() {
       ...(w.billable_miles !== undefined ? { billable_miles: w.billable_miles ?? null } : {}),
       // Fred's own fields (Settings -> Custom fields, migration 110).
       ...(w.custom !== undefined ? { custom: w.custom ?? {} } : {}),
+      // The tech's hotel (migration 152); sent only when the job has one.
+      ...(w.hotel !== undefined ? { hotel: w.hotel ?? null } : {}),
       // What the tech records and what check-in asks for (migration 128). The
       // form sends them only when set, so a job saved before 128 still saves.
       ...(w.capture !== undefined ? { capture: w.capture ?? null } : {}),
@@ -563,13 +584,27 @@ export default function HomePage() {
     if (w.id) {
       const { error } = await supabase.from('work_orders').update(payload).eq('id', w.id);
       if (error) { toastError(`Couldn't save WO#${w.wo_number}: ${notYet128(error)}`); return; }
-      logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}` });
+      logAudit({ action: 'update', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number}`,
+        ...(prevWO ? { changes: { changes: describeChanges(prevWO, payload as Partial<WorkOrder>) } } : {}) });
       // Notify contractor on status change
       const prev = workOrders.find((x) => x.id === w.id);
       // The job as saved, straight away: Edit job opened right after Save must not get the copy
       // from before it, or a job saved with Pay removed opens with its mileage worked out again
       // and Pay back (Fred, 2026-10-25: "but the pay still is popping up"). loadAll refreshes the rest.
       setWorkOrders((list) => list.map((x) => (x.id === w.id ? ({ ...x, ...payload } as WorkOrder) : x)));
+      // A tech added to a job that already exists hears about it too, on his phone if the app is on it
+      // (Fred, 2026-10-31: "when a tech is assign if the app is on the phobe he gets an alert").
+      if (prev) {
+        const was = new Set([...(prev.contractor_names ?? []), ...(prev.contractor_name ? [prev.contractor_name] : [])]);
+        const now = (w.contractor_names?.length ? w.contractor_names : w.contractor_name ? [w.contractor_name] : []);
+        for (const name of now.filter((n) => !was.has(n))) {
+          const c = contractors.find((x) => x.name === name);
+          if (!c) continue;
+          if (c.on_hold) { toastInfo(`${c.name} is on hold, so he wasn't told about the job.`); continue; }
+          void sendNewJobNotice({ ...prev, ...(payload as unknown as WorkOrder), id: w.id }, c,
+            techPayToShow({ ...prev, ...(payload as unknown as WorkOrder) }, name));
+        }
+      }
       if (prev && prev.wo_status !== w.wo_status) {
         const c = contractors.find((x) => x.name === w.contractor_name);
         if (c?.email) notifyContractor({ type: 'status_change', contractor_email: c.email, contractor_name: c.name, wo_number: w.wo_number!, title: w.title ?? undefined, status: w.wo_status ?? '' });
@@ -599,12 +634,13 @@ export default function HomePage() {
       const refId = w.external_wo_id || w.client_reference || null;
       for (const name of assignedNames) {
         const c = contractors.find((x) => x.name === name);
-        if (!c?.email) continue;
+        // No email is fine: a tech with the app still gets the phone alert.
+        if (!c) continue;
         // On hold (migration-104): saved on the job, but no email until released.
         if (c.on_hold) { toastInfo(`${c.name} is on hold, so no job email was sent.`); continue; }
         notifyContractor({
           type: 'wo_assigned',
-          contractor_email: c.email,
+          contractor_email: c.email ?? '',
           contractor_name: c.name,
           wo_number: w.wo_number!,
           title: w.title ?? undefined,
@@ -792,6 +828,46 @@ It goes to ${c.email}.`)) return;
     loadAll();
   };
 
+  // The Sheet's edits and the automations (Fred, 2026-10-31): each job as it is now goes to
+  // `make`; what changed is written, logged for the job's Updates, and a tech newly put on
+  // the job or a status change is told, the same as saving the job form.
+  const patchJobs: AutoPatch = async (ids, make, by) => {
+    let done = 0;
+    const failed: string[] = [];
+    for (const id of ids) {
+      const prev = workOrders.find((x) => x.id === id);
+      if (!prev) continue;
+      const patch = make(prev);
+      if (!patch || Object.keys(patch).length === 0) continue;
+      const { error } = await supabase.from('work_orders').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+      if (error) { failed.push(`WO#${prev.wo_number}: ${error.message}`); continue; }
+      done += 1;
+      setWorkOrders((list) => list.map((x) => (x.id === id ? ({ ...x, ...patch } as WorkOrder) : x)));
+      logAudit({ action: by === 'auto' ? 'auto' : 'update', entityType: 'work_order', entityId: id,
+        entityLabel: `WO#${prev.wo_number}${by === 'auto' ? ' (automation)' : ' (Sheet)'}`, changes: { changes: describeChanges(prev, patch) } });
+      const next = { ...prev, ...patch } as WorkOrder;
+      if (patch.contractor_names) {
+        const was = new Set([...(prev.contractor_names ?? []), ...(prev.contractor_name ? [prev.contractor_name] : [])]);
+        for (const name of patch.contractor_names.filter((n) => !was.has(n))) {
+          const c = contractors.find((x) => x.name === name);
+          if (!c) continue;
+          if (c.on_hold) { toastInfo(`${c.name} is on hold, so he wasn't told about WO#${prev.wo_number}.`); continue; }
+          void sendNewJobNotice(next, c, techPayToShow(next, name));
+        }
+      }
+      if (patch.wo_status && patch.wo_status !== prev.wo_status) {
+        const c = contractors.find((x) => x.name === next.contractor_name);
+        if (c?.email) notifyContractor({ type: 'status_change', contractor_email: c.email, contractor_name: c.name, wo_number: prev.wo_number, title: prev.title ?? undefined, status: patch.wo_status });
+      }
+    }
+    if (failed.length) toastError(`Couldn't change ${failed.join('; ')}`);
+    else if (done > 1 && by !== 'auto') toastSuccess(`${done} jobs changed`);
+    else if (done > 0 && by === 'auto') toastInfo(`Automation: ${done} job${done === 1 ? '' : 's'} moved to Work Done`);
+    void loadAll();
+    return done;
+  };
+  const autoRules = useAutomations(workOrders, contractors, patchJobs, !loading);
+
   // FieldNation-style close: fully-paid jobs close as Paid; jobs closed early
   // close as Approved. Either way they leave the active board (archived, not
   // deleted — Ledger, Payments, and the Closed tab still have them).
@@ -825,10 +901,10 @@ Go ahead?`)) return;
 
     // Tell the incoming tech, the same way a new assignment is announced.
     const c = contractors.find((x) => x.name === to);
-    if (c?.email) {
+    if (c) {
       notifyContractor({
         type: 'wo_assigned',
-        contractor_email: c.email,
+        contractor_email: c.email ?? '',
         contractor_name: c.name,
         wo_number: w.wo_number,
         title: w.title ?? undefined,
@@ -854,6 +930,24 @@ Go ahead?`)) return;
     logAudit({ action: 'archive', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number} closed as ${finalStatus}` });
     toastSuccess(`WO #${w.wo_number} closed${finalStatus === 'Paid' ? ' — everyone paid ✓' : w.remaining > 0 ? ` (${fmtMoney(w.remaining)} still owed — find it under Closed)` : ''}`);
     loadAll();
+  };
+
+  // Close old jobs (Fred, 2026-10-31): the same close as one job, for many, with one message.
+  const closeJobs = async (list: EnrichedWorkOrder[]) => {
+    let done = 0;
+    const failed: string[] = [];
+    const at = new Date().toISOString();
+    for (const w of list) {
+      const finalStatus = w.remaining <= 0 && w.paid > 0 ? 'Paid' : 'Approved';
+      const { error } = await supabase.from('work_orders').update({ wo_status: finalStatus, archived_at: at, updated_at: at }).eq('id', w.id);
+      if (error) { failed.push(`WO#${w.wo_number}`); continue; }
+      done += 1;
+      logAudit({ action: 'archive', entityType: 'work_order', entityId: w.id, entityLabel: `WO#${w.wo_number} closed as ${finalStatus} (Close old jobs)` });
+    }
+    if (failed.length) toastError(`Couldn't close ${failed.join(', ')}`);
+    if (done) toastSuccess(`${done} job${done === 1 ? '' : 's'} closed. They're under Closed.`);
+    await loadAll();
+    return done;
   };
 
   const handleArchive = async (id: string) => {
@@ -1618,7 +1712,7 @@ Go ahead?`)) return;
                     </button>
                     {open && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 16 }}>
-                        {g.items.map((i) => {
+                        {(() => { const sp = splitMore(g.items, view); return moreSection === g.id ? g.items : sp.main; })().map((i) => {
                           const count = badgeFor(i.view);
                           const sub = { padding: '8px 12px', fontSize: 13 };
                           if (!i.view) {
@@ -1641,6 +1735,11 @@ Go ahead?`)) return;
                             </button>
                           );
                         })}
+                        {moreSection !== g.id && splitMore(g.items, view).more.length > 0 && (
+                          <button className="nav-btn" onClick={() => setMoreSection(g.id)} style={{ padding: '8px 12px', fontSize: 12.5, opacity: 0.75 }}>
+                            <ChevronDown size={13} /> More
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1709,30 +1808,7 @@ Go ahead?`)) return;
 
       {/* ── Main Content ── */}
       <main className="main-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
-        {view === 'dashboard' && (
-          <DashboardView
-            stats={stats}
-            workOrders={enrichedWOs}
-            payments={payments}
-            onView={(v) => setView(v as typeof view)}
-            // Placed and sized like any other block (Settings -> Screen designer).
-            attention={shown('dash.attention') ? (
-              <AttentionPanel
-                flush
-                data={{
-                  surveys, quotes, contracts, workOrders: enrichedWOs,
-                  invoices, invoicePayments, siteVisits: dashboardVisits,
-                }}
-                onGo={(v) => setView(v as typeof view)}
-              />
-            ) : undefined}
-            field={shown('dash.field') ? (
-              <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'dashboard')} onGo={(v) => setView(v as typeof view)} />
-            ) : undefined}
-            coming={shown('dash.coming') ? <ComingUp jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'dashboard')} /> : undefined}
-            screenName={(k) => screenLabel(appLayout.layout, k)}
-          />
-        )}
+        <TechInstall appUrl={OFFICE_APP_URL} dismissKey="faj-office-install-dismissed" title="Install the FAJ app" style={{ margin: '16px 16px 0' }} />
         {/* The Financials dashboard: the money in and out on top, a tab for each money screen below. */}
         {isMoneyView(view) && (
           <MoneyHub view={view} onGo={navigate} invoices={invoices} invoicePayments={invoicePayments} payments={payments} workOrders={enrichedWOs} />
@@ -1793,6 +1869,7 @@ Go ahead?`)) return;
         {view === 'customers' && <CustomersView startNew={createIntent === 'customer'} onStarted={() => setCreateIntent(null)} />}
         {view === 'portal-admin' && <PortalAdminView />}
         {view === 'network' && <NetworkView />}
+        {isHoursView(view) && <HoursTabs view={view} onGo={(v) => navigate(v as View)} />}
         {view === 'sitelog' && <SiteLogView />}
         {view === 'projects' && <ProjectsView workOrders={enrichedWOs} onOpen={(id) => openJobFrom(id, 'projects')} />}
         {view === 'fieldsheet' && <FieldSheetView workOrders={enrichedWOs} />}
@@ -1895,6 +1972,37 @@ Go ahead?`)) return;
             onCloseJob={closeWorkOrder}
             onUnarchive={handleUnarchive}
             onRefresh={loadAll}
+            onPatch={patchJobs}
+            onCloseJobs={closeJobs}
+            onAddField={(label, kind, options) => customFields.update({ ...customFields.fields,
+              jobs: [...customFields.fields.jobs, { id: `f${Date.now().toString(36)}`, label, kind, options, hidden: false }] })}
+            automations={(open) => <AutomationsCard rules={autoRules.rules} onChange={autoRules.update} workOrders={workOrders} onOpenJob={open} saveError={autoRules.saveError} />}
+            home={(
+              <DashboardView
+                home
+                stats={stats}
+                workOrders={enrichedWOs}
+                payments={payments}
+                onView={(v) => setView(v as typeof view)}
+                // Placed and sized like any other block (Settings -> Screen designer).
+                attention={shown('dash.attention') ? (
+                  <AttentionPanel
+                    flush
+                    data={{
+                      surveys, quotes, contracts, workOrders: enrichedWOs,
+                      invoices, invoicePayments, siteVisits: dashboardVisits,
+                      waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount, receipts: receiptCount },
+                    }}
+                    onGo={(v) => setView(v as typeof view)}
+                  />
+                ) : undefined}
+                field={shown('dash.field') ? (
+                  <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'workorders')} onGo={(v) => setView(v as typeof view)} />
+                ) : undefined}
+                coming={shown('dash.coming') ? <ComingUp jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'workorders')} /> : undefined}
+                screenName={(k) => screenLabel(appLayout.layout, k)}
+              />
+            )}
           />
         )}
         {view === 'payments' && (
@@ -2009,6 +2117,7 @@ Go ahead?`)) return;
           questionTemplates={questionTemplates}
           deliverableTemplates={deliverableTemplates}
           payments={payments}
+          invoiced={!!modal.item?.id && invoices.some((i) => i.status !== 'void' && i.work_order_ids.includes(modal.item!.id))}
           onSave={(w) => { saveWorkOrder(w); setModal(null); }}
           onClose={() => { ticketForNextJob.current = null; setModal(null); }}
           // Delete from the edit window too (Fred, 2026-10-18: "that's something I

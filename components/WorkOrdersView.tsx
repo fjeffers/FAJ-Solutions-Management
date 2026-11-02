@@ -11,6 +11,11 @@ import WorkBoard from '@/components/WorkBoard';
 import WorkFlowView, { OwnerAlerts } from '@/components/WorkFlowView';
 import { Dialog } from '@/components/wf/WfUi';
 import { DispatchBoard, type BoardRow } from '@/components/wf/PrimioScreens';
+import JobSheet from '@/components/wf/JobSheet';
+import CloseOldJobs from '@/components/wf/CloseOldJobs';
+import { datePatch } from '@/lib/job-sheet';
+import type { AutoPatch } from '@/components/useAutomations';
+import type { FieldKind } from '@/lib/custom-fields';
 import { wfJobFromOwner, type WfJob } from '@/lib/wf';
 import type { BoardColumn, Move } from '@/lib/dispatch-columns';
 import { createClient } from '@/lib/supabase/client';
@@ -22,6 +27,7 @@ import { aiFailureText } from '@/lib/wo-ai';
 import { parseTrackerRow } from '@/lib/tracker-row';
 import { useJobTemplates } from '@/components/useJobTemplates';
 import { templateForText } from '@/lib/capture';
+import { withTemplate } from '@/lib/template-fill';
 import AiNeedsReview from '@/components/AiNeedsReview';
 import { applyNeeds, defaultNeeds, type Found, type NeedChoices } from '@/lib/ai-needs';
 
@@ -37,6 +43,7 @@ const WO_STATUS_META: Record<WorkOrderStatus, { bg: string; color: string; accen
   'Work Done':   { bg: 'rgba(99,102,241,0.12)',  color: '#4338ca',  accent: '#6366f1' },
   'Approved':    { bg: 'rgba(16,185,129,0.12)',  color: '#047857',  accent: '#10b981' },
   'Paid':        { bg: 'rgba(5,150,105,0.15)',   color: '#065f46',  accent: '#059669' },
+  'On Hold':     { bg: 'rgba(107,114,128,0.15)', color: '#4b5563',  accent: '#9ca3af' },
 };
 
 const PAY_META: Record<string, { bg: string; color: string }> = {
@@ -49,8 +56,17 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onCreate, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed,
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed, home,
+  onPatch, onAddField, automations, onCloseJobs,
 }: {
+  /** Close old jobs: close these in one go; returns how many closed. */
+  onCloseJobs?: (jobs: EnrichedWorkOrder[]) => Promise<number>;
+  /** Changes from the Sheet (status, date, tech, price, Fred's columns); without it there's no Sheet. */
+  onPatch?: AutoPatch;
+  /** The Sheet's "Add a column": a new job field. */
+  onAddField?: (label: string, kind: FieldKind, options: string[]) => void;
+  /** Home's Automations card; it opens a job with the function it's given. */
+  automations?: (openJob: (id: string) => void) => ReactNode;
   /** Open this job straight away (a job tapped on the Schedule). */
   startOpenId?: string;
   /** The job opened with startOpenId was closed (back to the Schedule). */
@@ -82,6 +98,8 @@ export default function WorkOrdersView({
   onRefresh: () => Promise<void> | void;
   /** For the WorkFlow greeting. */
   ownerFirstName?: string;
+  /** Home's blocks (the old Dashboard's), under the greeting. */
+  home?: ReactNode;
 }) {
   // The jobs screen is Primio's Dispatch board (Fred, 2026-10-04: "i asked for
   // every to mirror primio"); a card opens the job screen.
@@ -137,6 +155,36 @@ export default function WorkOrdersView({
     await onRefresh();
   };
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
+  const [closingOld, setClosingOld] = useState(false);
+  // Back goes one step at a time (Fred, 2026-11-02: "when i hit back once it showes me only that tech when
+  // i hit back again it goes back to home"): the search and the job opened from the board each get a step
+  // in the browser's history, so Back (the in-app one, the browser's or the phone's) closes the job and
+  // keeps the search, and the next Back clears the search.
+  const [boardQuery, setBoardQueryState] = useState('');
+  const searchStep = useRef(false);
+  const jobStep = useRef(false);
+  const setBoardQuery = (q: string) => {
+    setBoardQueryState(q);
+    if (q.trim() && !searchStep.current) { window.history.pushState({ fajHome: 'search' }, ''); searchStep.current = true; }
+    else if (!q.trim() && searchStep.current) { searchStep.current = false; window.history.back(); }
+  };
+  const openJob = (id: string) => {
+    if (!wfOpen && !jobStep.current) { window.history.pushState({ fajHome: 'job' }, ''); jobStep.current = true; }
+    setWfOpen(id);
+    window.scrollTo({ top: 0 });
+  };
+  const closeJob = () => { if (jobStep.current) window.history.back(); else setWfOpen(null); };
+  const latest = useRef(setWfOpen);
+  useEffect(() => { latest.current = setWfOpen; });
+  useEffect(() => {
+    const onPop = () => {
+      if (jobStep.current) { jobStep.current = false; latest.current(null); return; }
+      if (searchStep.current) { searchStep.current = false; setBoardQueryState(''); }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const woById = useMemo(() => new Map(workOrders.map((w) => [w.id, w])), [workOrders]);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
   // looking at that work order rather than at a list to hunt through.
   const [search, setSearch] = useState(initialSearch);
@@ -210,15 +258,18 @@ export default function WorkOrdersView({
             onReassign={(w) => setReassigning(w)}
             onRefresh={onRefresh}
             openId={wfOpen}
-            onOpenChange={setWfOpen}
+            onOpenChange={(id) => (id === null ? closeJob() : setWfOpen(id))}
           />
         </div>
       ) : (
         <DispatchBoard
           rows={boardRows}
           onMove={(job, move, target) => void moveJob(job, move, target)}
-          onOpen={(j) => { setWfOpen(j.id); window.scrollTo({ top: 0 }); }}
+          onOpen={(j) => openJob(j.id)}
+          query={boardQuery}
+          onQuery={setBoardQuery}
           right={<>
+            {onCloseJobs && <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setClosingOld(true)}><Archive size={15} /> Old jobs</button>}
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAiOpen(true)}><Sparkles size={15} /> Generate with AI</button>
             <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={onAdd}><Plus size={16} /> New order</button>
             {onCreate && (
@@ -231,10 +282,19 @@ export default function WorkOrdersView({
               ]} />
             )}
           </>}
-          between={shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}
+          title={home ? 'Home' : undefined}
+          sheet={onPatch ? (jobs) => (
+            <JobSheet rows={jobs.map((j) => woById.get(j.id)).filter((w): w is EnrichedWorkOrder => !!w)} contractors={contractors}
+              fields={activeFields('jobs')} onPatch={(ids, make) => onPatch(ids, make)} onOpen={openJob}
+              onReassign={(w) => setReassigning(w as EnrichedWorkOrder)} onAddField={onAddField} />
+          ) : undefined}
+          // Home: Dashboard and Dispatch in one (Fred, 2026-10-31): what needs you, the field and notes above the jobs.
+          between={<>{home}{automations?.(openJob)}{shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={openJob} onRefresh={onRefresh} />}</>}
         />
       )}
 
+      {closingOld && onCloseJobs && <div className="wf"><CloseOldJobs workOrders={workOrders} onClose={() => setClosingOld(false)} onCloseJobs={onCloseJobs}
+        onMoveJobs={onPatch ? (jobs, day) => onPatch(jobs.map((w) => w.id), (cur) => datePatch(cur, day)) : undefined} /></div>}
       {aiOpen && (
         <div className="wf">
         <AIGenerateModal
@@ -358,6 +418,8 @@ function WOCard({
   const canSendPortal = !!(contractor?.email && contractor?.portal_token);
 
   const isArchived = w.archived_at !== null;
+  // On hold (Fred, 2026-10-31: "add hold on work orders and it gray out").
+  const isHeld = w.wo_status === 'On Hold';
 
   return (
     <div
@@ -370,7 +432,8 @@ function WOCard({
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
         display: 'flex',
         flexDirection: 'column',
-        opacity: isArchived ? 0.82 : 1,
+        opacity: isHeld ? 0.55 : isArchived ? 0.82 : 1,
+        filter: isHeld ? 'grayscale(1)' : undefined,
         cursor: 'pointer',
         transition: 'box-shadow 0.2s, border-color 0.2s',
       }}
@@ -707,9 +770,10 @@ export function AIGenerateModal({
       const tpl = templateForText(prompt, templates);
       const fields: Found = { ...row };
       if (tpl) fields.start_asks = tpl.startAsks ?? [];
+      const job = tpl ? withTemplate(fields, tpl.fill, () => crypto.randomUUID()) : fields;
       setError(null);
-      setFound(fields);
-      setChoices(defaultNeeds(fields, tpl && tpl.items.length ? tpl.items : null));
+      setFound(job);
+      setChoices(defaultNeeds(job, tpl && tpl.items.length ? tpl.items : null));
       setReadBy({ source: 'tracker' });
       return;
     }
@@ -738,8 +802,10 @@ export function AIGenerateModal({
       // empty template starts from what the AI read the job needs.
       const tpl = templates.find((t) => t.id === picked) ?? templateForText(prompt, templates);
       if (tpl) fields.start_asks = tpl.startAsks ?? [];
-      setFound(fields);
-      setChoices(defaultNeeds(fields, tpl && tpl.items.length ? tpl.items : null));
+      // A client template's SOW, deliverables and tools are the same on every job; the AI keeps the site's details.
+      const job = tpl ? withTemplate(fields, tpl.fill, () => crypto.randomUUID()) : fields;
+      setFound(job);
+      setChoices(defaultNeeds(job, tpl && tpl.items.length ? tpl.items : null));
       setReadBy({ source: data.source, why: data.why, filled: data.filled });
     } catch {
       setError('Could not reach the AI service — try again.');

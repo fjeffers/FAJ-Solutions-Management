@@ -113,7 +113,8 @@ const ON_SITE = ['arrived', 'leftSite', 'lunch', 'hours'] as const;
 export function hoursScreenDays(rows: SheetRow[]): HoursScreenDay[] {
   return rows.flatMap((r): HoursScreenDay[] => {
     if (r.hidden) return [{ tech: r.tech, day: r.day, in: '', out: '', brk: 0, hidden: true }];
-    const set = ON_SITE.some((f) => f in r.edits);
+    // Times the drives the office typed set count the same (lib/field-sheet.ts sheetRows).
+    const set = ON_SITE.some((f) => f in r.edits) || r.source.arrived === 'office' || r.source.leftSite === 'office';
     if (!set && !r.added) return [];
     const v = r.values;
     const row: TimeRow = { tech: r.tech, day: r.day, in: v.arrived ?? '', out: v.leftSite ?? '', brk: r2((v.lunch ?? 0) / 60) };

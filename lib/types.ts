@@ -89,10 +89,11 @@ export type WorkOrderStatus =
   | 'In Progress'
   | 'Work Done'
   | 'Approved'
-  | 'Paid';
+  | 'Paid'
+  | 'On Hold';
 
 export const WO_STATUSES: WorkOrderStatus[] = [
-  'Open', 'Assigned', 'In Progress', 'Work Done', 'Approved', 'Paid',
+  'Open', 'Assigned', 'In Progress', 'Work Done', 'Approved', 'Paid', 'On Hold',
 ];
 
 export type PayType = 'Fixed' | 'Hourly' | 'Per Device' | 'Blended';
@@ -250,6 +251,8 @@ export type WorkOrder = {
   signature_required: boolean;
   photo_required: boolean;
   /** What the job asks the tech for (migration 128, lib/capture.ts); null or missing = everything. */
+  /** Where the tech stays (lib/hotel.ts, migration 152). */
+  hotel?: Record<string, string> | null;
   capture?: string[] | null;
   /** What else the office wants at check-in (migration 128, lib/checkin.ts). */
   start_asks?: unknown;

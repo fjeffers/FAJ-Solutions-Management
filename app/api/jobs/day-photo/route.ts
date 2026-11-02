@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { zonedIso } from '@/lib/clock-fix';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/jobs/day-photo — the office adds a picture to a tech's day on a job
 // (Fred, 2026-10-24: "i need to add pictures also to the days also the odometer
@@ -46,6 +47,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
   const { data: wo } = await supabase.from('work_orders').select('id, wo_number').eq('id', woId).eq('user_id', user.id).maybeSingle();
   if (!wo) return NextResponse.json({ ok: false, error: 'That work order was not found.' }, { status: 404 });
 

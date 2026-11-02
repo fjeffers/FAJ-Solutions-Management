@@ -326,6 +326,11 @@ textarea.wf-input { resize: vertical; }
   font: inherit; color: var(--wf-text); box-shadow: 0 1px 2px rgba(14, 27, 46, 0.06);
 }
 .wf-week-card:hover, .wf-week-card:focus-visible { box-shadow: 0 2px 8px rgba(14, 27, 46, 0.14); outline: none; }
+/* Day and Month on Home: one day under another, its cards side by side. */
+.wf-week.wf-period { grid-template-columns: 1fr; }
+.wf-period .wf-week-day { min-height: 0; }
+.wf-period .wf-week-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+.wf-period .wf-week-day.is-empty .wf-week-list { display: block; }
 @media (max-width: 1100px) {
   .wf-week { grid-template-columns: 1fr; }
   .wf-week-day { min-height: 0; }
@@ -349,3 +354,21 @@ textarea.wf-input { resize: vertical; }
   .wf-msg-grid.wf-msg-open .wf-msg-list { display: none; }
   .wf-msg-back { display: inline-flex; }
 }
+
+/* The Sheet, Timeline and Automations on Home (Fred, 2026-10-31). */
+.wf-sheet-input { font: inherit; font-size: 13.5px; padding: 5px 8px; border: 1px solid var(--wf-line); border-radius: 8px; background: #fff; color: inherit; max-width: 100%; }
+.wf-sheet-input:focus { outline: 2px solid var(--wf-gold); outline-offset: -1px; }
+.wf-sheet tr:hover td { background: rgba(14, 27, 46, 0.03); }
+.wf-sheet-total td { background: #FAF9F5; }
+.wf-sheet-pill { border: 0; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.wf-sheet-pop { position: fixed; z-index: 61; background: #fff; border: 1px solid var(--wf-line); border-radius: 12px; box-shadow: 0 10px 30px rgba(14, 27, 46, 0.18); padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
+.wf-sheet-link { background: none; border: 0; padding: 0; font: inherit; color: var(--wf-navy); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.wf-sheet-bulk { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: var(--wf-navy); color: #fff; position: sticky; top: 8px; z-index: 5; }
+.wf-sheet-bulk .wf-sheet-input { color: var(--wf-navy); }
+.wf-sheet-bulk .wf-btn-ghost, .wf-sheet-bulk .wf-btn-outline { color: #fff; border-color: rgba(255, 255, 255, 0.5); }
+.wf-tl-head { padding: 8px 4px; text-align: center; font-size: 12px; color: var(--wf-subtle); border-bottom: 1px solid var(--wf-line); display: flex; flex-direction: column; align-items: center; }
+.wf-tl-head b { color: var(--wf-navy); font-size: 14px; }
+.wf-tl-head.is-today, .wf-tl-cell.is-today { background: rgba(201, 162, 39, 0.12); }
+.wf-tl-name { padding: 8px 12px; font-size: 13px; font-weight: 600; position: sticky; left: 0; background: #fff; z-index: 2; text-align: left; align-items: flex-start; }
+.wf-tl-cell { border-left: 1px solid var(--wf-line); min-height: 38px; }
+.wf-tl-bar { z-index: 1; margin: 5px 2px; border: 0; border-radius: 7px; color: #fff; font-size: 12px; font-weight: 600; padding: 5px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; min-width: 0; }

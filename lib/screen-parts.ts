@@ -22,7 +22,7 @@ export const SCREEN_PARTS: ScreenParts[] = [
     ],
   },
   {
-    screen: 'Dispatch',
+    screen: 'Home',
     hint: 'The job board',
     parts: [
       { key: 'dispatch.tiles', label: 'Count tiles', hint: 'Total jobs, each stage and High priority, across the top' },

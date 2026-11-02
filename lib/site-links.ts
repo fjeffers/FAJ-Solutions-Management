@@ -43,6 +43,17 @@ export function linkPurpose(link: string, s: Pick<SiteLinks, 'checkin' | 'checko
   if (link === s.survey) return 'Fill in the site survey';
   if (link === s.deliverable) return 'Upload the photos and documents here';
   if (link === s.checkout) return 'Fill in when you check out each day';
+  if (/^https?:\/\/deliverables\.ldsqa\.fyi/i.test(link)) return "The customer's Site Deliverables page";
+  return null;
+}
+
+/** The short tag on the office's Client links (Fred, 2026-11-01: mark the Drive folder "deliverables"). */
+export function linkTag(link: string, s: Pick<SiteLinks, 'checkin' | 'checkout' | 'survey' | 'deliverable'>): string | null {
+  if (link === s.checkin) return 'Opens on check-in';
+  if (link === s.checkout) return 'Opens on check-out';
+  if (link === s.deliverable) return 'Deliverables (upload)';
+  if (link === s.survey) return 'Site survey';
+  if (/^https?:\/\/deliverables\.ldsqa\.fyi/i.test(link)) return 'Site Deliverables page';
   return null;
 }
 

@@ -5,6 +5,7 @@ const inserted: { table: string; row: Record<string, unknown> }[] = [];
 const uploads: string[] = [];
 vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({
+    rpc: async () => ({ data: { role: 'owner' }, error: null }),
     auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
     from: () => {
       const q: Record<string, unknown> = {};

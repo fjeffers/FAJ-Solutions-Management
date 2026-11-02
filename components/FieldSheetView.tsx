@@ -16,13 +16,15 @@
 // the same way as the Site Log and can email it to the client
 // (/api/quickbooks/field-sheet-invoice).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useStableOrder } from '@/lib/stable-order';
+import { pickFirst, techShown, useTechPick } from '@/lib/tech-pick';
 import { createPortal } from 'react-dom';
 import { Camera, ExternalLink, EyeOff, FileSpreadsheet, FileText, Plus, Receipt, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  atCost, billRange, blocksBilling, byTech, byTechRows, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, leadFirst, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  atCost, billRange, blocksBilling, byTech, byTechRows, dayBill, dayCalc, drivesText, fieldSheetRows, inDates, LABOR_TYPES, leadFirst, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
   withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals, type TechBreakdown,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
@@ -212,6 +214,7 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
       ...workOrders.filter((w) => w.is_project).sort((a, b) => (b.start_date ?? '').localeCompare(a.start_date ?? ''))];
     return [...new Map(list.map((w) => [w.id, w])).values()].slice(0, 10);
   }, [workOrders, opened]);
+  const shownPicks = useStableOrder(picks, (w) => w.id);
 
   return (
     <div className="wf" style={{ padding: 16, maxWidth: 1400, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -226,7 +229,7 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
         <button className="wf-btn wf-btn-navy" type="submit"><Search size={16} /> Pull it up</button>
         {picks.length > 0 && (
           <div style={{ flexBasis: '100%', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {picks.map((w) => (
+            {shownPicks.map((w) => (
               <button type="button" key={w.id} className={`wf-btn wf-btn-sm ${w.id === woId ? 'wf-btn-gold' : 'wf-btn-outline'}`}
                 onClick={() => { setQ(w.wo_number); setWeek(null); setWoId(w.id); }}>
                 WO {w.wo_number}{w.external_wo_id ? ` · ${w.external_wo_id}` : ''} · {jobName(w)}
@@ -402,6 +405,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
   const [from, setFrom] = useState(week?.from ?? '');
   const [to, setTo] = useState(week?.to ?? '');
   const [showHidden, setShowHidden] = useState(false);
+  const [pick, setPick] = useTechPick();
   const [addOpen, setAddOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [zoom, setZoom] = useState<Shot | null>(null);
@@ -469,7 +473,6 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
   const rows = useMemo(() => allRows.filter((r) => inDates(r.day, from, to)), [allRows, from, to]);
   // The weeks this site has days in, Sunday to Saturday, to bill one at a time.
   const weeks = useMemo(() => [...new Set(allRows.map((r) => weekOf(r.day)))].sort(), [allRows]);
-  const visible = rows.filter((r) => showHidden || !r.hidden);
   const inRange = (d: string) => inDates(d, from, to);
   const receipts = expenses.filter((e) => inRange(e.expense_date));
   const billed: SheetReceipt[] = receipts.map((e) => ({ id: e.id, category: e.category, amount: e.amount, status: e.status, vendor: e.vendor, date: e.expense_date, tech: e.contractor_name }));
@@ -477,6 +480,10 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
   // Each tech's hours, miles and materials (Fred, 2026-10-29: "I need a break down from each tech").
   const perTech = byTech(rows, billed, settings, leadFirst(wo));
   const allTechs = [...new Set([...techs, ...rows.map((r) => r.tech)])];
+  const techPick = techShown(pick, allTechs);
+  const visible = rows.filter((r) => (showHidden || !r.hidden) && (!techPick || r.tech === techPick));
+  // The Days total follows the tech picked; the billing above stays the whole job.
+  const lineTotals = techPick ? sheetTotals(rows.filter((r) => r.tech === techPick), billed.filter((b) => b.tech === techPick), settings) : totals;
 
   // ── saving: one write at a time per line, and for the rates, so an older save can't land after a newer one ──
   const queues = useRef(new Map<string, Promise<void>>());
@@ -650,6 +657,12 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
 
       <Section title="Days" subtitle={`${visible.filter((r) => !r.hidden).length} lines`} right={
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {allTechs.length > 1 && (
+            <select className="wf-input" style={{ width: 'auto', padding: '5px 8px', fontSize: 13 }} value={techPick} onChange={(e) => setPick(e.target.value)} aria-label="Technician">
+              <option value="">All techs</option>
+              {allTechs.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
           {rows.some((r) => r.hidden) && (
             <label style={{ fontSize: 12.5, display: 'inline-flex', gap: 6, alignItems: 'center' }}>
               <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Show hidden lines
@@ -677,10 +690,10 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
             </tbody>
             <tfoot>
               <tr style={{ background: '#F6F1E4', fontWeight: 700 }}>
-                <td style={TD} colSpan={7}>Total · {totals.techDays} tech-days</td>
-                <td style={TDN}>{hrs(totals.hours)}</td><td style={TDN}>{hrs(totals.travel)}</td><td style={TDN}>{hrs(totals.total)}</td>
-                <td style={TD} colSpan={3} /><td style={TDN}>{mi(totals.miles)}</td><td style={TD} /><td style={TDN}>{money(totals.mileage)}</td>
-                <td style={TD} colSpan={2} /><td style={TDN}>{money(totals.bill)}</td><td style={TD} colSpan={3} />
+                <td style={TD} colSpan={7}>{techPick ? `${techPick} total` : 'Total'} · {lineTotals.techDays} tech-days</td>
+                <td style={TDN}>{hrs(lineTotals.hours)}</td><td style={TDN}>{hrs(lineTotals.travel)}</td><td style={TDN}>{hrs(lineTotals.total)}</td>
+                <td style={TD} colSpan={3} /><td style={TDN}>{mi(lineTotals.miles)}</td><td style={TD} /><td style={TDN}>{money(lineTotals.mileage)}</td>
+                <td style={TD} colSpan={2} /><td style={TDN}>{money(lineTotals.bill)}</td><td style={TD} colSpan={3} />
               </tr>
             </tfoot>
           </table>
@@ -736,7 +749,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
         ))}
       </Section>
 
-      {addOpen && <AddDay techs={allTechs} rows={rows} defaultDay={wo.start_date ?? ''} onClose={() => setAddOpen(false)}
+      {addOpen && <AddDay techs={pickFirst(techPick, allTechs)} rows={rows} defaultDay={wo.start_date ?? ''} onClose={() => setAddOpen(false)}
         onAdd={(day, tech) => { setAddOpen(false); void store({ key: `${day}|${tech}`, day, tech, id: null, added: true, hidden: false, missing: false, app: null, edits: {}, values: {} as SheetRow['values'], source: {} }, { edits: {} }); }} />}
       {report && (
         <FieldSheetReport site={settings.site || jobName(wo)} client={settings.client || wo.customer_name || ''} wo={wo.wo_number} clientWo={wo.external_wo_id}
@@ -1259,6 +1272,7 @@ function DayLine({ r, s, onSet, onUndo, onHide }: {
       <td style={{ ...TD, minWidth: 280, background: bg('note') }}>
         {r.missing && <div style={{ padding: '6px 6px 0', fontSize: 12, fontWeight: 600, color: '#9A4A12' }}>Nothing in the app for this day.</div>}
         {r.app?.drives && <div className="wf-subtle" style={{ padding: '6px 6px 0', fontSize: 11.5 }}>{r.app.drives}</div>}
+        {!!v.drives?.length && <div style={{ padding: '6px 6px 0', fontSize: 11.5 }}><b>Drives typed:</b> {drivesText(v.drives)}</div>}
         <textarea key={`note:${v.note}`} rows={1} style={{ ...IN, resize: 'vertical', fontSize: 12.5 }} defaultValue={v.note} placeholder="Your note"
           aria-label={`Note ${r.tech} ${r.day}`} onBlur={(e) => { if (e.target.value.trim() !== v.note) onSet(r, 'note', e.target.value.trim() || null); }} />
       </td>

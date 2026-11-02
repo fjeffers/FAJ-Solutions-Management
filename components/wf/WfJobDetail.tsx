@@ -3,6 +3,7 @@
 // a tech; what differs is passed in — the office adds Techs, Money and its own
 // buttons, a tech gets the time clock and Accept / Work done. A tech's job never
 // carries money (lib/wf.ts), so there is nothing here to hide from them.
+import { linkTag } from '@/lib/site-links';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowLeft, CalendarDays, CheckCircle2, Circle, FileCheck2, Info, KeyRound,
@@ -71,7 +72,7 @@ export function DetailHeader({ job, ownerView, loggedMs, billedHours }: {
             ? [`Hours on site: ${billedHours.toFixed(2)} h (as billed)`, `Techs' clock: ${logged ? formatDuration(logged) : '0m'}`]
             : [`Time logged: ${logged ? formatDuration(logged) : '0m'}`]} />
         <InfoItem icon={<MapPin size={16} />} title={`Location: ${(ownerView ? city || job.siteName : job.siteName || city) || 'not set'}`} lines={[fullAddress(job)]} />
-        <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], `${job.priorityLabel} priority`]} />
+        <InfoItem icon={<Wrench size={16} />} title="Work type" lines={[job.serviceType || WF_WORK_TYPE_LABEL[type], ...(job.priorityLabel ? [`${job.priorityLabel} priority`] : [])]} />
         <InfoItem icon={<CalendarDays size={16} />} title="Schedule" lines={[whenDay(job), times || 'No set time']} />
       </div>
     </div>
@@ -306,11 +307,10 @@ export default function WfJobDetail({
                       style={{ justifyContent: 'flex-start', minWidth: 0 }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkLabel(l)}</span>
                       {/* Which one opens on site and which at check-out (migration 133). */}
-                      {(l === job.checkinLink || l === job.checkoutLink) && (
-                        <span className="wf-chip" style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 11.5 }}>
-                          {l === job.checkinLink ? 'Opens on check-in' : 'Opens on check-out'}
-                        </span>
-                      )}
+                      {(() => {
+                        const tag = linkTag(l, { checkin: job.checkinLink ?? undefined, checkout: job.checkoutLink ?? undefined, survey: job.surveyLink ?? undefined, deliverable: job.deliverableLink ?? undefined });
+                        return tag && <span className="wf-chip" style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 11.5 }}>{tag}</span>;
+                      })()}
                     </a>
                   ))}
                 </div>

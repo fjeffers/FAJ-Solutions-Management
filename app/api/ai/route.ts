@@ -9,6 +9,7 @@ import { todayISO } from '@/lib/utils';
 import type { WorkOrder } from '@/lib/types';
 import { workspaceHeader } from '@/lib/anthropic-headers';
 import { jobFile } from '@/lib/job-file';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/ai — "Generate with AI" on a new work order. Admin-only tool, not
 // portal-token gated.
@@ -37,6 +38,8 @@ export async function POST(req: Request) {
     const supabase = await createClient('admin');
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const denied = await ownerOnly(supabase);
+    if (denied) return denied;
 
     const body = await req.json();
     const jobDescription: string = String(body?.job_description || '').slice(0, 30_000);

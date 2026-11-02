@@ -3,12 +3,15 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getValidQboSession } from '@/lib/quickbooks-session';
 import { findOrCreateVendor, createExpensePurchase } from '@/lib/quickbooks';
 import { NextResponse } from 'next/server';
+import { ownerOnly } from '@/lib/security';
 
 // Body: { payment_id }
 export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const { payment_id } = await req.json();
   if (!payment_id) return NextResponse.json({ error: 'Missing payment_id' }, { status: 400 });

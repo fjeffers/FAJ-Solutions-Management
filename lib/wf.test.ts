@@ -3,7 +3,7 @@ import {
   wfStatusFor, wfJobFromTech, wfJobFromOwner, parseClockTime, whenText, fullAddress, place,
   tasksDone, isClockedIn, canWork, withTask, clockedIn, clockedOut, markedWorkDone, workedMs,
   formatDuration, formatClock, matchesWf, sortWf, ownerCounts, techCounts, statusesPresent, jobImage,
-  wfStatusLabel, reportMissing, sortTechJobs, techFilterOf, TECH_FILTERS,
+  wfStatusLabel, reportMissing, missingGoesTo, sortTechJobs, techFilterOf, TECH_FILTERS,
 } from './wf';
 import {
   Outbox, RefusedError, isNoSignal, makeAction, saveCopy, loadCopy, lastUid, clearCopies, type KeyValue,
@@ -466,5 +466,15 @@ describe("the client's links on the office job page", () => {
   it('reads the saved links, web addresses only', () => {
     const job = wfJobFromOwner({ id: 'g', wo_number: '19101399', title: 't', client_links: ['https://drive.google.com/drive/folders/x', 'not a link', 'https://app.smartsheet.com/b/form/y'] } as never);
     expect(job.clientLinks).toEqual(['https://drive.google.com/drive/folders/x', 'https://app.smartsheet.com/b/form/y']);
+  });
+});
+
+describe('missingGoesTo', () => {
+  it('sends each missing item to the part of the job screen where it gets done', () => {
+    expect(missingGoesTo('Tick off 2 more deliverables under Closeout')).toBe('closeout');
+    expect(missingGoesTo('Get the customer to sign off under Closeout')).toBe('closeout');
+    expect(missingGoesTo('Add at least one photo of the work')).toBe('photos');
+    expect(missingGoesTo('Answer: Was the rack mounted?')).toBe('report');
+    expect(missingGoesTo('Write what you did, in your notes')).toBe('report');
   });
 });

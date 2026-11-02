@@ -7,7 +7,7 @@ import { NextRequest } from 'next/server';
 import { EMAIL_NOT_SET_UP, EMAIL_ON_PREVIEW } from '@/lib/email-client';
 
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'owner-1' } } }) } }),
+  createClient: async () => ({ rpc: async () => ({ data: { role: 'owner' }, error: null }), auth: { getUser: async () => ({ data: { user: { id: 'owner-1' } } }) } }),
 }));
 
 const { POST } = await import('./route');

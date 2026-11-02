@@ -6,12 +6,67 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import {
-  CAPTURE_ITEMS, TEMPLATE_MAX, addTemplate, removeTemplate, renameTemplate, setTemplateItems, setTemplateStartAsks, toggleItem,
-  type CaptureItem,
+  CAPTURE_ITEMS, TEMPLATE_MAX, addStarterClients, addTemplate, removeTemplate, renameTemplate, setTemplateFill, setTemplateItems, setTemplateStartAsks, toggleItem,
+  type CaptureItem, type JobTemplate,
 } from '@/lib/capture';
 import { START_ASK_MAX, addStartAsk, type StartAsk } from '@/lib/checkin';
 import { SaveLine } from '@/components/LayoutEditor';
 import { useJobTemplates } from '@/components/useJobTemplates';
+import { FILL_TASK_CATEGORIES, STARTER_CLIENTS, fillCount, type FillTaskCategory, type FillTextField, type TemplateFill } from '@/lib/template-fill';
+
+const FILL_FIELDS: { key: FillTextField; label: string; rows?: number }[] = [
+  { key: 'customer_name', label: 'Client' },
+  { key: 'service_type', label: 'Type of work' },
+  { key: 'description', label: 'Scope of work', rows: 5 },
+  { key: 'deliverables', label: 'Deliverables', rows: 3 },
+  { key: 'tools_required', label: 'Tools', rows: 3 },
+  { key: 'checkin_link', label: 'Check-in link' },
+  { key: 'checkout_link', label: 'Check-out link' },
+  { key: 'survey_link', label: 'Survey link' },
+  { key: 'deliverable_link', label: 'Documents (upload) link' },
+];
+const splitLines = (v: string) => v.split('\n').map((l) => l.trim()).filter(Boolean);
+
+/** What a client template fills in on a new work order (lib/template-fill.ts). Saved when a box loses focus. */
+function FillEditor({ t, onChange }: { t: JobTemplate; onChange: (fill: TemplateFill) => void }) {
+  const f = t.fill ?? {};
+  const set = (patch: Partial<TemplateFill>) => onChange({ ...f, ...patch });
+  const box = { display: 'flex', flexDirection: 'column' as const, gap: 4, fontSize: 12, fontWeight: 600 };
+  const n = fillCount(t.fill);
+  return (
+    <details>
+      <summary style={{ fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>Fills in on the work order{n ? ` (${n})` : ''}</summary>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8, marginTop: 8 }}>
+        {FILL_FIELDS.map((x) => (
+          <label key={x.key} style={box}>
+            {x.label}
+            {x.rows
+              ? <textarea className="wf-input" rows={x.rows} defaultValue={f[x.key] ?? ''} onBlur={(e) => set({ [x.key]: e.target.value })} />
+              : <input className="wf-input" defaultValue={f[x.key] ?? ''} onBlur={(e) => set({ [x.key]: e.target.value })} />}
+          </label>
+        ))}
+        <label style={box}>
+          Other links (one per line)
+          <textarea className="wf-input" rows={3} defaultValue={(f.client_links ?? []).join('\n')} onBlur={(e) => set({ client_links: splitLines(e.target.value) })} />
+        </label>
+        {FILL_TASK_CATEGORIES.map((c) => (
+          <label key={c} style={box}>
+            Checklist: {c} (one per line)
+            <textarea className="wf-input" rows={3} defaultValue={(f.tasks ?? []).filter((x) => x.category === c).map((x) => x.label).join('\n')}
+              onBlur={(e) => set({ tasks: [
+                ...(f.tasks ?? []).filter((x) => x.category !== c),
+                ...splitLines(e.target.value).map((label) => ({ category: c as FillTaskCategory, label })),
+              ].sort((a, b) => FILL_TASK_CATEGORIES.indexOf(a.category) - FILL_TASK_CATEGORIES.indexOf(b.category)) })} />
+          </label>
+        ))}
+        <label style={box}>
+          Questions for the tech (one per line)
+          <textarea className="wf-input" rows={3} defaultValue={(f.questions ?? []).join('\n')} onBlur={(e) => set({ questions: splitLines(e.target.value) })} />
+        </label>
+      </div>
+    </details>
+  );
+}
 
 /** One tick box per item, with what it means. */
 export function CaptureTicks({ items, onChange, idPrefix }: {
@@ -134,6 +189,7 @@ export default function JobTemplatesEditor() {
             setError(null);
           }} />
           <StartAsksEditor idPrefix={`tpl-${t.id}`} asks={t.startAsks ?? []} onChange={(asks) => update(setTemplateStartAsks(templates, t.id, asks))} />
+          <FillEditor t={t} onChange={(fill) => update(setTemplateFill(templates, t.id, fill))} />
         </section>
       ))}
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -144,6 +200,14 @@ export default function JobTemplatesEditor() {
         </label>
         <button type="button" className="wf-btn wf-btn-navy wf-btn-sm" onClick={add}><Plus size={15} /> Add template</button>
       </div>
+      {STARTER_CLIENTS.some((st) => !templates.some((t) => t.name.trim().toLowerCase() === st.name.toLowerCase())) && (
+        <div>
+          <button type="button" className="wf-btn wf-btn-outline wf-btn-sm"
+            onClick={() => update(addStarterClients(templates, STARTER_CLIENTS, Math.random().toString(36).slice(2)))}>
+            <Plus size={15} /> Add client templates: {STARTER_CLIENTS.filter((st) => !templates.some((t) => t.name.trim().toLowerCase() === st.name.toLowerCase())).map((st) => st.name).join(', ')}
+          </button>
+        </div>
+      )}
       {error && <div role="alert" className="wf-p-small" style={{ color: 'var(--wf-danger)' }}>{error}</div>}
       <SaveLine state={saveState} error={saveError} onRetry={retry} />
     </div>

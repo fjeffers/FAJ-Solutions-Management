@@ -10,6 +10,7 @@ import type { OdoRow } from '@/lib/weekly-bill';
 import { timesheetFile, timesheetLines, timesheetPdf } from '@/lib/timesheet';
 import { sheetInvoiceNumber } from '@/lib/qbo-work-order-export';
 import { NextResponse } from 'next/server';
+import { ownerOnly } from '@/lib/security';
 
 // Bill one site's Field Sheet for a week — IN QUICKBOOKS, and email it to the client.
 //
@@ -51,6 +52,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const body = await req.json().catch(() => ({}));
   const { wo_id, from: fromIn, to: toIn, dry_run, send, photos, timesheet, imported, total: importedTotal, date: importedDate } = body as {

@@ -229,7 +229,20 @@ describe('FsDayLog', () => {
     ]);
   });
 
-  it('says so when nothing is recorded yet', () => {
+  // Fred, 2026-11-02: "it add to the rest of the milages giving a total at the end of the woork week".
+  it('adds the miles added by hand to their day and the week, and shows a day with only those', () => {
+    render(<FsDayLog events={[
+      { kind: 'travel_start', at: '2026-10-26T12:00:00Z', origin: 'hotel', dest: 'site' },
+      { kind: 'travel_end', at: '2026-10-26T13:00:00Z', miles: 20 },
+    ]} added={{ '2026-10-25': 85, '2026-10-26': 10 }} />);
+    const titles = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+    expect(titles).toEqual(['Week of Sun, Oct 25 – Sat, Oct 31', 'Monday, October 26', 'Sunday, October 25']);
+    expect(screen.getByText('Week total:').parentElement!.textContent)
+      .toBe('Week total: 2 days · on site 0m · travel 1h 00m · 115 mi (from GPS — the office can correct it; 95 mi added by hand)');
+    expect(screen.getByText('85 mi (added by hand)')).toBeTruthy();
+  });
+
+    it('says so when nothing is recorded yet', () => {
     render(<FsDayLog events={[]} />);
     expect(screen.getByText(/Nothing recorded yet/)).toBeTruthy();
   });

@@ -14,6 +14,11 @@ const admin = {
     const q = {
       select: () => q,
       eq: (k: string, v: string) => { f[k] = v; return q; },
+      then: (ok: (r: unknown) => unknown) => ok({ data: f.tech === 'Frederick Jeffers' ? [
+        { day: '2026-11-01', edits: { extraMiles: 85 }, hidden: false },
+        { day: '2026-11-02', edits: {}, hidden: false },
+        { day: '2026-11-03', edits: { extraMiles: 40 }, hidden: true },
+      ] : [], error: null }),
       maybeSingle: async () => { lookups.push({ ...f }); return { data: f.auth_user_id === 'auth-fred' ? { name: 'Frederick Jeffers', user_id: 'owner-1' } : null }; },
     };
     return q;
@@ -23,7 +28,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => admin }));
 const addDayMiles = vi.fn(async () => 95 as number | null);
 vi.mock('@/lib/day-miles', async (original) => ({ ...(await original<typeof import('@/lib/day-miles')>()), addDayMiles }));
 
-const { POST } = await import('./route');
+const { POST, GET } = await import('./route');
 const today = dayOf(new Date().toISOString(), 'America/New_York');
 
 function post(f: Record<string, string>) {
@@ -59,5 +64,19 @@ describe('POST /api/tech/mileage', () => {
     const res = await post({});
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ ok: false, error: "Couldn't add the miles. Try again." });
+  });
+});
+
+describe('GET /api/tech/mileage', () => {
+  it("gives the tech's own miles added by hand on the job, by day, leaving out hidden days", async () => {
+    const res = await GET(new Request('http://localhost/api/tech/mileage?wo_number=19101412'));
+    expect(await res.json()).toEqual({ ok: true, days: { '2026-11-01': 85 } });
+    expect(rpc).toHaveBeenCalledWith('wf_tech_photo_target', { p_wo_number: '19101412' });
+  });
+
+  it('turns away a job that is not theirs', async () => {
+    job = null;
+    const res = await GET(new Request('http://localhost/api/tech/mileage?wo_number=19101412'));
+    expect(res.status).toBe(403);
   });
 });

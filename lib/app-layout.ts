@@ -55,8 +55,8 @@ export const SETTINGS_KEY = 'settings';
 export const LABEL_MAX = 40;
 
 const MAIN_SCREENS: Record<string, { label: string; hint: string }> = {
-  dashboard: { label: 'Dashboard', hint: 'Money, jobs and what needs you today' },
-  workorders: { label: 'Dispatch', hint: 'The job board: every job by stage' },
+  dashboard: { label: 'Dashboard', hint: 'Now part of Home' },
+  workorders: { label: 'Home', hint: 'What needs you, today in the field, and every job by stage' },
   scheduling: { label: 'Schedule', hint: 'Jobs on the calendar' },
   messages: { label: 'Messages', hint: 'Every conversation with your techs' },
   office: { label: 'Office', hint: 'Every other screen, in sections' },
@@ -88,6 +88,15 @@ export const STANDARD_LAYOUT: Layout = {
   hours: STANDARD_HOURS_LOOK,
 };
 
+/**
+ * Sections the standard menu renamed (Fred, 2026-10-31: the shorter menu, Jobs / Money / Techs /
+ * Sales / Setup). A saved menu gets the new name too, unless Fred named the section himself.
+ */
+const RENAMED_SECTIONS: Record<string, { was: string; id: string; title: string }> = {
+  everyday: { was: 'Every day', id: 'everyday', title: 'Jobs' },
+  onsite: { was: 'On site', id: 'setup', title: 'Setup' },
+};
+
 const known = (k: unknown): k is string => typeof k === 'string' && Object.prototype.hasOwnProperty.call(SCREENS, k);
 const cleanText = (v: unknown): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, LABEL_MAX) : '');
 
@@ -111,11 +120,14 @@ export function normalizeLayout(raw: unknown): Layout {
   for (const s of savedSections ?? STANDARD_LAYOUT.sections) {
     if (!s || typeof s !== 'object') continue;
     const rec = s as Record<string, unknown>;
-    const id = typeof rec.id === 'string' && rec.id.trim() ? rec.id.trim().slice(0, 40) : '';
+    let id = typeof rec.id === 'string' && rec.id.trim() ? rec.id.trim().slice(0, 40) : '';
+    let title = cleanText(rec.title);
+    const renamed = RENAMED_SECTIONS[id];
+    if (renamed && (!title || title === renamed.was)) ({ id, title } = renamed);
     if (!id || ids.has(id)) continue;
     ids.add(id);
     const items = Array.isArray(rec.items) ? rec.items.filter(take) : [];
-    sections.push({ id, title: cleanText(rec.title) || 'Untitled section', items });
+    sections.push({ id, title: title || 'Untitled section', items });
   }
 
   // Anything not placed (a screen new to the app, or a damaged value) goes
@@ -176,7 +188,8 @@ export function resolveLayout(l: Layout): ResolvedLayout {
 /** What the menu shows: hidden screens out, and sections left empty out. */
 export function visibleLayout(r: ResolvedLayout): ResolvedLayout {
   return {
-    main: r.main.filter((s) => !s.hidden),
+    // Dashboard is part of Home now (Fred, 2026-10-31: merge Dashboard and Dispatch).
+    main: r.main.filter((s) => !s.hidden && s.key !== 'dashboard'),
     sections: r.sections.map((s) => ({ ...s, items: s.items.filter((i) => !i.hidden) })).filter((s) => s.items.length > 0),
   };
 }

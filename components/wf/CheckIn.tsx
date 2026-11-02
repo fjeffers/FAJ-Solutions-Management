@@ -2,7 +2,7 @@
 // Check in (Fred, 2026-10-18: "they leave home, they sign into the app, hit
 // Check in, then it asks them from where, then asks for a GPS photo of the
 // starting mileage, along with any other things listed"). Step by step:
-//   1. Where are you driving? One drop-down: Home → Hotel, Hotel → Site,
+//   1. Where are you driving? Big buttons: Site, Hotel, Home, Fuel, Materials,
 //      Site → Hotel… (lib/checkin.ts). Tapping Start the drive records it at
 //      once, with the time and GPS, through the outbox, so it works with no signal.
 //   2. The starting mileage: a GPS-stamped photo, the number read from it by the
@@ -38,12 +38,14 @@ export type CheckInSend = {
 
 type Step = 'drive' | 'mileage' | 'asks';
 
-export default function CheckInDialog({ job, startOfDay, afterWork = false, from, send, onClose }: {
+export default function CheckInDialog({ job, startOfDay, afterWork = false, hotelDrive = false, from, send, onClose }: {
   job: WfJob;
   /** The first check-in of the day: the day starts, and the office's items are asked. */
   startOfDay: boolean;
   /** Work done: only the drive back to the hotel or home. */
   afterWork?: boolean;
+  /** The drive out to the hotel the day before the job (lib/hotel.ts hotelDriveDay): Hotel first. */
+  hotelDrive?: boolean;
   /** Where the tech is now (their last drive), to list the likely drives first. */
   from: Origin | null;
   send: CheckInSend;
@@ -143,19 +145,33 @@ export default function CheckInDialog({ job, startOfDay, afterWork = false, from
       {counter}
       {step === 'drive' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {travel && hotelDrive && (
+            <p style={{ margin: 0, fontSize: 13.5, padding: '8px 10px', borderRadius: 8, background: '#EEF3FA', color: '#13284A' }}>
+              Travel day: drive to <b>{job.hotel?.name || 'the hotel'}</b>. Pick <b>Hotel</b>; arriving there signs you off for the day.
+            </p>
+          )}
           {travel && (
-            <label style={{ display: 'block' }}>
-              <span className="wf-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--wf-text)', fontSize: 13 }}>What are you doing?</span>
-              {/* Required: the four activities (Fred, 2026-10-18), each drive under its own. */}
-              <select className="wf-input" value={driveKey} onChange={(e) => setDriveKey(e.target.value)} aria-label="What are you doing?">
-                <option value="" disabled>Pick one</option>
-                {checkInChoices(from, afterWork).map((g) => (
-                  <optgroup key={g.group} label={g.label}>
-                    {g.options.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-            </label>
+            // Big buttons, not a drop-down (Fred, 2026-10-31: "keep" the mockup's Where are you driving? screen).
+            <div role="radiogroup" aria-label="What are you doing?" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {checkInChoices(from, afterWork, hotelDrive).map((g) => (
+                <div key={g.group}>
+                  {g.group === 'on_site' && <div className="wf-subtle" style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>Already there?</div>}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                    {g.options.map((d) => {
+                      const on = driveKey === d.key;
+                      return (
+                        <button key={d.key} type="button" role="radio" aria-checked={on}
+                          className={`wf-btn ${on ? 'wf-btn-navy' : 'wf-btn-outline'}`}
+                          style={{ minHeight: 48, whiteSpace: 'normal', lineHeight: 1.2, gridColumn: g.group === 'on_site' ? '1 / -1' : undefined }}
+                          onClick={() => setDriveKey(d.key)}>
+                          {d.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
           {travel && samePlace(drive) && (
             <p role="alert" style={{ margin: 0, fontSize: 13.5, padding: '8px 10px', borderRadius: 8, background: '#FDF3E1', color: '#7A4B00' }}>

@@ -92,7 +92,7 @@ const FROM: { key: Origin; label: string }[] = [
 ];
 const ARRIVE: Record<string, string> = {
   site: 'Arrive on site', next_site: 'Arrive at the next site', hotel: 'Arrive at the hotel', home: 'Arrive home',
-  fuel: 'Arrive at the fuel stop', materials: 'Arrive at the materials pickup',
+  fuel: 'Arrive at the fuel stop', materials: 'Arrive at the vendor',
 };
 
 /**
@@ -275,36 +275,44 @@ export function FsStageAction({ stage, events, busy, enabled, afterWork = false,
 /**
  * Time & travel: each day's clock in, drives and time on site, newest day first, under its week
  * (Sunday to Saturday, like the bill) and the week's totals. A drive's miles are its odometer
- * photos' (`readings`, the tech's own) when it has both, else the GPS's.
+ * photos' (`readings`, the tech's own) when it has both, else the GPS's. `added`: the miles the
+ * tech added by hand, by day (Receipt → Mileage), on top, and in the week's total.
  */
-export function FsDayLog({ events, readings = [] }: { events: DayEvent[]; readings?: OdometerReading[] }) {
+export function FsDayLog({ events, readings = [], added = {} }: { events: DayEvent[]; readings?: OdometerReading[]; added?: Record<string, number> }) {
   const now = useTick(60_000);
   const logs = buildDayLogs(events, now, TZ).reverse();
-  if (logs.length === 0) return <p className="fs-muted">Nothing recorded yet. Your clock in, drives and time on site show here.</p>;
+  const handDays = Object.keys(added).filter((d) => added[d] > 0);
+  if (logs.length === 0 && handDays.length === 0) return <p className="fs-muted">Nothing recorded yet. Your clock in, drives and time on site show here.</p>;
   const drives = driveMiles(logs.flatMap((d) => d.legs), readings);
   // Fred, 2026-10-29: "Need to add Sunday to Saturday".
-  const weeks: { key: string; logs: DayLog[] }[] = [];
-  for (const log of logs) {
-    const key = weekStartOf(log.day);
+  const days = [...new Set([...logs.map((d) => d.day), ...handDays])].sort().reverse();
+  const weeks: { key: string; days: string[] }[] = [];
+  for (const day of days) {
+    const key = weekStartOf(day);
     const last = weeks.at(-1);
-    if (last?.key === key) last.logs.push(log); else weeks.push({ key, logs: [log] });
+    if (last?.key === key) last.days.push(day); else weeks.push({ key, days: [day] });
   }
   return (
     <div className="fs-stack">
       {weeks.map((w) => {
-        const total = dayMiles(w.logs, drives);
-        const days = new Set(w.logs.map((d) => d.day)).size;
-        const sum = (f: (d: DayLog) => number) => w.logs.reduce((t, d) => t + f(d), 0);
+        const wlogs = logs.filter((d) => w.days.includes(d.day));
+        const total = dayMiles(wlogs, drives);
+        const hand = r1(w.days.reduce((t, d) => t + (added[d] ?? 0), 0));
+        const sum = (f: (d: DayLog) => number) => wlogs.reduce((t, d) => t + f(d), 0);
         return (
           <div key={w.key} className="fs-stack">
             <div>
               <h4 className="fs-day-title">{groupLabel(w.key, 'week')}</h4>
               <p className="fs-muted">
-                <b>Week total:</b> {days} day{days === 1 ? '' : 's'} · on site {formatDuration(sum((d) => d.onSiteMs))} · travel {formatDuration(sum((d) => d.travelMs))}
-                {total.miles > 0 ? ` · ${total.miles} mi (${total.source})` : ''}
+                <b>Week total:</b> {w.days.length} day{w.days.length === 1 ? '' : 's'} · on site {formatDuration(sum((d) => d.onSiteMs))} · travel {formatDuration(sum((d) => d.travelMs))}
+                {milesText(total, hand)}
               </p>
             </div>
-            {w.logs.map((log) => <FsDay key={log.day + log.tech} log={log} drives={drives} />)}
+            {w.days.map((day) => {
+              const mine = wlogs.filter((d) => d.day === day);
+              if (mine.length === 0) return <FsHandDay key={day} day={day} miles={added[day]} />;
+              return mine.map((log, i) => <FsDay key={log.day + log.tech} log={log} drives={drives} added={i === 0 ? added[day] : undefined} />);
+            })}
           </div>
         );
       })}
@@ -312,8 +320,29 @@ export function FsDayLog({ events, readings = [] }: { events: DayEvent[]; readin
   );
 }
 
+const r1 = (n: number) => Math.round(n * 10) / 10;
+
+/** " · 122 mi (odometer photos)", with the miles added by hand in the total and said so. */
+function milesText(total: { miles: number; source: string }, hand = 0): string {
+  if (hand > 0 && total.miles > 0) return ` · ${r1(total.miles + hand)} mi (${total.source}; ${hand} mi added by hand)`;
+  if (hand > 0) return ` · ${hand} mi (added by hand)`;
+  return total.miles > 0 ? ` · ${total.miles} mi (${total.source})` : '';
+}
+
+const dayTitle = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+
+/** A day with only miles added by hand (a drive the app didn't track). */
+function FsHandDay({ day, miles }: { day: string; miles: number }) {
+  return (
+    <div>
+      <h4 className="fs-day-title">{dayTitle(day)}</h4>
+      <p className="fs-muted">{r1(miles)} mi (added by hand)</p>
+    </div>
+  );
+}
+
 /** One day on the phone: its clock in, drives and time on site, and its totals. */
-function FsDay({ log, drives }: { log: DayLog; drives: Map<string, DriveMiles> }) {
+function FsDay({ log, drives, added = 0 }: { log: DayLog; drives: Map<string, DriveMiles>; added?: number }) {
   const total = dayMiles(log, drives);
   const rows = [
     ...(log.clockIn ? [{ at: log.clockIn, title: 'Clocked in', detail: timeOf(log.clockIn) }] : []),
@@ -329,15 +358,14 @@ function FsDay({ log, drives }: { log: DayLog; drives: Map<string, DriveMiles> }
       detail: `${timeOf(s.in)}–${s.out ? timeOf(s.out) : 'now'} · ${formatDuration(s.ms)}${s.lunchMs ? ` (lunch ${formatDuration(s.lunchMs)})` : ''}`,
     })),
   ].sort((a, b) => a.at.localeCompare(b.at));
-  const day = new Date(`${log.day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
   return (
     <div>
-      <h4 className="fs-day-title">{day}</h4>
+      <h4 className="fs-day-title">{dayTitle(log.day)}</h4>
       <ul className="fs-timeline">
         {rows.map((r) => <li key={r.at + r.title}><i /><div><b>{r.title}</b><small>{r.detail}</small></div></li>)}
       </ul>
       <p className="fs-muted">
-        On site {formatDuration(log.onSiteMs)} · travel {formatDuration(log.travelMs)}{total.miles > 0 ? ` · ${total.miles} mi (${total.source})` : ''}
+        On site {formatDuration(log.onSiteMs)} · travel {formatDuration(log.travelMs)}{milesText(total, added)}
       </p>
     </div>
   );

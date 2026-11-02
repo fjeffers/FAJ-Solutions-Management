@@ -28,14 +28,19 @@ import {
   techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
   fullAddress, reportMissing, askedOnly, askedDeliverables, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
+  missingGoesTo, wfStatusLabel,
 } from '@/lib/wf';
-import { closeoutArgs, closeoutMissing, listFor, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
+import HotelCard from '@/components/wf/HotelCard';
+import TechAlerts from '@/components/wf/TechAlerts';
+import UploadReminder from '@/components/wf/UploadReminder';
+import { closeoutArgs, closeoutMissing, listFor, parseCloseoutLists, type CloseoutList, type CloseoutOp } from '@/lib/closeout';
 import CloseoutCard from '@/components/wf/Closeout';
 import ProjectDayCard, { OffSiteDialog, type DayActions } from '@/components/wf/ProjectDay';
 import { PhotoLabelDialog, photoLabelChoices } from '@/components/wf/PhotoLabel';
 import { LeftSiteDialog, SheetLinkButton, SiteAccessBar, buzz, openIssue, sendSiteMessage, useLateMarks, useLeftSite, useSiteTalk } from '@/components/wf/SiteTalk';
 import { FsDayLog, FsStageAction } from '@/components/wf/FsWork';
 import { FS_STAGE_NAME, fsStage, type FsStage } from '@/lib/fs-stage';
+import { jobDayGuide, type GuideStep } from '@/lib/job-day-guide';
 import { addNotes, clearNotes, loadNotes, markRead, messageNote, notesFromChanges, saveNotes, type TechNote } from '@/lib/tech-inbox';
 import { FsBell } from '@/components/wf/FsBell';
 import { PushSwitch } from '@/components/wf/PushSwitch';
@@ -59,18 +64,21 @@ import Toaster from '@/components/Toaster';
 import TechChat from '@/components/TechChat';
 import TechInstall from '@/components/TechInstall';
 import PortalDocuments from '@/app/portal/[token]/PortalDocuments';
+import { ArrivalPrompt, CheckInNow, HomeSpotCard } from '@/components/wf/DayPrompts';
+import { driveTarget, loadHome, saveHotel } from '@/lib/arrival';
+import { hotelDriveDay } from '@/lib/hotel';
 import { Banner, Dialog, Empty, Filters, Hero, JobCard, Section, TimeRequestLine, greeting } from '@/components/wf/WfUi';
 import { FsBrand, FsChip, FsIcon, FsPageHeader, fsInitials } from '@/components/wf/FsUi';
 import { linkLabel } from '@/lib/client-links';
 import { checkoutFormUrl, clock24, lastOffOrNow, linkPurpose, onSiteSince, parseSiteLinks, siteIdOf, type SiteLinks } from '@/lib/site-links';
-import WfJobDetail, { ChecklistCard, DetailHeader, InfoListCard, SiteInfoCard, TimeClockCard } from '@/components/wf/WfJobDetail';
+import WfJobDetail, { ChecklistCard, InfoListCard, TimeClockCard } from '@/components/wf/WfJobDetail';
 import SignaturePad from '@/components/wf/SignaturePad';
 import DirectionsButton from '@/components/wf/Directions';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechProfile } from '@/lib/types';
 import {
   CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown, Phone, Mail,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -309,7 +317,7 @@ export default function TechPortalPage() {
       if (cp && cj) {
         setProfile(cp.value);
         setOfficeJobs(cj.value);
-        setLists(loadCopy<CloseoutList[]>(kv, u, 'lists')?.value ?? []);
+        setLists(parseCloseoutLists(loadCopy<CloseoutList[]>(kv, u, 'lists')?.value ?? []));
         setSavedAt(cj.at);
         setPhase('ready');
       }
@@ -539,6 +547,7 @@ export default function TechPortalPage() {
         const st = fsStage(checkIn.myDay ?? [], {}, undefined, 'America/New_York');
         return (
           <CheckInDialog job={checkIn} startOfDay={st === 'ready' || st === 'done'} afterWork={checkIn.status === 'workDone'}
+            hotelDrive={(st === 'ready' || st === 'done') && hotelDriveDay(checkIn, todayISO())}
             from={lastPlace(checkIn.myDay ?? [])} send={sendFor(checkIn)} onClose={() => setCheckIn(null)} />
         );
       })()}
@@ -582,6 +591,9 @@ export default function TechPortalPage() {
             </div>
           )}
 
+          {!checkIn && !openJob && tab === 'project' && <CheckInNow jobs={jobs} busy={dayBusy} onCheckIn={setCheckIn} />}
+          {uid && <ArrivalPrompt jobs={jobs} uid={uid} busy={dayBusy} onArrive={(j) => void arriveFrom(j)} />}
+
           {openJob ? (
             <>
               <button type="button" className="fs-back-link" onClick={() => setOpenId(null)}><FsIcon name="back" size={16} />{TAB_TITLE[navKey]}</button>
@@ -591,7 +603,8 @@ export default function TechPortalPage() {
                 techName={profile?.name ?? ''} />
             </>
           ) : tab === 'project' ? (
-            <ProjectTab jobs={jobs} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} />
+            <ProjectTab jobs={jobs} uid={uid ?? ''} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} act={act}
+              alerts={<TechAlerts jobs={jobs} unread={unread} onOpen={openFromList} onChat={() => go('chat')} />} />
           ) : underProfile ? (
             <>
               <button type="button" className="fs-back-link" onClick={() => go('profile')}><FsIcon name="back" size={16} />Profile</button>
@@ -634,6 +647,7 @@ export default function TechPortalPage() {
                 <PushSwitch onText="On. New work orders and messages pop up on this phone, even with the app closed."
                   offText="Turn on so new work orders and messages pop up on this phone, even with the app closed." />
               </div>
+              {uid && <div style={{ marginBottom: 18, maxWidth: 640 }}><HomeSpotCard uid={uid} /></div>}
               <ProfileTab
                 profile={profile} portalToken={portalToken} onSignOut={signOut} wide={wide} onWide={setWide}
                 onSaved={(p) => { setProfile(p); if (uid) saveCopy(kv, uid, 'profile', p); }}
@@ -666,7 +680,8 @@ function DayStrip({ job, busy, onSignOut }: { job: WfJob; busy: boolean; onSignO
  * The first thing after logging in (Fred, 2026-10-18: "when they log in it should ask"):
  * Check in for today's job, or the one step that's next on the job they're in the middle of.
  */
-function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
+function TodayCard({ jobs, uid, onOpen, onCheckIn, onArrive, busy }: {
+  uid: string;
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
 }) {
   const today = todayISO();
@@ -681,15 +696,21 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   const choices = sortTechJobs(jobs.filter((j) => canWork(j) && j.dayFlow), today);
   const [pick, setPick] = useState<string>('');
   if (!inProgress && choices.length === 0) return null;
-  const job = inProgress?.j ?? choices.find((j) => j.id === pick) ?? choices[0];
+  // On Sunday's drive out to the hotel (lib/hotel.ts hotelDriveDay), that job comes first.
+  const job = inProgress?.j ?? choices.find((j) => j.id === pick) ?? choices.find((j) => hotelDriveDay(j, today)) ?? choices[0];
+  const hotelDrive = !inProgress && hotelDriveDay(job, today);
   const stage = inProgress?.st ?? fsStage(job.myDay ?? [], {}, now, 'America/New_York');
   const st = dayState(job.myDay ?? [], now);
   const since = 'since' in st ? new Date(st.since).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
   const name = job.siteName || job.title || `WO ${job.number}`;
   let line: string;
   let action: React.ReactNode;
+  // Navigate to where the drive is headed (Fred, 2026-11-02: "update navigation and hotel drive on
+  // sunday"): the site, the job's hotel, or home; before Sunday's drive, the hotel.
+  let navTo: { address: string; lat: number | null; lng: number | null } | null = null;
   if (stage === 'outbound' || stage === 'returning') {
     const dest = st.stage === 'travel' ? st.dest : 'site';
+    navTo = driveTarget(job, dest, dest === 'home' ? loadHome(browserStorage(), uid) : null);
     line = `${onTheWay(dest)}${since ? ` since ${since}` : ''}.`;
     action = (
       <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy} onClick={() => onArrive(job)}>
@@ -701,7 +722,9 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
     action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" onClick={() => onOpen(job.id)}>Open the job</button>;
   } else {
     // Ready for the day, off site, or signed out at the hotel: the next check-in.
-    line = stage === 'offsite' ? `Off site at ${name}. Where to now?`
+    if (hotelDrive) navTo = driveTarget(job, 'hotel', null);
+    line = hotelDrive && stage !== 'clocked' ? `Travel day: drive to ${job.hotel?.name || 'the hotel'}. Check in when you leave home.`
+      : stage === 'offsite' ? `Off site at ${name}. Where to now?`
       : stage === 'clocked' ? 'Checked in. Where are you driving?' : 'Ready to go? Check in before you drive off.';
     action = (
       <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy || job.status === 'offered'} onClick={() => onCheckIn(job)}>
@@ -724,6 +747,7 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
       )}
       <p>{line}</p>
       {action}
+      {navTo && <DirectionsButton to={navTo} label="Navigate" className="fs-btn fs-btn-secondary" style={{ width: '100%', marginTop: 8 }} />}
     </section>
   );
 }
@@ -734,8 +758,12 @@ function TodayCard({ jobs, onOpen, onCheckIn, onArrive, busy }: {
 // office to close it).
 type WoList = 'assigned' | 'available' | 'pending';
 
-function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
+function ProjectTab({ jobs, uid, onOpen, onCheckIn, onArrive, busy, act, alerts }: {
+  /** The Alerts bar (components/wf/TechAlerts.tsx), first on the screen. */
+  alerts?: React.ReactNode;
+  uid: string;
   jobs: WfJob[]; onOpen: (id: string) => void; onCheckIn: (job: WfJob) => void; onArrive: (job: WfJob) => void; busy: boolean;
+  act: (a: PendingAction, sent?: string) => Promise<void>;
 }) {
   const today = todayISO();
   const live = sortTechJobs(jobs.filter(canWork), today);
@@ -783,7 +811,40 @@ function ProjectTab({ jobs, onOpen, onCheckIn, onArrive, busy }: {
   return (
     <>
       <FsPageHeader title="Work orders" subtitle="Your assigned work, one tap away." />
-      <TodayCard jobs={jobs} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
+      {alerts}
+      {/* Up front until it's on, so a new job reaches the phone (Fred, 2026-10-31: "when a tech is assign if the app is on the phobe he gets an alert"). */}
+      <div style={{ marginBottom: 14 }}>
+        <PushSwitch hideWhenOn offText="Turn on so you get an alert the moment you're put on a job, even with the app closed." />
+      </div>
+      {/* New offers first, with the answer right here (Fred, 2026-10-31: "New job offers on the home screen"). */}
+      {lists.available.length > 0 && (
+        <section className="fs-card" aria-label="New jobs offered to you"
+          style={{ marginBottom: 14, borderColor: 'var(--wf-gold, #c9a24b)', borderWidth: 2, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 17 }}>
+            {lists.available.length === 1 ? 'New job offered to you' : `${lists.available.length} new jobs offered to you`}
+          </h3>
+          {lists.available.slice(0, 3).map((j) => {
+            const start = parseClockTime(j.startTime);
+            const day = !j.date ? 'Not scheduled yet'
+              : new Date(`${j.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            return (
+              <div key={j.id} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 10, borderTop: '1px solid var(--wf-line, #e5e7eb)' }}>
+                <button type="button" onClick={() => onOpen(j.id)}
+                  style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <strong>{j.siteName || j.title}</strong>
+                  <span className="fs-meta">{[`WO ${j.number}`, `${day}${start ? ` · ${fmtClock12(start)}` : ''}`, j.city].filter(Boolean).join(' · ')}</span>
+                </button>
+                <OfferButtons job={j} act={act} />
+              </div>
+            );
+          })}
+          {lists.available.length > 3 && (
+            <button type="button" className="wf-btn wf-btn-outline" onClick={() => setList('available')}>See all {lists.available.length}</button>
+          )}
+        </section>
+      )}
+      <TodayCard jobs={jobs} uid={uid} onOpen={onOpen} onCheckIn={onCheckIn} onArrive={onArrive} busy={busy} />
+      <HotelCard jobs={live} today={today} onOpen={onOpen} />
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">
           <div>Open work orders<FsIcon name="sheet" size={18} /></div>
@@ -1212,6 +1273,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   // The client's links for the day (migration 133): the checkout form opens when they go off site.
   const siteLinks = useSiteLinks(job.number);
   const [checkoutAt, setCheckoutAt] = useState<string | null>(null);
+  // The pictures reminder when he leaves the site for the day (Fred, 2026-11-01).
+  const [uploadAsk, setUploadAsk] = useState(false);
   /** The client's checkout form, filled in with this job and today's times (lib/site-links.ts). */
   const checkoutHref = (off: string) => siteLinks.checkout ? checkoutFormUrl(siteLinks.checkout, {
     // The client's own numbers (migration 135): their Site ID, and their ticket, never FAJ's WO number.
@@ -1241,6 +1304,17 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     if (!error && Array.isArray(data)) setExpenses(data as TechExpense[]);
   }, [job.number]);
   useEffect(() => { void loadExpenses(); }, [loadExpenses]);
+  // Miles the tech added by hand (Receipt → Mileage), by day, for the week's total (Fred, 2026-11-02:
+  // "it add to the rest of the milages giving a total at the end of the woork week").
+  const [handMiles, setHandMiles] = useState<Record<string, number>>({});
+  const loadHandMiles = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tech/mileage?wo_number=${encodeURIComponent(job.number)}`);
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; days?: Record<string, number> };
+      if (res.ok && json.ok) setHandMiles(json.days ?? {});
+    } catch { /* no signal: the totals show without them */ }
+  }, [job.number]);
+  useEffect(() => { void loadHandMiles(); }, [loadHandMiles]);
   const working = canWork(job);
   const canReport = working || job.status === 'workDone';
   const checklist = useMemo(() => listFor(lists, job.title, job.description), [lists, job.title, job.description]);
@@ -1270,7 +1344,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   // The day of travel, lunch and time on site: project jobs, and every job once
   // the database sends the day for it (migration 127) on the Field Service screen.
   const dayFlow = project || (FS_JOB_SCREEN && !!job.dayFlow);
-  const jobForCloseout = project && ask('signature') ? { ...shown, signatureRequired: true } : shown;
+  const jobForCloseout = project && ask('signature') && !shown.noSignature ? { ...shown, signatureRequired: true } : shown;
   // The live sheet's messages: No access, the PM's questions (migration 121).
   const talk = useSiteTalk(job.number, dayFlow && job.status !== 'offered' && job.status !== 'declined');
   // Running late, and stepped off site (migration 122).
@@ -1352,7 +1426,13 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   };
   // A project site always needs the sign-off; an ordinary job only when the office asked for one.
   const offSiteMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, jobForCloseout.signatureRequired)];
-  const leaveSite = async (finished: boolean, report?: { done: string; left: string }) => {
+  /** Sent in with items not done: what and why, on the job's messages for the office. */
+  const sendMissingWhy = (missing: string[], why: string) =>
+    act(makeAction('sitemsg', {
+      number: job.number, kind: 'report', to: 'Everyone',
+      body: `Sent in with items not done:\n${missing.map((m) => `• ${m}`).join('\n')}\nWhy: ${why}`,
+    }, `Items not done on WO ${job.number}`));
+  const leaveSite = async (finished: boolean, report?: { done: string; left: string }, why?: string) => {
     setOffOpen(false);
     const at = new Date();
     const g = await where();
@@ -1362,7 +1442,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     }
     // Then the client's own checkout form, when the job has one (migration 133).
     if (siteLinks.checkout) setCheckoutAt(at.toISOString());
+    setUploadAsk(true);
     if (finished) {
+      if (why) await sendMissingWhy(offSiteMissing, why);
       await act(makeAction('report', { number: job.number, notes, answers }, `Job report for WO ${job.number}`));
       setAnswers({});
       await act(makeAction('workdone', { number: job.number, notes, clockOut: isClockedIn(job), ...g }, `Site finished on WO ${job.number}`, at),
@@ -1496,6 +1578,16 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         bottom={simple && job.status !== 'offered' ? undefined : bottom}
       />
   );
+  /** Check-out's "Go to it": close the dialog and scroll to where the missing item gets done. */
+  const goTo = (m: string) => {
+    setDoneOpen(false);
+    setOffOpen(false);
+    const order = [missingGoesTo(m), 'report', 'closeout', 'photos'];
+    setTimeout(() => {
+      const el = order.map((k) => document.getElementById(`fs-go-${k}`)).find(Boolean);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  };
   const dialogs = (
     <>
       {offOpen && (
@@ -1506,14 +1598,16 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             ...(shown.photoRequired || deliverables.length ? ['the photos'] : []),
             ...(jobForCloseout.signatureRequired ? ['the signature'] : []),
           ]}
-          clientCheckout={!!siteLinks.checkout}
-          onBack={(report) => void leaveSite(false, report)} onFinished={() => void leaveSite(true)} />
+          clientCheckout={!!siteLinks.checkout} onGo={goTo}
+          onBack={(report) => void leaveSite(false, report)} onFinished={(why) => void leaveSite(true, undefined, why)} />
       )}
+      {uploadAsk && !checkoutAt && !offOpen && <UploadReminder href={siteLinks.deliverable} onClose={() => setUploadAsk(false)} />}
       {checkoutAt && !offOpen && (
         <CheckoutLinkDialog href={checkoutHref(checkoutAt)} on={onSiteSince(job.myDay ?? [], checkoutAt, 'America/New_York')} off={checkoutAt}
           onClose={() => setCheckoutAt(null)} />
       )}
-      {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }} onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); }} />}
+      {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} keep={keepPhoto} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }}
+        onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); void loadHandMiles(); }} />}
       {odometer && <OdometerDialog woNumber={job.number} moment={odometer} required={odoRequired} keep={keepPhoto} initialFile={odoFile}
         onClose={() => { setOdometer(null); setOdoFile(null); setOdoRequired(false); }} />}
       {fromPhone && <PhotoMileageDialog woNumber={job.number} file={fromPhone.file} photo={fromPhone.photo} keep={keepPhoto}
@@ -1531,15 +1625,16 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         }} />
       )}
       {ph.pending && <PhotoLabelDialog preview={ph.pending.preview} choices={photoLabelChoices(deliverables)} onPick={ph.answer} onCancel={ph.cancel} />}
-      {doneOpen && (
+      {doneOpen && (() => { const doneMissing = [...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, shown.signatureRequired)]; return (
         <WorkDoneDialog
           job={job}
-          missing={[...reportMissing(job, notes, answers, photoCount), ...closeoutMissing(job.closeout, deliverables, shown.signatureRequired)]}
-          onClose={() => setDoneOpen(false)}
+          missing={doneMissing}
+          onClose={() => setDoneOpen(false)} onGo={goTo}
           onSaveDraft={async () => { setDoneOpen(false); await saveReport(); }}
-          onConfirm={async () => {
+          onConfirm={async (why) => {
             setDoneOpen(false);
             const at = new Date();
+            if (why) await sendMissingWhy(doneMissing, why);
             const clockOut = isClockedIn(job);
             const pos = await getPosition(6000);
             // The customer's signature is taken under Closeout now, with their name.
@@ -1553,7 +1648,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
             );
           }}
         />
-      )}
+      ); })()}
     </>
   );
   if (!FS_JOB_SCREEN) return <>{detail}{dialogs}</>;
@@ -1594,43 +1689,51 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   };
   return (
     <div className="fs-stack">
-      <DetailHeader job={job} ownerView={false} />
+      <TechJobHeader job={job} />
       <JobIcons job={job} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
         onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
         onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
       {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
       {job.status === 'offered' && bottom}
-      {dayCard}
-      {job.description && (
+      {live && working && (
+        <JobDayGuide steps={jobDayGuide({
+          stage, workDone: job.status === 'workDone', photos: ask('photos'),
+          report: ask('notes') || shown.questions.length > 0,
+          closeout: deliverables.length > 0 || jobForCloseout.signatureRequired,
+          missing: offSiteMissing,
+        })} />
+      )}
+      {dayCard && <div id="fs-go-day" style={{ scrollMarginTop: 12, display: 'contents' }}>{dayCard}</div>}
+      {/* The clients pay for the hours and the miles (Fred, 2026-10-31): they stay near the top. */}
+      {dayFlow && live && (
         <section className="fs-card fs-form">
-          <h3>Job description</h3>
-          <p className="fs-scope">{job.description}</p>
+          <h3>My time and travel</h3>
+          <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} added={handMiles} />
         </section>
       )}
+      <SiteCard job={job} />
       <ClientLinksCard number={job.number} siteLinks={siteLinks} checkoutHref={() => checkoutHref(lastOffOrNow(job.myDay ?? [], new Date().toISOString(), 'America/New_York'))} />
-      <SiteInfoCard job={job} />
-      <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
+      {live && <div className="fs-group-label">Today&apos;s list</div>}
       {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
       {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
-        <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
+        <div id="fs-go-closeout" style={{ scrollMarginTop: 12 }}>
+          <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
+        </div>
       )}
-      {ask('photos') && <JobPhotos canAdd={canReport} ph={phPicked} />}
+      {ask('photos') && <div id="fs-go-photos" style={{ scrollMarginTop: 12 }}><JobPhotos canAdd={canReport} ph={phPicked} /></div>}
       {live && (ask('notes') || shown.questions.length > 0) && (
-        <JobReport
-          job={shown} uid={uid} canEdit={canReport}
-          notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
-          dirty={dirty} onSave={(extra) => saveReport(extra)}
-        />
+        <div id="fs-go-report" style={{ scrollMarginTop: 12 }}>
+          <JobReport
+            job={shown} uid={uid} canEdit={canReport}
+            notes={notes} setNotes={setNotes} answers={answers} setAnswers={setAnswers}
+            dirty={dirty} onSave={(extra) => saveReport(extra)}
+          />
+        </div>
       )}
       {(ask('receipts') || expenses.length > 0) && (canReport || expenses.length > 0) && (
         <JobExpenses expenses={expenses} canAdd={canReport && ask('receipts')} onAdd={() => setExpenseOpen(true)} />
       )}
-      {dayFlow && live && (
-        <section className="fs-card fs-form">
-          <h3>My time and travel</h3>
-          <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} />
-        </section>
-      )}
+      <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
       <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
       {job.status !== 'offered' && bottom}
       {msgOpen && (
@@ -1648,6 +1751,99 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
 }
 
 type PhotoKind = 'odo_start' | 'odo_end' | 'receipt' | 'job';
+
+/** The job in a few lines: status, number, where and when. */
+function TechJobHeader({ job }: { job: WfJob }) {
+  const e = parseClockTime(job.endTime);
+  const end = parseClockTime(job.startTime) ? (e ? fmtClock12(e) : job.endTime) : '';
+  return (
+    <section className="fs-card fs-job-head">
+      <div className="fs-job-head-top">
+        <span className="fs-job-chip">{wfStatusLabel(job.status, false)}</span>
+        <span className="fs-muted">WO #{job.number}</span>
+      </div>
+      <h2>{job.siteName || job.title}</h2>
+      <p className="fs-muted">{[job.client, job.siteName ? job.title : '', job.serviceType].filter(Boolean).join(' · ')}</p>
+      <p className="fs-job-when"><CalendarDays size={15} /> {whenText(job)}{end ? ` – ${end}` : ''}</p>
+    </section>
+  );
+}
+
+/**
+ * Everything about the site in one card (Fred, 2026-10-31: "i dont want a tech
+ * looking for anything"): the address with one Navigate button (Google Maps, Waze or Apple Maps),
+ * how to get in, parking, who to call, special instructions and the scope.
+ */
+function SiteCard({ job }: { job: WfJob }) {
+  const address = fullAddress(job);
+  const phone = job.pocPhone.replace(/[^0-9+]/g, '');
+  const rows: [string, string][] = [['Parking', job.parking], ['Deliverables', job.deliverables]];
+  return (
+    <section className="fs-card fs-form fs-site-card" id="fs-go-site">
+      <h3>At the site</h3>
+      {address && (
+        <div className="fs-site-where">
+          <MapPin size={16} />
+          <span>{address}</span>
+        </div>
+      )}
+      {/* One Navigate button, then the choice of Google Maps, Waze or Apple Maps (Fred, 2026-10-31). */}
+      <DirectionsButton job={job} label="Navigate" className="fs-btn fs-btn-secondary" style={{ width: '100%' }} />
+      {job.access && (
+        <div className="fs-site-access">
+          <span>How to get in</span>
+          <strong>{job.access}</strong>
+        </div>
+      )}
+      {job.special && <div className="fs-site-special"><b>Special instructions:</b> {job.special}</div>}
+      {(job.pocName || phone || job.pocEmail) && (
+        <div className="fs-site-contact">
+          <span>Site contact{job.pocName ? `: ${job.pocName}` : ''}</span>
+          <div className="fs-nav-row">
+            {phone && <a className="fs-btn fs-btn-secondary" href={`tel:${phone}`}><Phone size={15} /> Call {job.pocPhone}</a>}
+            {job.pocEmail && <a className="fs-btn fs-btn-secondary" href={`mailto:${job.pocEmail}`}><Mail size={15} /> Email</a>}
+          </div>
+        </div>
+      )}
+      {rows.filter(([, v]) => v).map(([k, v]) => <p key={k}><b>{k}:</b> {v}</p>)}
+      {job.description && (
+        <div>
+          <div className="fs-site-label">Scope of work</div>
+          <p className="fs-scope">{job.description}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The guided job day: every step in a row, the next one lit, and one button that takes the tech to it. */
+function JobDayGuide({ steps }: { steps: GuideStep[] }) {
+  const next = steps.find((s) => s.state === 'now');
+  const go = () => {
+    if (!next) return;
+    const el = document.getElementById(`fs-go-${next.target}`);
+    (el?.firstElementChild ?? el)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  return (
+    <section className="fs-card" aria-label="Your job day" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <ol style={{ display: 'flex', gap: 4, listStyle: 'none', margin: 0, padding: 0, overflowX: 'auto' }}>
+        {steps.map((s) => (
+          <li key={s.key} aria-current={s.state === 'now' ? 'step' : undefined} style={{
+            flex: '1 0 auto', textAlign: 'center', padding: '5px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+            background: s.state === 'done' ? 'rgba(16,185,129,0.12)' : s.state === 'now' ? '#0E1B2E' : '#f3f4f6',
+            color: s.state === 'done' ? '#047857' : s.state === 'now' ? '#fff' : '#9ca3af',
+          }}>{s.state === 'done' ? '✓ ' : ''}{s.label}</li>
+        ))}
+      </ol>
+      {next ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ flex: 1 }}><small style={{ display: 'block', fontSize: 11, color: 'var(--wf-subtle, #6b7280)', fontWeight: 700 }}>NEXT STEP</small><b>{next.label}</b></span>
+          <button type="button" className="wf-btn wf-btn-navy" onClick={go}>Go</button>
+        </div>
+      ) : <b style={{ color: '#047857' }}>All done for this job.</b>}
+    </section>
+  );
+}
 
 /** "What's this photo for?" after the tech takes one: mileage, a receipt, or a job photo. */
 function PhotoKindDialog({ odometer, receipts, onPick, onCancel }: {
@@ -1693,12 +1889,11 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onR
 }) {
   const tile: React.CSSProperties = {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
-    minHeight: 72, padding: '10px 6px', borderRadius: 14, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
-    font: 'inherit', fontWeight: 600, fontSize: 13.5, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
+    minHeight: 58, padding: '8px 4px', borderRadius: 12, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
+    font: 'inherit', fontWeight: 600, fontSize: 12.5, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
   };
-  const address = fullAddress(job);
   return (
-    <div role="toolbar" aria-label="Job icons" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: 8 }}>
+    <div role="toolbar" aria-label="Job icons" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(64px, 1fr))', gap: 6 }}>
       {canPhoto && (
         <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
           <Camera size={22} /> Photo
@@ -1715,7 +1910,6 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onR
       )}
       {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={22} /> Receipt</button>}
       <button type="button" style={tile} onClick={onMessages}><MessageSquare size={22} /> Messages</button>
-      {address && <DirectionsButton job={job} style={tile} icon={<Navigation size={22} />} />}
     </div>
   );
 }
@@ -1964,11 +2158,32 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
  * Work done: says plainly what is still missing (the same rules as the
  * emailed job link), and takes the customer's signature when the job needs one.
  */
-function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
-  job: WfJob; missing: string[]; onClose: () => void;
-  onSaveDraft: () => Promise<void>; onConfirm: () => void | Promise<void>;
+function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm, onGo }: {
+  job: WfJob; missing: string[]; onClose: () => void; onGo?: (item: string) => void;
+  onSaveDraft: () => Promise<void>;
+  /** `why`: sent in with items missing, and the tech's reason (the office sees it on the job's messages). */
+  onConfirm: (why?: string) => void | Promise<void>;
 }) {
   const ready = missing.length === 0;
+  const [anyway, setAnyway] = useState(false);
+  const [why, setWhy] = useState('');
+  // Check-out that won't let a job end half done (Fred, 2026-10-31): missing items block it, unless
+  // the tech says why, in words the office reads.
+  if (anyway && missing.length > 0) {
+    return (
+      <Dialog title="Send it in anyway?" onClose={onClose}
+        footer={<>
+          <button className="wf-btn wf-btn-ghost" onClick={() => setAnyway(false)}>Back</button>
+          <button className="wf-btn wf-btn-navy" disabled={why.trim().length < 5} onClick={() => void onConfirm(why.trim())}>
+            <CheckCircle2 size={16} /> Send in anyway
+          </button>
+        </>}>
+        <label className="wf-label" htmlFor="done-why">Why can&apos;t these be done? The office sees this.</label>
+        <textarea id="done-why" className="wf-input" rows={3} autoFocus value={why} maxLength={600} onChange={(e) => setWhy(e.target.value)}
+          style={{ fontSize: 16 }} placeholder="e.g. Customer left before signing; photos blocked by site security" />
+      </Dialog>
+    );
+  }
   return (
     <Dialog
       title={missing.length ? 'Almost there' : 'Mark the work done?'}
@@ -1976,6 +2191,7 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
       footer={missing.length ? <>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Back to the job</button>
         <button className="wf-btn wf-btn-outline" onClick={() => void onSaveDraft()}><Save size={16} /> Save what I have</button>
+        <button className="wf-btn wf-btn-ghost" onClick={() => setAnyway(true)}>Can&apos;t finish these</button>
       </> : <>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
         <button className="wf-btn wf-btn-navy" disabled={!ready} onClick={() => void onConfirm()}><CheckCircle2 size={16} /> Work done</button>
@@ -1985,7 +2201,11 @@ function WorkDoneDialog({ job, missing, onClose, onSaveDraft, onConfirm }: {
         <>
           <p style={{ marginTop: 0 }}>Before you send the job in, finish these under <b>Closeout</b>, <b>Job report</b> and <b>Photos</b>:</p>
           <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {missing.map((m) => <li key={m}>{m}</li>)}
+            {missing.map((m) => (
+              <li key={m}>
+                {m}{onGo && <>{' '}<button type="button" className="wf-btn wf-btn-sm wf-btn-outline" onClick={() => onGo(m)}>Go to it</button></>}
+              </li>
+            ))}
           </ul>
         </>
       ) : (
@@ -2063,9 +2283,11 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     if (st.stage === 'travel' && st.dest !== 'site') {
       const g = await where();
       if (!g) return false;
+      // The first arrival at the hotel saves it, so later drives there are spotted by GPS.
+      if (st.dest === 'hotel') saveHotel(browserStorage(), uid, job.id, g);
       await day('travel_end', {}, 'Arrived', new Date(), g,
         st.dest === 'hotel' || st.dest === 'home' ? `At the ${st.dest}. Signed out for the day.`
-          : st.dest === 'fuel' || st.dest === 'materials' ? `At the ${st.dest === 'fuel' ? 'fuel stop' : 'materials pickup'}. Tap Check in when you head out again.` : 'Arrived.');
+          : st.dest === 'fuel' || st.dest === 'materials' ? `At the ${st.dest === 'fuel' ? 'fuel stop' : 'vendor'}. Tap Check in when you head out again.` : 'Arrived.');
       return true;
     }
     return onSite();

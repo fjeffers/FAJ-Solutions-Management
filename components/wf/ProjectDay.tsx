@@ -108,7 +108,7 @@ export default function ProjectDayCard({ job, busy, enabled, on, onReceipt }: {
       )}
 
       {st.stage === 'travel' && (st.dest === 'fuel' || st.dest === 'materials') && (
-        <button style={navy} disabled={busy} onClick={on.arrived}><LogIn size={20} /> Arrived at the {st.dest === 'fuel' ? 'fuel stop' : 'materials pickup'}</button>
+        <button style={navy} disabled={busy} onClick={on.arrived}><LogIn size={20} /> Arrived at the {st.dest === 'fuel' ? 'fuel stop' : 'vendor'}</button>
       )}
 
       {st.stage === 'travel' && (st.dest === 'hotel' || st.dest === 'home') && (
@@ -208,8 +208,10 @@ function DayLines({ log, drives }: { log: DayLog; drives: Map<string, DriveMiles
  * finished site needs everything the job asks for first — each photo taken or
  * a reason why not, the signature or a reason why not.
  */
-export function OffSiteDialog({ missing, needs, signature = true, clientCheckout = false, onClose, onBack, onFinished }: {
+export function OffSiteDialog({ missing, needs, signature = true, clientCheckout = false, onClose, onBack, onFinished, onGo }: {
   missing: string[];
+  /** Takes the tech to where a missing item gets done. */
+  onGo?: (item: string) => void;
   /**
    * What this job needs before it can be finished, in words ("the photos", "the
    * signature"). Nothing listed says nothing (Fred, 2026-10-18: "Check list not
@@ -227,9 +229,11 @@ export function OffSiteDialog({ missing, needs, signature = true, clientCheckout
   onClose: () => void;
   /** Coming back: what got done today and what's still left (Fred, 2026-10-14). */
   onBack: (report: { done: string; left: string }) => void;
-  onFinished: () => void;
+  /** `why`: finished with items missing, and the tech's reason for the office. */
+  onFinished: (why?: string) => void;
 }) {
   const [finish, setFinish] = useState(false);
+  const [why, setWhy] = useState('');
   const [back, setBack] = useState(false);
   const [done, setDone] = useState('');
   const [left, setLeft] = useState('');
@@ -258,9 +262,15 @@ export function OffSiteDialog({ missing, needs, signature = true, clientCheckout
     <Dialog title="Leaving the site" onClose={onClose}
       footer={finish ? <>
         <button className="wf-btn wf-btn-ghost" onClick={() => setFinish(false)}>Back</button>
-        <button className="wf-btn wf-btn-navy" disabled={missing.length > 0} onClick={onFinished}>
-          <CheckCircle2 size={17} /> Site finished — off site
-        </button>
+        {missing.length > 0 ? (
+          <button className="wf-btn wf-btn-navy" disabled={why.trim().length < 5} onClick={() => onFinished(why.trim())}>
+            <CheckCircle2 size={17} /> Finish anyway
+          </button>
+        ) : (
+          <button className="wf-btn wf-btn-navy" onClick={() => onFinished()}>
+            <CheckCircle2 size={17} /> Site finished — off site
+          </button>
+        )}
       </> : <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>}>
       {!finish ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -277,12 +287,19 @@ export function OffSiteDialog({ missing, needs, signature = true, clientCheckout
         <div>
           <p style={{ marginTop: 0, fontWeight: 600 }}>Before you can leave a finished site:</p>
           <ul style={{ margin: '0 0 10px', paddingLeft: 20 }}>
-            {missing.map((m) => <li key={m} style={{ marginBottom: 4 }}>{m}</li>)}
+            {missing.map((m) => (
+              <li key={m} style={{ marginBottom: 6 }}>
+                {m}{onGo && <>{' '}<button type="button" className="wf-btn wf-btn-sm wf-btn-outline" onClick={() => onGo(m)}>Go to it</button></>}
+              </li>
+            ))}
           </ul>
           <div className="wf-subtle" style={{ fontSize: 12.5 }}>
             Can&apos;t get a photo or the signature? Tap <b>Can&apos;t do it</b>{' '}next to it under Closeout and say why
             (for example &quot;Contact not on site&quot;).
           </div>
+          <label className="wf-label" htmlFor="off-why" style={{ marginTop: 12 }}>Or finish anyway: why can&apos;t these be done? The office sees this.</label>
+          <textarea id="off-why" className="wf-input" rows={2} value={why} maxLength={600} onChange={(e) => setWhy(e.target.value)}
+            style={{ fontSize: 16 }} placeholder="e.g. Customer left before signing" />
         </div>
       ) : (
         <p style={{ margin: 0 }}>Everything is in. This sends the job to the office and stops your time on site.</p>

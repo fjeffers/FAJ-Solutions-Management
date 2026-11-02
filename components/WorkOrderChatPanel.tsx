@@ -13,6 +13,8 @@ export default function WorkOrderChatPanel({ woNumber }: { woNumber: string | un
   const [messages, setMessages] = useState<WorkOrderMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // Who didn't get a phone alert for the last message (their app has alerts off, or no app yet).
+  const [missed, setMissed] = useState<string[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -57,6 +59,12 @@ export default function WorkOrderChatPanel({ woNumber }: { woNumber: string | un
     });
     await load();
     setSending(false);
+    // The tech's phone alert (the insert above doesn't send one by itself).
+    try {
+      const r = await fetch('/api/tech/message-push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wo_number: woNumber, content }) });
+      const j = (await r.json().catch(() => ({}))) as { techs?: { name: string; pushed: number }[] };
+      setMissed((j.techs ?? []).filter((t) => t.pushed === 0).map((t) => t.name));
+    } catch { setMissed([]); }
   };
 
   if (!woNumber) {
@@ -111,6 +119,11 @@ export default function WorkOrderChatPanel({ woNumber }: { woNumber: string | un
           <Send size={13} /> Send
         </button>
       </div>
+      {missed.length > 0 && (
+        <div style={{ fontSize: 12, color: '#b45309' }}>
+          Saved, but {missed.join(' and ')} didn&apos;t get a phone alert: alerts are off in {missed.length === 1 ? 'his' : 'their'} tech app (Profile → turn on alerts), or {missed.length === 1 ? "he hasn't" : "they haven't"} signed in to the app yet.
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildDayLogs, parseDayEvents, type DayEvent } from './project-day';
 import { matchOdometer, type OdoRow } from './weekly-bill';
 import {
-  appDays, billRange, blocksBilling, byTech, leadFirst, byTechRows, clock, dayMiles, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
+  appDays, billRange, driveDay, drivesMiles, drivesText, blocksBilling, byTech, leadFirst, byTechRows, clock, dayMiles, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
   withAccountRate,
   type SavedDay, type SheetReceipt, type SheetSettings,
 } from './field-sheet';
@@ -635,5 +635,72 @@ describe('by tech', () => {
       ['Office', 'Mon, 10/19', 'Tools & equipment', 'Home Depot', 25], ['Office total', '', '', '', 25],
       ['All techs', '', '', '', 176.65],
     ]);
+  });
+});
+
+describe('drives the office typed (Fred, 2026-11-02: home to site, site to site, site to home)', () => {
+  const drives = [{ from: 'Home', to: 'Site', miles: 32.5 }, { from: 'Site', to: 'Next site', miles: 12 }, { from: 'Next site', to: 'Home', miles: 40 }];
+  it('keeps them through the database and adds their miles up as the day\'s', () => {
+    const edits = parseEdits({ drives: [...drives, { from: 'x', to: 'y', miles: 'lots' }] });
+    expect(edits.drives).toEqual(drives);
+    const [row] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits, added: true, hidden: false }], techs: [], days: [] });
+    expect(row.values.drives).toEqual(drives);
+    expect(dayCalc(row.values, 0.7)).toMatchObject({ miles: 84.5, mileage: 59.15 });
+    expect(drivesMiles(drives)).toBe(84.5);
+    expect(drivesText(drives)).toBe('Home → Site, 32.5 mi; Site → Next site, 12 mi; Next site → Home, 40 mi');
+  });
+  it('lets the Miles box and Extra miles still count as typed', () => {
+    const [row] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives, extraMiles: 5 }, added: true, hidden: false }], techs: [], days: [] });
+    expect(dayCalc(row.values, 0).miles).toBe(89.5);
+    expect(dayCalc({ ...row.values, miles: 70 }, 0).miles).toBe(75);
+  });
+});
+
+describe('drives with their times (Fred, 2026-11-02: home to site, time on site, site to site, site to home or hotel)', () => {
+  const drives = [
+    { from: 'Home', to: 'Site', miles: 30, start: '07:00', end: '08:00' },
+    { from: 'Site', to: 'Next site', miles: 12, start: '11:00', end: '11:30' },
+    { from: 'Next site', to: 'Hotel', miles: 20, start: '15:00', end: '16:00' },
+  ];
+  it('keeps the times and reads the travel and the time at each site from them', () => {
+    expect(parseEdits({ drives: [...drives, { from: 'a', to: 'b', miles: 1, start: 'noon' }] }).drives).toEqual([...drives, { from: 'a', to: 'b', miles: 1 }]);
+    const t = driveDay(drives);
+    expect(t).toMatchObject({ timed: true, travel: 2.5, onSite: 6.5 });
+    expect(t.stops).toEqual([{ from: '08:00', until: '11:00', hours: 3 }, { from: '11:30', until: '15:00', hours: 3.5 }, null]);
+    expect(drivesText(drives.slice(0, 1))).toBe('7:00 AM–8:00 AM Home → Site, 30 mi');
+  });
+  it('makes the day\'s hours, travel and miles, less lunch', () => {
+    const [row] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives, lunch: 30 }, added: true, hidden: false }], techs: [], days: [] });
+    expect(dayCalc(row.values, 0)).toMatchObject({ hours: 6, travel: 2.5, miles: 62 });
+  });
+  it('a last stop at the site runs to Finished', () => {
+    expect(driveDay(drives.slice(0, 1), '15:30').stops[0]).toEqual({ from: '08:00', until: '15:30', hours: 7.5 });
+  });
+});
+
+describe('drives with their times on the timesheet and the job log (Fred, 2026-11-02: "make sure it all adds up correctly")', async () => {
+  const { timesheetLines } = await import('./timesheet');
+  const { hoursScreenDays } = await import('./job-log-sheet');
+  const drives = [
+    { from: 'Home', to: 'Site', miles: 30, start: '07:00', end: '08:00' },
+    { from: 'Site', to: 'Next site', miles: 12, start: '11:00', end: '11:30' },
+    { from: 'Next site', to: 'Hotel', miles: 20, start: '15:00', end: '16:00' },
+  ];
+  const [row] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives, lunch: 30 }, added: true, hidden: false }], techs: [], days: [] });
+  it('the drives set the day\'s times: out, first site, last site, back', () => {
+    expect(row.values).toMatchObject({ left: '07:00', arrived: '08:00', leftSite: '15:00', back: '16:00' });
+  });
+  it('the timesheet line has the same hours on site, travel and miles as the card', () => {
+    expect(timesheetLines([row])[0]).toMatchObject({ started: '8:00 AM', finished: '3:00 PM', hours: 6, travel: 2.5, total: 8.5, miles: 62 });
+  });
+  it('the job log takes the day, with the hours on site less lunch', () => {
+    expect(hoursScreenDays([row])).toEqual([{ tech: 'Ana', day: '2026-11-02', in: '08:00', out: '15:00', brk: 0.5, hours: 6.5 }]);
+  });
+  it('times the office typed itself stay, and drives without times leave the day\'s times alone', () => {
+    const [typed] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives, arrived: '08:15' }, added: true, hidden: false }], techs: [], days: [] });
+    expect(typed.values).toMatchObject({ arrived: '08:15', leftSite: '15:00' });
+    const [untimed] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives: [{ from: 'Site', to: 'Home', miles: 105 }], arrived: '14:22', leftSite: '17:45' }, added: true, hidden: false }], techs: [], days: [] });
+    expect(untimed.values).toMatchObject({ arrived: '14:22', leftSite: '17:45', left: null, back: null });
+    expect(dayCalc(untimed.values, 0)).toMatchObject({ hours: 3.38, miles: 105 });
   });
 });

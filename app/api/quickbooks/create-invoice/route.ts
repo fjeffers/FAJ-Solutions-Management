@@ -5,6 +5,7 @@ import { findOrCreateCustomer, findOrCreateServiceItem, createInvoice } from '@/
 import { buildQbInvoice, rejectedVisits, coveredVisitIds, qbInvoiceTotal } from '@/lib/qb-invoice';
 import { NextResponse } from 'next/server';
 import type { SiteVisit } from '@/lib/types';
+import { ownerOnly } from '@/lib/security';
 
 // Raise an invoice for a set of site visits — IN QUICKBOOKS.
 //
@@ -21,6 +22,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   const body = await req.json().catch(() => ({}));
   const { customer_name, visit_ids, due_date, memo, dry_run } = body as {

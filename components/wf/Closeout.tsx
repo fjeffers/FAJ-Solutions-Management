@@ -55,7 +55,7 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
   return (
     <Section
       title="Closeout"
-      subtitle={`${done} of ${items.length} deliverables${cant ? ` · ${cant} can't be done` : ''} · ${c.signoff ? 'signed off' : c.signSkip ? 'no signature (reason given)' : job.signatureRequired ? 'sign-off needed' : 'not signed'}`}
+      subtitle={`${done} of ${items.length} deliverables${cant ? ` · ${cant} can't be done` : ''} · ${c.signoff ? 'signed off' : job.noSignature ? 'no signature needed' : c.signSkip ? 'no signature (reason given)' : job.signatureRequired ? 'sign-off needed' : 'not signed'}`}
       right={missing.length === 0 ? <CheckCircle2 size={20} color="var(--wf-success)" aria-label="Closeout complete" /> : undefined}
     >
       {/* Deliverables */}
@@ -128,8 +128,8 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
 
       <hr style={rule} />
 
-      {/* Approval of work */}
-      <SubHead title="Approval of work" note={c.signoff ? 'Signed' : 'Not signed'} />
+      {/* Approval of work (LDS: no one on site to sign, so no signing; Fred, 2026-11-01) */}
+      <SubHead title={job.noSignature ? 'Time on site' : 'Approval of work'} note={c.signoff ? 'Signed' : job.noSignature ? 'No signature needed' : 'Not signed'} />
       <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px', fontSize: 13.5 }}>
         <span className="wf-subtle">Arrival</span><span>{job.checkedInAt ? dayTime(job.checkedInAt) : '—'}</span>
         <span className="wf-subtle">Departure</span><span>{job.checkedOutAt ? dayTime(job.checkedOutAt) : '—'}</span>
@@ -149,7 +149,7 @@ export default function CloseoutCard({ job, items, listName, canEdit, ownerView 
       {!c.signoff && !c.signSkip && ownerView && job.signatureRequired && (
         <div style={{ fontSize: 12.5, marginTop: 6, color: 'var(--wf-warning)', fontWeight: 600 }}>Customer signature required — not signed yet.</div>
       )}
-      {edit && onSign && !c.signoff && !c.signSkip && (
+      {edit && onSign && !c.signoff && !c.signSkip && !job.noSignature && (
         <>
           <div className="wf-subtle" style={{ fontSize: 12.5, margin: '8px 0' }}>
             Hand the phone to the on-site contact to sign once the work is done{job.signatureRequired ? ' — this job needs it' : ''}.

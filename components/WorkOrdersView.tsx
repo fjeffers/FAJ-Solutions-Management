@@ -156,7 +156,34 @@ export default function WorkOrdersView({
   };
   const [reassigning, setReassigning] = useState<EnrichedWorkOrder | null>(null);
   const [closingOld, setClosingOld] = useState(false);
-  const openJob = (id: string) => { setWfOpen(id); window.scrollTo({ top: 0 }); };
+  // Back goes one step at a time (Fred, 2026-11-02: "when i hit back once it showes me only that tech when
+  // i hit back again it goes back to home"): the search and the job opened from the board each get a step
+  // in the browser's history, so Back (the in-app one, the browser's or the phone's) closes the job and
+  // keeps the search, and the next Back clears the search.
+  const [boardQuery, setBoardQueryState] = useState('');
+  const searchStep = useRef(false);
+  const jobStep = useRef(false);
+  const setBoardQuery = (q: string) => {
+    setBoardQueryState(q);
+    if (q.trim() && !searchStep.current) { window.history.pushState({ fajHome: 'search' }, ''); searchStep.current = true; }
+    else if (!q.trim() && searchStep.current) { searchStep.current = false; window.history.back(); }
+  };
+  const openJob = (id: string) => {
+    if (!wfOpen && !jobStep.current) { window.history.pushState({ fajHome: 'job' }, ''); jobStep.current = true; }
+    setWfOpen(id);
+    window.scrollTo({ top: 0 });
+  };
+  const closeJob = () => { if (jobStep.current) window.history.back(); else setWfOpen(null); };
+  const latest = useRef(setWfOpen);
+  useEffect(() => { latest.current = setWfOpen; });
+  useEffect(() => {
+    const onPop = () => {
+      if (jobStep.current) { jobStep.current = false; latest.current(null); return; }
+      if (searchStep.current) { searchStep.current = false; setBoardQueryState(''); }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const woById = useMemo(() => new Map(workOrders.map((w) => [w.id, w])), [workOrders]);
   // Arriving from a Site Log card's "WO #… →" link, the board opens already
   // looking at that work order rather than at a list to hunt through.
@@ -231,14 +258,16 @@ export default function WorkOrdersView({
             onReassign={(w) => setReassigning(w)}
             onRefresh={onRefresh}
             openId={wfOpen}
-            onOpenChange={setWfOpen}
+            onOpenChange={(id) => (id === null ? closeJob() : setWfOpen(id))}
           />
         </div>
       ) : (
         <DispatchBoard
           rows={boardRows}
           onMove={(job, move, target) => void moveJob(job, move, target)}
-          onOpen={(j) => { setWfOpen(j.id); window.scrollTo({ top: 0 }); }}
+          onOpen={(j) => openJob(j.id)}
+          query={boardQuery}
+          onQuery={setBoardQuery}
           right={<>
             {onCloseJobs && <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setClosingOld(true)}><Archive size={15} /> Old jobs</button>}
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAiOpen(true)}><Sparkles size={15} /> Generate with AI</button>
@@ -260,7 +289,7 @@ export default function WorkOrdersView({
               onReassign={(w) => setReassigning(w as EnrichedWorkOrder)} onAddField={onAddField} />
           ) : undefined}
           // Home: Dashboard and Dispatch in one (Fred, 2026-10-31): what needs you, the field and notes above the jobs.
-          between={<>{home}{automations?.(openJob)}{shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={(id) => { setWfOpen(id); window.scrollTo({ top: 0 }); }} onRefresh={onRefresh} />}</>}
+          between={<>{home}{automations?.(openJob)}{shown('dispatch.alerts') && <OwnerAlerts workOrders={workOrders} onOpenJob={openJob} onRefresh={onRefresh} />}</>}
         />
       )}
 

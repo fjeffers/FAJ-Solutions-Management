@@ -238,8 +238,11 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
   );
 }
 
-export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'Dispatch board', sheet }: {
+export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'Dispatch board', sheet, query: queryProp, onQuery }: {
   title?: string;
+  /** The search, when the screen around keeps it (so it's still there after a job is opened and closed). */
+  query?: string;
+  onQuery?: (q: string) => void;
   /** The Sheet (components/wf/JobSheet.tsx) for the jobs showing; without it there's no Sheet button. */
   sheet?: (jobs: WfJob[]) => ReactNode;
   rows: BoardRow[];
@@ -251,7 +254,9 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'D
   /** Anything that needs Fred, between the numbers and the search (expenses, time asks). */
   between?: ReactNode;
 }) {
-  const [query, setQuery] = useState('');
+  const [ownQuery, setOwnQuery] = useState('');
+  const query = queryProp ?? ownQuery;
+  const setQuery = onQuery ?? setOwnQuery;
   // Board (Primio's columns), Grid (cards) or List (a table) — Fred, 2026-10-04:
   // "i need a grid, list view". The choice is remembered on this device.
   // Week is where Work orders opens (Fred, 2026-10-18: "the view sucks" ... "week
@@ -320,8 +325,13 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'D
         <div style={{ position: 'relative', flex: '1 1 280px' }}>
           <Search size={18} color="var(--wf-subtle)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
           <input className="wf-input" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by ID, client, location or title" aria-label="Search the dispatch board" style={{ paddingLeft: 40 }} />
+            placeholder="Search by ID, client, location, title or tech" aria-label="Search the dispatch board" style={{ paddingLeft: 40 }} />
         </div>
+        {query.trim() && (
+          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setQuery('')}>
+            <ChevronLeft size={15} /> {title === 'Home' ? 'Back to Home' : 'Show all jobs'}
+          </button>
+        )}
         <div className="wf-filters" role="group" aria-label="Which days" style={{ flexWrap: 'nowrap' }}>
           {([['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['stage', 'By stage']] as const).map(([v, label]) => (
             <button key={v} className="wf-filter" aria-pressed={when === v} onClick={() => remember(v, layout)}

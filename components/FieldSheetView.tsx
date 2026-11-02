@@ -16,6 +16,7 @@
 // the same way as the Site Log and can email it to the client
 // (/api/quickbooks/field-sheet-invoice).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useStableOrder } from '@/lib/stable-order';
 import { createPortal } from 'react-dom';
 import { Camera, ExternalLink, EyeOff, FileSpreadsheet, FileText, Plus, Receipt, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -212,6 +213,7 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
       ...workOrders.filter((w) => w.is_project).sort((a, b) => (b.start_date ?? '').localeCompare(a.start_date ?? ''))];
     return [...new Map(list.map((w) => [w.id, w])).values()].slice(0, 10);
   }, [workOrders, opened]);
+  const shownPicks = useStableOrder(picks, (w) => w.id);
 
   return (
     <div className="wf" style={{ padding: 16, maxWidth: 1400, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -226,7 +228,7 @@ export default function FieldSheetView({ workOrders }: { workOrders: EnrichedWor
         <button className="wf-btn wf-btn-navy" type="submit"><Search size={16} /> Pull it up</button>
         {picks.length > 0 && (
           <div style={{ flexBasis: '100%', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {picks.map((w) => (
+            {shownPicks.map((w) => (
               <button type="button" key={w.id} className={`wf-btn wf-btn-sm ${w.id === woId ? 'wf-btn-gold' : 'wf-btn-outline'}`}
                 onClick={() => { setQ(w.wo_number); setWeek(null); setWoId(w.id); }}>
                 WO {w.wo_number}{w.external_wo_id ? ` · ${w.external_wo_id}` : ''} · {jobName(w)}

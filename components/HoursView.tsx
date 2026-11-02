@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Clock, LogOut, Plus, Save, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { useStableOrder } from '@/lib/stable-order';
 import { dayOf, type DayEvent } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { clock, dayCalc, nextEdits, parseEdits, rowsFor, type SavedDay, type SheetField, type SheetRow } from '@/lib/field-sheet';
@@ -80,6 +81,7 @@ export default function HoursView({ workOrders, onLook }: { workOrders: Enriched
       .sort((a, b) => Number(going(b)) - Number(going(a)) || (b.start_date ?? '').localeCompare(a.start_date ?? ''))
       .slice(0, 20);
   }, [workOrders]);
+  const shownPicks = useStableOrder(picks, (w) => w.id);
   const pull = (e?: React.FormEvent) => {
     e?.preventDefault();
     const w = findJob(workOrders, q);
@@ -97,7 +99,7 @@ export default function HoursView({ workOrders, onLook }: { workOrders: Enriched
           placeholder="Work order number, like 19101413" aria-label="Work order number" inputMode="search" autoComplete="off" />
         <button className="wf-btn wf-btn-navy" type="submit"><Search size={16} /> Show the days</button>
         <div style={{ flexBasis: '100%', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {picks.map((w) => (
+          {shownPicks.map((w) => (
             <button type="button" key={w.id} className={`wf-btn wf-btn-sm ${w.id === woId ? 'wf-btn-gold' : 'wf-btn-outline'}`}
               onClick={() => { setQ(w.wo_number); setWoId(w.id); }}>
               WO {w.wo_number} · {jobName(w)}

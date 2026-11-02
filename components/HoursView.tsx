@@ -528,7 +528,7 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
                 <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" aria-label={`Remove drive ${i + 1}`} title="Remove this drive"
                   onClick={() => setDrives((list) => list.filter((_, j) => j !== i))}><X size={14} /></button>
               </div>
-              {driveH != null && <span className="wf-subtle" style={{ fontSize: 12 }}>Driving {driveH.toFixed(2)} h</span>}
+              {driveH != null && <span className="wf-subtle" style={{ fontSize: 12 }}>Traveling {driveH.toFixed(2)} h</span>}
               {stop && (
                 <div style={{ background: '#EEF3EA', borderRadius: 8, padding: '4px 10px', fontSize: 13 }}>
                   <b>On site</b> {clock(stop.from) || '?'} – {clock(stop.until) || '?'}
@@ -540,9 +540,9 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
         })}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
           <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={addDrive}><Plus size={14} /> Add a drive</button>
+          {timeline.onSite > 0 && <span><b>{timeline.onSite.toFixed(2)} h on site</b></span>}
           {typedDrives && typedDrives.length > 0 && <span><b>{typedDrives.length} drive{typedDrives.length === 1 ? '' : 's'} · {drivesMiles(typedDrives)} mi</b></span>}
-          {timeline.travel > 0 && <span>{timeline.travel.toFixed(2)} h driving</span>}
-          {timeline.onSite > 0 && <span>{timeline.onSite.toFixed(2)} h on site</span>}
+          {timeline.travel > 0 && <span><b>{timeline.travel.toFixed(2)} h traveling</b></span>}
           {typedDrives && typedDrives.length > 0 && vals.miles.trim() !== '' && (
             <span style={{ color: '#7A4B00' }}>The Miles box above counts instead. Clear it to use the drives.</span>
           )}

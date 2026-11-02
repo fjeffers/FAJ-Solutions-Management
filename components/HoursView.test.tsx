@@ -130,7 +130,7 @@ describe('Hours', () => {
     await user.click(add);
     await user.selectOptions(screen.getByLabelText('Drive 3 to Frederick Jeffers 2026-10-23'), 'Hotel');
     at(3, 'left', '15:00'); at(3, 'got there', '16:00'); at(3, 'miles', '20');
-    expect(screen.getByText('2.50 h driving')).toBeTruthy();
+    expect(screen.getByText('2.50 h traveling')).toBeTruthy();
     expect(screen.getByText('6.50 h on site')).toBeTruthy();
     expect(screen.getByText(/8:00 AM – 11:00 AM/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: /^save$/i }));

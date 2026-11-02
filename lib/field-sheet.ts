@@ -16,7 +16,7 @@
 // them and marked as a guess for the office to check.
 //
 // Pure and unit-tested (lib/field-sheet.test.ts). The screen is components/FieldSheetView.tsx.
-import { buildDayLogs, gapOnSite, hoursOf, legLabel, type DayEvent, type DayLog } from './project-day';
+import { buildDayLogs, gapOnSite, hoursOf, legLabel, type DayEvent, type DayLog, type Dest, type Origin } from './project-day';
 import { matchOdometer, odoProblems, type BillLeg, type OdoRow } from './weekly-bill';
 import type { QbInvoicePayload } from './qb-invoice';
 import { expenseCategoryLabel } from './expenses';
@@ -35,10 +35,40 @@ export type SheetField = TimeField | NumField | 'note' | 'ask';
  * A drive the office typed on a day, one per leg (Fred, 2026-11-02: "multiple milage so from home to site then
  * site to site and site to home need some here to record that"). Their miles add up to the day's miles.
  */
-export type TypedDrive = { from: string; to: string; miles: number };
-export const DRIVE_PLACES = ['Home', 'Hotel', 'Site', 'Next site', 'Vendor / materials', 'Fuel'] as const;
+// start and end (HH:MM): when the drive left and got there (Fred, 2026-11-02: "home to site and hours and between
+// sites and hours on site and site to home or hotel"), so the drives give the day's travel and the time at each site.
+export type TypedDrive = { from: string; to: string; miles: number; start?: string; end?: string };
+export const DRIVE_PLACES = ['Home', 'Hotel', 'Site', 'Next site', 'Vendor / materials', 'Fuel', 'Other'] as const;
+/** Places that are a job site: the time from getting there to the next drive is time on site. */
+export const SITE_PLACES: readonly string[] = ['Site', 'Next site'];
 export const drivesMiles = (d: readonly TypedDrive[]) => r1(d.reduce((t, x) => t + x.miles, 0));
-export const drivesText = (d: readonly TypedDrive[]) => d.map((x) => `${x.from || '?'} → ${x.to || '?'}, ${x.miles} mi`).join('; ');
+export const drivesText = (d: readonly TypedDrive[]) => d.map((x) => {
+  const when = x.start || x.end ? `${clock(x.start) || '?'}–${clock(x.end) || '?'} ` : '';
+  return `${when}${x.from || '?'} → ${x.to || '?'}, ${x.miles} mi`;
+}).join('; ');
+
+/** A stop at a site after a drive: from getting there to the next drive (or Finished, after the last). */
+export type SiteStop = { from: string | null; until: string | null; hours: number | null };
+/**
+ * The day read from its drives: travel is each drive's own time, and time on
+ * site is each stop at a site. `timed` once every drive has both times.
+ */
+export function driveDay(d: readonly TypedDrive[], finished?: string | null): { timed: boolean; travel: number; onSite: number; stops: (SiteStop | null)[] } {
+  const between = (a?: string | null, b?: string | null) => {
+    const x = minutesOf(a), y = minutesOf(b);
+    return x != null && y != null ? hoursBetween(x, y) : null;
+  };
+  let travel = 0, onSite = 0;
+  const stops = d.map((x, i) => {
+    travel += between(x.start, x.end) ?? 0;
+    if (!SITE_PLACES.includes(x.to)) return null;
+    const until = (i + 1 < d.length ? d[i + 1].start : finished) || null;
+    const hours = between(x.end, until);
+    onSite += hours ?? 0;
+    return { from: x.end || null, until, hours: hours == null ? null : r2(hours) };
+  });
+  return { timed: d.length > 0 && d.every((x) => minutesOf(x.start) != null && minutesOf(x.end) != null), travel: r2(travel), onSite: r2(onSite), stops };
+}
 /** Typed drives from the database, keeping only well-formed ones. */
 export function parseDrives(raw: unknown): TypedDrive[] {
   if (!Array.isArray(raw)) return [];
@@ -47,7 +77,9 @@ export function parseDrives(raw: unknown): TypedDrive[] {
     const miles = o.miles;
     if (typeof miles !== 'number' || !Number.isFinite(miles) || miles < 0) return [];
     const text = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 60) : '');
-    return [{ from: text(o.from), to: text(o.to), miles }];
+    const time = (v: unknown) => (typeof v === 'string' && minutesOf(v) != null ? v : null);
+    const start = time(o.start), end = time(o.end);
+    return [{ from: text(o.from), to: text(o.to), miles, ...(start ? { start } : {}), ...(end ? { end } : {}) }];
   }).slice(0, 20);
 }
 
@@ -74,6 +106,8 @@ export type AppDay = {
   guessed: ('arrived' | 'leftSite')[];
   /** Every drive that day, for the office to read: "7:38–7:44 AM Hotel → Hotel, 2.2 mi; …". */
   drives: string;
+  /** The same drives as rows the office can correct, like the ones it types. */
+  legs?: TypedDrive[];
 };
 
 /** A field_sheet_days row. */
@@ -131,6 +165,9 @@ export function minutesOf(t: string | null | undefined): number | null {
 /** Hours from one clock time to the next, past midnight if it has to. */
 const hoursBetween = (a: number, b: number) => (((b - a) % 1440) + 1440) % 1440 / 60;
 
+const LEG_FROM: Record<Origin, string> = { home: 'Home', hotel: 'Hotel', site: 'Site', other: 'Other', fuel: 'Fuel', materials: 'Vendor / materials' };
+const LEG_TO: Record<Dest, string> = { site: 'Site', next_site: 'Next site', hotel: 'Hotel', home: 'Home', fuel: 'Fuel', materials: 'Vendor / materials' };
+
 /** Each tech's day from the app: the taps (buildDayLogs) and the drives with their odometer readings (matchOdometer). */
 export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): AppDay[] {
   const t = (iso: string | null | undefined) => (iso ? hhmm(iso, timeZone) : null);
@@ -175,7 +212,13 @@ export function appDays(logs: DayLog[], legs: BillLeg[], timeZone?: string): App
     const addedMiles = r1(mine.reduce((t, l) => t + (both(l) && l.milesTyped ? l.miles ?? 0 : 0), 0)) || null;
     const visits = spans.length > 1;
     const drives = mine.map((l) => `${clock(t(l.start))}–${l.end ? clock(t(l.end)) : '…'} ${legLabel(l)}${l.miles != null ? `, ${r1(l.miles)} mi` : ''}`).join('; ');
+    const driveRows = mine.map((l, i): TypedDrive => {
+      const from = l.origin ? LEG_FROM[l.origin] : i ? LEG_TO[mine[i - 1].dest] : '';
+      const start = t(l.start), end = t(l.end);
+      return { from, to: LEG_TO[l.dest], miles: r1(both(l) ? l.odoMiles! : l.miles ?? 0), ...(start ? { start } : {}), ...(end ? { end } : {}) };
+    });
     return {
+      legs: driveRows,
       day: d.day, tech: d.tech,
       left: t(left), arrived: t(arrived), leftSite: t(leftSite), back: t(back),
       lunch: d.lunchMs > 0 ? Math.round(d.lunchMs / MIN) : null,
@@ -307,8 +350,12 @@ export type DayCalc = {
  */
 export function dayCalc(v: Values, mileRate: number): DayCalc {
   const L = minutesOf(v.left), A = minutesOf(v.arrived), O = minutesOf(v.leftSite), B = minutesOf(v.back);
-  const hoursAuto = A != null && O != null ? Math.max(0, hoursBetween(A, O) - (v.lunch ?? 0) / 60) : 0;
-  const travelAuto = (L != null && A != null ? hoursBetween(L, A) : 0)
+  // Drives typed with their times give the travel and the time at each site, however many sites.
+  const timeline = v.drives?.length ? driveDay(v.drives, v.leftSite) : null;
+  const byDrives = timeline?.timed ? timeline : null;
+  const hoursAuto = byDrives && byDrives.stops.some(Boolean) ? Math.max(0, byDrives.onSite - (v.lunch ?? 0) / 60)
+    : A != null && O != null ? Math.max(0, hoursBetween(A, O) - (v.lunch ?? 0) / 60) : 0;
+  const travelAuto = byDrives ? byDrives.travel : (L != null && A != null ? hoursBetween(L, A) : 0)
     + (O != null && B != null ? hoursBetween(O, B) : 0)
     + (L != null && B != null && A == null && O == null ? hoursBetween(L, B) : 0);
   const odo = v.odoStart != null && v.odoEnd != null ? v.odoEnd - v.odoStart : null;

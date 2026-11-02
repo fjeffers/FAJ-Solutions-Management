@@ -15,14 +15,14 @@
 // view etc"): day by day, by week or by month with totals, newest or oldest
 // first, one tech or all, full cards or a short list. Settings -> Hours screen
 // keeps the choice (lib/hours-look.ts).
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Clock, LogOut, Plus, Save, Search, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useStableOrder } from '@/lib/stable-order';
 import { pickFirst, techShown, useTechPick } from '@/lib/tech-pick';
 import { dayOf, type DayEvent } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
-import { clock, dayCalc, DRIVE_PLACES, drivesMiles, nextEdits, parseEdits, rowsFor, type SavedDay, type SheetField, type SheetRow, type TypedDrive } from '@/lib/field-sheet';
+import { clock, dayCalc, DRIVE_PLACES, driveDay, drivesMiles, nextEdits, parseEdits, rowsFor, type SavedDay, type SheetField, type SheetRow, type TypedDrive } from '@/lib/field-sheet';
 import { parsePunches, stillOnSite, zonedIso, type Punch } from '@/lib/clock-fix';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { expenseCategoryLabel } from '@/lib/expenses';
@@ -357,15 +357,21 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
   );
 }
 
-type DriveDraft = { from: string; to: string; miles: string };
-/** The drives typed on a card, blank rows left out; undefined while one has no miles or junk in them. */
+type DriveDraft = { from: string; to: string; start: string; end: string; miles: string };
+const toDraft = (d: TypedDrive): DriveDraft => ({ from: d.from, to: d.to, start: d.start ?? '', end: d.end ?? '', miles: String(d.miles) });
+/** The drives a card starts from: the ones the office typed, else the tech's from the app. */
+const baseDrives = (row: SheetRow): TypedDrive[] => row.values.drives ?? row.app?.legs ?? [];
+/**
+ * The drives on a card, blank rows left out; undefined while one has junk for
+ * miles, or no miles and no times. A timed drive with no miles counts 0 mi.
+ */
 function drivesOf(list: DriveDraft[]): TypedDrive[] | undefined {
   const out: TypedDrive[] = [];
   for (const d of list) {
     const from = d.from.trim(), to = d.to.trim(), miles = num(d.miles);
-    if (!from && !to && miles == null) continue;
-    if (miles == null || miles === undefined) return undefined;
-    out.push({ from, to, miles });
+    if (!from && !to && !d.start && !d.end && miles == null) continue;
+    if (miles === undefined || (miles == null && !d.start && !d.end)) return undefined;
+    out.push({ from, to, miles: miles ?? 0, ...(d.start ? { start: d.start } : {}), ...(d.end ? { end: d.end } : {}) });
   }
   return out;
 }
@@ -382,7 +388,7 @@ function cardEdits(row: SheetRow, vals: Record<string, string>, driveList: Drive
     edits = nextEdits({ app: row.app, edits }, f, v);
   }
   if (vals.note.trim() !== (row.values.note ?? '')) edits = nextEdits({ app: row.app, edits }, 'note', vals.note.trim() || null);
-  if (JSON.stringify(drives) !== JSON.stringify(row.values.drives ?? [])) {
+  if (JSON.stringify(drives) !== JSON.stringify(baseDrives(row))) {
     const { drives: _old, ...rest } = edits; // eslint-disable-line @typescript-eslint/no-unused-vars
     edits = drives.length ? { ...rest, drives } : rest;
   }
@@ -397,20 +403,22 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
 }) {
   const start = () => Object.fromEntries([...BOXES.map(({ f }) => [f, row.values[f] == null ? '' : String(row.values[f])]), ['note', row.values.note ?? '']]);
   const [vals, setVals] = useState<Record<string, string>>(start);
-  const [drives, setDrives] = useState<DriveDraft[]>(() => (row.values.drives ?? []).map((d) => ({ from: d.from, to: d.to, miles: String(d.miles) })));
-  const placesId = useId();
+  const [drives, setDrives] = useState<DriveDraft[]>(() => baseDrives(row).map(toDraft));
+  const fromApp = !row.values.drives && !!row.app?.legs?.length;
   const [busy, setBusy] = useState(false);
   const typedDrives = drivesOf(drives);
+  const drivesChanged = JSON.stringify(typedDrives ?? drives) !== JSON.stringify(baseDrives(row));
+  // The app's own drives already make its figures; drives count here once the office types or corrects them.
   const typed = { ...row.values, ...Object.fromEntries(BOXES.map(({ f, time }) => [f, time ? (vals[f] || null) : (num(vals[f]) ?? null)])),
-    drives: typedDrives ?? row.values.drives } as SheetRow['values'];
+    drives: drivesChanged ? typedDrives ?? row.values.drives : row.values.drives } as SheetRow['values'];
   const c = dayCalc(typed, 0);
-  const drivesChanged = JSON.stringify(typedDrives ?? drives) !== JSON.stringify(row.values.drives ?? []);
+  const timeline = driveDay(drives.map((d) => ({ from: d.from, to: d.to, miles: num(d.miles) ?? 0, start: d.start || undefined, end: d.end || undefined })), vals.leftSite || null);
   const changed = BOXES.some(({ f }) => vals[f] !== (row.values[f] == null ? '' : String(row.values[f]))) || vals.note.trim() !== (row.values.note ?? '') || drivesChanged;
   const edited = Object.keys(row.edits).length > 0;
   const pending = changed ? cardEdits(row, vals, drives) : undefined;
   const setDrive = (i: number, d: Partial<DriveDraft>) => setDrives((list) => list.map((x, j) => (j === i ? { ...x, ...d } : x)));
   // The next drive starts where the last one ended: Home → Site, Site → Next site, … → Home.
-  const addDrive = () => setDrives((list) => [...list, { from: list.at(-1)?.to || 'Home', to: list.length ? '' : 'Site', miles: '' }]);
+  const addDrive = () => setDrives((list) => [...list, { from: list.at(-1)?.to || 'Home', to: list.length ? '' : 'Site', start: '', end: '', miles: '' }]);
   const pendingKey = pending ? JSON.stringify(pending) : '';
   useEffect(() => {
     onPending?.(row.key, pending ? { row, edits: pending } : null);
@@ -422,7 +430,7 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
   const save = async () => {
     const bad = BOXES.find(({ f, time }) => !time && num(vals[f]) === undefined);
     if (bad) { toastError(`${bad.label}: type a number, like 7.5`); return; }
-    if (!drivesOf(drives)) { toastError('Drives: type the miles of each drive, like 24.5'); return; }
+    if (!drivesOf(drives)) { toastError('Drives: type the miles of each drive, like 24.5, or when it left and got there'); return; }
     const edits = cardEdits(row, vals, drives)!;
     setBusy(true);
     const ok = await onSave(row, edits);
@@ -485,25 +493,56 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
       </div>
       <div style={{ display: 'grid', gap: 6 }} role="group" aria-label={`Drives ${row.tech} ${row.day}`}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <span className="wf-label">Drives</span>
-          <span className="wf-subtle" style={{ fontSize: 12 }}>Each drive that day, like Home → Site, Site → Site, Site → Home. Their miles add up to the day&apos;s Miles.</span>
+          <span className="wf-label">Drives and time on site</span>
+          <span className="wf-subtle" style={{ fontSize: 12 }}>
+            The day in order: Home → Site, Site → Next site, then Site → Home or Hotel. Type when each drive left and got there:
+            the drives add up to Travel hours and Miles, and the time from getting to a site to the next drive is time on site.
+          </span>
+          {fromApp && <span style={{ fontSize: 12, color: '#13284A' }}><b>From the tech&apos;s app.</b> Correct any drive and Save.</span>}
         </div>
-        <datalist id={placesId}>{DRIVE_PLACES.map((p) => <option key={p} value={p} />)}</datalist>
-        {drives.map((d, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) 84px auto', gap: 6, alignItems: 'center' }}>
-            <input className="wf-input" list={placesId} value={d.from} placeholder="From" aria-label={`Drive ${i + 1} from ${row.tech} ${row.day}`}
-              onChange={(e) => setDrive(i, { from: e.target.value })} />
-            <input className="wf-input" list={placesId} value={d.to} placeholder="To" aria-label={`Drive ${i + 1} to ${row.tech} ${row.day}`}
-              onChange={(e) => setDrive(i, { to: e.target.value })} />
-            <input className="wf-input" inputMode="decimal" value={d.miles} placeholder="Miles" aria-label={`Drive ${i + 1} miles ${row.tech} ${row.day}`}
-              onChange={(e) => setDrive(i, { miles: e.target.value })} />
-            <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" aria-label={`Remove drive ${i + 1}`} title="Remove this drive"
-              onClick={() => setDrives((list) => list.filter((_, j) => j !== i))}><X size={14} /></button>
-          </div>
-        ))}
+        {drives.map((d, i) => {
+          const stop = timeline.stops[i];
+          const driveH = d.start && d.end ? driveDay([{ from: '', to: '', miles: 0, start: d.start, end: d.end }]).travel : null;
+          const place = (v: string, f: 'from' | 'to') => (
+            <select className="wf-input" value={v} aria-label={`Drive ${i + 1} ${f} ${row.tech} ${row.day}`}
+              onChange={(e) => setDrive(i, { [f]: e.target.value })}>
+              <option value="">{f === 'from' ? 'From…' : 'To…'}</option>
+              {[...DRIVE_PLACES, ...(v && !(DRIVE_PLACES as readonly string[]).includes(v) ? [v] : [])].map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          );
+          const field = (label: string, el: React.ReactNode, grow: string) => (
+            <label style={{ ...box, flex: grow }}><span className="wf-label" style={{ fontSize: 11 }}>{label}</span>{el}</label>
+          );
+          return (
+            <div key={i} style={{ display: 'grid', gap: 4, padding: '8px 10px', border: '1px solid #E5E1D8', borderRadius: 10 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <b style={{ fontSize: 12, alignSelf: 'center', minWidth: 52 }}>Drive {i + 1}</b>
+                {field('From', place(d.from, 'from'), '1 1 120px')}
+                {field('To', place(d.to, 'to'), '1 1 120px')}
+                {field('Left', <input className="wf-input" type="time" value={d.start} aria-label={`Drive ${i + 1} left ${row.tech} ${row.day}`}
+                  onChange={(e) => setDrive(i, { start: e.target.value })} />, '1 1 110px')}
+                {field('Got there', <input className="wf-input" type="time" value={d.end} aria-label={`Drive ${i + 1} got there ${row.tech} ${row.day}`}
+                  onChange={(e) => setDrive(i, { end: e.target.value })} />, '1 1 110px')}
+                {field('Miles', <input className="wf-input" inputMode="decimal" value={d.miles} placeholder="Miles" aria-label={`Drive ${i + 1} miles ${row.tech} ${row.day}`}
+                  onChange={(e) => setDrive(i, { miles: e.target.value })} />, '0 0 84px')}
+                <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" aria-label={`Remove drive ${i + 1}`} title="Remove this drive"
+                  onClick={() => setDrives((list) => list.filter((_, j) => j !== i))}><X size={14} /></button>
+              </div>
+              {driveH != null && <span className="wf-subtle" style={{ fontSize: 12 }}>Driving {driveH.toFixed(2)} h</span>}
+              {stop && (
+                <div style={{ background: '#EEF3EA', borderRadius: 8, padding: '4px 10px', fontSize: 13 }}>
+                  <b>On site</b> {clock(stop.from) || '?'} – {clock(stop.until) || '?'}
+                  {stop.hours != null ? <> · <b>{stop.hours.toFixed(2)} h</b></> : <span className="wf-subtle"> · type when they left in the next drive, or in Finished</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
           <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={addDrive}><Plus size={14} /> Add a drive</button>
           {typedDrives && typedDrives.length > 0 && <span><b>{typedDrives.length} drive{typedDrives.length === 1 ? '' : 's'} · {drivesMiles(typedDrives)} mi</b></span>}
+          {timeline.travel > 0 && <span>{timeline.travel.toFixed(2)} h driving</span>}
+          {timeline.onSite > 0 && <span>{timeline.onSite.toFixed(2)} h on site</span>}
           {typedDrives && typedDrives.length > 0 && vals.miles.trim() !== '' && (
             <span style={{ color: '#7A4B00' }}>The Miles box above counts instead. Clear it to use the drives.</span>
           )}

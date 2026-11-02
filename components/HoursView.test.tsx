@@ -2,7 +2,7 @@
 //
 // Hours: pick the job, see a card per day from the techs' taps, change a box, Save.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { EnrichedWorkOrder } from '@/lib/types';
 
@@ -92,21 +92,52 @@ describe('Hours', () => {
     render(<HoursView workOrders={[wo]} />);
     await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
     const add = await screen.findByRole('button', { name: /add a drive/i });
+    // The tech's own drive from the app comes first, to correct or remove.
+    expect(screen.getByText(/From the tech's app/)).toBeTruthy();
+    expect((screen.getByLabelText('Drive 1 left Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('09:16');
+    expect((screen.getByLabelText('Drive 1 got there Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('12:49');
+    await user.click(screen.getByRole('button', { name: 'Remove drive 1' }));
     await user.click(add);
     expect((screen.getByLabelText('Drive 1 from Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('Home');
     expect((screen.getByLabelText('Drive 1 to Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('Site');
     await user.type(screen.getByLabelText('Drive 1 miles Frederick Jeffers 2026-10-23'), '30');
     await user.click(add);
     expect((screen.getByLabelText('Drive 2 from Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('Site');
-    await user.type(screen.getByLabelText('Drive 2 to Frederick Jeffers 2026-10-23'), 'Next site');
+    await user.selectOptions(screen.getByLabelText('Drive 2 to Frederick Jeffers 2026-10-23'), 'Next site');
     await user.type(screen.getByLabelText('Drive 2 miles Frederick Jeffers 2026-10-23'), '12.5');
     await user.click(add);
-    await user.type(screen.getByLabelText('Drive 3 to Frederick Jeffers 2026-10-23'), 'Home');
+    await user.selectOptions(screen.getByLabelText('Drive 3 to Frederick Jeffers 2026-10-23'), 'Home');
     await user.type(screen.getByLabelText('Drive 3 miles Frederick Jeffers 2026-10-23'), '40');
     expect(screen.getByText('3 drives · 82.5 mi')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: /^save$/i }));
     expect(upserts.at(-1)).toMatchObject({ day: '2026-10-23', tech: 'Frederick Jeffers', edits: { drives: [
       { from: 'Home', to: 'Site', miles: 30 }, { from: 'Site', to: 'Next site', miles: 12.5 }, { from: 'Next site', to: 'Home', miles: 40 },
+    ] } });
+  });
+
+  it('works out the travel and the time at each site from when each drive left and got there (Fred, 2026-11-02)', async () => {
+    const user = userEvent.setup();
+    render(<HoursView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    const add = await screen.findByRole('button', { name: /add a drive/i });
+    const at = (n: number, f: string, v: string) => fireEvent.change(screen.getByLabelText(`Drive ${n} ${f} Frederick Jeffers 2026-10-23`), { target: { value: v } });
+    await user.click(screen.getByRole('button', { name: 'Remove drive 1' }));
+    await user.click(add);
+    at(1, 'left', '07:00'); at(1, 'got there', '08:00'); at(1, 'miles', '30');
+    await user.click(add);
+    await user.selectOptions(screen.getByLabelText('Drive 2 to Frederick Jeffers 2026-10-23'), 'Next site');
+    at(2, 'left', '11:00'); at(2, 'got there', '11:30'); at(2, 'miles', '12');
+    await user.click(add);
+    await user.selectOptions(screen.getByLabelText('Drive 3 to Frederick Jeffers 2026-10-23'), 'Hotel');
+    at(3, 'left', '15:00'); at(3, 'got there', '16:00'); at(3, 'miles', '20');
+    expect(screen.getByText('2.50 h driving')).toBeTruthy();
+    expect(screen.getByText('6.50 h on site')).toBeTruthy();
+    expect(screen.getByText(/8:00 AM – 11:00 AM/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(upserts.at(-1)).toMatchObject({ edits: { drives: [
+      { from: 'Home', to: 'Site', start: '07:00', end: '08:00', miles: 30 },
+      { from: 'Site', to: 'Next site', start: '11:00', end: '11:30', miles: 12 },
+      { from: 'Next site', to: 'Hotel', start: '15:00', end: '16:00', miles: 20 },
     ] } });
   });
 

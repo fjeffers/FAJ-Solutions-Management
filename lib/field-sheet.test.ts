@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildDayLogs, parseDayEvents, type DayEvent } from './project-day';
 import { matchOdometer, type OdoRow } from './weekly-bill';
 import {
-  appDays, billRange, blocksBilling, byTech, leadFirst, byTechRows, clock, dayMiles, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
+  appDays, billRange, drivesMiles, drivesText, blocksBilling, byTech, leadFirst, byTechRows, clock, dayMiles, dayBill, fieldSheetInvoice, inDates, overlaps, dayCalc, fieldSheetRows, jobDays, nextEdits, parseEdits, parseSettings, rowsFor, sheetRows, sheetTotals,
   withAccountRate,
   type SavedDay, type SheetReceipt, type SheetSettings,
 } from './field-sheet';
@@ -635,5 +635,23 @@ describe('by tech', () => {
       ['Office', 'Mon, 10/19', 'Tools & equipment', 'Home Depot', 25], ['Office total', '', '', '', 25],
       ['All techs', '', '', '', 176.65],
     ]);
+  });
+});
+
+describe('drives the office typed (Fred, 2026-11-02: home to site, site to site, site to home)', () => {
+  const drives = [{ from: 'Home', to: 'Site', miles: 32.5 }, { from: 'Site', to: 'Next site', miles: 12 }, { from: 'Next site', to: 'Home', miles: 40 }];
+  it('keeps them through the database and adds their miles up as the day\'s', () => {
+    const edits = parseEdits({ drives: [...drives, { from: 'x', to: 'y', miles: 'lots' }] });
+    expect(edits.drives).toEqual(drives);
+    const [row] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits, added: true, hidden: false }], techs: [], days: [] });
+    expect(row.values.drives).toEqual(drives);
+    expect(dayCalc(row.values, 0.7)).toMatchObject({ miles: 84.5, mileage: 59.15 });
+    expect(drivesMiles(drives)).toBe(84.5);
+    expect(drivesText(drives)).toBe('Home → Site, 32.5 mi; Site → Next site, 12 mi; Next site → Home, 40 mi');
+  });
+  it('lets the Miles box and Extra miles still count as typed', () => {
+    const [row] = sheetRows({ app: [], saved: [{ id: 's', day: '2026-11-02', tech: 'Ana', edits: { drives, extraMiles: 5 }, added: true, hidden: false }], techs: [], days: [] });
+    expect(dayCalc(row.values, 0).miles).toBe(89.5);
+    expect(dayCalc({ ...row.values, miles: 70 }, 0).miles).toBe(75);
   });
 });

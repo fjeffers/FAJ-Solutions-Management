@@ -15,14 +15,14 @@
 // view etc"): day by day, by week or by month with totals, newest or oldest
 // first, one tech or all, full cards or a short list. Settings -> Hours screen
 // keeps the choice (lib/hours-look.ts).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Clock, LogOut, Plus, Save, Search } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, Clock, LogOut, Plus, Save, Search, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useStableOrder } from '@/lib/stable-order';
 import { pickFirst, techShown, useTechPick } from '@/lib/tech-pick';
 import { dayOf, type DayEvent } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
-import { clock, dayCalc, nextEdits, parseEdits, rowsFor, type SavedDay, type SheetField, type SheetRow } from '@/lib/field-sheet';
+import { clock, dayCalc, DRIVE_PLACES, drivesMiles, nextEdits, parseEdits, rowsFor, type SavedDay, type SheetField, type SheetRow, type TypedDrive } from '@/lib/field-sheet';
 import { parsePunches, stillOnSite, zonedIso, type Punch } from '@/lib/clock-fix';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { expenseCategoryLabel } from '@/lib/expenses';
@@ -357,9 +357,24 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
   );
 }
 
+type DriveDraft = { from: string; to: string; miles: string };
+/** The drives typed on a card, blank rows left out; undefined while one has no miles or junk in them. */
+function drivesOf(list: DriveDraft[]): TypedDrive[] | undefined {
+  const out: TypedDrive[] = [];
+  for (const d of list) {
+    const from = d.from.trim(), to = d.to.trim(), miles = num(d.miles);
+    if (!from && !to && miles == null) continue;
+    if (miles == null || miles === undefined) return undefined;
+    out.push({ from, to, miles });
+  }
+  return out;
+}
+
 /** The edits a card's boxes make, or undefined while a number box holds something that isn't a number. */
-function cardEdits(row: SheetRow, vals: Record<string, string>): SavedDay['edits'] | undefined {
+function cardEdits(row: SheetRow, vals: Record<string, string>, driveList: DriveDraft[] = []): SavedDay['edits'] | undefined {
   if (BOXES.some(({ f, time }) => !time && num(vals[f]) === undefined)) return undefined;
+  const drives = drivesOf(driveList);
+  if (!drives) return undefined;
   let edits = row.edits;
   for (const { f, time } of BOXES) {
     const v = time ? (vals[f] || null) : num(vals[f]) ?? null;
@@ -367,6 +382,10 @@ function cardEdits(row: SheetRow, vals: Record<string, string>): SavedDay['edits
     edits = nextEdits({ app: row.app, edits }, f, v);
   }
   if (vals.note.trim() !== (row.values.note ?? '')) edits = nextEdits({ app: row.app, edits }, 'note', vals.note.trim() || null);
+  if (JSON.stringify(drives) !== JSON.stringify(row.values.drives ?? [])) {
+    const { drives: _old, ...rest } = edits; // eslint-disable-line @typescript-eslint/no-unused-vars
+    edits = drives.length ? { ...rest, drives } : rest;
+  }
   return edits;
 }
 
@@ -378,12 +397,20 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
 }) {
   const start = () => Object.fromEntries([...BOXES.map(({ f }) => [f, row.values[f] == null ? '' : String(row.values[f])]), ['note', row.values.note ?? '']]);
   const [vals, setVals] = useState<Record<string, string>>(start);
+  const [drives, setDrives] = useState<DriveDraft[]>(() => (row.values.drives ?? []).map((d) => ({ from: d.from, to: d.to, miles: String(d.miles) })));
+  const placesId = useId();
   const [busy, setBusy] = useState(false);
-  const typed = { ...row.values, ...Object.fromEntries(BOXES.map(({ f, time }) => [f, time ? (vals[f] || null) : (num(vals[f]) ?? null)])) } as SheetRow['values'];
+  const typedDrives = drivesOf(drives);
+  const typed = { ...row.values, ...Object.fromEntries(BOXES.map(({ f, time }) => [f, time ? (vals[f] || null) : (num(vals[f]) ?? null)])),
+    drives: typedDrives ?? row.values.drives } as SheetRow['values'];
   const c = dayCalc(typed, 0);
-  const changed = BOXES.some(({ f }) => vals[f] !== (row.values[f] == null ? '' : String(row.values[f]))) || vals.note.trim() !== (row.values.note ?? '');
+  const drivesChanged = JSON.stringify(typedDrives ?? drives) !== JSON.stringify(row.values.drives ?? []);
+  const changed = BOXES.some(({ f }) => vals[f] !== (row.values[f] == null ? '' : String(row.values[f]))) || vals.note.trim() !== (row.values.note ?? '') || drivesChanged;
   const edited = Object.keys(row.edits).length > 0;
-  const pending = changed ? cardEdits(row, vals) : undefined;
+  const pending = changed ? cardEdits(row, vals, drives) : undefined;
+  const setDrive = (i: number, d: Partial<DriveDraft>) => setDrives((list) => list.map((x, j) => (j === i ? { ...x, ...d } : x)));
+  // The next drive starts where the last one ended: Home → Site, Site → Next site, … → Home.
+  const addDrive = () => setDrives((list) => [...list, { from: list.at(-1)?.to || 'Home', to: list.length ? '' : 'Site', miles: '' }]);
   const pendingKey = pending ? JSON.stringify(pending) : '';
   useEffect(() => {
     onPending?.(row.key, pending ? { row, edits: pending } : null);
@@ -395,7 +422,8 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
   const save = async () => {
     const bad = BOXES.find(({ f, time }) => !time && num(vals[f]) === undefined);
     if (bad) { toastError(`${bad.label}: type a number, like 7.5`); return; }
-    const edits = cardEdits(row, vals)!;
+    if (!drivesOf(drives)) { toastError('Drives: type the miles of each drive, like 24.5'); return; }
+    const edits = cardEdits(row, vals, drives)!;
     setBusy(true);
     const ok = await onSave(row, edits);
     setBusy(false);
@@ -454,6 +482,32 @@ function DayCard({ row, woId, openPunch, onSave, onClocked, pictures, onPending 
             </label>
           );
         })}
+      </div>
+      <div style={{ display: 'grid', gap: 6 }} role="group" aria-label={`Drives ${row.tech} ${row.day}`}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <span className="wf-label">Drives</span>
+          <span className="wf-subtle" style={{ fontSize: 12 }}>Each drive that day, like Home → Site, Site → Site, Site → Home. Their miles add up to the day&apos;s Miles.</span>
+        </div>
+        <datalist id={placesId}>{DRIVE_PLACES.map((p) => <option key={p} value={p} />)}</datalist>
+        {drives.map((d, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) 84px auto', gap: 6, alignItems: 'center' }}>
+            <input className="wf-input" list={placesId} value={d.from} placeholder="From" aria-label={`Drive ${i + 1} from ${row.tech} ${row.day}`}
+              onChange={(e) => setDrive(i, { from: e.target.value })} />
+            <input className="wf-input" list={placesId} value={d.to} placeholder="To" aria-label={`Drive ${i + 1} to ${row.tech} ${row.day}`}
+              onChange={(e) => setDrive(i, { to: e.target.value })} />
+            <input className="wf-input" inputMode="decimal" value={d.miles} placeholder="Miles" aria-label={`Drive ${i + 1} miles ${row.tech} ${row.day}`}
+              onChange={(e) => setDrive(i, { miles: e.target.value })} />
+            <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" aria-label={`Remove drive ${i + 1}`} title="Remove this drive"
+              onClick={() => setDrives((list) => list.filter((_, j) => j !== i))}><X size={14} /></button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
+          <button type="button" className="wf-btn wf-btn-outline wf-btn-sm" onClick={addDrive}><Plus size={14} /> Add a drive</button>
+          {typedDrives && typedDrives.length > 0 && <span><b>{typedDrives.length} drive{typedDrives.length === 1 ? '' : 's'} · {drivesMiles(typedDrives)} mi</b></span>}
+          {typedDrives && typedDrives.length > 0 && vals.miles.trim() !== '' && (
+            <span style={{ color: '#7A4B00' }}>The Miles box above counts instead. Clear it to use the drives.</span>
+          )}
+        </div>
       </div>
       <label style={box}><span className="wf-label">Note</span>
         <input className="wf-input" value={vals.note} onChange={(e) => setVals((x) => ({ ...x, note: e.target.value }))} aria-label={`Note ${row.tech} ${row.day}`} />

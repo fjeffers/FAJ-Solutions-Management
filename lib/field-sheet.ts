@@ -31,8 +31,29 @@ export type TimeField = (typeof TIME_FIELDS)[number];
 export type NumField = (typeof NUM_FIELDS)[number];
 export type SheetField = TimeField | NumField | 'note' | 'ask';
 
+/**
+ * A drive the office typed on a day, one per leg (Fred, 2026-11-02: "multiple milage so from home to site then
+ * site to site and site to home need some here to record that"). Their miles add up to the day's miles.
+ */
+export type TypedDrive = { from: string; to: string; miles: number };
+export const DRIVE_PLACES = ['Home', 'Hotel', 'Site', 'Next site', 'Vendor / materials', 'Fuel'] as const;
+export const drivesMiles = (d: readonly TypedDrive[]) => r1(d.reduce((t, x) => t + x.miles, 0));
+export const drivesText = (d: readonly TypedDrive[]) => d.map((x) => `${x.from || '?'} → ${x.to || '?'}, ${x.miles} mi`).join('; ');
+/** Typed drives from the database, keeping only well-formed ones. */
+export function parseDrives(raw: unknown): TypedDrive[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((d) => {
+    const o = d && typeof d === 'object' ? (d as Record<string, unknown>) : {};
+    const miles = o.miles;
+    if (typeof miles !== 'number' || !Number.isFinite(miles) || miles < 0) return [];
+    const text = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 60) : '');
+    return [{ from: text(o.from), to: text(o.to), miles }];
+  }).slice(0, 20);
+}
+
 /** What the office changed on one line. A field set to null was emptied on purpose. */
-export type Edits = { [K in TimeField]?: string | null } & { [K in NumField]?: number | null } & { note?: string | null; ask?: boolean | null };
+export type Edits = { [K in TimeField]?: string | null } & { [K in NumField]?: number | null } & { note?: string | null; ask?: boolean | null }
+  & { drives?: TypedDrive[] };
 
 /** One tech's day as the app recorded it. Times are HH:MM in the job's time zone. */
 export type AppDay = {
@@ -60,7 +81,9 @@ export type SavedDay = { id: string; day: string; tech: string; edits: Edits; ad
 
 export type Values = { [K in TimeField]: string | null } & { [K in NumField]: number | null } & { note: string; ask: boolean }
   // From the app only, never typed: AppDay.driveMiles and addedMiles.
-  & { driveMiles: number | null; addedMiles: number | null };
+  & { driveMiles: number | null; addedMiles: number | null }
+  // The drives the office typed (Edits.drives).
+  & { drives?: TypedDrive[] };
 export type Source = 'app' | 'guess' | 'office';
 
 export type SheetRow = {
@@ -222,6 +245,7 @@ export function sheetRows(input: { app: AppDay[]; saved: SavedDay[]; techs: stri
       }
     }
     for (const [f, v] of Object.entries(edits) as [SheetField, unknown][]) {
+      if ((f as string) === 'drives') { values.drives = parseDrives(v); continue; }
       if (!(f in EMPTY)) continue;
       if (f === 'note') values.note = typeof v === 'string' ? v : '';
       else if (f === 'ask') values.ask = v === true;
@@ -288,7 +312,8 @@ export function dayCalc(v: Values, mileRate: number): DayCalc {
     + (O != null && B != null ? hoursBetween(O, B) : 0)
     + (L != null && B != null && A == null && O == null ? hoursBetween(L, B) : 0);
   const odo = v.odoStart != null && v.odoEnd != null ? v.odoEnd - v.odoStart : null;
-  const drives = v.driveMiles ?? v.gps ?? 0;
+  // Drives the office typed stand for the day's drives.
+  const drives = v.drives?.length ? drivesMiles(v.drives) : v.driveMiles ?? v.gps ?? 0;
   const milesAuto = odo != null && odo >= 0 ? Math.max(odo, drives) : drives;
   const hours = v.hours ?? hoursAuto;
   const travel = v.travel ?? travelAuto;
@@ -369,6 +394,7 @@ export function parseEdits(raw: unknown): Edits {
     else if ((NUM_FIELDS as readonly string[]).includes(k)) { if (v === null || isNum(v)) out[k] = v; }
     else if (k === 'note') { if (v === null || typeof v === 'string') out[k] = v; }
     else if (k === 'ask') { if (v === null || typeof v === 'boolean') out[k] = v; }
+    else if (k === 'drives') { const d = parseDrives(v); if (d.length) out[k] = d; }
   }
   return out as Edits;
 }

@@ -87,6 +87,29 @@ describe('Hours', () => {
     expect(upserts.at(-1)).toMatchObject({ day: '2026-10-23', tech: 'Frederick Jeffers', edits: { extraMiles: 85 } });
   });
 
+  it('records each drive of the day, home to site, site to site, site to home, and adds up the miles (Fred, 2026-11-02)', async () => {
+    const user = userEvent.setup();
+    render(<HoursView workOrders={[wo]} />);
+    await user.type(screen.getByLabelText('Work order number'), '19101413{Enter}');
+    const add = await screen.findByRole('button', { name: /add a drive/i });
+    await user.click(add);
+    expect((screen.getByLabelText('Drive 1 from Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('Home');
+    expect((screen.getByLabelText('Drive 1 to Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('Site');
+    await user.type(screen.getByLabelText('Drive 1 miles Frederick Jeffers 2026-10-23'), '30');
+    await user.click(add);
+    expect((screen.getByLabelText('Drive 2 from Frederick Jeffers 2026-10-23') as HTMLInputElement).value).toBe('Site');
+    await user.type(screen.getByLabelText('Drive 2 to Frederick Jeffers 2026-10-23'), 'Next site');
+    await user.type(screen.getByLabelText('Drive 2 miles Frederick Jeffers 2026-10-23'), '12.5');
+    await user.click(add);
+    await user.type(screen.getByLabelText('Drive 3 to Frederick Jeffers 2026-10-23'), 'Home');
+    await user.type(screen.getByLabelText('Drive 3 miles Frederick Jeffers 2026-10-23'), '40');
+    expect(screen.getByText('3 drives · 82.5 mi')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(upserts.at(-1)).toMatchObject({ day: '2026-10-23', tech: 'Frederick Jeffers', edits: { drives: [
+      { from: 'Home', to: 'Site', miles: 30 }, { from: 'Site', to: 'Next site', miles: 12.5 }, { from: 'Next site', to: 'Home', miles: 40 },
+    ] } });
+  });
+
   it('saves every changed day at once with Save all changes', async () => {
     const user = userEvent.setup();
     render(<HoursView workOrders={[wo]} />);

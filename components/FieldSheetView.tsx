@@ -24,7 +24,7 @@ import { createClient } from '@/lib/supabase/client';
 import { dayOf } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import {
-  atCost, billRange, blocksBilling, byTech, byTechRows, dayBill, dayCalc, fieldSheetRows, inDates, LABOR_TYPES, leadFirst, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
+  atCost, billRange, blocksBilling, byTech, byTechRows, dayBill, dayCalc, drivesText, fieldSheetRows, inDates, LABOR_TYPES, leadFirst, nextEdits, overlaps, parseEdits, parseSettings, rowsFor, sheetTotals,
   withAccountRate, type BillItem, type LaborType, type SavedDay, type SheetField, type SheetReceipt, type SheetRow, type SheetSettings, type SheetTotals, type TechBreakdown,
 } from '@/lib/field-sheet';
 import { expenseCategoryLabel, expenseReasonText } from '@/lib/expenses';
@@ -1272,6 +1272,7 @@ function DayLine({ r, s, onSet, onUndo, onHide }: {
       <td style={{ ...TD, minWidth: 280, background: bg('note') }}>
         {r.missing && <div style={{ padding: '6px 6px 0', fontSize: 12, fontWeight: 600, color: '#9A4A12' }}>Nothing in the app for this day.</div>}
         {r.app?.drives && <div className="wf-subtle" style={{ padding: '6px 6px 0', fontSize: 11.5 }}>{r.app.drives}</div>}
+        {!!v.drives?.length && <div style={{ padding: '6px 6px 0', fontSize: 11.5 }}><b>Drives typed:</b> {drivesText(v.drives)}</div>}
         <textarea key={`note:${v.note}`} rows={1} style={{ ...IN, resize: 'vertical', fontSize: 12.5 }} defaultValue={v.note} placeholder="Your note"
           aria-label={`Note ${r.tech} ${r.day}`} onBlur={(e) => { if (e.target.value.trim() !== v.note) onSet(r, 'note', e.target.value.trim() || null); }} />
       </td>

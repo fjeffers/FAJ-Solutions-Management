@@ -77,7 +77,7 @@ import DirectionsButton from '@/components/wf/Directions';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechProfile } from '@/lib/types';
 import {
-  CalendarClock, CalendarDays, Camera, Car, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
+  CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
   RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown, Phone, Mail,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
@@ -1293,9 +1293,6 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const photoCount = ph.sent.length + ph.waiting.length;
   const [noteOpen, setNoteOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
-  // Miles typed in by hand, so a drive with no odometer photos still gets credit (Fred, 2026-11-02:
-  // "i just want to have someone manually entering they milages to get credit for it").
-  const [milesOpen, setMilesOpen] = useState(false);
   // One page (Fred, 2026-10-18): Messages in a pop-up, and a photo that asks what it's for.
   const [msgOpen, setMsgOpen] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -1307,6 +1304,17 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     if (!error && Array.isArray(data)) setExpenses(data as TechExpense[]);
   }, [job.number]);
   useEffect(() => { void loadExpenses(); }, [loadExpenses]);
+  // Miles the tech added by hand (Receipt → Mileage), by day, for the week's total (Fred, 2026-11-02:
+  // "it add to the rest of the milages giving a total at the end of the woork week").
+  const [handMiles, setHandMiles] = useState<Record<string, number>>({});
+  const loadHandMiles = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tech/mileage?wo_number=${encodeURIComponent(job.number)}`);
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; days?: Record<string, number> };
+      if (res.ok && json.ok) setHandMiles(json.days ?? {});
+    } catch { /* no signal: the totals show without them */ }
+  }, [job.number]);
+  useEffect(() => { void loadHandMiles(); }, [loadHandMiles]);
   const working = canWork(job);
   const canReport = working || job.status === 'workDone';
   const checklist = useMemo(() => listFor(lists, job.title, job.description), [lists, job.title, job.description]);
@@ -1598,8 +1606,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         <CheckoutLinkDialog href={checkoutHref(checkoutAt)} on={onSiteSince(job.myDay ?? [], checkoutAt, 'America/New_York')} off={checkoutAt}
           onClose={() => setCheckoutAt(null)} />
       )}
-      {milesOpen && <ExpenseDialog job={job} initialCategory="mileage" onClose={() => setMilesOpen(false)} onSaved={() => setMilesOpen(false)} />}
-      {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }} onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); }} />}
+      {expenseOpen && <ExpenseDialog job={job} initialFile={expenseFile} keep={keepPhoto} onClose={() => { setExpenseOpen(false); setExpenseFile(null); }}
+        onSaved={() => { setExpenseOpen(false); setExpenseFile(null); void loadExpenses(); void loadHandMiles(); }} />}
       {odometer && <OdometerDialog woNumber={job.number} moment={odometer} required={odoRequired} keep={keepPhoto} initialFile={odoFile}
         onClose={() => { setOdometer(null); setOdoFile(null); setOdoRequired(false); }} />}
       {fromPhone && <PhotoMileageDialog woNumber={job.number} file={fromPhone.file} photo={fromPhone.photo} keep={keepPhoto}
@@ -1700,17 +1708,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       {dayFlow && live && (
         <section className="fs-card fs-form">
           <h3>My time and travel</h3>
-          <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} />
-          {canReport && (
-            <>
-              <button type="button" className="fs-btn fs-btn-secondary" style={{ width: '100%', marginTop: 10 }} onClick={() => setMilesOpen(true)}>
-                <Car size={18} /> Add miles by hand
-              </button>
-              <p className="fs-muted" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
-                A drive the app didn&apos;t track, like Sunday&apos;s drive to the hotel: type the miles and the day, and they count on your hours and the bill.
-              </p>
-            </>
-          )}
+          <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} added={handMiles} />
         </section>
       )}
       <SiteCard job={job} />

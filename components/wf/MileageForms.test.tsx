@@ -12,7 +12,11 @@ import { EXPENSE_CATEGORIES } from '@/lib/expenses';
 const { toastError, toastSuccess } = vi.hoisted(() => ({ toastError: vi.fn(), toastSuccess: vi.fn() }));
 vi.mock('@/lib/toast', () => ({ toastError, toastSuccess, toastInfo: vi.fn() }));
 vi.mock('@/lib/use-expense-categories', () => ({ useExpenseCategories: () => ({ list: EXPENSE_CATEGORIES, add: vi.fn() }) }));
-vi.mock('@/components/wf/Odometer', () => ({ readPhoto: vi.fn() }));
+const { readPhoto } = vi.hoisted(() => ({ readPhoto: vi.fn() }));
+vi.mock('@/components/wf/Odometer', () => ({ readPhoto }));
+const { photoTakenAt } = vi.hoisted(() => ({ photoTakenAt: vi.fn() }));
+vi.mock('@/lib/photo-time', () => ({ photoTakenAt }));
+const GPS = { lat: 40.6884, lng: -75.2207, accuracy: 5 };
 vi.mock('@/lib/photo-stamp', () => ({ shrinkPhoto: async (f: Blob) => f, stampPhoto: async (f: Blob) => f }));
 // field_sheet_days for the office: the day isn't saved yet, so it's inserted.
 const inserts: Record<string, unknown>[] = [];
@@ -35,7 +39,7 @@ const { default: ExpenseDialog } = await import('./ExpenseDialog');
 const { OfficeReceiptDialog, MilesEdit } = await import('./ProjectOffice');
 const { HOURS_CHANGED } = await import('@/lib/hours-look');
 
-afterEach(() => { cleanup(); fetchMock.mockClear(); toastError.mockClear(); toastSuccess.mockClear(); inserts.length = 0; updates.length = 0; });
+afterEach(() => { cleanup(); readPhoto.mockReset(); photoTakenAt.mockReset(); fetchMock.mockClear(); toastError.mockClear(); toastSuccess.mockClear(); inserts.length = 0; updates.length = 0; });
 
 describe('Add an expense, in the tech app', () => {
   const job = { number: '19101412' } as unknown as WfJob;
@@ -69,6 +73,47 @@ describe('Add an expense, in the tech app', () => {
     expect(url).toBe('/api/tech/mileage');
     expect(Object.fromEntries(init.body.entries())).toEqual({ wo_number: '19101412', miles: '85', date: '2026-10-19' });
     expect(toastSuccess).toHaveBeenCalledWith('85 mi added to your miles for Mon, Oct 19.');
+  });
+});
+
+describe('Mileage from odometer photos on the phone (Fred, 2026-11-02)', () => {
+  const job = { number: '19101412' } as unknown as WfJob;
+  URL.createObjectURL = vi.fn(() => 'blob:x');
+  URL.revokeObjectURL = vi.fn();
+
+  it('reads the start and end photos, works out the miles and the day, and sends the photos with them', async () => {
+    readPhoto.mockResolvedValueOnce({ reading: 228010 }).mockResolvedValueOnce({ reading: 228095.4 });
+    photoTakenAt
+      .mockResolvedValueOnce({ at: '2026-11-01T18:00:00Z', from: 'camera', gps: GPS })
+      .mockResolvedValueOnce({ at: '2026-11-01T19:40:00Z', from: 'camera', gps: GPS });
+    const keep = vi.fn(async () => 'sent' as const);
+    const onSaved = vi.fn();
+    render(<ExpenseDialog job={job} initialCategory="mileage" keep={keep} onClose={vi.fn()} onSaved={onSaved} />);
+    const pick = (name: string) => fireEvent.change(screen.getByLabelText(name).querySelector('input')!, { target: { files: [new File(['x'], 'odo.jpg', { type: 'image/jpeg' })] } });
+    pick('Starting mileage photo');
+    await waitFor(() => expect(screen.getByText('228,010')).toBeTruthy());
+    pick('Ending mileage photo');
+    await waitFor(() => expect((screen.getByLabelText('Miles') as HTMLInputElement).value).toBe('85.4'));
+    expect((screen.getByLabelText('Day driven') as HTMLInputElement).value).toBe('2026-11-01');
+    fireEvent.click(screen.getByRole('button', { name: /Add miles/ }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body: FormData }];
+    expect(Object.fromEntries(init.body.entries())).toEqual({ wo_number: '19101412', miles: '85.4', date: '2026-11-01' });
+    expect(keep.mock.calls.map((c) => [(c as unknown[])[1], (c as unknown[])[2], (c as unknown[])[3]])).toEqual([
+      ['Starting mileage 228,010 (85.4 mi added by hand for Sun, Nov 1)', '2026-11-01T18:00:00Z', GPS],
+      ['Ending mileage 228,095.4 (85.4 mi added by hand for Sun, Nov 1)', '2026-11-01T19:40:00Z', GPS],
+    ]);
+    expect(toastSuccess).toHaveBeenCalledWith('85.4 mi added to your miles for Sun, Nov 1.');
+  });
+
+  it("says so when a photo can't be read, and the miles can still be typed", async () => {
+    readPhoto.mockResolvedValueOnce(null);
+    photoTakenAt.mockResolvedValueOnce({ at: null, from: null, gps: null });
+    render(<ExpenseDialog job={job} initialCategory="mileage" keep={vi.fn()} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Starting mileage photo').querySelector('input')!, { target: { files: [new File(['x'], 'odo.jpg', { type: 'image/jpeg' })] } });
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't read the odometer on that photo. Try a clearer one, or type the miles."));
+    expect(screen.getByText("Couldn't read")).toBeTruthy();
+    expect((screen.getByLabelText('Miles') as HTMLInputElement).value).toBe('');
   });
 });
 

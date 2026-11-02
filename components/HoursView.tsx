@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Clock, LogOut, Plus, Save, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useStableOrder } from '@/lib/stable-order';
+import { pickFirst, techShown, useTechPick } from '@/lib/tech-pick';
 import { dayOf, type DayEvent } from '@/lib/project-day';
 import type { OdoRow } from '@/lib/weekly-bill';
 import { clock, dayCalc, nextEdits, parseEdits, rowsFor, type SavedDay, type SheetField, type SheetRow } from '@/lib/field-sheet';
@@ -140,7 +141,7 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
   const [fileUrls, setFileUrls] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
   const [look, setLook] = useState<HoursLook>(hoursLookNow);
-  const [tech, setTech] = useState('');
+  const [pick, setTech] = useTechPick();
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const changeLook = (l: Partial<HoursLook>) => { const n = { ...look, ...l }; setLook(n); onLook?.(n); };
   // What each card would save, so one press saves every changed day (Fred, 2026-10-24: "save all is not working").
@@ -189,6 +190,7 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
   const rows = useMemo(() => rowsFor({ events, readings, saved, techs, start: wo.start_date, end: wo.end_date, timeZone: TZ })
     .filter((r) => !r.hidden), [events, readings, saved, techs, wo.start_date, wo.end_date]);
   const rowTechs = useMemo(() => [...new Set([...techs, ...rows.map((r) => r.tech)])], [techs, rows]);
+  const tech = techShown(pick, rowTechs);
   const shown = useMemo(() => rows.filter((r) => !tech || r.tech === tech)
     .sort((a, b) => (look.order === 'new' ? b.day.localeCompare(a.day) : a.day.localeCompare(b.day)) || a.tech.localeCompare(b.tech)),
   [rows, tech, look.order]);
@@ -260,7 +262,7 @@ export function JobDays({ wo, onLook, inWorkOrder = false }: { wo: WorkOrder; on
           <div style={{ flexBasis: '100%' }}><TimesheetExport key={rows.length} wo={wo} rows={rows} /></div>
         </div>
       )}
-      {adding && <AddDayCard techs={techs} defaultDay={wo.start_date ?? dayOf(new Date().toISOString(), TZ)} onCancel={() => setAdding(false)}
+      {adding && <AddDayCard techs={pickFirst(tech, rowTechs)} defaultDay={wo.start_date ?? dayOf(new Date().toISOString(), TZ)} onCancel={() => setAdding(false)}
         onAdd={async (day, tech) => {
           const row: SheetRow = { key: `${day}|${tech}`, day, tech, id: null, added: true, hidden: false, missing: false, app: null, edits: {}, values: {} as SheetRow['values'], source: {} };
           if (await saveDay(row, {})) { setAdding(false); toastSuccess(`Added ${fmtDay(day)} for ${tech}. Fill in the times and Save.`); }

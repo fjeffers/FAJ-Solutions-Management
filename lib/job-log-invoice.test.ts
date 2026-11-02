@@ -143,15 +143,15 @@ describe('the invoice', () => {
 
 describe("the job log's client copy", () => {
   it('has the same lines and total as the invoice (Fred, 2026-10-31: "the job log and invoice is not matching up")', () => {
-    // Raja rides with Paul and has his hotel; the meals up to $50 a day; the fuel isn't charged.
+    // Raja has Paul's hotel, and only the miles he entered: none (Fred, 2026-11-02: "i need each tech milage to be
+    // individually"); the meals up to $50 a day; the fuel isn't charged.
     const { lines, total } = invoiceCharges(inv, null);
     expect(lines.map((l) => [l.what, l.amount, l.counted])).toEqual([
       ['Paul Gibbs hours · 12.64 × $50.00/hr', 632, false],
       ['Raja hours · 6.32 × $50.00/hr', 316, false],
       ['Hours total', 948, true],
       ['Paul Gibbs mileage · 956 mi × $0.60/mi', 573.6, false],
-      ['Raja mileage · 956 mi (with Paul Gibbs) × $0.60/mi', 573.6, false],
-      ['Mileage total', 1147.2, true],
+      ['Mileage total', 573.6, true],
       ['Meals · up to $50.00 a day (receipts $71.51)', 62.54, true],
       ['Materials', 47.48, true],
       ['Paul Gibbs hotel', 402.5, true],

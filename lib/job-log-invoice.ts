@@ -8,6 +8,9 @@ import { byTechGroups } from './job-log';
 import { lineAmount, type JobRates } from './job-log-rates';
 import { fixedHours, hoursTotal, isHotel, rowHours, type JobSheet, type MileRow, type MoneyRow, type TimeRow } from './job-log-sheet';
 import type { XCell } from './job-log-xlsx';
+import { qboItemFor } from './field-sheet';
+import { IMPORT_HEADER, usDate } from './qbo-work-order-export';
+import type { QbInvoicePayload } from './qb-invoice';
 
 /** What the office types for the invoice, kept with the rates (job_log_rates.invoice, migration 149). */
 export type InvoiceMeta = {
@@ -23,7 +26,11 @@ export type InvoiceMeta = {
   meal: number | null;
   /** Who it's billed to (the client's sample: TeamNetView); empty: the work order's customer. */
   billTo: string;
+  /** The QuickBooks invoice it was sent as, so it isn't sent twice. */
+  qbo?: InvoiceSent;
 };
+/** A QuickBooks invoice made from the job log's invoice: its id, number, total and when. */
+export type InvoiceSent = { id: string; number: string; total: number; at: string };
 
 export const DEFAULT_LABOR = 'Installation of Cabling for refresh project';
 
@@ -41,7 +48,15 @@ export function parseInvoiceMeta(raw: unknown, today: string): InvoiceMeta {
     // An allowance of null, typed as empty, is kept as no cap; one never set is the client's $50.
     meal: 'meal' in o ? n(o.meal) : 50,
     billTo: text(o.billTo).slice(0, 120),
+    ...(sentOf(o.qbo) ? { qbo: sentOf(o.qbo)! } : {}),
   };
+}
+
+function sentOf(raw: unknown): InvoiceSent | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.id !== 'string' || !o.id) return null;
+  return { id: o.id, number: typeof o.number === 'string' ? o.number : '', total: Number(o.total) || 0, at: typeof o.at === 'string' ? o.at : '' };
 }
 
 export const sameMeta = (a: InvoiceMeta, b: InvoiceMeta) => JSON.stringify(a) === JSON.stringify(b);
@@ -364,4 +379,71 @@ export async function downloadInvoiceXlsx(filename: string, inv: Invoice, head: 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
   XLSX.writeFile(wb, filename);
+}
+
+// The invoice into QuickBooks (Fred, 2026-11-04: "i need to pase the invoice from INvoice to quick books invoice"):
+// QuickBooks takes no pasted lines, so its lines are made here, each tech's in turn as on the invoice, on the
+// Products/services the Field Sheet bills with (Cabling, Traveling, Meals, Lodging, Field Services).
+
+/** A line of the QuickBooks invoice: its day, Product/service, description, qty, rate and amount. */
+export type QbJobLine = { date: string; item: string; description: string; qty: number; rate: number; amount: number };
+
+const QBO_KIND: Record<string, string> = { Labor: 'labor', Mileage: 'mileage', Meal: 'meals', Hotel: 'hotel', Material: 'receipt' };
+/** The Products/services the job log's lines go on. */
+export const JOB_LOG_QBO_ITEMS = [...new Set(Object.values(QBO_KIND).map(qboItemFor))];
+
+/** The invoice's lines that charge something, the tech's name on each ("Paul Gibbs (Lead): Installation of …"). */
+export function quickBooksLines(inv: Invoice): QbJobLine[] {
+  return inv.techs.flatMap((t) => [t.hours, t.meals, t.mileage, ...(t.materials ? [t.materials] : []), t.travel]
+    .flatMap((s) => s.lines)
+    .filter((l) => (l.amount ?? 0) > 0)
+    .map((l) => {
+      const qty = l.qty ?? 1, rate = l.rate ?? l.amount ?? 0;
+      const who = `${t.tech}${t.role === 'Lead' ? ' (Lead)' : ''}`;
+      return { date: l.date, item: qboItemFor(QBO_KIND[l.item]), description: `${who}: ${l.description || l.item}`.slice(0, 4000), qty, rate, amount: r2(l.amount ?? 0) };
+    }));
+}
+
+export const qbLinesTotal = (lines: QbJobLine[]) => r2(lines.reduce((t, l) => t + l.amount, 0));
+
+/** The memo the client sees: the site, the work order and the days on the invoice. */
+export function jobLogMemo(w: { title?: string | null; site_name?: string | null; wo_number: string; external_wo_id?: string | null }, lines: QbJobLine[]): string {
+  const days = lines.map((l) => l.date).filter(Boolean).sort();
+  const span = days.length ? (days[0] === days.at(-1) ? usDate(days[0]) : `${usDate(days[0])} – ${usDate(days.at(-1)!)}`) : '';
+  return [w.site_name || w.title, `WO ${w.wo_number}`, w.external_wo_id ? `Client # ${w.external_wo_id}` : null, span].filter(Boolean).join(' · ').slice(0, 1000);
+}
+
+/** The invoice's number in QuickBooks: the one typed on it, else WO-<number>. */
+export const jobLogInvoiceNumber = (meta: Pick<InvoiceMeta, 'number'>, woNumber: string) => meta.number || `WO-${woNumber}`;
+
+/** The invoice as QuickBooks' invoice import takes it (Settings → Import data → Invoices): one row a line. */
+export function invoiceImportRows(lines: QbJobLine[], head: { number: string; billTo: string; meta: Pick<InvoiceMeta, 'date' | 'terms'>; memo: string }): string[][] {
+  const { meta } = head;
+  return [
+    IMPORT_HEADER,
+    ...lines.map((l) => [
+      head.number, head.billTo, usDate(meta.date), usDate(dueDate(meta.date, meta.terms)), `Net ${meta.terms}`, head.memo,
+      l.item, l.description, String(l.qty), String(l.rate), l.amount.toFixed(2), l.date ? usDate(l.date) : '',
+    ]),
+  ];
+}
+
+/** The QuickBooks Online invoice: its lines on their Products/services, numbered, dated and due as on the invoice. */
+export function jobLogQbPayload(lines: QbJobLine[], opts: {
+  customerId: string; itemIds: Record<string, string>; number?: string; date: string; terms: number; memo: string; note: string;
+}): QbInvoicePayload {
+  return {
+    CustomerRef: { value: opts.customerId },
+    Line: lines.map((l) => ({
+      DetailType: 'SalesItemLineDetail' as const,
+      Amount: l.amount,
+      Description: l.description,
+      SalesItemLineDetail: { ItemRef: { value: opts.itemIds[l.item] }, Qty: l.qty, UnitPrice: l.rate, ...(l.date ? { ServiceDate: l.date } : {}) },
+    })),
+    ...(opts.number ? { DocNumber: opts.number } : {}),
+    TxnDate: opts.date,
+    DueDate: dueDate(opts.date, opts.terms),
+    CustomerMemo: { value: opts.memo.slice(0, 1000) },
+    PrivateNote: opts.note.slice(0, 4000),
+  };
 }

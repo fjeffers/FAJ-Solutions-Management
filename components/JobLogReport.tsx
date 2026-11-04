@@ -47,7 +47,7 @@
 // receipts, odometer the one i edit is the time sheet that reflect on the job log".
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Download, FileSpreadsheet, FileText, Pencil, Plus, Printer, X } from 'lucide-react';
+import { Check, Download, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { fmtMoney } from '@/lib/utils';
@@ -68,7 +68,12 @@ import {
 } from '@/lib/job-log-rates';
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
 import JobLogInvoice, { type InvoiceEditor } from '@/components/JobLogInvoice';
-import { addLine, buildInvoice, downloadInvoiceXlsx, editLine, invoiceCharges, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceMeta } from '@/lib/job-log-invoice';
+import {
+  addLine, buildInvoice, downloadInvoiceXlsx, editLine, invoiceCharges, invoiceImportRows, jobLogInvoiceNumber, jobLogMemo, parseInvoiceMeta, qbLinesTotal,
+  quickBooksLines, removeLine, type InvoiceHead, type InvoiceMeta, type InvoiceSent,
+} from '@/lib/job-log-invoice';
+import { downloadCSVText } from '@/lib/export';
+import { toCSV } from '@/lib/csv';
 import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
@@ -196,6 +201,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [savedSheet, setSavedSheet] = useState<JobSheet | null>(null);
   const [draft, setDraft] = useState<JobSheet | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   // The client's copy has each tech's rates and the dollars; the tech's copy has none (Fred, 2026-10-30: "i need a
   // copy i can entered how much per an hour the milage for each tech ... then i need a copy with out it for the
   // tech"). The rates are kept per job in job_log_rates, which only the office can read (migration 147).
@@ -534,6 +540,41 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     toastSuccess('Invoice saved. The job log and its time sheet show it.');
   };
 
+  // The invoice into QuickBooks (Fred, 2026-11-04: "i need to pase the invoice from INvoice to quick books invoice"):
+  // made there line by line, or a file for QuickBooks' invoice import when it isn't connected.
+  const qbLines = invoice ? quickBooksLines(invoice) : [];
+  const qbTotal = qbLinesTotal(qbLines);
+  const qbNumber = jobLogInvoiceNumber(savedMeta, w.wo_number);
+  const sendToQuickBooks = async () => {
+    if (!qbLines.length) { toastError('Nothing on the invoice is charged yet. Edit invoice and type the rates first.'); return; }
+    const was = savedMeta.qbo;
+    const ask = `${was ? `This invoice already went to QuickBooks as invoice ${was.number || ''} (${fmtMoney(was.total)}). ` : ''}`
+      + `Create invoice ${savedMeta.number || '(QuickBooks numbers it)'} for ${invoiceHead.billTo || 'the client'}, ${fmtMoney(qbTotal)}, in QuickBooks?`;
+    if (!window.confirm(ask)) return;
+    setSending(true);
+    try {
+      const res = await fetch('/api/quickbooks/job-log-invoice', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wo_id: w.id, lines: qbLines, total: qbTotal, number: savedMeta.number, date: savedMeta.date, terms: savedMeta.terms, bill_to: invoiceHead.billTo }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; fix?: string; sent?: InvoiceSent; write_back_error?: string | null };
+      if (!res.ok || !j.ok || !j.sent) { toastError([j.error ?? "The invoice didn't go to QuickBooks.", j.fix].filter(Boolean).join(' ')); return; }
+      const sent = j.sent;
+      setSavedMeta((m) => ({ ...m, qbo: sent }));
+      toastSuccess(`QuickBooks invoice ${sent.number} for ${fmtMoney(sent.total)} created.${j.write_back_error ? " The job log couldn't note it, so check QuickBooks before sending it again." : ''}`);
+    } catch {
+      toastError("Couldn't reach the app. Check your connection and try again.");
+    } finally {
+      setSending(false);
+    }
+  };
+  const downloadQuickBooksFile = () => {
+    if (!qbLines.length) { toastError('Nothing on the invoice is charged yet. Edit invoice and type the rates first.'); return; }
+    const rows = invoiceImportRows(qbLines, { number: qbNumber, billTo: invoiceHead.billTo, meta: savedMeta, memo: jobLogMemo(w, qbLines) });
+    downloadCSVText(`${`QuickBooks import ${pdfName}`.replace(/[\\/:*?"<>|#]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)}.csv`, toCSV(rows));
+    toastSuccess('In QuickBooks: Settings → Import data → Invoices, then pick this file. Import it once.');
+  };
+
   // Saving an edit: the job keeps its own sheet, and the log, the print and Excel show it from then on.
   const saveSheet = async () => {
     if (!draft) return;
@@ -776,6 +817,14 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         ) : (
           <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded} onClick={() => setDraft(sheetByTech(sheet, crew))}><Pencil size={16} /> Edit time sheet</button>
         )}
+        {copy === 'invoice' && !invDraft && (
+          <>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || clientBlocked || sending || saving} onClick={() => void sendToQuickBooks()}
+              title="Make this invoice in QuickBooks, line by line"><Send size={16} /> {sending ? 'Sending…' : 'Send to QuickBooks'}</button>
+            <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || clientBlocked} onClick={downloadQuickBooksFile}
+              title="A file to import in QuickBooks yourself: Settings → Import data → Invoices"><FileSpreadsheet size={16} /> QuickBooks import file</button>
+          </>
+        )}
         {copy === 'invoice' && <AddJobPhotos woId={w.id} woNumber={w.wo_number} techs={techs.filter((t): t is string => !!t)}
           day={photoDay(w.start_date, w.end_date, new Date().toLocaleDateString('en-CA', { timeZone: TZ }))} onAdded={(urls) => { setFresh(new Set(urls)); setAdded((n) => n + 1); }} />}
         <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -790,7 +839,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
             {invDraft ? <>Editing the invoice: type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢) in the box at its top, change any day, hours, meals, miles or hotel right on its lines, add or take out a line, then <b>Save invoice</b>. The job log’s time sheet changes with it.</>
               : ratesFailed ? 'The saved rates didn’t load, so the invoice can’t be changed or printed right now. Close the job log and open it again.'
                 : noSavedRates ? <>Press <b>Edit invoice</b>, type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢) in the box at its top, then <b>Save invoice</b> to print it.</>
-                  : <>The invoice as the client lays it out. <b>Edit invoice</b> to change it right on its lines.</>}
+                  : <>The invoice as the client lays it out. <b>Edit invoice</b> to change it right on its lines. <b>Send to QuickBooks</b> makes it there, line by line.</>}
+            {!invDraft && savedMeta.qbo && <div style={{ marginTop: 4, color: '#047857', fontWeight: 600 }}>In QuickBooks as invoice {savedMeta.qbo.number || '—'} ({fmtMoney(savedMeta.qbo.total)}){savedMeta.qbo.at ? `, sent ${new Date(savedMeta.qbo.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: TZ })}` : ''}.</div>}
           </div>
         )}
         {copy === 'client' && (

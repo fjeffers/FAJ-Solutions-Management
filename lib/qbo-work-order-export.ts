@@ -48,12 +48,12 @@ function isoDate(value: string | null | undefined): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
 
-function addDays(iso: string, days: number): string {
+export function addDays(iso: string, days: number): string {
   const [year, month, day] = iso.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
 
-function usDate(iso: string): string {
+export function usDate(iso: string): string {
   const [year, month, day] = iso.split('-');
   return `${Number(month)}/${Number(day)}/${year}`;
 }
@@ -103,7 +103,7 @@ export function prepareQboCompletedJobs(workOrders: QboWorkOrderInput[]) {
   return { completedCount: completed.length, jobs, skipped };
 }
 
-const IMPORT_HEADER = ['InvoiceNo', 'Customer', 'InvoiceDate', 'DueDate', 'Terms', 'Memo', 'Item(Product/Service)', 'ItemDescription', 'ItemQuantity', 'ItemRate', 'ItemAmount', 'Service Date'];
+export const IMPORT_HEADER = ['InvoiceNo', 'Customer', 'InvoiceDate', 'DueDate', 'Terms', 'Memo', 'Item(Product/Service)', 'ItemDescription', 'ItemQuantity', 'ItemRate', 'ItemAmount', 'Service Date'];
 
 export function qboInvoiceImportRows(jobs: QboImportJob[]): string[][] {
   return [

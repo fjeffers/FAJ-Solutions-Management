@@ -318,6 +318,22 @@ export async function createInvoice(
   };
 }
 
+/** An invoice QuickBooks already has under this number, if any. */
+export async function findInvoiceByNumber(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+  docNumber: string,
+): Promise<{ id: string; docNumber: string; total: number } | null> {
+  const escaped = docNumber.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const found = await qboQuery<{ Id: string; DocNumber?: string; TotalAmt?: number }>(
+    environment, realmId, accessToken,
+    `SELECT Id, DocNumber, TotalAmt FROM Invoice WHERE DocNumber = '${escaped}'`,
+  );
+  const inv = found[0];
+  return inv ? { id: String(inv.Id), docNumber: String(inv.DocNumber ?? docNumber), total: Number(inv.TotalAmt ?? 0) } : null;
+}
+
 /**
  * Email an invoice to the client from QuickBooks (the client gets QuickBooks'
  * own invoice email, with its pay-online link). sendTo overrides the address on

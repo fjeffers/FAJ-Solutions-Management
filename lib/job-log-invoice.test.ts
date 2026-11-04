@@ -1,7 +1,10 @@
 // The job log's invoice in the client's own layout (Fred, 2026-10-30: "this how the client want the layout to look",
 // "mirror it exactly").
 import { describe, it, expect } from 'vitest';
-import { addLine, buildInvoice, dueDate, editLine, invoiceCells, invoiceCharges, parseInvoiceMeta, removeLine, type InvoiceHead, type InvoiceLine } from './job-log-invoice';
+import {
+  addLine, buildInvoice, dueDate, editLine, invoiceCells, invoiceCharges, invoiceImportRows, jobLogMemo, jobLogQbPayload, parseInvoiceMeta, qbLinesTotal, quickBooksLines,
+  removeLine, type InvoiceHead, type InvoiceLine,
+} from './job-log-invoice';
 import type { JobSheet } from './job-log-sheet';
 import type { XCell } from './job-log-xlsx';
 
@@ -215,5 +218,40 @@ describe('the invoice in Excel', () => {
     expect(cell(labor, 6)).toMatchObject({ f: hoursRows.map((n) => `G${n}`).join('+') });
     expect(cell(labor + 3, 6)).toMatchObject({ f: `G${mats}` });
     expect(cell(labor + 5, 6)).toMatchObject({ f: `SUM(G${labor}:G${labor + 4})` });
+  });
+});
+
+// Fred, 2026-11-04: "i need to pase the invoice from INvoice to quick books invoice".
+describe('the invoice into QuickBooks', () => {
+  const lines = quickBooksLines(inv);
+  it('has each charged line, the tech named on it, on the Field Sheet’s Products/services', () => {
+    expect(lines[0]).toEqual({ date: '2026-10-19', item: 'Cabling', description: 'Paul Gibbs (Lead): Installation of Cabling for refresh project', qty: 6.32, rate: 50, amount: 316 });
+    expect(lines.map((l) => l.item)).toEqual(expect.arrayContaining(['Cabling', 'Traveling', 'Meals', 'Lodging', 'Field Services']));
+    expect(lines.some((l) => l.description.startsWith('Raja: '))).toBe(true);
+    expect(lines.every((l) => l.amount > 0)).toBe(true);
+    expect(qbLinesTotal(lines)).toBe(inv.totals.total);
+  });
+
+  it('makes the import file one row a line, numbered, dated and due as on the invoice', () => {
+    const rows = invoiceImportRows(lines, { number: '1042', billTo: 'TeamNetView', meta: { date: '2026-10-25', terms: 30 }, memo: 'Site · WO 1' });
+    expect(rows[0][0]).toBe('InvoiceNo');
+    expect(rows).toHaveLength(lines.length + 1);
+    expect(rows[1]).toEqual(['1042', 'TeamNetView', '10/25/2026', '11/24/2026', 'Net 30', 'Site · WO 1', 'Cabling',
+      'Paul Gibbs (Lead): Installation of Cabling for refresh project', '6.32', '50', '316.00', '10/19/2026']);
+  });
+
+  it('makes the QuickBooks invoice with its number, date and due date', () => {
+    const p = jobLogQbPayload(lines, { customerId: 'c1', itemIds: { Cabling: 'i1', Traveling: 'i2', Meals: 'i3', Lodging: 'i4', 'Field Services': 'i5' }, number: '1042', date: '2026-10-25', terms: 30, memo: 'm', note: 'n' });
+    expect(p).toMatchObject({ CustomerRef: { value: 'c1' }, DocNumber: '1042', TxnDate: '2026-10-25', DueDate: '2026-11-24' });
+    expect(p.Line[0]).toEqual({ DetailType: 'SalesItemLineDetail', Amount: 316, Description: lines[0].description,
+      SalesItemLineDetail: { ItemRef: { value: 'i1' }, Qty: 6.32, UnitPrice: 50, ServiceDate: '2026-10-19' } });
+    expect(jobLogQbPayload(lines, { customerId: 'c1', itemIds: {}, date: '2026-10-25', terms: 30, memo: '', note: '' }).DocNumber).toBeUndefined();
+  });
+
+  it('keeps the QuickBooks invoice it was sent as with its boxes, and the memo names the site and the days', () => {
+    const sent = { id: '77', number: '1042', total: 10, at: '2026-11-04T17:00:00Z' };
+    expect(parseInvoiceMeta({ number: '1042', qbo: sent }, '2026-11-04').qbo).toEqual(sent);
+    expect(parseInvoiceMeta({ number: '1042', qbo: 'x' }, '2026-11-04').qbo).toBeUndefined();
+    expect(jobLogMemo({ site_name: 'LDS Site 5006643', wo_number: '191', external_wo_id: 'LDS-1' }, lines)).toBe('LDS Site 5006643 · WO 191 · Client # LDS-1 · 10/18/2026 – 10/20/2026');
   });
 });

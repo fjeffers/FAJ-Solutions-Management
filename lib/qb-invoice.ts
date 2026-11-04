@@ -30,6 +30,8 @@ export type QbLine = {
 export type QbInvoicePayload = {
   CustomerRef: { value: string };
   Line: QbLine[];
+  /** The invoice's number, when the office numbers it (the job log's invoice); else QuickBooks numbers it. */
+  DocNumber?: string;
   TxnDate?: string;
   DueDate?: string;
   PrivateNote?: string;

@@ -8,7 +8,7 @@ import { normalizeFields } from '@/lib/custom-fields';
 import { todayISO } from '@/lib/utils';
 import type { WorkOrder } from '@/lib/types';
 import { workspaceHeader } from '@/lib/anthropic-headers';
-import { jobFile } from '@/lib/job-file';
+import { jobFiles } from '@/lib/job-file';
 import { ownerOnly } from '@/lib/security';
 
 // POST /api/ai — "Generate with AI" on a new work order. Admin-only tool, not
@@ -33,6 +33,12 @@ import { ownerOnly } from '@/lib/security';
 // 2026-10-24 (Fred: "If you look at the PDF ... these are some of the things
 // that it should basically pull from it"): the work order can come as a file
 // too — a PDF, or a picture of one — sent to the model with the text.
+/** Tells the model what came attached, so it reads all of it as one job. */
+function attachedNote(files: { kind: 'pdf' | 'image' }[]): string {
+  if (files.length === 1) return `The work order is in the attached ${files[0].kind === 'pdf' ? 'PDF' : 'picture'}: read every page of it.`;
+  return `The work order is in the ${files.length} attached files (PDFs and pictures): read every page of each. They are all the same job, so put what they say together.`;
+}
+
 export async function POST(req: Request) {
   try {
     const supabase = await createClient('admin');
@@ -43,9 +49,10 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const jobDescription: string = String(body?.job_description || '').slice(0, 30_000);
-    const file = jobFile(body?.file);
-    if (body?.file && !file) return NextResponse.json({ error: 'That file can’t be read. Send a PDF or a photo (JPG, PNG) under 3 MB.' }, { status: 400 });
-    if (!jobDescription.trim() && !file) return NextResponse.json({ error: 'Paste or describe the job first.' }, { status: 400 });
+    // Several files can come with one job (Fred, 2026-11-02): the work order PDF, photos of it, the SOW.
+    const files = jobFiles(body?.files ?? body?.file);
+    if (!files) return NextResponse.json({ error: 'Those files can’t be read. Send up to 5 PDFs or photos (JPG, PNG), under 3 MB together.' }, { status: 400 });
+    if (!jobDescription.trim() && !files.length) return NextResponse.json({ error: 'Paste or describe the job first.' }, { status: 400 });
     // Fred's own job fields shown on the form (Settings -> Custom fields).
     const custom: AiCustomField[] = normalizeFields({ jobs: body?.custom_fields }).jobs
       .filter((d) => !d.hidden).slice(0, 30)
@@ -78,10 +85,10 @@ export async function POST(req: Request) {
         messages: [{
           role: 'user',
           content: [
-            ...(file ? [file.kind === 'pdf'
+            ...files.map((file) => file.kind === 'pdf'
               ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: file.data } }
-              : { type: 'image' as const, source: { type: 'base64' as const, media_type: file.media, data: file.data } }] : []),
-            { type: 'text' as const, text: buildWoPrompt(file ? `${jobDescription}\n\n(The work order is in the attached ${file.kind === 'pdf' ? 'PDF' : 'picture'}: read every page of it.)`.trim() : jobDescription, todayISO(), custom, templates) },
+              : { type: 'image' as const, source: { type: 'base64' as const, media_type: file.media, data: file.data } }),
+            { type: 'text' as const, text: buildWoPrompt(files.length ? `${jobDescription}\n\n(${attachedNote(files)})`.trim() : jobDescription, todayISO(), custom, templates) },
           ],
         }],
       });

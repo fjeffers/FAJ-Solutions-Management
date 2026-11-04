@@ -25,6 +25,7 @@ import { shown } from '@/lib/screen-parts';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { aiFailureText } from '@/lib/wo-ai';
 import { parseTrackerRow } from '@/lib/tracker-row';
+import { FILES_MAX } from '@/lib/job-file';
 import { useJobTemplates } from '@/components/useJobTemplates';
 import { templateForText } from '@/lib/capture';
 import { withTemplate } from '@/lib/template-fill';
@@ -734,7 +735,8 @@ export function AIGenerateModal({
   // fills every field it can, plus the tech's checklist (lib/wo-ai.ts).
   const [prompt, setPrompt] = useState('');
   // The work order as a file: a PDF, or a photo or screenshot of it (Fred, 2026-10-24: "If you look at the PDF").
-  const [file, setFile] = useState<{ name: string; type: string; data: string } | null>(null);
+  // More than one file per job (Fred, 2026-11-02: "i can only upload ond file not two").
+  const [files, setFiles] = useState<{ name: string; type: string; data: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Fred's templates: the AI picks the one that fits, and the job starts with its items.
@@ -745,27 +747,30 @@ export function AIGenerateModal({
   const [choices, setChoices] = useState<NeedChoices | null>(null);
   const [readBy, setReadBy] = useState<{ source: string; why?: string; filled?: number } | null>(null);
 
-  const pickFile = async (f: File | undefined) => {
-    if (!f) return;
-    if (!/^(application\/pdf|image\/(jpeg|png|webp|gif))$/.test(f.type)) { setError('Send a PDF or a photo (JPG, PNG) of the work order.'); return; }
-    if (f.size > 3 * 1024 * 1024) { setError('That file is over 3 MB. Send a smaller PDF, or a screenshot of the work order.'); return; }
-    const data = await new Promise<string>((ok, bad) => {
+  const pickFiles = async (list: FileList | null) => {
+    const picked = Array.from(list ?? []);
+    if (!picked.length) return;
+    if (picked.some((f) => !/^(application\/pdf|image\/(jpeg|png|webp|gif))$/.test(f.type))) { setError('Send PDFs or photos (JPG, PNG) of the work order.'); return; }
+    if (files.length + picked.length > FILES_MAX) { setError(`Up to ${FILES_MAX} files per job.`); return; }
+    const total = [...files.map((f) => (f.data.length * 3) / 4), ...picked.map((f) => f.size)].reduce((a, b) => a + b, 0);
+    if (total > 3 * 1024 * 1024) { setError('Those files are over 3 MB together. Send smaller PDFs, or screenshots of the work order.'); return; }
+    const read = await Promise.all(picked.map((f) => new Promise<string>((ok, bad) => {
       const r = new FileReader();
       r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, ''));
       r.onerror = () => bad(r.error);
       r.readAsDataURL(f);
-    }).catch(() => '');
-    if (!data) { setError("Couldn't open that file."); return; }
+    }).catch(() => '')));
+    if (read.some((d) => !d)) { setError("Couldn't open one of those files."); return; }
     setError(null);
-    setFile({ name: f.name, type: f.type, data });
+    setFiles((cur) => [...cur, ...picked.map((f, i) => ({ name: f.name, type: f.type, data: read[i] }))]);
   };
 
   const generate = async () => {
-    if ((!prompt.trim() && !file) || loading) return;
+    if ((!prompt.trim() && !files.length) || loading) return;
     // A row from the LDS tracker is read from its cells, no AI needed (lib/tracker-row.ts), and still asks
     // what the job needs before it builds, like any paste (Fred, 2026-10-24: "it read it and asks me,
     // hey, do I need this, do I need that"; the row used to go straight into the form).
-    const row = file ? null : parseTrackerRow(prompt);
+    const row = files.length ? null : parseTrackerRow(prompt);
     if (row) {
       const tpl = templateForText(prompt, templates);
       const fields: Found = { ...row };
@@ -786,7 +791,7 @@ export function AIGenerateModal({
         // Fred's own job fields go along so the AI can fill those too.
         body: JSON.stringify({
           job_description: prompt,
-          ...(file ? { file: { type: file.type, data: file.data } } : {}),
+          ...(files.length ? { files: files.map(({ type, data }) => ({ type, data })) } : {}),
           custom_fields: activeFields('jobs').map(({ id, label, kind, options }) => ({ id, label, kind, options })),
           templates: templates.map((t) => ({ id: t.id, name: t.name })),
         }),
@@ -857,7 +862,7 @@ export function AIGenerateModal({
       wide
       footer={<>
         <button className="wf-btn wf-btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="wf-btn wf-btn-gold" onClick={generate} disabled={loading || (!prompt.trim() && !file)}>
+        <button className="wf-btn wf-btn-gold" onClick={generate} disabled={loading || (!prompt.trim() && !files.length)}>
           <Sparkles size={16} /> {loading ? 'Reading the job…' : 'Read the job'}
         </button>
       </>}
@@ -880,11 +885,13 @@ export function AIGenerateModal({
       />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
         <label className="wf-btn wf-btn-outline wf-btn-sm" style={{ cursor: 'pointer' }}>
-          <Paperclip size={15} /> {file ? 'Change the file' : 'Add the work order PDF or a photo of it'}
-          <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif" hidden aria-label="Work order file"
-            onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ''; }} />
+          <Paperclip size={15} /> {files.length ? 'Add another file' : 'Add the work order PDFs or photos'}
+          <input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp,image/gif" hidden aria-label="Work order files"
+            onChange={(e) => { void pickFiles(e.target.files); e.target.value = ''; }} />
         </label>
-        {file && <span style={{ fontSize: 13 }}>{file.name} <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setFile(null)}>Remove</button></span>}
+        {files.map((f, i) => (
+          <span key={`${f.name}-${i}`} style={{ fontSize: 13 }}>{f.name} <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" aria-label={`Remove ${f.name}`} onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}>Remove</button></span>
+        ))}
       </div>
       {error && <div role="alert" style={{ fontSize: 13, color: 'var(--wf-danger)', marginTop: 8 }}>{error}</div>}
       <div className="wf-subtle" style={{ fontSize: 12, marginTop: 8 }}>

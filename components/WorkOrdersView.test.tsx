@@ -49,3 +49,28 @@ describe('Generate with AI: a tracker row', () => {
     });
   });
 });
+
+// Fred, 2026-11-02: "i can only upload ond file not two".
+describe('Generate with AI: more than one file', () => {
+  it('keeps every file picked and sends them all to the AI', async () => {
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ result: { site_address: '1 Main St' }, source: 'ai', filled: 1 })));
+    vi.stubGlobal('fetch', fetchSpy);
+    render(<AIGenerateModal onClose={() => {}} onGenerated={() => {}} />);
+    const input = screen.getByLabelText('Work order files') as HTMLInputElement;
+    await userEvent.upload(input, [
+      new File(['%PDF-1.4'], 'work-order.pdf', { type: 'application/pdf' }),
+      new File(['png'], 'sow-photo.png', { type: 'image/png' }),
+    ]);
+    expect(await screen.findByText(/work-order\.pdf/)).toBeTruthy();
+    expect(screen.getByText(/sow-photo\.png/)).toBeTruthy();
+    await userEvent.upload(input, new File(['%PDF-1.4'], 'site-plan.pdf', { type: 'application/pdf' }));
+    expect(await screen.findByText(/site-plan\.pdf/)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove sow-photo.png' }));
+    expect(screen.queryByText(/sow-photo\.png/)).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: /Read the job/ }));
+    const body = JSON.parse(String((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(body.files.map((f: { type: string }) => f.type)).toEqual(['application/pdf', 'application/pdf']);
+  });
+});

@@ -1009,10 +1009,18 @@ describe('Job log edited by the office', () => {
       expect(zoom()).not.toContain('zoom');
       fireEvent.click(screen.getByRole('button', { name: 'Fit to screen' }));
       expect(zoom()).toContain('zoom: 0.5');
-      // Full size while it's edited, so its boxes are big enough to type in.
+      // Edited on a phone: each tech's days are boxes to type in over the invoice, which shows finished, fit to the
+      // screen (Fred, 2026-11-06: "once I click on that edit button, I should see basically all that right there").
       fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
-      expect(zoom()).not.toContain('zoom');
+      expect(zoom()).toContain('zoom: 0.5');
       expect(screen.queryByRole('button', { name: /fit to screen|full size/i })).toBeNull();
+      const days = screen.getByRole('region', { name: 'Days, Paul Gibbs' });
+      const hours = within(days).getByLabelText('Hours, Paul Gibbs, 10/19/2026');
+      expect(document.querySelector('.jl-invoice input')).toBeNull();
+      fireEvent.change(hours, { target: { value: '8' } });
+      expect(document.querySelector('.jl-invoice')!.textContent).toContain('400.00');
+      expect(within(days).getByRole('button', { name: 'Add mileage, Paul Gibbs' })).toBeTruthy();
+      expect(within(days).getByRole('button', { name: 'Add a hotel, Paul Gibbs' })).toBeTruthy();
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
       vi.unstubAllGlobals();

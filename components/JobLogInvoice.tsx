@@ -216,6 +216,76 @@ function EditTop({ edit, techs }: { edit: InvoiceEditor; techs: InvoiceTech[] })
   );
 }
 
+/** On a phone, while it's edited: each tech's days as simple rows to type in, the hours, meals, miles, materials and
+ *  hotel, with the finished invoice under them (Fred, 2026-11-06: "once I click on that edit button, I should see
+ *  basically all that right there"). */
+function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor }) {
+  const row: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.9fr) 28px', gap: 6, alignItems: 'center' };
+  const head: CSSProperties = { ...row, fontSize: 11, color: '#5E6470', fontWeight: 600 };
+  const amount = (n: number | null) => (n ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—');
+  const part = (title: string, lines: InvoiceLine[], tech: string, box: string, add?: ReactNode) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+      <div style={head}><span>{title}</span><span>{box}</span><span style={{ textAlign: 'right' }}>Amount</span><span /></div>
+      {lines.map((l, i) => {
+        const at = `${tech}, ${day(l.date)}`;
+        const value = l.item === 'Labor' || l.item === 'Mileage' ? l.qty : l.item === 'Meal' ? (l.spent || null) : l.rate;
+        const name = l.item === 'Labor' ? 'Hours' : l.item === 'Mileage' ? 'Miles' : l.item === 'Meal' ? 'Meals' : l.item;
+        return (
+          <div key={`${l.item}-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={row}>
+              {l.item === 'Meal' ? <span style={{ fontSize: 13 }}>{day(l.date)}</span>
+                : <DayBox value={l.date} label={`${l.item} day, ${at}`} onChange={(d) => edit.change(l, { day: d })} />}
+              <NumBox label={`${name}, ${at}`} value={value}
+                onChange={(n) => edit.change(l, l.item === 'Labor' || l.item === 'Mileage' ? { qty: n } : { amount: n })} />
+              <span style={{ textAlign: 'right', fontSize: 13 }}>{amount(l.amount)}</span>
+              {(l.item !== 'Meal' || (l.spent ?? 0) > 0) ? <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} /> : <span />}
+            </div>
+            {l.item === 'Material' && (
+              <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
+            )}
+          </div>
+        );
+      })}
+      {add}
+    </div>
+  );
+  const addBtn = (name: string, onClick: () => void, text: string) => (
+    <button type="button" aria-label={name} className="wf-btn wf-btn-ghost wf-btn-sm" style={{ alignSelf: 'flex-start' }} onClick={onClick}><Plus size={14} /> {text}</button>
+  );
+  return (
+    <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+      {techs.map((t) => {
+        const hotelOwner = t.travel.lines.find((l) => l.tech && l.tech !== t.tech)?.tech ?? t.tech;
+        return (
+          <section key={t.tech} aria-label={`Days, ${t.tech}`} style={{ padding: '10px 12px', border: '1px solid #D9D2C3', borderRadius: 10, background: '#fff' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 14 }}>
+              <span>{t.tech} <span style={{ fontWeight: 400, color: '#5E6470' }}>({t.role})</span></span>
+              <span>{amount(t.total)}</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: '#5E6470' }}>{qty(t.hours.qty, true)} hours · {qty(t.mileage.lines.reduce((m, l) => m + (l.qty ?? 0), 0))} miles</div>
+            {part('Day worked', t.hours.lines, t.tech, 'Hours', addBtn(`Add hours, ${t.tech}`, () => edit.add(t.tech, 'Labor'), 'Add hours'))}
+            {part('Meals', t.meals.lines, t.tech, 'Receipts $')}
+            {part('Mileage', t.mileage.lines, t.tech, 'Miles', addBtn(`Add mileage, ${t.tech}`, () => edit.add(t.tech, 'Mileage'), 'Add mileage'))}
+            {t.materials && part('Materials', t.materials.lines, t.tech, '$', addBtn(`Add a material, ${t.tech}`, () => edit.add(t.tech, 'Material'), 'Add a material'))}
+            {part('Hotel / travel', t.travel.lines, t.tech, '$', addBtn(`Add a hotel, ${t.tech}`, () => edit.add(hotelOwner, 'Hotel'), 'Add a hotel'))}
+          </section>
+        );
+      })}
+      <div style={{ fontSize: 12.5, color: '#5E6470' }}>The finished invoice, as the client sees it:</div>
+    </div>
+  );
+}
+
+/** A phone's invoice editing, over the invoice, which shows finished under it: its boxes and each tech's days. */
+export function InvoicePhoneEdit({ invoice, edit }: { invoice: Invoice; edit: InvoiceEditor }) {
+  return (
+    <div className="no-print" style={{ padding: '4px 12px 12px', color: '#1B1C1F' }}>
+      <EditTop edit={edit} techs={invoice.techs} />
+      <PhoneEdit techs={invoice.techs} edit={edit} />
+    </div>
+  );
+}
+
 export default function JobLogInvoice({ invoice, head, edit }: { invoice: Invoice; head: InvoiceHead; edit?: InvoiceEditor }) {
   const { meta } = head;
   return (

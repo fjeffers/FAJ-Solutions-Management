@@ -67,7 +67,7 @@ import {
   type JobRates, type RateRow,
 } from '@/lib/job-log-rates';
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
-import JobLogInvoice, { type InvoiceEditor } from '@/components/JobLogInvoice';
+import JobLogInvoice, { InvoicePhoneEdit, type InvoiceEditor } from '@/components/JobLogInvoice';
 import {
   addLine, buildInvoice, downloadInvoiceXlsx, editLine, invoiceCharges, invoiceImportRows, jobLogInvoiceNumber, jobLogMemo, parseInvoiceMeta, qbLinesTotal,
   quickBooksLines, removeLine, type InvoiceHead, type InvoiceMeta, type InvoiceSent,
@@ -505,6 +505,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     // In the dates picked, so the line added shows to be filled in (Greptile on PR #44).
     return to && day > to ? to : from && day < from ? from : day;
   };
+  // On a phone the invoice's days are typed in over it, and the invoice under them shows finished, fit to the screen.
+  const phoneEdit = !!invDraft && screenZoom < 1;
   type InvDraft = NonNullable<typeof invDraft>;
   const editInv = (f: (d: InvDraft) => InvDraft) => setInvDraft((d) => (d ? f(d) : d));
   const invoiceEditor: InvoiceEditor | undefined = invDraft ? {
@@ -928,9 +930,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               <button type="button" className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => setFullSize((f) => !f)}>{fullSize ? 'Fit to screen' : 'Full size (swipe sideways)'}</button>
             </div>
           )}
+          {phoneEdit && invoiceEditor && <InvoicePhoneEdit invoice={invoice} edit={invoiceEditor} />}
           <div ref={invoiceBox} className={`jl-invoice-scroll${invDraft ? ' no-print' : ''}`}>
-            <div className="jl-invoice-zoom" style={screenZoom < 1 && !fullSize && !invDraft ? { zoom: screenZoom } : undefined}>
-              <JobLogInvoice invoice={invoice} head={invoiceHead} edit={invoiceEditor} />
+            <div className="jl-invoice-zoom" style={screenZoom < 1 && !fullSize && (!invDraft || phoneEdit) ? { zoom: screenZoom } : undefined}>
+              <JobLogInvoice invoice={invoice} head={invoiceHead} edit={phoneEdit ? undefined : invoiceEditor} />
             </div>
           </div>
           {invDraft && <div className="jl-print-only" style={{ padding: 24 }}>The invoice is being changed. Save it, then print it.</div>}

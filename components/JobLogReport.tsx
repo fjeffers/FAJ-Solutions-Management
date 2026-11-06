@@ -57,7 +57,7 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
@@ -591,20 +591,6 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     toastSuccess('In QuickBooks: Settings → Import data → Invoices, then pick this file. Import it once.');
   };
 
-  // Saving an edit: the job keeps its own sheet, and the log, the print and Excel show it from then on.
-  const saveSheet = async () => {
-    if (!draft) return;
-    const problems = sheetProblems(draft);
-    if (problems.length) { toastError(`Each row needs a name and a date: ${problems.join(', ')}.`); return; }
-    const clean = sheetToSave(draft);
-    setSaving(true);
-    const { error } = await queueSave(w.id, () => createClient().from('work_orders').update({ job_log_sheet: clean }).eq('id', w.id));
-    setSaving(false);
-    if (error) { toastError("That didn't save. Check your connection and try again."); return; }
-    setSavedSheet(clean);
-    setDraft(null);
-    toastSuccess('Time sheet saved. The job log, its PDF and Excel show it.');
-  };
   // Back to what the app has: the clock-ins, the Field Sheet's miles and the approved receipts.
   const startOver = async () => {
     if (!window.confirm('Go back to what the app has (the clock-ins, the Field Sheet miles and the approved receipts)? Your edits to this time sheet will be gone.')) return;
@@ -816,22 +802,18 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         {/* And the rates saved first on the client's copy, so what's printed is what's kept. */}
         <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft || clientBlocked} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
         <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft || clientBlocked} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
-        {copy === 'invoice' ? (invDraft ? (
+        {invDraft ? (
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveInvoice()}><Check size={16} /> {saving ? 'Saving…' : 'Save invoice'}</button>
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => setInvDraft(null)}>Cancel</button>
           </>
         ) : (
           <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || ratesFailed}
-            // From the rates as they're typed on the client's copy, saved or not, so none are lost (CodeRabbit on PR #44).
-            onClick={() => setInvDraft({ sheet, rates, together: all, meta: savedMeta })}><Pencil size={16} /> Edit invoice, hours & mileage</button>
-        )) : draft ? (
-          <>
-            <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>
-            <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={saving} onClick={() => setDraft(null)}>Cancel</button>
-          </>
-        ) : (
-          <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded} onClick={() => setDraft(sheetByTech(sheet, crew))}><Pencil size={16} /> Edit time sheet</button>
+            // One edit button for the whole invoice. It opens the invoice and keeps hours, mileage, rates and charges together.
+            onClick={() => {
+              setCopy('invoice');
+              setInvDraft({ sheet, rates, together: all, meta: savedMeta });
+            }}><Pencil size={16} /> Edit invoice</button>
         )}
         {copy === 'invoice' && !invDraft && (
           <>
@@ -860,8 +842,8 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
             {invDraft ? <>Everything is changed here: type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢), change the date, hours or miles on any line, or use <b>Add hours</b> and <b>Add mileage</b>. Totals update automatically. Press <b>Save invoice</b> when it is right; the job log’s time sheet changes with it.</>
               : ratesFailed ? 'The saved rates didn’t load, so the invoice can’t be changed or printed right now. Close the job log and open it again.'
-                : noSavedRates ? <>Press <b>Edit invoice, hours & mileage</b>. Add or change the days, hours, mileage and rates here, then <b>Save invoice</b>.</>
-                  : <>This is the central invoice workspace. <b>Edit invoice, hours & mileage</b> changes the days, hours, mileage and rates with automatic totals. Then use <b>Send to QuickBooks</b>, <b>Send to NetView</b> or the <b>QuickBooks import file</b> above.</>}
+                : noSavedRates ? <>Press <b>Edit invoice</b>. Add or change the days, hours, mileage and rates here, then <b>Save invoice</b>.</>
+                  : <>This is the central invoice workspace. <b>Edit invoice</b> changes the days, hours, mileage and rates with automatic totals. Then use <b>Send to QuickBooks</b>, <b>Send to NetView</b> or the <b>QuickBooks import file</b> above.</>}
             {!invDraft && savedMeta.qbo && <div style={{ marginTop: 4, color: '#047857', fontWeight: 600 }}>In QuickBooks as invoice {savedMeta.qbo.number || '—'} ({fmtMoney(savedMeta.qbo.total)}){savedMeta.qbo.at ? `, sent ${new Date(savedMeta.qbo.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: TZ })}` : ''}.</div>}
           </div>
         )}

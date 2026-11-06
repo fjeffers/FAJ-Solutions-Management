@@ -37,8 +37,6 @@ const upserts: { table: string; row: Record<string, unknown>; onConflict?: strin
 let saveDelays: number[] = [];
 // Which saves fail, in order.
 let saveFails: boolean[] = [];
-// The job's saved sheet kept, as the database would, once a save lands.
-let persistSheet = false;
 // The punches come back only once this settles, to hold the log loading.
 let punchesHeld: Promise<void> = Promise.resolve();
 // How many times each table was read.
@@ -59,7 +57,6 @@ function query(table: string) {
     eq: async () => {
       await new Promise((ok) => setTimeout(ok, saveDelays.shift() ?? 0));
       updates.push(row);
-      if (persistSheet && table === 'work_orders' && 'job_log_sheet' in row) tables.work_orders = [{ ...tables.work_orders[0], job_log_sheet: row.job_log_sheet }];
       return { error: saveFails.shift() ? { message: 'offline' } : null };
     },
   });
@@ -75,7 +72,6 @@ vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (ur
 vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: async () => new Blob(['jpeg'], { type: 'image/jpeg' }) }));
 
 const { default: JobLogReport } = await import('./JobLogReport');
-const { toastError } = await import('@/lib/toast');
 const { downloadJobLogXlsx } = await import('@/lib/job-log-xlsx');
 const { downloadInvoiceXlsx } = await import('@/lib/job-log-invoice');
 const wo = {
@@ -550,55 +546,19 @@ describe('Job log edited by the office', () => {
     try { await run(); } finally { tables.job_punches = before; }
   };
 
-  it('edits the hours, the miles and the receipts, saves them on the job, and the log shows them', () => withPunches(async () => {
+  it('uses one edit button from every copy and opens all invoice fields together', () => withPunches(async () => {
     renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-    const edit = await screen.findByRole('button', { name: /edit time sheet/i });
-    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(edit);
-    // What's edited is the time sheet; the page keeps its name, Job log (Fred, 2026-10-30).
-    expect(screen.getByRole('heading', { name: 'Time sheet' })).toBeTruthy();
-    expect(screen.getByText('JOB LOG')).toBeTruthy();
-    // While editing, the print and Excel wait for the save.
-    expect((screen.getByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: /excel/i }) as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '17:30' } });
-    fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '0.5' } });
-    // 8:00 to 5:30 less half an hour.
-    expect(screen.getByText('Total 9 hours')).toBeTruthy();
-    // The odometer's end typed again: the miles follow it.
-    fireEvent.click(screen.getByRole('button', { name: 'Mileage (1)' }));
-    fireEvent.change(screen.getByLabelText('Odometer end, miles row 1'), { target: { value: '41230' } });
-    expect((screen.getByLabelText('Miles, miles row 1') as HTMLInputElement).value).toBe('30');
-    // A meal receipt added by hand: the job's tech and first day to start with.
-    fireEvent.click(screen.getByRole('button', { name: 'Meals (0)' }));
-    const meals = screen.getByRole('heading', { name: 'Meals' }).parentElement!;
-    fireEvent.click(within(meals).getByRole('button', { name: /add a row/i }));
-    fireEvent.change(screen.getByLabelText('Store, meals row 1'), { target: { value: ' Waffle House ' } });
-    fireEvent.change(screen.getByLabelText('Amount, meals row 1'), { target: { value: '18.50' } });
-    // And the declined fuel never was on it; the Lowe's receipt stays.
-    fireEvent.click(screen.getByRole('button', { name: /save time sheet/i }));
-
-    await waitFor(() => expect(updates.at(-1)).toEqual({
-      job_log_sheet: {
-        time: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '08:00', out: '17:30', brk: 0.5 }],
-        miles: [{ tech: 'Paul Gibbs', day: '2026-10-19', start: 41200, end: 41230, miles: 30 }],
-        meals: [{ tech: 'Paul Gibbs', day: '2026-10-19', store: 'Waffle House', amount: 18.5 }],
-        materials: [{ tech: 'Paul Gibbs', day: '2026-10-21', store: "Lowe's", amount: 104.17 }],
-        other: [],
-      },
-    }));
-    expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))).toEqual([
-      ['Paul Gibbs', '10/19/2026', '8:00 AM', '5:30 PM', '0.5', '9'],
-      ['Paul Gibbs final hours · 1 day', '9'],
-      ['Overall total worked', '9'],
-    ]);
-    expect(rowsOf(screen.getByRole('heading', { name: 'Mileage' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '41,200', '41,230', '30']);
-    expect(rowsOf(screen.getByRole('heading', { name: 'Meals' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', 'Waffle House', '$18.50']);
-    expect(screen.getByText(/the job log shows your time sheet/i)).toBeTruthy();
-    // The job's hours and miles in one line, no money on it (Fred: "i dont want it mix"), and no billable total.
-    expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 30');
-    expect(screen.queryByText(/billable/i)).toBeNull();
+    const edits = await screen.findAllByRole('button', { name: 'Edit invoice' });
+    expect(edits).toHaveLength(1);
+    await waitFor(() => expect((edits[0] as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(edits[0]);
+    expect(screen.getByRole('button', { name: /save invoice/i })).toBeTruthy();
+    expect(screen.getByLabelText('Invoice #')).toBeTruthy();
+    expect(screen.getByLabelText('$ per hour, Paul Gibbs')).toBeTruthy();
+    expect(screen.getByLabelText('Hours, Paul Gibbs, 10/19/2026')).toBeTruthy();
+    expect(screen.getByLabelText('Miles, Paul Gibbs, 10/19/2026')).toBeTruthy();
+    expect(screen.getByLabelText('Material, Paul Gibbs, 10/21/2026')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /edit time sheet/i })).toBeNull();
   }));
 
   it('shows a day as the office retimed it on the Hours screen, in place of its clock-ins (Fred: "edit the time sheet and it shows on the job logs")', () => withPunches(async () => {
@@ -621,7 +581,7 @@ describe('Job log edited by the office', () => {
     tables.field_sheet_days = [{ id: 's1', day: '2026-10-19', tech: 'Paul Gibbs', edits: { odoStart: 41200, odoEnd: 41218 }, added: false, hidden: true }];
     try {
       renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-      await screen.findByRole('button', { name: /edit time sheet/i });
+      await screen.findByRole('button', { name: /edit invoice/i });
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Materials' })).toBeTruthy());
       expect(screen.queryByRole('heading', { name: 'Time on site' })).toBeNull();
       expect(screen.queryByRole('heading', { name: 'Mileage' })).toBeNull();
@@ -630,122 +590,16 @@ describe('Job log edited by the office', () => {
     }
   }));
 
-  it('reads the saved sheet when the log is closed and opened again while the save is still going (Greptile on PR #39)', () => withPunches(async () => {
-    const before = tables.work_orders;
-    persistSheet = true;
-    saveDelays = [200];
-    try {
-      const first = renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-      const edit = await screen.findByRole('button', { name: /edit time sheet/i });
-      await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
-      fireEvent.click(edit);
-      fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '16:00' } });
-      fireEvent.click(screen.getByRole('button', { name: /save time sheet/i }));
-      first.unmount();
-      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-      const heading = await screen.findByRole('heading', { name: 'Time on site' });
-      await waitFor(() => expect(rowsOf(heading)[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '4:00 PM', '—', '8']));
-    } finally {
-      tables.work_orders = before;
-      persistSheet = false;
-    }
-  }));
-
-  it('takes only a number in a number box, so the box never shows one figure and saves another (Greptile on PR #39)', () => withPunches(async () => {
+  it('saves total hours from the invoice and shows them on the job log', () => withPunches(async () => {
     renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-    const edit = await screen.findByRole('button', { name: /edit time sheet/i });
+    const edit = await screen.findByRole('button', { name: 'Edit invoice' });
     await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(edit);
-    fireEvent.click(screen.getByRole('button', { name: 'Materials (1)' }));
-    const amount = screen.getByLabelText('Amount, materials row 1') as HTMLInputElement;
-    expect(amount.value).toBe('104.17');
-    fireEvent.change(amount, { target: { value: '18..50' } });
-    expect(amount.value).toBe('104.17');
-    fireEvent.change(amount, { target: { value: '$1,018.50' } });
-    expect(amount.value).toBe('$1,018.50');
-    const materials = screen.getByRole('heading', { name: 'Materials' }).parentElement!;
-    expect(within(materials).getByText('Total $1,018.50')).toBeTruthy();
-  }));
-
-  it('opens each part of the time sheet from its button, hotels with the other receipts (Fred: "where do i edit hotels materials and meals and milages? i only see hours")', () => withPunches(async () => {
-    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-    const edit = await screen.findByRole('button', { name: /edit time sheet/i });
-    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(edit);
-    const parts = screen.getByRole('group', { name: 'Time sheet sections' });
-    expect(within(parts).getAllByRole('button').map((t) => t.textContent)).toEqual(['Hours (1)', 'Mileage (1)', 'Meals (0)', 'Materials (1)', 'Hotels & other (0)']);
-    // The hours first; one part at a time.
-    expect(screen.getByRole('button', { name: 'Hours (1)' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Mileage (1)' }).getAttribute('aria-pressed')).toBe('false');
-    const shownNow = (label: string) => !screen.getByLabelText(label).closest('[hidden]');
-    expect(shownNow('Clock in, time row 1')).toBe(true);
-    expect(shownNow('Odometer start, miles row 1')).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: 'Mileage (1)' }));
-    expect(shownNow('Odometer start, miles row 1')).toBe(true);
-    expect(shownNow('Clock in, time row 1')).toBe(false);
-    // A number half typed stays as typed when another part is opened and back (CodeRabbit on PR #40).
-    fireEvent.change(screen.getByLabelText('Odometer end, miles row 1'), { target: { value: '41230.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Hours (1)' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Mileage (1)' }));
-    expect((screen.getByLabelText('Odometer end, miles row 1') as HTMLInputElement).value).toBe('41230.');
-    // A hotel added by hand: what it was for, the store and the amount; it counts on its button.
-    fireEvent.click(screen.getByRole('button', { name: 'Hotels & other (0)' }));
-    const other = screen.getByRole('heading', { name: 'Hotels & other receipts' }).parentElement!;
-    fireEvent.click(within(other).getByRole('button', { name: /add a row/i }));
-    fireEvent.change(screen.getByLabelText('For, other row 1'), { target: { value: 'Hotel' } });
-    fireEvent.change(screen.getByLabelText('Store, other row 1'), { target: { value: 'Hampton Inn' } });
-    fireEvent.change(screen.getByLabelText('Amount, other row 1'), { target: { value: '129' } });
-    expect(screen.getByRole('button', { name: 'Hotels & other (1)' })).toBeTruthy();
-    expect(within(other).getByText('Total $129.00')).toBeTruthy();
-    // An edit stays when another part is opened and back.
-    fireEvent.click(screen.getByRole('button', { name: 'Hours (1)' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Hotels & other (1)' }));
-    expect((screen.getByLabelText('Store, other row 1') as HTMLInputElement).value).toBe('Hampton Inn');
-  }));
-
-  it("keeps a row's Hours screen hours until both clock times replace them; the break comes off them (Greptile on PR #39)", async () => {
-    const before = tables.work_orders;
-    tables.work_orders = [{ job_log_left_out: [], job_log_receipt_photos: [], job_log_sheet: {
-      time: [{ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 }], miles: [], meals: [], materials: [], other: [],
-    } }];
-    try {
-      renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-      const edit = await screen.findByRole('button', { name: /edit time sheet/i });
-      await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
-      fireEvent.click(edit);
-      const time = screen.getByRole('heading', { name: 'Time on site' }).parentElement!;
-      expect(within(time).getByText('Total 6 hours')).toBeTruthy();
-      // A break typed too big, then cleared: the six hours are back, not more (Greptile on PR #39).
-      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '7' } });
-      expect(within(time).getByText('Total 0 hours')).toBeTruthy();
-      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '' } });
-      expect(within(time).getByText('Total 6 hours')).toBeTruthy();
-      fireEvent.change(screen.getByLabelText('Break, time row 1'), { target: { value: '0.5' } });
-      expect(within(time).getByText('Total 5.5 hours')).toBeTruthy();
-      // One clock time isn't enough to replace them.
-      fireEvent.change(screen.getByLabelText('Clock in, time row 1'), { target: { value: '08:00' } });
-      expect(within(time).getByText('Total 5.5 hours')).toBeTruthy();
-      // Both: the hours follow the times.
-      fireEvent.change(screen.getByLabelText('Clock out, time row 1'), { target: { value: '17:00' } });
-      expect(within(time).getByText('Total 8.5 hours')).toBeTruthy();
-    } finally {
-      tables.work_orders = before;
-    }
-  });
-
-  it("won't save a row without a name, and says which", () => withPunches(async () => {
-    vi.mocked(toastError).mockClear();
-    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} />);
-    const edit = await screen.findByRole('button', { name: /edit time sheet/i });
-    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(edit);
-    fireEvent.change(screen.getByLabelText('Name, time row 1'), { target: { value: '  ' } });
-    fireEvent.click(screen.getByRole('button', { name: /save time sheet/i }));
-    expect(toastError).toHaveBeenCalledWith('Each row needs a name and a date: Time on site row 1.');
-    expect(updates.some((u) => 'job_log_sheet' in u)).toBe(false);
-    // Cancel: back to the log as it was.
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(rowsOf(await screen.findByRole('heading', { name: 'Time on site' }))[0]).toEqual(['Paul Gibbs', '10/19/2026', '8:00 AM', '5:00 PM', '—', '9']);
+    fireEvent.change(screen.getByLabelText('Hours, Paul Gibbs, 10/19/2026'), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
+    await screen.findByRole('button', { name: 'Edit invoice' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Tech copy (no rates)' }));
+    expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0][5]).toBe('8');
   }));
 
   it('shows the sheet the job has saved, and starts over from the app when asked', async () => {

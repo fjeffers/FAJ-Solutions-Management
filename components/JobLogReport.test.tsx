@@ -66,7 +66,10 @@ function query(table: string) {
   return chain;
 }
 const storage = { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((p) => ({ path: p, signedUrl: `https://signed.test/${p}` })) }) }) };
-vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ from: (t: string) => query(t), storage }) }));
+vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({
+  from: (t: string) => query(t), storage,
+  auth: { getUser: async () => ({ data: { user: { email: 'fred@faj.test', user_metadata: { full_name: 'Fred' } } } }) },
+}) }));
 vi.stubGlobal('fetch', async (url: string) => ({ ok: true, json: async () => (url === '/api/jobs/day-photo' ? { ok: true, url: 'https://example.test/added.jpg' } : []) }));
 // The stamp draws on a canvas, which the test browser hasn't got.
 vi.mock('@/lib/photo-stamp', () => ({ stampPhoto: async () => new Blob(['jpeg'], { type: 'image/jpeg' }) }));
@@ -992,6 +995,9 @@ describe('Job log edited by the office', () => {
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      const quickBooks = screen.getByRole('button', { name: /send to quickbooks/i });
+      const netview = screen.getByRole('link', { name: /send to netview/i });
+      expect(quickBooks.nextElementSibling).toBe(netview);
       // One thing: no rates box or invoice box beside it; it's edited right on the invoice (Fred: "the invoice need to
       // be one ... so we edit job log it shows as an invoice").
       expect(screen.queryByRole('button', { name: /save rates/i })).toBeNull();
@@ -1004,6 +1010,7 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
       await waitFor(() => expect(print.disabled).toBe(false));
       expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50, billTo: '' } });
+      await waitFor(() => expect(new URL((screen.getByRole('link', { name: /send to netview/i }) as HTMLAnchorElement).href).searchParams.get('entry.1582831326')).toBe('1240'));
       // On a phone it scrolls sideways rather than being cut off.
       expect(screen.getByRole('table').closest('.jl-invoice-scroll')).toBeTruthy();
       // The time sheet wasn't changed, so it isn't saved: the log still follows the app.
@@ -1101,7 +1108,7 @@ describe('Job log edited by the office', () => {
       expect((screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026') as HTMLInputElement).value).toBe('');
       // His miles typed, and a drive added on his section, are his only; Paul's stay as they are.
       fireEvent.change(screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026'), { target: { value: '30' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Add a drive, Kendell Newbold' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add mileage, Kendell Newbold' }));
       fireEvent.change(screen.getByLabelText('Miles, Kendell Newbold, 10/21/2026'), { target: { value: '200' } });
       expect((screen.getByLabelText('Miles, Kendell Newbold, 10/19/2026') as HTMLInputElement).value).toBe('30');
       expect((screen.getByLabelText('Miles, Paul Gibbs, 10/19/2026') as HTMLInputElement).value).toBe('18');
@@ -1168,7 +1175,7 @@ describe('Job log edited by the office', () => {
       fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-19' } });
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
       fireEvent.click(screen.getByRole('button', { name: /edit invoice/i }));
-      fireEvent.click(screen.getByRole('button', { name: 'Add a day, Paul Gibbs' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add hours, Paul Gibbs' }));
       expect(screen.getAllByLabelText('Hours, Paul Gibbs, 10/19/2026')).toHaveLength(2);
     } finally {
       delete tables.job_log_rates;
@@ -1190,7 +1197,7 @@ describe('Job log edited by the office', () => {
       fireEvent.change(screen.getByLabelText('Hours, Paul Gibbs, 10/19/2026'), { target: { value: '8' } });
       fireEvent.change(screen.getByLabelText('Meals, Paul Gibbs, 10/19/2026'), { target: { value: '60' } });
       // A day added, then its hours.
-      fireEvent.click(screen.getByRole('button', { name: 'Add a day, Paul Gibbs' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add hours, Paul Gibbs' }));
       fireEvent.change(screen.getByLabelText('Hours, Paul Gibbs, 10/20/2026'), { target: { value: '6' } });
       // A material added on the lead's part, before the hotel (Fred: "under lead tech before hotel").
       fireEvent.click(screen.getByRole('button', { name: 'Add a material, Paul Gibbs' }));
@@ -1236,7 +1243,7 @@ describe('Job log edited by the office', () => {
     // In cents, 60, or as Fred writes it, .652 (Fred: "Cent per mile", ".652 per mile").
     fireEvent.change(within(box).getByLabelText('Per mile, Paul Gibbs'), { target: { value: '60' } });
     expect(screen.getByText('Total Hours').closest('tr')!.textContent).toContain('$50.00');
-    fireEvent.click(screen.getByRole('button', { name: 'Add a drive, Paul Gibbs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add mileage, Paul Gibbs' }));
     const miles = screen.getAllByLabelText(/^Miles, Paul Gibbs, /).at(-1)!;
     fireEvent.change(miles, { target: { value: '100' } });
     expect(miles.closest('tr')!.textContent).toContain('$0.60');

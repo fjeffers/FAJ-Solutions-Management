@@ -60,7 +60,7 @@ function Remove({ name, onClick }: { name: string; onClick: () => void }) {
       style={{ width: 26, height: 26, border: 'none', background: 'none', color: '#B42318', cursor: 'pointer', padding: 0 }}><X size={16} /></button>
   );
 }
-/** "+ Add a day" under a tech's lines. */
+/** Add another chargeable line under a tech's invoice section. */
 function AddRow({ children, onClick, name }: { children: ReactNode; onClick: () => void; name: string }) {
   return (
     <tr className="no-print">
@@ -138,10 +138,10 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
         {edit && <td style={td} />}
       </tr>
       <Lines lines={t.hours.lines} tech={t.tech} edit={edit} />
-      {edit && <AddRow name={`Add a day, ${t.tech}`} onClick={() => edit.add(t.tech, 'Labor')}>Add a day</AddRow>}
+      {edit && <AddRow name={`Add hours, ${t.tech}`} onClick={() => edit.add(t.tech, 'Labor')}>Add hours</AddRow>}
       <Section s={t.meals} tech={t.tech} edit={edit} />
       <Section s={t.mileage} tech={t.tech} edit={edit}
-        add={edit && <AddRow name={`Add a drive, ${t.tech}`} onClick={() => edit.add(t.tech, 'Mileage')}>Add a drive</AddRow>} />
+        add={edit && <AddRow name={`Add mileage, ${t.tech}`} onClick={() => edit.add(t.tech, 'Mileage')}>Add mileage</AddRow>} />
       {/* The materials, on the lead's part before the hotel (Fred: "under lead tech before hotel"). */}
       {t.materials && (t.materials.lines.length > 0 || edit) && (
         <Section s={t.materials} tech={t.tech} edit={edit}

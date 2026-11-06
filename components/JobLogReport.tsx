@@ -47,7 +47,7 @@
 // receipts, odometer the one i edit is the time sheet that reflect on the job log".
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Download, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, X } from 'lucide-react';
+import { Check, Download, ExternalLink, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { fmtMoney } from '@/lib/utils';
@@ -78,6 +78,7 @@ import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
 import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos';
+import { isNetviewJob, netviewAnswers, netviewFormUrl, NETVIEW_PAYROLL } from '@/lib/netview-form';
 import AddJobPhotos from '@/components/AddJobPhotos';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
@@ -202,6 +203,16 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const [draft, setDraft] = useState<JobSheet | null>(null);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const netview = isNetviewJob(w, w.customer_name);
+  const [me, setMe] = useState({ name: '', email: '' });
+  useEffect(() => {
+    if (!netview) return;
+    void createClient().auth.getUser().then(({ data }) => {
+      const user = data.user;
+      const meta = (user?.user_metadata ?? {}) as { full_name?: string; name?: string };
+      setMe({ name: meta.full_name || meta.name || '', email: user?.email ?? '' });
+    });
+  }, [netview]);
   // The client's copy has each tech's rates and the dollars; the tech's copy has none (Fred, 2026-10-30: "i need a
   // copy i can entered how much per an hour the milage for each tech ... then i need a copy with out it for the
   // tech"). The rates are kept per job in job_log_rates, which only the office can read (migration 147).
@@ -545,6 +556,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const qbLines = invoice ? quickBooksLines(invoice) : [];
   const qbTotal = qbLinesTotal(qbLines);
   const qbNumber = jobLogInvoiceNumber(savedMeta, w.wo_number);
+  const netviewLink = netview ? netviewFormUrl(netviewAnswers({
+    job: w,
+    invoice: { number: qbNumber, total: qbTotal, date: savedMeta.date, from, to },
+    vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
+  })) : '';
   const sendToQuickBooks = async () => {
     if (!qbLines.length) { toastError('Nothing on the invoice is charged yet. Edit invoice and type the rates first.'); return; }
     const was = savedMeta.qbo;
@@ -808,7 +824,7 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         ) : (
           <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || ratesFailed}
             // From the rates as they're typed on the client's copy, saved or not, so none are lost (CodeRabbit on PR #44).
-            onClick={() => setInvDraft({ sheet, rates, together: all, meta: savedMeta })}><Pencil size={16} /> Edit invoice</button>
+            onClick={() => setInvDraft({ sheet, rates, together: all, meta: savedMeta })}><Pencil size={16} /> Edit invoice, hours & mileage</button>
         )) : draft ? (
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveSheet()}><Check size={16} /> {saving ? 'Saving…' : 'Save time sheet'}</button>
@@ -821,6 +837,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || clientBlocked || sending || saving} onClick={() => void sendToQuickBooks()}
               title="Make this invoice in QuickBooks, line by line"><Send size={16} /> {sending ? 'Sending…' : 'Send to QuickBooks'}</button>
+            {netview && (
+              <a className="wf-btn wf-btn-outline wf-btn-sm" href={netviewLink} target="_blank" rel="noopener noreferrer"
+                title={`Open NetView's payment portal with this same invoice filled in. Review it, confirm the invoice was emailed to ${NETVIEW_PAYROLL}, then submit it.`}>
+                <ExternalLink size={16} /> Send to NetView
+              </a>
+            )}
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || clientBlocked} onClick={downloadQuickBooksFile}
               title="A file to import in QuickBooks yourself: Settings → Import data → Invoices"><FileSpreadsheet size={16} /> QuickBooks import file</button>
           </>
@@ -836,10 +858,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
         </div>
         {copy === 'invoice' && (
           <div role="status" style={{ flexBasis: '100%', fontSize: 13, background: '#FBF6EA', border: '1px solid #E3C987', borderRadius: 10, padding: '8px 12px' }}>
-            {invDraft ? <>Editing the invoice: type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢) in the box at its top, change any day, hours, meals, miles or hotel right on its lines, add or take out a line, then <b>Save invoice</b>. The job log’s time sheet changes with it.</>
+            {invDraft ? <>Everything is changed here: type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢), change the date, hours or miles on any line, or use <b>Add hours</b> and <b>Add mileage</b>. Totals update automatically. Press <b>Save invoice</b> when it is right; the job log’s time sheet changes with it.</>
               : ratesFailed ? 'The saved rates didn’t load, so the invoice can’t be changed or printed right now. Close the job log and open it again.'
-                : noSavedRates ? <>Press <b>Edit invoice</b>, type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢) in the box at its top, then <b>Save invoice</b> to print it.</>
-                  : <>The invoice as the client lays it out. <b>Edit invoice</b> to change it right on its lines. <b>Send to QuickBooks</b> makes it there, line by line.</>}
+                : noSavedRates ? <>Press <b>Edit invoice, hours & mileage</b>. Add or change the days, hours, mileage and rates here, then <b>Save invoice</b>.</>
+                  : <>This is the central invoice workspace. <b>Edit invoice, hours & mileage</b> changes the days, hours, mileage and rates with automatic totals. Then use <b>Send to QuickBooks</b>, <b>Send to NetView</b> or the <b>QuickBooks import file</b> above.</>}
             {!invDraft && savedMeta.qbo && <div style={{ marginTop: 4, color: '#047857', fontWeight: 600 }}>In QuickBooks as invoice {savedMeta.qbo.number || '—'} ({fmtMoney(savedMeta.qbo.total)}){savedMeta.qbo.at ? `, sent ${new Date(savedMeta.qbo.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: TZ })}` : ''}.</div>}
           </div>
         )}

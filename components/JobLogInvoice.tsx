@@ -12,6 +12,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Plus, X } from 'lucide-react';
 import { NumBox } from '@/components/JobSheetEditor';
 import { mileRateShown, mileRateTyped } from '@/lib/job-log-rates';
+import type { TimeRow } from '@/lib/job-log-sheet';
 import { dueDate, FAJ, type Invoice, type InvoiceHead, type InvoiceLine, type InvoiceMeta, type InvoiceSection, type InvoiceTech } from '@/lib/job-log-invoice';
 
 const line = '1px solid #000';
@@ -32,7 +33,7 @@ export type InvoiceEditor = {
   setTogether: (t: { on: boolean; hour: number | null }) => void;
   rateOf: (tech: string) => { hour: number | null; mile: number | null };
   setRate: (tech: string, k: 'hour' | 'mile', v: number | null) => void;
-  change: (l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string }) => void;
+  change: (l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string; in?: string; out?: string }) => void;
   remove: (l: InvoiceLine) => void;
   add: (tech: string, item: 'Labor' | 'Mileage' | 'Material' | 'Hotel') => void;
 };
@@ -53,6 +54,17 @@ const qty = (n: number | null, hours?: boolean) => (n == null ? '' : n.toLocaleS
 
 function DayBox({ value, label: name, onChange }: { value: string; label: string; onChange: (d: string) => void }) {
   return <input type="date" aria-label={name} style={input} value={value} onChange={(e) => e.target.value && onChange(e.target.value)} />;
+}
+/** A day worked's in and out times while it's edited: both typed, its hours are worked out from them. */
+function InOut({ l, at, edit }: { l: InvoiceLine; at: string; edit: InvoiceEditor }) {
+  const r = l.row as TimeRow | undefined;
+  if (!r) return null;
+  const box = (k: 'in' | 'out', name: string) => (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, flex: '1 1 0', minWidth: 0 }}>{name}
+      <input type="time" aria-label={`${name} time, ${at}`} style={input} value={r[k]} onChange={(e) => edit.change(l, { [k]: e.target.value })} />
+    </label>
+  );
+  return <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>{box('in', 'In')}{box('out', 'Out')}</div>;
 }
 function Remove({ name, onClick }: { name: string; onClick: () => void }) {
   return (
@@ -88,7 +100,8 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
         // A material's store, as typed.
         const description = edit && l.item === 'Material'
           ? <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
-          : l.description;
+          : edit && l.item === 'Labor' ? <>{l.description}<InOut l={l} at={at} edit={edit} /></>
+            : l.description;
         return (
           <tr key={`${l.item}-${i}`}>
             <td style={td}>{dateCell}</td>
@@ -240,6 +253,7 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
               <span style={{ textAlign: 'right', fontSize: 13 }}>{amount(l.amount)}</span>
               {(l.item !== 'Meal' || (l.spent ?? 0) > 0) ? <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} /> : <span />}
             </div>
+            {l.item === 'Labor' && <InOut l={l} at={at} edit={edit} />}
             {l.item === 'Material' && (
               <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
             )}

@@ -104,6 +104,13 @@ describe('the invoice', () => {
     const hours = editLine(withBreak, buildInvoice(withBreak, rates, crew, meta, '').techs[0].hours.lines[0], { qty: 8 });
     expect(hours.time.find((r) => r.tech === 'Paul Gibbs' && r.day === '2026-10-19')).toMatchObject({ hours: 8.5, brk: 0.5 });
     expect(buildInvoice(hours, rates, crew, meta, '').techs[0].hours.lines[0]).toMatchObject({ qty: 8, amount: 400 });
+    // In and out times typed: the hours are theirs, less the break (Fred: "07:00am in 09:00 am out ... total hours 2").
+    const inTyped = editLine(hours, buildInvoice(hours, rates, crew, meta, '').techs[0].hours.lines[0], { in: '07:00' });
+    // Only the in typed: the hours stay as they were until the out is in too.
+    expect(buildInvoice(inTyped, rates, crew, meta, '').techs[0].hours.lines[0]).toMatchObject({ qty: 8 });
+    const timed = editLine(inTyped, buildInvoice(inTyped, rates, crew, meta, '').techs[0].hours.lines[0], { out: '09:30' });
+    expect(timed.time.find((r) => r.tech === 'Paul Gibbs' && r.day === '2026-10-19')).toEqual(expect.not.objectContaining({ hours: expect.anything() }));
+    expect(buildInvoice(timed, rates, crew, meta, '').techs[0].hours.lines[0]).toMatchObject({ qty: 2, amount: 100 });
     const moved = editLine(sheet, paul.hours.lines[0], { day: '2026-10-21' });
     expect(buildInvoice(moved, rates, crew, meta, '').techs[0].hours.lines.map((l) => l.date)).toEqual(['2026-10-20', '2026-10-21']);
     // A day's meals as one amount: Paul's two receipts on the 19th become $45.

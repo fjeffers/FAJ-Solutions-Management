@@ -6,7 +6,7 @@
 // theirs. The hours and miles × each tech's rates (lib/job-log-rates.ts), as the client's copy charges them.
 import { byTechGroups } from './job-log';
 import { lineAmount, type JobRates } from './job-log-rates';
-import { fixedHours, hoursTotal, isHotel, rowHours, type JobSheet, type MileRow, type MoneyRow, type TimeRow } from './job-log-sheet';
+import { fixedHours, hoursTotal, isHotel, minutesOf, rowHours, type JobSheet, type MileRow, type MoneyRow, type TimeRow } from './job-log-sheet';
 import type { XCell } from './job-log-xlsx';
 import { qboItemFor } from './field-sheet';
 import { IMPORT_HEADER, usDate } from './qbo-work-order-export';
@@ -233,12 +233,20 @@ function dayMiles(rows: MileRow[], tech: string, day: string, miles: number | nu
  * A line changed on the invoice: its day; a day's hours (the break still comes off them), a day's miles, a meal's
  * receipts, a hotel's amount, or a material's store and amount.
  */
-export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string }): JobSheet {
+export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string; in?: string; out?: string }): JobSheet {
   const tech = l.tech ?? '';
   if (l.item === 'Labor' && l.row) {
     const r = l.row as TimeRow;
     const { open: _open, ms: _ms, ...kept } = r;
     void _open; void _ms;
+    // A day's in and out times (Fred, 2026-11-06: "07:00am in 09:00 am out ... total hours 2"): both typed, the hours
+    // are theirs; the invoice still shows only the hours.
+    if ('in' in p || 'out' in p) {
+      const { hours: _hours, ...timed } = kept;
+      const next: TimeRow = { ...timed, in: p.in ?? r.in, out: p.out ?? r.out };
+      const both = minutesOf(next.in) != null && minutesOf(next.out) != null;
+      return { ...sheet, time: swap(sheet.time, r, both || _hours == null ? next : { ...next, hours: _hours }) };
+    }
     // The hours typed (before the break), else the day's own: a stretch still on site keeps its hours so far when only
     // its date changes (Greptile on PR #44).
     const hours = 'qty' in p ? r2((p.qty ?? 0) + (r.brk || 0)) : fixedHours(r);

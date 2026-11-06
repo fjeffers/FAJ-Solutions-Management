@@ -1019,6 +1019,12 @@ describe('Job log edited by the office', () => {
       expect(document.querySelector('.jl-invoice input')).toBeNull();
       fireEvent.change(hours, { target: { value: '8' } });
       expect(document.querySelector('.jl-invoice')!.textContent).toContain('400.00');
+      // 07:00 in, 09:00 out: 2 hours, $100 at $50, and the invoice shows only the hours (Fred, 2026-11-06).
+      fireEvent.change(within(days).getByLabelText('In time, Paul Gibbs, 10/19/2026'), { target: { value: '07:00' } });
+      fireEvent.change(within(days).getByLabelText('Out time, Paul Gibbs, 10/19/2026'), { target: { value: '09:00' } });
+      expect((within(days).getByLabelText('Hours, Paul Gibbs, 10/19/2026') as HTMLInputElement).value).toBe('2');
+      expect(document.querySelector('.jl-invoice')!.textContent).toContain('100.00');
+      expect(document.querySelector('.jl-invoice')!.textContent).not.toMatch(/07:00|7:00/);
       expect(within(days).getByRole('button', { name: 'Add mileage, Paul Gibbs' })).toBeTruthy();
       expect(within(days).getByRole('button', { name: 'Add a hotel, Paul Gibbs' })).toBeTruthy();
     } finally {
@@ -1066,7 +1072,9 @@ describe('Job log edited by the office', () => {
       fireEvent.change(screen.getByLabelText('Material store, Paul Gibbs, 10/19/2026'), { target: { value: 'Home Depot' } });
       fireEvent.change(screen.getByLabelText('Material, Paul Gibbs, 10/19/2026'), { target: { value: '25' } });
       const cells = (label: string) => [...screen.getByLabelText(label).closest('tr')!.querySelectorAll('td')].map((c) => c.textContent);
-      expect(cells('Hours, Paul Gibbs, 10/20/2026').slice(1, 3)).toEqual(['Labor', 'Installation of Cabling for refresh project']);
+      // The day's line, with its in and out time boxes while it's edited.
+      expect(cells('Hours, Paul Gibbs, 10/20/2026').slice(1, 3)).toEqual(['Labor', 'Installation of Cabling for refresh projectInOut']);
+      expect(screen.getByLabelText('In time, Paul Gibbs, 10/20/2026')).toBeTruthy();
       expect(screen.getByText('Total Hours').closest('tr')!.textContent).toContain('$700.00');
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
       await waitFor(() => expect(print.disabled).toBe(false));

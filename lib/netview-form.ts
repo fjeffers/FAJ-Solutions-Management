@@ -58,7 +58,61 @@ export type NetviewInvoice = {
   date: string;
   from: string;
   to: string;
+  /** The saved invoice's hourly rates, ready for NetView's Rate field. */
+  rate?: string;
+  /** The saved invoice's billable hours, ready for NetView's Quantity field. */
+  quantity?: string;
+  /** The saved invoice's charge breakdown, ready for NetView's Other field. */
+  other?: string;
 };
+
+type NetviewInvoiceTech = {
+  tech: string;
+  hours: { qty: number; rate: number | null; amount: number };
+  mileage: { amount: number; lines: { qty: number | null; rate: number | null }[] };
+  meals: { amount: number };
+  materials?: { amount: number };
+  travel: { amount: number };
+};
+
+type NetviewInvoiceBreakdown = {
+  techs: NetviewInvoiceTech[];
+  totals: { labor: number; mileage: number; meals: number; materials: number; travel: number; total: number };
+};
+
+const numberText = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+const moneyText = (n: number) => `$${n.toFixed(2)}`;
+
+/** NetView's Rate, Quantity and Other answers from the same saved invoice shown on screen. */
+export function netviewInvoiceDetails(invoice: NetviewInvoiceBreakdown): Pick<NetviewInvoice, 'rate' | 'quantity' | 'other'> {
+  const hours = invoice.techs.filter((t) => t.hours.qty > 0);
+  const rate = hours
+    .filter((t) => t.hours.rate != null)
+    .map((t) => `${t.tech}: ${moneyText(t.hours.rate!)}/hr`)
+    .join('; ');
+  const quantity = hours
+    .map((t) => `${t.tech}: ${numberText(t.hours.qty)} hr`)
+    .join('; ');
+
+  const lines: string[] = [];
+  for (const tech of invoice.techs) {
+    if (tech.hours.amount > 0) {
+      lines.push(`${tech.tech} labor: ${numberText(tech.hours.qty)} hr${tech.hours.rate == null ? '' : ` × ${moneyText(tech.hours.rate)}/hr`} = ${moneyText(tech.hours.amount)}`);
+    }
+    const miles = tech.mileage.lines.reduce((total, line) => total + (line.qty ?? 0), 0);
+    const mileRate = tech.mileage.lines.find((line) => line.rate != null)?.rate ?? null;
+    if (tech.mileage.amount > 0) {
+      lines.push(`${tech.tech} mileage: ${numberText(miles)} mi${mileRate == null ? '' : ` × ${moneyText(mileRate)}/mi`} = ${moneyText(tech.mileage.amount)}`);
+    }
+    if (tech.meals.amount > 0) lines.push(`${tech.tech} meals: ${moneyText(tech.meals.amount)}`);
+    if ((tech.materials?.amount ?? 0) > 0) lines.push(`Materials: ${moneyText(tech.materials!.amount)}`);
+    if (tech.travel.amount > 0) lines.push(`${tech.tech} hotel/travel: ${moneyText(tech.travel.amount)}`);
+  }
+  lines.push(
+    `Totals: labor ${moneyText(invoice.totals.labor)}, mileage ${moneyText(invoice.totals.mileage)}, meals ${moneyText(invoice.totals.meals)}, materials ${moneyText(invoice.totals.materials)}, travel ${moneyText(invoice.totals.travel)}, invoice ${moneyText(invoice.totals.total)}`,
+  );
+  return { rate, quantity, other: lines.join('\n') };
+}
 
 /** A NetView job: NetView is the buyer, the platform, or a contact's company. */
 export function isNetviewJob(w: NetviewJob, client?: string | null): boolean {
@@ -89,11 +143,9 @@ export function netviewAnswers(input: {
     invoiceDate: inv.date,
     serviceDate: inv.to,
     vendor: input.vendor,
-    // Only the full total (Fred, 2026-10-25: "on the [NetView] just the full total quick books will do the rest"):
-    // the breakdown is on the QuickBooks invoice that goes to Payroll.
-    rate: '',
-    quantity: '',
-    other: '',
+    rate: inv.rate ?? '',
+    quantity: inv.quantity ?? '',
+    other: inv.other ?? '',
     total: inv.total.toFixed(2),
     customer: (w.customer_name ?? '').trim(),
     invoiceNumber: inv.number,

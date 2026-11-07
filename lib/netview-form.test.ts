@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isNetviewJob, netviewAnswers, netviewCoordinator, netviewFormUrl, NETVIEW_FORM, type NetviewJob } from './netview-form';
+import { isNetviewJob, netviewAnswers, netviewCoordinator, netviewFormUrl, netviewInvoiceDetails, NETVIEW_FORM, type NetviewJob } from './netview-form';
 
 // WO 19101413, Wendy's #397, as it is on live.
 const wendys: NetviewJob = {
@@ -27,15 +27,48 @@ describe('NetView form', () => {
     expect(netviewCoordinator([])).toBe('');
   });
 
-  // Fred, 2026-10-25: "just the full total quick books will do the rest".
-  it('fills every answer the job knows with only the full total, and leaves direct deposit and the confirmation to Fred', () => {
-    const a = netviewAnswers({ job: wendys, invoice: { number: '1042', total: 299.02, date: '2026-10-25', from: '2026-10-16', to: '2026-10-16' }, ...who });
+  it('fills every answer the job and saved invoice know, and leaves direct deposit and the confirmation to Fred', () => {
+    const a = netviewAnswers({
+      job: wendys,
+      invoice: {
+        number: '1042', total: 299.02, date: '2026-10-25', from: '2026-10-16', to: '2026-10-16',
+        rate: 'Fred Jeffers: $60.00/hr', quantity: 'Fred Jeffers: 2 hr',
+        other: 'Fred Jeffers labor: 2 hr × $60.00/hr = $120.00\nMileage: $10.00',
+      },
+      ...who,
+    });
     expect(a).toEqual({
       invoiceDate: '2026-10-25', serviceDate: '2026-10-16', vendor: 'FAJ Solutions',
-      rate: '', quantity: '', other: '',
+      rate: 'Fred Jeffers: $60.00/hr', quantity: 'Fred Jeffers: 2 hr',
+      other: 'Fred Jeffers labor: 2 hr × $60.00/hr = $120.00\nMileage: $10.00',
       total: '299.02', customer: "Wendy's", invoiceNumber: '1042', siteId: 'FLN5294 · Site 397 · FAJ WO 19101413',
       memo: "Wendy's #397 — Add 2 cameras (office & rear exterior) · Wendy's #397, Folsom, PA · 10/16/2026",
       coordinator: 'Karen Sparkman', enteredBy: 'Fred Jeffers', email: 'fajsolutions@gmail.com',
+    });
+  });
+
+  it('turns the saved invoice into NetView rates, quantities and a full charge breakdown', () => {
+    expect(netviewInvoiceDetails({
+      techs: [{
+        tech: 'Fred Jeffers',
+        hours: { qty: 2, rate: 60, amount: 120 },
+        mileage: { amount: 9, lines: [{ qty: 15, rate: 0.6 }] },
+        meals: { amount: 18 },
+        materials: { amount: 25 },
+        travel: { amount: 100 },
+      }],
+      totals: { labor: 120, mileage: 9, meals: 18, materials: 25, travel: 100, total: 272 },
+    })).toEqual({
+      rate: 'Fred Jeffers: $60.00/hr',
+      quantity: 'Fred Jeffers: 2 hr',
+      other: [
+        'Fred Jeffers labor: 2 hr × $60.00/hr = $120.00',
+        'Fred Jeffers mileage: 15 mi × $0.60/mi = $9.00',
+        'Fred Jeffers meals: $18.00',
+        'Materials: $25.00',
+        'Fred Jeffers hotel/travel: $100.00',
+        'Totals: labor $120.00, mileage $9.00, meals $18.00, materials $25.00, travel $100.00, invoice $272.00',
+      ].join('\n'),
     });
   });
 

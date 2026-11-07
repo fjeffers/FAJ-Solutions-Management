@@ -78,7 +78,7 @@ import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
 import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos';
-import { isNetviewJob, netviewAnswers, netviewFormUrl, NETVIEW_PAYROLL } from '@/lib/netview-form';
+import { isNetviewJob, netviewAnswers, netviewFormUrl, netviewInvoiceDetails, NETVIEW_PAYROLL } from '@/lib/netview-form';
 import AddJobPhotos from '@/components/AddJobPhotos';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
@@ -558,9 +558,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
   const qbLines = invoice ? quickBooksLines(invoice) : [];
   const qbTotal = qbLinesTotal(qbLines);
   const qbNumber = jobLogInvoiceNumber(savedMeta, w.wo_number);
+  const netviewDetails = invoice ? netviewInvoiceDetails(invoice) : {};
   const netviewLink = netview ? netviewFormUrl(netviewAnswers({
     job: w,
-    invoice: { number: qbNumber, total: qbTotal, date: savedMeta.date, from, to },
+    invoice: { number: qbNumber, total: qbTotal, date: savedMeta.date, from, to, ...netviewDetails },
     vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
   })) : '';
   const sendToQuickBooks = async () => {

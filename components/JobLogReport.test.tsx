@@ -864,7 +864,15 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
       await waitFor(() => expect(print.disabled).toBe(false));
       expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50, billTo: '' } });
-      await waitFor(() => expect(new URL((screen.getByRole('link', { name: /send to netview/i }) as HTMLAnchorElement).href).searchParams.get('entry.1582831326')).toBe('1240'));
+      await waitFor(() => {
+        const params = new URL((screen.getByRole('link', { name: /send to netview/i }) as HTMLAnchorElement).href).searchParams;
+        expect(params.get('entry.1582831326')).toBe('1240');
+        expect(params.get('entry.1719028500')).toBe('Paul Gibbs: $50.00/hr');
+        expect(params.get('entry.1596223790')).toBe('Paul Gibbs: 9 hr');
+        expect(params.get('entry.2058828780')).toContain('Paul Gibbs labor: 9 hr × $50.00/hr = $450.00');
+        expect(params.get('entry.2058828780')).toContain('Totals: labor $450.00, mileage $10.80, meals $18.97, materials $104.17, travel $402.50, invoice $986.44');
+        expect(params.get('entry.1510356417')).toBe('986.44');
+      });
       // On a phone it scrolls sideways rather than being cut off.
       expect(screen.getByRole('table').closest('.jl-invoice-scroll')).toBeTruthy();
       // The time sheet wasn't changed, so it isn't saved: the log still follows the app.

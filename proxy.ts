@@ -55,6 +55,8 @@ export async function proxy(request: NextRequest) {
     '/accountant/login',// accountant sign-in / first-time signup
     '/reset-password', // request a reset — always logged out
     '/update-password',// set the new password from the emailed link
+    '/terms',          // public legal page required by the QuickBooks connection
+    '/privacy',        // public privacy page required by the QuickBooks connection
   ];
 
   // The office signs in at /admin/login, techs at /tech/login (Fred,

@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/daily-brief",
-      "schedule": "0 12 * * 2-5"
+      "schedule": "0 12 * * *"
     }
   ]
 }

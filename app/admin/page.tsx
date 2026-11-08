@@ -47,6 +47,7 @@ import SettingsView from '@/components/SettingsView';
 import PayablesView from '@/components/PayablesView';
 import LedgerView from '@/components/LedgerView';
 import GlobalSearch from '@/components/GlobalSearch';
+import FollowUps from '@/components/FollowUps';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
 import { belongsInTechPortal } from '@/lib/tech-portal';
 import { myStaffSection } from '@/lib/assistant';
@@ -2015,6 +2016,7 @@ Go ahead?`)) return;
                       onGo={(v) => setView(v as typeof view)}
                     />
                     <BillingToSend jobs={enrichedWOs} onOpenJob={(id) => openJobFrom(id, 'workorders')} />
+                    <FollowUps invoices={invoices} invoicePayments={invoicePayments} quotes={quotes} jobs={enrichedWOs} techs={contractors} />
                   </>
                 ) : undefined}
                 field={shown('dash.field') ? (

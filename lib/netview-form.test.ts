@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isNetviewJob, netviewAnswers, netviewCoordinator, netviewFormUrl, netviewInvoiceDetails, NETVIEW_FORM, type NetviewJob } from './netview-form';
+import { isNetviewJob, netviewAnswers, netviewCoordinator, netviewCustomerSite, netviewFormUrl, netviewInvoiceDetails, netviewInvoiceNumber, NETVIEW_FORM, type NetviewJob } from './netview-form';
 
 // WO 19101413, Wendy's #397, as it is on live.
 const wendys: NetviewJob = {
@@ -52,7 +52,20 @@ describe('NetView form', () => {
       invoice: { number: '1043', total: 100, date: '2026-10-25', from: '2026-10-20', to: '2026-10-20' },
       ...who,
     });
-    expect(a.customer).toBe('LDS 5006643');
+    expect(a.customer).toBe('LDS - 5006643');
+  });
+
+  it("adds a Field Nation site number to the visited site's name", () => {
+    expect(netviewCustomerSite({
+      wo_number: '1',
+      site_name: "Wendy's - Franklin, NJ",
+      external_wo_id: 'FLN5302',
+    })).toBe("Wendy's - Franklin, NJ - 5302");
+  });
+
+  it('leaves the invoice number blank until QuickBooks creates one', () => {
+    expect(netviewInvoiceNumber()).toBe('');
+    expect(netviewInvoiceNumber('  QB-1042 ')).toBe('QB-1042');
   });
 
   it('sends NetView only the hourly rate, without a quantity or charge breakdown', () => {

@@ -78,7 +78,7 @@ import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
 import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos';
-import { isNetviewJob, netviewAnswers, netviewFormUrl, netviewInvoiceDetails, NETVIEW_PAYROLL } from '@/lib/netview-form';
+import { isNetviewJob, netviewAnswers, netviewFormUrl, netviewInvoiceDetails, netviewInvoiceNumber, NETVIEW_PAYROLL } from '@/lib/netview-form';
 import AddJobPhotos from '@/components/AddJobPhotos';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
@@ -571,7 +571,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const netviewLink = netview ? netviewFormUrl(netviewAnswers({
     job: w,
     invoice: {
-      number: savedMeta.qbo?.number || qbNumber,
+      number: netviewInvoiceNumber(savedMeta.qbo?.number),
       total: netviewTotal,
       date: todayDay,
       from: netviewFrom,

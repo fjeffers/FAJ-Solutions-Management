@@ -80,6 +80,18 @@ type NetviewInvoiceBreakdown = {
 
 const moneyText = (n: number) => `$${n.toFixed(2)}`;
 
+/** NetView wants the real QuickBooks number, never FAJ's work-order fallback. */
+export const netviewInvoiceNumber = (quickBooksNumber?: string | null) => (quickBooksNumber ?? '').trim();
+
+/** The visited site, including the site number when it is stored separately. */
+export function netviewCustomerSite(w: NetviewJob): string {
+  const base = (w.site_name || w.customer_name || '').trim();
+  const fieldNationSite = w.external_wo_id?.trim().match(/^FLN[-\s]?(\d+)$/i)?.[1] ?? '';
+  const siteNumber = (w.client_reference || fieldNationSite).trim();
+  if (!siteNumber || base.toLowerCase().includes(siteNumber.toLowerCase())) return base;
+  return [base, siteNumber].filter(Boolean).join(' - ');
+}
+
 /** NetView only needs the billing rate; the form's Total field carries the full invoice amount. */
 export function netviewInvoiceDetails(invoice: NetviewInvoiceBreakdown): Pick<NetviewInvoice, 'rate'> {
   const rates = [...new Set(invoice.techs
@@ -113,10 +125,6 @@ export function netviewAnswers(input: {
   const { job: w, invoice: inv } = input;
   const days = inv.from === inv.to ? mdy(inv.from) : `${mdy(inv.from)} – ${mdy(inv.to)}`;
   const place = [w.site_name, [w.site_city, w.site_state].filter(Boolean).join(', ')].filter(Boolean).join(', ');
-  const customerSite = (w.site_name
-    || [w.customer_name, w.client_reference].filter(Boolean).join(' ')
-    || w.customer_name
-    || '').trim();
   return {
     invoiceDate: inv.date,
     serviceDate: inv.to,
@@ -125,7 +133,7 @@ export function netviewAnswers(input: {
     quantity: '',
     other: '',
     total: inv.total.toFixed(2),
-    customer: customerSite,
+    customer: netviewCustomerSite(w),
     invoiceNumber: inv.number,
     siteId: [w.external_wo_id, w.client_reference ? `Site ${w.client_reference}` : '', `FAJ WO ${w.wo_number}`].filter(Boolean).join(' · '),
     memo: [(w.title ?? '').trim() || place, place && (w.title ?? '').trim() ? place : '', days].filter(Boolean).join(' · '),

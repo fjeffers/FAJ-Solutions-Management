@@ -434,8 +434,16 @@ export function jobLogMemo(w: { title?: string | null; site_name?: string | null
   return [w.site_name || w.title, `WO ${w.wo_number}`, w.external_wo_id ? `Client # ${w.external_wo_id}` : null, span].filter(Boolean).join(' · ').slice(0, 1000);
 }
 
-/** The invoice's number in QuickBooks: the one typed on it, else WO-<number>. */
-export const jobLogInvoiceNumber = (meta: Pick<InvoiceMeta, 'number'>, woNumber: string) => meta.number || `WO-${woNumber}`;
+/** The invoice's number in QuickBooks: typed number, LDS job number, else WO-<number>. */
+export const jobLogInvoiceNumber = (
+  meta: Pick<InvoiceMeta, 'number'>,
+  woNumber: string,
+  ...clientReferences: (string | null | undefined)[]
+) => {
+  if (meta.number) return meta.number;
+  const lds = clientReferences.join(' ').match(/\bLDS[\s-]?(\d+)\b/i);
+  return lds ? `LDS${lds[1]}` : `WO-${woNumber}`;
+};
 
 /** The invoice as QuickBooks' invoice import takes it (Settings → Import data → Invoices): one row a line. */
 export function invoiceImportRows(lines: QbJobLine[], head: { number: string; billTo: string; meta: Pick<InvoiceMeta, 'date' | 'terms'>; memo: string }): string[][] {

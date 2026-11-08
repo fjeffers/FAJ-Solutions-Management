@@ -570,7 +570,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   // made there line by line, or a file for QuickBooks' invoice import when it isn't connected.
   const qbLines = invoice ? quickBooksLines(invoice) : [];
   const qbTotal = qbLinesTotal(qbLines);
-  const qbNumber = jobLogInvoiceNumber(savedMeta, w.wo_number);
+  const qbNumber = jobLogInvoiceNumber(savedMeta, w.wo_number, w.title, w.site_name, w.external_wo_id);
   const netviewDetails = invoice ? netviewInvoiceDetails(invoice) : {};
   const serviceDays = qbLines.map((line) => line.date).filter(Boolean).sort();
   const netviewFrom = from || serviceDays[0] || w.start_date || savedMeta.date;
@@ -594,13 +594,13 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
     if (!qbLines.length) { toastError('Nothing on the invoice is charged yet. Edit invoice and type the rates first.'); return; }
     const was = savedMeta.qbo;
     const ask = `${was ? `This invoice already went to QuickBooks as invoice ${was.number || ''} (${fmtMoney(was.total)}). ` : ''}`
-      + `Create invoice ${savedMeta.number || '(QuickBooks numbers it)'} for ${invoiceHead.billTo || 'the client'}, ${fmtMoney(qbTotal)}, in QuickBooks?`;
+      + `Create invoice ${qbNumber} for ${invoiceHead.billTo || 'the client'}, ${fmtMoney(qbTotal)}, in QuickBooks?`;
     if (!window.confirm(ask)) return;
     setSending(true);
     try {
       const res = await fetch('/api/quickbooks/job-log-invoice', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wo_id: w.id, lines: qbLines, total: qbTotal, number: savedMeta.number, date: todayDay, terms: savedMeta.terms, bill_to: invoiceHead.billTo }),
+        body: JSON.stringify({ wo_id: w.id, lines: qbLines, total: qbTotal, number: qbNumber, date: todayDay, terms: savedMeta.terms, bill_to: invoiceHead.billTo }),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; fix?: string; sent?: InvoiceSent; write_back_error?: string | null };
       if (!res.ok || !j.ok || !j.sent) { toastError([j.error ?? "The invoice didn't go to QuickBooks.", j.fix].filter(Boolean).join(' ')); return; }

@@ -2,7 +2,7 @@
 // "mirror it exactly").
 import { describe, it, expect } from 'vitest';
 import {
-  addLine, buildInvoice, dueDate, editLine, inQuickBooks, invoiceCells, invoiceCharges, invoiceImportRows, jobLogMemo, jobLogQbPayload, parseInvoiceMeta, qbLinesTotal, quickBooksLines,
+  addLine, buildInvoice, dueDate, editLine, inQuickBooks, invoiceCells, invoiceCharges, invoiceImportRows, jobLogInvoiceNumber, jobLogMemo, jobLogQbPayload, parseInvoiceMeta, qbLinesTotal, quickBooksLines,
   removeLine, type InvoiceHead, type InvoiceLine,
 } from './job-log-invoice';
 import type { JobSheet } from './job-log-sheet';
@@ -37,6 +37,13 @@ const inv = buildInvoice(sheet, rates, crew, meta, 'Goldsboro NC');
 const read = (lines: InvoiceLine[]) => lines.map(({ date, item, description, qty, rate, amount }) => ({ date, item, description, qty, rate, amount }));
 
 describe('the invoice', () => {
+  it('uses the LDS job number before falling back to the FAJ work-order number', () => {
+    expect(jobLogInvoiceNumber({ number: '' }, '19101401', 'LDS1106 Site 5006643')).toBe('LDS1106');
+    expect(jobLogInvoiceNumber({ number: '' }, '19101401', 'LDS-1106 Site 5006643')).toBe('LDS1106');
+    expect(jobLogInvoiceNumber({ number: '' }, '19101401', "Wendy's Franklin")).toBe('WO-19101401');
+    expect(jobLogInvoiceNumber({ number: '1240' }, '19101401', 'LDS1106')).toBe('1240');
+  });
+
   it('has the lead then the helper, each with their hours, meals, mileage and hotel, as the client lays it out', () => {
     expect(inv.techs.map((t) => [t.role, t.tech])).toEqual([['Lead', 'Paul Gibbs'], ['Helper', 'Raja']]);
     const paul = inv.techs[0];

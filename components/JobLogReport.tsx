@@ -184,8 +184,11 @@ const H = ({ children }: { children: React.ReactNode }) => (
   <h3 className="jl-h" style={{ fontFamily: "'Space Grotesk', Inter, sans-serif", fontSize: 15, fontWeight: 700, color: '#0E1B2E', margin: '22px 0 8px', paddingBottom: 6, borderBottom: '2px solid #C9A24B' }}>{children}</h3>
 );
 
-export default function JobLogReport({ w, deliverables, onClose }: {
+export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   w: EnrichedWorkOrder;
+  /** Opens the tech's payment, filled in with what's still owed (Fred, 2026-11-08: "When I send to Netview and good
+   *  I need to record to payment for technician also"). */
+  onPayTech?: () => void;
   /** The job's closeout deliverables (listFor), so a finished job can say which weren't done. */
   deliverables: string[];
   onClose: () => void;
@@ -597,7 +600,10 @@ export default function JobLogReport({ w, deliverables, onClose }: {
     setSaving(false);
     if (error) { toastError("That didn't save. Check your connection and try again."); return; }
     setSavedMeta(meta);
+    if (k === 'netview' && on && techOwed > 0.005 && onPayTech
+      && window.confirm(`NetView is marked sent. Record ${fmtMoney(techOwed)} pay for ${w.contractor_name || 'the tech'} now?`)) onPayTech();
   };
+  const techOwed = w.remaining ?? 0;
   const markBox = (k: 'billed' | 'netview', label: string) => (
     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, cursor: saving ? 'default' : 'pointer' }}>
       <input type="checkbox" checked={!!savedMeta[k]} disabled={saving} onChange={(e) => void markInvoice(k, e.target.checked)} /> {label}
@@ -868,6 +874,11 @@ export default function JobLogReport({ w, deliverables, onClose }: {
               <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '6px 18px' }}>
                 {!savedMeta.qbo && markBox('billed', 'Billed in QuickBooks')}
                 {netview && markBox('netview', 'Sent to NetView')}
+                {netview && savedMeta.netview && onPayTech && techOwed > 0.005 && (
+                  <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={saving} onClick={onPayTech}>
+                    Record tech pay ({fmtMoney(techOwed)} owed)
+                  </button>
+                )}
               </div>
             )}
           </div>

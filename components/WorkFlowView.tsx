@@ -601,7 +601,8 @@ function OwnerJob({
           {jobDesign.jobBelow.filter(partShown).map((k) => <Fragment key={k}>{jobCards[k]}</Fragment>)}
         </>}
       />
-      {logOpen && <JobLogReport w={w} deliverables={checklist.items} onClose={() => setLogOpen(false)} />}
+      {logOpen && <JobLogReport w={w} deliverables={checklist.items} onClose={() => setLogOpen(false)}
+        onPayTech={() => { setLogOpen(false); onPay(w); }} />}
       {sowOpen && <SowDocument w={w} contractors={contractors} author={author} onClose={() => setSowOpen(false)} />}
       {askDelete && (
         <Dialog title={`Delete WO ${w.wo_number}?`} onClose={() => setAskDelete(false)}

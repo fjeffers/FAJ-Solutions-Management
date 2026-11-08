@@ -27,7 +27,7 @@ describe('NetView form', () => {
     expect(netviewCoordinator([])).toBe('');
   });
 
-  it('fills every answer the job and saved invoice know, and leaves direct deposit and the confirmation to Fred', () => {
+  it('fills every answer the job and saved invoice know, including FAJ direct deposit and payroll confirmation', () => {
     const a = netviewAnswers({
       job: wendys,
       invoice: {
@@ -42,7 +42,17 @@ describe('NetView form', () => {
       total: '299.02', customer: "Wendy's #397", invoiceNumber: '1042', siteId: 'FLN5294 · Site 397 · FAJ WO 19101413',
       memo: "Wendy's #397 — Add 2 cameras (office & rear exterior) · Wendy's #397, Folsom, PA · 10/16/2026",
       coordinator: 'Karen Sparkman', enteredBy: 'Fred Jeffers', email: 'fajsolutions@gmail.com',
+      directDeposit: 'Yes', invoiceEmailed: 'Yes',
     });
+  });
+
+  it('uses the LDS site number when an LDS job has no separate site name', () => {
+    const a = netviewAnswers({
+      job: { wo_number: '9', customer_name: 'LDS', buyer_company: 'NetView', client_reference: '5006643' },
+      invoice: { number: '1043', total: 100, date: '2026-10-25', from: '2026-10-20', to: '2026-10-20' },
+      ...who,
+    });
+    expect(a.customer).toBe('LDS 5006643');
   });
 
   it('sends NetView only the hourly rate, without a quantity or charge breakdown', () => {
@@ -74,7 +84,7 @@ describe('NetView form', () => {
     expect(u.searchParams.get('entry.1582831326')).toBe('A&B 1');
     expect(u.searchParams.get('entry.116346627')).toBe('2026-10-20');
     expect(u.searchParams.has('entry.1450654372')).toBe(false); // no coordinator known
-    expect(u.searchParams.has('entry.1894271667')).toBe(false); // direct deposit: Fred's answer
-    expect(u.searchParams.has('entry.894978173')).toBe(false); // "the invoice was emailed": Fred's answer
+    expect(u.searchParams.get('entry.1894271667')).toBe('Yes');
+    expect(u.searchParams.get('entry.894978173')).toBe('Yes');
   });
 });

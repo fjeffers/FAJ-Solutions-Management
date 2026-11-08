@@ -9,8 +9,8 @@
 // checks it and presses Submit himself. The money is the invoice's full total
 // only: the breakdown is on the QuickBooks invoice.
 //
-// Never filled in: the direct deposit answer, the "invoice was emailed"
-// confirmation (only Fred knows), and the form's bank and tax ID page.
+// Direct deposit and "invoice was emailed" are Yes for FAJ. The form's bank
+// and tax ID page stays empty.
 //
 // Pure and unit-tested (lib/netview-form.test.ts).
 
@@ -33,6 +33,8 @@ const Q = {
   coordinator: 1450654372,
   enteredBy: 207071221,
   email: 1632549946,
+  directDeposit: 1894271667,
+  invoiceEmailed: 894978173,
 } as const;
 
 type Contact = { name?: string | null; email?: string | null; label?: string | null };
@@ -111,6 +113,10 @@ export function netviewAnswers(input: {
   const { job: w, invoice: inv } = input;
   const days = inv.from === inv.to ? mdy(inv.from) : `${mdy(inv.from)} – ${mdy(inv.to)}`;
   const place = [w.site_name, [w.site_city, w.site_state].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+  const customerSite = (w.site_name
+    || [w.customer_name, w.client_reference].filter(Boolean).join(' ')
+    || w.customer_name
+    || '').trim();
   return {
     invoiceDate: inv.date,
     serviceDate: inv.to,
@@ -119,13 +125,15 @@ export function netviewAnswers(input: {
     quantity: '',
     other: '',
     total: inv.total.toFixed(2),
-    customer: (w.site_name || w.customer_name || '').trim(),
+    customer: customerSite,
     invoiceNumber: inv.number,
     siteId: [w.external_wo_id, w.client_reference ? `Site ${w.client_reference}` : '', `FAJ WO ${w.wo_number}`].filter(Boolean).join(' · '),
     memo: [(w.title ?? '').trim() || place, place && (w.title ?? '').trim() ? place : '', days].filter(Boolean).join(' · '),
     coordinator: netviewCoordinator(w.contacts),
     enteredBy: input.enteredBy.trim(),
     email: input.email.trim(),
+    directDeposit: 'Yes',
+    invoiceEmailed: 'Yes',
   };
 }
 

@@ -573,7 +573,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
     invoice: {
       number: savedMeta.qbo?.number || qbNumber,
       total: netviewTotal,
-      date: savedMeta.date,
+      date: todayDay,
       from: netviewFrom,
       to: netviewTo,
       ...netviewDetails,

@@ -3,12 +3,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const updates: Record<string, unknown>[] = [];
+let savedInvoice: Record<string, unknown> = { number: '1042', date: '2026-10-25', terms: 30 };
 function query(table: string) {
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'eq']) chain[m] = () => chain;
   chain.maybeSingle = async () => ({
     data: table === 'work_orders' ? { id: 'wo', wo_number: '191', external_wo_id: null, site_name: 'LDS Site 5006643', title: null, customer_name: 'LDS' }
-      : { invoice: { number: '1042', date: '2026-10-25', terms: 30 } },
+      : { invoice: savedInvoice },
     error: null,
   });
   chain.update = (patch: Record<string, unknown>) => { updates.push(patch); return { eq: async () => ({ error: null }) }; };
@@ -35,7 +36,11 @@ const lines = [
 const post = (body: Record<string, unknown> = {}) => POST(new Request('http://localhost/api/quickbooks/job-log-invoice', {
   method: 'POST', body: JSON.stringify({ wo_id: 'wo', lines, total: 346, number: '1042', date: '2026-10-25', terms: 30, bill_to: 'TeamNetView', ...body }),
 }));
-afterEach(() => { vi.clearAllMocks(); updates.length = 0; });
+afterEach(() => {
+  vi.clearAllMocks();
+  updates.length = 0;
+  savedInvoice = { number: '1042', date: '2026-10-25', terms: 30 };
+});
 
 describe('POST /api/quickbooks/job-log-invoice', () => {
   it('makes the invoice in QuickBooks line by line, under its number, and keeps it with the invoice', async () => {
@@ -54,6 +59,18 @@ describe('POST /api/quickbooks/job-log-invoice', () => {
     const res = await post();
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/already has invoice 1042/);
+    expect(qb.createInvoice).not.toHaveBeenCalled();
+  });
+
+  it('stops a retry when FAJ already recorded the QuickBooks invoice', async () => {
+    savedInvoice = { number: '1042', date: '2026-10-25', terms: 30, qbo: { id: '77', number: '1042', total: 346 } };
+    const res = await post();
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: 'This invoice already exists in QuickBooks as 1042.',
+      existing: { id: '77', number: '1042', total: 346 },
+    });
+    expect(session).not.toHaveBeenCalled();
     expect(qb.createInvoice).not.toHaveBeenCalled();
   });
 

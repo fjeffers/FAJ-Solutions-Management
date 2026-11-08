@@ -68,6 +68,16 @@ export async function POST(req: Request) {
   const customer = ((typeof body.bill_to === 'string' ? body.bill_to : '').trim() || wo.customer_name || '').trim().slice(0, 100);
   if (!customer) return NextResponse.json({ error: 'Who is the invoice billed to?', fix: 'Edit invoice and type the Bill to.' }, { status: 400 });
 
+  const { data: kept, error: readErr } = await supabase.from('job_log_rates').select('invoice').eq('wo_id', wo.id).maybeSingle();
+  const meta = parseInvoiceMeta((kept as { invoice?: unknown } | null)?.invoice, date);
+  if (meta.qbo?.id) {
+    return NextResponse.json({
+      error: `This invoice already exists in QuickBooks as ${meta.qbo.number || 'an invoice'}.`,
+      fix: 'Open the existing invoice in QuickBooks. FAJ stopped this retry so it would not create a duplicate.',
+      existing: meta.qbo,
+    }, { status: 409 });
+  }
+
   const session = await getValidQboSession(user.id);
   if (!session) {
     return NextResponse.json({
@@ -97,10 +107,8 @@ export async function POST(req: Request) {
     const sent = { id: invoice.id, number: invoice.docNumber || number, total: invoice.total, at: new Date().toISOString() };
 
     // Kept with the invoice's boxes, so the job log says it's in QuickBooks.
-    const { data: kept, error: readErr } = await supabase.from('job_log_rates').select('invoice').eq('wo_id', wo.id).maybeSingle();
     let writeBackError: string | null = readErr?.message ?? null;
     if (!readErr) {
-      const meta = parseInvoiceMeta((kept as { invoice?: unknown } | null)?.invoice, date);
       const { error } = await supabase.from('job_log_rates').update({ invoice: { ...meta, qbo: sent } }).eq('wo_id', wo.id);
       writeBackError = error?.message ?? null;
     }

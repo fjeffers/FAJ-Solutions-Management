@@ -862,11 +862,11 @@ describe('Job log edited by the office', () => {
       expect(print.disabled).toBe(true);
       expect((screen.getByLabelText('$ per hour, Paul Gibbs') as HTMLInputElement).value).toBe('50');
       fireEvent.change(screen.getByLabelText('Invoice #'), { target: { value: '1240' } });
-      // Billed to the job's customer until another is typed (Fred's sample: TeamNetView).
+      // LDS work bills TeamNetView.
       expect((screen.getByLabelText('Bill to') as HTMLInputElement).placeholder).toBe('TeamNetView');
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
       await waitFor(() => expect(print.disabled).toBe(false));
-      expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50, billTo: '' } });
+      expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50, billTo: 'TeamNetView' } });
       await waitFor(() => {
         const params = new URL((screen.getByRole('link', { name: /open netview link/i }) as HTMLAnchorElement).href).searchParams;
         expect(params.get('entry.1582831326')).toBe('QB-1042');

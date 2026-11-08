@@ -83,6 +83,14 @@ const moneyText = (n: number) => `$${n.toFixed(2)}`;
 /** NetView wants the real QuickBooks number, never FAJ's work-order fallback. */
 export const netviewInvoiceNumber = (quickBooksNumber?: string | null) => (quickBooksNumber ?? '').trim();
 
+/** QuickBooks customer used for NetView work: Wendy's bills NetView, LDS bills TeamNetView. */
+export function netviewBillingCustomer(w: NetviewJob): string {
+  const text = [w.site_name, w.title, w.customer_name].filter(Boolean).join(' ');
+  if (/\blds(?=\d|\b)/i.test(text)) return 'TeamNetView';
+  if (/\bwendy'?s\b/i.test(text)) return 'NetView';
+  return '';
+}
+
 /** The visited site, including the site number when it is stored separately. */
 export function netviewCustomerSite(w: NetviewJob): string {
   const siteText = [w.site_name, w.title].filter(Boolean).join(' ');

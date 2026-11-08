@@ -78,7 +78,7 @@ import { jobGaps } from '@/lib/job-gaps';
 import { isFinished, wfJobFromOwner } from '@/lib/wf';
 import { asks, parseCapture } from '@/lib/capture';
 import { downloadHref, fileExt, photoDay, photoFileName } from '@/lib/job-photos';
-import { isNetviewJob, netviewAnswers, netviewFormUrl, netviewInvoiceDetails, netviewInvoiceNumber, NETVIEW_PAYROLL } from '@/lib/netview-form';
+import { isNetviewJob, netviewAnswers, netviewBillingCustomer, netviewFormUrl, netviewInvoiceDetails, netviewInvoiceNumber, NETVIEW_PAYROLL } from '@/lib/netview-form';
 import AddJobPhotos from '@/components/AddJobPhotos';
 import type { EnrichedWorkOrder, TimeLog } from '@/lib/types';
 
@@ -451,10 +451,20 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const invSheet = invDraft ? sheetSorted(sheetInDates(invDraft.sheet, from, to)) : shown;
   const invRates = invDraft ? withAllHoursRate(invSheet, invDraft.rates, invDraft.together.on ? invDraft.together.hour : null) : billRates;
   const invMeta = invDraft ? parseInvoiceMeta(invDraft.meta, todayDay) : savedMeta;
-  // Billed to as typed on the invoice (Fred's sample: TeamNetView), else the work order's customer.
-  const invoiceHead: InvoiceHead = { billTo: invMeta.billTo || (w.customer_name ?? ''), shipTo: [w.title ?? '', where].filter(Boolean), meta: invMeta };
+  const mappedBillTo = netviewBillingCustomer(w);
+  const savedBillTo = invMeta.billTo?.trim() ?? '';
+  const oldSiteBillTo = !!mappedBillTo && (
+    !savedBillTo
+    || savedBillTo === w.customer_name
+    || /\bwendy'?s\b/i.test(savedBillTo)
+    || /\blds(?=\d|\b)/i.test(savedBillTo)
+  );
+  const invoiceBillTo = oldSiteBillTo ? mappedBillTo : savedBillTo || mappedBillTo || (w.customer_name ?? '');
+  // An invoice opened today is dated today; its due date follows its saved terms.
+  const currentInvoiceMeta: InvoiceMeta = { ...invMeta, date: todayDay, billTo: invoiceBillTo };
+  const invoiceHead: InvoiceHead = { billTo: invoiceBillTo, shipTo: [w.title ?? '', where].filter(Boolean), meta: currentInvoiceMeta };
   const place = [w.site_city, w.site_state].filter(Boolean).join(' ');
-  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, invMeta, place) : null;
+  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, currentInvoiceMeta, place) : null;
   // The client copy's charges are the invoice's, so the two always have the same total (Fred, 2026-10-31: "the job log
   // and invoice is not matching up"): with the rates saved, and as they're typed.
   const clientInvoice = buildInvoice(shown, billRates, crew, savedMeta, place);
@@ -514,7 +524,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const editInv = (f: (d: InvDraft) => InvDraft) => setInvDraft((d) => (d ? f(d) : d));
   const invoiceEditor: InvoiceEditor | undefined = invDraft ? {
     meta: invDraft.meta,
-    billToDefault: w.customer_name ?? '',
+    billToDefault: mappedBillTo || w.customer_name || '',
     setMeta: (p) => editInv((d) => ({ ...d, meta: { ...d.meta, ...p } })),
     together: invDraft.together,
     setTogether: (t) => editInv((d) => ({ ...d, together: t })),
@@ -590,7 +600,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
     try {
       const res = await fetch('/api/quickbooks/job-log-invoice', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wo_id: w.id, lines: qbLines, total: qbTotal, number: savedMeta.number, date: savedMeta.date, terms: savedMeta.terms, bill_to: invoiceHead.billTo }),
+        body: JSON.stringify({ wo_id: w.id, lines: qbLines, total: qbTotal, number: savedMeta.number, date: todayDay, terms: savedMeta.terms, bill_to: invoiceHead.billTo }),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; fix?: string; sent?: InvoiceSent; write_back_error?: string | null };
       if (!res.ok || !j.ok || !j.sent) { toastError([j.error ?? "The invoice didn't go to QuickBooks.", j.fix].filter(Boolean).join(' ')); return; }
@@ -624,7 +634,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   );
   const downloadQuickBooksFile = () => {
     if (!qbLines.length) { toastError('Nothing on the invoice is charged yet. Edit invoice and type the rates first.'); return; }
-    const rows = invoiceImportRows(qbLines, { number: qbNumber, billTo: invoiceHead.billTo, meta: savedMeta, memo: jobLogMemo(w, qbLines) });
+    const rows = invoiceImportRows(qbLines, { number: qbNumber, billTo: invoiceHead.billTo, meta: currentInvoiceMeta, memo: jobLogMemo(w, qbLines) });
     downloadCSVText(`${`QuickBooks import ${pdfName}`.replace(/[\\/:*?"<>|#]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)}.csv`, toCSV(rows));
     toastSuccess('In QuickBooks: Settings → Import data → Invoices, then pick this file. Import it once, then tick Billed in QuickBooks here.');
   };
@@ -850,7 +860,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
             // One edit button for the whole invoice. It opens the invoice and keeps hours, mileage, rates and charges together.
             onClick={() => {
               setCopy('invoice');
-              setInvDraft({ sheet, rates, together: all, meta: savedMeta });
+              setInvDraft({ sheet, rates, together: all, meta: currentInvoiceMeta });
             }}><Pencil size={16} /> Edit invoice</button>
         )}
         {copy === 'invoice' && !invDraft && (

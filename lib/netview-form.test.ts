@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isNetviewJob, netviewAnswers, netviewCoordinator, netviewCustomerSite, netviewFormUrl, netviewInvoiceDetails, netviewInvoiceNumber, NETVIEW_FORM, type NetviewJob } from './netview-form';
+import { isNetviewJob, netviewAnswers, netviewBillingCustomer, netviewCoordinator, netviewCustomerSite, netviewFormUrl, netviewInvoiceDetails, netviewInvoiceNumber, NETVIEW_FORM, type NetviewJob } from './netview-form';
 
 // WO 19101413, Wendy's #397, as it is on live.
 const wendys: NetviewJob = {
@@ -78,6 +78,11 @@ describe('NetView form', () => {
   it('leaves the invoice number blank until QuickBooks creates one', () => {
     expect(netviewInvoiceNumber()).toBe('');
     expect(netviewInvoiceNumber('  QB-1042 ')).toBe('QB-1042');
+  });
+
+  it("bills Wendy's work to NetView and LDS work to TeamNetView", () => {
+    expect(netviewBillingCustomer({ wo_number: '1', title: "Wendy's Franklin, NJ" })).toBe('NetView');
+    expect(netviewBillingCustomer({ wo_number: '2', title: 'LDS1106 Site 5006643' })).toBe('TeamNetView');
   });
 
   it('sends NetView only the hourly rate, without a quantity or charge breakdown', () => {

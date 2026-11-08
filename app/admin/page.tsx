@@ -1761,7 +1761,7 @@ Go ahead?`)) return;
             title="Search (Ctrl+K)"
             style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
           >
-            <Search size={13} /> Search
+            <Search size={13} /> Ask FAJ
           </button>
           <button
             onClick={toggleDark}
@@ -1805,6 +1805,13 @@ Go ahead?`)) return;
           if (r.type === 'wo') { setView('workorders'); setModal({ type: 'wo', item: r.data }); }
           else if (r.type === 'contractor') { setView('contractors'); setModal({ type: 'contractor', item: r.data }); }
           else if (r.type === 'payment') { setView('payments'); setModal({ type: 'payment', item: r.data }); }
+        }}
+        onAsk={(a) => {
+          setSearchOpen(false);
+          if (a.kind === 'pay') { const w = enrichedWOs.find((x) => x.id === a.woId); if (w) handlePayWO(w); }
+          else if (a.kind === 'open') openJobFrom(a.woId, 'workorders');
+          else if (a.kind === 'new-job') openNewOrder();
+          else if ((VIEWS as readonly string[]).includes(a.view)) setView(a.view as View);
         }}
       />
 
@@ -1989,6 +1996,12 @@ Go ahead?`)) return;
                 // Placed and sized like any other block (Settings -> Screen designer).
                 attention={shown('dash.attention') ? (
                   <>
+                    <button onClick={() => setSearchOpen(true)} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, width: '100%', marginBottom: 14, padding: '12px 14px', cursor: 'text',
+                      borderRadius: 13, background: 'white', border: '1px solid #eae5d8', color: '#8a8578', fontSize: 14, textAlign: 'left',
+                    }}>
+                      <Search size={16} color="var(--teal)" /> Ask FAJ: pay Paul for 191, what do I owe, new job…
+                    </button>
                     <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'workorders')}
                       onGo={(v) => setView(v as typeof view)} onTechRead={(n) => setMessageCount((c) => Math.max(0, c - n))} />
                     <AttentionPanel

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
-import { Search, X, Briefcase, Users, CreditCard } from 'lucide-react';
+import { Search, X, Briefcase, Users, CreditCard, Sparkles } from 'lucide-react';
+import { askFaj, type AskAction } from '@/lib/ask-faj';
 import { fmtMoney } from '@/lib/utils';
 import type { EnrichedWorkOrder, Contractor, Payment } from '@/lib/types';
 
@@ -10,7 +11,7 @@ type Result =
   | { type: 'payment'; data: Payment };
 
 export default function GlobalSearch({
-  open, onClose, workOrders, contractors, payments, onSelect,
+  open, onClose, workOrders, contractors, payments, onSelect, onAsk,
 }: {
   open: boolean;
   onClose: () => void;
@@ -18,6 +19,8 @@ export default function GlobalSearch({
   contractors: Contractor[];
   payments: Payment[];
   onSelect: (r: Result) => void;
+  /** Ask FAJ (lib/ask-faj.ts): "pay Paul for 191", "what do I owe", "new job". */
+  onAsk: (a: Exclude<AskAction, { kind: 'answer' }>) => void;
 }) {
   const [q, setQ] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -36,6 +39,11 @@ export default function GlobalSearch({
 
   const query = q.toLowerCase();
   const results: Result[] = [];
+  const actions = askFaj(q, workOrders, contractors.map((c) => c.name));
+  const run = (a: AskAction) => {
+    onAsk(a.kind === 'answer' ? { kind: 'view', view: a.view, label: a.label } : a);
+    onClose(); setQ('');
+  };
 
   if (query.length >= 2) {
     for (const w of workOrders) {
@@ -80,13 +88,34 @@ export default function GlobalSearch({
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search work orders, contractors, payments..."
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              const a = actions.find((x) => x.kind !== 'answer');
+              if (a) run(a);
+              else if (results[0]) { onSelect(results[0]); onClose(); setQ(''); }
+            }}
+            placeholder="Search or ask: pay Paul for 191, what do I owe, new job…"
             style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, fontFamily: 'Inter, sans-serif', background: 'transparent', color: 'inherit' }}
           />
           <button onClick={() => { onClose(); setQ(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa' }}>
             <X size={18} />
           </button>
         </div>
+
+        {actions.length > 0 && (
+          <div style={{ borderBottom: '1px solid #eee', background: '#fbfaf6' }}>
+            {actions.map((a, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: '1px solid #f1eee6' }}>
+                <Sparkles size={14} color="var(--teal)" style={{ flexShrink: 0 }} />
+                {a.kind === 'answer' && <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{a.text}</div>}
+                <button className={`wf-btn wf-btn-sm ${a.kind === 'answer' ? 'wf-btn-outline' : 'wf-btn-gold'}`}
+                  style={a.kind === 'answer' ? undefined : { flex: 1, justifyContent: 'flex-start' }} onClick={() => run(a)}>
+                  {a.label}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {results.length > 0 && (
           <div style={{ maxHeight: 360, overflowY: 'auto' }}>
@@ -118,7 +147,7 @@ export default function GlobalSearch({
           </div>
         )}
 
-        {q.length >= 2 && results.length === 0 && (
+        {q.length >= 2 && results.length === 0 && actions.length === 0 && (
           <div style={{ padding: '24px 20px', textAlign: 'center', color: '#aaa', fontSize: 13 }}>
             No results for &ldquo;{q}&rdquo;
           </div>

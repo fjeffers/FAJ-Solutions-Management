@@ -1996,7 +1996,11 @@ Go ahead?`)) return;
                 onView={(v) => setView(v as typeof view)}
                 // Placed and sized like any other block (Settings -> Screen designer).
                 attention={shown('dash.attention') ? (
-                  <>
+                  <section aria-label="Today's command center">
+                    <div style={{ marginBottom: 14 }}>
+                      <h2 className="serif" style={{ fontSize: 27, fontWeight: 600, margin: 0 }}>Today</h2>
+                      <p style={{ margin: '4px 0 0', color: '#777', fontSize: 13.5 }}>Messages, jobs, billing and follow-ups that need you.</p>
+                    </div>
                     <button onClick={() => setSearchOpen(true)} style={{
                       display: 'flex', alignItems: 'center', gap: 10, width: '100%', marginBottom: 14, padding: '12px 14px', cursor: 'text',
                       borderRadius: 13, background: 'white', border: '1px solid #eae5d8', color: '#8a8578', fontSize: 14, textAlign: 'left',
@@ -2017,7 +2021,7 @@ Go ahead?`)) return;
                     />
                     <BillingToSend jobs={enrichedWOs} onOpenJob={(id) => openJobFrom(id, 'workorders')} />
                     <FollowUps invoices={invoices} invoicePayments={invoicePayments} quotes={quotes} jobs={enrichedWOs} techs={contractors} />
-                  </>
+                  </section>
                 ) : undefined}
                 field={shown('dash.field') ? (
                   <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'workorders')} onGo={(v) => setView(v as typeof view)} />

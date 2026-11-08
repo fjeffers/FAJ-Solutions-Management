@@ -175,9 +175,14 @@ export default function DashboardView({ stats, workOrders, payments, onView, att
   };
 
 
+  const visibleBlocks = designNow().dash
+    .filter((b) => !(home && b.kind === 'part' && MONEY_PARTS.has(b.key))
+      && (b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.attention' || attention) && (b.key !== 'dash.field' || field) && (b.key !== 'dash.coming' || coming))))
+    .map((b) => (home && b.kind === 'part' && (b.key === 'dash.field' || b.key === 'dash.coming') ? { ...b, width: 'half' as const } : b));
+
   const grid = (
       <div style={{ display: 'flex', flexDirection: 'column', gap: home ? 16 : 24 }}>
-        {dashRows(designNow().dash.filter((b) => !(home && b.kind === 'part' && MONEY_PARTS.has(b.key)) && (b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.attention' || attention) && (b.key !== 'dash.field' || field) && (b.key !== 'dash.coming' || coming))))).map((row) => (
+        {dashRows(visibleBlocks).map((row) => (
           <div key={row.map((b) => b.key).join('|')} className={row.length === 2 ? 'dash-row dash-row-2' : 'dash-row'}
             style={{ display: 'grid', gridTemplateColumns: row.length === 2 ? '1fr 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
             {row.map((b) => <div key={b.key} style={{ minWidth: 0 }}>{block(b)}</div>)}

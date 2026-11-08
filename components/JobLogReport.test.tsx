@@ -850,7 +850,7 @@ describe('Job log edited by the office', () => {
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
       const quickBooks = screen.getByRole('button', { name: /send to quickbooks/i });
-      const netview = screen.getByRole('link', { name: /send to netview/i });
+      const netview = screen.getByRole('link', { name: /open netview link/i });
       expect(quickBooks.nextElementSibling).toBe(netview);
       // One thing: no rates box or invoice box beside it; it's edited right on the invoice (Fred: "the invoice need to
       // be one ... so we edit job log it shows as an invoice").
@@ -865,7 +865,7 @@ describe('Job log edited by the office', () => {
       await waitFor(() => expect(print.disabled).toBe(false));
       expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50, billTo: '' } });
       await waitFor(() => {
-        const params = new URL((screen.getByRole('link', { name: /send to netview/i }) as HTMLAnchorElement).href).searchParams;
+        const params = new URL((screen.getByRole('link', { name: /open netview link/i }) as HTMLAnchorElement).href).searchParams;
         expect(params.get('entry.1582831326')).toBe('1240');
         expect(params.get('entry.1719028500')).toBe('$50.00/hr');
         expect(params.has('entry.1596223790')).toBe(false);

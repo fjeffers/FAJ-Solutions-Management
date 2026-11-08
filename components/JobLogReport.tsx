@@ -562,9 +562,12 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const qbTotal = qbLinesTotal(qbLines);
   const qbNumber = jobLogInvoiceNumber(savedMeta, w.wo_number);
   const netviewDetails = invoice ? netviewInvoiceDetails(invoice) : {};
+  // NetView must receive the exact total printed on the saved FAJ invoice.
+  // QuickBooks lines can intentionally omit non-positive display rows.
+  const netviewTotal = invoice?.totals.total ?? qbTotal;
   const netviewLink = netview ? netviewFormUrl(netviewAnswers({
     job: w,
-    invoice: { number: qbNumber, total: qbTotal, date: savedMeta.date, from, to, ...netviewDetails },
+    invoice: { number: qbNumber, total: netviewTotal, date: savedMeta.date, from, to, ...netviewDetails },
     vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
   })) : '';
   const sendToQuickBooks = async () => {
@@ -847,7 +850,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
             {netview && (
               <a className="wf-btn wf-btn-outline wf-btn-sm" href={netviewLink} target="_blank" rel="noopener noreferrer"
                 title={`Open NetView's payment portal with this same invoice filled in. Review it, confirm the invoice was emailed to ${NETVIEW_PAYROLL}, then submit it.`}>
-                <ExternalLink size={16} /> Send to NetView
+                <ExternalLink size={16} /> Open NetView link
               </a>
             )}
             <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || clientBlocked} onClick={downloadQuickBooksFile}
@@ -868,7 +871,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
             {invDraft ? <>Everything is changed here: type each tech’s $ per hour and rate per mile (.50 or 50 for 50¢), change the date, hours or miles on any line, or use <b>Add hours</b> and <b>Add mileage</b>. Totals update automatically. Press <b>Save invoice</b> when it is right; the job log’s time sheet changes with it.</>
               : ratesFailed ? 'The saved rates didn’t load, so the invoice can’t be changed or printed right now. Close the job log and open it again.'
                 : noSavedRates ? <>Press <b>Edit invoice</b>. Add or change the days, hours, mileage and rates here, then <b>Save invoice</b>.</>
-                  : <>This is the central invoice workspace. <b>Edit invoice</b> changes the days, hours, mileage and rates with automatic totals. Then use <b>Send to QuickBooks</b>, <b>Send to NetView</b> or the <b>QuickBooks import file</b> above.</>}
+                  : <>This is the central invoice workspace. <b>Edit invoice</b> changes the days, hours, mileage and rates with automatic totals. Then use <b>Send to QuickBooks</b>, <b>Open NetView link</b> or the <b>QuickBooks import file</b> above.</>}
             {!invDraft && savedMeta.qbo && <div style={{ marginTop: 4, color: '#047857', fontWeight: 600 }}>In QuickBooks as invoice {savedMeta.qbo.number || '—'} ({fmtMoney(savedMeta.qbo.total)}){savedMeta.qbo.at ? `, sent ${new Date(savedMeta.qbo.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: TZ })}` : ''}.</div>}
             {!invDraft && !noSavedRates && !ratesFailed && (!savedMeta.qbo || netview) && (
               <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '6px 18px' }}>

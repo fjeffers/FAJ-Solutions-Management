@@ -2,7 +2,7 @@
 // ApplicationAuthorizationFailed (3100), a real company asked of the sandbox.
 // findCompany asks the other QuickBooks before giving up.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { findCompany } from './quickbooks';
+import { findCompany, findInvoiceByNumber } from './quickbooks';
 
 const FAULT = JSON.stringify({ fault: { error: [{ message: 'message=ApplicationAuthorizationFailed; errorCode=003100; statusCode=403', code: '3100' }], type: 'SERVICE' } });
 function quickbooks(company: { host: string; name: string }) {
@@ -34,5 +34,33 @@ describe('findCompany', () => {
   it("gives the first answer's error when neither has the company", async () => {
     quickbooks({ host: 'nowhere.example', name: '' });
     await expect(findCompany('production', '9341', 'token')).rejects.toThrow(/ApplicationAuthorizationFailed/);
+  });
+});
+
+describe('findInvoiceByNumber', () => {
+  it('matches work-order numbers with apostrophes without putting them in the QuickBooks query', async () => {
+    const asked: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const query = new URL(url).searchParams.get('query') ?? '';
+      asked.push(query);
+      return new Response(JSON.stringify({
+        QueryResponse: {
+          Invoice: [
+            { Id: '1', DocNumber: 'WO 1901448', TotalAmt: 100 },
+            { Id: '2', DocNumber: "WO 19'01449", TotalAmt: 220 },
+          ],
+          maxResults: 2,
+        },
+      }), { status: 200 });
+    }));
+
+    await expect(findInvoiceByNumber('production', '9341', 'token', "WO 19'01449")).resolves.toEqual({
+      id: '2',
+      docNumber: "WO 19'01449",
+      total: 220,
+    });
+    expect(asked).toEqual([
+      'SELECT Id, DocNumber, TotalAmt FROM Invoice ORDERBY MetaData.LastUpdatedTime DESC MAXRESULTS 1000',
+    ]);
   });
 });

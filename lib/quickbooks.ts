@@ -325,12 +325,17 @@ export async function findInvoiceByNumber(
   accessToken: string,
   docNumber: string,
 ): Promise<{ id: string; docNumber: string; total: number } | null> {
-  const escaped = docNumber.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  // QuickBooks' query parser rejects escaped apostrophes in DocNumber filters
+  // (for example WO 19'01449), even though the invoice API accepts that value.
+  // For those uncommon numbers, fetch recent invoices and match in JavaScript.
+  const query = /['\\]/.test(docNumber)
+    ? 'SELECT Id, DocNumber, TotalAmt FROM Invoice ORDERBY MetaData.LastUpdatedTime DESC MAXRESULTS 1000'
+    : `SELECT Id, DocNumber, TotalAmt FROM Invoice WHERE DocNumber = '${docNumber}'`;
   const found = await qboQuery<{ Id: string; DocNumber?: string; TotalAmt?: number }>(
     environment, realmId, accessToken,
-    `SELECT Id, DocNumber, TotalAmt FROM Invoice WHERE DocNumber = '${escaped}'`,
+    query,
   );
-  const inv = found[0];
+  const inv = found.find((item) => item.DocNumber === docNumber);
   return inv ? { id: String(inv.Id), docNumber: String(inv.DocNumber ?? docNumber), total: Number(inv.TotalAmt ?? 0) } : null;
 }
 

@@ -70,18 +70,23 @@ export async function POST(req: Request) {
 
   const { data: kept, error: readErr } = await supabase.from('job_log_rates').select('invoice').eq('wo_id', wo.id).maybeSingle();
   const meta = parseInvoiceMeta((kept as { invoice?: unknown } | null)?.invoice, date);
-  if (meta.qbo?.id) {
-    return NextResponse.json({
-      error: `This invoice already exists in QuickBooks as ${meta.qbo.number || 'an invoice'}.`,
-      fix: 'Open the existing invoice in QuickBooks. FAJ stopped this retry so it would not create a duplicate.',
-      existing: meta.qbo,
-    }, { status: 409 });
-  }
-
   const session = await getValidQboSession(user.id);
   if (!session) {
     return NextResponse.json({
       error: 'QuickBooks is not connected, or its sign-in expired.', fix: 'Connect it again in Settings → QuickBooks, or use the QuickBooks import file button.', not_connected: true,
+    }, { status: 409 });
+  }
+  // Older records were created while FAJ only had a Sandbox connection and did
+  // not store the environment. They must not block the first real invoice after
+  // the company switches to Production.
+  const sameCompany = meta.qbo?.environment
+    ? meta.qbo.environment === session.environment && (!meta.qbo.realmId || meta.qbo.realmId === session.realm_id)
+    : session.environment === 'sandbox';
+  if (meta.qbo?.id && sameCompany) {
+    return NextResponse.json({
+      error: `This invoice already exists in QuickBooks as ${meta.qbo.number || 'an invoice'}.`,
+      fix: 'Open the existing invoice in QuickBooks. FAJ stopped this retry so it would not create a duplicate.',
+      existing: meta.qbo,
     }, { status: 409 });
   }
 
@@ -104,7 +109,14 @@ export async function POST(req: Request) {
     // The same invoice sent again (a double tap, a retry) is the same request to QuickBooks, which makes it once.
     const requestId = createHash('sha256').update(JSON.stringify([wo.id, payload])).digest('hex').slice(0, 40);
     const invoice = await createInvoice(env, realm, token, payload as unknown as Record<string, unknown>, requestId);
-    const sent = { id: invoice.id, number: invoice.docNumber || number, total: invoice.total, at: new Date().toISOString() };
+    const sent = {
+      id: invoice.id,
+      number: invoice.docNumber || number,
+      total: invoice.total,
+      at: new Date().toISOString(),
+      environment: env,
+      realmId: realm,
+    };
 
     // Kept with the invoice's boxes, so the job log says it's in QuickBooks.
     let writeBackError: string | null = readErr?.message ?? null;

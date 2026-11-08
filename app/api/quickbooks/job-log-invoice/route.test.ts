@@ -63,15 +63,30 @@ describe('POST /api/quickbooks/job-log-invoice', () => {
   });
 
   it('stops a retry when FAJ already recorded the QuickBooks invoice', async () => {
-    savedInvoice = { number: '1042', date: '2026-10-25', terms: 30, qbo: { id: '77', number: '1042', total: 346 } };
+    savedInvoice = {
+      number: '1042',
+      date: '2026-10-25',
+      terms: 30,
+      qbo: { id: '77', number: '1042', total: 346, environment: 'production', realmId: 'r' },
+    };
     const res = await post();
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({
       error: 'This invoice already exists in QuickBooks as 1042.',
-      existing: { id: '77', number: '1042', total: 346 },
+      existing: { id: '77', number: '1042', total: 346, environment: 'production', realmId: 'r' },
     });
-    expect(session).not.toHaveBeenCalled();
+    expect(session).toHaveBeenCalled();
     expect(qb.createInvoice).not.toHaveBeenCalled();
+  });
+
+  it('allows the first production invoice when the saved copy came from the old Sandbox connection', async () => {
+    savedInvoice = { number: '1042', date: '2026-10-25', terms: 30, qbo: { id: 'sandbox-77', number: '1042', total: 346 } };
+    const res = await post();
+    expect(res.status).toBe(200);
+    expect(qb.createInvoice).toHaveBeenCalledOnce();
+    expect(updates[0]).toMatchObject({
+      invoice: { qbo: { id: '77', environment: 'production', realmId: 'r' } },
+    });
   });
 
   it("sends nothing when a line doesn't add up or the total isn't the lines'", async () => {

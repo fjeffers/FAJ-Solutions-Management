@@ -33,8 +33,15 @@ export type InvoiceMeta = {
   /** When Fred marked it sent on NetView's form: ISO time. */
   netview?: string;
 };
-/** A QuickBooks invoice made from the job log's invoice: its id, number, total and when. */
-export type InvoiceSent = { id: string; number: string; total: number; at: string };
+/** A QuickBooks invoice made from the job log's invoice: its company, id, number, total and when. */
+export type InvoiceSent = {
+  id: string;
+  number: string;
+  total: number;
+  at: string;
+  environment?: 'sandbox' | 'production';
+  realmId?: string;
+};
 
 export const DEFAULT_LABOR = 'Installation of Cabling for refresh project';
 
@@ -69,7 +76,15 @@ function sentOf(raw: unknown): InvoiceSent | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   if (typeof o.id !== 'string' || !o.id) return null;
-  return { id: o.id, number: typeof o.number === 'string' ? o.number : '', total: Number(o.total) || 0, at: typeof o.at === 'string' ? o.at : '' };
+  const environment = o.environment === 'sandbox' || o.environment === 'production' ? o.environment : null;
+  return {
+    id: o.id,
+    number: typeof o.number === 'string' ? o.number : '',
+    total: Number(o.total) || 0,
+    at: typeof o.at === 'string' ? o.at : '',
+    ...(environment ? { environment } : {}),
+    ...(typeof o.realmId === 'string' && o.realmId ? { realmId: o.realmId } : {}),
+  };
 }
 
 export const sameMeta = (a: InvoiceMeta, b: InvoiceMeta) => JSON.stringify(a) === JSON.stringify(b);

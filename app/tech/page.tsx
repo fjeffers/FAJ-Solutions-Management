@@ -1721,9 +1721,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
       {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
       {job.status === 'offered' && bottom}
       {dayCard && <div id="fs-go-day" style={{ scrollMarginTop: 12, display: 'contents' }}>{dayCard}</div>}
-      <JobIcons job={job} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
+      <JobIcons canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
         onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
-        onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined}
+        onReceipt={canReport && (ask('receipts') || odoAsked) ? () => setExpenseOpen(true) : undefined}
         onNote={canReport ? () => (hasReport ? toReport() : setNoteOpen(true)) : undefined} />
       {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
         <div id="fs-go-closeout" style={{ scrollMarginTop: 12 }}>
@@ -1828,7 +1828,7 @@ function SiteCard({ job }: { job: WfJob }) {
         </div>
       )}
       {/* One Navigate button, then the choice of Google Maps, Waze or Apple Maps (Fred, 2026-10-31). */}
-      <DirectionsButton job={job} label="Navigate" className="fs-btn fs-btn-secondary" style={{ width: '100%' }} />
+      <DirectionsButton job={job} label="Navigate to site" className="fs-btn fs-btn-secondary" style={{ width: '100%' }} />
       {job.access && (
         <div className="fs-site-access">
           <span>How to get in</span>
@@ -1916,13 +1916,13 @@ function PhotoKindDialog({ odometer, receipts, onPick, onCancel }: {
 }
 
 /**
- * The icons under the job: Photo, Upload, Receipt, Messages and Directions, one tap each.
+ * The four buttons under the job: Photo, Receipt / miles, Message and Notes.
  * Receipt only on a job that asks for receipts (Fred, 2026-10-19: "tech is not
- * seeing where to add their receipts"); Upload, a photo already on the phone,
- * on a job that asks for mileage (Fred, 2026-10-26).
+ * seeing where to add their receipts"). Photo offers the camera and, when mileage
+ * is requested, a photo already on the phone (Fred, 2026-10-26).
  */
-function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onReceipt, onNote }: {
-  job: WfJob; canPhoto: boolean; photoBusy: boolean; onPhoto: (f: File | undefined) => void; onMessages: () => void;
+function JobIcons({ canPhoto, photoBusy, onPhoto, onUpload, onMessages, onReceipt, onNote }: {
+  canPhoto: boolean; photoBusy: boolean; onPhoto: (f: File | undefined) => void; onMessages: () => void;
   /** A photo already on the phone (a mileage photo taken while the app was down): not every job shows Photos. */
   onUpload?: (f: File | undefined) => void;
   onReceipt?: () => void;
@@ -1933,26 +1933,42 @@ function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onR
     minHeight: 76, padding: '10px 6px', borderRadius: 14, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
     font: 'inherit', fontWeight: 700, fontSize: 15, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
   };
+  const [photoOpen, setPhotoOpen] = useState(false);
   return (
-    <div role="toolbar" aria-label="Job buttons" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-      {canPhoto && (
-        <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
-          <Camera size={26} /> Photo
-          <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
-            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onPhoto(f); }} />
-        </label>
+    <>
+      <div role="toolbar" aria-label="Job buttons" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+        {canPhoto && (onUpload ? (
+          <button type="button" style={{ ...tile, opacity: photoBusy ? 0.6 : 1 }} disabled={photoBusy} onClick={() => setPhotoOpen(true)}>
+            <Camera size={26} /> Photo
+          </button>
+        ) : (
+          <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
+            <Camera size={26} /> Photo
+            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onPhoto(f); }} />
+          </label>
+        ))}
+        {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={26} /> Receipt / miles</button>}
+        <button type="button" style={tile} onClick={onMessages}><MessageSquare size={26} /> Message</button>
+        {onNote && <button type="button" style={tile} onClick={onNote}><NotebookPen size={26} /> Notes</button>}
+      </div>
+      {photoOpen && onUpload && (
+        <Dialog title="Add a photo" onClose={() => setPhotoOpen(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label className="wf-btn wf-btn-outline" style={{ justifyContent: 'flex-start', padding: '12px 14px' }}>
+              <Camera size={18} /> Take photo
+              <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setPhotoOpen(false); onPhoto(f); }} />
+            </label>
+            <label className="wf-btn wf-btn-outline" style={{ justifyContent: 'flex-start', padding: '12px 14px' }}>
+              <ImagePlus size={18} /> Choose from phone
+              <input type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setPhotoOpen(false); onUpload(f); }} />
+            </label>
+          </div>
+        </Dialog>
       )}
-      {canPhoto && onUpload && (
-        <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
-          <ImagePlus size={26} /> Upload
-          <input type="file" accept="image/*" style={{ display: 'none' }} aria-label="Upload a photo from the phone"
-            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onUpload(f); }} />
-        </label>
-      )}
-      {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={26} /> Receipt / miles</button>}
-      <button type="button" style={tile} onClick={onMessages}><MessageSquare size={26} /> Message</button>
-      {onNote && <button type="button" style={tile} onClick={onNote}><NotebookPen size={26} /> Notes</button>}
-    </div>
+    </>
   );
 }
 

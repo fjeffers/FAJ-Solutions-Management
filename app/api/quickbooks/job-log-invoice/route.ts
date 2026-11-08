@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   const session = await getValidQboSession(user.id);
   if (!session) {
     return NextResponse.json({
-      error: 'QuickBooks is not connected yet.', fix: 'Connect it in Settings → QuickBooks, or use the QuickBooks import file button.', not_connected: true,
+      error: 'QuickBooks is not connected, or its sign-in expired.', fix: 'Connect it again in Settings → QuickBooks, or use the QuickBooks import file button.', not_connected: true,
     }, { status: 409 });
   }
 

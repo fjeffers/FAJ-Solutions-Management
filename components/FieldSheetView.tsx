@@ -947,7 +947,10 @@ function FinishPanel({ wo, s, totals, from, to, rows, receipts, invoices, allRow
     const t = sheetTotals(allRows.filter((r) => inDates(r.day, i.from_day, i.to_day)), allReceipts.filter((e) => !!e.date && inDates(e.date, i.from_day, i.to_day)), s);
     return netviewFormUrl(netviewAnswers({
       job: wo,
-      invoice: { number: i.qbo_invoice_number ?? '', total: Number(i.total ?? t.bill), date: i.invoice_date ?? dayOf(i.created_at, TZ), from: i.from_day, to: i.to_day },
+      invoice: {
+        number: i.qbo_invoice_number ?? '', total: Number(i.total ?? t.bill), date: i.invoice_date ?? dayOf(i.created_at, TZ),
+        from: i.from_day, to: i.to_day, rate: s.rate == null ? undefined : `$${s.rate.toFixed(2)}/hr`,
+      },
       vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
     }));
   };
@@ -1351,4 +1354,3 @@ function AddDay({ techs, rows, defaultDay, onClose, onAdd }: {
       </form>
     </div>, document.body);
 }
-

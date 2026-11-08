@@ -32,22 +32,20 @@ describe('NetView form', () => {
       job: wendys,
       invoice: {
         number: '1042', total: 299.02, date: '2026-10-25', from: '2026-10-16', to: '2026-10-16',
-        rate: 'Fred Jeffers: $60.00/hr', quantity: 'Fred Jeffers: 2 hr',
-        other: 'Fred Jeffers labor: 2 hr × $60.00/hr = $120.00\nMileage: $10.00',
+        rate: '$60.00/hr',
       },
       ...who,
     });
     expect(a).toEqual({
       invoiceDate: '2026-10-25', serviceDate: '2026-10-16', vendor: 'FAJ Solutions',
-      rate: 'Fred Jeffers: $60.00/hr', quantity: 'Fred Jeffers: 2 hr',
-      other: 'Fred Jeffers labor: 2 hr × $60.00/hr = $120.00\nMileage: $10.00',
+      rate: '$60.00/hr', quantity: '', other: '',
       total: '299.02', customer: "Wendy's", invoiceNumber: '1042', siteId: 'FLN5294 · Site 397 · FAJ WO 19101413',
       memo: "Wendy's #397 — Add 2 cameras (office & rear exterior) · Wendy's #397, Folsom, PA · 10/16/2026",
       coordinator: 'Karen Sparkman', enteredBy: 'Fred Jeffers', email: 'fajsolutions@gmail.com',
     });
   });
 
-  it('turns the saved invoice into NetView rates, quantities and a full charge breakdown', () => {
+  it('sends NetView only the hourly rate, without a quantity or charge breakdown', () => {
     expect(netviewInvoiceDetails({
       techs: [{
         tech: 'Fred Jeffers',
@@ -59,16 +57,7 @@ describe('NetView form', () => {
       }],
       totals: { labor: 120, mileage: 9, meals: 18, materials: 25, travel: 100, total: 272 },
     })).toEqual({
-      rate: 'Fred Jeffers: $60.00/hr',
-      quantity: 'Fred Jeffers: 2 hr',
-      other: [
-        'Fred Jeffers labor: 2 hr × $60.00/hr = $120.00',
-        'Fred Jeffers mileage: 15 mi × $0.60/mi = $9.00',
-        'Fred Jeffers meals: $18.00',
-        'Materials: $25.00',
-        'Fred Jeffers hotel/travel: $100.00',
-        'Totals: labor $120.00, mileage $9.00, meals $18.00, materials $25.00, travel $100.00, invoice $272.00',
-      ].join('\n'),
+      rate: '$60.00/hr',
     });
   });
 

@@ -867,10 +867,9 @@ describe('Job log edited by the office', () => {
       await waitFor(() => {
         const params = new URL((screen.getByRole('link', { name: /send to netview/i }) as HTMLAnchorElement).href).searchParams;
         expect(params.get('entry.1582831326')).toBe('1240');
-        expect(params.get('entry.1719028500')).toBe('Paul Gibbs: $50.00/hr');
-        expect(params.get('entry.1596223790')).toBe('Paul Gibbs: 9 hr');
-        expect(params.get('entry.2058828780')).toContain('Paul Gibbs labor: 9 hr × $50.00/hr = $450.00');
-        expect(params.get('entry.2058828780')).toContain('Totals: labor $450.00, mileage $10.80, meals $18.97, materials $104.17, travel $402.50, invoice $986.44');
+        expect(params.get('entry.1719028500')).toBe('$50.00/hr');
+        expect(params.has('entry.1596223790')).toBe(false);
+        expect(params.has('entry.2058828780')).toBe(false);
         expect(params.get('entry.1510356417')).toBe('986.44');
       });
       // On a phone it scrolls sideways rather than being cut off.

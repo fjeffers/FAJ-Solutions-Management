@@ -146,7 +146,7 @@ export type WfJob = {
   archived: boolean;
   /** Owner only. Null on a tech's job — a tech never sees money. */
   clientPrice: number | null;
-  /** Office only: the Dispatch board column of Fred's the job is parked in (migration 113). */
+  /** The Dispatch board holding column the job is parked in. Techs receive it so held work is read-only. */
   hold?: string | null;
   /** Part of a project: the tech gets the project day (migration 117). */
   isProject?: boolean;
@@ -322,7 +322,7 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
     timeRequests: owner ? parseTimeRequests(r.time_requests) : {},
     archived: !!s(r, 'archived_at'),
     clientPrice: owner && Number.isFinite(price) ? price : null,
-    hold: owner ? s(r, 'board_stage') || null : null,
+    hold: s(r, 'board_stage') || (s(r, 'wo_status') === 'On Hold' ? 'On hold' : null),
     isProject: r.is_project === true,
     projectName: s(r, 'project_name'),
     myDay: owner ? [] : parseDayEvents(r.my_day),
@@ -339,9 +339,9 @@ function base(r: Row, status: WfStatus, owner: boolean): WfJob {
   };
 }
 
-/** Jobs on hold stay off the tech's phone until the office takes them off hold (Fred, 2026-10-31). */
+/** Kept for older cached/API callers. Held jobs now stay visible and read-only. */
 export function notOnHold<T>(rows: T[]): T[] {
-  return rows.filter((r) => (r as { wo_status?: unknown } | null)?.wo_status !== 'On Hold');
+  return rows;
 }
 
 /** A row from `wf_tech_jobs()`: the signed-in tech's own job. Never any money. */
@@ -401,7 +401,9 @@ export const place = (j: WfJob) => [j.city, j.state].filter(Boolean).join(', ');
 
 export const tasksDone = (j: WfJob) => j.tasks.filter((t) => t.done).length;
 export const isClockedIn = (j: WfJob) => !!j.checkedInAt && !j.checkedOutAt;
-export const canWork = (j: WfJob) => j.status === 'scheduled' || j.status === 'inProgress';
+export const isOnHold = (j: Pick<WfJob, 'hold' | 'officeStatus'>) =>
+  j.officeStatus === 'On Hold' || j.hold?.trim().toLowerCase() === 'on hold';
+export const canWork = (j: WfJob) => !isOnHold(j) && (j.status === 'scheduled' || j.status === 'inProgress');
 export const isFinished = (j: WfJob) => j.status === 'workDone' || j.status === 'closed';
 
 /** Milliseconds logged on the job so far (a running clock counts up to `now`). */

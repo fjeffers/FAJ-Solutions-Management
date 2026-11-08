@@ -36,6 +36,18 @@ export async function fetchCloseoutLists(): Promise<CloseoutList[]> {
 
 /** Call a server function; turn "no" into a RefusedError and no signal into a plain error. */
 async function call(fn: string, args: Record<string, unknown>): Promise<void> {
+  const number = typeof args.p_wo_number === 'string' ? args.p_wo_number : '';
+  if (number) {
+    const { data: held, error: heldError } = await createClient().rpc('wf_tech_job_on_hold', { p_wo_number: number });
+    if (heldError) {
+      if (isNoSignal(heldError)) throw new Error(heldError.message);
+      // The app and migration can deploy a few minutes apart. Older databases
+      // have no hold-check RPC yet, so keep existing job actions working until
+      // migration 153 lands.
+      if (heldError.code !== 'PGRST202') throw new RefusedError("That couldn't be saved. Try again.");
+    }
+    if (held === true) throw new RefusedError('This work order is on hold. You can view it, but no changes can be made.');
+  }
   const { data, error } = await createClient().rpc(fn, args);
   if (error) {
     if (isNoSignal(error)) throw new Error(error.message);

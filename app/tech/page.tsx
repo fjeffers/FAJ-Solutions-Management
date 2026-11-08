@@ -25,7 +25,7 @@ import {
   type PendingAction,
 } from '@/lib/wf-outbox';
 import {
-  techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, formatDuration, whenText,
+  techCounts, matchesWf, sortWf, sortTechJobs, canWork, isClockedIn, isFinished, isOnHold, formatDuration, whenText,
   fullAddress, reportMissing, askedOnly, askedDeliverables, workTypeFor, requestWhen, WF_WORK_TYPE_LABEL, TECH_FILTERS, techFilterOf, fmtClock12, parseClockTime,
   type TechFilter, type WfJob, type WfQuestion, type WfTask, type WfWorkType,
   missingGoesTo, wfStatusLabel,
@@ -632,7 +632,7 @@ export default function TechPortalPage() {
             <>
               <FsPageHeader title="Messenger" subtitle="Talk about your work orders." />
               <TechChat
-                jobs={jobs.filter((j) => !isFinished(j) && j.status !== 'declined').map(toChatJob)}
+                jobs={jobs.filter((j) => !isOnHold(j) && !isFinished(j) && j.status !== 'declined').map(toChatJob)}
                 onRead={async () => {
                   const [u1, u2] = await Promise.all([fetchTechUnread(), fetchTechDmUnread()]);
                   setUnread(u1 + u2);
@@ -784,10 +784,11 @@ function ProjectTab({ jobs, uid, onOpen, onCheckIn, onArrive, busy, act, alerts 
 }) {
   const today = todayISO();
   const live = sortTechJobs(jobs.filter(canWork), today);
+  const assigned = sortTechJobs(jobs.filter((j) => canWork(j) || isOnHold(j)), today);
   const todayCount = live.filter((j) => j.date === today || isClockedIn(j)).length;
   const lists: Record<WoList, WfJob[]> = {
-    assigned: live,
-    available: sortTechJobs(jobs.filter((j) => j.status === 'offered'), today),
+    assigned,
+    available: sortTechJobs(jobs.filter((j) => !isOnHold(j) && j.status === 'offered'), today),
     pending: sortTechJobs(jobs.filter((j) => j.status === 'workDone'), today),
   };
   const past = sortTechJobs(jobs.filter((j) => j.status === 'closed'), today);
@@ -805,9 +806,11 @@ function ProjectTab({ jobs, uid, onOpen, onCheckIn, onArrive, busy, act, alerts 
       : new Date(`${j.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     const time = start ? ` · ${fmtClock12(start)}${end ? ` – ${fmtClock12(end)}` : ''}` : '';
     // A job with the day says where the tech is in it, as Field Service does.
+    const held = isOnHold(j);
     const stage = j.dayFlow && canWork(j) ? fsStage(j.myDay ?? [], {}, undefined, 'America/New_York') : 'ready';
     const [label, tone, dot]: [string, 'green' | 'amber' | 'grey', boolean] =
-      stage !== 'ready' ? [FS_STAGE_NAME[stage], 'green', true]
+      held ? ['On hold · view only', 'grey', false]
+      : stage !== 'ready' ? [FS_STAGE_NAME[stage], 'green', true]
       : isClockedIn(j) ? ['Clocked in', 'green', true]
         : j.status === 'inProgress' ? ['In progress', 'green', true]
           : j.status === 'workDone' ? ['Work done', 'amber', false]
@@ -824,7 +827,7 @@ function ProjectTab({ jobs, uid, onOpen, onCheckIn, onArrive, busy, act, alerts 
           {where && where !== j.siteName && <HomeAddress label="Site address" address={where} />}
           <span className="fs-go">Open work order<FsIcon name="arrow" size={16} /></span>
         </button>
-        {where && <DirectionsButton job={j} label="Navigate to site" className="fs-btn fs-btn-secondary" style={{ width: '100%' }} />}
+        {where && !held && <DirectionsButton job={j} label="Navigate to site" className="fs-btn fs-btn-secondary" style={{ width: '100%' }} />}
       </div>
     );
   };
@@ -870,7 +873,7 @@ function ProjectTab({ jobs, uid, onOpen, onCheckIn, onArrive, busy, act, alerts 
       <div className="fs-stat-grid">
         <div className="fs-card fs-stat-card">
           <div>Open work orders<FsIcon name="sheet" size={18} /></div>
-          <strong>{live.length}</strong><small>Assigned to you</small>
+          <strong>{assigned.length}</strong><small>Assigned to you, including held</small>
         </div>
         <div className="fs-card fs-stat-card">
           <div>Today<FsIcon name="clock" size={18} /></div>
@@ -1339,7 +1342,8 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   }, [job.number]);
   useEffect(() => { void loadHandMiles(); }, [loadHandMiles]);
   const working = canWork(job);
-  const canReport = working || job.status === 'workDone';
+  const held = isOnHold(job);
+  const canReport = !held && (working || job.status === 'workDone');
   const checklist = useMemo(() => listFor(lists, job.title, job.description), [lists, job.title, job.description]);
   // Only what the office asked for on this job (lib/capture.ts); a job with no list asks for everything.
   const ask = (k: CaptureItem) => asks(job.capture, k);
@@ -1369,7 +1373,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const dayFlow = project || (FS_JOB_SCREEN && !!job.dayFlow);
   const jobForCloseout = project && ask('signature') && !shown.noSignature ? { ...shown, signatureRequired: true } : shown;
   // The live sheet's messages: No access, the PM's questions (migration 121).
-  const talk = useSiteTalk(job.number, dayFlow && job.status !== 'offered' && job.status !== 'declined');
+  const talk = useSiteTalk(job.number, !held && dayFlow && job.status !== 'offered' && job.status !== 'declined');
   // Running late, and stepped off site (migration 122).
   const late = useLateMarks(job.number, project && working);
   const [offOpen, setOffOpen] = useState(false);
@@ -1551,7 +1555,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         onRefresh={onRefresh}
         refreshing={refreshing}
         simple={simple}
-        actions={canReport ? (
+        actions={held ? undefined : canReport ? (
           <QuickActions
             job={job}
             showClock={showClock && !project}
@@ -1598,7 +1602,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
           {chatOpen && <div id="wf-job-messages"><JobMessages number={job.number} talk={project ? talk : undefined} keep={msgDraft} /></div>}
         </>}
-        bottom={simple && job.status !== 'offered' ? undefined : bottom}
+        bottom={held || (simple && job.status !== 'offered') ? undefined : bottom}
       />
   );
   /** Check-out's "Go to it": close the dialog and scroll to where the missing item gets done. */
@@ -1719,9 +1723,15 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     <div className="fs-stack">
       <TechJobHeader job={job} />
       {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
-      {job.status === 'offered' && bottom}
+      {held && (
+        <div className="wf-card" role="status" style={{ padding: 14, borderColor: '#9CA3AF', background: '#F3F4F6', color: '#374151' }}>
+          <b>On hold, view only</b>
+          <div style={{ marginTop: 3, fontSize: 13 }}>The office must release this work order before you can add time, photos, receipts, notes, messages, or make any other change.</div>
+        </div>
+      )}
+      {!held && job.status === 'offered' && bottom}
       {dayCard && <div id="fs-go-day" style={{ scrollMarginTop: 12, display: 'contents' }}>{dayCard}</div>}
-      <JobIcons canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
+      <JobIcons readOnly={held} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
         onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
         onReceipt={canReport && (ask('receipts') || odoAsked) ? () => setExpenseOpen(true) : undefined}
         onNote={canReport ? () => (hasReport ? toReport() : setNoteOpen(true)) : undefined} />
@@ -1750,7 +1760,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         {details ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
       </button>
       {details && (
-        <>
+        <div style={held ? { opacity: 0.58, filter: 'grayscale(1)', pointerEvents: 'none' } : undefined} aria-disabled={held || undefined}>
           {live && working && (
             <JobDayGuide steps={jobDayGuide({
               stage, workDone: job.status === 'workDone', photos: ask('photos'),
@@ -1773,9 +1783,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           )}
           <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
           <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
-        </>
+        </div>
       )}
-      {job.status !== 'offered' && bottom}
+      {!held && job.status !== 'offered' && bottom}
       {msgOpen && (
         <Dialog title="Messages" wide onClose={() => setMsgOpen(false)}>
           <JobMessages number={job.number} talk={dayFlow ? talk : undefined} keep={msgDraft} />
@@ -1799,7 +1809,7 @@ function TechJobHeader({ job }: { job: WfJob }) {
   return (
     <section className="fs-card fs-job-head">
       <div className="fs-job-head-top">
-        <span className="fs-job-chip">{wfStatusLabel(job.status, false)}</span>
+        <span className="fs-job-chip">{isOnHold(job) ? 'On hold' : wfStatusLabel(job.status, false)}</span>
         <span className="fs-muted">WO #{job.number}</span>
       </div>
       <h2>{job.siteName || job.title}</h2>
@@ -1921,7 +1931,8 @@ function PhotoKindDialog({ odometer, receipts, onPick, onCancel }: {
  * seeing where to add their receipts"). Photo offers the camera and, when mileage
  * is requested, a photo already on the phone (Fred, 2026-10-26).
  */
-function JobIcons({ canPhoto, photoBusy, onPhoto, onUpload, onMessages, onReceipt, onNote }: {
+function JobIcons({ readOnly = false, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onReceipt, onNote }: {
+  readOnly?: boolean;
   canPhoto: boolean; photoBusy: boolean; onPhoto: (f: File | undefined) => void; onMessages: () => void;
   /** A photo already on the phone (a mileage photo taken while the app was down): not every job shows Photos. */
   onUpload?: (f: File | undefined) => void;
@@ -1934,6 +1945,16 @@ function JobIcons({ canPhoto, photoBusy, onPhoto, onUpload, onMessages, onReceip
     font: 'inherit', fontWeight: 700, fontSize: 15, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
   };
   const [photoOpen, setPhotoOpen] = useState(false);
+  if (readOnly) {
+    return (
+      <div role="toolbar" aria-label="Job buttons unavailable while on hold" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, opacity: 0.48, filter: 'grayscale(1)' }}>
+        <button type="button" style={tile} disabled><Camera size={26} /> Photo</button>
+        <button type="button" style={tile} disabled><Receipt size={26} /> Receipt / miles</button>
+        <button type="button" style={tile} disabled><MessageSquare size={26} /> Message</button>
+        <button type="button" style={tile} disabled><NotebookPen size={26} /> Notes</button>
+      </div>
+    );
+  }
   return (
     <>
       <div role="toolbar" aria-label="Job buttons" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>

@@ -21,12 +21,14 @@ export async function POST(req: Request) {
   if (!woNumber || !content.trim()) return NextResponse.json({ ok: false }, { status: 400 });
 
   const admin = createAdminClient();
-  const { data } = await admin.from('work_orders').select('id, wo_number, wo_status, contractor_name, contractor_names')
+  const { data } = await admin.from('work_orders').select('id, wo_number, wo_status, board_stage, contractor_name, contractor_names')
     .eq('user_id', user.id).eq('wo_number', woNumber).maybeSingle();
-  const w = data as { id: string; wo_number: string; wo_status: string | null; contractor_name: string; contractor_names: string[] | null } | null;
+  const w = data as { id: string; wo_number: string; wo_status: string | null; board_stage: string | null; contractor_name: string; contractor_names: string[] | null } | null;
   if (!w) return NextResponse.json({ ok: false }, { status: 404 });
-  // A held job is hidden from techs, so its messages don't ring their phones either.
-  if (w.wo_status === 'On Hold') return NextResponse.json({ ok: true, techs: [] });
+  // A held job is view-only, so its messages don't ring their phones either.
+  if (w.wo_status === 'On Hold' || w.board_stage?.trim().toLowerCase() === 'on hold') {
+    return NextResponse.json({ ok: true, techs: [] });
+  }
 
   const techs: { name: string; pushed: number }[] = [];
   for (const name of techsOf(w)) {

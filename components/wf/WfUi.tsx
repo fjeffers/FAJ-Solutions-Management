@@ -122,7 +122,8 @@ export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet =
   /** A line of what the job is (the Projects list). */
   brief?: boolean;
 }) {
-  const accent = WF_STATUS_COLOR[job.status];
+  const held = job.officeStatus === 'On Hold' || job.hold?.trim().toLowerCase() === 'on hold';
+  const accent = held ? '#6B7280' : WF_STATUS_COLOR[job.status];
   const done = tasksDone(job);
   const where = [job.client, place(job)].filter(Boolean).join(' · ');
   return (
@@ -142,7 +143,9 @@ export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet =
               WO {job.number}
               {job.highPriority && <AlertTriangle size={13} color="var(--wf-danger)" aria-label="High priority" style={{ display: 'inline-block', verticalAlign: '-2px', marginLeft: 5 }} />}
             </span>
-            <StatusChip status={job.status} ownerView={ownerView} />
+            {held
+              ? <span className="wf-chip" style={{ color: '#4B5563', background: 'rgba(107,114,128,0.15)' }}>On hold</span>
+              : <StatusChip status={job.status} ownerView={ownerView} />}
           </div>
           <div style={{ fontWeight: 600, fontSize: 15, marginTop: 3, lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
             {job.title}

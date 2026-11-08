@@ -37,10 +37,13 @@ describe('Waiting on you: tech receipts', () => {
   });
 });
 
-describe('held jobs stay off the tech app', () => {
-  it('drops On Hold rows and keeps the rest', async () => {
-    const { notOnHold } = await import('./wf');
+describe('held jobs in the tech app', () => {
+  it('keeps On Hold rows visible for read-only access', async () => {
+    const { notOnHold, wfJobFromTech, isOnHold, canWork } = await import('./wf');
     const rows = [{ wo_number: '1', wo_status: 'Assigned' }, { wo_number: '2', wo_status: 'On Hold' }, { wo_number: '3', wo_status: null }];
-    expect(notOnHold(rows).map((r) => r.wo_number)).toEqual(['1', '3']);
+    expect(notOnHold(rows).map((r) => r.wo_number)).toEqual(['1', '2', '3']);
+    const job = wfJobFromTech({ wo_number: '2', wo_status: 'Assigned', board_stage: 'On hold', my_response: 'accepted' });
+    expect(isOnHold(job)).toBe(true);
+    expect(canWork(job)).toBe(false);
   });
 });

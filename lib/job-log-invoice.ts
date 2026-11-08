@@ -442,7 +442,7 @@ export const jobLogInvoiceNumber = (
 ) => {
   if (meta.number) return meta.number;
   const lds = clientReferences.join(' ').match(/\bLDS[\s-]?(\d+)\b/i);
-  return lds ? `LDS${lds[1]}` : `WO-${woNumber}`;
+  return lds ? `LDS-${lds[1]}` : `WO-${woNumber}`;
 };
 
 /** The invoice as QuickBooks' invoice import takes it (Settings → Import data → Invoices): one row a line. */

@@ -38,8 +38,8 @@ const read = (lines: InvoiceLine[]) => lines.map(({ date, item, description, qty
 
 describe('the invoice', () => {
   it('uses the LDS job number before falling back to the FAJ work-order number', () => {
-    expect(jobLogInvoiceNumber({ number: '' }, '19101401', 'LDS1106 Site 5006643')).toBe('LDS1106');
-    expect(jobLogInvoiceNumber({ number: '' }, '19101401', 'LDS-1106 Site 5006643')).toBe('LDS1106');
+    expect(jobLogInvoiceNumber({ number: '' }, '19101401', 'LDS1106 Site 5006643')).toBe('LDS-1106');
+    expect(jobLogInvoiceNumber({ number: '' }, '19101401', 'LDS-1106 Site 5006643')).toBe('LDS-1106');
     expect(jobLogInvoiceNumber({ number: '' }, '19101401', "Wendy's Franklin")).toBe('WO-19101401');
     expect(jobLogInvoiceNumber({ number: '1240' }, '19101401', 'LDS1106')).toBe('1240');
   });

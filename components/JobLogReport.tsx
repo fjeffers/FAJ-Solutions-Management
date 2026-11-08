@@ -587,11 +587,27 @@ export default function JobLogReport({ w, deliverables, onClose }: {
       setSending(false);
     }
   };
+  // Marked by hand: in QuickBooks by the import file or typed in, and sent on NetView's form. Home lists an invoice
+  // until both are done (components/BillingToSend.tsx).
+  const markInvoice = async (k: 'billed' | 'netview', on: boolean) => {
+    const meta: InvoiceMeta = { ...savedMeta };
+    if (on) meta[k] = new Date().toISOString(); else delete meta[k];
+    setSaving(true);
+    const { error } = await queueSave(w.id, () => createClient().from('job_log_rates').update({ invoice: meta }).eq('wo_id', w.id));
+    setSaving(false);
+    if (error) { toastError("That didn't save. Check your connection and try again."); return; }
+    setSavedMeta(meta);
+  };
+  const markBox = (k: 'billed' | 'netview', label: string) => (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, cursor: saving ? 'default' : 'pointer' }}>
+      <input type="checkbox" checked={!!savedMeta[k]} disabled={saving} onChange={(e) => void markInvoice(k, e.target.checked)} /> {label}
+    </label>
+  );
   const downloadQuickBooksFile = () => {
     if (!qbLines.length) { toastError('Nothing on the invoice is charged yet. Edit invoice and type the rates first.'); return; }
     const rows = invoiceImportRows(qbLines, { number: qbNumber, billTo: invoiceHead.billTo, meta: savedMeta, memo: jobLogMemo(w, qbLines) });
     downloadCSVText(`${`QuickBooks import ${pdfName}`.replace(/[\\/:*?"<>|#]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)}.csv`, toCSV(rows));
-    toastSuccess('In QuickBooks: Settings → Import data → Invoices, then pick this file. Import it once.');
+    toastSuccess('In QuickBooks: Settings → Import data → Invoices, then pick this file. Import it once, then tick Billed in QuickBooks here.');
   };
 
   // Back to what the app has: the clock-ins, the Field Sheet's miles and the approved receipts.
@@ -848,6 +864,12 @@ export default function JobLogReport({ w, deliverables, onClose }: {
                 : noSavedRates ? <>Press <b>Edit invoice</b>. Add or change the days, hours, mileage and rates here, then <b>Save invoice</b>.</>
                   : <>This is the central invoice workspace. <b>Edit invoice</b> changes the days, hours, mileage and rates with automatic totals. Then use <b>Send to QuickBooks</b>, <b>Send to NetView</b> or the <b>QuickBooks import file</b> above.</>}
             {!invDraft && savedMeta.qbo && <div style={{ marginTop: 4, color: '#047857', fontWeight: 600 }}>In QuickBooks as invoice {savedMeta.qbo.number || '—'} ({fmtMoney(savedMeta.qbo.total)}){savedMeta.qbo.at ? `, sent ${new Date(savedMeta.qbo.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: TZ })}` : ''}.</div>}
+            {!invDraft && !noSavedRates && !ratesFailed && (!savedMeta.qbo || netview) && (
+              <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '6px 18px' }}>
+                {!savedMeta.qbo && markBox('billed', 'Billed in QuickBooks')}
+                {netview && markBox('netview', 'Sent to NetView')}
+              </div>
+            )}
           </div>
         )}
         {copy === 'client' && (

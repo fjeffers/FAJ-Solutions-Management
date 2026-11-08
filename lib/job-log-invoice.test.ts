@@ -2,7 +2,7 @@
 // "mirror it exactly").
 import { describe, it, expect } from 'vitest';
 import {
-  addLine, buildInvoice, dueDate, editLine, invoiceCells, invoiceCharges, invoiceImportRows, jobLogMemo, jobLogQbPayload, parseInvoiceMeta, qbLinesTotal, quickBooksLines,
+  addLine, buildInvoice, dueDate, editLine, inQuickBooks, invoiceCells, invoiceCharges, invoiceImportRows, jobLogMemo, jobLogQbPayload, parseInvoiceMeta, qbLinesTotal, quickBooksLines,
   removeLine, type InvoiceHead, type InvoiceLine,
 } from './job-log-invoice';
 import type { JobSheet } from './job-log-sheet';
@@ -259,6 +259,12 @@ describe('the invoice into QuickBooks', () => {
     const sent = { id: '77', number: '1042', total: 10, at: '2026-11-04T17:00:00Z' };
     expect(parseInvoiceMeta({ number: '1042', qbo: sent }, '2026-11-04').qbo).toEqual(sent);
     expect(parseInvoiceMeta({ number: '1042', qbo: 'x' }, '2026-11-04').qbo).toBeUndefined();
+    const marked = parseInvoiceMeta({ billed: '2026-11-08T12:00:00Z', netview: '2026-11-08T12:05:00Z' }, '2026-11-08');
+    expect(marked).toMatchObject({ billed: '2026-11-08T12:00:00Z', netview: '2026-11-08T12:05:00Z' });
+    expect(parseInvoiceMeta({ billed: 'yes', netview: 3 }, '2026-11-08')).not.toHaveProperty('billed');
+    expect(inQuickBooks(marked)).toBe(true);
+    expect(inQuickBooks({ qbo: sent })).toBe(true);
+    expect(inQuickBooks({})).toBe(false);
     expect(jobLogMemo({ site_name: 'LDS Site 5006643', wo_number: '191', external_wo_id: 'LDS-1' }, lines)).toBe('LDS Site 5006643 · WO 191 · Client # LDS-1 · 10/18/2026 – 10/20/2026');
   });
 });

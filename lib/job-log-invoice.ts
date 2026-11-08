@@ -28,6 +28,10 @@ export type InvoiceMeta = {
   billTo: string;
   /** The QuickBooks invoice it was sent as, so it isn't sent twice. */
   qbo?: InvoiceSent;
+  /** When Fred marked it in QuickBooks himself (the import file, or typed in): ISO time. */
+  billed?: string;
+  /** When Fred marked it sent on NetView's form: ISO time. */
+  netview?: string;
 };
 /** A QuickBooks invoice made from the job log's invoice: its id, number, total and when. */
 export type InvoiceSent = { id: string; number: string; total: number; at: string };
@@ -49,8 +53,17 @@ export function parseInvoiceMeta(raw: unknown, today: string): InvoiceMeta {
     meal: 'meal' in o ? n(o.meal) : 50,
     billTo: text(o.billTo).slice(0, 120),
     ...(sentOf(o.qbo) ? { qbo: sentOf(o.qbo)! } : {}),
+    ...(isoTime(o.billed) ? { billed: isoTime(o.billed)! } : {}),
+    ...(isoTime(o.netview) ? { netview: isoTime(o.netview)! } : {}),
   };
 }
+
+function isoTime(v: unknown): string | null {
+  return typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v : null;
+}
+
+/** In QuickBooks: sent from here, or marked by hand. */
+export const inQuickBooks = (m: Pick<InvoiceMeta, 'qbo' | 'billed'>) => !!m.qbo || !!m.billed;
 
 function sentOf(raw: unknown): InvoiceSent | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;

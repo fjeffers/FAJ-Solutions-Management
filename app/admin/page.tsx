@@ -27,6 +27,7 @@ import QuotesView, { nextQuoteNumber } from '@/components/QuotesView';
 import SurveysView from '@/components/SurveysView';
 import ContractsView from '@/components/ContractsView';
 import AttentionPanel from '@/components/AttentionPanel';
+import BillingToSend from '@/components/BillingToSend';
 import { FieldAttention, ComingUp } from '@/components/FieldToday';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
@@ -1986,15 +1987,18 @@ Go ahead?`)) return;
                 onView={(v) => setView(v as typeof view)}
                 // Placed and sized like any other block (Settings -> Screen designer).
                 attention={shown('dash.attention') ? (
-                  <AttentionPanel
-                    flush
-                    data={{
-                      surveys, quotes, contracts, workOrders: enrichedWOs,
-                      invoices, invoicePayments, siteVisits: dashboardVisits,
-                      waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount, receipts: receiptCount },
-                    }}
-                    onGo={(v) => setView(v as typeof view)}
-                  />
+                  <>
+                    <AttentionPanel
+                      flush
+                      data={{
+                        surveys, quotes, contracts, workOrders: enrichedWOs,
+                        invoices, invoicePayments, siteVisits: dashboardVisits,
+                        waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount, receipts: receiptCount },
+                      }}
+                      onGo={(v) => setView(v as typeof view)}
+                    />
+                    <BillingToSend jobs={enrichedWOs} onOpenJob={(id) => openJobFrom(id, 'workorders')} />
+                  </>
                 ) : undefined}
                 field={shown('dash.field') ? (
                   <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'workorders')} onGo={(v) => setView(v as typeof view)} />

@@ -78,7 +78,7 @@ import ChangePasswordForm from '@/components/ChangePasswordForm';
 import type { TechMessage, TechProfile } from '@/lib/types';
 import {
   CalendarClock, CalendarDays, Camera, MapPin, CheckCircle2, NotebookPen, PlayCircle, Receipt, StopCircle, CloudOff, FileText, FileWarning, ImagePlus, Inbox, LogOut, MessageSquare, Navigation,
-  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown, Phone, Mail,
+  RefreshCw, Save, Search, Send, ThumbsDown, ThumbsUp, X, ScanLine, Hash, Ruler, ScanBarcode, Signature, Wrench, ChevronDown, ChevronUp, Phone, Mail,
 } from 'lucide-react';
 import DocScanner from '@/components/tools/DocScanner';
 import PhotoMarkup from '@/components/tools/PhotoMarkup';
@@ -1295,6 +1295,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const [expenseOpen, setExpenseOpen] = useState(false);
   // One page (Fred, 2026-10-18): Messages in a pop-up, and a photo that asks what it's for.
   const [msgOpen, setMsgOpen] = useState(false);
+  const [details, setDetails] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [expenseFile, setExpenseFile] = useState<File | null>(null);
   const [odoFile, setOdoFile] = useState<File | null>(null);
@@ -1582,6 +1583,7 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
   const goTo = (m: string) => {
     setDoneOpen(false);
     setOffOpen(false);
+    setDetails(true);
     const order = [missingGoesTo(m), 'report', 'closeout', 'photos'];
     setTimeout(() => {
       const el = order.map((k) => document.getElementById(`fs-go-${k}`)).find(Boolean);
@@ -1687,41 +1689,27 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
     setOdoFile(f);
     setOdometer(kind === 'odo_start' ? 'start' : 'end');
   };
+  const hasReport = live && (ask('notes') || shown.questions.length > 0);
+  const toReport = () => document.getElementById('fs-go-report')?.firstElementChild?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Simpler job screen (Fred, 2026-11-08): the one next-step button, four big buttons, the work the job asks
+  // for, and everything else behind one "Job details" button.
   return (
     <div className="fs-stack">
       <TechJobHeader job={job} />
-      <JobIcons job={job} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
-        onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
-        onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined} />
       {ph.held.length > 0 && <HeldForGps count={ph.held.length} onRetry={() => void ph.retry()} onDiscard={ph.drop} busy={!!ph.busy} />}
       {job.status === 'offered' && bottom}
-      {live && working && (
-        <JobDayGuide steps={jobDayGuide({
-          stage, workDone: job.status === 'workDone', photos: ask('photos'),
-          report: ask('notes') || shown.questions.length > 0,
-          closeout: deliverables.length > 0 || jobForCloseout.signatureRequired,
-          missing: offSiteMissing,
-        })} />
-      )}
       {dayCard && <div id="fs-go-day" style={{ scrollMarginTop: 12, display: 'contents' }}>{dayCard}</div>}
-      {/* The clients pay for the hours and the miles (Fred, 2026-10-31): they stay near the top. */}
-      {dayFlow && live && (
-        <section className="fs-card fs-form">
-          <h3>My time and travel</h3>
-          <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} added={handMiles} />
-        </section>
-      )}
-      <SiteCard job={job} />
-      <ClientLinksCard number={job.number} siteLinks={siteLinks} checkoutHref={() => checkoutHref(lastOffOrNow(job.myDay ?? [], new Date().toISOString(), 'America/New_York'))} />
-      {live && <div className="fs-group-label">Today&apos;s list</div>}
-      {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
+      <JobIcons job={job} canPhoto={canReport} photoBusy={!!phPicked.busy} onPhoto={(f) => { if (f) setPhotoFile(f); }} onMessages={() => setMsgOpen(true)}
+        onUpload={odoAsked ? (f) => askPhoto(f, 'library') : undefined}
+        onReceipt={canReport && ask('receipts') ? () => setExpenseOpen(true) : undefined}
+        onNote={canReport ? () => (hasReport ? toReport() : setNoteOpen(true)) : undefined} />
       {live && (deliverables.length > 0 || jobForCloseout.signatureRequired) && (
         <div id="fs-go-closeout" style={{ scrollMarginTop: 12 }}>
           <CloseoutCard job={jobForCloseout} items={deliverables} listName={checklist.name} canEdit={canReport} onOp={closeoutOp} onSign={signOff} />
         </div>
       )}
       {ask('photos') && <div id="fs-go-photos" style={{ scrollMarginTop: 12 }}><JobPhotos canAdd={canReport} ph={phPicked} /></div>}
-      {live && (ask('notes') || shown.questions.length > 0) && (
+      {hasReport && (
         <div id="fs-go-report" style={{ scrollMarginTop: 12 }}>
           <JobReport
             job={shown} uid={uid} canEdit={canReport}
@@ -1730,11 +1718,41 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
           />
         </div>
       )}
-      {(ask('receipts') || expenses.length > 0) && (canReport || expenses.length > 0) && (
-        <JobExpenses expenses={expenses} canAdd={canReport && ask('receipts')} onAdd={() => setExpenseOpen(true)} />
+      <button type="button" className="fs-card" aria-expanded={details} onClick={() => setDetails(!details)} style={{
+        display: 'flex', alignItems: 'center', gap: 10, width: '100%', font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--wf-text)',
+      }}>
+        <span style={{ flex: 1 }}>
+          <b style={{ display: 'block', fontSize: 16 }}>Job details</b>
+          <small style={{ color: 'var(--wf-subtle, #6b7280)' }}>Site, lockbox and call, client links, checklist, my time and travel</small>
+        </span>
+        {details ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+      </button>
+      {details && (
+        <>
+          {live && working && (
+            <JobDayGuide steps={jobDayGuide({
+              stage, workDone: job.status === 'workDone', photos: ask('photos'),
+              report: ask('notes') || shown.questions.length > 0,
+              closeout: deliverables.length > 0 || jobForCloseout.signatureRequired,
+              missing: offSiteMissing,
+            })} />
+          )}
+          {dayFlow && live && (
+            <section className="fs-card fs-form">
+              <h3>My time and travel</h3>
+              <FsDayLog events={job.myDay ?? []} readings={job.myOdometer} added={handMiles} />
+            </section>
+          )}
+          <SiteCard job={job} />
+          <ClientLinksCard number={job.number} siteLinks={siteLinks} checkoutHref={() => checkoutHref(lastOffOrNow(job.myDay ?? [], new Date().toISOString(), 'America/New_York'))} />
+          {ask('checklist') && <ChecklistCard job={job} onToggle={working ? toggleTask : undefined} />}
+          {(ask('receipts') || expenses.length > 0) && (canReport || expenses.length > 0) && (
+            <JobExpenses expenses={expenses} canAdd={canReport && ask('receipts')} onAdd={() => setExpenseOpen(true)} />
+          )}
+          <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
+          <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
+        </>
       )}
-      <InfoListCard title="Skills & tools" rows={[['Skills needed', job.skills], ['Tools to bring', job.tools]]} />
-      <JobTools job={job} canAdd={canReport} ph={ph} onNote={canReport ? addNote : undefined} />
       {job.status !== 'offered' && bottom}
       {msgOpen && (
         <Dialog title="Messages" wide onClose={() => setMsgOpen(false)}>
@@ -1881,35 +1899,37 @@ function PhotoKindDialog({ odometer, receipts, onPick, onCancel }: {
  * seeing where to add their receipts"); Upload, a photo already on the phone,
  * on a job that asks for mileage (Fred, 2026-10-26).
  */
-function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onReceipt }: {
+function JobIcons({ job, canPhoto, photoBusy, onPhoto, onUpload, onMessages, onReceipt, onNote }: {
   job: WfJob; canPhoto: boolean; photoBusy: boolean; onPhoto: (f: File | undefined) => void; onMessages: () => void;
   /** A photo already on the phone (a mileage photo taken while the app was down): not every job shows Photos. */
   onUpload?: (f: File | undefined) => void;
   onReceipt?: () => void;
+  onNote?: () => void;
 }) {
   const tile: React.CSSProperties = {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
-    minHeight: 58, padding: '8px 4px', borderRadius: 12, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
-    font: 'inherit', fontWeight: 600, fontSize: 12.5, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
+    minHeight: 76, padding: '10px 6px', borderRadius: 14, border: '1px solid var(--wf-line)', background: 'var(--wf-card)',
+    font: 'inherit', fontWeight: 700, fontSize: 15, color: 'var(--wf-text)', cursor: 'pointer', textDecoration: 'none', textAlign: 'center',
   };
   return (
-    <div role="toolbar" aria-label="Job icons" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(64px, 1fr))', gap: 6 }}>
+    <div role="toolbar" aria-label="Job buttons" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
       {canPhoto && (
         <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
-          <Camera size={22} /> Photo
+          <Camera size={26} /> Photo
           <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onPhoto(f); }} />
         </label>
       )}
       {canPhoto && onUpload && (
         <label style={{ ...tile, opacity: photoBusy ? 0.6 : 1, pointerEvents: photoBusy ? 'none' : 'auto' }}>
-          <ImagePlus size={22} /> Upload
+          <ImagePlus size={26} /> Upload
           <input type="file" accept="image/*" style={{ display: 'none' }} aria-label="Upload a photo from the phone"
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onUpload(f); }} />
         </label>
       )}
-      {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={22} /> Receipt</button>}
-      <button type="button" style={tile} onClick={onMessages}><MessageSquare size={22} /> Messages</button>
+      {onReceipt && <button type="button" style={tile} onClick={onReceipt}><Receipt size={26} /> Receipt / miles</button>}
+      <button type="button" style={tile} onClick={onMessages}><MessageSquare size={26} /> Message</button>
+      {onNote && <button type="button" style={tile} onClick={onNote}><NotebookPen size={26} /> Notes</button>}
     </div>
   );
 }

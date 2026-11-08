@@ -39,7 +39,7 @@ describe('NetView form', () => {
     expect(a).toEqual({
       invoiceDate: '2026-10-25', serviceDate: '2026-10-16', vendor: 'FAJ Solutions',
       rate: '$60.00/hr', quantity: '', other: '',
-      total: '299.02', customer: "Wendy's", invoiceNumber: '1042', siteId: 'FLN5294 · Site 397 · FAJ WO 19101413',
+      total: '299.02', customer: "Wendy's #397", invoiceNumber: '1042', siteId: 'FLN5294 · Site 397 · FAJ WO 19101413',
       memo: "Wendy's #397 — Add 2 cameras (office & rear exterior) · Wendy's #397, Folsom, PA · 10/16/2026",
       coordinator: 'Karen Sparkman', enteredBy: 'Fred Jeffers', email: 'fajsolutions@gmail.com',
     });

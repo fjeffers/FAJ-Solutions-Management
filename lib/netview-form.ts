@@ -119,7 +119,7 @@ export function netviewAnswers(input: {
     quantity: '',
     other: '',
     total: inv.total.toFixed(2),
-    customer: (w.customer_name ?? '').trim(),
+    customer: (w.site_name || w.customer_name || '').trim(),
     invoiceNumber: inv.number,
     siteId: [w.external_wo_id, w.client_reference ? `Site ${w.client_reference}` : '', `FAJ WO ${w.wo_number}`].filter(Boolean).join(' · '),
     memo: [(w.title ?? '').trim() || place, place && (w.title ?? '').trim() ? place : '', days].filter(Boolean).join(' · '),

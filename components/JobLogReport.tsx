@@ -562,12 +562,22 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const qbTotal = qbLinesTotal(qbLines);
   const qbNumber = jobLogInvoiceNumber(savedMeta, w.wo_number);
   const netviewDetails = invoice ? netviewInvoiceDetails(invoice) : {};
+  const serviceDays = qbLines.map((line) => line.date).filter(Boolean).sort();
+  const netviewFrom = from || serviceDays[0] || w.start_date || savedMeta.date;
+  const netviewTo = to || serviceDays.at(-1) || w.end_date || netviewFrom;
   // NetView must receive the exact total printed on the saved FAJ invoice.
   // QuickBooks lines can intentionally omit non-positive display rows.
   const netviewTotal = invoice?.totals.total ?? qbTotal;
   const netviewLink = netview ? netviewFormUrl(netviewAnswers({
     job: w,
-    invoice: { number: qbNumber, total: netviewTotal, date: savedMeta.date, from, to, ...netviewDetails },
+    invoice: {
+      number: savedMeta.qbo?.number || qbNumber,
+      total: netviewTotal,
+      date: savedMeta.date,
+      from: netviewFrom,
+      to: netviewTo,
+      ...netviewDetails,
+    },
     vendor: 'FAJ Solutions', enteredBy: me.name, email: me.email,
   })) : '';
   const sendToQuickBooks = async () => {

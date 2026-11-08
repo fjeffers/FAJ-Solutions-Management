@@ -841,7 +841,10 @@ describe('Job log edited by the office', () => {
     tables.job_expenses = [...before,
       { id: 'm1', contractor_name: 'Paul Gibbs', category: 'meals', vendor: 'Waffle House', amount: 18.97, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/meal.jpg' },
       { id: 'h1', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 402.5, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/hotel.jpg' }];
-    tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
+    tables.job_log_rates = [{
+      rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } },
+      invoice: { qbo: { id: 'qb1', number: 'QB-1042', total: 986.44, at: '2026-10-31T12:00:00Z' } },
+    }];
     vi.mocked(downloadInvoiceXlsx).mockClear();
     const goldsboro = { ...wo, customer_name: 'TeamNetView', title: 'LDS1106 Site 5006643 — Goldsboro, NC', site_address: '1000 Eleventh Street', site_city: 'Goldsboro', site_state: 'NC', site_zip: '27530' } as EnrichedWorkOrder;
     try {
@@ -866,7 +869,8 @@ describe('Job log edited by the office', () => {
       expect(upserts.at(-1)!.row).toMatchObject({ invoice: { number: '1240', terms: 30, labor: 'Installation of Cabling for refresh project', meal: 50, billTo: '' } });
       await waitFor(() => {
         const params = new URL((screen.getByRole('link', { name: /open netview link/i }) as HTMLAnchorElement).href).searchParams;
-        expect(params.get('entry.1582831326')).toBe('1240');
+        expect(params.get('entry.1582831326')).toBe('QB-1042');
+        expect(params.get('entry.116346627')).toBe('2026-10-21');
         expect(params.get('entry.1719028500')).toBe('$50.00/hr');
         expect(params.has('entry.1596223790')).toBe(false);
         expect(params.has('entry.2058828780')).toBe(false);

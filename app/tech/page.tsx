@@ -705,12 +705,12 @@ function TodayCard({ jobs, uid, onOpen, onCheckIn, onArrive, busy }: {
   const name = job.siteName || job.title || `WO ${job.number}`;
   let line: string;
   let action: React.ReactNode;
-  // Navigate to where the drive is headed (Fred, 2026-11-02: "update navigation and hotel drive on
-  // sunday"): the site, the job's hotel, or home; before Sunday's drive, the hotel.
   let navTo: { address: string; lat: number | null; lng: number | null } | null = null;
+  let navPlace: 'site' | 'hotel' | 'home' = 'site';
   if (stage === 'outbound' || stage === 'returning') {
     const dest = st.stage === 'travel' ? st.dest : 'site';
     navTo = driveTarget(job, dest, dest === 'home' ? loadHome(browserStorage(), uid) : null);
+    navPlace = dest === 'hotel' || dest === 'home' ? dest : 'site';
     line = `${onTheWay(dest)}${since ? ` since ${since}` : ''}.`;
     action = (
       <button type="button" className="fs-btn fs-btn-primary fs-btn-big" disabled={busy} onClick={() => onArrive(job)}>
@@ -722,7 +722,8 @@ function TodayCard({ jobs, uid, onOpen, onCheckIn, onArrive, busy }: {
     action = <button type="button" className="fs-btn fs-btn-primary fs-btn-big" onClick={() => onOpen(job.id)}>Open the job</button>;
   } else {
     // Ready for the day, off site, or signed out at the hotel: the next check-in.
-    if (hotelDrive) navTo = driveTarget(job, 'hotel', null);
+    navPlace = hotelDrive ? 'hotel' : 'site';
+    navTo = driveTarget(job, navPlace, null);
     line = hotelDrive && stage !== 'clocked' ? `Travel day: drive to ${job.hotel?.name || 'the hotel'}. Check in when you leave home.`
       : stage === 'offsite' ? `Off site at ${name}. Where to now?`
       : stage === 'clocked' ? 'Checked in. Where are you driving?' : 'Ready to go? Check in before you drive off.';
@@ -746,9 +747,25 @@ function TodayCard({ jobs, uid, onOpen, onCheckIn, onArrive, busy }: {
         <p className="fs-meta">{[name, `WO ${job.number}`].join(' · ')}</p>
       )}
       <p>{line}</p>
+      {navTo?.address && <HomeAddress label={`${navPlace === 'hotel' ? 'Hotel' : navPlace === 'home' ? 'Home' : 'Site'} address`} address={navTo.address} />}
       {action}
-      {navTo && <DirectionsButton to={navTo} label="Navigate" className="fs-btn fs-btn-secondary" style={{ width: '100%', marginTop: 8 }} />}
+      {navTo && <DirectionsButton to={navTo} label={`Navigate to ${navPlace}`} className="fs-btn fs-btn-secondary" style={{ width: '100%', marginTop: 8 }} />}
     </section>
+  );
+}
+
+function HomeAddress({ label, address }: { label: string; address: string }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 12px', borderRadius: 12,
+      border: '1px solid var(--wf-gold, #c9a24b)', background: 'var(--wf-gold-soft, #f6efdc)',
+    }}>
+      <MapPin size={19} style={{ flexShrink: 0, marginTop: 1, color: 'var(--wf-navy, #0e1b2e)' }} />
+      <span style={{ minWidth: 0 }}>
+        <small style={{ display: 'block', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</small>
+        <strong style={{ display: 'block', marginTop: 2, fontSize: 15, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{address}</strong>
+      </span>
+    </div>
   );
 }
 
@@ -799,13 +816,16 @@ function ProjectTab({ jobs, uid, onOpen, onCheckIn, onArrive, busy, act, alerts 
                 : ['Not started', 'grey', false];
     const where = fullAddress(j);
     return (
-      <button type="button" key={j.id} className={`fs-card fs-wo-card${isToday ? ' today' : ''}`} onClick={() => onOpen(j.id)}>
-        <div className="fs-card-top"><h3>{j.siteName || j.title}</h3><FsChip tone={tone} dot={dot}>{label}</FsChip></div>
-        <p className="fs-meta">{[j.client, j.siteName ? j.title : '', `WO ${j.number}`].filter(Boolean).join(' · ')}</p>
-        <p className="fs-when"><FsIcon name="clock" size={16} />{day}{time}</p>
-        {where && where !== j.siteName && <p className="fs-meta"><FsIcon name="pin" size={14} />{where}</p>}
-        <span className="fs-go">Open work order<FsIcon name="arrow" size={16} /></span>
-      </button>
+      <div key={j.id} className={`fs-card fs-wo-card${isToday ? ' today' : ''}`}>
+        <button type="button" onClick={() => onOpen(j.id)} style={{ all: 'unset', cursor: 'pointer', display: 'grid', gap: 12 }}>
+          <div className="fs-card-top"><h3>{j.siteName || j.title}</h3><FsChip tone={tone} dot={dot}>{label}</FsChip></div>
+          <p className="fs-meta">{[j.client, j.siteName ? j.title : '', `WO ${j.number}`].filter(Boolean).join(' · ')}</p>
+          <p className="fs-when"><FsIcon name="clock" size={16} />{day}{time}</p>
+          {where && where !== j.siteName && <HomeAddress label="Site address" address={where} />}
+          <span className="fs-go">Open work order<FsIcon name="arrow" size={16} /></span>
+        </button>
+        {where && <DirectionsButton job={j} label="Navigate to site" className="fs-btn fs-btn-secondary" style={{ width: '100%' }} />}
+      </div>
     );
   };
   return (
@@ -834,6 +854,8 @@ function ProjectTab({ jobs, uid, onOpen, onCheckIn, onArrive, busy, act, alerts 
                   <strong>{j.siteName || j.title}</strong>
                   <span className="fs-meta">{[`WO ${j.number}`, `${day}${start ? ` · ${fmtClock12(start)}` : ''}`, j.city].filter(Boolean).join(' · ')}</span>
                 </button>
+                {fullAddress(j) && <HomeAddress label="Site address" address={fullAddress(j)} />}
+                {fullAddress(j) && <DirectionsButton job={j} label="Navigate to site" className="wf-btn wf-btn-outline" />}
                 <OfferButtons job={j} act={act} />
               </div>
             );

@@ -18,11 +18,16 @@ export default function HotelCard({ jobs, today, onOpen }: { jobs: WfJob[]; toda
           <div key={`${job.id}-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: i ? 10 : 0, borderTop: i ? '1px solid var(--wf-line, #e5e7eb)' : undefined }}>
             <strong style={{ fontSize: 16 }}>{hotel.name || 'Hotel'}</strong>
             {dates && <span className="fs-meta">{dates}</span>}
-            {hotel.address && <span className="fs-meta">{hotel.address}</span>}
+            {hotel.address && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '10px 12px', borderRadius: 12, border: '1px solid var(--wf-gold, #c9a24b)', background: 'var(--wf-gold-soft, #f6efdc)' }}>
+                <small style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em' }}>Hotel address</small>
+                <strong style={{ fontSize: 15, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{hotel.address}</strong>
+              </div>
+            )}
             {hotel.confirmation && <span>Confirmation # <b style={{ letterSpacing: 0.5 }}>{hotel.confirmation}</b></span>}
             {hotel.notes && <span className="fs-meta" style={{ whiteSpace: 'pre-line' }}>{hotel.notes}</span>}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {hotel.address && <DirectionsButton to={{ address: hotel.address }} label="Navigate" className="wf-btn wf-btn-gold" />}
+              {hotel.address && <DirectionsButton to={{ address: hotel.address }} label="Navigate to hotel" className="wf-btn wf-btn-gold" />}
               {hotel.phone && <a className="wf-btn wf-btn-outline" href={`tel:${hotel.phone.replace(/[^\d+]/g, '')}`}><Phone size={15} /> Call hotel</a>}
               <button type="button" className="wf-btn wf-btn-ghost" onClick={() => onOpen(job.id)}>WO {job.number}</button>
             </div>

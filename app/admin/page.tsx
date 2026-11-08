@@ -28,6 +28,7 @@ import SurveysView from '@/components/SurveysView';
 import ContractsView from '@/components/ContractsView';
 import AttentionPanel from '@/components/AttentionPanel';
 import BillingToSend from '@/components/BillingToSend';
+import OneInbox from '@/components/OneInbox';
 import { FieldAttention, ComingUp } from '@/components/FieldToday';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
@@ -1988,12 +1989,15 @@ Go ahead?`)) return;
                 // Placed and sized like any other block (Settings -> Screen designer).
                 attention={shown('dash.attention') ? (
                   <>
+                    <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'workorders')}
+                      onGo={(v) => setView(v as typeof view)} onTechRead={(n) => setMessageCount((c) => Math.max(0, c - n))} />
                     <AttentionPanel
                       flush
                       data={{
                         surveys, quotes, contracts, workOrders: enrichedWOs,
                         invoices, invoicePayments, siteVisits: dashboardVisits,
-                        waiting: { support: supportCount, imports: pendingImportCount, messages: messageCount, receipts: receiptCount },
+                        // Messages, emails and imports are listed one by one in the Inbox above.
+                        waiting: { receipts: receiptCount },
                       }}
                       onGo={(v) => setView(v as typeof view)}
                     />

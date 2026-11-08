@@ -85,11 +85,20 @@ export const netviewInvoiceNumber = (quickBooksNumber?: string | null) => (quick
 
 /** The visited site, including the site number when it is stored separately. */
 export function netviewCustomerSite(w: NetviewJob): string {
-  const base = (w.site_name || w.customer_name || '').trim();
+  const siteText = [w.site_name, w.title].filter(Boolean).join(' ');
+  const brand = /\bwendy'?s\b/i.test(siteText)
+    ? "Wendy's"
+    : /\blds(?=\d|\b)/i.test(siteText)
+      ? 'LDS'
+      : (w.customer_name || w.site_name || '').trim();
   const fieldNationSite = w.external_wo_id?.trim().match(/^FLN[-\s]?(\d+)$/i)?.[1] ?? '';
-  const siteNumber = (w.client_reference || fieldNationSite).trim();
-  if (!siteNumber || base.toLowerCase().includes(siteNumber.toLowerCase())) return base;
-  return [base, siteNumber].filter(Boolean).join(' - ');
+  const namedSite = siteText.match(/\b(?:site(?:\s*id)?|#)\s*[:#-]?\s*(\d{3,})\b/i)?.[1] ?? '';
+  const siteNumber = (w.client_reference || fieldNationSite || namedSite).trim();
+  const place = [w.site_city, w.site_state].filter(Boolean).join(', ');
+  return [
+    [brand, siteNumber].filter(Boolean).join(' '),
+    place,
+  ].filter(Boolean).join(' - ');
 }
 
 /** NetView only needs the billing rate; the form's Total field carries the full invoice amount. */

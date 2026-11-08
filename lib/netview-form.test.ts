@@ -39,7 +39,7 @@ describe('NetView form', () => {
     expect(a).toEqual({
       invoiceDate: '2026-10-25', serviceDate: '2026-10-16', vendor: 'FAJ Solutions',
       rate: '$60.00/hr', quantity: '', other: '',
-      total: '299.02', customer: "Wendy's #397", invoiceNumber: '1042', siteId: 'FLN5294 · Site 397 · FAJ WO 19101413',
+      total: '299.02', customer: "Wendy's 397 - Folsom, PA", invoiceNumber: '1042', siteId: 'FLN5294 · Site 397 · FAJ WO 19101413',
       memo: "Wendy's #397 — Add 2 cameras (office & rear exterior) · Wendy's #397, Folsom, PA · 10/16/2026",
       coordinator: 'Karen Sparkman', enteredBy: 'Fred Jeffers', email: 'fajsolutions@gmail.com',
       directDeposit: 'Yes', invoiceEmailed: 'Yes',
@@ -52,7 +52,7 @@ describe('NetView form', () => {
       invoice: { number: '1043', total: 100, date: '2026-10-25', from: '2026-10-20', to: '2026-10-20' },
       ...who,
     });
-    expect(a.customer).toBe('LDS - 5006643');
+    expect(a.customer).toBe('LDS 5006643');
   });
 
   it("adds a Field Nation site number to the visited site's name", () => {
@@ -60,7 +60,19 @@ describe('NetView form', () => {
       wo_number: '1',
       site_name: "Wendy's - Franklin, NJ",
       external_wo_id: 'FLN5302',
-    })).toBe("Wendy's - Franklin, NJ - 5302");
+      site_city: 'Franklin',
+      site_state: 'NJ',
+    })).toBe("Wendy's 5302 - Franklin, NJ");
+  });
+
+  it('finds an LDS site number in the work-order title and pairs it with the city', () => {
+    expect(netviewCustomerSite({
+      wo_number: '1',
+      customer_name: 'TeamNetView',
+      title: 'LDS1106 Site 5006643 — Goldsboro, NC',
+      site_city: 'Goldsboro',
+      site_state: 'NC',
+    })).toBe('LDS 5006643 - Goldsboro, NC');
   });
 
   it('leaves the invoice number blank until QuickBooks creates one', () => {

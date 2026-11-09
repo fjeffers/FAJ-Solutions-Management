@@ -47,6 +47,17 @@ export function directMessagePush(content: string): TechPush {
   };
 }
 
+/** A technician replied to the office's private Messenger thread. */
+export function ownerDirectMessagePush(techName: string, content: string): TechPush {
+  const text = content.replace(/\s+/g, ' ').trim();
+  return {
+    title: `${techName} sent you a message`,
+    body: text.length > 140 ? `${text.slice(0, 137)}…` : text || 'Tap to read it.',
+    url: '/admin?view=messages',
+    tag: `msg-tech-${techName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+  };
+}
+
 /** 5 PM: upload today's pictures (Automations, lib/automations.ts). */
 export function photoReminderPush(o: { woId: string; woNumber: string; title?: string | null }): TechPush {
   return {

@@ -276,7 +276,15 @@ export async function sendTechOwnerMessage(content: string): Promise<boolean> {
   const supabase = createClient();
   const { data, error } = await supabase.rpc('tech_send_owner_message', { p_content: content });
   if (error) throw new Error(error.message);
-  return !!(data as { ok?: boolean } | null)?.ok;
+  const ok = !!(data as { ok?: boolean } | null)?.ok;
+  if (ok) {
+    // The message itself is already saved; a failed pop-up must never make the
+    // reply look failed or send it twice.
+    void fetch('/api/tech/direct-message-alert', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }),
+    }).catch(() => {});
+  }
+  return ok;
 }
 
 // ── Working the job (migration-076) ─────────────────────────────────────────

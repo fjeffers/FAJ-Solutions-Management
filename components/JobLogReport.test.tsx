@@ -1037,7 +1037,11 @@ describe('Job log edited by the office', () => {
       expect(document.querySelector('.jl-invoice')!.textContent).toContain('100.00');
       expect(document.querySelector('.jl-invoice')!.textContent).not.toMatch(/07:00|7:00/);
       expect(within(days).getByRole('button', { name: 'Add mileage, Paul Gibbs' })).toBeTruthy();
-      expect(within(days).getByRole('button', { name: 'Add a hotel, Paul Gibbs' })).toBeTruthy();
+      // A hotel's date, name and amount (Fred, 2026-11-09: "date for the hotel and hotel name and the amount?").
+      fireEvent.click(within(days).getByRole('button', { name: 'Add a hotel, Paul Gibbs' }));
+      const hotelNames = within(days).getAllByLabelText(/^Hotel name, Paul Gibbs/);
+      fireEvent.change(hotelNames.at(-1)!, { target: { value: 'Hampton Inn Wilmington' } });
+      expect(document.querySelector('.jl-invoice')!.textContent).toContain('Hampton Inn Wilmington – Hotel charge');
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
       vi.unstubAllGlobals();

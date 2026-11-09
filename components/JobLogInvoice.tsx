@@ -235,7 +235,7 @@ function EditTop({ edit, techs }: { edit: InvoiceEditor; techs: InvoiceTech[] })
 }
 
 /** On a phone, while it's edited: each tech's days as simple rows to type in, the hours, meals, miles, materials and
- *  hotel, with the finished invoice under them (Fred, 2026-11-06: "once I click on that edit button, I should see
+ *  hotel (its date, name and amount), with the finished invoice under them (Fred, 2026-11-06: "once I click on that edit button, I should see
  *  basically all that right there"). */
 function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor }) {
   const row: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.9fr) 28px', gap: 6, alignItems: 'center' };
@@ -261,6 +261,9 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
             {l.item === 'Labor' && <InOut l={l} at={at} edit={edit} />}
             {l.item === 'Material' && (
               <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
+            )}
+            {l.item === 'Hotel' && l.row && (
+              <input aria-label={`Hotel name, ${at}`} style={input} value={(l.row as { store?: string }).store ?? ''} placeholder="Hotel name" onChange={(e) => edit.change(l, { description: e.target.value })} />
             )}
           </div>
         );

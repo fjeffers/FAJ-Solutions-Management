@@ -97,13 +97,11 @@ export default function BusinessCommandCenter({
         .then(({ count, error }) => { if (!error) setSavedCustomers(count ?? 0); });
     };
     load();
-    const channel = db.channel('home-customer-count')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, load)
-      .subscribe();
+    const timer = window.setInterval(load, 30_000);
     window.addEventListener('focus', load);
     return () => {
+      window.clearInterval(timer);
       window.removeEventListener('focus', load);
-      void db.removeChannel(channel);
     };
   }, []);
   const cards = [

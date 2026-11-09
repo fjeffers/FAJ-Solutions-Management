@@ -51,7 +51,7 @@ export function businessSnapshot({
     paidByInvoice.set(payment.invoice_id, (paidByInvoice.get(payment.invoice_id) ?? 0) + Number(payment.amount || 0));
   }
   const openInvoices = invoices
-    .filter((i) => i.status !== 'paid' && i.status !== 'void')
+    .filter((i) => i.status === 'sent')
     .map((i) => ({ invoice: i, due: Math.max(0, Number(i.total || 0) - (paidByInvoice.get(i.id) ?? 0)) }))
     .filter((i) => i.due > 0);
 

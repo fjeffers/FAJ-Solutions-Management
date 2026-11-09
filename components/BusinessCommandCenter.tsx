@@ -128,7 +128,7 @@ export default function BusinessCommandCenter({
   const kpis = [
     { label: 'Customers', value: String(savedCustomers ?? s.customers), detail: 'CRM records', view: 'customers', icon: Building2 },
     { label: 'Open jobs', value: String(s.activeJobs), detail: `${s.todayJobs} today`, view: 'workorders', icon: BriefcaseBusiness },
-    { label: 'In the field', value: String(s.inField), detail: 'Live now', view: 'scheduling', icon: Gauge },
+    { label: 'In the field', value: String(s.inField), detail: 'Live now', view: 'field', icon: Gauge },
     { label: 'Open quotes', value: fmtMoney(s.openQuoteValue), detail: `${s.openQuotes} proposals`, view: 'quotes', icon: FileChartColumn },
     { label: 'Outstanding', value: fmtMoney(s.outstandingInvoices), detail: `${s.overdueInvoices} overdue`, view: 'financials', icon: WalletCards },
     { label: 'Inventory', value: String(s.inventoryItems), detail: `${s.lowStock} low stock`, view: 'materials', icon: Boxes },

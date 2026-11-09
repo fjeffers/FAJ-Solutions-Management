@@ -1,8 +1,17 @@
-import { JSDOM } from 'jsdom';
+import { parseHTML } from 'linkedom';
 import type { CustomQAItem, WoTask } from './types';
 import { parseSimplySubPackage, type SimplySubPackage } from './simplysub';
 
 const BASE = 'https://app.simplysub.com';
+const absoluteUrl = (url: string) => url ? new URL(url, BASE).toString() : '';
+const dom = (html: string) => {
+  const documentHtml = /<html[\s>]/i.test(html)
+    ? html
+    : /<body[\s>]/i.test(html)
+      ? `<html>${html}</html>`
+      : `<html><body>${html}</body></html>`;
+  return parseHTML(documentHtml).document as unknown as Document;
+};
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -72,7 +81,6 @@ export function parseSimplySubSyncPages(args: {
   deliverableLink?: string | null;
   now?: Date;
 }): SimplySubSyncJob {
-  const dom = (html: string) => new JSDOM(html, { url: BASE }).window.document;
   const overview = dom(args.overviewHtml);
   const tasks = dom(args.tasksHtml);
   const files = dom(args.filesHtml);
@@ -101,7 +109,7 @@ export function parseSimplySubSyncPages(args: {
 
   const sourceFiles = [...files.querySelectorAll<HTMLElement>('[data-original-url], a[href*="cdn.simplysub.com"]')]
     .map((node) => {
-      const url = node.getAttribute('data-original-url') || (node as HTMLAnchorElement).href;
+      const url = absoluteUrl(node.getAttribute('data-original-url') || node.getAttribute('href') || '');
       const card = node.closest('.file-tile') ?? node.parentElement?.parentElement;
       const name = text(card?.querySelector('.file-tile-title, .file-title'))
         || node.getAttribute('data-preview-title')
@@ -115,7 +123,7 @@ export function parseSimplySubSyncPages(args: {
 
   const formRows = [...forms.querySelectorAll<HTMLElement>('[data-form-row]')];
   const formLinks = formRows.map((row) => {
-    const href = row.querySelector<HTMLAnchorElement>('a[href*="/forms/submissions/"]')?.href ?? '';
+    const href = absoluteUrl(row.querySelector('a[href*="/forms/submissions/"]')?.getAttribute('href') ?? '');
     return { title: text(row.querySelector('.ss-forms-title')), url: href };
   }).filter((form) => form.url);
 
@@ -146,7 +154,7 @@ export function parseSimplySubSyncPages(args: {
     date: card.getAttribute('data-date') || '',
     sizeKb: number(card.getAttribute('data-size') || ''),
     url: card.querySelector<HTMLElement>('[data-original-url]')?.getAttribute('data-original-url')
-      || card.querySelector<HTMLAnchorElement>('a[href^="https://cdn.simplysub.com"]')?.href
+      || card.querySelector('a[href^="https://cdn.simplysub.com"]')?.getAttribute('href')
       || '',
   }));
   const notes = [...(noteTable?.querySelectorAll('tbody tr') ?? [])].map((row) => {
@@ -198,7 +206,7 @@ export function parseSimplySubSyncPages(args: {
         ? text(row.querySelector('.ss-form-meta')).replace(/^Started by\s*/i, '')
         : '',
       startedAt: row.querySelector('time')?.getAttribute('data-utc-date') ?? '',
-      url: row.querySelector<HTMLAnchorElement>('a[href*="/forms/submissions/"]')?.href ?? '',
+      url: absoluteUrl(row.querySelector('a[href*="/forms/submissions/"]')?.getAttribute('href') ?? ''),
     })),
   };
 
@@ -264,10 +272,10 @@ class SimplySubSession {
 export async function findSimplySubJobsBySiteNumber(email: string, password: string, now = new Date()) {
   const session = new SimplySubSession();
   await session.login(email, password);
-  const quickSelect = new JSDOM(await session.html('/jobs/quick-select'), { url: BASE }).window.document;
+  const quickSelect = dom(await session.html('/jobs/quick-select'));
   const matches = [...quickSelect.querySelectorAll<HTMLAnchorElement>('a[href*="/jobs/"][href$="/overview"]')]
     .map((link) => {
-      const jobId = link.pathname.match(/\/jobs\/(\d+)\/overview/)?.[1] ?? '';
+      const jobId = link.getAttribute('href')?.match(/\/jobs\/(\d+)\/overview/)?.[1] ?? '';
       const title = text(link);
       const siteNumber = title.match(/\b(\d{7})\b/)?.[1] ?? '';
       return { jobId, siteNumber };

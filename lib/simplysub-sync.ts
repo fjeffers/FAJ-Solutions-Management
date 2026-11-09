@@ -45,6 +45,29 @@ export type SimplySubSyncJob = {
   summary: SimplySubSyncSummary;
 };
 
+export type SimplySubFormInspection = {
+  jobId: string;
+  siteNumber: string;
+  forms: {
+    title: string;
+    status: string;
+    links: { text: string; href: string }[];
+    actions: { tag: string; text: string; attrs: Record<string, string> }[];
+  }[];
+  submissionPages: {
+    path: string;
+    forms: {
+      action: string;
+      method: string;
+      enctype: string;
+      attrs: Record<string, string>;
+      fields: { name: string; type: string; multiple: boolean }[];
+    }[];
+    actions: { tag: string; text: string; attrs: Record<string, string> }[];
+    formPaths: string[];
+  }[];
+};
+
 const text = (node: Node | null | undefined) =>
   (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
@@ -267,6 +290,81 @@ class SimplySubSession {
     }
     return html;
   }
+}
+
+const actionAttrs = (node: Element) => Object.fromEntries(
+  ['action', 'method', 'enctype', 'href', 'hx-get', 'hx-post', 'hx-put', 'data-url', 'data-action']
+    .map((name) => [name, node.getAttribute(name) ?? ''] as const)
+    .filter(([, value]) => value),
+);
+
+const pageActions = (document: Document) => [...document.querySelectorAll('a[href], button, form')]
+  .map((node) => ({
+    tag: node.tagName.toLowerCase(),
+    text: text(node).slice(0, 120),
+    attrs: actionAttrs(node),
+  }))
+  .filter((row) => Object.keys(row.attrs).length > 0);
+
+/**
+ * Read-only structure probe for the authenticated job form pages. This exposes
+ * endpoint and field names, never cookies, passwords, CSRF values, or answers.
+ */
+export async function inspectSimplySubFormsBySiteNumber(
+  email: string,
+  password: string,
+  wantedSiteNumber: string,
+): Promise<SimplySubFormInspection> {
+  const session = new SimplySubSession();
+  await session.login(email, password);
+  const quickSelect = dom(await session.html('/jobs/quick-select'));
+  const match = [...quickSelect.querySelectorAll<HTMLAnchorElement>('a[href*="/jobs/"][href$="/overview"]')]
+    .map((link) => {
+      const href = link.getAttribute('href') ?? '';
+      return {
+        jobId: href.match(/\/jobs\/(\d+)\/overview/)?.[1] ?? '',
+        siteNumber: text(link).match(/\b(\d{7})\b/)?.[1] ?? '',
+      };
+    })
+    .find((job) => job.jobId && job.siteNumber === wantedSiteNumber);
+  if (!match) throw new Error(`SimplySub site ${wantedSiteNumber} was not found.`);
+
+  const formsDocument = dom(await session.html(`/object/3/object-record/${match.jobId}/forms`));
+  const forms = [...formsDocument.querySelectorAll<HTMLElement>('[data-form-row]')].map((row) => ({
+    title: text(row.querySelector('.ss-forms-title')),
+    status: row.getAttribute('data-status') ?? '',
+    links: [...row.querySelectorAll<HTMLAnchorElement>('a[href]')].map((link) => ({
+      text: text(link).slice(0, 120),
+      href: link.getAttribute('href') ?? '',
+    })),
+    actions: pageActions(row as unknown as Document),
+  }));
+
+  const paths = [...new Set(forms.flatMap((form) => form.links.map((link) => link.href))
+    .filter((href) => /^\/forms\/submissions\/\d+(?:[/?#]|$)/.test(href)))];
+  const submissionPages = [];
+  for (const path of paths.slice(0, 5)) {
+    const html = await session.html(path);
+    const document = dom(html);
+    submissionPages.push({
+      path,
+      forms: [...document.querySelectorAll<HTMLFormElement>('form')].map((form) => ({
+        action: form.getAttribute('action') ?? '',
+        method: form.getAttribute('method') ?? '',
+        enctype: form.getAttribute('enctype') ?? '',
+        attrs: actionAttrs(form),
+        fields: [...form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input[name], select[name], textarea[name]')]
+          .map((field) => ({
+            name: field.getAttribute('name') ?? '',
+            type: field.getAttribute('type') ?? field.tagName.toLowerCase(),
+            multiple: field.hasAttribute('multiple'),
+          })),
+      })),
+      actions: pageActions(document),
+      formPaths: [...new Set([...html.matchAll(/["'`](\/[^"'`]*forms[^"'`]*)["'`]/gi)].map((m) => m[1]))].slice(0, 100),
+    });
+  }
+  return { ...match, forms, submissionPages };
 }
 
 export async function findSimplySubJobsBySiteNumber(email: string, password: string, now = new Date()) {

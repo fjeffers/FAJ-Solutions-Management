@@ -4,6 +4,7 @@ import { copySimplySubPdfs } from '@/lib/simplysub-documents';
 import {
   filterSimplySubSummaryToTechs,
   findSimplySubJobsBySiteNumber,
+  inspectSimplySubFormsBySiteNumber,
   mergeSimplySubItems,
   mergeSimplySubWorkflow,
 } from '@/lib/simplysub-sync';
@@ -38,6 +39,17 @@ export async function GET(req: Request) {
   const password = process.env.SIMPLYSUB_PASSWORD;
   if (!email || !password) {
     return NextResponse.json({ error: 'SimplySub login is not configured.' }, { status: 503 });
+  }
+  const inspectSite = new URL(req.url).searchParams.get('inspect_forms');
+  if (inspectSite) {
+    try {
+      return NextResponse.json({
+        ok: true,
+        inspection: await inspectSimplySubFormsBySiteNumber(email, password, inspectSite),
+      });
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 502 });
+    }
   }
 
   const admin = createAdminClient();

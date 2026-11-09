@@ -240,13 +240,12 @@ class SimplySubSession {
 
   async login(email: string, password: string) {
     await this.request('/login');
-    const response = await this.request('/login', {
+    const response = await this.request('/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ login_identifier: email, password, next_url: '' }),
     });
-    const html = await response.text();
-    if (response.url.includes('/login') || /name=["']password["']/i.test(html)) {
+    if (!response.ok || response.status !== 204) {
       throw new Error('SimplySub sign-in failed. Check the saved email and password.');
     }
   }

@@ -286,6 +286,51 @@ body {
     radial-gradient(circle at 78% 2%, rgba(0, 155, 255, .13), transparent 30%),
     linear-gradient(145deg, #EAF3FA 0%, #F7FAFC 52%, #E9F2F8 100%);
 }
+.faj-summit-flag {
+  position: absolute;
+  left: 67%;
+  top: 34%;
+  width: 46px;
+  height: 40px;
+  z-index: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .55));
+}
+.faj-summit-flag-pole {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 40px;
+  border-radius: 2px;
+  background: linear-gradient(#e6edf5, #687d91);
+}
+.faj-summit-flag-cloth {
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  width: 40px;
+  height: 22px;
+  overflow: hidden;
+  transform-origin: left center;
+  clip-path: polygon(0 0, 100% 8%, 91% 52%, 100% 95%, 0 100%);
+  background: linear-gradient(110deg, #031a38, #07507c 63%, #d9af55);
+  animation: faj-flag-wave 2.3s ease-in-out infinite;
+}
+.faj-summit-flag-cloth img {
+  width: 35px;
+  height: 18px;
+  margin: 1px 0 0 1px;
+  object-fit: contain;
+  filter: brightness(1.2) contrast(1.08);
+}
+@keyframes faj-flag-wave {
+  0%, 100% { transform: perspective(90px) rotateY(-8deg) skewY(-2deg); }
+  50% { transform: perspective(90px) rotateY(22deg) skewY(3deg) scaleX(.88); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .faj-summit-flag-cloth { animation: none; }
+}
 
 @media (max-width: 520px) {
   .faj-enterprise-home { padding: 8px; }

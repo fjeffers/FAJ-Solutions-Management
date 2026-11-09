@@ -211,6 +211,12 @@ export default function BusinessCommandCenter({
             fontSize: 'clamp(28px, 5vw, 68px)', lineHeight: .9, fontWeight: 900, letterSpacing: '.08em',
             color: 'rgba(255,255,255,.15)', textShadow: '0 0 28px rgba(52,200,184,.35)',
           }}>NEVER<br />GIVE UP</div>
+          <div className="faj-summit-flag" aria-hidden>
+            <span className="faj-summit-flag-pole" />
+            <span className="faj-summit-flag-cloth">
+              <img src="/wf/logo-wide.png" alt="" />
+            </span>
+          </div>
           <div style={{ maxWidth: 690, position: 'relative', zIndex: 1 }}>
             <div style={{ fontSize: 10.5, fontWeight: 850, color: '#E5BD66', letterSpacing: 2.6 }}>FAJ SOLUTIONS · CRM + ERP WORKSPACE</div>
             <h1 style={{ fontSize: 'clamp(31px, 4.4vw, 52px)', lineHeight: 1.02, fontWeight: 760, margin: '10px 0 0', letterSpacing: '-.035em' }}>Welcome back, {ownerName}.</h1>

@@ -68,7 +68,9 @@ export function businessSnapshot({
     outstandingInvoices: openInvoices.reduce((sum, i) => sum + i.due, 0),
     overdueInvoices: openInvoices.filter(({ invoice }) => !!invoice.due_date && invoice.due_date < today).length,
     inventoryItems: materials.length,
-    lowStock: materials.filter((m) => m.low_stock_threshold != null && m.stock_quantity <= m.low_stock_threshold).length,
+    lowStock: materials.filter((m) =>
+      m.stock_quantity <= 0 || (m.low_stock_threshold != null && m.stock_quantity <= m.low_stock_threshold)
+    ).length,
     completedJobs: workOrders.filter((w) => ['Work Done', 'Approved', 'Paid'].includes(w.wo_status)).length,
   };
 }

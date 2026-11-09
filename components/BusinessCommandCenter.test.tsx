@@ -39,7 +39,7 @@ describe('business command center', () => {
       outstandingInvoices: 750,
       overdueInvoices: 1,
       inventoryItems: 3,
-      lowStock: 1,
+      lowStock: 2,
       completedJobs: 1,
     });
   });

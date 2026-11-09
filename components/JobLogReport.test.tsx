@@ -1040,6 +1040,9 @@ describe('Job log edited by the office', () => {
       // A hotel's date, name and amount (Fred, 2026-11-09: "date for the hotel and hotel name and the amount?").
       fireEvent.click(within(days).getByRole('button', { name: 'Add a hotel, Paul Gibbs' }));
       const hotelNames = within(days).getAllByLabelText(/^Hotel name, Paul Gibbs/);
+      const hotelRow = hotelNames.at(-1)!.closest('[data-hotel-row]') as HTMLElement;
+      expect(within(hotelRow).getByLabelText(/^Hotel day, Paul Gibbs/)).toBeTruthy();
+      expect(within(hotelRow).getByLabelText(/^Hotel amount, Paul Gibbs/)).toBeTruthy();
       fireEvent.change(hotelNames.at(-1)!, { target: { value: 'Hampton Inn Wilmington' } });
       expect(document.querySelector('.jl-invoice')!.textContent).toContain('Hampton Inn Wilmington – Hotel charge');
     } finally {

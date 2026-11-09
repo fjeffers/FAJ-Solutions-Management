@@ -248,22 +248,26 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
         const at = `${tech}, ${day(l.date)}`;
         const value = l.item === 'Labor' || l.item === 'Mileage' ? l.qty : l.item === 'Meal' ? (l.spent || null) : l.rate;
         const name = l.item === 'Labor' ? 'Hours' : l.item === 'Mileage' ? 'Miles' : l.item === 'Meal' ? 'Meals' : l.item;
+        const hotel = l.item === 'Hotel' && l.row;
         return (
           <div key={`${l.item}-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={row}>
+            <div data-hotel-row={hotel ? '' : undefined} style={hotel
+              ? { ...row, gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 0.8fr) 28px' }
+              : row}>
               {l.item === 'Meal' ? <span style={{ fontSize: 13 }}>{day(l.date)}</span>
                 : <DayBox value={l.date} label={`${l.item} day, ${at}`} onChange={(d) => edit.change(l, { day: d })} />}
-              <NumBox label={`${name}, ${at}`} value={value}
-                onChange={(n) => edit.change(l, l.item === 'Labor' || l.item === 'Mileage' ? { qty: n } : { amount: n })} />
-              <span style={{ textAlign: 'right', fontSize: 13 }}>{amount(l.amount)}</span>
+              {hotel
+                ? <input aria-label={`Hotel name, ${at}`} style={input} value={(l.row as { store?: string }).store ?? ''} placeholder="Hotel name" onChange={(e) => edit.change(l, { description: e.target.value })} />
+                : <NumBox label={`${name}, ${at}`} value={value}
+                    onChange={(n) => edit.change(l, l.item === 'Labor' || l.item === 'Mileage' ? { qty: n } : { amount: n })} />}
+              {hotel
+                ? <NumBox label={`Hotel amount, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
+                : <span style={{ textAlign: 'right', fontSize: 13 }}>{amount(l.amount)}</span>}
               {(l.item !== 'Meal' || (l.spent ?? 0) > 0) ? <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} /> : <span />}
             </div>
             {l.item === 'Labor' && <InOut l={l} at={at} edit={edit} />}
             {l.item === 'Material' && (
               <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
-            )}
-            {l.item === 'Hotel' && l.row && (
-              <input aria-label={`Hotel name, ${at}`} style={input} value={(l.row as { store?: string }).store ?? ''} placeholder="Hotel name" onChange={(e) => edit.change(l, { description: e.target.value })} />
             )}
           </div>
         );

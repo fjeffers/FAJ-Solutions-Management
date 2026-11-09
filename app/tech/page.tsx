@@ -85,6 +85,7 @@ import PhotoMarkup from '@/components/tools/PhotoMarkup';
 import PdfEditor from '@/components/tools/PdfEditor';
 import DocViewer, { docKind } from '@/components/tools/DocViewer';
 import ReadTool from '@/components/tools/ReadTool';
+import LdsDailyCheckout from '@/components/wf/LdsDailyCheckout';
 import { DOC_KINDS, sendTechDoc, signedName } from '@/lib/job-docs';
 
 // Primio's tech tabs — Jobs, Available, Profile (with the W-9 inside) — plus
@@ -1741,6 +1742,9 @@ function TechJobScreen({ job, uid, lists, onBack, act, onRefresh, refreshing, on
         </div>
       )}
       {ask('photos') && <div id="fs-go-photos" style={{ scrollMarginTop: 12 }}><JobPhotos canAdd={canReport} ph={phPicked} /></div>}
+      {shown.noSignature && shown.status !== 'offered' && shown.status !== 'declined' && (
+        <LdsDailyCheckout job={shown} canEdit={canReport} upload={(label, file) => ldsUpload(shown.number, label, file)} />
+      )}
       {hasReport && (
         <div id="fs-go-report" style={{ scrollMarginTop: 12 }}>
           <JobReport
@@ -2375,6 +2379,23 @@ function techDay(job: WfJob, act: (a: PendingAction, sent?: string) => Promise<v
     return onSite();
   };
   return { send, keep, arrive };
+}
+
+/** One labeled LDS checkout photo: GPS-stamped like every job photo, then sent. */
+async function ldsUpload(woNumber: string, label: string, file: File): Promise<string | null> {
+  const at = new Date();
+  const pos = await getPosition(6000);
+  if (!pos) { toastError(noGpsMessage(), NO_GPS_MS); return null; }
+  try {
+    const blob = await stampPhoto(file, stampLines({ woNumber, title: label, at, pos }));
+    const r = await sendPhoto({ woNumber, blob, takenAt: at.toISOString(), lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy ?? null, source: 'camera', label: label.slice(0, 80) });
+    if (r === 'offline') { toastError('Checkout photos need signal. Try again when you have it.'); return null; }
+    if ('error' in r) { toastError(r.error); return null; }
+    return r.url;
+  } catch (e) {
+    toastError(e instanceof Error ? e.message : "Couldn't prepare that photo.");
+    return null;
+  }
 }
 
 async function sendPhoto(p: Omit<QueuedPhoto, 'id' | 'uid'>): Promise<{ url: string } | 'offline' | { error: string }> {

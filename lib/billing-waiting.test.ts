@@ -1,9 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { billingDetail, billingWaiting, type BillingJob, type BillingRow } from './billing-waiting';
+import { accountingTracking, billingDetail, billingWaiting, type AccountingJob, type BillingJob, type BillingRow } from './billing-waiting';
 
 const job = (over: Partial<BillingJob> = {}): BillingJob => ({ id: 'w1', wo_number: '191', site_name: 'Site 5006643', customer_name: 'Acme', ...over });
 const row = (over: Partial<BillingRow> = {}): BillingRow => ({
   wo_id: 'w1', rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } }, all_hours_rate: null, invoice: {}, updated_at: '2026-11-08T15:00:00Z', ...over,
+});
+
+describe('accountingTracking', () => {
+  it('keeps the QuickBooks invoice and technician payment separate on each finished job', () => {
+    const jobs = [
+      job({ id: 'w1', wo_status: 'Work Done', paid: 125, remaining: 75, pay_set: true, scheduled_date: '2026-11-08' } as Partial<AccountingJob>),
+      job({ id: 'w2', wo_number: '192', wo_status: 'Paid', paid: 200, remaining: 0, pay_set: true, scheduled_date: '2026-11-09' } as Partial<AccountingJob>),
+    ] as AccountingJob[];
+    const rows = [
+      row(),
+      row({ wo_id: 'w2', invoice: { qbo: { id: '7', number: '1042', total: 500, at: '2026-11-09T15:00:00Z' } } }),
+    ];
+    expect(accountingTracking(rows, jobs)).toEqual([
+      expect.objectContaining({ woId: 'w2', invoice: 'sent', invoiceNumber: '1042', techPaid: 200, techDue: 0 }),
+      expect.objectContaining({ woId: 'w1', invoice: 'not_sent', techPaid: 125, techDue: 75 }),
+    ]);
+  });
+
+  it('labels a finished job with no invoice or tech pay setup', () => {
+    const [item] = accountingTracking([], [job({ wo_status: 'Approved' } as Partial<AccountingJob>) as AccountingJob]);
+    expect(item).toMatchObject({ invoice: 'not_prepared', techPaid: 0, techDue: 0, paySet: false });
+  });
 });
 
 describe('billingWaiting', () => {

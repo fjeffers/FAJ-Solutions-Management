@@ -225,6 +225,8 @@ body {
 .sidebar-desktop { display: flex; }
 
 @media (max-width: 768px) {
+  .job-accounting-row { grid-template-columns: 1fr auto !important; }
+  .job-accounting-row > span { grid-column: 1 / -1; }
   .faj-system-grid { grid-template-columns: 1fr !important; }
   .faj-enterprise-topbar { grid-template-columns: 1fr !important; }
   .faj-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }

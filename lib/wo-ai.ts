@@ -147,7 +147,7 @@ export function modelConflictFields(raw: unknown): Set<string> {
   if (!raw || typeof raw !== 'object') return new Set();
   const values = (raw as Record<string, unknown>).conflicted_fields;
   if (!Array.isArray(values)) return new Set();
-  return new Set(values.filter((v): v is string => typeof v === 'string' && /^[a-z][a-z0-9_]{0,59}$/.test(v)).slice(0, 30));
+  return new Set(values.filter((v): v is string => typeof v === 'string' && /^[a-z][a-z0-9_]{0,59}$/.test(v)));
 }
 
 const clean = (v: unknown, max = 4000): string | null => {

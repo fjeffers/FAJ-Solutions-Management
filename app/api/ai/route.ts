@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { extractWorkOrderFields } from '@/lib/wo-extract';
-import { WO_AI_MODEL, buildWoPrompt, parseModelJson, sanitizeWoAi, filledCount, aiFailureReason, type AiCustomField, type AiTemplate } from '@/lib/wo-ai';
+import { WO_AI_MODEL, buildWoPrompt, parseModelJson, modelConflictFields, sanitizeWoAi, filledCount, aiFailureReason, type AiCustomField, type AiTemplate } from '@/lib/wo-ai';
 import { linksInText, mergeLinks } from '@/lib/client-links';
 import { normalizeFields } from '@/lib/custom-fields';
 import { todayISO } from '@/lib/utils';
@@ -103,11 +103,19 @@ export async function POST(req: Request) {
       throw err;
     }
 
-    const aiFields: Partial<WorkOrder> & { template?: string } = sanitizeWoAi(parseModelJson(text), custom, templates);
+    const parsed = parseModelJson(text);
+    const aiFields: Partial<WorkOrder> & { template?: string } = sanitizeWoAi(parsed, custom, templates);
     if (Object.keys(aiFields).length === 0) return floor('ai_unreadable');
 
-    // The model wins where it answered; the parser fills whatever it left out.
-    const result = { ...regexFields, ...aiFields, client_links: mergeLinks(aiFields.client_links ?? [], pastedLinks) };
+    // The model wins where it answered; the parser fills whatever it left out,
+    // except fields the model deliberately withheld because source files conflict.
+    const conflicts = modelConflictFields(parsed);
+    const parserFields = Object.fromEntries(Object.entries(regexFields).filter(([key]) => !conflicts.has(key)));
+    const result = {
+      ...parserFields,
+      ...aiFields,
+      client_links: conflicts.has('client_links') ? (aiFields.client_links ?? []) : mergeLinks(aiFields.client_links ?? [], pastedLinks),
+    };
     return NextResponse.json({ result, source: 'ai', filled: filledCount(result), tasks: aiFields.wo_tasks?.length ?? 0 });
   } catch (err) {
     console.error('AI route error:', err);

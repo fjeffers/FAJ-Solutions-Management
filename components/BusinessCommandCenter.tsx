@@ -112,20 +112,25 @@ export default function BusinessCommandCenter({
       window.removeEventListener('focus', load);
     };
   }, []);
-  const appCards = [
-    { group: 'TODAY', title: 'Waiting on you', detail: 'Inbox, approvals and invoices', view: 'attention', icon: Bell },
-    { group: 'CRM', title: 'Follow-up', detail: 'Quotes, clients and technician replies', view: 'followups', icon: ClipboardCheck },
-    { group: 'CRM', title: 'Customers', value: String(savedCustomers ?? s.customers), detail: 'Contacts, history and client portals', view: 'customers', icon: Building2 },
-    { group: 'CRM', title: 'Sales', value: String(s.openQuotes), detail: `${fmtMoney(s.openQuoteValue)} in open quotes`, view: 'quotes', icon: BriefcaseBusiness },
-    { group: 'ERP', title: 'Jobs', value: String(s.activeJobs), detail: `${s.todayJobs} scheduled today`, view: 'workorders', icon: FileChartColumn },
-    { group: 'ERP', title: 'Schedule', value: String(s.inField), detail: 'Jobs in progress now', view: 'scheduling', icon: CalendarDays },
-    { group: 'ERP', title: 'Team', value: String(s.activeTechs), detail: 'Active technicians and assignments', view: 'contractors', icon: Users },
-    { group: 'ERP', title: 'Money', value: fmtMoney(s.outstandingInvoices), detail: `${s.overdueInvoices} overdue invoice${s.overdueInvoices === 1 ? '' : 's'}`, view: 'financials', icon: WalletCards },
-    { group: 'ERP', title: 'Inventory', value: String(s.inventoryItems), detail: `${s.lowStock} item${s.lowStock === 1 ? '' : 's'} low on stock`, view: 'materials', icon: Boxes },
-    { group: 'OFFICE', title: 'Reports & admin', value: String(s.completedJobs), detail: 'Completed jobs ready for records', view: 'office', icon: FileChartColumn },
-    { group: 'AI', title: 'AI generator', detail: 'Build a work order from files or notes', view: 'ai', icon: Sparkles },
-    { group: 'CREATE', title: 'New job', detail: 'Start and assign new work', view: 'new-job', icon: Plus },
+  const availableAppCards = [
+    { key: 'attention', group: 'TODAY', title: 'Waiting on you', detail: 'Inbox, approvals and invoices', view: 'attention', icon: Bell },
+    { key: 'followups', group: 'CRM', title: 'Follow-up', detail: 'Quotes, clients and technician replies', view: 'followups', icon: ClipboardCheck },
+    { key: 'field', group: 'FIELD', title: 'In the field', detail: 'Live work and upcoming visits', view: 'field', icon: Radio },
+    { key: 'customers', group: 'CRM', title: 'Customers', value: String(savedCustomers ?? s.customers), detail: 'Contacts, history and client portals', view: 'customers', icon: Building2 },
+    { key: 'quotes', group: 'CRM', title: 'Sales', value: String(s.openQuotes), detail: `${fmtMoney(s.openQuoteValue)} in open quotes`, view: 'quotes', icon: BriefcaseBusiness },
+    { key: 'workorders', group: 'ERP', title: 'Jobs', value: String(s.activeJobs), detail: `${s.todayJobs} scheduled today`, view: 'workorders', icon: FileChartColumn },
+    { key: 'scheduling', group: 'ERP', title: 'Schedule', value: String(s.inField), detail: 'Jobs in progress now', view: 'scheduling', icon: CalendarDays },
+    { key: 'contractors', group: 'ERP', title: 'Team', value: String(s.activeTechs), detail: 'Active technicians and assignments', view: 'contractors', icon: Users },
+    { key: 'financials', group: 'ERP', title: 'Money', value: fmtMoney(s.outstandingInvoices), detail: `${s.overdueInvoices} overdue invoice${s.overdueInvoices === 1 ? '' : 's'}`, view: 'financials', icon: WalletCards },
+    { key: 'materials', group: 'ERP', title: 'Inventory', value: String(s.inventoryItems), detail: `${s.lowStock} item${s.lowStock === 1 ? '' : 's'} low on stock`, view: 'materials', icon: Boxes },
+    { key: 'office', group: 'OFFICE', title: 'Reports & admin', value: String(s.completedJobs), detail: 'Completed jobs ready for records', view: 'office', icon: FileChartColumn },
+    { key: 'ai', group: 'AI', title: 'AI generator', detail: 'Build a work order from files or notes', view: 'ai', icon: Sparkles },
+    { key: 'new-job', group: 'CREATE', title: 'New job', detail: 'Start and assign new work', view: 'new-job', icon: Plus },
   ] as const;
+  const appCards = look.tiles.flatMap((key) => {
+    const card = availableAppCards.find((item) => item.key === key);
+    return card ? [card] : [];
+  });
   const kpis = [
     { label: 'Customers', value: String(savedCustomers ?? s.customers), detail: 'CRM records', view: 'customers', icon: Building2 },
     { label: 'Open jobs', value: String(s.activeJobs), detail: `${s.todayJobs} today`, view: 'workorders', icon: BriefcaseBusiness },

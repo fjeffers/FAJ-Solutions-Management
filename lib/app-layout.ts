@@ -38,11 +38,32 @@ export type Layout = {
 };
 
 export type HomeTheme = 'midnight' | 'violet' | 'light';
+export const HOME_TILE_OPTIONS = [
+  { key: 'attention', label: 'Waiting on you' },
+  { key: 'followups', label: 'Follow-up' },
+  { key: 'field', label: 'In the field' },
+  { key: 'customers', label: 'Customers' },
+  { key: 'quotes', label: 'Sales' },
+  { key: 'workorders', label: 'Jobs' },
+  { key: 'scheduling', label: 'Schedule' },
+  { key: 'contractors', label: 'Team' },
+  { key: 'financials', label: 'Money' },
+  { key: 'materials', label: 'Inventory' },
+  { key: 'office', label: 'Reports & admin' },
+  { key: 'ai', label: 'AI generator' },
+  { key: 'new-job', label: 'New job' },
+] as const;
+export const STANDARD_HOME_TILES = [
+  'attention', 'followups', 'customers', 'quotes', 'workorders', 'scheduling',
+  'contractors', 'financials', 'materials', 'office', 'ai', 'new-job',
+] as const;
+export type HomeTileKey = typeof HOME_TILE_OPTIONS[number]['key'];
 export type HomeLook = {
   brand: string;
   title: string;
   subtitle: string;
   theme: HomeTheme;
+  tiles: HomeTileKey[];
 };
 
 export const STANDARD_HOME_LOOK: HomeLook = {
@@ -50,6 +71,7 @@ export const STANDARD_HOME_LOOK: HomeLook = {
   title: 'Everything you need to run FAJ.',
   subtitle: 'Customers, jobs, technicians, inventory and money in one place.',
   theme: 'midnight',
+  tiles: [...STANDARD_HOME_TILES],
 };
 
 export type Screen = {
@@ -125,11 +147,16 @@ const homeText = (v: unknown, fallback: string, max: number): string =>
 export function normalizeHomeLook(raw: unknown): HomeLook {
   const src = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const theme: HomeTheme = src.theme === 'violet' || src.theme === 'light' ? src.theme : 'midnight';
+  const allowed = new Set<string>(HOME_TILE_OPTIONS.map((tile) => tile.key));
+  const tiles = Array.isArray(src.tiles)
+    ? [...new Set(src.tiles.filter((tile): tile is HomeTileKey => typeof tile === 'string' && allowed.has(tile)))]
+    : [...STANDARD_HOME_TILES];
   return {
     brand: homeText(src.brand, STANDARD_HOME_LOOK.brand, 32),
     title: homeText(src.title, STANDARD_HOME_LOOK.title, 72),
     subtitle: homeText(src.subtitle, STANDARD_HOME_LOOK.subtitle, 150),
     theme,
+    tiles,
   };
 }
 

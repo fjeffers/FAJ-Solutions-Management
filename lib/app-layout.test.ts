@@ -22,8 +22,13 @@ describe('menu layout (Settings -> Menu & screens)', () => {
       title: 'Control every job',
       subtitle: 'One place for the whole company.',
       theme: 'violet',
+      tiles: STANDARD_HOME_LOOK.tiles,
     });
     expect(normalizeHomeLook({ brand: '', title: '', subtitle: '', theme: 'neon' })).toEqual(STANDARD_HOME_LOOK);
+    expect(normalizeHomeLook({
+      ...STANDARD_HOME_LOOK,
+      tiles: ['financials', 'bad-tile', 'financials', 'workorders'],
+    }).tiles).toEqual(['financials', 'workorders']);
   });
 
   it('the standard menu: Home (Dashboard is part of it), Schedule, Messages, Office, Settings — everything else in Office', () => {

@@ -137,6 +137,15 @@ export default function BusinessCommandCenter({
     },
   } as const;
   const theme = themes[look.theme];
+  const flow = [
+    { label: 'Lead', view: 'surveys' },
+    { label: 'Quote', view: 'quotes' },
+    { label: 'Contract', view: 'contracts' },
+    { label: 'Job', view: 'workorders' },
+    { label: 'Dispatch', view: 'scheduling' },
+    { label: 'Invoice', view: 'financials' },
+    { label: 'Paid', view: 'financials' },
+  ] as const;
   const cardGrid = (cards: typeof crmCards | typeof erpCards) => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: 9 }}>
       {cards.map(({ group, title, value, detail, view, icon: Icon }) => (
@@ -189,6 +198,24 @@ export default function BusinessCommandCenter({
               background: theme.accent, color: look.theme === 'midnight' ? '#1D2630' : look.theme === 'violet' ? '#132A2C' : '#FFFFFF',
               fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
             }}><Plus size={15} /> New job</button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 12, padding: '12px 13px', borderRadius: 16, background: 'rgba(0,0,0,.09)', border: `1px solid ${theme.cardBorder}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 9 }}>
+            <span style={{ fontSize: 10, fontWeight: 850, letterSpacing: 1.6, color: theme.accent }}>FAJ BUSINESS FLOW</span>
+            <span style={{ fontSize: 10.5, color: theme.muted }}>From first contact to money collected</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflowX: 'auto', paddingBottom: 2 }}>
+            {flow.map((step, i) => (
+              <span key={step.label} style={{ display: 'contents' }}>
+                <button type="button" onClick={() => onGo(step.view)} style={{
+                  flex: '1 0 92px', minHeight: 38, borderRadius: 10, border: `1px solid ${theme.cardBorder}`,
+                  background: theme.card, color: theme.text, fontSize: 11.5, fontWeight: 780, cursor: 'pointer',
+                }}>{step.label}</button>
+                {i < flow.length - 1 && <span aria-hidden style={{ color: theme.accent, fontWeight: 900, fontSize: 17 }}>›</span>}
+              </span>
+            ))}
           </div>
         </div>
 

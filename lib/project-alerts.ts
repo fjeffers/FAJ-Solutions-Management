@@ -19,6 +19,11 @@ export type AlertRow = {
 };
 
 export type AlertJob = { title: string; site: string; city: string; state: string };
+export type AlertWorkOrderState = { wo_status?: string | null; board_stage?: string | null };
+
+export function isHeldWorkOrder(w: AlertWorkOrderState | null): boolean {
+  return w?.wo_status === 'On Hold' || w?.board_stage?.trim().toLowerCase() === 'on hold';
+}
 
 export type AlertPerson = {
   name: string; role: 'owner' | 'assistant' | 'pm' | 'other';

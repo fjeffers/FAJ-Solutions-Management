@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { alertMessage, recipientsFor, recipientsForAlert, toE164, canOpenApp, alertEmailHtml, OWNER_ALERT_EMAIL, type AlertRow, type AlertPerson } from './project-alerts';
+import { alertMessage, recipientsFor, recipientsForAlert, toE164, canOpenApp, alertEmailHtml, isHeldWorkOrder, OWNER_ALERT_EMAIL, type AlertRow, type AlertPerson } from './project-alerts';
 
 const base: AlertRow = {
   id: 'a1', user_id: 'owner', wo_id: 'w1', wo_number: 'TEST-PRJ-1', project_name: 'TEST Mock Project',
@@ -36,6 +36,15 @@ describe('alertMessage', () => {
   });
   it('no job details still reads', () => {
     expect(alertMessage({ ...base, tech: null }, null).title).toBe('A tech clocked in');
+  });
+});
+
+describe('held work orders', () => {
+  it('suppresses alerts for either kind of hold', () => {
+    expect(isHeldWorkOrder({ wo_status: 'On Hold', board_stage: null })).toBe(true);
+    expect(isHeldWorkOrder({ wo_status: 'Assigned', board_stage: ' On hold ' })).toBe(true);
+    expect(isHeldWorkOrder({ wo_status: 'Assigned', board_stage: 'Waiting on material' })).toBe(false);
+    expect(isHeldWorkOrder(null)).toBe(false);
   });
 });
 

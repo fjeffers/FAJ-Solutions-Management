@@ -2,7 +2,7 @@
 
 import {
   Boxes, BriefcaseBusiness, Building2, CalendarDays, FileChartColumn,
-  Search, Users, WalletCards, Plus, Bell, ArrowUpRight, Gauge, Sparkles, ClipboardCheck, Radio,
+  Search, Users, WalletCards, Plus, Bell, ArrowUpRight, Gauge, Sparkles, ClipboardCheck, Radio, MessageSquare,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -26,6 +26,16 @@ export type BusinessSnapshot = {
   lowStock: number;
   completedJobs: number;
 };
+
+export const BUSINESS_FLOW = [
+  { label: 'Lead', view: 'surveys' },
+  { label: 'Quote', view: 'quotes' },
+  { label: 'Contract', view: 'contracts' },
+  { label: 'Job', view: 'workorders' },
+  { label: 'Messenger', view: 'messages' },
+  { label: 'Invoice', view: 'financials' },
+  { label: 'Paid', view: 'financials' },
+] as const;
 
 export function businessSnapshot({
   workOrders, contractors, materials, quotes, invoices, invoicePayments, today = todayISO(),
@@ -163,16 +173,6 @@ export default function BusinessCommandCenter({
     },
   } as const;
   const theme = themes[look.theme];
-  const flow = [
-    { label: 'Lead', view: 'surveys' },
-    { label: 'Quote', view: 'quotes' },
-    { label: 'Contract', view: 'contracts' },
-    { label: 'Job', view: 'workorders' },
-    { label: 'Dispatch', view: 'scheduling' },
-    { label: 'Invoice', view: 'financials' },
-    { label: 'Paid', view: 'financials' },
-  ] as const;
-
   return (
     <section aria-label="CRM and ERP command center" style={{
       position: 'relative', overflow: 'hidden', borderRadius: 24, padding: 14,
@@ -256,13 +256,13 @@ export default function BusinessCommandCenter({
             <span style={{ fontSize: 10.5, color: 'rgba(221,239,255,.64)' }}>From first contact to money collected</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflowX: 'auto', paddingBottom: 2 }}>
-            {flow.map((step, i) => (
+            {BUSINESS_FLOW.map((step, i) => (
               <span key={step.label} style={{ display: 'contents' }}>
                 <button type="button" onClick={() => onGo(step.view)} style={{
                   flex: '1 0 92px', minHeight: 36, borderRadius: 10, border: '1px solid rgba(39,186,255,.28)',
                   background: 'rgba(9,48,80,.9)', color: '#FFFFFF', fontSize: 11.5, fontWeight: 780, cursor: 'pointer',
-                }}>{step.label}</button>
-                {i < flow.length - 1 && <span aria-hidden style={{ color: '#E5BD66', fontWeight: 900, fontSize: 17 }}>›</span>}
+                }}>{step.label === 'Messenger' && <MessageSquare size={13} style={{ verticalAlign: -2, marginRight: 5 }} />}{step.label}</button>
+                {i < BUSINESS_FLOW.length - 1 && <span aria-hidden style={{ color: '#E5BD66', fontWeight: 900, fontSize: 17 }}>›</span>}
               </span>
             ))}
           </div>

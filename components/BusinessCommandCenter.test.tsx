@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { businessSnapshot } from './BusinessCommandCenter';
+import { BUSINESS_FLOW, businessSnapshot } from './BusinessCommandCenter';
 import type { Contractor, EnrichedWorkOrder, Invoice, InvoicePayment, Material, Quote } from '@/lib/types';
 
 describe('business command center', () => {
+  it('puts Messenger in the connected flow instead of repeating Jobs as Dispatch', () => {
+    expect(BUSINESS_FLOW.map((step) => [step.label, step.view])).toEqual([
+      ['Lead', 'surveys'],
+      ['Quote', 'quotes'],
+      ['Contract', 'contracts'],
+      ['Job', 'workorders'],
+      ['Messenger', 'messages'],
+      ['Invoice', 'financials'],
+      ['Paid', 'financials'],
+    ]);
+  });
+
   it('summarizes CRM and ERP data without counting the same customer twice', () => {
     const workOrders = [
       { customer_name: "Wendy's", archived_at: null, wo_status: 'In Progress', scheduled_date: '2026-11-09', start_date: null },

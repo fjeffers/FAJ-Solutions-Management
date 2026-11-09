@@ -243,7 +243,7 @@ export function parseSimplySubSyncPages(args: {
   };
 }
 
-class SimplySubSession {
+export class SimplySubSession {
   private cookies = new Map<string, string>();
 
   constructor(private readonly fetcher: FetchLike = fetch) {}
@@ -282,6 +282,28 @@ class SimplySubSession {
     if (!response.ok || response.status !== 204) {
       throw new Error('SimplySub sign-in failed. Check the saved email and password.');
     }
+  }
+
+  /** Adds one file to a SimplySub job's Files tab, the same form its Upload Files button posts. */
+  async uploadJobFile(jobId: string, file: { name: string; bytes: Uint8Array; type: string }, meta: {
+    label: string; notes?: string; representationId?: string; date?: string;
+  }) {
+    const redirect = `/jobs/${jobId}/files`;
+    const form = new FormData();
+    form.append('redirect_url', redirect);
+    form.append('representationid', meta.representationId ?? '4173');
+    form.append('file_date', meta.date ?? new Date().toISOString().slice(0, 10));
+    form.append('file_notes', meta.notes ?? '');
+    form.append('file_label', meta.label);
+    form.append('browser_gps_status', 'not_requested');
+    form.append('low_bandwidth_upload', '0');
+    form.append('file_meta[0][client_original_filename]', file.name);
+    form.append('file_meta[0][client_uploaded_filename]', file.name);
+    form.append('file_meta[0][client_original_size_bytes]', String(file.bytes.byteLength));
+    form.append('file_meta[0][client_optimized_size_bytes]', String(file.bytes.byteLength));
+    form.append('file', new Blob([file.bytes as BlobPart], { type: file.type }), file.name);
+    const response = await this.request(`/object/3/object-record/${jobId}/add-file`, { method: 'POST', body: form });
+    if (!response.ok) throw new Error(`SimplySub upload returned ${response.status}.`);
   }
 
   async html(path: string) {

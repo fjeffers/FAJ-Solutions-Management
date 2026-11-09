@@ -65,6 +65,7 @@ export default function LdsDailyCheckout({ job, canEdit, upload }: {
     try {
       const row = await saveLdsDailyCheckout(job.number, day, { ...c, progress: effectiveProgress(c) }, submit);
       setSubmitted(row.submitted_at);
+      if (submit) void fetch('/api/tech/lds-checkout-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wo_number: job.number, day }) }).catch(() => {});
       toastSuccess(submit ? 'Daily checkout sent to the office.' : 'Saved.');
     } catch (e) {
       toastError(e instanceof Error ? e.message : "Couldn't save the checkout.");

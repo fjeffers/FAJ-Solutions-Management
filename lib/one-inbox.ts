@@ -1,7 +1,7 @@
 // One inbox on Home (Fred, 2026-11-08: "I need a platform where I can see everything"): tech and client messages
 // not read yet, job emails not yet sorted (Support), and work orders waiting in Import, newest first. Each opens
 // where it's answered. Pure; components/OneInbox.tsx loads the rows.
-import type { InboxMessage } from './messages-inbox';
+import { directContractorId, type InboxMessage } from './messages-inbox';
 
 export type InboxTicket = { id: string; from_name: string | null; from_email: string | null; subject: string | null;
   summary: string | null; received_at: string; urgent: boolean };
@@ -40,11 +40,13 @@ export function oneInbox({ messages, tickets, imports, jobs }: {
   for (const m of messages) {
     if (!unreadFromField(m)) continue;
     const client = m.sender_role === 'client';
+    const direct = directContractorId(m.work_order_id);
     const k = `${m.work_order_id}|${m.sender_role}|${m.sender_name}`;
     const was = seen.get(k);
     if (was && was.at >= m.created_at) continue;
     seen.set(k, {
-      key: `m:${m.id}`, kind: client ? 'client' : 'tech', who: `${m.sender_name || (client ? 'Client' : 'A tech')} · WO ${m.work_order_id}`,
+      key: `m:${m.id}`, kind: client ? 'client' : 'tech',
+      who: direct ? `${m.sender_name || 'A tech'} · Direct message` : `${m.sender_name || (client ? 'Client' : 'A tech')} · WO ${m.work_order_id}`,
       text: one(m.content), at: m.created_at, urgent: false, woId: jobs.get(m.work_order_id) ?? null, view: 'messages',
     });
   }

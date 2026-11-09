@@ -21,6 +21,10 @@ export type InboxMessage = {
 };
 
 export type InboxJob = { id: string; wo_number: string; title: string | null; techs: string[]; archived: boolean };
+export const DIRECT_MESSAGE_PREFIX = 'direct:';
+export const directThreadId = (contractorId: string) => `${DIRECT_MESSAGE_PREFIX}${contractorId}`;
+export const directContractorId = (threadId: string) =>
+  threadId.startsWith(DIRECT_MESSAGE_PREFIX) ? threadId.slice(DIRECT_MESSAGE_PREFIX.length) : null;
 
 export type JobThread = {
   woNumber: string;
@@ -38,6 +42,7 @@ export function buildJobThreads(messages: InboxMessage[], jobs: InboxJob[]): Job
   const byNumber = new Map(jobs.map((j) => [j.wo_number, j]));
   const threads = new Map<string, JobThread>();
   for (const m of messages) {
+    if (directContractorId(m.work_order_id)) continue;
     const t = threads.get(m.work_order_id);
     if (!t) {
       threads.set(m.work_order_id, {
@@ -51,6 +56,49 @@ export function buildJobThreads(messages: InboxMessage[], jobs: InboxJob[]): Job
     if (m.created_at > t.last.created_at) t.last = m;
   }
   return [...threads.values()].sort((a, b) => (a.last.created_at < b.last.created_at ? 1 : -1));
+}
+
+export type InboxContact = {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  auth_user_id?: string | null;
+  on_hold?: boolean;
+};
+export type DirectThread = {
+  contractor: InboxContact;
+  key: string;
+  last: InboxMessage | null;
+  messages: InboxMessage[];
+  /** Direct messages from this tech the office has not opened. */
+  unread: number;
+};
+
+/** Every technician is a contact, even before the first direct message. */
+export function buildDirectThreads(messages: InboxMessage[], contractors: InboxContact[]): DirectThread[] {
+  const byId = new Map<string, DirectThread>(contractors.map((c) => [c.id, {
+    contractor: c,
+    key: directThreadId(c.id),
+    last: null,
+    messages: [],
+    unread: 0,
+  }]));
+  for (const m of [...messages].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+    const contractorId = directContractorId(m.work_order_id);
+    if (!contractorId) continue;
+    const thread = byId.get(contractorId);
+    if (!thread) continue;
+    thread.messages.push(m);
+    thread.last = m;
+    if (fromTech(m) && !m.read_at) thread.unread += 1;
+  }
+  return [...byId.values()].sort((a, b) => {
+    if (a.last && b.last) return b.last.created_at.localeCompare(a.last.created_at);
+    if (a.last) return -1;
+    if (b.last) return 1;
+    return a.contractor.name.localeCompare(b.contractor.name);
+  });
 }
 
 /** Tech messages the office hasn't read, across every job. */

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildDmThreads, buildJobThreads, unreadFromTechs, whenShort, type InboxMessage } from './messages-inbox';
+import {
+  buildDirectThreads, buildDmThreads, buildJobThreads, directThreadId, unreadFromTechs, whenShort, type InboxMessage,
+} from './messages-inbox';
 
 const msg = (id: string, wo: string, role: string, at: string, read = false): InboxMessage => ({
   id, work_order_id: wo, sender_name: role === 'contractor' ? 'Davis' : 'FAJ Solutions', sender_role: role,
@@ -38,6 +40,23 @@ describe('Messages inbox', () => {
       msg('3', 'x', 'admin', '2026-10-05T10:00:00Z'),
     ])).toBe(1);
     expect(unreadFromTechs([])).toBe(0);
+  });
+
+  it('lists every technician as a direct contact and keeps direct messages out of job conversations', () => {
+    const direct = [
+      msg('1', directThreadId('d'), 'admin', '2026-10-05T09:00:00Z'),
+      msg('2', directThreadId('d'), 'contractor', '2026-10-05T10:00:00Z'),
+      msg('3', '19101393', 'contractor', '2026-10-05T11:00:00Z'),
+    ];
+    const contacts = buildDirectThreads(direct, [
+      { id: 'p', name: 'Paul Gibbs', auth_user_id: null },
+      { id: 'd', name: 'Davis King', auth_user_id: 'login-d' },
+    ]);
+    expect(contacts.map((t) => t.contractor.name)).toEqual(['Davis King', 'Paul Gibbs']);
+    expect(contacts[0]).toMatchObject({ unread: 1, last: { id: '2' } });
+    expect(contacts[0].messages.map((m) => m.id)).toEqual(['1', '2']);
+    expect(contacts[1]).toMatchObject({ unread: 0, last: null, messages: [] });
+    expect(buildJobThreads(direct, JOBS).map((t) => t.woNumber)).toEqual(['19101393']);
   });
 
   it('tech-to-tech: one thread per pair, whoever wrote first', () => {

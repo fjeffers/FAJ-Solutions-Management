@@ -4,18 +4,18 @@
 // a reply box — the same thread the tech sees in their portal and on the job
 // page. Techs messaging each other are under "Between techs", read-only.
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ChevronRight, MessageSquare, MessageSquarePlus, Users } from 'lucide-react';
+import { ArrowLeft, ChevronRight, MessageSquare, MessageSquarePlus, Send, Users } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
 import { PrimioBar } from '@/components/wf/PrimioScreens';
 import { Empty } from '@/components/wf/WfUi';
 import {
-  buildDmThreads, buildJobThreads, fromTech, unreadFromTechs, whenShort,
+  buildDirectThreads, buildDmThreads, buildJobThreads, directThreadId, fromTech, unreadFromTechs, whenShort,
   type InboxJob, type InboxMessage, type TechDm,
 } from '@/lib/messages-inbox';
 import type { Contractor, WorkOrder } from '@/lib/types';
 
-type Tab = 'jobs' | 'techs';
+type Tab = 'people' | 'jobs' | 'techs';
 
 export default function MessagesView({ workOrders, contractors, onOpenJob, onCount }: {
   workOrders: WorkOrder[];
@@ -25,19 +25,24 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
   onCount: (n: number) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
-  const [tab, setTab] = useState<Tab>('jobs');
+  const [tab, setTab] = useState<Tab>('people');
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [dms, setDms] = useState<TechDm[]>([]);
   const [loading, setLoading] = useState(true);
   const [openWo, setOpenWo] = useState<string | null>(null);
+  const [openPerson, setOpenPerson] = useState<string | null>(null);
   const [openDm, setOpenDm] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const [directDraft, setDirectDraft] = useState('');
+  const [directSending, setDirectSending] = useState(false);
+  const [directMissed, setDirectMissed] = useState(false);
 
   const jobs: InboxJob[] = useMemo(() => workOrders.map((w) => ({
     id: w.id, wo_number: w.wo_number, title: w.title ?? null, archived: !!w.archived_at,
     techs: (w.contractor_names?.length ? w.contractor_names : [w.contractor_name]).filter((n): n is string => !!n && !!n.trim()),
   })), [workOrders]);
   const threads = useMemo(() => buildJobThreads(messages, jobs), [messages, jobs]);
+  const directThreads = useMemo(() => buildDirectThreads(messages, contractors), [messages, contractors]);
   const nameOf = useMemo(() => {
     const m = new Map(contractors.map((c) => [c.id, c.name]));
     return (id: string) => m.get(id) ?? 'A tech';
@@ -89,11 +94,52 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openWo, messages]);
 
+  // Opening one technician marks their private replies read for the office.
+  useEffect(() => {
+    if (!openPerson) return;
+    const key = directThreadId(openPerson);
+    const waiting = messages.filter((m) => m.work_order_id === key && fromTech(m) && !m.read_at);
+    if (waiting.length === 0) return;
+    const now = new Date().toISOString();
+    void supabase.from('work_order_messages').update({ read_at: now })
+      .in('id', waiting.map((m) => m.id))
+      .then(({ error }) => {
+        if (error) return;
+        const ids = new Set(waiting.map((m) => m.id));
+        const next = messages.map((m) => (ids.has(m.id) ? { ...m, read_at: now } : m));
+        setMessages(next);
+        onCount(unreadFromTechs(next));
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPerson, messages]);
+
   const unread = unreadFromTechs(messages);
   const thread = threads.find((t) => t.woNumber === openWo) ?? null;
   const openJob = thread?.job ?? jobs.find((j) => j.wo_number === openWo) ?? null;
   const dm = dmThreads.find((t) => t.key === openDm) ?? null;
-  const showingThread = tab === 'jobs' ? !!openWo : !!dm;
+  const person = directThreads.find((t) => t.contractor.id === openPerson) ?? null;
+  const showingThread = tab === 'people' ? !!person : tab === 'jobs' ? !!openWo : !!dm;
+
+  const sendDirect = async () => {
+    const content = directDraft.trim();
+    if (!person || !content || directSending) return;
+    setDirectSending(true);
+    setDirectMissed(false);
+    try {
+      const r = await fetch('/api/tech/direct-message', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contractor_id: person.contractor.id, content }),
+      });
+      const out = (await r.json().catch(() => ({}))) as { ok?: boolean; pushed?: number; connected?: boolean };
+      if (r.ok && out.ok) {
+        setDirectDraft('');
+        setDirectMissed(!out.connected || !out.pushed);
+        await load();
+      }
+    } finally {
+      setDirectSending(false);
+    }
+  };
 
   // Jobs Fred can start a conversation on: open ones with a tech, newest first.
   const startable = jobs.filter((j) => !j.archived && j.techs.length > 0)
@@ -105,7 +151,40 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
     font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'pointer',
   });
 
-  const list = tab === 'jobs' ? (
+  const list = tab === 'people' ? (
+    directThreads.length === 0 ? (
+      <Empty icon={<Users size={28} />} title="No technicians yet"
+        message="Add a technician to your Team, then their name will appear here." />
+    ) : directThreads.map((t) => {
+      const initials = t.contractor.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+      return (
+        <button key={t.key} style={rowStyle(t.contractor.id === openPerson)}
+          onClick={() => { setOpenPerson(t.contractor.id); setDirectMissed(false); }}>
+          <span aria-hidden style={{
+            width: 38, height: 38, borderRadius: '50%', flexShrink: 0, display: 'inline-flex',
+            alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 850,
+            color: 'white', background: t.contractor.on_hold ? '#8a8578' : 'var(--wf-navy)',
+          }}>{initials || '?'}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+              <span className="wf-p-title" style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: t.unread ? 800 : 650 }}>
+                {t.contractor.name}
+              </span>
+              {t.last && <span className="wf-p-small wf-subtle" style={{ flexShrink: 0 }}>{whenShort(t.last.created_at)}</span>}
+            </span>
+            <span className="wf-p-small" style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: t.unread ? 'var(--wf-text)' : 'var(--wf-subtle)' }}>
+              {t.last ? <><strong>{fromTech(t.last) ? t.contractor.name.split(/\s+/)[0] : 'You'}:</strong> {t.last.content}</>
+                : t.contractor.auth_user_id ? 'Start a private conversation' : 'No FAJ app login yet'}
+            </span>
+          </span>
+          {t.unread > 0 && (
+            <span style={{ background: 'var(--wf-gold)', color: 'var(--wf-gold-ink)', borderRadius: 999, fontSize: 11, fontWeight: 800, padding: '1px 8px' }}>{t.unread}</span>
+          )}
+          <ChevronRight size={18} color="var(--wf-subtle)" />
+        </button>
+      );
+    })
+  ) : tab === 'jobs' ? (
     threads.length === 0 ? (
       <Empty icon={<MessageSquare size={28} />} title="No messages yet"
         message="When a tech writes about a job, it shows here. To start one, press New message." />
@@ -153,12 +232,71 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
   );
 
   const back = (
-    <button className="wf-btn wf-btn-ghost wf-btn-sm wf-msg-back" onClick={() => { setOpenWo(null); setOpenDm(null); }}>
-      <ArrowLeft size={16} /> All messages
+    <button className="wf-btn wf-btn-ghost wf-btn-sm wf-msg-back" onClick={() => { setOpenPerson(null); setOpenWo(null); setOpenDm(null); }}>
+      <ArrowLeft size={16} /> All conversations
     </button>
   );
 
-  const threadPane = tab === 'jobs' ? (
+  const threadPane = tab === 'people' ? (
+    person ? (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14 }}>
+        {back}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          <span aria-hidden style={{
+            width: 42, height: 42, borderRadius: '50%', display: 'inline-flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 13, fontWeight: 850, color: 'white', background: 'var(--wf-navy)',
+          }}>{person.contractor.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span>
+          <div style={{ minWidth: 0 }}>
+            <div className="wf-p-title">{person.contractor.name}</div>
+            <div className="wf-p-small wf-subtle">
+              {person.contractor.auth_user_id ? 'Private FAJ app conversation' : 'No FAJ app login yet'}
+              {person.contractor.phone ? ` · ${person.contractor.phone}` : ''}
+            </div>
+          </div>
+        </div>
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 430, minHeight: 220,
+          overflowY: 'auto', padding: '12px 14px', background: '#f9fafb', borderRadius: 10, border: '1px solid #eee',
+        }}>
+          {person.messages.length === 0 && (
+            <div style={{ fontSize: 12.5, color: '#aaa', textAlign: 'center', padding: '30px 0' }}>
+              No messages yet. Send {person.contractor.name.split(/\s+/)[0]} a private message.
+            </div>
+          )}
+          {person.messages.map((m) => (
+            <div key={m.id} style={{
+              alignSelf: fromTech(m) ? 'flex-start' : 'flex-end', maxWidth: '78%',
+              background: fromTech(m) ? 'white' : 'var(--wf-navy)', color: fromTech(m) ? 'var(--wf-text)' : 'white',
+              border: fromTech(m) ? '1px solid #e5e7eb' : 'none', borderRadius: 13, padding: '9px 12px',
+            }}>
+              {fromTech(m) && <div style={{ fontSize: 10, fontWeight: 750, marginBottom: 2 }}>{person.contractor.name}</div>}
+              <div style={{ fontSize: 13.5, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{m.content}</div>
+              <div style={{ fontSize: 9.5, opacity: .65, marginTop: 4, textAlign: 'right' }}>
+                {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </div>
+            </div>
+          ))}
+        </div>
+        {directMissed && (
+          <div className="wf-p-small" style={{ color: '#8a5a00' }}>
+            Message saved. {person.contractor.auth_user_id ? 'This technician has no phone alerts enabled.' : 'They need to sign in to the FAJ app to read it.'}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <textarea className="wf-input" rows={2} value={directDraft} placeholder={`Message ${person.contractor.name}…`}
+            onChange={(e) => setDirectDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendDirect(); } }}
+            style={{ flex: 1, resize: 'none' }} />
+          <button className="wf-btn wf-btn-navy" aria-label={`Send message to ${person.contractor.name}`}
+            disabled={directSending || !directDraft.trim()} onClick={() => void sendDirect()}>
+            <Send size={16} /> Send
+          </button>
+        </div>
+      </div>
+    ) : (
+      <div className="wf-msg-placeholder"><Empty icon={<Users size={28} />} title="Pick a technician" message="Choose a name to open a private conversation." /></div>
+    )
+  ) : tab === 'jobs' ? (
     openWo ? (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14 }}>
         {back}
@@ -201,18 +339,19 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <PrimioBar title="Messages" right={
-        <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => { setTab('jobs'); setOpenWo(null); setPicking(true); }}>
+      <PrimioBar title="Messenger" right={tab === 'jobs' ? (
+        <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => { setOpenWo(null); setPicking(true); }}>
           <MessageSquarePlus size={16} /> New message
         </button>
-      } />
+      ) : undefined} />
 
       <div style={{ display: 'flex', gap: 4, background: 'var(--wf-card)', border: '1px solid var(--wf-line)', borderRadius: 999, padding: 3, alignSelf: 'flex-start' }}>
-        {(['jobs', 'techs'] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t}
+        {(['people', 'jobs', 'techs'] as Tab[]).map((t) => (
+          <button key={t} onClick={() => { setTab(t); setOpenPerson(null); setOpenWo(null); setOpenDm(null); }} aria-pressed={tab === t}
             style={{ border: 'none', borderRadius: 999, padding: '7px 14px', font: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer',
               background: tab === t ? 'var(--wf-navy)' : 'transparent', color: tab === t ? 'white' : 'var(--wf-text)' }}>
-            {t === 'jobs' ? <>With techs{unread > 0 ? ` (${unread})` : ''}</> : 'Between techs'}
+            {t === 'people' ? <>Technicians{unread > 0 ? ` (${unread})` : ''}</>
+              : t === 'jobs' ? 'Job conversations' : 'Between technicians'}
           </button>
         ))}
       </div>

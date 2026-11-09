@@ -262,6 +262,23 @@ export async function fetchTechDmUnread(): Promise<number> {
   return Number(data) || 0;
 }
 
+// ── Direct conversation with the office (migration-154) ─────────────────────
+
+/** Opening this thread marks FAJ's direct messages read. */
+export async function fetchTechOwnerThread(): Promise<TechDirectMessage[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_owner_thread');
+  if (error) throw new Error(error.message);
+  return (data as TechDirectMessage[] | null) ?? [];
+}
+
+export async function sendTechOwnerMessage(content: string): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_send_owner_message', { p_content: content });
+  if (error) throw new Error(error.message);
+  return !!(data as { ok?: boolean } | null)?.ok;
+}
+
 // ── Working the job (migration-076) ─────────────────────────────────────────
 // A tech may set only 'In Progress' or 'Work Done' — never Approved or Paid,
 // and never on a job that is already finished. The database enforces both.

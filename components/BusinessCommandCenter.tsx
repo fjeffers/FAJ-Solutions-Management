@@ -134,10 +134,10 @@ export default function BusinessCommandCenter({
     { label: 'Inventory', value: String(s.inventoryItems), detail: `${s.lowStock} low stock`, view: 'materials', icon: Boxes },
   ] as const;
   const liveStatus = [
-    { label: 'Jobs scheduled today', value: String(s.todayJobs), view: 'scheduling', tone: '#39D5FF' },
-    { label: 'Technicians active', value: String(s.activeTechs), view: 'contractors', tone: '#57E6A5' },
-    { label: 'Overdue invoices', value: String(s.overdueInvoices), view: 'financials', tone: '#FFB74D' },
-    { label: 'Low-stock items', value: String(s.lowStock), view: 'materials', tone: '#FF6B7A' },
+    { label: "Jobs on today's schedule", value: String(s.todayJobs), view: 'scheduling', tone: '#39D5FF' },
+    { label: 'Work happening now', value: String(s.inField), view: 'field', tone: '#57E6A5' },
+    { label: 'Invoices needing attention', value: String(s.overdueInvoices), view: 'financials', tone: '#FFB74D' },
+    { label: 'Inventory needing attention', value: String(s.lowStock), view: 'materials', tone: '#FF6B7A' },
   ] as const;
   const themes = {
     midnight: {
@@ -281,7 +281,7 @@ export default function BusinessCommandCenter({
           </section>
           <section style={{ padding: 14, borderRadius: 16, background: 'rgba(4,28,51,.92)', border: '1px solid rgba(39,186,255,.25)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 11 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 800 }}><Bell size={17} color="#E5BD66" /> Live status</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 800 }}><Bell size={17} color="#E5BD66" /> My Day</span>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#52E6A7', boxShadow: '0 0 12px #52E6A7' }} />
             </div>
             <div style={{ display: 'grid', gap: 8 }}>

@@ -899,7 +899,7 @@ describe('Job log edited by the office', () => {
         ['', 'Total Materials', '', '$104.17'],
         ['10/21/2026', 'Material', "Lowe's", '1', '$104.17', '$104.17'],
         ['', 'Total Travel', '', '$402.50'],
-        ['10/19/2026', 'Hotel', 'Hotel charge for the week', '1', '$402.50', '$402.50'],
+        ['10/19/2026', 'Hotel', 'Quality Inn – Hotel charge for the week', '1', '$402.50', '$402.50'],
         ['', 'Lead Total', '', '$986.44'],
         ['Totals'],
         ['Labor', '', '$450.00'], ['Mileage', '', '$10.80'], ['Meals', '', '$18.97'], ['Materials', '', '$104.17'], ['Travel', '', '$402.50'], ['Total Invoice', '', '$986.44'],

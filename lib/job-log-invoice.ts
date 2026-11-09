@@ -128,7 +128,7 @@ const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', curr
  * The invoice for the sheet shown: each tech on it, the lead (`crew`'s first) as Lead and the rest as Helper.
  * `place` is the site's city and state ("Goldsboro NC") for the drives there and home.
  */
-export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], meta: Pick<InvoiceMeta, 'labor' | 'meal'>, place: string): Invoice {
+export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], meta: Pick<InvoiceMeta, 'labor' | 'meal'>, place: string, hotelName = ''): Invoice {
   const names = [...sheet.time, ...sheet.miles, ...sheet.meals, ...sheet.other.filter((r) => isHotel(r) || isVehicleRental(r))].map((r) => r.tech).filter(Boolean);
   const order = byTechGroups(names, (t) => t, crew).map((g) => g.tech);
   // The lead's hotel, the helpers' too (Fred, 2026-10-30: "everything the lead has the helpers has also ... 701 for
@@ -182,10 +182,14 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     // Total Travel: their hotel.
     const ownHotels = sheet.other.filter((r) => r.tech === tech && isHotel(r));
     const hotels = [...(ownHotels.length ? ownHotels : leadHotels)].sort((a, b) => a.day.localeCompare(b.day));
-    const travelLines = hotels.map((r): InvoiceLine => ({
-      date: r.day, item: 'Hotel', description: hotels.length === 1 ? 'Hotel charge for the week' : 'Hotel charge', qty: 1, rate: r.amount, amount: r2(r.amount || 0),
-      tech: r.tech, row: r,
-    }));
+    // The hotel's name on its line (Fred, 2026-11-09: "in the invoice it needs to have the hotel name"): the receipt's,
+    // else the hotel saved on the job.
+    const travelLines = hotels.map((r): InvoiceLine => {
+      const name = r.store.trim() || hotelName.trim();
+      const charge = hotels.length === 1 ? 'Hotel charge for the week' : 'Hotel charge';
+      return { date: r.day, item: 'Hotel', description: name ? `${name} – ${charge}` : charge, qty: 1, rate: r.amount, amount: r2(r.amount || 0),
+        tech: r.tech, row: r };
+    });
     // A vehicle rented for the job, under the hotel (Fred, 2026-11-09: "add vehicle rental to the invoice under hotel"):
     // the tech's own only, so a car the crew shares is charged once.
     const vehicles = sheet.other.filter((r) => r.tech === tech && isVehicleRental(r)).sort((a, b) => a.day.localeCompare(b.day));
@@ -270,7 +274,7 @@ function dayMiles(rows: MileRow[], tech: string, day: string, miles: number | nu
 
 /**
  * A line changed on the invoice: its day; a day's hours (the break still comes off them), a day's miles, a meal's
- * receipts, a hotel's amount, or a material's store and amount.
+ * receipts, a hotel's name and amount, or a material's store and amount.
  */
 export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string; in?: string; out?: string }): JobSheet {
   const tech = l.tech ?? '';
@@ -294,7 +298,8 @@ export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty
   }
   if ((l.item === 'Hotel' || l.item === 'Vehicle') && l.row) {
     const r = l.row as MoneyRow;
-    return { ...sheet, other: swap(sheet.other, r, { ...r, ...(p.day ? { day: p.day } : {}), ...('amount' in p ? { amount: p.amount ?? 0 } : {}) }) };
+    return { ...sheet, other: swap(sheet.other, r, { ...r, ...(p.day ? { day: p.day } : {}), ...('amount' in p ? { amount: p.amount ?? 0 } : {}),
+      ...(l.item === 'Hotel' && p.description != null ? { store: p.description } : {}) }) };
   }
   if (l.item === 'Material' && l.row) {
     const r = l.row as MoneyRow;

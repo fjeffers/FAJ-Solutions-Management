@@ -97,9 +97,11 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
         const rateCell = edit && l.item === 'Meal' ? <NumBox label={`Meals, ${at}`} value={l.spent || null} onChange={(n) => edit.change(l, { amount: n })} />
           : edit && (l.item === 'Hotel' || l.item === 'Vehicle' || l.item === 'Material') ? <NumBox label={`${l.item}, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
             : <Money n={l.rate} rate />;
-        // A material's store, as typed.
+        // A material's store and a hotel's name, as typed.
         const description = edit && l.item === 'Material'
           ? <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
+          : edit && l.item === 'Hotel' && l.row
+            ? <input aria-label={`Hotel name, ${at}`} style={input} value={(l.row as { store?: string }).store ?? ''} placeholder="Hotel name" onChange={(e) => edit.change(l, { description: e.target.value })} />
           : edit && l.item === 'Labor' ? <>{l.description}<InOut l={l} at={at} edit={edit} /></>
             : l.description;
         return (

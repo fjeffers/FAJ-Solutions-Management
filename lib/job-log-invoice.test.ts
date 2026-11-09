@@ -65,7 +65,7 @@ describe('the invoice', () => {
     ] });
     // The hotel only: no fuel, no materials, as theirs.
     expect({ ...paul.travel, lines: read(paul.travel.lines) }).toEqual({ title: 'Total Travel', amount: 402.5, lines: [
-      { date: '2026-10-20', item: 'Hotel', description: 'Hotel charge for the week', qty: 1, rate: 402.5, amount: 402.5 },
+      { date: '2026-10-20', item: 'Hotel', description: 'Quality Inn – Hotel charge for the week', qty: 1, rate: 402.5, amount: 402.5 },
     ] });
     // The materials, once, under the lead before the hotel (Fred: "under lead tech before hotel").
     expect({ ...paul.materials!, lines: read(paul.materials!.lines) }).toEqual({ title: 'Total Materials', amount: 47.48, lines: [
@@ -96,7 +96,7 @@ describe('the invoice', () => {
     const inv = buildInvoice(priced, rates, crew, meta, 'Goldsboro NC');
     const [paul, raja] = inv.techs;
     expect(paul.travel.lines.map((l) => [l.item, l.description, l.amount])).toEqual([
-      ['Hotel', 'Hotel charge for the week', 402.5], ['Vehicle', 'Vehicle rental', 210],
+      ['Hotel', 'Quality Inn – Hotel charge for the week', 402.5], ['Vehicle', 'Vehicle rental', 210],
     ]);
     expect(paul.travel.amount).toBe(612.5);
     expect(raja.travel.lines.map((l) => l.item)).toEqual(['Hotel']);
@@ -105,6 +105,16 @@ describe('the invoice', () => {
     expect(invoiceCharges(inv, null).lines.map((l) => l.what)).toContain('Paul Gibbs vehicle rental');
     const gone = removeLine(priced, paul.travel.lines[1]);
     expect(buildInvoice(gone, rates, crew, meta, '').techs[0].travel.amount).toBe(402.5);
+  });
+
+  it('names the hotel on its line: the receipt\'s, else the job\'s, and lets the office type it', () => {
+    const unnamed = { ...sheet, other: sheet.other.map((r) => (r.for === 'Lodging' ? { ...r, store: '' } : r)) };
+    const fromJob = buildInvoice(unnamed, rates, crew, meta, 'Goldsboro NC', 'Hampton Inn Wilmington').techs[0].travel.lines[0];
+    expect(fromJob.description).toBe('Hampton Inn Wilmington – Hotel charge for the week');
+    expect(buildInvoice(unnamed, rates, crew, meta, 'Goldsboro NC').techs[0].travel.lines[0].description).toBe('Hotel charge for the week');
+    const typed = editLine(unnamed, fromJob, { description: 'Courtyard by Marriott' });
+    expect(buildInvoice(typed, rates, crew, meta, 'Goldsboro NC', 'Hampton Inn Wilmington').techs[0].travel.lines[0].description)
+      .toBe('Courtyard by Marriott – Hotel charge for the week');
   });
 
   it('reads a Rental receipt as a vehicle rental, not a hotel', () => {

@@ -45,6 +45,7 @@
 // his workbook's layout with the log's rows, the numbers as formulas (lib/job-log-xlsx.ts). No billable
 // total ("No, keep it off"). The names, Fred, 2026-10-30: "Keep the Name Job Log with the pictures of the
 // receipts, odometer the one i edit is the time sheet that reflect on the job log".
+import { parseHotel } from '@/lib/hotel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Download, ExternalLink, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, X } from 'lucide-react';
@@ -465,12 +466,13 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const currentInvoiceMeta: InvoiceMeta = { ...invMeta, date: todayDay, billTo: invoiceBillTo };
   const invoiceHead: InvoiceHead = { billTo: invoiceBillTo, shipTo: [w.title ?? '', where].filter(Boolean), meta: currentInvoiceMeta };
   const place = [w.site_city, w.site_state].filter(Boolean).join(' ');
-  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, currentInvoiceMeta, place) : null;
+  const hotelName = parseHotel(w.hotel)?.name ?? '';
+  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, currentInvoiceMeta, place, hotelName) : null;
   // The client copy's charges are the invoice's, so the two always have the same total (Fred, 2026-10-31: "the job log
   // and invoice is not matching up"): with the rates saved, and as they're typed.
-  const clientInvoice = buildInvoice(shown, billRates, crew, savedMeta, place);
+  const clientInvoice = buildInvoice(shown, billRates, crew, savedMeta, place, hotelName);
   const clientCharges = invoiceCharges(clientInvoice, savedAll);
-  const typedTotal = invoiceCharges(buildInvoice(shown, typedRates, crew, savedMeta, place), typedAll).total;
+  const typedTotal = invoiceCharges(buildInvoice(shown, typedRates, crew, savedMeta, place, hotelName), typedAll).total;
   // The total under the table as the rates are typed; the page, the print and Excel with the rates saved, so a
   // print (the button, or the browser's own) is never of rates that aren't kept (CodeRabbit on PR #40).
   const charges = chargesByTech(shown, billRates, crew);

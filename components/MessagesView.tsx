@@ -72,8 +72,11 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'work_order_messages' }, () => { void load(); })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contractor_messages' }, () => { void load(); })
       .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once; the channel keeps it current
+    const poll = setInterval(() => { void load(); }, 10000);
+    const focus = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', focus);
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', focus); void supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once; the channel and refresh keep it current
   }, []);
 
   // Opening a job's thread marks the tech's messages in it as read.

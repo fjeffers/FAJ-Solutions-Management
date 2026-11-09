@@ -22,7 +22,10 @@ export default function LdsCheckoutMonitor({ workOrderId }: { workOrderId: strin
     const channel = db.channel(`lds-checkout-${workOrderId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lds_daily_checkouts', filter: `wo_id=eq.${workOrderId}` }, () => void load())
       .subscribe();
-    return () => { clearTimeout(first); void db.removeChannel(channel); };
+    const poll = setInterval(() => void load(), 10000);
+    const focus = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', focus);
+    return () => { clearTimeout(first); clearInterval(poll); document.removeEventListener('visibilitychange', focus); void db.removeChannel(channel); };
   }, [workOrderId]);
 
   return (

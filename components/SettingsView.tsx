@@ -1,6 +1,6 @@
 'use client';
 import ChangePasswordForm from './ChangePasswordForm';
-import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered, TextCursorInput, Eye, LayoutDashboard, SlidersHorizontal, Clock } from 'lucide-react';
+import { Lock, ClipboardList, CheckSquare, ListChecks, PanelsTopLeft, ListOrdered, TextCursorInput, Eye, LayoutDashboard, SlidersHorizontal, Clock, Sparkles } from 'lucide-react';
 import HoursLookEditor from './HoursLookEditor';
 import CloseoutListsEditor from './CloseoutListsEditor';
 import LayoutEditor from './LayoutEditor';
@@ -9,6 +9,7 @@ import ScreenDesigner from './ScreenDesigner';
 import ListsEditor from './ListsEditor';
 import CustomFieldsEditor from './CustomFieldsEditor';
 import JobTemplatesEditor from './CaptureEditor';
+import HomeAppearanceEditor from './HomeAppearanceEditor';
 import type { FieldSets } from '@/lib/custom-fields';
 import type { AppLists } from '@/lib/app-lists';
 import type { Layout } from '@/lib/app-layout';
@@ -61,6 +62,20 @@ export default function SettingsView({
         <div className="display" style={{ fontSize: 11, color: 'var(--teal)', letterSpacing: 3, marginBottom: 6 }}>SETTINGS</div>
         <h1 className="serif" style={{ fontSize: 36, fontWeight: 600, margin: 0, lineHeight: 1 }}>Settings</h1>
         <p style={{ margin: '6px 0 0', color: '#666', fontSize: 14 }}>Manage your account and configuration</p>
+      </div>
+
+      <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 28 }}>
+        <div style={{ padding: '20px 28px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(91,63,195,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Sparkles size={16} color="#5B3FC3" />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Home appearance</h2>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 1 }}>Change the FAJ name, headline, message and visual style shown at the top of Home</div>
+          </div>
+        </div>
+        <HomeAppearanceEditor layout={layout} onChange={onLayoutChange} saveState={layoutSaveState}
+          saveError={layoutSaveError} onRetry={onLayoutRetry} />
       </div>
 
       {/* ── Menu & screens (migration-107) ── Fred, 2026-10-05: "I want setting

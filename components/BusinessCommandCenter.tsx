@@ -10,6 +10,7 @@ import { fmtMoney, todayISO } from '@/lib/utils';
 import type {
   Contractor, EnrichedWorkOrder, Invoice, InvoicePayment, Material, Quote,
 } from '@/lib/types';
+import { normalizeHomeLook, type HomeLook } from '@/lib/app-layout';
 
 export type BusinessSnapshot = {
   customers: number;
@@ -76,7 +77,7 @@ export function businessSnapshot({
 }
 
 export default function BusinessCommandCenter({
-  workOrders, contractors, materials, quotes, invoices, invoicePayments, onGo, onNewJob, onSearch,
+  workOrders, contractors, materials, quotes, invoices, invoicePayments, home, onGo, onNewJob, onSearch,
 }: {
   workOrders: EnrichedWorkOrder[];
   contractors: Contractor[];
@@ -84,10 +85,12 @@ export default function BusinessCommandCenter({
   quotes: Quote[];
   invoices: Invoice[];
   invoicePayments: InvoicePayment[];
+  home?: HomeLook;
   onGo: (view: string) => void;
   onNewJob: () => void;
   onSearch: () => void;
 }) {
+  const look = normalizeHomeLook(home);
   const s = businessSnapshot({ workOrders, contractors, materials, quotes, invoices, invoicePayments });
   const [savedCustomers, setSavedCustomers] = useState<number | null>(null);
   useEffect(() => {
@@ -114,41 +117,77 @@ export default function BusinessCommandCenter({
     { group: 'ERP', title: 'Inventory', value: String(s.inventoryItems), detail: `${s.lowStock} item${s.lowStock === 1 ? '' : 's'} low on stock`, view: 'materials', icon: Boxes },
     { group: 'OFFICE', title: 'Reports & admin', value: String(s.completedJobs), detail: 'Completed jobs ready for records', view: 'office', icon: FileChartColumn },
   ] as const;
+  const themes = {
+    midnight: {
+      hero: 'linear-gradient(125deg, #061426 0%, #0D2F45 58%, #174C5F 100%)',
+      glow: 'rgba(217,175,85,.26)', accent: '#E5BD66', text: '#FFFFFF', muted: 'rgba(255,255,255,.72)',
+      card: 'rgba(255,255,255,.085)', cardBorder: 'rgba(255,255,255,.14)',
+    },
+    violet: {
+      hero: 'linear-gradient(125deg, #150E2A 0%, #37216F 56%, #245F68 100%)',
+      glow: 'rgba(136,101,255,.34)', accent: '#79E0CF', text: '#FFFFFF', muted: 'rgba(255,255,255,.74)',
+      card: 'rgba(255,255,255,.09)', cardBorder: 'rgba(255,255,255,.16)',
+    },
+    light: {
+      hero: 'linear-gradient(125deg, #F8F4E9 0%, #FFFFFF 54%, #E3F2F2 100%)',
+      glow: 'rgba(14,86,103,.15)', accent: '#0E5667', text: '#10283A', muted: '#5E6A70',
+      card: 'rgba(255,255,255,.7)', cardBorder: 'rgba(14,86,103,.14)',
+    },
+  } as const;
+  const theme = themes[look.theme];
 
   return (
-    <section aria-label="CRM and ERP command center" className="glass card" style={{ padding: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', letterSpacing: 1.6 }}>CRM + ERP</div>
-          <h2 className="serif" style={{ fontSize: 25, fontWeight: 600, margin: '3px 0 0' }}>Business command center</h2>
-          <p style={{ margin: '4px 0 0', color: '#777', fontSize: 13 }}>Customers, work, people and money, all using the same records.</p>
+    <section aria-label="CRM and ERP command center" style={{
+      position: 'relative', overflow: 'hidden', borderRadius: 22, padding: 'clamp(20px, 3vw, 34px)',
+      background: theme.hero, color: theme.text, boxShadow: '0 20px 55px rgba(5,20,35,.18)',
+      border: `1px solid ${theme.cardBorder}`,
+    }}>
+      <span aria-hidden style={{
+        position: 'absolute', width: 420, height: 420, borderRadius: '50%', right: -160, top: -250,
+        background: theme.glow, filter: 'blur(2px)',
+      }} />
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap', marginBottom: 23 }}>
+          <div style={{ maxWidth: 690 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 850, color: theme.accent, letterSpacing: 2.6 }}>{look.brand}</div>
+            <h1 className="serif" style={{ fontSize: 'clamp(29px, 4vw, 46px)', lineHeight: 1.04, fontWeight: 650, margin: '9px 0 0', letterSpacing: '-.02em' }}>{look.title}</h1>
+            <p style={{ margin: '10px 0 0', color: theme.muted, fontSize: 'clamp(13px, 1.6vw, 15.5px)', lineHeight: 1.5 }}>{look.subtitle}</p>
+          </div>
+          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+            <button onClick={onSearch} style={{
+              minHeight: 39, padding: '0 14px', borderRadius: 10, border: `1px solid ${theme.cardBorder}`,
+              background: theme.card, color: theme.text, fontWeight: 750, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
+            }}><Search size={15} /> Find anything</button>
+            <button onClick={onNewJob} style={{
+              minHeight: 39, padding: '0 15px', borderRadius: 10, border: 0,
+              background: theme.accent, color: look.theme === 'midnight' ? '#1D2630' : look.theme === 'violet' ? '#132A2C' : '#FFFFFF',
+              fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
+            }}><Plus size={15} /> New job</button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={onSearch}><Search size={14} /> Find anything</button>
-          <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={onNewJob}><Plus size={14} /> New job</button>
-        </div>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(205px, 1fr))', gap: 9 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(178px, 1fr))', gap: 10 }}>
         {cards.map(({ group, title, value, detail, view, icon: Icon }) => (
           <button
             key={title}
             onClick={() => onGo(view)}
             style={{
-              minWidth: 0, textAlign: 'left', cursor: 'pointer', padding: '13px 14px', borderRadius: 13,
-              background: 'white', border: '1px solid #eae5d8', boxShadow: '0 1px 6px rgba(0,0,0,0.025)',
+              minWidth: 0, textAlign: 'left', cursor: 'pointer', padding: '15px', borderRadius: 15,
+              color: theme.text, background: theme.card, border: `1px solid ${theme.cardBorder}`,
+              backdropFilter: 'blur(10px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.06)',
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 750 }}>
-                <Icon size={16} color="var(--teal)" /> {title}
+                <Icon size={16} color={theme.accent} /> {title}
               </span>
-              <span style={{ fontSize: 9.5, fontWeight: 800, color: '#8a8578', letterSpacing: 1 }}>{group}</span>
+              <span style={{ fontSize: 9, fontWeight: 850, color: theme.muted, letterSpacing: 1.2 }}>{group}</span>
             </span>
-            <span className="serif" style={{ display: 'block', marginTop: 10, fontSize: 24, lineHeight: 1, fontWeight: 650, color: 'var(--teal)', overflowWrap: 'anywhere' }}>{value}</span>
-            <span style={{ display: 'block', marginTop: 5, color: '#777', fontSize: 11.5, lineHeight: 1.3 }}>{detail}</span>
+            <span className="serif" style={{ display: 'block', marginTop: 15, fontSize: 27, lineHeight: 1, fontWeight: 680, color: theme.text, overflowWrap: 'anywhere' }}>{value}</span>
+            <span style={{ display: 'block', marginTop: 6, color: theme.muted, fontSize: 11.5, lineHeight: 1.35 }}>{detail}</span>
           </button>
         ))}
+        </div>
       </div>
     </section>
   );

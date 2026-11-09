@@ -32,6 +32,7 @@ export function simplifiedDailyQuestions(): CustomQAItem[] {
   const questions: [string, CustomQAItem['type']][] = [
     ['What work was completed today? *', 'textarea'],
     ['Was the site/building walkthrough completed? *', 'yes_no'],
+    ['How many feet of cable were run today?', 'number'],
     ['What materials were received today?', 'textarea'],
     ['What materials are missing or damaged?', 'textarea'],
     ['Were the materials inventoried? *', 'yes_no'],
@@ -62,27 +63,37 @@ export function normalizeTaskLabel(raw: string): string {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
-/**
- * SimplySub repeats the same five steps under every run (HVAC, Fire Panel, AP-01…).
- * Day groups keep their own steps; every other group collapses into one shared
- * "All runs" list, so the tech answers once a day instead of per cable.
- */
+const sharedChecklist = (groups: NonNullable<SimplySubPackage['tasks']>): string[] => {
+  const text = groups.flatMap((g) => [clean(g.title), ...(g.items ?? []).map((x) => normalizeTaskLabel(x))]).join('\n');
+  const labels: string[] = [];
+  if (/\bcable(?:d)? pulled\b/i.test(text)) labels.push('Cable pulled where applicable');
+  if (/\bcable(?:d)? terminated\b/i.test(text)) labels.push('Cable terminated where applicable');
+  if (/\bcable(?:d)? labeled\b/i.test(text)) labels.push('Cable and equipment labels completed');
+  if (/\bcable(?:d)? tested\b/i.test(text)) labels.push('Cable testing completed');
+  if (/patch cable|firewall/i.test(text)) labels.push('Patch cables installed and plugged into the correct ports');
+  if (/\bAP installed\b/i.test(text)) labels.push('Access points installed and labeled');
+  if (/serial number|MAC address/i.test(text)) labels.push('Serial numbers and MAC addresses recorded');
+  if (/Netspot|floorplan uploaded/i.test(text)) labels.push('NetSpot survey completed and results uploaded');
+  if (/DeComm|old firewall|old APs/i.test(text)) labels.push('Decommissioning and site cleanup completed');
+  return labels;
+};
+
+/** Day-specific items stay intact; repeated per-run steps become a short shared checklist. */
 export function simplifiedDailyTasks(groups: SimplySubPackage['tasks']): WoTask[] {
   const labels: string[] = [];
-  const shared = new Map<string, string>();
   for (const group of groups ?? []) {
     const title = clean(group.title);
     const day = dayNumber(title);
+    if (!day) continue;
     for (const item of group.items ?? []) {
       const label = normalizeTaskLabel(item);
       if (!label) continue;
-      if (day) labels.push(`Day ${day} · ${label}`);
-      else if (!shared.has(label.toLowerCase())) shared.set(label.toLowerCase(), label);
+      labels.push(`Day ${day} · ${label}`);
     }
   }
-  for (const label of shared.values()) labels.push(`All runs · ${label}`);
+  for (const label of sharedChecklist(groups ?? [])) labels.push(`Daily work · ${label}`);
   const out = labels.length ? labels : DEFAULT_CHECKLIST.map((label) => `Day 1 · ${label}`);
-  return [...new Set(out)].slice(0, 40).map((label, n) => ({
+  return [...new Set(out)].slice(0, 30).map((label, n) => ({
     id: id('simplysub-task', n),
     category: 'On Site',
     label,

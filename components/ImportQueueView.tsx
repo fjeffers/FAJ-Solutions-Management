@@ -332,7 +332,8 @@ Ticket Number: FLN5092
         </div>
         <div style={{ fontSize: 11, color: '#999', marginBottom: 10, lineHeight: 1.5 }}>
           Drag <strong>Copy SimplySub job</strong> to your bookmarks bar. Open any SimplySub job while signed in, tap the bookmark,
-          then upload the downloaded file here. FAJ turns its tasks into one daily checklist with daily questions, photos and documents.
+          then upload the downloaded file here. FAJ turns its repeated cable tasks into one short daily checklist with daily questions.
+          When you approve it, PDFs are copied into the work order and the other source files stay linked there.
           Nothing becomes a work order until you approve it below.
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

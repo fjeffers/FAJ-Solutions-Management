@@ -16,8 +16,11 @@ describe('parseSimplySubPackage', () => {
     const f = parseSimplySubPackage(pkg, 'https://drive.google.com/drive/folders/149vdTeZDgIBVVelC49W8WgcorQY7Gr_o');
     expect(f).toMatchObject({ external_wo_id: '3123', client_reference: '26', customer_name: 'LDS - Compucom', start_date: '2026-11-09', city: 'WILMINGTON', state: 'NC', zip: '28412' });
     expect(f.wo_tasks?.map((t) => t.label)).toEqual([
-      'Day 1 · Pre-Existing Damage Photos', 'Day 1 · Building Walkthrough',
-      'All runs · Cable Pulled', 'All runs · Cable Tested', 'All runs · Patch cable left plugged in',
+      'Day 1 · Pre-Existing Damage Photos',
+      'Day 1 · Building Walkthrough',
+      'Daily work · Cable pulled where applicable',
+      'Daily work · Cable testing completed',
+      'Daily work · Patch cables installed and plugged into the correct ports',
     ]);
     expect(f.custom_qa?.find((q) => q.id === 'simplysub-q-runs')?.label).toContain('HVAC Cable Pull, AP-01 Install');
     expect(f.custom_qa?.some((q) => q.type === 'photo')).toBe(true);

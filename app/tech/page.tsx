@@ -2121,7 +2121,10 @@ function JobReport({ job, canEdit, notes, setNotes, answers, setAnswers, dirty, 
   // A photo, document or signature answer is uploaded straight away and saved.
   const uploadAnswer = async (q: WfQuestion, blob: Blob) => {
     setBusy(q.id);
-    const r = await sendPhoto({ woNumber: job.number, blob, takenAt: new Date().toISOString(), lat: null, lng: null, accuracy: null, source: 'camera' });
+    const r = await sendPhoto({
+      woNumber: job.number, blob, takenAt: new Date().toISOString(), lat: null, lng: null,
+      accuracy: null, source: 'camera', label: q.label.replace(/\s*\*$/, '').slice(0, 80),
+    });
     setBusy(null);
     if (r === 'offline') { toastError('Photos and signatures for a question need signal. Try again when you have it.'); return; }
     if ('error' in r) { toastError(r.error); return; }

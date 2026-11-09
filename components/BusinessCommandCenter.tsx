@@ -4,6 +4,8 @@ import {
   Boxes, BriefcaseBusiness, Building2, CalendarDays, FileChartColumn,
   Search, Users, WalletCards, Plus,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import { fmtMoney, todayISO } from '@/lib/utils';
 import type {
   Contractor, EnrichedWorkOrder, Invoice, InvoicePayment, Material, Quote,
@@ -85,8 +87,25 @@ export default function BusinessCommandCenter({
   onSearch: () => void;
 }) {
   const s = businessSnapshot({ workOrders, contractors, materials, quotes, invoices, invoicePayments });
+  const [savedCustomers, setSavedCustomers] = useState<number | null>(null);
+  useEffect(() => {
+    const db = createClient();
+    const load = () => {
+      void db.from('customers').select('id', { count: 'exact', head: true })
+        .then(({ count, error }) => { if (!error) setSavedCustomers(count ?? 0); });
+    };
+    load();
+    const channel = db.channel('home-customer-count')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, load)
+      .subscribe();
+    window.addEventListener('focus', load);
+    return () => {
+      window.removeEventListener('focus', load);
+      void db.removeChannel(channel);
+    };
+  }, []);
   const cards = [
-    { group: 'CRM', title: 'Customers', value: String(s.customers), detail: 'Contacts, history and client portals', view: 'customers', icon: Building2 },
+    { group: 'CRM', title: 'Customers', value: String(savedCustomers ?? s.customers), detail: 'Contacts, history and client portals', view: 'customers', icon: Building2 },
     { group: 'CRM', title: 'Sales', value: String(s.openQuotes), detail: `${fmtMoney(s.openQuoteValue)} in open quotes`, view: 'quotes', icon: BriefcaseBusiness },
     { group: 'ERP', title: 'Jobs', value: String(s.activeJobs), detail: `${s.todayJobs} scheduled today`, view: 'workorders', icon: FileChartColumn },
     { group: 'ERP', title: 'Schedule', value: String(s.inField), detail: 'Jobs in progress now', view: 'scheduling', icon: CalendarDays },

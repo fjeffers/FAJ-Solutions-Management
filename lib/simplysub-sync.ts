@@ -66,6 +66,8 @@ export type SimplySubFormInspection = {
     actions: { tag: string; text: string; attrs: Record<string, string> }[];
     formPaths: string[];
     scripts: string[];
+    inlineScripts: string[];
+    options: { field: string; value: string; text: string }[];
   }[];
 };
 
@@ -345,9 +347,12 @@ export async function inspectSimplySubFormsBySiteNumber(
     ...forms.flatMap((form) => form.links.map((link) => link.href))
       .filter((href) => /^\/forms\/submissions\/\d+(?:[/?#]|$)/.test(href)),
     '/forms/choose',
+    `/jobs/${match.jobId}/overview`,
+    `/jobs/${match.jobId}/files`,
+    '/views/daily-logs/search',
   ])];
   const submissionPages = [];
-  for (const path of paths.slice(0, 5)) {
+  for (const path of paths.slice(0, 8)) {
     const html = await session.html(path);
     const document = dom(html);
     submissionPages.push({
@@ -369,6 +374,21 @@ export async function inspectSimplySubFormsBySiteNumber(
       scripts: [...document.querySelectorAll<HTMLScriptElement>('script[src]')]
         .map((script) => script.getAttribute('src') ?? '')
         .filter(Boolean),
+      inlineScripts: [...document.querySelectorAll<HTMLScriptElement>('script')]
+        .filter((script) => !script.hasAttribute('src'))
+        .flatMap((script) => (script.textContent ?? '').split('\n'))
+        .map((line) => line.trim())
+        .filter((line) => /fetch\(|\/api\/|\/forms\/|\/jobs\/|upload|daily|note|attach|htmx\.ajax/i.test(line))
+        .filter((line) => !/csrf|token|password|secret|cookie/i.test(line))
+        .map((line) => line.slice(0, 300))
+        .slice(0, 80),
+      options: [...document.querySelectorAll<HTMLOptionElement>('select[name] option')]
+        .map((option) => ({
+          field: option.closest('select')?.getAttribute('name') ?? '',
+          value: option.getAttribute('value') ?? '',
+          text: text(option).slice(0, 120),
+        }))
+        .slice(0, 100),
     });
   }
   return { ...match, forms, submissionPages };

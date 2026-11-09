@@ -29,8 +29,10 @@ export const NOTE_STYLE: Record<string, { bg: string; edge: string }> = {
 // Money parts left off Home; they live under Money (Fred, 2026-10-31: merge Dashboard and Dispatch).
 const MONEY_PARTS = new Set(['dash.kpis', 'dash.status', 'dash.outstanding', 'dash.payments']);
 
-export default function DashboardView({ stats, workOrders, payments, onView, attention, field, coming, screenName, home }: {
+export default function DashboardView({ stats, workOrders, payments, onView, business, attention, field, coming, screenName, home }: {
   stats: Stats; workOrders: EnrichedWorkOrder[]; payments: Payment[]; onView: (v: string) => void;
+  /** The combined CRM + ERP home hub. */
+  business?: ReactNode;
   /** "Needs your attention" — built by the owner app, placed here like any other block. */
   attention?: ReactNode;
   /** "In the field" and "Coming up" (components/FieldToday.tsx), placed the same way. */
@@ -89,6 +91,7 @@ export default function DashboardView({ stats, workOrders, payments, onView, att
       );
     }
     switch (b.key) {
+      case 'dash.business': return business;
       case 'dash.attention': return attention;
       case 'dash.field': return field;
       case 'dash.coming': return coming;
@@ -177,7 +180,7 @@ export default function DashboardView({ stats, workOrders, payments, onView, att
 
   const visibleBlocks = designNow().dash
     .filter((b) => !(home && b.kind === 'part' && MONEY_PARTS.has(b.key))
-      && (b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.attention' || attention) && (b.key !== 'dash.field' || field) && (b.key !== 'dash.coming' || coming))))
+      && (b.kind !== 'part' || (shown(b.key) && (b.key !== 'dash.business' || business) && (b.key !== 'dash.attention' || attention) && (b.key !== 'dash.field' || field) && (b.key !== 'dash.coming' || coming))))
     .map((b) => (home && b.kind === 'part' && (b.key === 'dash.field' || b.key === 'dash.coming') ? { ...b, width: 'half' as const } : b));
 
   const grid = (

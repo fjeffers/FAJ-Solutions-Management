@@ -24,8 +24,8 @@ describe('screen designer', () => {
 
   it('a block missing from a saved design comes back in its standard place', () => {
     const d = normalizeDesign({ dash: [{ kind: 'part', key: 'dash.payments', width: 'full' }, { kind: 'part', key: 'dash.kpis', width: 'half' }] });
-    // The field blocks, new on 2026-10-18, land after Needs your attention on a design saved before them.
-    expect(keys(d)).toEqual(['dash.attention', 'dash.field', 'dash.coming', 'dash.payments', 'dash.kpis', 'dash.status', 'dash.outstanding']);
+    // New standard blocks land in their standard places on a design saved before them.
+    expect(keys(d)).toEqual(['dash.business', 'dash.attention', 'dash.field', 'dash.coming', 'dash.payments', 'dash.kpis', 'dash.status', 'dash.outstanding']);
     expect(d.dash.find((b) => b.key === 'dash.kpis')!.width).toBe('half');
   });
 
@@ -45,9 +45,9 @@ describe('screen designer', () => {
 
   it('reordering and widths', () => {
     let d = shiftDash(std(), 'dash.field', -1);
-    expect(keys(d).slice(0, 2)).toEqual(['dash.field', 'dash.attention']);
+    expect(keys(d).slice(0, 3)).toEqual(['dash.business', 'dash.field', 'dash.attention']);
     d = moveDashBefore(d, 'dash.payments', 'dash.field');
-    expect(keys(d)[0]).toBe('dash.payments');
+    expect(keys(d).slice(0, 2)).toEqual(['dash.business', 'dash.payments']);
     d = moveDashBefore(d, 'dash.payments', null);
     expect(keys(d).at(-1)).toBe('dash.payments');
     expect(moveDashBefore(d, 'dash.payments', 'missing')).toBe(d);

@@ -12,6 +12,7 @@ export const SCREEN_PARTS: ScreenParts[] = [
     screen: 'Dashboard',
     hint: 'The first screen after you sign in',
     parts: [
+      { key: 'dash.business', label: 'CRM + ERP command center', hint: 'Customers, sales, jobs, schedule, team, money, inventory and reports in one place' },
       { key: 'dash.attention', label: 'Needs your attention', hint: 'Quotes, invoices and visits waiting on you' },
       { key: 'dash.field', label: 'In the field', hint: 'Stopped work, late techs, jobs starting soon with no tech, and receipts and time requests waiting' },
       { key: 'dash.coming', label: 'Coming up', hint: 'Jobs starting in the next 7 days, and who is going' },

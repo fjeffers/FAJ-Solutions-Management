@@ -13,6 +13,7 @@ import TechInstall from '@/components/TechInstall';
 import { OFFICE_APP_URL } from '@/lib/install-help';
 
 import DashboardView from '@/components/DashboardView';
+import BusinessCommandCenter from '@/components/BusinessCommandCenter';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
 import { MoneyHub, isMoneyView } from '@/components/MoneyHub';
 import WorkOrdersView, { type LinkedVisit } from '@/components/WorkOrdersView';
@@ -1994,6 +1995,19 @@ Go ahead?`)) return;
                 workOrders={enrichedWOs}
                 payments={payments}
                 onView={(v) => setView(v as typeof view)}
+                business={shown('dash.business') ? (
+                  <BusinessCommandCenter
+                    workOrders={enrichedWOs}
+                    contractors={contractors}
+                    materials={materials}
+                    quotes={quotes}
+                    invoices={invoices}
+                    invoicePayments={invoicePayments}
+                    onGo={(v) => setView(v as typeof view)}
+                    onNewJob={openNewOrder}
+                    onSearch={() => setSearchOpen(true)}
+                  />
+                ) : undefined}
                 // Placed and sized like any other block (Settings -> Screen designer).
                 attention={shown('dash.attention') ? (
                   <section aria-label="Today's command center">
@@ -2001,12 +2015,6 @@ Go ahead?`)) return;
                       <h2 className="serif" style={{ fontSize: 27, fontWeight: 600, margin: 0 }}>Today</h2>
                       <p style={{ margin: '4px 0 0', color: '#777', fontSize: 13.5 }}>Messages, jobs, billing and follow-ups that need you.</p>
                     </div>
-                    <button onClick={() => setSearchOpen(true)} style={{
-                      display: 'flex', alignItems: 'center', gap: 10, width: '100%', marginBottom: 14, padding: '12px 14px', cursor: 'text',
-                      borderRadius: 13, background: 'white', border: '1px solid #eae5d8', color: '#8a8578', fontSize: 14, textAlign: 'left',
-                    }}>
-                      <Search size={16} color="var(--teal)" /> Ask FAJ: pay Paul for 191, what do I owe, new job…
-                    </button>
                     <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'workorders')}
                       onGo={(v) => setView(v as typeof view)} onTechRead={(n) => setMessageCount((c) => Math.max(0, c - n))} />
                     <AttentionPanel

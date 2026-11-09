@@ -214,6 +214,7 @@ body {
 
 /* ── App root layout ── */
 #mobile-header { display: none; }
+.dashboard-hidden { display: none !important; }
 
 .app-root {
   display: flex;
@@ -225,6 +226,10 @@ body {
 
 @media (max-width: 768px) {
   .faj-system-grid { grid-template-columns: 1fr !important; }
+  .faj-enterprise-topbar { grid-template-columns: 1fr !important; }
+  .faj-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .faj-enterprise-grid { grid-template-columns: 1fr !important; }
+  .faj-app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
   .app-root { flex-direction: column !important; }
   .sidebar-desktop { display: none !important; }
   /* Hamburger-opened menu: must out-specific the display:none above,
@@ -272,6 +277,19 @@ body {
      under 16px, so every tap on a field jumped the layout and left the user
      pinching back out. 16px is the threshold that stops it. */
   .input, .select, textarea.input { font-size: 16px; }
+}
+
+.faj-enterprise-home {
+  min-height: 100%;
+  padding: clamp(12px, 2vw, 22px);
+  background:
+    radial-gradient(circle at 78% 2%, rgba(0, 155, 255, .13), transparent 30%),
+    linear-gradient(145deg, #EAF3FA 0%, #F7FAFC 52%, #E9F2F8 100%);
+}
+
+@media (max-width: 520px) {
+  .faj-enterprise-home { padding: 8px; }
+  .faj-kpi-grid, .faj-app-grid { gap: 6px !important; }
 }
 
 /* ── Dark mode ── */

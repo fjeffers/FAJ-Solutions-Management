@@ -1943,6 +1943,7 @@ Go ahead?`)) return;
           <ImportQueueView
             items={importQueue}
             connection={gmailConnection}
+            workOrders={workOrders}
             onApprove={approveImportItem}
             onReject={rejectImportItem}
             onImported={loadAll}

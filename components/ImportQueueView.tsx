@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Mail, CheckCircle2, XCircle, Inbox, LinkIcon, Sheet, Upload, RefreshCw, ClipboardPaste } from 'lucide-react';
 import { fmtDate, fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
-import type { ImportQueueItem, GmailConnection } from '@/lib/types';
+import type { ImportQueueItem, GmailConnection, WorkOrder } from '@/lib/types';
 import { SIMPLYSUB_BOOKMARKLET } from '@/lib/simplysub';
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -20,12 +20,14 @@ export default function ImportQueueView({
   onApprove,
   onReject,
   onImported,
+  workOrders,
 }: {
   items: ImportQueueItem[];
   connection: GmailConnection | null;
   onApprove: (id: string, opts?: { silent?: boolean }) => Promise<boolean | void>;
   onReject: (id: string) => Promise<void>;
   onImported?: () => void;
+  workOrders: Pick<WorkOrder, 'id' | 'wo_number' | 'title' | 'site_name' | 'customer_name' | 'start_date'>[];
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sheetUrl, setSheetUrl] = useState('');
@@ -36,6 +38,7 @@ export default function ImportQueueView({
   const [checking, setChecking] = useState(false);
   const [simplyDrive, setSimplyDrive] = useState('');
   const [simplyBusy, setSimplyBusy] = useState(false);
+  const [attachTargets, setAttachTargets] = useState<Record<string, string>>({});
   const pending = items.filter((i) => i.status === 'pending');
   const reviewed = items.filter((i) => i.status !== 'pending').slice(0, 20);
   const approvedCount = items.filter((i) => i.status === 'approved').length;
@@ -187,6 +190,27 @@ Each one also opens a site visit at that address.`)) return;
       toastError('Could not import that SimplySub job');
     } finally {
       setSimplyBusy(false);
+    }
+  };
+
+  const attachToExisting = async (itemId: string) => {
+    const workOrderId = attachTargets[itemId];
+    if (!workOrderId) { toastError('Choose the current work order first'); return; }
+    setBusyId(itemId);
+    try {
+      const res = await fetch(`/api/import-queue/${itemId}/attach`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ work_order_id: workOrderId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toastError(data.error || 'Could not add the import to that work order'); return; }
+      toastSuccess(`Added the checkout workflow to WO#${data.wo_number}`);
+      onImported?.();
+    } catch {
+      toastError('Could not add the import to that work order');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -392,7 +416,31 @@ Ticket Number: FLN5092
                   <span>Amount: <strong>{fmtMoney(item.parsed_fields.total_amount)}</strong></span>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              {item.source === 'simplysub' && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <select
+                    className="input"
+                    value={attachTargets[item.id] ?? ''}
+                    onChange={(e) => setAttachTargets((targets) => ({ ...targets, [item.id]: e.target.value }))}
+                    style={{ minWidth: 280, flex: 1, fontSize: 13 }}
+                  >
+                    <option value="">Choose the current work order…</option>
+                    {workOrders.map((workOrder) => (
+                      <option key={workOrder.id} value={workOrder.id}>
+                        WO#{workOrder.wo_number} · {workOrder.site_name || workOrder.title || workOrder.customer_name || 'Untitled'}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn btn-primary"
+                    disabled={busyId === item.id || !attachTargets[item.id]}
+                    onClick={() => void attachToExisting(item.id)}
+                  >
+                    Add to Existing WO
+                  </button>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-primary"
                   disabled={busyId === item.id}

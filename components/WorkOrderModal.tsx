@@ -49,6 +49,8 @@ type SimplySubSyncView = {
   expenses?: { date: string; supplier: string; category: string; description: string; amount: number }[];
   assignments?: string[];
   forms?: { name: string; status: string; startedBy: string; startedAt: string; url: string }[];
+  techOnly?: boolean;
+  excludedPeople?: number;
 };
 
 function SimplySubMonitor({ workOrder }: { workOrder: WorkOrder }) {
@@ -72,6 +74,11 @@ function SimplySubMonitor({ workOrder }: { workOrder: WorkOrder }) {
           <div style={{ fontSize: 12, color: '#6366f1', marginTop: 3 }}>
             {sync.status || 'No status'} · Last pulled {sync.syncedAt ? new Date(sync.syncedAt).toLocaleString() : '—'}
           </div>
+          {sync.techOnly && (
+            <div style={{ fontSize: 11, color: '#4338ca', marginTop: 3 }}>
+              Your FAJ techs only{sync.excludedPeople ? ` · ${sync.excludedPeople} other ${sync.excludedPeople === 1 ? 'person' : 'people'} left out` : ''} · Mileage comes from the FAJ app
+            </div>
+          )}
         </div>
         {sync.sourceUrl && (
           <a className="btn btn-ghost" href={sync.sourceUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>

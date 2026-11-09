@@ -308,6 +308,51 @@ export async function findSimplySubJobsBySiteNumber(email: string, password: str
   };
 }
 
+const personKey = (name: string) => name.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+
+export const isSimplySubTech = (name: string, techNames: string[]) => {
+  const person = personKey(name);
+  if (person.length < 2) return false;
+  return techNames.some((techName) => {
+    const tech = personKey(techName);
+    if (tech.length < 2 || tech[tech.length - 1] !== person[person.length - 1]) return false;
+    return tech[0].startsWith(person[0]) || person[0].startsWith(tech[0]);
+  });
+};
+
+const isMileage = (expense: { category: string; description: string }) =>
+  /\bmile(age|s)?\b/i.test(`${expense.category} ${expense.description}`);
+
+export function filterSimplySubSummaryToTechs(
+  summary: SimplySubSyncSummary,
+  techNames: string[],
+): SimplySubSyncSummary & { techOnly: true; excludedPeople: number } {
+  const tech = (name: string) => isSimplySubTech(name, techNames);
+  const labor = summary.labor.filter((row) => tech(row.employee));
+  const notes = summary.notes.filter((note) => tech(note.by));
+  const assignments = summary.assignments.filter(tech);
+  const expenses = summary.expenses.filter((expense) => !isMileage(expense));
+  const people = new Set([
+    ...summary.labor.map((row) => row.employee),
+    ...summary.notes.map((note) => note.by),
+    ...summary.assignments,
+  ].filter(Boolean));
+  return {
+    ...summary,
+    labor,
+    notes,
+    assignments,
+    expenses,
+    forms: summary.forms.filter((form) => !form.startedBy || tech(form.startedBy)),
+    laborHours: Math.round(labor.reduce((sum, row) => sum + row.hours, 0) * 100) / 100,
+    noteCount: notes.length,
+    assignmentCount: assignments.length,
+    expenseTotal: Math.round(expenses.reduce((sum, expense) => sum + expense.amount, 0) * 100) / 100,
+    techOnly: true,
+    excludedPeople: [...people].filter((name) => !tech(name)).length,
+  };
+}
+
 export const mergeSimplySubItems = <T>(
   current: T[] | null | undefined,
   incoming: T[],

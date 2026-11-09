@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeSimplySubWorkflow, parseSimplySubSyncPages } from './simplysub-sync';
+import { filterSimplySubSummaryToTechs, isSimplySubTech, mergeSimplySubWorkflow, parseSimplySubSyncPages } from './simplysub-sync';
 import type { WoTask } from './types';
 
 const overview = `
@@ -61,5 +61,41 @@ describe('SimplySub automatic sync', () => {
     ];
     expect(mergeSimplySubWorkflow({ wo_tasks: current, custom_qa: [] }, { wo_tasks: incoming, custom_qa: [] }).wo_tasks)
       .toEqual([current[0], incoming[1]]);
+  });
+
+  it('keeps only FAJ technicians and leaves mileage to the FAJ app', () => {
+    const { summary } = parseSimplySubSyncPages({
+      jobId: '3123',
+      siteNumber: '5006902',
+      overviewHtml: overview,
+      tasksHtml: tasks,
+      filesHtml: files,
+      formsHtml: forms,
+      reportHtml: report,
+    });
+    const filtered = filterSimplySubSummaryToTechs({
+      ...summary,
+      labor: [{ employee: 'Paul Gibbs', hours: 6 }, { employee: 'Kinniard Brooks', hours: 4.45 }, { employee: 'Fred Jeffers', hours: 1 }],
+      notes: [{ by: 'Mike Wise', date: '2026-10-05', category: 'General', note: 'Codes' }, { by: 'Paul Gibbs', date: '2026-11-09', category: 'General', note: 'Done' }],
+      assignments: ['Paul Gibbs', 'Someone Else'],
+      expenses: [
+        { date: '2026-11-08', supplier: 'TRS Rentco', category: 'Rental', description: 'Certifier', amount: 252.5 },
+        { date: '2026-11-08', supplier: '', category: 'Mileage', description: '120 miles', amount: 80 },
+      ],
+    }, ['Paul Gibbs', 'Frederick Jeffers', 'Raja Bennett']);
+    expect(filtered.labor.map((row) => row.employee)).toEqual(['Paul Gibbs', 'Fred Jeffers']);
+    expect(filtered.laborHours).toBe(7);
+    expect(filtered.notes.map((note) => note.by)).toEqual(['Paul Gibbs']);
+    expect(filtered.assignments).toEqual(['Paul Gibbs']);
+    expect(filtered.expenses).toHaveLength(1);
+    expect(filtered.expenseTotal).toBe(252.5);
+    expect(filtered.excludedPeople).toBe(3);
+    expect(filtered.forms).toHaveLength(0);
+  });
+
+  it('matches people by last name and first-name nickname only', () => {
+    expect(isSimplySubTech('Fred Jeffers', ['Frederick Jeffers'])).toBe(true);
+    expect(isSimplySubTech('Paul Smith', ['Paul Gibbs'])).toBe(false);
+    expect(isSimplySubTech('Paul', ['Paul Gibbs'])).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { copySimplySubPdfs } from '@/lib/simplysub-documents';
 import {
+  filterSimplySubSummaryToTechs,
   findSimplySubJobsBySiteNumber,
   mergeSimplySubItems,
   mergeSimplySubWorkflow,
@@ -45,6 +46,16 @@ export async function GET(req: Request) {
     .select('id, user_id, wo_number, title, site_name, client_reference, client_status, custom, wo_tasks, custom_qa, client_links, doc_urls, deliverable_link, deliverables')
     .is('archived_at', null);
   if (workOrderError) return NextResponse.json({ error: workOrderError.message }, { status: 500 });
+
+  const { data: contractors, error: contractorError } = await admin
+    .from('contractors')
+    .select('user_id, name');
+  if (contractorError) return NextResponse.json({ error: contractorError.message }, { status: 500 });
+  const techNamesByOwner = new Map<string, string[]>();
+  for (const contractor of contractors ?? []) {
+    if (!contractor.name) continue;
+    techNamesByOwner.set(contractor.user_id, [...(techNamesByOwner.get(contractor.user_id) ?? []), contractor.name]);
+  }
 
   const bySite = new Map<string, typeof workOrders>();
   for (const workOrder of workOrders ?? []) {
@@ -103,7 +114,10 @@ export async function GET(req: Request) {
         client_status: sync.summary.status || workOrder.client_status,
         custom: {
           ...((workOrder.custom && typeof workOrder.custom === 'object') ? workOrder.custom : {}),
-          _simplysub_sync: sync.summary,
+          _simplysub_sync: filterSimplySubSummaryToTechs(
+            sync.summary,
+            techNamesByOwner.get(workOrder.user_id) ?? [],
+          ),
         },
       }).eq('id', workOrder.id);
       if (updateError) throw new Error(`WO ${workOrder.wo_number}: ${updateError.message}`);

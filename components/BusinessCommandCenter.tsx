@@ -115,7 +115,6 @@ export default function BusinessCommandCenter({
   const appCards = [
     { group: 'TODAY', title: 'Waiting on you', detail: 'Inbox, approvals and invoices', view: 'attention', icon: Bell },
     { group: 'CRM', title: 'Follow-up', detail: 'Quotes, clients and technician replies', view: 'followups', icon: ClipboardCheck },
-    { group: 'FIELD', title: 'In the field', detail: 'Live work and upcoming visits', view: 'field', icon: Radio },
     { group: 'CRM', title: 'Customers', value: String(savedCustomers ?? s.customers), detail: 'Contacts, history and client portals', view: 'customers', icon: Building2 },
     { group: 'CRM', title: 'Sales', value: String(s.openQuotes), detail: `${fmtMoney(s.openQuoteValue)} in open quotes`, view: 'quotes', icon: BriefcaseBusiness },
     { group: 'ERP', title: 'Jobs', value: String(s.activeJobs), detail: `${s.todayJobs} scheduled today`, view: 'workorders', icon: FileChartColumn },

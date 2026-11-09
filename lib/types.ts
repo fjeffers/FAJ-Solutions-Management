@@ -1063,12 +1063,19 @@ export type ParsedNetviewFields = {
   city?: string;
   state?: string;
   zip?: string;
+  /** Rich fields supplied by the SimplySub package importer. */
+  wo_tasks?: WoTask[];
+  custom_qa?: CustomQAItem[];
+  client_links?: string[];
+  deliverable_link?: string | null;
+  deliverables?: string | null;
+  source_documents?: { name: string; url: string; category?: string }[];
 };
 
 export type ImportQueueItem = {
   id: string;
   user_id: string;
-  source: 'netview_smartsheet' | 'field_nation' | 'google_sheets' | 'google_docs';
+  source: 'netview_smartsheet' | 'field_nation' | 'google_sheets' | 'google_docs' | 'simplysub';
   external_dedupe_key: string;
   parsed_fields: ParsedNetviewFields;
   raw_snippet: string | null;

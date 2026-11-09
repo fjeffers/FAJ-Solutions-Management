@@ -4,12 +4,14 @@ import { Mail, CheckCircle2, XCircle, Inbox, LinkIcon, Sheet, Upload, RefreshCw,
 import { fmtDate, fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
 import type { ImportQueueItem, GmailConnection } from '@/lib/types';
+import { SIMPLYSUB_BOOKMARKLET } from '@/lib/simplysub';
 
 const SOURCE_LABELS: Record<string, string> = {
   netview_smartsheet: 'Netview/Smartsheet',
   field_nation: 'FieldNation',
   google_sheets: 'Google Sheets',
   google_docs: 'Google Docs',
+  simplysub: 'SimplySub',
 };
 
 export default function ImportQueueView({
@@ -32,6 +34,8 @@ export default function ImportQueueView({
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const [importing, setImporting] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [simplyDrive, setSimplyDrive] = useState('');
+  const [simplyBusy, setSimplyBusy] = useState(false);
   const pending = items.filter((i) => i.status === 'pending');
   const reviewed = items.filter((i) => i.status !== 'pending').slice(0, 20);
   const approvedCount = items.filter((i) => i.status === 'approved').length;
@@ -168,6 +172,24 @@ Each one also opens a site visit at that address.`)) return;
     }
   };
 
+  const importSimplySub = async (file: File) => {
+    setSimplyBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('deliverable_link', simplyDrive.trim());
+      const res = await fetch('/api/import-queue/from-simplysub', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toastError(data.error || 'Could not import that SimplySub job'); return; }
+      toastSuccess(data.duplicate ? 'That SimplySub job was already imported' : `SimplySub job added for review · ${data.tasks ?? 0} checklist items · ${data.documents ?? 0} documents`);
+      onImported?.();
+    } catch {
+      toastError('Could not import that SimplySub job');
+    } finally {
+      setSimplyBusy(false);
+    }
+  };
+
   return (
     <div className="view-inner" style={{ maxWidth: 900, margin: '0 auto' }}>
       <div style={{ marginBottom: 24 }}>
@@ -300,6 +322,31 @@ Ticket Number: FLN5092
           >
             <Upload size={13} /> {importing ? 'Importing…' : 'Import'}
           </button>
+        </div>
+      </div>
+
+      <div className="glass card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <Upload size={18} color="#0E1B2E" />
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Import a SimplySub job</div>
+        </div>
+        <div style={{ fontSize: 11, color: '#999', marginBottom: 10, lineHeight: 1.5 }}>
+          Drag <strong>Copy SimplySub job</strong> to your bookmarks bar. Open any SimplySub job while signed in, tap the bookmark,
+          then upload the downloaded file here. FAJ turns its tasks into one daily checklist with daily questions, photos and documents.
+          Nothing becomes a work order until you approve it below.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <a className="btn btn-ghost" href={SIMPLYSUB_BOOKMARKLET} onClick={(e) => { e.preventDefault(); toastSuccess('Drag this button to your bookmarks bar, then use it on a SimplySub job.'); }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <LinkIcon size={13} /> Copy SimplySub job
+          </a>
+          <input className="input" value={simplyDrive} onChange={(e) => setSimplyDrive(e.target.value)}
+            placeholder="Cabling Google Drive folder link (optional)" style={{ flex: 1, minWidth: 220, fontSize: 13 }} />
+          <label className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: simplyBusy ? 'wait' : 'pointer', opacity: simplyBusy ? 0.6 : 1 }}>
+            <Upload size={13} /> {simplyBusy ? 'Importing…' : 'Upload job file'}
+            <input type="file" accept="application/json,.json" disabled={simplyBusy} style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importSimplySub(f); }} />
+          </label>
         </div>
       </div>
 

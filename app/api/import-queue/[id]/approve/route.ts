@@ -46,6 +46,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     field_nation: 'FieldNation',
     google_sheets: 'Internal',
     google_docs: 'Internal',
+    simplysub: 'NetView',
   };
 
   const { data: newWO, error: insertError } = await supabase.from('work_orders').insert({
@@ -72,6 +73,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     assignment_type: 'Internal',
     priority: 'Normal',
     schedule_type: 'Exact Time',
+    ...(Array.isArray(f.wo_tasks) ? { wo_tasks: f.wo_tasks } : {}),
+    ...(Array.isArray(f.custom_qa) ? { custom_qa: f.custom_qa } : {}),
+    ...(Array.isArray(f.client_links) ? { client_links: f.client_links } : {}),
+    ...(f.deliverable_link ? { deliverable_link: f.deliverable_link } : {}),
+    ...(f.deliverables ? { deliverables: f.deliverables } : {}),
+    ...(Array.isArray(f.source_documents)
+      ? { doc_urls: f.source_documents.map((d: { url?: unknown }) => d.url).filter((u: unknown): u is string => typeof u === 'string') }
+      : {}),
   }).select('id').single();
 
   if (insertError || !newWO) {

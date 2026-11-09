@@ -65,6 +65,7 @@ export type SimplySubFormInspection = {
     }[];
     actions: { tag: string; text: string; attrs: Record<string, string> }[];
     formPaths: string[];
+    scripts: string[];
   }[];
 };
 
@@ -340,8 +341,11 @@ export async function inspectSimplySubFormsBySiteNumber(
     actions: pageActions(row as unknown as Document),
   }));
 
-  const paths = [...new Set(forms.flatMap((form) => form.links.map((link) => link.href))
-    .filter((href) => /^\/forms\/submissions\/\d+(?:[/?#]|$)/.test(href)))];
+  const paths = [...new Set([
+    ...forms.flatMap((form) => form.links.map((link) => link.href))
+      .filter((href) => /^\/forms\/submissions\/\d+(?:[/?#]|$)/.test(href)),
+    '/forms/choose',
+  ])];
   const submissionPages = [];
   for (const path of paths.slice(0, 5)) {
     const html = await session.html(path);
@@ -362,6 +366,9 @@ export async function inspectSimplySubFormsBySiteNumber(
       })),
       actions: pageActions(document),
       formPaths: [...new Set([...html.matchAll(/["'`](\/[^"'`]*forms[^"'`]*)["'`]/gi)].map((m) => m[1]))].slice(0, 100),
+      scripts: [...document.querySelectorAll<HTMLScriptElement>('script[src]')]
+        .map((script) => script.getAttribute('src') ?? '')
+        .filter(Boolean),
     });
   }
   return { ...match, forms, submissionPages };

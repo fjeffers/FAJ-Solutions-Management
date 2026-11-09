@@ -238,7 +238,7 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
   );
 }
 
-export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'Dispatch board', sheet, query: queryProp, onQuery }: {
+export function DispatchBoard({ rows, onOpen, right, before, between, onMove, title = 'Dispatch board', sheet, query: queryProp, onQuery }: {
   title?: string;
   /** The search, when the screen around keeps it (so it's still there after a job is opened and closed). */
   query?: string;
@@ -251,6 +251,8 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'D
   onMove?: (job: WfJob, move: Move, target: BoardColumn) => void;
   /** App bar buttons (New order). */
   right?: ReactNode;
+  /** Branded Home content that must appear before the work-order app bar. */
+  before?: ReactNode;
   /** Anything that needs Fred, between the numbers and the search (expenses, time asks). */
   between?: ReactNode;
 }) {
@@ -305,6 +307,7 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'D
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {before}
       <PrimioBar title={title} right={right} />
       {partShown('dispatch.tiles') && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
         <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />

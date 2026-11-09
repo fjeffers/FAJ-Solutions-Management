@@ -1819,7 +1819,9 @@ Go ahead?`)) return;
 
       {/* ── Main Content ── */}
       <main className="main-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
-        <TechInstall appUrl={OFFICE_APP_URL} dismissKey="faj-office-install-dismissed" title="Install the FAJ app" style={{ margin: '16px 16px 0' }} />
+        {view !== 'workorders' && (
+          <TechInstall appUrl={OFFICE_APP_URL} dismissKey="faj-office-install-dismissed" title="Install the FAJ app" style={{ margin: '16px 16px 0' }} />
+        )}
         {/* The Financials dashboard: the money in and out on top, a tab for each money screen below. */}
         {isMoneyView(view) && (
           <MoneyHub view={view} onGo={navigate} invoices={invoices} invoicePayments={invoicePayments} payments={payments} workOrders={enrichedWOs} />
@@ -1988,6 +1990,20 @@ Go ahead?`)) return;
             onAddField={(label, kind, options) => customFields.update({ ...customFields.fields,
               jobs: [...customFields.fields.jobs, { id: `f${Date.now().toString(36)}`, label, kind, options, hidden: false }] })}
             automations={(open) => <AutomationsCard rules={autoRules.rules} onChange={autoRules.update} workOrders={workOrders} onOpenJob={open} saveError={autoRules.saveError} />}
+            homeTop={shown('dash.business') ? (
+              <BusinessCommandCenter
+                workOrders={enrichedWOs}
+                contractors={contractors}
+                materials={materials}
+                quotes={quotes}
+                invoices={invoices}
+                invoicePayments={invoicePayments}
+                home={appLayout.layout.home}
+                onGo={(v) => setView(v as typeof view)}
+                onNewJob={openNewOrder}
+                onSearch={() => setSearchOpen(true)}
+              />
+            ) : undefined}
             home={(
               <DashboardView
                 home
@@ -1995,20 +2011,6 @@ Go ahead?`)) return;
                 workOrders={enrichedWOs}
                 payments={payments}
                 onView={(v) => setView(v as typeof view)}
-                business={shown('dash.business') ? (
-                  <BusinessCommandCenter
-                    workOrders={enrichedWOs}
-                    contractors={contractors}
-                    materials={materials}
-                    quotes={quotes}
-                    invoices={invoices}
-                    invoicePayments={invoicePayments}
-                    home={appLayout.layout.home}
-                    onGo={(v) => setView(v as typeof view)}
-                    onNewJob={openNewOrder}
-                    onSearch={() => setSearchOpen(true)}
-                  />
-                ) : undefined}
                 // Placed and sized like any other block (Settings -> Screen designer).
                 attention={shown('dash.attention') ? (
                   <section aria-label="Today's command center">

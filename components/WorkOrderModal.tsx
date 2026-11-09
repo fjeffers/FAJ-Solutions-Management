@@ -29,6 +29,7 @@ import WOTimeLogs from '@/components/WOTimeLogs';
 import { JobDays } from '@/components/HoursView';
 import { HOURS_SAVE_ALL } from '@/lib/hours-look';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
+import LdsCheckoutMonitor from '@/components/LdsCheckoutMonitor';
 
 type SimplySubSyncView = {
   jobId?: string;
@@ -2344,6 +2345,7 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* ── CLOSEOUT TAB ── */}
         {onPage('closeout') && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {item && <LdsCheckoutMonitor workOrderId={item.id} />}
             {item && <SimplySubMonitor workOrder={item} />}
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Materials used on this job</div>

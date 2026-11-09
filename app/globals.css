@@ -283,10 +283,10 @@ body {
 
 .faj-enterprise-home {
   min-height: 100%;
-  padding: clamp(12px, 2vw, 22px);
+  padding: clamp(6px, .8vw, 10px);
   background:
-    radial-gradient(circle at 78% 2%, rgba(0, 155, 255, .13), transparent 30%),
-    linear-gradient(145deg, #EAF3FA 0%, #F7FAFC 52%, #E9F2F8 100%);
+    radial-gradient(circle at 78% 2%, rgba(0, 155, 255, .15), transparent 30%),
+    linear-gradient(145deg, #020D1A 0%, #031326 52%, #061D31 100%);
 }
 .faj-summit-flag {
   position: absolute;
@@ -335,7 +335,7 @@ body {
 }
 
 @media (max-width: 520px) {
-  .faj-enterprise-home { padding: 8px; }
+  .faj-enterprise-home { padding: 0; }
   .faj-kpi-grid, .faj-app-grid { gap: 6px !important; }
 }
 

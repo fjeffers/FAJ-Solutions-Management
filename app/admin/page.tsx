@@ -1964,6 +1964,10 @@ Go ahead?`)) return;
               onAI={() => setHomeAiOpen(true)}
               onSearch={() => setSearchOpen(true)}
             />
+            <div className="view-inner wf" style={{ maxWidth: 1200, margin: '14px auto 0' }}>
+              <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'dashboard')}
+                onGo={(v) => setView(v as typeof view)} onTechRead={(n) => setMessageCount((c) => Math.max(0, c - n))} />
+            </div>
           </div>
         )}
         {view === 'attention' && (

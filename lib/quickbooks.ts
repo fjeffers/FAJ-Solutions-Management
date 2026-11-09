@@ -361,6 +361,77 @@ export async function sendInvoice(
   return String(data?.Invoice?.BillEmail?.Address ?? sendTo);
 }
 
+export type QuickBooksInvoiceStatus = {
+  id: string;
+  docNumber: string;
+  total: number;
+  balance: number;
+  emailStatus: string | null;
+  updatedAt: string | null;
+};
+
+/** Current amount and balance for an invoice QuickBooks owns. */
+export async function getInvoiceStatus(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+  invoiceId: string,
+): Promise<QuickBooksInvoiceStatus> {
+  const res = await fetch(`${apiBase(environment)}/${realmId}/invoice/${encodeURIComponent(invoiceId)}?minorversion=65`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`QuickBooks invoice read failed: ${await res.text()}`);
+  const data = await res.json();
+  const inv = data.Invoice ?? {};
+  return {
+    id: String(inv.Id ?? invoiceId),
+    docNumber: String(inv.DocNumber ?? ''),
+    total: Number(inv.TotalAmt ?? 0),
+    balance: Number(inv.Balance ?? 0),
+    emailStatus: typeof inv.EmailStatus === 'string' ? inv.EmailStatus : null,
+    updatedAt: typeof inv.MetaData?.LastUpdatedTime === 'string' ? inv.MetaData.LastUpdatedTime : null,
+  };
+}
+
+/**
+ * Latest payment date per invoice. Payment lines carry the amount applied to
+ * each linked invoice, even when one client payment covers several invoices.
+ */
+export async function invoicePaymentDates(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+  invoiceIds: string[],
+): Promise<Map<string, { amount: number; latestDate: string | null }>> {
+  if (invoiceIds.length === 0) return new Map();
+  type QboPayment = {
+    TxnDate?: string;
+    Line?: { Amount?: number; LinkedTxn?: { TxnId?: string; TxnType?: string }[] }[];
+  };
+  const wanted = new Set(invoiceIds);
+  const payments = await qboQuery<QboPayment>(
+    environment,
+    realmId,
+    accessToken,
+    'SELECT * FROM Payment ORDERBY TxnDate DESC MAXRESULTS 1000',
+  );
+  const out = new Map<string, { amount: number; latestDate: string | null }>();
+  for (const payment of payments) {
+    for (const line of payment.Line ?? []) {
+      for (const link of line.LinkedTxn ?? []) {
+        if (link.TxnType !== 'Invoice' || !link.TxnId || !wanted.has(link.TxnId)) continue;
+        const prior = out.get(link.TxnId) ?? { amount: 0, latestDate: null };
+        const date = typeof payment.TxnDate === 'string' ? payment.TxnDate : null;
+        out.set(link.TxnId, {
+          amount: prior.amount + Number(line.Amount ?? 0),
+          latestDate: !prior.latestDate || (date && date > prior.latestDate) ? date : prior.latestDate,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Attach a file (a photo, a receipt) to an invoice. includeOnSend puts it in
  * the email QuickBooks sends the client, so the client gets the photos with the

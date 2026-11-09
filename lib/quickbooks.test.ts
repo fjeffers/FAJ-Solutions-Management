@@ -2,7 +2,7 @@
 // ApplicationAuthorizationFailed (3100), a real company asked of the sandbox.
 // findCompany asks the other QuickBooks before giving up.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { findCompany, findInvoiceByNumber } from './quickbooks';
+import { findCompany, findInvoiceByNumber, getInvoiceStatus, invoicePaymentDates } from './quickbooks';
 
 const FAULT = JSON.stringify({ fault: { error: [{ message: 'message=ApplicationAuthorizationFailed; errorCode=003100; statusCode=403', code: '3100' }], type: 'SERVICE' } });
 function quickbooks(company: { host: string; name: string }) {
@@ -62,5 +62,42 @@ describe('findInvoiceByNumber', () => {
     expect(asked).toEqual([
       'SELECT Id, DocNumber, TotalAmt FROM Invoice ORDERBY MetaData.LastUpdatedTime DESC MAXRESULTS 1000',
     ]);
+  });
+});
+
+describe('QuickBooks receivables', () => {
+  it('reads the current total and balance from QuickBooks', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      Invoice: {
+        Id: '88', DocNumber: 'LDS-5006902', TotalAmt: 1800, Balance: 450,
+        EmailStatus: 'EmailSent', MetaData: { LastUpdatedTime: '2026-11-09T14:00:00-05:00' },
+      },
+    }), { status: 200 })));
+
+    await expect(getInvoiceStatus('production', 'realm', 'token', '88')).resolves.toEqual({
+      id: '88',
+      docNumber: 'LDS-5006902',
+      total: 1800,
+      balance: 450,
+      emailStatus: 'EmailSent',
+      updatedAt: '2026-11-09T14:00:00-05:00',
+    });
+  });
+
+  it('totals payments applied to each invoice and keeps the latest payment date', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      QueryResponse: {
+        Payment: [
+          { TxnDate: '2026-11-07', Line: [{ Amount: 600, LinkedTxn: [{ TxnId: '88', TxnType: 'Invoice' }] }] },
+          { TxnDate: '2026-11-09', Line: [{ Amount: 750, LinkedTxn: [{ TxnId: '88', TxnType: 'Invoice' }] }] },
+          { TxnDate: '2026-11-08', Line: [{ Amount: 50, LinkedTxn: [{ TxnId: 'other', TxnType: 'Invoice' }] }] },
+        ],
+        maxResults: 3,
+      },
+    }), { status: 200 })));
+
+    const payments = await invoicePaymentDates('production', 'realm', 'token', ['88']);
+    expect(payments.get('88')).toEqual({ amount: 1350, latestDate: '2026-11-09' });
+    expect(payments.has('other')).toBe(false);
   });
 });

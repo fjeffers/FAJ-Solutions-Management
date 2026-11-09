@@ -308,6 +308,24 @@ export function DispatchBoard({ rows, onOpen, right, before, between, onMove, ti
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {before}
+      {before && between && (
+        <section aria-label="Today at FAJ" style={{
+          padding: 'clamp(16px, 2.5vw, 26px)', borderRadius: 20,
+          background: 'linear-gradient(145deg, rgba(255,255,255,.98), rgba(244,247,248,.96))',
+          border: '1px solid rgba(14,86,103,.12)', boxShadow: '0 14px 34px rgba(14,27,46,.07)',
+        }}>
+          <div style={{ marginBottom: 17 }}>
+            <div className="wf-p-label" style={{ color: 'var(--wf-gold)', letterSpacing: 2 }}>TODAY AT FAJ</div>
+            <div className="serif" style={{ fontSize: 27, fontWeight: 650, marginTop: 3 }}>What needs your attention</div>
+          </div>
+          {between}
+        </section>
+      )}
+      <section aria-label={before ? 'Live work operations' : undefined} style={before ? {
+        padding: 'clamp(16px, 2.5vw, 26px)', borderRadius: 20, background: 'var(--wf-card)',
+        border: '1px solid var(--wf-line)', boxShadow: '0 14px 34px rgba(14,27,46,.07)',
+        display: 'flex', flexDirection: 'column', gap: 16,
+      } : { display: 'flex', flexDirection: 'column', gap: 16 }}>
       <PrimioBar title={title} right={right} />
       {partShown('dispatch.tiles') && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
         <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />
@@ -323,7 +341,7 @@ export function DispatchBoard({ rows, onOpen, right, before, between, onMove, ti
           <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setFocus(null)}>Show all</button>
         </div>
       )}
-      {between}
+      {!before && between}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 280px' }}>
           <Search size={18} color="var(--wf-subtle)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
@@ -404,6 +422,7 @@ export function DispatchBoard({ rows, onOpen, right, before, between, onMove, ti
       )}
       {view === 'sheet' && sheet?.([...new Map(groups.flatMap((g) => g.list).map((r) => [r.job.id, r.job])).values()])}
       {view === 'list' && <DispatchTable groups={groups} onOpen={onOpen} onStage={toggle} focus={focus} />}
+      </section>
     </div>
   );
 }

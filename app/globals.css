@@ -224,6 +224,7 @@ body {
 .sidebar-desktop { display: flex; }
 
 @media (max-width: 768px) {
+  .faj-system-grid { grid-template-columns: 1fr !important; }
   .app-root { flex-direction: column !important; }
   .sidebar-desktop { display: none !important; }
   /* Hamburger-opened menu: must out-specific the display:none above,

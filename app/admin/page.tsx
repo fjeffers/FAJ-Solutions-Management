@@ -2014,10 +2014,6 @@ Go ahead?`)) return;
                 // Placed and sized like any other block (Settings -> Screen designer).
                 attention={shown('dash.attention') ? (
                   <section aria-label="Today's command center">
-                    <div style={{ marginBottom: 14 }}>
-                      <h2 className="serif" style={{ fontSize: 27, fontWeight: 600, margin: 0 }}>Today</h2>
-                      <p style={{ margin: '4px 0 0', color: '#777', fontSize: 13.5 }}>Messages, jobs, billing and follow-ups that need you.</p>
-                    </div>
                     <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'workorders')}
                       onGo={(v) => setView(v as typeof view)} onTechRead={(n) => setMessageCount((c) => Math.max(0, c - n))} />
                     <AttentionPanel

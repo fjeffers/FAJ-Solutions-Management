@@ -47,8 +47,8 @@ export type HomeLook = {
 
 export const STANDARD_HOME_LOOK: HomeLook = {
   brand: 'FAJ SOLUTIONS',
-  title: 'Your business. One command center.',
-  subtitle: 'Customers, field operations, money and growth, connected in one place.',
+  title: 'CRM + ERP. One connected business.',
+  subtitle: 'Customers and sales on one side. Jobs, people, inventory and money on the other. One source of truth.',
   theme: 'midnight',
 };
 

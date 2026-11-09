@@ -107,9 +107,11 @@ export default function BusinessCommandCenter({
       window.removeEventListener('focus', load);
     };
   }, []);
-  const cards = [
+  const crmCards = [
     { group: 'CRM', title: 'Customers', value: String(savedCustomers ?? s.customers), detail: 'Contacts, history and client portals', view: 'customers', icon: Building2 },
     { group: 'CRM', title: 'Sales', value: String(s.openQuotes), detail: `${fmtMoney(s.openQuoteValue)} in open quotes`, view: 'quotes', icon: BriefcaseBusiness },
+  ] as const;
+  const erpCards = [
     { group: 'ERP', title: 'Jobs', value: String(s.activeJobs), detail: `${s.todayJobs} scheduled today`, view: 'workorders', icon: FileChartColumn },
     { group: 'ERP', title: 'Schedule', value: String(s.inField), detail: 'Jobs in progress now', view: 'scheduling', icon: CalendarDays },
     { group: 'ERP', title: 'Team', value: String(s.activeTechs), detail: 'Active technicians and assignments', view: 'contractors', icon: Users },
@@ -135,6 +137,30 @@ export default function BusinessCommandCenter({
     },
   } as const;
   const theme = themes[look.theme];
+  const cardGrid = (cards: typeof crmCards | typeof erpCards) => (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: 9 }}>
+      {cards.map(({ group, title, value, detail, view, icon: Icon }) => (
+        <button
+          key={title}
+          onClick={() => onGo(view)}
+          style={{
+            minWidth: 0, textAlign: 'left', cursor: 'pointer', padding: '14px', borderRadius: 14,
+            color: theme.text, background: theme.card, border: `1px solid ${theme.cardBorder}`,
+            backdropFilter: 'blur(10px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.06)',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 750 }}>
+              <Icon size={16} color={theme.accent} /> {title}
+            </span>
+            <span style={{ fontSize: 9, fontWeight: 850, color: theme.muted, letterSpacing: 1.2 }}>{group}</span>
+          </span>
+          <span className="serif" style={{ display: 'block', marginTop: 14, fontSize: 26, lineHeight: 1, fontWeight: 680, color: theme.text, overflowWrap: 'anywhere' }}>{value}</span>
+          <span style={{ display: 'block', marginTop: 6, color: theme.muted, fontSize: 11.5, lineHeight: 1.35 }}>{detail}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <section aria-label="CRM and ERP command center" style={{
@@ -166,27 +192,27 @@ export default function BusinessCommandCenter({
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(178px, 1fr))', gap: 10 }}>
-        {cards.map(({ group, title, value, detail, view, icon: Icon }) => (
-          <button
-            key={title}
-            onClick={() => onGo(view)}
-            style={{
-              minWidth: 0, textAlign: 'left', cursor: 'pointer', padding: '15px', borderRadius: 15,
-              color: theme.text, background: theme.card, border: `1px solid ${theme.cardBorder}`,
-              backdropFilter: 'blur(10px)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.06)',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 750 }}>
-                <Icon size={16} color={theme.accent} /> {title}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, .72fr) minmax(0, 1.55fr)', gap: 12 }} className="faj-system-grid">
+          <section style={{ padding: 12, borderRadius: 17, background: 'rgba(255,255,255,.035)', border: `1px solid ${theme.cardBorder}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '1px 2px 10px' }}>
+              <span style={{ width: 27, height: 27, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: theme.card }}><Building2 size={15} color={theme.accent} /></span>
+              <span>
+                <b style={{ display: 'block', fontSize: 13.5 }}>CRM</b>
+                <span style={{ display: 'block', fontSize: 10.5, color: theme.muted }}>Win and keep customers</span>
               </span>
-              <span style={{ fontSize: 9, fontWeight: 850, color: theme.muted, letterSpacing: 1.2 }}>{group}</span>
-            </span>
-            <span className="serif" style={{ display: 'block', marginTop: 15, fontSize: 27, lineHeight: 1, fontWeight: 680, color: theme.text, overflowWrap: 'anywhere' }}>{value}</span>
-            <span style={{ display: 'block', marginTop: 6, color: theme.muted, fontSize: 11.5, lineHeight: 1.35 }}>{detail}</span>
-          </button>
-        ))}
+            </div>
+            {cardGrid(crmCards)}
+          </section>
+          <section style={{ padding: 12, borderRadius: 17, background: 'rgba(255,255,255,.035)', border: `1px solid ${theme.cardBorder}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '1px 2px 10px' }}>
+              <span style={{ width: 27, height: 27, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: theme.card }}><Boxes size={15} color={theme.accent} /></span>
+              <span>
+                <b style={{ display: 'block', fontSize: 13.5 }}>ERP</b>
+                <span style={{ display: 'block', fontSize: 10.5, color: theme.muted }}>Run the entire operation</span>
+              </span>
+            </div>
+            {cardGrid(erpCards)}
+          </section>
         </div>
       </div>
     </section>

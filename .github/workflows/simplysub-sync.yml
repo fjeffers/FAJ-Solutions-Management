@@ -16,4 +16,4 @@ jobs:
           curl --fail --silent --show-error \
             --retry 3 \
             -H "Authorization: Bearer ${{ secrets.SIMPLYSUB_SYNC_SECRET }}" \
-            "https://app.fajsolutions.com/api/cron/simplysub-sync${{ github.event_name == 'workflow_dispatch' && '?force=1&inspect_forms=5006902' || '' }}"
+            "https://app.fajsolutions.com/api/cron/simplysub-sync${{ github.event_name == 'workflow_dispatch' && '?force=1' || '' }}"

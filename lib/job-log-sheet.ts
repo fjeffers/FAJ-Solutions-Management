@@ -86,6 +86,8 @@ export const moneyTotal = (rows: MoneyRow[]) => r2(rows.reduce((t, r) => t + (r.
  * category, before the tech's note (" · "): parking noted "at the hotel" is still parking (Greptile on PR #41).
  */
 export const isHotel = (r: MoneyRow) => /\b(lodging|hotels?|motels?)\b/i.test((r.for ?? '').split(' · ')[0]);
+/** An other receipt that's a rented vehicle: its category says Rental (the app's), or vehicle, car, truck or van rental. */
+export const isVehicleRental = (r: MoneyRow) => /^rental\b|\b(vehicle|car|truck|van)\s+rentals?\b/i.test((r.for ?? '').split(' · ')[0].trim());
 
 /** The miles of a row whose odometer was just typed: end less start when both are there, else as they were. */
 export function milesFromOdometer(r: MileRow): number {

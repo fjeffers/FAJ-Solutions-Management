@@ -88,6 +88,31 @@ describe('the invoice', () => {
     expect(own.techs[1]).toMatchObject({ mileage: { amount: 18 }, travel: { amount: 99 } });
   });
 
+  it('puts a vehicle rental under the hotel, the tech\'s own only, and in QuickBooks as Traveling', () => {
+    const rented = addLine(sheet, 'Paul Gibbs', 'Vehicle', '2026-10-18');
+    expect(rented.other.at(-1)).toEqual({ tech: 'Paul Gibbs', day: '2026-10-18', store: '', amount: 0, for: 'Vehicle rental' });
+    const blank = buildInvoice(rented, rates, crew, meta, 'Goldsboro NC').techs[0].travel.lines.at(-1)!;
+    const priced = editLine(rented, blank, { amount: 210 });
+    const inv = buildInvoice(priced, rates, crew, meta, 'Goldsboro NC');
+    const [paul, raja] = inv.techs;
+    expect(paul.travel.lines.map((l) => [l.item, l.description, l.amount])).toEqual([
+      ['Hotel', 'Hotel charge for the week', 402.5], ['Vehicle', 'Vehicle rental', 210],
+    ]);
+    expect(paul.travel.amount).toBe(612.5);
+    expect(raja.travel.lines.map((l) => l.item)).toEqual(['Hotel']);
+    expect(inv.totals.travel).toBe(1015);
+    expect(quickBooksLines(inv).find((l) => l.description.includes('Vehicle rental'))?.item).toBe('Traveling');
+    expect(invoiceCharges(inv, null).lines.map((l) => l.what)).toContain('Paul Gibbs vehicle rental');
+    const gone = removeLine(priced, paul.travel.lines[1]);
+    expect(buildInvoice(gone, rates, crew, meta, '').techs[0].travel.amount).toBe(402.5);
+  });
+
+  it('reads a Rental receipt as a vehicle rental, not a hotel', () => {
+    const inv = buildInvoice({ ...sheet, other: [...sheet.other, { tech: 'Raja', day: '2026-10-19', store: 'Enterprise', amount: 150, for: 'Rental · SUV' }] },
+      rates, crew, meta, '');
+    expect(inv.techs[1].travel.lines.map((l) => [l.item, l.amount])).toEqual([['Hotel', 402.5], ['Vehicle', 150]]);
+  });
+
   it('keeps a stretch still on site\'s hours when only its date changes (Greptile on PR #44)', () => {
     const open = { ...sheet, time: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '08:00', out: '', brk: 0, open: true, ms: 3 * 3_600_000 }] };
     const line = buildInvoice(open, rates, crew, meta, '').techs[0].hours.lines[0];

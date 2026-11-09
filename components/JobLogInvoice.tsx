@@ -13,7 +13,7 @@ import { Plus, X } from 'lucide-react';
 import { NumBox } from '@/components/JobSheetEditor';
 import { mileRateShown, mileRateTyped } from '@/lib/job-log-rates';
 import type { TimeRow } from '@/lib/job-log-sheet';
-import { dueDate, FAJ, type Invoice, type InvoiceHead, type InvoiceLine, type InvoiceMeta, type InvoiceSection, type InvoiceTech } from '@/lib/job-log-invoice';
+import { dueDate, FAJ, type AddableItem, type Invoice, type InvoiceHead, type InvoiceLine, type InvoiceMeta, type InvoiceSection, type InvoiceTech } from '@/lib/job-log-invoice';
 
 const line = '1px solid #000';
 const td: CSSProperties = { padding: '2px 6px', verticalAlign: 'top' };
@@ -35,7 +35,7 @@ export type InvoiceEditor = {
   setRate: (tech: string, k: 'hour' | 'mile', v: number | null) => void;
   change: (l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string; in?: string; out?: string }) => void;
   remove: (l: InvoiceLine) => void;
-  add: (tech: string, item: 'Labor' | 'Mileage' | 'Material' | 'Hotel') => void;
+  add: (tech: string, item: AddableItem) => void;
 };
 
 /** 10/19/2026 */
@@ -95,7 +95,7 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
           ? <NumBox label={`${l.item === 'Labor' ? 'Hours' : 'Miles'}, ${at}`} value={l.qty} onChange={(n) => edit.change(l, { qty: n })} />
           : qty(l.qty, l.item === 'Labor');
         const rateCell = edit && l.item === 'Meal' ? <NumBox label={`Meals, ${at}`} value={l.spent || null} onChange={(n) => edit.change(l, { amount: n })} />
-          : edit && (l.item === 'Hotel' || l.item === 'Material') ? <NumBox label={`${l.item}, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
+          : edit && (l.item === 'Hotel' || l.item === 'Vehicle' || l.item === 'Material') ? <NumBox label={`${l.item}, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
             : <Money n={l.rate} rate />;
         // A material's store, as typed.
         const description = edit && l.item === 'Material'
@@ -161,7 +161,10 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
           add={edit && <AddRow name={`Add a material, ${t.tech}`} onClick={() => edit.add(t.tech, 'Material')}>Add a material</AddRow>} />
       )}
       <Section s={t.travel} tech={t.tech} edit={edit}
-        add={edit && <AddRow name={`Add a hotel, ${t.tech}`} onClick={() => edit.add(ownerOf(t.travel), 'Hotel')}>Add a hotel</AddRow>} />
+        add={edit && <>
+          <AddRow name={`Add a hotel, ${t.tech}`} onClick={() => edit.add(ownerOf(t.travel), 'Hotel')}>Add a hotel</AddRow>
+          <AddRow name={`Add a vehicle rental, ${t.tech}`} onClick={() => edit.add(t.tech, 'Vehicle')}>Add a vehicle rental</AddRow>
+        </>} />
       <tr>
         <td style={td} colSpan={3} />
         <td style={{ ...center, fontWeight: 700, textDecoration: 'underline', borderTop: line }}>{t.role} Total</td>
@@ -281,7 +284,10 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
             {part('Meals', t.meals.lines, t.tech, 'Receipts $')}
             {part('Mileage', t.mileage.lines, t.tech, 'Miles', addBtn(`Add mileage, ${t.tech}`, () => edit.add(t.tech, 'Mileage'), 'Add mileage'))}
             {t.materials && part('Materials', t.materials.lines, t.tech, '$', addBtn(`Add a material, ${t.tech}`, () => edit.add(t.tech, 'Material'), 'Add a material'))}
-            {part('Hotel / travel', t.travel.lines, t.tech, '$', addBtn(`Add a hotel, ${t.tech}`, () => edit.add(hotelOwner, 'Hotel'), 'Add a hotel'))}
+            {part('Hotel / travel', t.travel.lines, t.tech, '$', <>
+              {addBtn(`Add a hotel, ${t.tech}`, () => edit.add(hotelOwner, 'Hotel'), 'Add a hotel')}
+              {addBtn(`Add a vehicle rental, ${t.tech}`, () => edit.add(t.tech, 'Vehicle'), 'Add a vehicle rental')}
+            </>)}
           </section>
         );
       })}

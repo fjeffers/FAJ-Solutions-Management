@@ -33,6 +33,23 @@ export type Layout = {
   design: ScreenDesign;
   /** How the Hours cards show (Settings -> Hours screen; lib/hours-look.ts). */
   hours: HoursLook;
+  /** Branding and presentation for the top of Home. */
+  home: HomeLook;
+};
+
+export type HomeTheme = 'midnight' | 'violet' | 'light';
+export type HomeLook = {
+  brand: string;
+  title: string;
+  subtitle: string;
+  theme: HomeTheme;
+};
+
+export const STANDARD_HOME_LOOK: HomeLook = {
+  brand: 'FAJ SOLUTIONS',
+  title: 'Your business. One command center.',
+  subtitle: 'Customers, field operations, money and growth, connected in one place.',
+  theme: 'midnight',
 };
 
 export type Screen = {
@@ -86,6 +103,7 @@ export const STANDARD_LAYOUT: Layout = {
   off: [],
   design: STANDARD_DESIGN,
   hours: STANDARD_HOURS_LOOK,
+  home: STANDARD_HOME_LOOK,
 };
 
 /**
@@ -99,6 +117,21 @@ const RENAMED_SECTIONS: Record<string, { was: string; id: string; title: string 
 
 const known = (k: unknown): k is string => typeof k === 'string' && Object.prototype.hasOwnProperty.call(SCREENS, k);
 const cleanText = (v: unknown): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, LABEL_MAX) : '');
+const homeText = (v: unknown, fallback: string, max: number): string =>
+  typeof v === 'string' && v.replace(/\s+/g, ' ').trim()
+    ? v.replace(/\s+/g, ' ').trim().slice(0, max)
+    : fallback;
+
+export function normalizeHomeLook(raw: unknown): HomeLook {
+  const src = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const theme: HomeTheme = src.theme === 'violet' || src.theme === 'light' ? src.theme : 'midnight';
+  return {
+    brand: homeText(src.brand, STANDARD_HOME_LOOK.brand, 32),
+    title: homeText(src.title, STANDARD_HOME_LOOK.title, 72),
+    subtitle: homeText(src.subtitle, STANDARD_HOME_LOOK.subtitle, 150),
+    theme,
+  };
+}
 
 /** A saved value (or anything else) made safe to show. */
 export function normalizeLayout(raw: unknown): Layout {
@@ -164,7 +197,11 @@ export function normalizeLayout(raw: unknown): Layout {
   // A dashboard shortcut may go to a screen in the menu, or to a tab of the Financials dashboard.
   const design = normalizeDesign(src.design, (v) => (known(v) && SCREENS[v].view !== null) || Object.prototype.hasOwnProperty.call(MONEY_TAB_LABELS, v));
 
-  return { main, sections, labels, hidden, off, design, hours: normalizeHoursLook(src.hours) };
+  return {
+    main, sections, labels, hidden, off, design,
+    hours: normalizeHoursLook(src.hours),
+    home: normalizeHomeLook(src.home),
+  };
 }
 
 /** A screen's name as Fred has it (his own name, or the standard one). */
@@ -227,7 +264,13 @@ export function isStandardMenu(l: Layout): boolean {
 
 /** The standard menu, keeping the screen parts switched off, the designer's arrangement and the Hours look. */
 export function resetMenu(l: Layout): Layout {
-  return { ...normalizeLayout(STANDARD_LAYOUT), off: l.off ?? [], design: l.design ?? STANDARD_DESIGN, hours: l.hours ?? STANDARD_HOURS_LOOK };
+  return {
+    ...normalizeLayout(STANDARD_LAYOUT),
+    off: l.off ?? [],
+    design: l.design ?? STANDARD_DESIGN,
+    hours: l.hours ?? STANDARD_HOURS_LOOK,
+    home: l.home ?? STANDARD_HOME_LOOK,
+  };
 }
 
 // ── Changes Fred makes in Settings. Each returns a new Layout. ───────────────

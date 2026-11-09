@@ -2003,6 +2003,7 @@ Go ahead?`)) return;
                     quotes={quotes}
                     invoices={invoices}
                     invoicePayments={invoicePayments}
+                    home={appLayout.layout.home}
                     onGo={(v) => setView(v as typeof view)}
                     onNewJob={openNewOrder}
                     onSearch={() => setSearchOpen(true)}

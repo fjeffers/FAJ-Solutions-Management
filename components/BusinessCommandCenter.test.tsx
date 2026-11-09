@@ -6,7 +6,7 @@ describe('business command center', () => {
   it('summarizes CRM and ERP data without counting the same customer twice', () => {
     const workOrders = [
       { customer_name: "Wendy's", archived_at: null, wo_status: 'In Progress', scheduled_date: '2026-11-09', start_date: null },
-      { customer_name: "wendy's", archived_at: null, wo_status: 'Open', scheduled_date: '2026-11-10', start_date: null },
+      { customer_name: "wendy's", archived_at: null, wo_status: 'In Progress', scheduled_date: '2026-11-10', start_date: null },
       { customer_name: 'LDS', archived_at: '2026-11-01', wo_status: 'Paid', scheduled_date: null, start_date: null },
     ] as EnrichedWorkOrder[];
     const quotes = [

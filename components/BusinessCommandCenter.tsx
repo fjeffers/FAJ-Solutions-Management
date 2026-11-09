@@ -64,7 +64,9 @@ export function businessSnapshot({
     openQuoteValue: openQuotes.reduce((sum, q) => sum + Number(q.total || 0), 0),
     activeJobs: liveJobs.length,
     todayJobs: liveJobs.filter((w) => (w.scheduled_date || w.start_date) === today).length,
-    inField: liveJobs.filter((w) => w.wo_status === 'In Progress').length,
+    inField: liveJobs.filter(
+      (w) => w.wo_status === 'In Progress' && (w.scheduled_date || w.start_date) === today,
+    ).length,
     activeTechs: contractors.filter((c) => !c.on_hold).length,
     outstandingInvoices: openInvoices.reduce((sum, i) => sum + i.due, 0),
     overdueInvoices: openInvoices.filter(({ invoice }) => !!invoice.due_date && invoice.due_date < today).length,

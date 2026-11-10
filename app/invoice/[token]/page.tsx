@@ -54,7 +54,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
             <div className="display" style={{ fontSize: 20, fontWeight: 700, color: '#0E1B2E', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
             <div style={{ fontSize: 11, color: '#8a6d2f', fontWeight: 700, letterSpacing: 2 }}>FIELD SERVICES · NETWORKING · LLC</div>
           </div>
-          <PrintButton />
+          <PrintButton token={token} />
         </div>
 
         {/* Invoice card */}

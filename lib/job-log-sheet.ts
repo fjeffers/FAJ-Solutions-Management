@@ -89,6 +89,26 @@ export const isHotel = (r: MoneyRow) => /\b(lodging|hotels?|motels?)\b/i.test((r
 /** An other receipt that's a rented vehicle: its category says Rental (the app's), or vehicle, car, truck or van rental. */
 export const isVehicleRental = (r: MoneyRow) => /^rental\b|\b(vehicle|car|truck|van)\s+rentals?\b/i.test((r.for ?? '').split(' · ')[0].trim());
 
+/**
+ * A hotel booked on the work order belongs on the invoice even before its
+ * receipt arrives. The office gets the date, hotel name and a blank amount to
+ * complete instead of having to add the whole line again.
+ */
+export function withHotelBooking(
+  sheet: JobSheet,
+  hotel: { name?: string; checkIn?: string } | null | undefined,
+  leadTech: string,
+  fallbackDay: string,
+): JobSheet {
+  if (!leadTech || !hotel?.name?.trim() || sheet.other.some(isHotel)) return sheet;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(hotel.checkIn ?? '') ? hotel.checkIn! : fallbackDay;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return sheet;
+  return {
+    ...sheet,
+    other: [...sheet.other, { tech: leadTech, day, store: hotel.name.trim(), amount: 0, for: 'Lodging' }],
+  };
+}
+
 /** The miles of a row whose odometer was just typed: end less start when both are there, else as they were. */
 export function milesFromOdometer(r: MileRow): number {
   return r.start != null && r.end != null && r.end >= r.start ? r1(r.end - r.start) : r.miles;

@@ -58,7 +58,7 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave, withHotelBooking,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
@@ -367,11 +367,15 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
     hoursScreen: hoursScreenDays(days),
     timeZone: TZ,
   }), [punches, logs, days, spent]);
-  const sheet = savedSheet ?? appSheet;
+  const crew = leadFirst(w);
+  const jobHotel = parseHotel(w.hotel);
+  // A hotel entered on the work order is already attached to this site. Put it
+  // on the invoice with its check-in date and name even when the receipt/amount
+  // has not been uploaded yet; Edit invoice is where the office fills it in.
+  const sheet = withHotelBooking(savedSheet ?? appSheet, jobHotel, crew[0] ?? '', w.start_date ?? '');
   const shown = sheetSorted(sheetInDates(sheet, from, to));
   // Each tech's own days and total, then the next tech (Fred, 2026-10-29: "Paul and Kendall separated grouping"),
   // the lead tech first and then the helpers ("Lead tech first and then helper tech").
-  const crew = leadFirst(w);
   const timeGroups = byTechGroups(shown.time, (r) => r.tech, crew);
   const mileGroups = byTechGroups(shown.miles, (r) => r.tech, crew);
   const dayCount = (days: string[]) => { const n = new Set(days).size; return `${n} day${n === 1 ? '' : 's'}`; };
@@ -466,7 +470,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const currentInvoiceMeta: InvoiceMeta = { ...invMeta, date: todayDay, billTo: invoiceBillTo };
   const invoiceHead: InvoiceHead = { billTo: invoiceBillTo, shipTo: [w.title ?? '', where].filter(Boolean), meta: currentInvoiceMeta };
   const place = [w.site_city, w.site_state].filter(Boolean).join(' ');
-  const hotelName = parseHotel(w.hotel)?.name ?? '';
+  const hotelName = jobHotel?.name ?? '';
   const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, currentInvoiceMeta, place, hotelName) : null;
   // The client copy's charges are the invoice's, so the two always have the same total (Fred, 2026-10-31: "the job log
   // and invoice is not matching up"): with the rates saved, and as they're typed.

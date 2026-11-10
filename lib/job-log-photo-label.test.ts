@@ -7,6 +7,7 @@ describe('job log photo labels', () => {
     const rental = jobLogPhotoLabelKey('rental', id, 'Enterprise Rent-A-Car');
     expect(jobLogPhotoLabel([rental], id)).toEqual({ kind: 'rental', vendor: 'Enterprise Rent-A-Car' });
     expect(isJobLogPhotoLabel(rental, id)).toBe(true);
+    expect(jobLogPhotoLabel([jobLogPhotoLabelKey('fuel', id, 'Wawa')], id)).toEqual({ kind: 'fuel', vendor: 'Wawa' });
   });
 
   it('keeps older receipt and hotel labels working', () => {

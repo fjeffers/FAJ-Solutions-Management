@@ -1,4 +1,4 @@
-export type JobLogPhotoKind = 'photo' | 'odometer' | 'receipt' | 'hotel' | 'rental';
+export type JobLogPhotoKind = 'photo' | 'odometer' | 'receipt' | 'hotel' | 'rental' | 'fuel';
 export type JobLogPhotoLabel = { kind: JobLogPhotoKind; vendor: string | null };
 
 const decoded = (value: string) => {
@@ -9,7 +9,7 @@ export function jobLogPhotoLabel(labels: Iterable<string>, id: string): JobLogPh
   const values = new Set(labels);
   if (values.has(id)) return { kind: 'receipt', vendor: null };
   if (values.has(`odo:${id}`)) return { kind: 'odometer', vendor: null };
-  for (const kind of ['hotel', 'rental'] as const) {
+  for (const kind of ['hotel', 'rental', 'fuel'] as const) {
     const legacy = `${kind}:${id}`;
     if (values.has(legacy)) return { kind, vendor: null };
     const suffix = `:${id}`;
@@ -27,6 +27,6 @@ export function jobLogPhotoLabelKey(kind: Exclude<JobLogPhotoKind, 'photo'>, id:
 }
 
 export function isJobLogPhotoLabel(value: string, id: string) {
-  return value === id || value === `odo:${id}` || value === `hotel:${id}` || value === `rental:${id}`
-    || ((value.startsWith('hotel:') || value.startsWith('rental:')) && value.endsWith(`:${id}`));
+  return value === id || value === `odo:${id}` || value === `hotel:${id}` || value === `rental:${id}` || value === `fuel:${id}`
+    || ((value.startsWith('hotel:') || value.startsWith('rental:') || value.startsWith('fuel:')) && value.endsWith(`:${id}`));
 }

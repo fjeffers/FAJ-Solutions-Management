@@ -332,7 +332,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
 
   const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => {
     const meta = jobLogPhotoLabel(receiptPhotos, p.id);
-    const base = ({ photo: undefined, receipt: 'Receipt photo', hotel: 'Hotel receipt photo', rental: 'Vehicle rental receipt photo', odometer: 'Odometer photo' } as const)[meta.kind];
+    const base = ({ photo: undefined, receipt: 'Receipt photo', hotel: 'Hotel receipt photo', rental: 'Vehicle rental receipt photo', fuel: 'Fuel receipt photo', odometer: 'Odometer photo' } as const)[meta.kind];
     return {
       key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
       caption: base && meta.vendor ? `${base}, ${meta.vendor}` : base,
@@ -342,7 +342,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const sitePicsOf = (...kinds: JobLogPhotoKind[]) => sitePics.filter((p) => kinds.includes(jobLogPhotoLabel(receiptPhotos, p.photoId!).kind));
   const shownPhotos = sitePicsOf('photo');
   // The receipts, then the site photos labeled receipts, by day.
-  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('receipt', 'hotel', 'rental')]
+  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('receipt', 'hotel', 'rental', 'fuel')]
     .sort((a, b) => a.day.localeCompare(b.day));
   const shownOdometer = [...odometer.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('odometer')]
     .sort((a, b) => a.day.localeCompare(b.day));
@@ -894,10 +894,10 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
               })()}
               {p.photoId && (
                 <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  {([['photo', 'Photo'], ['odometer', 'Odometer'], ['receipt', 'Receipt'], ['hotel', 'Hotel'], ['rental', 'Rental']] as const).map(([r, text]) => (
+                  {([['photo', 'Photo'], ['odometer', 'Odometer'], ['receipt', 'Receipt'], ['hotel', 'Hotel'], ['rental', 'Rental'], ['fuel', 'Fuel']] as const).map(([r, text]) => (
                     <button key={text} type="button" aria-pressed={kind === r} disabled={readingReceipt === p.photoId}
                       onClick={() => {
-                        if (r !== 'hotel' && r !== 'rental') {
+                        if (r !== 'hotel' && r !== 'rental' && r !== 'fuel') {
                           if (kind !== r) label(p.photoId!, r);
                           return;
                         }
@@ -914,7 +914,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
                       }}
                       style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '3px 2px', borderRadius: 8, cursor: 'pointer',
                         border: `1px solid ${kind === r ? '#0E1B2E' : '#D8D3C8'}`, background: kind === r ? '#0E1B2E' : '#fff', color: kind === r ? '#fff' : '#1B1C1F' }}>
-                      {readingReceipt === p.photoId && (r === 'hotel' || r === 'rental') ? 'Reading…' : text}
+                      {readingReceipt === p.photoId && (r === 'hotel' || r === 'rental' || r === 'fuel') ? 'Reading…' : text}
                     </button>
                   ))}
                 </div>

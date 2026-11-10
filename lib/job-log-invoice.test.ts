@@ -63,15 +63,15 @@ describe('the invoice', () => {
       { date: '2026-10-19', item: 'Mileage', description: '', qty: null, rate: 0.6, amount: 0 },
       { date: '2026-10-20', item: 'Mileage', description: 'Mileage from Goldsboro NC to Home', qty: 478, rate: 0.6, amount: 286.8 },
     ] });
-    // The hotel only: no fuel, no materials, as theirs.
-    expect({ ...paul.travel, lines: read(paul.travel.lines) }).toEqual({ title: 'Total Travel', amount: 402.5, lines: [
+    expect({ ...paul.travel, lines: read(paul.travel.lines) }).toEqual({ title: 'Total Travel', amount: 442.5, lines: [
       { date: '2026-10-20', item: 'Hotel', description: 'Quality Inn – Hotel charge for the week', qty: 1, rate: 402.5, amount: 402.5 },
+      { date: '2026-10-20', item: 'Fuel', description: 'Rental vehicle fuel, Circle K', qty: 1, rate: 40, amount: 40 },
     ] });
     // The materials, once, under the lead before the hotel (Fred: "under lead tech before hotel").
     expect({ ...paul.materials!, lines: read(paul.materials!.lines) }).toEqual({ title: 'Total Materials', amount: 47.48, lines: [
       { date: '2026-10-19', item: 'Material', description: "Lowe's", qty: 1, rate: 47.48, amount: 47.48 },
     ] });
-    expect(paul.total).toBe(1705.58);
+    expect(paul.total).toBe(1745.58);
     // Raja has the lead's hotel (Fred: "everything the lead has the helpers has also ... 701 for hotels"); his own
     // hours, meals and mileage, as he entered them, never the lead's drives (Fred, 2026-11-02: "i need each tech milage
     // to be individually", "all tech separately milage and hours they entered").
@@ -79,7 +79,7 @@ describe('the invoice', () => {
     expect(read(raja.mileage.lines).map((l) => [l.date, l.description, l.qty, l.amount])).toEqual([['2026-10-19', '', null, 0]]);
     expect(raja).toMatchObject({ meals: { amount: 12.54 }, mileage: { amount: 0 }, travel: { amount: 402.5 }, total: 731.04 });
     expect(raja.materials).toBeUndefined();
-    expect(inv.totals).toEqual({ labor: 948, mileage: 573.6, meals: 62.54, materials: 47.48, travel: 805, total: 2436.62 });
+    expect(inv.totals).toEqual({ labor: 948, mileage: 573.6, meals: 62.54, materials: 47.48, travel: 845, total: 2476.62 });
   });
 
   it('keeps a helper\'s own drives and hotel when they have them', () => {
@@ -91,20 +91,33 @@ describe('the invoice', () => {
   it('puts a vehicle rental under the hotel, the tech\'s own only, and in QuickBooks as Traveling', () => {
     const rented = addLine(sheet, 'Paul Gibbs', 'Vehicle', '2026-10-18');
     expect(rented.other.at(-1)).toEqual({ tech: 'Paul Gibbs', day: '2026-10-18', store: '', amount: 0, for: 'Vehicle rental' });
-    const blank = buildInvoice(rented, rates, crew, meta, 'Goldsboro NC').techs[0].travel.lines.at(-1)!;
+    const blank = buildInvoice(rented, rates, crew, meta, 'Goldsboro NC').techs[0].travel.lines.find((line) => line.item === 'Vehicle')!;
     const priced = editLine(rented, blank, { amount: 210 });
     const inv = buildInvoice(priced, rates, crew, meta, 'Goldsboro NC');
     const [paul, raja] = inv.techs;
     expect(paul.travel.lines.map((l) => [l.item, l.description, l.amount])).toEqual([
       ['Hotel', 'Quality Inn – Hotel charge for the week', 402.5], ['Vehicle', 'Vehicle rental', 210],
+      ['Fuel', 'Rental vehicle fuel, Circle K', 40],
     ]);
-    expect(paul.travel.amount).toBe(612.5);
+    expect(paul.travel.amount).toBe(652.5);
     expect(raja.travel.lines.map((l) => l.item)).toEqual(['Hotel']);
-    expect(inv.totals.travel).toBe(1015);
+    expect(inv.totals.travel).toBe(1055);
     expect(quickBooksLines(inv).find((l) => l.description.includes('Vehicle rental'))?.item).toBe('Traveling');
     expect(invoiceCharges(inv, null).lines.map((l) => l.what)).toContain('Paul Gibbs vehicle rental');
     const gone = removeLine(priced, paul.travel.lines[1]);
-    expect(buildInvoice(gone, rates, crew, meta, '').techs[0].travel.amount).toBe(402.5);
+    expect(buildInvoice(gone, rates, crew, meta, '').techs[0].travel.amount).toBe(442.5);
+  });
+
+  it('bills rental vehicle fuel as travel with the receipt vendor', () => {
+    const withFuel = {
+      ...sheet,
+      other: [...sheet.other, { tech: 'Paul Gibbs', day: '2026-10-20', store: 'QuickChek', amount: 44.19, for: 'Fuel' }],
+    };
+    const inv = buildInvoice(withFuel, rates, crew, meta, 'Goldsboro NC');
+    expect(inv.techs[0].travel.lines.at(-1)).toMatchObject({
+      item: 'Fuel', description: 'Rental vehicle fuel, QuickChek', amount: 44.19,
+    });
+    expect(quickBooksLines(inv).find((line) => line.description.includes('Rental vehicle fuel'))?.item).toBe('Traveling');
   });
 
   it('names the hotel on its line: the receipt\'s, else the job\'s, and lets the office type it', () => {
@@ -196,7 +209,7 @@ describe('the invoice', () => {
 describe("the job log's client copy", () => {
   it('has the same lines and total as the invoice (Fred, 2026-10-31: "the job log and invoice is not matching up")', () => {
     // Raja has Paul's hotel, and only the miles he entered: none (Fred, 2026-11-02: "i need each tech milage to be
-    // individually"); the meals up to $50 a day; the fuel isn't charged.
+    // individually"); the meals up to $50 a day; rental fuel is charged with travel.
     const { lines, total } = invoiceCharges(inv, null);
     expect(lines.map((l) => [l.what, l.amount, l.counted])).toEqual([
       ['Paul Gibbs hours · 12.64 × $50.00/hr', 632, false],
@@ -207,6 +220,7 @@ describe("the job log's client copy", () => {
       ['Meals · up to $50.00 a day (receipts $71.51)', 62.54, true],
       ['Materials', 47.48, true],
       ['Paul Gibbs hotel', 402.5, true],
+      ['Paul Gibbs rental vehicle fuel', 40, true],
       ['Raja hotel (same as Paul Gibbs)', 402.5, true],
     ]);
     expect(total).toBe(inv.totals.total);
@@ -254,12 +268,12 @@ describe('the invoice in Excel', () => {
     expect(cell(mats, 6)).toMatchObject({ v: 47.48, f: `SUM(G${mats + 1}:G${mats + 1})` });
     expect(cell(meals, 6)).toMatchObject({ v: 50, f: `SUM(G${meals + 1}:G${meals + 2})` });
     expect(rows[miles]).toMatchObject([expect.anything(), 'Mileage', 'Mileage from Home to Goldsboro NC', null, { v: 478 }, { v: 0.6 }, { v: 286.8 }]);
-    expect(cell(at('Lead Total'), 6)).toMatchObject({ v: 1705.58, f: `G${paul}+G${meals}+G${miles}+G${mats}+G${travel}` });
+    expect(cell(at('Lead Total'), 6)).toMatchObject({ v: 1745.58, f: `G${paul}+G${meals}+G${miles}+G${mats}+G${travel}` });
     // Raja's hours with no rate would be blank; his are $50, his total next.
     expect(cell(at('Helper Total'), 6)).toMatchObject({ v: 731.04 });
     const labor = at('Labor', 4);
     expect(rows.slice(labor - 1).map((r) => [r[4], (r[6] as { v: number }).v])).toEqual([
-      ['Labor', 948], ['Mileage', 573.6], ['Meals', 62.54], ['Materials', 47.48], ['Travel', 805], ['Total Invoice', 2436.62],
+      ['Labor', 948], ['Mileage', 573.6], ['Meals', 62.54], ['Materials', 47.48], ['Travel', 845], ['Total Invoice', 2476.62],
     ]);
     // Labor is each tech's Total Hours.
     const hoursRows = rows.flatMap((r, i) => (r[3] === 'Total Hours' ? [i + 1] : []));

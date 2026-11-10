@@ -88,6 +88,8 @@ export const moneyTotal = (rows: MoneyRow[]) => r2(rows.reduce((t, r) => t + (r.
 export const isHotel = (r: MoneyRow) => /\b(lodging|hotels?|motels?)\b/i.test((r.for ?? '').split(' · ')[0]);
 /** An other receipt that's a rented vehicle: its category says Rental (the app's), or vehicle, car, truck or van rental. */
 export const isVehicleRental = (r: MoneyRow) => /^rental\b|\b(vehicle|car|truck|van)\s+rentals?\b/i.test((r.for ?? '').split(' · ')[0].trim());
+/** Fuel bought for the rented vehicle and billed with travel. */
+export const isFuel = (r: MoneyRow) => /\b(fuel|gas|gasoline|diesel)\b/i.test((r.for ?? '').split(' · ')[0].trim());
 
 /**
  * A hotel booked on the work order belongs on the invoice even before its

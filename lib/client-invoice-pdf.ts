@@ -4,7 +4,7 @@ import { wrapLine } from './doc-to-pdf';
 type Site = Pick<WorkOrder, 'site_name' | 'site_city' | 'site_state' | 'title' | 'client_reference' | 'wo_number'>;
 type ClientExpense = { vendor: string | null; category: string; expense_date: string; receipt_path: string | null };
 export type ClientExpenseLink = { label: string; url: string };
-type ClientReceiptPhoto = { taken_at: string; url: string; kind: 'receipt' | 'hotel' | 'rental'; vendor: string | null };
+type ClientReceiptPhoto = { taken_at: string; url: string; kind: 'receipt' | 'hotel' | 'rental' | 'fuel'; vendor: string | null };
 
 const safe = (value: unknown) => String(value ?? '').replace(/[^\x20-\x7E]/g, ' ');
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -43,7 +43,7 @@ export function clientReceiptPhotoFilename(invoice: Invoice, photo: ClientReceip
   const resolved = invoiceSite(site, invoice);
   const extension = new URL(photo.url).pathname.match(/(\.[a-z0-9]{1,8})$/i)?.[1].toLowerCase() ?? '.jpg';
   const day = photo.taken_at.split('T')[0];
-  const type = photo.kind === 'hotel' ? 'Hotel receipt' : photo.kind === 'rental' ? 'Vehicle rental receipt' : 'Receipt photo';
+  const type = photo.kind === 'hotel' ? 'Hotel receipt' : photo.kind === 'rental' ? 'Vehicle rental receipt' : photo.kind === 'fuel' ? 'Fuel receipt' : 'Receipt photo';
   return fileSafe(`${resolved.number} - ${resolved.name} - ${type}${photo.vendor ? ` - ${photo.vendor}` : ''} - ${day}${extension}`);
 }
 

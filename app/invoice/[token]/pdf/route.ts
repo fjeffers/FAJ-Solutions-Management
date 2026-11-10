@@ -32,7 +32,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
       label: `${expense.expense_date} - ${expense.vendor || expense.category.replace(/[_-]+/g, ' ')} - ${Number(expense.amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}`,
       url: `${origin}/invoice/${encodeURIComponent(token)}/expense/${encodeURIComponent(expense.id)}`,
     }));
-  const photoIds = new Map<string, { kind: 'receipt' | 'hotel' | 'rental'; vendor: string | null }>();
+  const photoIds = new Map<string, { kind: 'receipt' | 'hotel' | 'rental' | 'fuel'; vendor: string | null }>();
   for (const wo of receiptSites) {
     const left = new Set(wo.job_log_left_out ?? []);
     const ids = (wo.job_log_receipt_photos ?? []).map((label) => label.split(':').at(-1)!).filter(Boolean);
@@ -47,7 +47,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
     const { data: photos } = await db.from('wo_photos').select('id, taken_at').in('id', [...photoIds.keys()]).in('wo_id', invoice.work_order_ids).order('taken_at');
     for (const photo of (photos ?? []) as { id: string; taken_at: string }[]) {
       const meta = photoIds.get(photo.id)!;
-      const type = meta.kind === 'hotel' ? 'Hotel receipt' : meta.kind === 'rental' ? 'Vehicle rental receipt' : 'Receipt photo';
+      const type = meta.kind === 'hotel' ? 'Hotel receipt' : meta.kind === 'rental' ? 'Vehicle rental receipt' : meta.kind === 'fuel' ? 'Fuel receipt' : 'Receipt photo';
       expenseLinks.push({
         label: `${photo.taken_at.split('T')[0]} - ${type}${meta.vendor ? ` - ${meta.vendor}` : ''}`,
         url: `${origin}/invoice/${encodeURIComponent(token)}/photo/${encodeURIComponent(photo.id)}`,

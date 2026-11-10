@@ -1152,7 +1152,7 @@ describe('Job log edited by the office', () => {
     expect((screen.getByLabelText('Per mile, Paul Gibbs') as HTMLInputElement).value).toBe('.652');
   }));
 
-  it('puts the hotels on their own line in the breakdown, and leaves the fuel off as the invoice does (Fred: "see it hotels also"; "the job log and invoice is not matching up")', () => withPunches(async () => {
+  it('puts hotels and rental fuel on their own lines in the breakdown', () => withPunches(async () => {
     const before = tables.job_expenses;
     tables.job_expenses = [...before,
       { id: 'h1', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 350.74, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/hotel.jpg' },
@@ -1165,11 +1165,10 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Breakdown' })).toBeTruthy());
       expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' })).slice(-2)).toEqual([
-        ['Materials', '$104.17'],
         ['Paul Gibbs hotel', '$350.74'],
+        ['Paul Gibbs rental vehicle fuel', '$40.00'],
       ]);
-      // $585 + $12.60 + $104.17 + $350.74, as the invoice: no fuel.
-      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,052.51');
+      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,092.51');
     } finally {
       tables.job_expenses = before;
       delete tables.job_log_rates;

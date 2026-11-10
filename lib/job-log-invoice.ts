@@ -6,7 +6,7 @@
 // theirs. The hours and miles × each tech's rates (lib/job-log-rates.ts), as the client's copy charges them.
 import { byTechGroups } from './job-log';
 import { lineAmount, type JobRates } from './job-log-rates';
-import { fixedHours, hoursTotal, isHotel, isVehicleRental, minutesOf, rowHours, type JobSheet, type MileRow, type MoneyRow, type TimeRow } from './job-log-sheet';
+import { fixedHours, hoursTotal, isFuel, isHotel, isVehicleRental, minutesOf, rowHours, type JobSheet, type MileRow, type MoneyRow, type TimeRow } from './job-log-sheet';
 import type { XCell } from './job-log-xlsx';
 import { qboItemFor } from './field-sheet';
 import { IMPORT_HEADER, usDate } from './qbo-work-order-export';
@@ -129,7 +129,7 @@ const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', curr
  * `place` is the site's city and state ("Goldsboro NC") for the drives there and home.
  */
 export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], meta: Pick<InvoiceMeta, 'labor' | 'meal'>, place: string, hotelName = ''): Invoice {
-  const names = [...sheet.time, ...sheet.miles, ...sheet.meals, ...sheet.other.filter((r) => isHotel(r) || isVehicleRental(r))].map((r) => r.tech).filter(Boolean);
+  const names = [...sheet.time, ...sheet.miles, ...sheet.meals, ...sheet.other.filter((r) => isHotel(r) || isVehicleRental(r) || isFuel(r))].map((r) => r.tech).filter(Boolean);
   const order = byTechGroups(names, (t) => t, crew).map((g) => g.tech);
   // The lead's hotel, the helpers' too (Fred, 2026-10-30: "everything the lead has the helpers has also ... 701 for
   // hotels so 350 for each tech"): a helper with no hotel of their own has the lead's, and that line is the lead's to
@@ -196,6 +196,11 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     travelLines.push(...vehicles.map((r): InvoiceLine => ({
       date: r.day, item: 'Vehicle', description: 'Vehicle rental', qty: 1, rate: r.amount, amount: r2(r.amount || 0), tech: r.tech, row: r,
     })));
+    const fuel = sheet.other.filter((r) => r.tech === tech && isFuel(r)).sort((a, b) => a.day.localeCompare(b.day));
+    travelLines.push(...fuel.map((r): InvoiceLine => ({
+      date: r.day, item: 'Fuel', description: r.store ? `Rental vehicle fuel, ${r.store}` : 'Rental vehicle fuel',
+      qty: 1, rate: r.amount, amount: r2(r.amount || 0), tech: r.tech, row: r,
+    })));
     const hours = { title: 'Total Hours', qty: hoursTotal(time), rate: hour, amount: sum(hourLines), lines: hourLines };
     const meals = { title: 'Total Meal Allowance', amount: sum(mealLines), lines: mealLines };
     const mileage = { title: 'Total Milage', amount: sum(mileLines), lines: mileLines };
@@ -243,9 +248,11 @@ export function invoiceCharges(inv: Invoice, allHoursRate: number | null): Invoi
   if (inv.totals.materials > 0) line('Materials', inv.totals.materials, true, false);
   for (const t of inv.techs) {
     const hotels = t.travel.lines.filter((l) => l.item === 'Hotel'), vehicles = t.travel.lines.filter((l) => l.item === 'Vehicle');
+    const fuel = t.travel.lines.filter((l) => l.item === 'Fuel');
     const shared = hotels.find((l) => l.tech && l.tech !== t.tech)?.tech;
     if (sum(hotels) > 0) line(`${t.tech} hotel${shared ? ` (same as ${shared})` : ''}`, sum(hotels), true, false);
     if (sum(vehicles) > 0) line(`${t.tech} vehicle rental`, sum(vehicles), true, false);
+    if (sum(fuel) > 0) line(`${t.tech} rental vehicle fuel`, sum(fuel), true, false);
   }
   return { lines, total: inv.totals.total };
 }
@@ -296,7 +303,7 @@ export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty
     const next: TimeRow = { ...kept, ...(p.day ? { day: p.day } : {}), ...(hours != null ? { hours } : {}) };
     return { ...sheet, time: swap(sheet.time, r, next) };
   }
-  if ((l.item === 'Hotel' || l.item === 'Vehicle') && l.row) {
+  if ((l.item === 'Hotel' || l.item === 'Vehicle' || l.item === 'Fuel') && l.row) {
     const r = l.row as MoneyRow;
     return { ...sheet, other: swap(sheet.other, r, { ...r, ...(p.day ? { day: p.day } : {}), ...('amount' in p ? { amount: p.amount ?? 0 } : {}),
       ...(l.item === 'Hotel' && p.description != null ? { store: p.description } : {}) }) };
@@ -321,7 +328,7 @@ export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty
 export function removeLine(sheet: JobSheet, l: InvoiceLine): JobSheet {
   const tech = l.tech ?? '';
   if (l.item === 'Labor' && l.row) return { ...sheet, time: swap(sheet.time, l.row as TimeRow, null) };
-  if ((l.item === 'Hotel' || l.item === 'Vehicle') && l.row) return { ...sheet, other: swap(sheet.other, l.row as MoneyRow, null) };
+  if ((l.item === 'Hotel' || l.item === 'Vehicle' || l.item === 'Fuel') && l.row) return { ...sheet, other: swap(sheet.other, l.row as MoneyRow, null) };
   if (l.item === 'Material' && l.row) return { ...sheet, materials: swap(sheet.materials, l.row as MoneyRow, null) };
   if (l.item === 'Meal') return { ...sheet, meals: sheet.meals.filter((r) => !theirs(tech, l.date)(r)) };
   if (l.item === 'Mileage') return { ...sheet, miles: sheet.miles.filter((r) => !theirs(tech, l.date)(r)) };
@@ -443,7 +450,7 @@ export async function downloadInvoiceXlsx(filename: string, inv: Invoice, head: 
 /** A line of the QuickBooks invoice: its day, Product/service, description, qty, rate and amount. */
 export type QbJobLine = { date: string; item: string; description: string; qty: number; rate: number; amount: number };
 
-const QBO_KIND: Record<string, string> = { Labor: 'labor', Mileage: 'mileage', Meal: 'meals', Hotel: 'hotel', Vehicle: 'travel', Material: 'receipt' };
+const QBO_KIND: Record<string, string> = { Labor: 'labor', Mileage: 'mileage', Meal: 'meals', Hotel: 'hotel', Vehicle: 'travel', Fuel: 'travel', Material: 'receipt' };
 /** The Products/services the job log's lines go on. */
 export const JOB_LOG_QBO_ITEMS = [...new Set(Object.values(QBO_KIND).map(qboItemFor))];
 

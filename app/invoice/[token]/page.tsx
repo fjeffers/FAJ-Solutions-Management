@@ -48,7 +48,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
   const receiptWorkOrders = invoice.work_order_ids.length ? await supabase.from('work_orders')
     .select('id, job_log_receipt_photos, job_log_left_out').in('id', invoice.work_order_ids) as { data: ReceiptWorkOrder[] | null }
     : { data: [] as ReceiptWorkOrder[] };
-  const receiptLabels = new Map<string, { kind: 'receipt' | 'hotel' | 'rental'; vendor: string | null; woId: string }>();
+  const receiptLabels = new Map<string, { kind: 'receipt' | 'hotel' | 'rental' | 'fuel'; vendor: string | null; woId: string }>();
   for (const wo of receiptWorkOrders.data ?? []) {
     const left = new Set(wo.job_log_left_out ?? []);
     const photoIds = (wo.job_log_receipt_photos ?? []).map((label) => label.split(':').at(-1)!).filter(Boolean);
@@ -183,7 +183,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
                       <a key={photo.id} href={`/invoice/${encodeURIComponent(token)}/photo/${encodeURIComponent(photo.id)}`}
                         style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: '1px solid #e5dfd2', borderRadius: 10, padding: '10px 12px', color: '#0E1B2E', textDecoration: 'none', fontSize: 13 }}>
                         <span>
-                          <b>{label?.kind === 'hotel' ? 'Hotel receipt' : label?.kind === 'rental' ? 'Vehicle rental receipt' : 'Receipt photo'}{label?.vendor ? `, ${label.vendor}` : ''}</b>
+                          <b>{label?.kind === 'hotel' ? 'Hotel receipt' : label?.kind === 'rental' ? 'Vehicle rental receipt' : label?.kind === 'fuel' ? 'Fuel receipt' : 'Receipt photo'}{label?.vendor ? `, ${label.vendor}` : ''}</b>
                           <span style={{ color: '#777', marginLeft: 8 }}>{fmtDate(photo.taken_at)}</span>
                         </span>
                         <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>Download</span>

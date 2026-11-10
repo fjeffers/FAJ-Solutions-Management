@@ -41,7 +41,7 @@ export async function GET(
     expense,
     site as Pick<WorkOrder, 'site_name' | 'title' | 'client_reference' | 'wo_number'> | null,
   );
-  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '').replace(/"/g, '') || 'Expense receipt';
+  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, ' ').replace(/"/g, '').replace(/\s+/g, ' ').trim() || 'Expense receipt';
 
   return new Response(await receipt.arrayBuffer(), {
     headers: {

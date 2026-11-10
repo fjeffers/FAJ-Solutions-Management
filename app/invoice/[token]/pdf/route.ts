@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   const site = (sites?.[0] ?? null) as Pick<WorkOrder, 'site_name' | 'title' | 'client_reference' | 'wo_number'> | null;
   const pdf = await clientInvoicePdf(invoice, (payments ?? []) as InvoicePayment[], site);
   const filename = clientInvoiceFilename(invoice, site);
-  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '').replace(/"/g, '') || `Invoice ${invoice.invoice_number}.pdf`;
+  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, ' ').replace(/"/g, '').replace(/\s+/g, ' ').trim() || `Invoice ${invoice.invoice_number}.pdf`;
 
   return new Response(pdf as BodyInit, {
     headers: {

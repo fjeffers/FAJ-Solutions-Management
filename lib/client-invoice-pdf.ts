@@ -23,7 +23,8 @@ export function invoiceSite(site: Site | null | undefined, invoice: Invoice) {
 
 export function clientInvoiceFilename(invoice: Invoice, site?: Site | null) {
   const resolved = invoiceSite(site, invoice);
-  return fileSafe(`${resolved.number} - ${resolved.name} - Invoice ${invoice.invoice_number}.pdf`);
+  const prefix = resolved.number === invoice.invoice_number ? '' : `${resolved.number} - `;
+  return fileSafe(`${prefix}${resolved.name} - Invoice ${invoice.invoice_number}.pdf`);
 }
 
 export function clientExpenseFilename(invoice: Invoice, expense: ClientExpense, site?: Site | null) {

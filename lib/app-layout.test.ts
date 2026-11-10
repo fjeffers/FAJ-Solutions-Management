@@ -29,6 +29,10 @@ describe('menu layout (Settings -> Menu & screens)', () => {
       ...STANDARD_HOME_LOOK,
       tiles: ['financials', 'bad-tile', 'financials', 'workorders'],
     }).tiles).toEqual(['financials', 'workorders']);
+    expect(normalizeHomeLook({
+      ...STANDARD_HOME_LOOK,
+      tiles: ['customers', 'financials'],
+    }).tiles).toEqual(['simplysub', 'financials']);
   });
 
   it('the standard menu: Home (Dashboard is part of it), Schedule, Messages, Office, Settings — everything else in Office', () => {

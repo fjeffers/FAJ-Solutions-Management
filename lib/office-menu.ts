@@ -51,6 +51,7 @@ export const OFFICE_GROUPS: OfficeGroup[] = [
       { view: 'field', label: 'In the field', hint: 'Live jobs, technicians and upcoming visits' },
       { view: 'fieldsheet', label: 'Field Sheet', hint: 'Pull a job by WO number: fix hours, miles and receipts, see the photos, bill it' },
       { view: 'support', label: 'Support', hint: 'Support emails turned into tickets to approve' },
+      { view: 'simplysub', label: 'SimplySub', hint: 'Open SimplySub work orders, linked FAJ jobs and new jobs' },
       { view: 'import-queue', label: 'Import', hint: 'Work orders from email and spreadsheets waiting to come in' },
       { view: 'dispatch', label: 'Dispatch Map', hint: 'Techs and jobs on a map' },
       { view: 'materials', label: 'Materials', hint: 'Stock, and materials used on jobs' },

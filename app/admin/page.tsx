@@ -85,7 +85,7 @@ import HoursView from '@/components/HoursView';
 
 const VIEWS = [
   'dashboard', 'attention', 'followups', 'field', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
-  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
+  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'simplysub', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
   'team', 'support', 'office', 'messages', 'sketches', 'projects', 'fieldsheet', 'hours',
 ] as const;
@@ -1940,6 +1940,14 @@ Go ahead?`)) return;
             }}
           />
         )}
+        {view === 'simplysub' && (
+          <div className="view-inner wf" style={{ maxWidth: 1200, margin: '0 auto' }}>
+            <SimplySubJobsHome
+              onOpenJob={(id) => openJobFrom(id, 'simplysub')}
+              onOpenImports={() => setView('import-queue')}
+            />
+          </div>
+        )}
         {view === 'import-queue' && (
           <ImportQueueView
             items={importQueue}
@@ -1964,10 +1972,6 @@ Go ahead?`)) return;
               onNewJob={openNewOrder}
               onAI={() => setHomeAiOpen(true)}
               onSearch={() => setSearchOpen(true)}
-            />
-            <SimplySubJobsHome
-              onOpenJob={(id) => openJobFrom(id, 'dashboard')}
-              onOpenImports={() => setView('import-queue')}
             />
             <div className="view-inner wf" style={{ maxWidth: 1200, margin: '14px auto 0' }}>
               <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'dashboard')}

@@ -111,6 +111,7 @@ export default function BusinessCommandCenter({
   const s = businessSnapshot({ workOrders, contractors, materials, quotes, invoices, invoicePayments });
   const [savedCustomers, setSavedCustomers] = useState<number | null>(null);
   const [quickBooksOpen, setQuickBooksOpen] = useState<{ count: number; balance: number } | null>(null);
+  const [simplySubJobs, setSimplySubJobs] = useState<{ open: number; newToFaj: number } | null>(null);
   useEffect(() => {
     const db = createClient();
     const loadCustomers = () => {
@@ -128,14 +129,23 @@ export default function BusinessCommandCenter({
         });
       }).catch(() => {});
     };
-    const load = () => { loadCustomers(); loadQuickBooks(); };
+    const loadSimplySub = () => {
+      void fetch('/api/simplysub/jobs', { cache: 'no-store' }).then(async (response) => {
+        if (!response.ok) return;
+        const body = await response.json() as { open?: number; new_to_faj?: number };
+        setSimplySubJobs({ open: Number(body.open ?? 0), newToFaj: Number(body.new_to_faj ?? 0) });
+      }).catch(() => {});
+    };
+    const load = () => { loadCustomers(); loadQuickBooks(); loadSimplySub(); };
     load();
     const customerTimer = window.setInterval(loadCustomers, 30_000);
     const quickBooksTimer = window.setInterval(loadQuickBooks, 5 * 60_000);
+    const simplySubTimer = window.setInterval(loadSimplySub, 5 * 60_000);
     window.addEventListener('focus', load);
     return () => {
       window.clearInterval(customerTimer);
       window.clearInterval(quickBooksTimer);
+      window.clearInterval(simplySubTimer);
       window.removeEventListener('focus', load);
     };
   }, []);
@@ -145,7 +155,7 @@ export default function BusinessCommandCenter({
     { key: 'attention', group: 'TODAY', title: 'Waiting on you', detail: 'Inbox, approvals and invoices', view: 'attention', icon: Bell },
     { key: 'followups', group: 'CRM', title: 'Follow-up', detail: 'Quotes, clients and technician replies', view: 'followups', icon: ClipboardCheck },
     { key: 'field', group: 'FIELD', title: 'In the field', detail: 'Live work and upcoming visits', view: 'field', icon: Radio },
-    { key: 'customers', group: 'CRM', title: 'Customers', value: String(savedCustomers ?? s.customers), detail: 'Contacts, history and client portals', view: 'customers', icon: Building2 },
+    { key: 'simplysub', group: 'FIELD', title: 'SimplySub', value: simplySubJobs ? String(simplySubJobs.open) : '—', detail: simplySubJobs ? `${simplySubJobs.newToFaj} new to FAJ` : 'Open and newly created work orders', view: 'simplysub', icon: ClipboardCheck },
     { key: 'quotes', group: 'CRM', title: 'Sales', value: String(s.openQuotes), detail: `${fmtMoney(s.openQuoteValue)} in open quotes`, view: 'quotes', icon: BriefcaseBusiness },
     { key: 'workorders', group: 'ERP', title: 'Jobs', value: String(s.activeJobs), detail: `${s.todayJobs} scheduled today`, view: 'workorders', icon: FileChartColumn },
     { key: 'scheduling', group: 'ERP', title: 'Schedule', value: String(s.inField), detail: 'Jobs in progress now', view: 'scheduling', icon: CalendarDays },

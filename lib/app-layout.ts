@@ -42,7 +42,7 @@ export const HOME_TILE_OPTIONS = [
   { key: 'attention', label: 'Waiting on you' },
   { key: 'followups', label: 'Follow-up' },
   { key: 'field', label: 'In the field' },
-  { key: 'customers', label: 'Customers' },
+  { key: 'simplysub', label: 'SimplySub' },
   { key: 'quotes', label: 'Sales' },
   { key: 'workorders', label: 'Jobs' },
   { key: 'scheduling', label: 'Schedule' },
@@ -54,7 +54,7 @@ export const HOME_TILE_OPTIONS = [
   { key: 'new-job', label: 'New job' },
 ] as const;
 export const STANDARD_HOME_TILES = [
-  'attention', 'followups', 'customers', 'quotes', 'workorders', 'scheduling',
+  'attention', 'followups', 'simplysub', 'quotes', 'workorders', 'scheduling',
   'contractors', 'financials', 'materials', 'office', 'ai', 'new-job',
 ] as const;
 export type HomeTileKey = typeof HOME_TILE_OPTIONS[number]['key'];
@@ -148,8 +148,11 @@ export function normalizeHomeLook(raw: unknown): HomeLook {
   const src = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const theme: HomeTheme = src.theme === 'violet' || src.theme === 'light' ? src.theme : 'midnight';
   const allowed = new Set<string>(HOME_TILE_OPTIONS.map((tile) => tile.key));
-  const tiles = Array.isArray(src.tiles)
-    ? [...new Set(src.tiles.filter((tile): tile is HomeTileKey => typeof tile === 'string' && allowed.has(tile)))]
+  const savedTiles = Array.isArray(src.tiles)
+    ? src.tiles.map((tile) => tile === 'customers' ? 'simplysub' : tile)
+    : null;
+  const tiles = savedTiles
+    ? [...new Set(savedTiles.filter((tile): tile is HomeTileKey => typeof tile === 'string' && allowed.has(tile)))]
     : [...STANDARD_HOME_TILES];
   return {
     brand: homeText(src.brand, STANDARD_HOME_LOOK.brand, 32),

@@ -206,6 +206,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const netview = isNetviewJob(w, w.customer_name);
   const [me, setMe] = useState({ name: '', email: '' });
   useEffect(() => {
@@ -623,50 +624,53 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
       setSending(false);
     }
   };
-  // The link Fred sends from the job log: the exact saved invoice breakdown,
-  // read-only for the client, with a real PDF and each approved receipt to
-  // download. It reuses the same invoice row/token so a link already sent
-  // keeps working after the office updates the saved job-log invoice.
-  const shareClientInvoice = async () => {
-    if (!invoice || !qbLines.length) { toastError('Nothing on the invoice is charged yet. Edit invoice and type the rates first.'); return; }
+  // The client link and direct PDF download use the same saved invoice row, so
+  // either action always has the current Job Log breakdown and keeps an older
+  // client link working after the office updates the invoice.
+  const saveClientInvoice = async () => {
+    if (!invoice || !qbLines.length) throw new Error('Nothing on the invoice is charged yet. Edit invoice and type the rates first.');
     const db = createClient();
+    const { data: { user } } = await db.auth.getUser();
+    if (!user) throw new Error('Sign in again, then try the invoice download.');
+    const { data: existing } = await db.from('invoices')
+      .select('id, share_token').contains('work_order_ids', [w.id]).eq('invoice_number', qbNumber)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    const token = (existing?.share_token as string | null) || (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+    const memo = jobLogMemo(w, qbLines);
+    const payload = {
+      user_id: user.id,
+      invoice_number: qbNumber,
+      client_name: invoiceHead.billTo || w.customer_name || null,
+      client_email: null,
+      client_phone: null,
+      title: w.site_name || w.title || `WO ${w.wo_number}`,
+      description: memo,
+      line_items: qbLines.map((line, index) => ({
+        id: `job-log-${index + 1}`,
+        description: [line.date, line.description].filter(Boolean).join(' · '),
+        quantity: line.qty,
+        rate: line.rate,
+      })),
+      subtotal: qbTotal,
+      tax_rate: 0,
+      tax_amount: 0,
+      total: qbTotal,
+      due_date: dueDate(savedMeta.date, savedMeta.terms),
+      notes: `Work order ${w.wo_number}`,
+      work_order_ids: [w.id],
+      share_token: token,
+      updated_at: new Date().toISOString(),
+    };
+    const saved = existing?.id
+      ? await db.from('invoices').update(payload).eq('id', existing.id)
+      : await db.from('invoices').insert({ ...payload, status: 'draft' });
+    if (saved.error) throw new Error(`The invoice wasn't saved: ${saved.error.message}`);
+    return token;
+  };
+  const shareClientInvoice = async () => {
     setSharing(true);
     try {
-      const { data: { user } } = await db.auth.getUser();
-      if (!user) { toastError('Sign in again, then copy the client invoice link.'); return; }
-      const { data: existing } = await db.from('invoices')
-        .select('id, share_token').contains('work_order_ids', [w.id]).eq('invoice_number', qbNumber)
-        .order('created_at', { ascending: false }).limit(1).maybeSingle();
-      const token = (existing?.share_token as string | null) || (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
-      const memo = jobLogMemo(w, qbLines);
-      const payload = {
-        user_id: user.id,
-        invoice_number: qbNumber,
-        client_name: invoiceHead.billTo || w.customer_name || null,
-        client_email: null,
-        client_phone: null,
-        title: w.site_name || w.title || `WO ${w.wo_number}`,
-        description: memo,
-        line_items: qbLines.map((line, index) => ({
-          id: `job-log-${index + 1}`,
-          description: [line.date, line.description].filter(Boolean).join(' · '),
-          quantity: line.qty,
-          rate: line.rate,
-        })),
-        subtotal: qbTotal,
-        tax_rate: 0,
-        tax_amount: 0,
-        total: qbTotal,
-        due_date: dueDate(savedMeta.date, savedMeta.terms),
-        notes: `Work order ${w.wo_number}`,
-        work_order_ids: [w.id],
-        share_token: token,
-        updated_at: new Date().toISOString(),
-      };
-      const saved = existing?.id
-        ? await db.from('invoices').update(payload).eq('id', existing.id)
-        : await db.from('invoices').insert({ ...payload, status: 'draft' });
-      if (saved.error) { toastError(`The client link wasn't created: ${saved.error.message}`); return; }
+      const token = await saveClientInvoice();
       const url = `${window.location.origin}/invoice/${token}`;
       if (typeof navigator.share === 'function') {
         try {
@@ -680,10 +684,24 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
       } catch {
         window.prompt('Copy this client invoice link:', url);
       }
-    } catch {
-      toastError("The client link couldn't be created. Check your connection and try again.");
+    } catch (error) {
+      toastError((error as Error).message || "The client link couldn't be created. Check your connection and try again.");
     } finally {
       setSharing(false);
+    }
+  };
+  const downloadClientInvoicePdf = async () => {
+    setDownloadingInvoice(true);
+    try {
+      const token = await saveClientInvoice();
+      const link = document.createElement('a');
+      link.href = `/invoice/${encodeURIComponent(token)}/pdf`;
+      link.click();
+      toastSuccess('Downloading the client-ready invoice PDF.');
+    } catch (error) {
+      toastError((error as Error).message || "The invoice PDF couldn't be downloaded. Check your connection and try again.");
+    } finally {
+      setDownloadingInvoice(false);
     }
   };
   // Marked by hand: in QuickBooks by the import file or typed in, and sent on NetView's form. Home lists an invoice
@@ -1094,6 +1112,14 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
             {inc.receipts && pictures('Hotels', hotelPics, true)}
             {inc.photos && pictures('Photos', shownPhotos)}
           </div>
+          {!invDraft && (
+            <div className="no-print" style={{ padding: '0 28px 28px', display: 'flex', justifyContent: 'center' }}>
+              <button type="button" className="wf-btn wf-btn-gold" disabled={clientBlocked || downloadingInvoice || saving}
+                onClick={() => void downloadClientInvoicePdf()} title="Save this invoice breakdown as a client-ready PDF attachment">
+                <Download size={16} /> {downloadingInvoice ? 'Downloading…' : 'Download invoice PDF'}
+              </button>
+            </div>
+          )}
         </div>
       ) : (
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>

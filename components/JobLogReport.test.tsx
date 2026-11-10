@@ -852,6 +852,7 @@ describe('Job log edited by the office', () => {
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      expect(screen.getByRole('button', { name: /download invoice pdf/i })).toBeTruthy();
       const quickBooks = screen.getByRole('button', { name: /send to quickbooks/i });
       const netview = screen.getByRole('link', { name: /open netview link/i });
       expect(quickBooks.nextElementSibling).toBe(netview);

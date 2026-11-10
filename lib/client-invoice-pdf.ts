@@ -3,6 +3,7 @@ import { wrapLine } from './doc-to-pdf';
 
 type Site = Pick<WorkOrder, 'site_name' | 'title' | 'client_reference' | 'wo_number'>;
 type ClientExpense = { vendor: string | null; category: string; expense_date: string; receipt_path: string | null };
+export type ClientExpenseLink = { label: string; url: string };
 
 const safe = (value: unknown) => String(value ?? '').replace(/[^\x20-\x7E]/g, ' ');
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -34,8 +35,13 @@ export function clientExpenseFilename(invoice: Invoice, expense: ClientExpense, 
   return fileSafe(`${resolved.number} - ${resolved.name} - Expense - ${label} - ${expense.expense_date}${extension}`);
 }
 
-export async function clientInvoicePdf(invoice: Invoice, payments: InvoicePayment[], site?: Site | null): Promise<Uint8Array> {
-  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+export async function clientInvoicePdf(
+  invoice: Invoice,
+  payments: InvoicePayment[],
+  site?: Site | null,
+  expenseLinks: ClientExpenseLink[] = [],
+): Promise<Uint8Array> {
+  const { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts, rgb } = await import('pdf-lib');
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -50,6 +56,20 @@ export async function clientInvoicePdf(invoice: Invoice, payments: InvoicePaymen
     wrapLine(safe(value), width, (s) => font.widthOfTextAtSize(s, size));
   const newPage = () => { page = doc.addPage([W, H]); y = H - M; };
   const ensure = (height: number) => { if (y - height < M) newPage(); };
+  const link = (label: string, url: string, x: number, yy: number, size = 9) => {
+    draw(label, x, yy, size, bold, navy);
+    const annotation = doc.context.register(doc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [x, yy - 2, x + bold.widthOfTextAtSize(label, size), yy + size + 2],
+      Border: [0, 0, 0],
+      A: { Type: 'Action', S: 'URI', URI: PDFString.of(url) },
+    }));
+    const key = PDFName.of('Annots');
+    const annotations = page.node.lookupMaybe(key, PDFArray) ?? doc.context.obj([]);
+    annotations.push(annotation);
+    page.node.set(key, annotations);
+  };
 
   const resolved = invoiceSite(site, invoice);
   doc.setTitle(`Invoice ${invoice.invoice_number} - ${resolved.number} ${resolved.name}`);
@@ -111,6 +131,18 @@ export async function clientInvoicePdf(invoice: Invoice, payments: InvoicePaymen
   if (paid > 0) total('Payments received', `- ${money(paid)}`);
   page.drawLine({ start: { x: 350, y: y + 5 }, end: { x: W - M, y: y + 5 }, thickness: 1.5, color: navy });
   total('Balance due', money(balance), true);
+
+  if (expenseLinks.length) {
+    y -= 8;
+    ensure(28 + expenseLinks.length * 18);
+    draw('Supporting expense receipts', M, y, 9, bold, gold);
+    y -= 17;
+    for (const expense of expenseLinks) {
+      ensure(18);
+      link(`Download ${expense.label}`, expense.url, M, y);
+      y -= 18;
+    }
+  }
 
   if (invoice.notes) {
     y -= 8;

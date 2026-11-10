@@ -48,7 +48,7 @@
 import { parseHotel } from '@/lib/hotel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Download, ExternalLink, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, X } from 'lucide-react';
+import { Check, Download, ExternalLink, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, Share2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { fmtMoney } from '@/lib/utils';
@@ -71,7 +71,7 @@ import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
 import JobLogInvoice, { InvoicePhoneEdit, type InvoiceEditor } from '@/components/JobLogInvoice';
 import {
   type AddableItem,
-  addLine, buildInvoice, downloadInvoiceXlsx, editLine, invoiceCharges, invoiceImportRows, jobLogInvoiceNumber, jobLogMemo, parseInvoiceMeta, qbLinesTotal,
+  addLine, buildInvoice, downloadInvoiceXlsx, dueDate, editLine, invoiceCharges, invoiceImportRows, jobLogInvoiceNumber, jobLogMemo, parseInvoiceMeta, qbLinesTotal,
   quickBooksLines, removeLine, type InvoiceHead, type InvoiceMeta, type InvoiceSent,
 } from '@/lib/job-log-invoice';
 import { downloadCSVText } from '@/lib/export';
@@ -208,6 +208,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const [draft, setDraft] = useState<JobSheet | null>(null);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const netview = isNetviewJob(w, w.customer_name);
   const [me, setMe] = useState({ name: '', email: '' });
   useEffect(() => {
@@ -620,6 +621,69 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
       setSending(false);
     }
   };
+  // The link Fred sends from the job log: the exact saved invoice breakdown,
+  // read-only for the client, with a real PDF and each approved receipt to
+  // download. It reuses the same invoice row/token so a link already sent
+  // keeps working after the office updates the saved job-log invoice.
+  const shareClientInvoice = async () => {
+    if (!invoice || !qbLines.length) { toastError('Nothing on the invoice is charged yet. Edit invoice and type the rates first.'); return; }
+    const db = createClient();
+    setSharing(true);
+    try {
+      const { data: { user } } = await db.auth.getUser();
+      if (!user) { toastError('Sign in again, then copy the client invoice link.'); return; }
+      const { data: existing } = await db.from('invoices')
+        .select('id, share_token').contains('work_order_ids', [w.id]).eq('invoice_number', qbNumber)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const token = (existing?.share_token as string | null) || (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+      const memo = jobLogMemo(w, qbLines);
+      const payload = {
+        user_id: user.id,
+        invoice_number: qbNumber,
+        client_name: invoiceHead.billTo || w.customer_name || null,
+        client_email: null,
+        client_phone: null,
+        title: w.site_name || w.title || `WO ${w.wo_number}`,
+        description: memo,
+        line_items: qbLines.map((line, index) => ({
+          id: `job-log-${index + 1}`,
+          description: [line.date, line.description].filter(Boolean).join(' · '),
+          quantity: line.qty,
+          rate: line.rate,
+        })),
+        subtotal: qbTotal,
+        tax_rate: 0,
+        tax_amount: 0,
+        total: qbTotal,
+        due_date: dueDate(savedMeta.date, savedMeta.terms),
+        notes: `Work order ${w.wo_number}`,
+        work_order_ids: [w.id],
+        share_token: token,
+        updated_at: new Date().toISOString(),
+      };
+      const saved = existing?.id
+        ? await db.from('invoices').update(payload).eq('id', existing.id)
+        : await db.from('invoices').insert({ ...payload, status: 'draft' });
+      if (saved.error) { toastError(`The client link wasn't created: ${saved.error.message}`); return; }
+      const url = `${window.location.origin}/invoice/${token}`;
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: `${qbNumber} - ${w.site_name || w.title || 'FAJ Solutions invoice'}`, url });
+          return;
+        } catch { /* The share sheet was closed; copy the link instead. */ }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        toastSuccess('Client invoice link copied. It is read-only and includes the PDF and expense receipts.');
+      } catch {
+        window.prompt('Copy this client invoice link:', url);
+      }
+    } catch {
+      toastError("The client link couldn't be created. Check your connection and try again.");
+    } finally {
+      setSharing(false);
+    }
+  };
   // Marked by hand: in QuickBooks by the import file or typed in, and sent on NetView's form. Home lists an invoice
   // until both are done (components/BillingToSend.tsx).
   const markInvoice = async (k: 'billed' | 'netview', on: boolean) => {
@@ -872,6 +936,10 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
         )}
         {copy === 'invoice' && !invDraft && (
           <>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || clientBlocked || sharing || saving} onClick={() => void shareClientInvoice()}
+              title="Copy a read-only client link with the invoice PDF and downloadable expense receipts">
+              <Share2 size={16} /> {sharing ? 'Creating link…' : 'Share client invoice'}
+            </button>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || clientBlocked || sending || saving} onClick={() => void sendToQuickBooks()}
               title="Make this invoice in QuickBooks, line by line"><Send size={16} /> {sending ? 'Sending…' : 'Send to QuickBooks'}</button>
             {netview && (

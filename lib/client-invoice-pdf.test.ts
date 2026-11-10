@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFArray, PDFDocument, PDFName } from 'pdf-lib';
 import { clientExpenseFilename, clientInvoiceFilename, clientInvoicePdf, invoiceSite } from './client-invoice-pdf';
 import type { Invoice } from './types';
 
@@ -23,8 +23,12 @@ describe('client invoice PDF', () => {
   });
 
   it('creates a readable PDF', async () => {
-    const pdf = await PDFDocument.load(await clientInvoicePdf(invoice, [], site));
+    const pdf = await PDFDocument.load(await clientInvoicePdf(invoice, [], site, [{
+      label: '2026-10-18 - Quality Inn - $350.74',
+      url: 'https://app.fajsolutions.com/invoice/token/expense/x1',
+    }]));
     expect(pdf.getTitle()).toContain('5006902 Wilmington NC');
     expect(pdf.getPageCount()).toBe(1);
+    expect(pdf.getPages()[0].node.lookupMaybe(PDFName.of('Annots'), PDFArray)?.size()).toBe(1);
   });
 });

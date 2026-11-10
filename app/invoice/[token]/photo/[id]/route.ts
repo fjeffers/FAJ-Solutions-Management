@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { clientReceiptPhotoFilename } from '@/lib/client-invoice-pdf';
 import type { Invoice, WorkOrder } from '@/lib/types';
+import { jobLogPhotoLabel } from '@/lib/job-log-photo-label';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,9 +29,8 @@ export async function GET(
   const { data: site } = await db.from('work_orders')
     .select('id, site_name, site_city, site_state, title, client_reference, wo_number, job_log_receipt_photos, job_log_left_out')
     .eq('id', photo.wo_id).maybeSingle<ReceiptWorkOrder>();
-  const labels = new Set(site?.job_log_receipt_photos ?? []);
-  const hotel = labels.has(`hotel:${photo.id}`);
-  if (!site || (!hotel && !labels.has(photo.id)) || new Set(site.job_log_left_out ?? []).has(`photo:${photo.id}`)) {
+  const meta = jobLogPhotoLabel(site?.job_log_receipt_photos ?? [], photo.id);
+  if (!site || meta.kind === 'photo' || meta.kind === 'odometer' || new Set(site.job_log_left_out ?? []).has(`photo:${photo.id}`)) {
     return new Response('Receipt not found.', { status: 404 });
   }
 
@@ -42,7 +42,7 @@ export async function GET(
   const file = await fetch(source, { cache: 'no-store' });
   if (!file.ok) return new Response('Receipt not found.', { status: 404 });
 
-  const filename = clientReceiptPhotoFilename(invoice, { taken_at: photo.taken_at, url: photo.url, hotel }, site);
+  const filename = clientReceiptPhotoFilename(invoice, { taken_at: photo.taken_at, url: photo.url, kind: meta.kind, vendor: meta.vendor }, site);
   const asciiFilename = filename.replace(/[^\x20-\x7E]/g, ' ').replace(/"/g, '').replace(/\s+/g, ' ').trim() || 'Receipt photo.jpg';
   return new Response(await file.arrayBuffer(), {
     headers: {

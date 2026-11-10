@@ -24,8 +24,8 @@ describe('client invoice PDF', () => {
       vendor: 'Quality Inn', category: 'hotel', expense_date: '2026-10-18', receipt_path: 'receipts/hotel.jpg',
     }, site)).toBe('5006902 - Wilmington NC - Expense - Quality Inn - 2026-10-18.jpg');
     expect(clientReceiptPhotoFilename(invoice, {
-      taken_at: '2026-10-18T12:00:00Z', url: 'https://example.com/hotel-photo.jpg', hotel: true,
-    }, site)).toBe('5006902 - Wilmington NC - Hotel receipt - 2026-10-18.jpg');
+      taken_at: '2026-10-18T12:00:00Z', url: 'https://example.com/hotel-photo.jpg', kind: 'hotel', vendor: 'Quality Inn',
+    }, site)).toBe('5006902 - Wilmington NC - Hotel receipt - Quality Inn - 2026-10-18.jpg');
   });
 
   it('creates a readable PDF', async () => {

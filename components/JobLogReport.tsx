@@ -46,6 +46,7 @@
 // total ("No, keep it off"). The names, Fred, 2026-10-30: "Keep the Name Job Log with the pictures of the
 // receipts, odometer the one i edit is the time sheet that reflect on the job log".
 import { parseHotel } from '@/lib/hotel';
+import { isJobLogPhotoLabel, jobLogPhotoLabel, jobLogPhotoLabelKey, type JobLogPhotoKind } from '@/lib/job-log-photo-label';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Download, ExternalLink, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, Share2, X } from 'lucide-react';
@@ -102,10 +103,6 @@ type Pic = {
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
 /** What a site photo is on the log. Saved in work_orders.job_log_receipt_photos: '<id>' a receipt, 'hotel:<id>' a
  *  hotel's receipt, 'odo:<id>' an odometer; none of them, a photo. */
-type PhotoKind = 'photo' | 'odometer' | 'receipt' | 'hotel';
-const kindKey: Record<Exclude<PhotoKind, 'photo'>, (id: string) => string> = { receipt: (id) => id, hotel: (id) => `hotel:${id}`, odometer: (id) => `odo:${id}` };
-const photoKind = (labels: Set<string>, id: string): PhotoKind =>
-  labels.has(id) ? 'receipt' : labels.has(`hotel:${id}`) ? 'hotel' : labels.has(`odo:${id}`) ? 'odometer' : 'photo';
 type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean; materials: boolean; otherReceipts: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
 
 const TZ = 'America/New_York';
@@ -172,10 +169,10 @@ function useLogChoices(woId: string, left: string[] | null | undefined, receiptI
   const savedOut = (key: string) => kept.current.leftOut.has(key);
   /** Label a site photo a photo, an odometer, a receipt or a hotel's receipt (Fred, 2026-10-31: "any pictures i
    *  added also it need to be edited"). */
-  const label = (photoId: string, kind: PhotoKind) => {
+  const label = (photoId: string, kind: JobLogPhotoKind, vendor?: string | null) => {
     const r = new Set(tapped.current.receiptPhotos);
-    for (const k of Object.values(kindKey)) r.delete(k(photoId));
-    if (kind !== 'photo') r.add(kindKey[kind](photoId));
+    for (const value of r) if (isJobLogPhotoLabel(value, photoId)) r.delete(value);
+    if (kind !== 'photo') r.add(jobLogPhotoLabelKey(kind, photoId, vendor));
     void choose({ ...tapped.current, receiptPhotos: r });
   };
   return { ...now, loaded, flip, label, savedOut };
@@ -255,6 +252,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   // among the others (Fred, 2026-10-26: "when i add a photo it not saving on the job log").
   const [added, setAdded] = useState(0);
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  const [readingReceipt, setReadingReceipt] = useState<string | null>(null);
   const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, meals: true, materials: true, otherReceipts: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
 
   useEffect(() => {
@@ -332,15 +330,19 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
     return () => document.body.classList.remove('job-log-open');
   }, []);
 
-  const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => ({
-    key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
-    caption: ({ photo: undefined, receipt: 'Receipt photo', hotel: 'Hotel receipt photo', odometer: 'Odometer photo' } as const)[photoKind(receiptPhotos, p.id)],
-    hotel: photoKind(receiptPhotos, p.id) === 'hotel',
-  }));
-  const sitePicsOf = (...kinds: PhotoKind[]) => sitePics.filter((p) => kinds.includes(photoKind(receiptPhotos, p.photoId!)));
+  const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => {
+    const meta = jobLogPhotoLabel(receiptPhotos, p.id);
+    const base = ({ photo: undefined, receipt: 'Receipt photo', hotel: 'Hotel receipt photo', rental: 'Vehicle rental receipt photo', odometer: 'Odometer photo' } as const)[meta.kind];
+    return {
+      key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
+      caption: base && meta.vendor ? `${base}, ${meta.vendor}` : base,
+      hotel: meta.kind === 'hotel',
+    };
+  });
+  const sitePicsOf = (...kinds: JobLogPhotoKind[]) => sitePics.filter((p) => kinds.includes(jobLogPhotoLabel(receiptPhotos, p.photoId!).kind));
   const shownPhotos = sitePicsOf('photo');
   // The receipts, then the site photos labeled receipts, by day.
-  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('receipt', 'hotel')]
+  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('receipt', 'hotel', 'rental')]
     .sort((a, b) => a.day.localeCompare(b.day));
   const shownOdometer = [...odometer.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('odometer')]
     .sort((a, b) => a.day.localeCompare(b.day));
@@ -840,7 +842,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
           // Taken out with its ✗; a declined receipt can be too, though it never prints either way.
           const taken = leftOut.has(p.key);
           const what = `${p.caption ?? 'Photo'} ${p.stamp}`;
-          const kind = p.photoId ? photoKind(receiptPhotos, p.photoId) : null;
+          const kind = p.photoId ? jobLogPhotoLabel(receiptPhotos, p.photoId).kind : null;
           return (
             <div key={p.key} className={out ? 'jl-avoid no-print' : 'jl-avoid'} style={{ position: 'relative' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -892,11 +894,27 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
               })()}
               {p.photoId && (
                 <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  {([['photo', 'Photo'], ['odometer', 'Odometer'], ['receipt', 'Receipt'], ['hotel', 'Hotel']] as const).map(([r, text]) => (
-                    <button key={text} type="button" aria-pressed={kind === r} onClick={() => { if (kind !== r) label(p.photoId!, r); }}
+                  {([['photo', 'Photo'], ['odometer', 'Odometer'], ['receipt', 'Receipt'], ['hotel', 'Hotel'], ['rental', 'Rental']] as const).map(([r, text]) => (
+                    <button key={text} type="button" aria-pressed={kind === r} disabled={readingReceipt === p.photoId}
+                      onClick={() => {
+                        if (r !== 'hotel' && r !== 'rental') {
+                          if (kind !== r) label(p.photoId!, r);
+                          return;
+                        }
+                        setReadingReceipt(p.photoId!);
+                        void fetch(p.src).then((response) => response.blob()).then(async (blob) => {
+                          const form = new FormData();
+                          form.set('wo_id', w.id);
+                          form.set('kind', 'receipt');
+                          form.set('file', blob, 'receipt.jpg');
+                          const response = await fetch('/api/jobs/read-photo', { method: 'POST', body: form });
+                          const body = await response.json().catch(() => ({})) as { result?: { vendor?: string | null } };
+                          label(p.photoId!, r, body.result?.vendor ?? null);
+                        }).catch(() => label(p.photoId!, r)).finally(() => setReadingReceipt(null));
+                      }}
                       style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '3px 2px', borderRadius: 8, cursor: 'pointer',
                         border: `1px solid ${kind === r ? '#0E1B2E' : '#D8D3C8'}`, background: kind === r ? '#0E1B2E' : '#fff', color: kind === r ? '#fff' : '#1B1C1F' }}>
-                      {text}
+                      {readingReceipt === p.photoId && (r === 'hotel' || r === 'rental') ? 'Reading…' : text}
                     </button>
                   ))}
                 </div>

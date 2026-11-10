@@ -5,6 +5,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { jobLogPhotoLabel } from '@/lib/job-log-photo-label';
 import type { Invoice, InvoicePayment } from '@/lib/types';
 import PrintButton from './PrintButton';
 import { todayISO } from '@/lib/utils';
@@ -47,13 +48,15 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
   const receiptWorkOrders = invoice.work_order_ids.length ? await supabase.from('work_orders')
     .select('id, job_log_receipt_photos, job_log_left_out').in('id', invoice.work_order_ids) as { data: ReceiptWorkOrder[] | null }
     : { data: [] as ReceiptWorkOrder[] };
-  const receiptLabels = new Map<string, { hotel: boolean; woId: string }>();
+  const receiptLabels = new Map<string, { kind: 'receipt' | 'hotel' | 'rental'; vendor: string | null; woId: string }>();
   for (const wo of receiptWorkOrders.data ?? []) {
     const left = new Set(wo.job_log_left_out ?? []);
-    for (const label of wo.job_log_receipt_photos ?? []) {
-      const hotel = label.startsWith('hotel:');
-      const id = hotel ? label.slice(6) : label;
-      if (id && !left.has(`photo:${id}`)) receiptLabels.set(id, { hotel, woId: wo.id });
+    const photoIds = (wo.job_log_receipt_photos ?? []).map((label) => label.split(':').at(-1)!).filter(Boolean);
+    for (const id of photoIds) {
+      const meta = jobLogPhotoLabel(wo.job_log_receipt_photos ?? [], id);
+      if (meta.kind !== 'photo' && meta.kind !== 'odometer' && !left.has(`photo:${id}`)) {
+        receiptLabels.set(id, { kind: meta.kind, vendor: meta.vendor, woId: wo.id });
+      }
     }
   }
   type ReceiptPhoto = { id: string; wo_id: string; taken_at: string; contractor_name: string | null };
@@ -180,7 +183,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
                       <a key={photo.id} href={`/invoice/${encodeURIComponent(token)}/photo/${encodeURIComponent(photo.id)}`}
                         style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: '1px solid #e5dfd2', borderRadius: 10, padding: '10px 12px', color: '#0E1B2E', textDecoration: 'none', fontSize: 13 }}>
                         <span>
-                          <b>{label?.hotel ? 'Hotel receipt' : 'Receipt photo'}</b>
+                          <b>{label?.kind === 'hotel' ? 'Hotel receipt' : label?.kind === 'rental' ? 'Vehicle rental receipt' : 'Receipt photo'}{label?.vendor ? `, ${label.vendor}` : ''}</b>
                           <span style={{ color: '#777', marginLeft: 8 }}>{fmtDate(photo.taken_at)}</span>
                         </span>
                         <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>Download</span>

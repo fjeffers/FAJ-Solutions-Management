@@ -48,6 +48,7 @@ describe('business command center', () => {
       todayJobs: 1,
       inField: 1,
       activeTechs: 2,
+      openInvoices: 1,
       outstandingInvoices: 750,
       overdueInvoices: 1,
       inventoryItems: 3,

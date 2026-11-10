@@ -79,7 +79,8 @@ export default function QuickBooksReceivablesView({
     billed: sum.billed + Number(row.total || 0),
     received: sum.received + Math.max(0, Number(row.total || 0) - Number(row.balance || 0)),
     outstanding: sum.outstanding + Number(row.balance || 0),
-  }), { billed: 0, received: 0, outstanding: 0 }), [rows]);
+    open: sum.open + (Number(row.balance || 0) > 0.005 ? 1 : 0),
+  }), { billed: 0, received: 0, outstanding: 0, open: 0 }), [rows]);
 
   return (
     <section className="glass card" style={{ maxWidth: 1200, margin: '14px auto 0', padding: 16 }}>
@@ -95,15 +96,16 @@ export default function QuickBooksReceivablesView({
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(130px, 1fr))', gap: 8, marginTop: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 14 }}>
         {[
-          ['Invoiced', totals.billed],
-          ['Client paid', totals.received],
-          ['Clients owe', totals.outstanding],
-        ].map(([label, value]) => (
-          <div key={String(label)} style={{ padding: 10, border: '1px solid #E5E7EB', borderRadius: 10 }}>
+          { label: 'Open invoices', value: String(totals.open) },
+          { label: 'Clients owe', value: fmtMoney(totals.outstanding) },
+          { label: 'Client paid', value: fmtMoney(totals.received) },
+          { label: 'Invoiced', value: fmtMoney(totals.billed) },
+        ].map(({ label, value }) => (
+          <div key={label} style={{ padding: 10, border: '1px solid #E5E7EB', borderRadius: 10 }}>
             <div style={{ fontSize: 10, textTransform: 'uppercase', color: '#667085', fontWeight: 800 }}>{label}</div>
-            <div style={{ fontSize: 19, fontWeight: 850, marginTop: 2 }}>{fmtMoney(Number(value))}</div>
+            <div style={{ fontSize: 19, fontWeight: 850, marginTop: 2 }}>{value}</div>
           </div>
         ))}
       </div>
@@ -136,7 +138,7 @@ export default function QuickBooksReceivablesView({
                         {row.email_status === 'EmailSent' ? 'Sent to client' : row.email_status === 'NeedToSend' ? 'Needs sending' : 'In QuickBooks'}
                       </div>
                     </td>
-                    <td style={{ padding: '9px 7px' }}>{workOrder ? `WO ${workOrder.wo_number}` : '—'}</td>
+                    <td style={{ padding: '9px 7px' }}>{workOrder ? `WO ${workOrder.wo_number}` : 'QuickBooks only'}</td>
                     <td style={{ padding: '9px 7px' }}>{row.customer_name || workOrder?.customer_name || '—'}</td>
                     <td style={{ padding: '9px 7px' }}>{date(row.sent_at)}</td>
                     <td style={{ padding: '9px 7px' }}>{fmtMoney(Number(row.total))}</td>

@@ -370,6 +370,12 @@ export type QuickBooksInvoiceStatus = {
   updatedAt: string | null;
 };
 
+export type QuickBooksOpenInvoice = QuickBooksInvoiceStatus & {
+  customerName: string | null;
+  invoiceDate: string | null;
+  dueDate: string | null;
+};
+
 /** Current amount and balance for an invoice QuickBooks owns. */
 export async function getInvoiceStatus(
   environment: 'sandbox' | 'production',
@@ -391,6 +397,42 @@ export async function getInvoiceStatus(
     emailStatus: typeof inv.EmailStatus === 'string' ? inv.EmailStatus : null,
     updatedAt: typeof inv.MetaData?.LastUpdatedTime === 'string' ? inv.MetaData.LastUpdatedTime : null,
   };
+}
+
+/** Every invoice QuickBooks currently considers open, including ones created directly there. */
+export async function listOpenInvoices(
+  environment: 'sandbox' | 'production',
+  realmId: string,
+  accessToken: string,
+): Promise<QuickBooksOpenInvoice[]> {
+  type QboInvoice = {
+    Id?: string;
+    DocNumber?: string;
+    TotalAmt?: number;
+    Balance?: number;
+    EmailStatus?: string;
+    TxnDate?: string;
+    DueDate?: string;
+    CustomerRef?: { name?: string };
+    MetaData?: { LastUpdatedTime?: string };
+  };
+  const invoices = await qboQuery<QboInvoice>(
+    environment,
+    realmId,
+    accessToken,
+    "SELECT * FROM Invoice WHERE Balance > '0' ORDERBY TxnDate DESC MAXRESULTS 1000",
+  );
+  return invoices.map((invoice) => ({
+    id: String(invoice.Id ?? ''),
+    docNumber: String(invoice.DocNumber ?? ''),
+    total: Number(invoice.TotalAmt ?? 0),
+    balance: Number(invoice.Balance ?? 0),
+    emailStatus: typeof invoice.EmailStatus === 'string' ? invoice.EmailStatus : null,
+    updatedAt: typeof invoice.MetaData?.LastUpdatedTime === 'string' ? invoice.MetaData.LastUpdatedTime : null,
+    customerName: typeof invoice.CustomerRef?.name === 'string' ? invoice.CustomerRef.name : null,
+    invoiceDate: typeof invoice.TxnDate === 'string' ? invoice.TxnDate : null,
+    dueDate: typeof invoice.DueDate === 'string' ? invoice.DueDate : null,
+  })).filter((invoice) => invoice.id);
 }
 
 /**

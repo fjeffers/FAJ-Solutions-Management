@@ -53,9 +53,12 @@ vi.mock('@/lib/quickbooks-session', () => ({
 }));
 
 vi.mock('@/lib/quickbooks', () => ({
-  getInvoiceStatus: async (_environment: string, _realm: string, _token: string, id: string) => id === 'qbo-field'
-    ? { id, docNumber: 'FS-22', total: 1000, balance: 250, emailStatus: 'EmailSent', updatedAt: null }
-    : { id, docNumber: 'LDS-5006902', total: 1800, balance: 0, emailStatus: 'NeedToSend', updatedAt: null },
+  listOpenInvoices: async () => [
+    { id: 'qbo-field', docNumber: 'FS-22', total: 1000, balance: 250, emailStatus: 'EmailSent', updatedAt: null, customerName: 'NetView', invoiceDate: '2026-11-07', dueDate: '2026-12-07' },
+    { id: 'qbo-direct', docNumber: '1245', total: 190, balance: 190, emailStatus: 'EmailSent', updatedAt: null, customerName: 'NetView', invoiceDate: '2026-10-27', dueDate: '2026-11-11' },
+  ],
+  getInvoiceStatus: async (_environment: string, _realm: string, _token: string, id: string) =>
+    ({ id, docNumber: 'LDS-5006902', total: 1800, balance: 0, emailStatus: 'NeedToSend', updatedAt: null }),
   invoicePaymentDates: async () => new Map([
     ['qbo-field', { amount: 750, latestDate: '2026-11-08' }],
     ['qbo-job', { amount: 1800, latestDate: '2026-11-09' }],
@@ -67,7 +70,7 @@ const { loadQuickBooksReceivables } = await import('./quickbooks-receivables');
 describe('loadQuickBooksReceivables', () => {
   it('combines field-sheet and job-log invoices with live balances and payment dates', async () => {
     const rows = await loadQuickBooksReceivables('fred');
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows).toEqual(expect.arrayContaining([
       expect.objectContaining({
         work_order_id: 'wo-field',
@@ -85,6 +88,15 @@ describe('loadQuickBooksReceivables', () => {
         status: 'paid',
         balance: 0,
         paid_at: '2026-11-09T12:00:00.000Z',
+      }),
+      expect.objectContaining({
+        work_order_id: null,
+        source_type: 'quickbooks',
+        qbo_invoice_number: '1245',
+        customer_name: 'NetView',
+        status: 'sent',
+        balance: 190,
+        due_date: '2026-11-11',
       }),
     ]));
   });

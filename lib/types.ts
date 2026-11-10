@@ -1019,7 +1019,7 @@ export type InvoicePayment = {
 
 export type QuickBooksReceivable = {
   work_order_id: string | null;
-  source_type: 'job_log' | 'field_sheet';
+  source_type: 'job_log' | 'field_sheet' | 'quickbooks';
   qbo_invoice_id: string;
   qbo_invoice_number: string | null;
   customer_name: string | null;
@@ -1027,6 +1027,7 @@ export type QuickBooksReceivable = {
   balance: number;
   status: 'sent' | 'partial' | 'paid' | 'void';
   sent_at: string | null;
+  due_date: string | null;
   paid_at: string | null;
   last_payment_at: string | null;
   email_status: string | null;

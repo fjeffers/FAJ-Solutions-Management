@@ -2,7 +2,7 @@
 // ApplicationAuthorizationFailed (3100), a real company asked of the sandbox.
 // findCompany asks the other QuickBooks before giving up.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { findCompany, findInvoiceByNumber, getInvoiceStatus, invoicePaymentDates } from './quickbooks';
+import { findCompany, findInvoiceByNumber, getInvoiceStatus, invoicePaymentDates, listOpenInvoices } from './quickbooks';
 
 const FAULT = JSON.stringify({ fault: { error: [{ message: 'message=ApplicationAuthorizationFailed; errorCode=003100; statusCode=403', code: '3100' }], type: 'SERVICE' } });
 function quickbooks(company: { host: string; name: string }) {
@@ -66,6 +66,29 @@ describe('findInvoiceByNumber', () => {
 });
 
 describe('QuickBooks receivables', () => {
+  it('lists every invoice with an open balance, including invoices created directly in QuickBooks', async () => {
+    let query = '';
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      query = new URL(url).searchParams.get('query') ?? '';
+      return new Response(JSON.stringify({
+        QueryResponse: {
+          Invoice: [{
+            Id: '1245', DocNumber: '1245', TotalAmt: 190, Balance: 190,
+            EmailStatus: 'EmailSent', TxnDate: '2026-10-27', DueDate: '2026-11-11',
+            CustomerRef: { name: 'NetView' }, MetaData: { LastUpdatedTime: '2026-10-27T12:00:00-04:00' },
+          }],
+          maxResults: 1,
+        },
+      }), { status: 200 });
+    }));
+
+    await expect(listOpenInvoices('production', 'realm', 'token')).resolves.toEqual([{
+      id: '1245', docNumber: '1245', total: 190, balance: 190, emailStatus: 'EmailSent',
+      updatedAt: '2026-10-27T12:00:00-04:00', customerName: 'NetView', invoiceDate: '2026-10-27', dueDate: '2026-11-11',
+    }]);
+    expect(query).toBe("SELECT * FROM Invoice WHERE Balance > '0' ORDERBY TxnDate DESC MAXRESULTS 1000");
+  });
+
   it('reads the current total and balance from QuickBooks', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       Invoice: {

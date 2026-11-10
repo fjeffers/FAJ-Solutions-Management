@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getValidQboSession } from '@/lib/quickbooks-session';
-import { getInvoiceStatus, invoicePaymentDates } from '@/lib/quickbooks';
+import { getInvoiceStatus, invoicePaymentDates, listOpenInvoices, type QuickBooksInvoiceStatus } from '@/lib/quickbooks';
 import type { QuickBooksReceivable } from '@/lib/types';
 
 type SourceInvoice = {
@@ -13,12 +13,22 @@ type SourceInvoice = {
   sentAt: string | null;
 };
 
+type InvoiceRow = {
+  source: SourceInvoice | null;
+  qbo: QuickBooksInvoiceStatus;
+  customerName: string | null;
+  invoiceDate: string | null;
+  dueDate: string | null;
+};
+
 function qboMeta(raw: unknown): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const invoice = raw as Record<string, unknown>;
   const qbo = invoice.qbo;
   return qbo && typeof qbo === 'object' && !Array.isArray(qbo) ? qbo as Record<string, unknown> : null;
 }
+
+const numberKey = (value: string) => value.trim().toLowerCase();
 
 export async function loadQuickBooksReceivables(userId: string): Promise<QuickBooksReceivable[]> {
   const admin = createAdminClient();
@@ -61,34 +71,58 @@ export async function loadQuickBooksReceivables(userId: string): Promise<QuickBo
     sentAt: row.sent_at as string | null,
   }));
   const sources = [...jobRows, ...fieldRows];
-  const workOrderIds = [...new Set(sources.map((s) => s.workOrderId))];
+  const workOrderIds = [...new Set(sources.map((source) => source.workOrderId))];
   const { data: workOrders, error: workOrderError } = workOrderIds.length
     ? await admin.from('work_orders').select('id, customer_name').in('id', workOrderIds)
     : { data: [], error: null };
   if (workOrderError) throw workOrderError;
-  const customers = new Map((workOrders ?? []).map((w) => [w.id as string, w.customer_name as string | null]));
+  const customers = new Map((workOrders ?? []).map((workOrder) => [workOrder.id as string, workOrder.customer_name as string | null]));
 
   const { environment, realm_id: realm, access_token: token } = session;
-  const statuses = await Promise.all(sources.map((source) =>
-    getInvoiceStatus(environment, realm, token, source.qboId).then((qbo) => ({ source, qbo }))
-  ));
-  const payments = await invoicePaymentDates(environment, realm, token, sources.map((s) => s.qboId));
+  const openInvoices = await listOpenInvoices(environment, realm, token);
+  const sourcesById = new Map(sources.map((source) => [source.qboId, source]));
+  const sourcesByNumber = new Map(sources.filter((source) => source.number).map((source) => [numberKey(source.number), source]));
+  const usedSources = new Set<SourceInvoice>();
+  const rows: InvoiceRow[] = openInvoices.map((qbo) => {
+    const source = sourcesById.get(qbo.id) ?? sourcesByNumber.get(numberKey(qbo.docNumber)) ?? null;
+    if (source) usedSources.add(source);
+    return {
+      source,
+      qbo,
+      customerName: qbo.customerName,
+      invoiceDate: qbo.invoiceDate,
+      dueDate: qbo.dueDate,
+    };
+  });
+
+  const remainingSources = sources.filter((source) => !usedSources.has(source));
+  const remaining = await Promise.all(remainingSources.map(async (source): Promise<InvoiceRow> => ({
+    source,
+    qbo: await getInvoiceStatus(environment, realm, token, source.qboId),
+    customerName: source.customer || customers.get(source.workOrderId) || null,
+    invoiceDate: source.sentAt?.slice(0, 10) ?? null,
+    dueDate: null,
+  })));
+  rows.push(...remaining);
+
+  const payments = await invoicePaymentDates(environment, realm, token, rows.map((row) => row.qbo.id));
   const now = new Date().toISOString();
-  return statuses.map(({ source, qbo }) => {
-    const total = qbo.total || source.total;
+  return rows.map(({ source, qbo, customerName, invoiceDate, dueDate }) => {
+    const total = qbo.total || source?.total || 0;
     const balance = Math.max(0, qbo.balance);
     const status = total <= 0 ? 'void' : balance <= 0.005 ? 'paid' : balance < total - 0.005 ? 'partial' : 'sent';
-    const payment = payments.get(source.qboId);
+    const payment = payments.get(qbo.id);
     return {
-      work_order_id: source.workOrderId,
-      source_type: source.sourceType,
-      qbo_invoice_id: source.qboId,
-      qbo_invoice_number: qbo.docNumber || source.number || null,
-      customer_name: source.customer || customers.get(source.workOrderId) || null,
+      work_order_id: source?.workOrderId ?? null,
+      source_type: source?.sourceType ?? 'quickbooks',
+      qbo_invoice_id: qbo.id,
+      qbo_invoice_number: qbo.docNumber || source?.number || null,
+      customer_name: source?.customer || customerName || (source ? customers.get(source.workOrderId) : null) || null,
       total,
       balance,
       status,
-      sent_at: source.sentAt,
+      sent_at: source?.sentAt ?? (invoiceDate ? `${invoiceDate}T12:00:00.000Z` : qbo.updatedAt),
+      due_date: dueDate,
       paid_at: status === 'paid' && payment?.latestDate ? `${payment.latestDate}T12:00:00.000Z` : null,
       last_payment_at: payment?.latestDate ?? null,
       email_status: qbo.emailStatus,

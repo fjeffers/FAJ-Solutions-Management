@@ -20,6 +20,7 @@ export type BusinessSnapshot = {
   todayJobs: number;
   inField: number;
   activeTechs: number;
+  openInvoices: number;
   outstandingInvoices: number;
   overdueInvoices: number;
   inventoryItems: number;
@@ -78,6 +79,7 @@ export function businessSnapshot({
       (w) => w.wo_status === 'In Progress' && (w.scheduled_date || w.start_date) === today,
     ).length,
     activeTechs: contractors.filter((c) => !c.on_hold).length,
+    openInvoices: openInvoices.length,
     outstandingInvoices: openInvoices.reduce((sum, i) => sum + i.due, 0),
     overdueInvoices: openInvoices.filter(({ invoice }) => !!invoice.due_date && invoice.due_date < today).length,
     inventoryItems: materials.length,
@@ -108,20 +110,37 @@ export default function BusinessCommandCenter({
   const look = normalizeHomeLook(home);
   const s = businessSnapshot({ workOrders, contractors, materials, quotes, invoices, invoicePayments });
   const [savedCustomers, setSavedCustomers] = useState<number | null>(null);
+  const [quickBooksOpen, setQuickBooksOpen] = useState<{ count: number; balance: number } | null>(null);
   useEffect(() => {
     const db = createClient();
-    const load = () => {
+    const loadCustomers = () => {
       void db.from('customers').select('id', { count: 'exact', head: true })
         .then(({ count, error }) => { if (!error) setSavedCustomers(count ?? 0); });
     };
+    const loadQuickBooks = () => {
+      void fetch('/api/quickbooks/receivables').then(async (response) => {
+        if (!response.ok) return;
+        const body = await response.json() as { invoices?: { balance?: number }[] };
+        const open = (body.invoices ?? []).filter((invoice) => Number(invoice.balance ?? 0) > 0.005);
+        setQuickBooksOpen({
+          count: open.length,
+          balance: open.reduce((sum, invoice) => sum + Number(invoice.balance ?? 0), 0),
+        });
+      }).catch(() => {});
+    };
+    const load = () => { loadCustomers(); loadQuickBooks(); };
     load();
-    const timer = window.setInterval(load, 30_000);
+    const customerTimer = window.setInterval(loadCustomers, 30_000);
+    const quickBooksTimer = window.setInterval(loadQuickBooks, 5 * 60_000);
     window.addEventListener('focus', load);
     return () => {
-      window.clearInterval(timer);
+      window.clearInterval(customerTimer);
+      window.clearInterval(quickBooksTimer);
       window.removeEventListener('focus', load);
     };
   }, []);
+  const openInvoiceCount = quickBooksOpen?.count ?? s.openInvoices;
+  const outstandingInvoices = quickBooksOpen?.balance ?? s.outstandingInvoices;
   const availableAppCards = [
     { key: 'attention', group: 'TODAY', title: 'Waiting on you', detail: 'Inbox, approvals and invoices', view: 'attention', icon: Bell },
     { key: 'followups', group: 'CRM', title: 'Follow-up', detail: 'Quotes, clients and technician replies', view: 'followups', icon: ClipboardCheck },
@@ -131,7 +150,7 @@ export default function BusinessCommandCenter({
     { key: 'workorders', group: 'ERP', title: 'Jobs', value: String(s.activeJobs), detail: `${s.todayJobs} scheduled today`, view: 'workorders', icon: FileChartColumn },
     { key: 'scheduling', group: 'ERP', title: 'Schedule', value: String(s.inField), detail: 'Jobs in progress now', view: 'scheduling', icon: CalendarDays },
     { key: 'contractors', group: 'ERP', title: 'Team', value: String(s.activeTechs), detail: 'Active technicians and assignments', view: 'contractors', icon: Users },
-    { key: 'financials', group: 'ERP', title: 'Money', value: fmtMoney(s.outstandingInvoices), detail: `${s.overdueInvoices} overdue invoice${s.overdueInvoices === 1 ? '' : 's'}`, view: 'financials', icon: WalletCards },
+    { key: 'financials', group: 'ERP', title: 'Money', value: fmtMoney(outstandingInvoices), detail: `${openInvoiceCount} open invoice${openInvoiceCount === 1 ? '' : 's'} in QuickBooks`, view: 'quickbooks', icon: WalletCards },
     { key: 'materials', group: 'ERP', title: 'Inventory', value: String(s.inventoryItems), detail: `${s.lowStock} item${s.lowStock === 1 ? '' : 's'} low on stock`, view: 'materials', icon: Boxes },
     { key: 'office', group: 'OFFICE', title: 'Reports & admin', value: String(s.completedJobs), detail: 'Completed jobs ready for records', view: 'office', icon: FileChartColumn },
     { key: 'ai', group: 'AI', title: 'AI generator', detail: 'Build a work order from files or notes', view: 'ai', icon: Sparkles },
@@ -146,13 +165,13 @@ export default function BusinessCommandCenter({
     { label: 'Open jobs', value: String(s.activeJobs), detail: `${s.todayJobs} today`, view: 'workorders', icon: BriefcaseBusiness },
     { label: 'In the field', value: String(s.inField), detail: 'Live now', view: 'field', icon: Gauge },
     { label: 'Open quotes', value: fmtMoney(s.openQuoteValue), detail: `${s.openQuotes} proposals`, view: 'quotes', icon: FileChartColumn },
-    { label: 'Outstanding', value: fmtMoney(s.outstandingInvoices), detail: `${s.overdueInvoices} overdue`, view: 'financials', icon: WalletCards },
+    { label: 'Outstanding', value: fmtMoney(outstandingInvoices), detail: `${openInvoiceCount} open invoices`, view: 'quickbooks', icon: WalletCards },
     { label: 'Inventory', value: String(s.inventoryItems), detail: `${s.lowStock} low stock`, view: 'materials', icon: Boxes },
   ] as const;
   const liveStatus = [
     { label: "Jobs on today's schedule", value: String(s.todayJobs), view: 'scheduling', tone: '#39D5FF' },
     { label: 'Work happening now', value: String(s.inField), view: 'field', tone: '#57E6A5' },
-    { label: 'Invoices needing attention', value: String(s.overdueInvoices), view: 'financials', tone: '#FFB74D' },
+    { label: 'Open QuickBooks invoices', value: String(openInvoiceCount), view: 'quickbooks', tone: '#FFB74D' },
     { label: 'Inventory needing attention', value: String(s.lowStock), view: 'materials', tone: '#FF6B7A' },
   ] as const;
   const themes = {

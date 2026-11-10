@@ -425,7 +425,12 @@ export async function findSimplySubJobsBySiteNumber(email: string, password: str
       const jobId = link.getAttribute('href')?.match(/\/jobs\/(\d+)\/overview/)?.[1] ?? '';
       const title = text(link);
       const siteNumber = title.match(/\b(\d{7})\b/)?.[1] ?? '';
-      return { jobId, siteNumber };
+      return {
+        jobId,
+        siteNumber,
+        title,
+        sourceUrl: jobId ? `${BASE}/jobs/${jobId}/overview` : '',
+      };
     })
     .filter((job) => job.jobId && job.siteNumber);
 

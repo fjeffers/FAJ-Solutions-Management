@@ -16,6 +16,7 @@ import BusinessCommandCenter from '@/components/BusinessCommandCenter';
 import AttentionPanel from '@/components/AttentionPanel';
 import BillingToSend from '@/components/BillingToSend';
 import OneInbox from '@/components/OneInbox';
+import SimplySubJobsHome from '@/components/SimplySubJobsHome';
 import { FieldAttention, ComingUp } from '@/components/FieldToday';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
 import { MoneyHub, isMoneyView } from '@/components/MoneyHub';
@@ -1963,6 +1964,10 @@ Go ahead?`)) return;
               onNewJob={openNewOrder}
               onAI={() => setHomeAiOpen(true)}
               onSearch={() => setSearchOpen(true)}
+            />
+            <SimplySubJobsHome
+              onOpenJob={(id) => openJobFrom(id, 'dashboard')}
+              onOpenImports={() => setView('import-queue')}
             />
             <div className="view-inner wf" style={{ maxWidth: 1200, margin: '14px auto 0' }}>
               <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'dashboard')}

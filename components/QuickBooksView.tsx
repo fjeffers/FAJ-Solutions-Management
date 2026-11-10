@@ -4,6 +4,7 @@ import { Printer, Link as LinkIcon, CheckCircle2 } from 'lucide-react';
 import { fmtMoney, fmtDate } from '@/lib/utils';
 import type { Payment, WorkOrder, Contractor, QuickBooksConnection, QuickBooksAccount } from '@/lib/types';
 import QuickBooksCompletedJobsExport from '@/components/QuickBooksCompletedJobsExport';
+import QuickBooksReceivablesView from '@/components/QuickBooksReceivablesView';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -147,6 +148,8 @@ export default function QuickBooksView({ payments, workOrders, contractors, conn
       </div>
 
       <QuickBooksConnectionPanel connection={connection} onReloaded={onReloaded} />
+
+      <QuickBooksReceivablesView workOrders={workOrders} payments={payments} />
 
       <QuickBooksCompletedJobsExport workOrders={workOrders} />
 

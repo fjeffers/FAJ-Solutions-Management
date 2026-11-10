@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
-import { clientInvoiceFilename, clientInvoicePdf, invoiceSite } from './client-invoice-pdf';
+import { clientExpenseFilename, clientInvoiceFilename, clientInvoicePdf, invoiceSite } from './client-invoice-pdf';
 import type { Invoice } from './types';
 
 const invoice = {
@@ -17,6 +17,9 @@ describe('client invoice PDF', () => {
   it('names each download with the site number and name', () => {
     expect(invoiceSite(site, invoice)).toEqual({ number: '5006902', name: 'Wilmington NC' });
     expect(clientInvoiceFilename(invoice, site)).toBe('5006902 - Wilmington NC - Invoice INV-22.pdf');
+    expect(clientExpenseFilename(invoice, {
+      vendor: 'Quality Inn', category: 'hotel', expense_date: '2026-10-18', receipt_path: 'receipts/hotel.jpg',
+    }, site)).toBe('5006902 - Wilmington NC - Expense - Quality Inn - 2026-10-18.jpg');
   });
 
   it('creates a readable PDF', async () => {

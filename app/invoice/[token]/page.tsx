@@ -38,6 +38,11 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
   const { data: payments } = await supabase
     .from('invoice_payments').select('*').eq('invoice_id', invoice.id)
     .order('payment_date') as { data: InvoicePayment[] | null };
+  type Expense = { id: string; category: string; vendor: string | null; amount: number; expense_date: string };
+  const expenses = invoice.work_order_ids.length ? await supabase
+    .from('job_expenses').select('id, category, vendor, amount, expense_date')
+    .in('wo_id', invoice.work_order_ids).eq('status', 'approved').not('receipt_path', 'is', null)
+    .order('expense_date') as { data: Expense[] | null } : { data: [] as Expense[] };
 
   const paid = (payments ?? []).reduce((s, p) => s + Number(p.amount), 0);
   const balance = Math.max(0, Number(invoice.total) - paid);
@@ -134,6 +139,24 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
             {invoice.notes && (
               <div style={{ background: '#f8f6f1', borderRadius: 12, padding: '12px 16px', marginTop: 18, fontSize: 13, color: '#555' }}>
                 <b style={{ color: '#8a6d2f' }}>Notes: </b>{invoice.notes}
+              </div>
+            )}
+
+            {(expenses.data ?? []).length > 0 && (
+              <div className="no-print" style={{ marginTop: 22, borderTop: '1px solid #eee8dc', paddingTop: 18 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, color: '#999', marginBottom: 8 }}>SUPPORTING EXPENSE RECEIPTS</div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {(expenses.data ?? []).map((expense) => (
+                    <a key={expense.id} href={`/invoice/${encodeURIComponent(token)}/expense/${encodeURIComponent(expense.id)}`}
+                      style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: '1px solid #e5dfd2', borderRadius: 10, padding: '10px 12px', color: '#0E1B2E', textDecoration: 'none', fontSize: 13 }}>
+                      <span>
+                        <b>{expense.vendor || expense.category.replace(/[_-]+/g, ' ')}</b>
+                        <span style={{ color: '#777', marginLeft: 8 }}>{fmtDate(expense.expense_date)}</span>
+                      </span>
+                      <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{money(Number(expense.amount))} · Download</span>
+                    </a>
+                  ))}
+                </div>
               </div>
             )}
           </div>

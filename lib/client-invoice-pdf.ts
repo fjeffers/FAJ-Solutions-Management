@@ -2,6 +2,7 @@ import type { Invoice, InvoicePayment, WorkOrder } from './types';
 import { wrapLine } from './doc-to-pdf';
 
 type Site = Pick<WorkOrder, 'site_name' | 'title' | 'client_reference' | 'wo_number'>;
+type ClientExpense = { vendor: string | null; category: string; expense_date: string; receipt_path: string | null };
 
 const safe = (value: unknown) => String(value ?? '').replace(/[^\x20-\x7E]/g, ' ');
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -23,6 +24,13 @@ export function invoiceSite(site: Site | null | undefined, invoice: Invoice) {
 export function clientInvoiceFilename(invoice: Invoice, site?: Site | null) {
   const resolved = invoiceSite(site, invoice);
   return fileSafe(`${resolved.number} - ${resolved.name} - Invoice ${invoice.invoice_number}.pdf`);
+}
+
+export function clientExpenseFilename(invoice: Invoice, expense: ClientExpense, site?: Site | null) {
+  const resolved = invoiceSite(site, invoice);
+  const extension = expense.receipt_path?.match(/(\.[a-z0-9]{1,8})$/i)?.[1].toLowerCase() ?? '';
+  const label = expense.vendor?.trim() || expense.category.replace(/[_-]+/g, ' ').trim() || 'Expense';
+  return fileSafe(`${resolved.number} - ${resolved.name} - Expense - ${label} - ${expense.expense_date}${extension}`);
 }
 
 export async function clientInvoicePdf(invoice: Invoice, payments: InvoicePayment[], site?: Site | null): Promise<Uint8Array> {

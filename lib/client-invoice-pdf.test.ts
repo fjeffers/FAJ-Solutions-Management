@@ -12,7 +12,10 @@ const invoice = {
 } as Invoice;
 
 describe('client invoice PDF', () => {
-  const site = { wo_number: '19101452', client_reference: 'Site 5006902', site_name: 'Wilmington NC', title: 'LDS - 5006902 - Wilmington NC' };
+  const site = {
+    wo_number: '19101452', client_reference: 'Site 5006902', site_name: 'LDS Site 5006902',
+    site_city: 'Wilmington', site_state: 'NC', title: 'LDS - 5006902 - Wilmington NC',
+  };
 
   it('names each download with the site number and name', () => {
     expect(invoiceSite(site, invoice)).toEqual({ number: '5006902', name: 'Wilmington NC' });

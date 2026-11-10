@@ -31,7 +31,7 @@ export async function GET(
   }
 
   const [{ data: site }, { data: receipt, error }] = await Promise.all([
-    db.from('work_orders').select('site_name, title, client_reference, wo_number').eq('id', expense.wo_id).maybeSingle(),
+    db.from('work_orders').select('site_name, site_city, site_state, title, client_reference, wo_number').eq('id', expense.wo_id).maybeSingle(),
     db.storage.from('job-receipts').download(expense.receipt_path),
   ]);
   if (error || !receipt) return new Response('Expense not found.', { status: 404 });
@@ -39,7 +39,7 @@ export async function GET(
   const filename = clientExpenseFilename(
     invoice,
     expense,
-    site as Pick<WorkOrder, 'site_name' | 'title' | 'client_reference' | 'wo_number'> | null,
+    site as Pick<WorkOrder, 'site_name' | 'site_city' | 'site_state' | 'title' | 'client_reference' | 'wo_number'> | null,
   );
   const asciiFilename = filename.replace(/[^\x20-\x7E]/g, ' ').replace(/"/g, '').replace(/\s+/g, ' ').trim() || 'Expense receipt';
 

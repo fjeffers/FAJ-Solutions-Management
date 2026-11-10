@@ -1,7 +1,7 @@
 import type { Invoice, InvoicePayment, WorkOrder } from './types';
 import { wrapLine } from './doc-to-pdf';
 
-type Site = Pick<WorkOrder, 'site_name' | 'title' | 'client_reference' | 'wo_number'>;
+type Site = Pick<WorkOrder, 'site_name' | 'site_city' | 'site_state' | 'title' | 'client_reference' | 'wo_number'>;
 type ClientExpense = { vendor: string | null; category: string; expense_date: string; receipt_path: string | null };
 export type ClientExpenseLink = { label: string; url: string };
 
@@ -12,13 +12,16 @@ const fileSafe = (s: string) => s.replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ').replace
 export function invoiceSite(site: Site | null | undefined, invoice: Invoice) {
   const source = [site?.client_reference, site?.site_name, site?.title, invoice.title, invoice.description].filter(Boolean).join(' ');
   const number = source.match(/\b(\d{7})\b/)?.[1] ?? site?.wo_number ?? invoice.invoice_number;
-  const rawName = site?.site_name || site?.title || invoice.title || invoice.client_name || 'Site';
-  const name = rawName
+  const cleanName = (value: string | null | undefined) => (value ?? '')
     .replace(/\b\d{7}\b/g, '')
     .replace(/\bLDS\b\s*[-–—:]?\s*/gi, '')
     .replace(/\s*[-–—]\s*$/g, '')
     .replace(/\s+/g, ' ')
-    .trim() || 'Site';
+    .trim();
+  const siteName = cleanName(site?.site_name);
+  const cityState = [site?.site_city, site?.site_state].filter(Boolean).join(' ').trim();
+  const name = (/^(?:site|church meetinghouse)$/i.test(siteName) ? cityState : siteName)
+    || cityState || cleanName(site?.title) || cleanName(invoice.title) || invoice.client_name || 'Site';
   return { number, name };
 }
 

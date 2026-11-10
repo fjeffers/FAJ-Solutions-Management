@@ -15,14 +15,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   const [{ data: payments }, { data: sites }, { data: expenses }] = await Promise.all([
     db.from('invoice_payments').select('*').eq('invoice_id', invoice.id).order('payment_date'),
     invoice.work_order_ids.length
-      ? db.from('work_orders').select('site_name, title, client_reference, wo_number').in('id', invoice.work_order_ids).limit(1)
+      ? db.from('work_orders').select('site_name, site_city, site_state, title, client_reference, wo_number').in('id', invoice.work_order_ids).limit(1)
       : Promise.resolve({ data: [] }),
     invoice.work_order_ids.length
       ? db.from('job_expenses').select('id, vendor, category, amount, expense_date').in('wo_id', invoice.work_order_ids)
         .eq('status', 'approved').not('receipt_path', 'is', null).order('expense_date')
       : Promise.resolve({ data: [] }),
   ]);
-  const site = (sites?.[0] ?? null) as Pick<WorkOrder, 'site_name' | 'title' | 'client_reference' | 'wo_number'> | null;
+  const site = (sites?.[0] ?? null) as Pick<WorkOrder, 'site_name' | 'site_city' | 'site_state' | 'title' | 'client_reference' | 'wo_number'> | null;
   const origin = new URL(request.url).origin;
   const expenseLinks = ((expenses ?? []) as { id: string; vendor: string | null; category: string; amount: number; expense_date: string }[])
     .map((expense) => ({

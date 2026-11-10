@@ -4,6 +4,7 @@ import { wrapLine } from './doc-to-pdf';
 type Site = Pick<WorkOrder, 'site_name' | 'site_city' | 'site_state' | 'title' | 'client_reference' | 'wo_number'>;
 type ClientExpense = { vendor: string | null; category: string; expense_date: string; receipt_path: string | null };
 export type ClientExpenseLink = { label: string; url: string };
+type ClientReceiptPhoto = { taken_at: string; url: string; hotel: boolean };
 
 const safe = (value: unknown) => String(value ?? '').replace(/[^\x20-\x7E]/g, ' ');
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -36,6 +37,13 @@ export function clientExpenseFilename(invoice: Invoice, expense: ClientExpense, 
   const extension = expense.receipt_path?.match(/(\.[a-z0-9]{1,8})$/i)?.[1].toLowerCase() ?? '';
   const label = expense.vendor?.trim() || expense.category.replace(/[_-]+/g, ' ').trim() || 'Expense';
   return fileSafe(`${resolved.number} - ${resolved.name} - Expense - ${label} - ${expense.expense_date}${extension}`);
+}
+
+export function clientReceiptPhotoFilename(invoice: Invoice, photo: ClientReceiptPhoto, site?: Site | null) {
+  const resolved = invoiceSite(site, invoice);
+  const extension = new URL(photo.url).pathname.match(/(\.[a-z0-9]{1,8})$/i)?.[1].toLowerCase() ?? '.jpg';
+  const day = photo.taken_at.split('T')[0];
+  return fileSafe(`${resolved.number} - ${resolved.name} - ${photo.hotel ? 'Hotel receipt' : 'Receipt photo'} - ${day}${extension}`);
 }
 
 export async function clientInvoicePdf(

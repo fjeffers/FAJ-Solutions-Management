@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PDFArray, PDFDocument, PDFName } from 'pdf-lib';
-import { clientExpenseFilename, clientInvoiceFilename, clientInvoicePdf, invoiceSite } from './client-invoice-pdf';
+import { clientExpenseFilename, clientInvoiceFilename, clientInvoicePdf, clientReceiptPhotoFilename, invoiceSite } from './client-invoice-pdf';
 import type { Invoice } from './types';
 
 const invoice = {
@@ -23,6 +23,9 @@ describe('client invoice PDF', () => {
     expect(clientExpenseFilename(invoice, {
       vendor: 'Quality Inn', category: 'hotel', expense_date: '2026-10-18', receipt_path: 'receipts/hotel.jpg',
     }, site)).toBe('5006902 - Wilmington NC - Expense - Quality Inn - 2026-10-18.jpg');
+    expect(clientReceiptPhotoFilename(invoice, {
+      taken_at: '2026-10-18T12:00:00Z', url: 'https://example.com/hotel-photo.jpg', hotel: true,
+    }, site)).toBe('5006902 - Wilmington NC - Hotel receipt - 2026-10-18.jpg');
   });
 
   it('creates a readable PDF', async () => {

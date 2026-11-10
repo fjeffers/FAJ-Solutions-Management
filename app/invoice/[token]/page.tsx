@@ -43,6 +43,24 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
     .from('job_expenses').select('id, category, vendor, amount, expense_date')
     .in('wo_id', invoice.work_order_ids).eq('status', 'approved').not('receipt_path', 'is', null)
     .order('expense_date') as { data: Expense[] | null } : { data: [] as Expense[] };
+  type ReceiptWorkOrder = { id: string; job_log_receipt_photos: string[] | null; job_log_left_out: string[] | null };
+  const receiptWorkOrders = invoice.work_order_ids.length ? await supabase.from('work_orders')
+    .select('id, job_log_receipt_photos, job_log_left_out').in('id', invoice.work_order_ids) as { data: ReceiptWorkOrder[] | null }
+    : { data: [] as ReceiptWorkOrder[] };
+  const receiptLabels = new Map<string, { hotel: boolean; woId: string }>();
+  for (const wo of receiptWorkOrders.data ?? []) {
+    const left = new Set(wo.job_log_left_out ?? []);
+    for (const label of wo.job_log_receipt_photos ?? []) {
+      const hotel = label.startsWith('hotel:');
+      const id = hotel ? label.slice(6) : label;
+      if (id && !left.has(`photo:${id}`)) receiptLabels.set(id, { hotel, woId: wo.id });
+    }
+  }
+  type ReceiptPhoto = { id: string; wo_id: string; taken_at: string; contractor_name: string | null };
+  const receiptPhotos = receiptLabels.size ? await supabase.from('wo_photos')
+    .select('id, wo_id, taken_at, contractor_name').in('id', [...receiptLabels.keys()]).in('wo_id', invoice.work_order_ids)
+    .order('taken_at') as { data: ReceiptPhoto[] | null } : { data: [] as ReceiptPhoto[] };
+  const supportingCount = (expenses.data ?? []).length + (receiptPhotos.data ?? []).length;
 
   const paid = (payments ?? []).reduce((s, p) => s + Number(p.amount), 0);
   const balance = Math.max(0, Number(invoice.total) - paid);
@@ -142,7 +160,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
               </div>
             )}
 
-            {(expenses.data ?? []).length > 0 && (
+            {supportingCount > 0 && (
               <div className="no-print" style={{ marginTop: 22, borderTop: '1px solid #eee8dc', paddingTop: 18 }}>
                 <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, color: '#999', marginBottom: 8 }}>SUPPORTING EXPENSE RECEIPTS</div>
                 <div style={{ display: 'grid', gap: 8 }}>
@@ -156,6 +174,19 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
                       <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{money(Number(expense.amount))} · Download</span>
                     </a>
                   ))}
+                  {(receiptPhotos.data ?? []).map((photo) => {
+                    const label = receiptLabels.get(photo.id);
+                    return (
+                      <a key={photo.id} href={`/invoice/${encodeURIComponent(token)}/photo/${encodeURIComponent(photo.id)}`}
+                        style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: '1px solid #e5dfd2', borderRadius: 10, padding: '10px 12px', color: '#0E1B2E', textDecoration: 'none', fontSize: 13 }}>
+                        <span>
+                          <b>{label?.hotel ? 'Hotel receipt' : 'Receipt photo'}</b>
+                          <span style={{ color: '#777', marginLeft: 8 }}>{fmtDate(photo.taken_at)}</span>
+                        </span>
+                        <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>Download</span>
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}

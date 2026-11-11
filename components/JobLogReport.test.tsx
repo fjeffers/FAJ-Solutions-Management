@@ -852,6 +852,7 @@ describe('Job log edited by the office', () => {
       const print = await screen.findByRole('button', { name: /print \/ save as pdf/i }) as HTMLButtonElement;
       await waitFor(() => expect(print.disabled).toBe(false));
       fireEvent.click(screen.getByRole('button', { name: 'Invoice' }));
+      expect(screen.getByRole('button', { name: /download invoice pdf/i })).toBeTruthy();
       const quickBooks = screen.getByRole('button', { name: /send to quickbooks/i });
       const netview = screen.getByRole('link', { name: /open netview link/i });
       expect(quickBooks.nextElementSibling).toBe(netview);
@@ -899,7 +900,7 @@ describe('Job log edited by the office', () => {
         ['', 'Total Materials', '', '$104.17'],
         ['10/21/2026', 'Material', "Lowe's", '1', '$104.17', '$104.17'],
         ['', 'Total Travel', '', '$402.50'],
-        ['10/19/2026', 'Hotel', 'Hotel charge for the week', '1', '$402.50', '$402.50'],
+        ['10/19/2026', 'Hotel', 'Quality Inn – Hotel charge for the week', '1', '$402.50', '$402.50'],
         ['', 'Lead Total', '', '$986.44'],
         ['Totals'],
         ['Labor', '', '$450.00'], ['Mileage', '', '$10.80'], ['Meals', '', '$18.97'], ['Materials', '', '$104.17'], ['Travel', '', '$402.50'], ['Total Invoice', '', '$986.44'],
@@ -1037,7 +1038,14 @@ describe('Job log edited by the office', () => {
       expect(document.querySelector('.jl-invoice')!.textContent).toContain('100.00');
       expect(document.querySelector('.jl-invoice')!.textContent).not.toMatch(/07:00|7:00/);
       expect(within(days).getByRole('button', { name: 'Add mileage, Paul Gibbs' })).toBeTruthy();
-      expect(within(days).getByRole('button', { name: 'Add a hotel, Paul Gibbs' })).toBeTruthy();
+      // A hotel's date, name and amount (Fred, 2026-11-09: "date for the hotel and hotel name and the amount?").
+      fireEvent.click(within(days).getByRole('button', { name: 'Add a hotel, Paul Gibbs' }));
+      const hotelNames = within(days).getAllByLabelText(/^Hotel name, Paul Gibbs/);
+      const hotelRow = hotelNames.at(-1)!.closest('[data-hotel-row]') as HTMLElement;
+      expect(within(hotelRow).getByLabelText(/^Hotel day, Paul Gibbs/)).toBeTruthy();
+      expect(within(hotelRow).getByLabelText(/^Hotel amount, Paul Gibbs/)).toBeTruthy();
+      fireEvent.change(hotelNames.at(-1)!, { target: { value: 'Hampton Inn Wilmington' } });
+      expect(document.querySelector('.jl-invoice')!.textContent).toContain('Hampton Inn Wilmington – Hotel charge');
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
       vi.unstubAllGlobals();
@@ -1145,7 +1153,7 @@ describe('Job log edited by the office', () => {
     expect((screen.getByLabelText('Per mile, Paul Gibbs') as HTMLInputElement).value).toBe('.652');
   }));
 
-  it('puts the hotels on their own line in the breakdown, and leaves the fuel off as the invoice does (Fred: "see it hotels also"; "the job log and invoice is not matching up")', () => withPunches(async () => {
+  it('puts hotels and rental fuel on their own lines in the breakdown', () => withPunches(async () => {
     const before = tables.job_expenses;
     tables.job_expenses = [...before,
       { id: 'h1', contractor_name: 'Paul Gibbs', category: 'hotel', vendor: 'Quality Inn', amount: 350.74, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/hotel.jpg' },
@@ -1158,11 +1166,10 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Client copy (rates)' }));
       await waitFor(() => expect(screen.getByRole('heading', { name: 'Breakdown' })).toBeTruthy());
       expect(rowsOf(screen.getByRole('heading', { name: 'Breakdown' })).slice(-2)).toEqual([
-        ['Materials', '$104.17'],
         ['Paul Gibbs hotel', '$350.74'],
+        ['Paul Gibbs rental vehicle fuel', '$40.00'],
       ]);
-      // $585 + $12.60 + $104.17 + $350.74, as the invoice: no fuel.
-      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,052.51');
+      expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$1,092.51');
     } finally {
       tables.job_expenses = before;
       delete tables.job_log_rates;

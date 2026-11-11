@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   clockOf, hoursScreenDays, hoursTotal, isHotel, milesFromOdometer, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours,
-  sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetToSave, type JobSheet, type TimeRow,
+  sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetToSave, withHotelBooking, type JobSheet, type TimeRow,
 } from './job-log-sheet';
 import type { Visit } from './job-log';
 import { sheetRows } from './field-sheet';
@@ -149,6 +149,20 @@ describe('the saved sheet', () => {
     const saved = sheetToSave({ ...sheet, time: [{ ...t('Paul Gibbs', '2026-10-20', '', ''), hours: 6 }] });
     expect(saved.time[0]).toEqual({ tech: 'Paul Gibbs', day: '2026-10-20', in: '', out: '', brk: 0, hours: 6 });
     expect(parseSheet(saved)!.time[0].hours).toBe(6);
+  });
+});
+
+describe('the hotel booked on the job', () => {
+  const empty: JobSheet = { time: [], miles: [], meals: [], materials: [], other: [] };
+
+  it('puts its date and name on the lead invoice with an amount ready to fill in', () => {
+    expect(withHotelBooking(empty, { name: 'Comfort Inn Wilmington', checkIn: '2026-11-08' }, 'Paul Gibbs', '2026-11-09').other)
+      .toEqual([{ tech: 'Paul Gibbs', day: '2026-11-08', store: 'Comfort Inn Wilmington', amount: 0, for: 'Lodging' }]);
+  });
+
+  it('does not duplicate an uploaded hotel receipt', () => {
+    const receipt = { ...empty, other: [{ tech: 'Paul Gibbs', day: '2026-11-08', store: 'Comfort Inn', amount: 350, for: 'Lodging' }] };
+    expect(withHotelBooking(receipt, { name: 'Comfort Inn', checkIn: '2026-11-08' }, 'Paul Gibbs', '2026-11-09')).toBe(receipt);
   });
 });
 

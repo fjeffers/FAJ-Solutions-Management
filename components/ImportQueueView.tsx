@@ -3,13 +3,15 @@ import { useState } from 'react';
 import { Mail, CheckCircle2, XCircle, Inbox, LinkIcon, Sheet, Upload, RefreshCw, ClipboardPaste } from 'lucide-react';
 import { fmtDate, fmtMoney } from '@/lib/utils';
 import { toastError, toastSuccess } from '@/lib/toast';
-import type { ImportQueueItem, GmailConnection } from '@/lib/types';
+import type { ImportQueueItem, GmailConnection, WorkOrder } from '@/lib/types';
+import { SIMPLYSUB_BOOKMARKLET } from '@/lib/simplysub';
 
 const SOURCE_LABELS: Record<string, string> = {
   netview_smartsheet: 'Netview/Smartsheet',
   field_nation: 'FieldNation',
   google_sheets: 'Google Sheets',
   google_docs: 'Google Docs',
+  simplysub: 'SimplySub',
 };
 
 export default function ImportQueueView({
@@ -18,12 +20,14 @@ export default function ImportQueueView({
   onApprove,
   onReject,
   onImported,
+  workOrders,
 }: {
   items: ImportQueueItem[];
   connection: GmailConnection | null;
   onApprove: (id: string, opts?: { silent?: boolean }) => Promise<boolean | void>;
   onReject: (id: string) => Promise<void>;
   onImported?: () => void;
+  workOrders: Pick<WorkOrder, 'id' | 'wo_number' | 'title' | 'site_name' | 'customer_name' | 'start_date'>[];
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sheetUrl, setSheetUrl] = useState('');
@@ -32,6 +36,9 @@ export default function ImportQueueView({
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const [importing, setImporting] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [simplyDrive, setSimplyDrive] = useState('');
+  const [simplyBusy, setSimplyBusy] = useState(false);
+  const [attachTargets, setAttachTargets] = useState<Record<string, string>>({});
   const pending = items.filter((i) => i.status === 'pending');
   const reviewed = items.filter((i) => i.status !== 'pending').slice(0, 20);
   const approvedCount = items.filter((i) => i.status === 'approved').length;
@@ -165,6 +172,45 @@ Each one also opens a site visit at that address.`)) return;
       toastError('Import failed — check your connection');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const importSimplySub = async (file: File) => {
+    setSimplyBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('deliverable_link', simplyDrive.trim());
+      const res = await fetch('/api/import-queue/from-simplysub', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toastError(data.error || 'Could not import that SimplySub job'); return; }
+      toastSuccess(data.duplicate ? 'That SimplySub job was already imported' : `SimplySub job added for review · ${data.tasks ?? 0} checklist items · ${data.documents ?? 0} documents`);
+      onImported?.();
+    } catch {
+      toastError('Could not import that SimplySub job');
+    } finally {
+      setSimplyBusy(false);
+    }
+  };
+
+  const attachToExisting = async (itemId: string) => {
+    const workOrderId = attachTargets[itemId];
+    if (!workOrderId) { toastError('Choose the current work order first'); return; }
+    setBusyId(itemId);
+    try {
+      const res = await fetch(`/api/import-queue/${itemId}/attach`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ work_order_id: workOrderId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toastError(data.error || 'Could not add the import to that work order'); return; }
+      toastSuccess(`Added the checkout workflow to WO#${data.wo_number}`);
+      onImported?.();
+    } catch {
+      toastError('Could not add the import to that work order');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -303,6 +349,32 @@ Ticket Number: FLN5092
         </div>
       </div>
 
+      <div className="glass card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <Upload size={18} color="#0E1B2E" />
+          <div style={{ fontWeight: 700, fontSize: 13 }}>Import a SimplySub job</div>
+        </div>
+        <div style={{ fontSize: 11, color: '#999', marginBottom: 10, lineHeight: 1.5 }}>
+          Drag <strong>Copy SimplySub job</strong> to your bookmarks bar. Open any SimplySub job while signed in, tap the bookmark,
+          then upload the downloaded file here. FAJ turns its repeated cable tasks into one short daily checklist with daily questions.
+          When you approve it, PDFs are copied into the work order and the other source files stay linked there.
+          Nothing becomes a work order until you approve it below.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <a className="btn btn-ghost" href={SIMPLYSUB_BOOKMARKLET} onClick={(e) => { e.preventDefault(); toastSuccess('Drag this button to your bookmarks bar, then use it on a SimplySub job.'); }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <LinkIcon size={13} /> Copy SimplySub job
+          </a>
+          <input className="input" value={simplyDrive} onChange={(e) => setSimplyDrive(e.target.value)}
+            placeholder="Cabling Google Drive folder link (optional)" style={{ flex: 1, minWidth: 220, fontSize: 13 }} />
+          <label className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: simplyBusy ? 'wait' : 'pointer', opacity: simplyBusy ? 0.6 : 1 }}>
+            <Upload size={13} /> {simplyBusy ? 'Importing…' : 'Upload job file'}
+            <input type="file" accept="application/json,.json" disabled={simplyBusy} style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importSimplySub(f); }} />
+          </label>
+        </div>
+      </div>
+
       <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase' }}>
           Pending Review ({pending.length})
@@ -344,7 +416,31 @@ Ticket Number: FLN5092
                   <span>Amount: <strong>{fmtMoney(item.parsed_fields.total_amount)}</strong></span>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              {item.source === 'simplysub' && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <select
+                    className="input"
+                    value={attachTargets[item.id] ?? ''}
+                    onChange={(e) => setAttachTargets((targets) => ({ ...targets, [item.id]: e.target.value }))}
+                    style={{ minWidth: 280, flex: 1, fontSize: 13 }}
+                  >
+                    <option value="">Choose the current work order…</option>
+                    {workOrders.map((workOrder) => (
+                      <option key={workOrder.id} value={workOrder.id}>
+                        WO#{workOrder.wo_number} · {workOrder.site_name || workOrder.title || workOrder.customer_name || 'Untitled'}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn btn-primary"
+                    disabled={busyId === item.id || !attachTargets[item.id]}
+                    onClick={() => void attachToExisting(item.id)}
+                  >
+                    Add to Existing WO
+                  </button>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-primary"
                   disabled={busyId === item.id}

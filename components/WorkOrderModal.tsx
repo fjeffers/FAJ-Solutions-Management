@@ -9,6 +9,7 @@ import {
   Link2,
   ClipboardPaste,
   LayoutTemplate,
+  RefreshCw,
 } from 'lucide-react';
 import { linkLabel, parseClientLinks } from '@/lib/client-links';
 import { parseTrackerRow } from '@/lib/tracker-row';
@@ -28,6 +29,111 @@ import WOTimeLogs from '@/components/WOTimeLogs';
 import { JobDays } from '@/components/HoursView';
 import { HOURS_SAVE_ALL } from '@/lib/hours-look';
 import WorkOrderChatPanel from '@/components/WorkOrderChatPanel';
+import LdsCheckoutMonitor from '@/components/LdsCheckoutMonitor';
+
+type SimplySubSyncView = {
+  jobId?: string;
+  siteNumber?: string;
+  status?: string;
+  percentComplete?: number | null;
+  syncedAt?: string;
+  sourceUrl?: string;
+  laborHours?: number;
+  workEntries?: number;
+  completedTasks?: number;
+  noteCount?: number;
+  fileCount?: number;
+  expenseTotal?: number;
+  assignmentCount?: number;
+  labor?: { employee: string; hours: number }[];
+  notes?: { by: string; date: string; category: string; note: string }[];
+  expenses?: { date: string; supplier: string; category: string; description: string; amount: number }[];
+  assignments?: string[];
+  forms?: { name: string; status: string; startedBy: string; startedAt: string; url: string }[];
+  techOnly?: boolean;
+  excludedPeople?: number;
+};
+
+function SimplySubMonitor({ workOrder }: { workOrder: WorkOrder }) {
+  const sync = workOrder.custom?._simplysub_sync as SimplySubSyncView | undefined;
+  if (!sync?.jobId) return null;
+  const metrics = [
+    ['Progress', sync.percentComplete == null ? '—' : `${sync.percentComplete}%`],
+    ['Labor', `${sync.laborHours ?? 0} hrs`],
+    ['Completed tasks', String(sync.completedTasks ?? 0)],
+    ['Files & photos', String(sync.fileCount ?? 0)],
+    ['Notes', String(sync.noteCount ?? 0)],
+    ['Expenses', fmtMoney(sync.expenseTotal ?? 0)],
+  ];
+  return (
+    <div style={{ border: '1px solid #c7d2fe', borderRadius: 14, padding: 16, background: '#eef2ff' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div>
+          <div style={{ display: 'flex', gap: 7, alignItems: 'center', fontWeight: 800, color: '#312e81' }}>
+            <RefreshCw size={15} /> SimplySub monitor · Site {sync.siteNumber}
+          </div>
+          <div style={{ fontSize: 12, color: '#6366f1', marginTop: 3 }}>
+            {sync.status || 'No status'} · Last pulled {sync.syncedAt ? new Date(sync.syncedAt).toLocaleString() : '—'}
+          </div>
+          {sync.techOnly && (
+            <div style={{ fontSize: 11, color: '#4338ca', marginTop: 3 }}>
+              Your FAJ techs only{sync.excludedPeople ? ` · ${sync.excludedPeople} other ${sync.excludedPeople === 1 ? 'person' : 'people'} left out` : ''} · Mileage comes from the FAJ app
+            </div>
+          )}
+        </div>
+        {sync.sourceUrl && (
+          <a className="btn btn-ghost" href={sync.sourceUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+            Open SimplySub
+          </a>
+        )}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: 8, marginTop: 14 }}>
+        {metrics.map(([label, value]) => (
+          <div key={label} style={{ background: '#fff', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 11, color: '#6b7280' }}>{label}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginTop: 2 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+      <details style={{ marginTop: 12 }}>
+        <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#3730a3' }}>
+          View synced checkout and billing details
+        </summary>
+        <div style={{ display: 'grid', gap: 10, marginTop: 10, fontSize: 12 }}>
+          {!!sync.assignments?.length && <div><b>Assigned:</b> {sync.assignments.join(', ')}</div>}
+          {!!sync.labor?.length && (
+            <div><b>Labor:</b> {sync.labor.map((row) => `${row.employee} ${row.hours} hrs`).join(' · ')}</div>
+          )}
+          {!!sync.forms?.length && (
+            <div>
+              <b>Forms:</b>{' '}
+              {sync.forms.map((form, index) => (
+                <span key={`${form.name}-${index}`}>
+                  {index ? ' · ' : ''}
+                  {form.url
+                    ? <a href={form.url} target="_blank" rel="noreferrer">{form.name}</a>
+                    : form.name}
+                  {form.status ? ` (${form.status})` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {!!sync.expenses?.length && (
+            <div>
+              <b>Expenses:</b>{' '}
+              {sync.expenses.map((expense) =>
+                `${expense.date} · ${expense.category || expense.description} · ${fmtMoney(expense.amount)}`,
+              ).join(' | ')}
+            </div>
+          )}
+          {!!sync.notes?.length && (
+            <div><b>Latest notes:</b> {sync.notes.slice(0, 5).map((note) => `${note.date} · ${note.by}: ${note.note}`).join(' | ')}</div>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
 import {
   PAY_TYPES,
   PAYMENT_METHODS,
@@ -2239,6 +2345,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
         {/* ── CLOSEOUT TAB ── */}
         {onPage('closeout') && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {item && <LdsCheckoutMonitor workOrderId={item.id} />}
+            {item && <SimplySubMonitor workOrder={item} />}
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Materials used on this job</div>
               <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>

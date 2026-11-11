@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { deriveSiteName } from '@/lib/visits';
 import { nextFreeWorkOrderNumber } from '@/lib/wo-number';
 import { ownerOnly } from '@/lib/security';
+import { copySimplySubPdfs } from '@/lib/simplysub-documents';
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -46,6 +47,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     field_nation: 'FieldNation',
     google_sheets: 'Internal',
     google_docs: 'Internal',
+    simplysub: 'NetView',
   };
 
   const { data: newWO, error: insertError } = await supabase.from('work_orders').insert({
@@ -72,11 +74,23 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     assignment_type: 'Internal',
     priority: 'Normal',
     schedule_type: 'Exact Time',
+    ...(Array.isArray(f.wo_tasks) ? { wo_tasks: f.wo_tasks } : {}),
+    ...(Array.isArray(f.custom_qa) ? { custom_qa: f.custom_qa } : {}),
+    ...(Array.isArray(f.client_links) ? { client_links: f.client_links } : {}),
+    ...(f.deliverable_link ? { deliverable_link: f.deliverable_link } : {}),
+    ...(f.deliverables ? { deliverables: f.deliverables } : {}),
+    ...(Array.isArray(f.source_documents)
+      ? { doc_urls: f.source_documents.map((d: { url?: unknown }) => d.url).filter((u: unknown): u is string => typeof u === 'string') }
+      : {}),
   }).select('id').single();
 
   if (insertError || !newWO) {
     return NextResponse.json({ error: insertError?.message ?? 'Failed to create work order' }, { status: 500 });
   }
+
+  const copiedDocuments = item.source === 'simplysub' && Array.isArray(f.source_documents)
+    ? await copySimplySubPdfs(supabase, f.source_documents, user.id, newWO.id)
+    : 0;
 
   // Open a site visit alongside the work order, so the location Fred is driving
   // to is tracked from the moment of import rather than remembered later. It
@@ -113,5 +127,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     wo_number: nextWoNumber,
     customer_id: customerId,
     site_visit_created: !visitError,
+    copied_documents: copiedDocuments,
   });
 }

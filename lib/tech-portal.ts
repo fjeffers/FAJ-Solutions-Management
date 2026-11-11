@@ -15,6 +15,7 @@ import type {
   TechDirectMessage, TechDirectoryEntry, TechJob, TechMessage, TechOpenJob,
   TechPayment, TechProfile, TechSummary,
 } from './types';
+import type { LdsDailyCheckout, LdsDailyCheckoutRow } from './lds-daily-checkout';
 
 export async function fetchTechProfile(): Promise<TechProfile | null> {
   const supabase = createClient();
@@ -260,6 +261,56 @@ export async function fetchTechDmUnread(): Promise<number> {
   const { data, error } = await supabase.rpc('tech_dm_unread');
   if (error) return 0;
   return Number(data) || 0;
+}
+
+// ── Direct conversation with the office (migration-154) ─────────────────────
+
+/** Opening this thread marks FAJ's direct messages read. */
+export async function fetchTechOwnerThread(): Promise<TechDirectMessage[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_owner_thread');
+  if (error) throw new Error(error.message);
+  return (data as TechDirectMessage[] | null) ?? [];
+}
+
+export async function sendTechOwnerMessage(content: string): Promise<boolean> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_send_owner_message', { p_content: content });
+  if (error) throw new Error(error.message);
+  const ok = !!(data as { ok?: boolean } | null)?.ok;
+  if (ok) {
+    // The message itself is already saved; a failed pop-up must never make the
+    // reply look failed or send it twice.
+    void fetch('/api/tech/direct-message-alert', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }),
+    }).catch(() => {});
+  }
+  return ok;
+}
+
+// ── LDS daily checkout (migration-155) ──────────────────────────────────────
+
+export async function fetchLdsDailyCheckout(woNumber: string, day: string): Promise<LdsDailyCheckoutRow | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_lds_checkout', { p_wo_number: woNumber, p_day: day });
+  if (error) throw new Error(error.message);
+  return (data as LdsDailyCheckoutRow | null) ?? null;
+}
+
+export async function saveLdsDailyCheckout(
+  woNumber: string,
+  day: string,
+  checkout: LdsDailyCheckout,
+  submit = false,
+): Promise<LdsDailyCheckoutRow> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('tech_save_lds_checkout', {
+    p_wo_number: woNumber, p_day: day, p_data: checkout, p_submit: submit,
+  });
+  if (error) throw new Error(error.message);
+  const out = (data ?? {}) as { ok?: boolean; reason?: string; checkout?: LdsDailyCheckoutRow };
+  if (!out.ok || !out.checkout) throw new Error(out.reason || "Couldn't save the daily checkout");
+  return out.checkout;
 }
 
 // ── Working the job (migration-076) ─────────────────────────────────────────

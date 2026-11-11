@@ -5,6 +5,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { jobLogPhotoLabel } from '@/lib/job-log-photo-label';
 import type { Invoice, InvoicePayment } from '@/lib/types';
 import PrintButton from './PrintButton';
 import { todayISO } from '@/lib/utils';
@@ -38,6 +39,31 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
   const { data: payments } = await supabase
     .from('invoice_payments').select('*').eq('invoice_id', invoice.id)
     .order('payment_date') as { data: InvoicePayment[] | null };
+  type Expense = { id: string; category: string; vendor: string | null; amount: number; expense_date: string };
+  const expenses = invoice.work_order_ids.length ? await supabase
+    .from('job_expenses').select('id, category, vendor, amount, expense_date')
+    .in('wo_id', invoice.work_order_ids).eq('status', 'approved').not('receipt_path', 'is', null)
+    .order('expense_date') as { data: Expense[] | null } : { data: [] as Expense[] };
+  type ReceiptWorkOrder = { id: string; job_log_receipt_photos: string[] | null; job_log_left_out: string[] | null };
+  const receiptWorkOrders = invoice.work_order_ids.length ? await supabase.from('work_orders')
+    .select('id, job_log_receipt_photos, job_log_left_out').in('id', invoice.work_order_ids) as { data: ReceiptWorkOrder[] | null }
+    : { data: [] as ReceiptWorkOrder[] };
+  const receiptLabels = new Map<string, { kind: 'receipt' | 'hotel' | 'rental' | 'fuel'; vendor: string | null; woId: string }>();
+  for (const wo of receiptWorkOrders.data ?? []) {
+    const left = new Set(wo.job_log_left_out ?? []);
+    const photoIds = (wo.job_log_receipt_photos ?? []).map((label) => label.split(':').at(-1)!).filter(Boolean);
+    for (const id of photoIds) {
+      const meta = jobLogPhotoLabel(wo.job_log_receipt_photos ?? [], id);
+      if (meta.kind !== 'photo' && meta.kind !== 'odometer' && !left.has(`photo:${id}`)) {
+        receiptLabels.set(id, { kind: meta.kind, vendor: meta.vendor, woId: wo.id });
+      }
+    }
+  }
+  type ReceiptPhoto = { id: string; wo_id: string; taken_at: string; contractor_name: string | null };
+  const receiptPhotos = receiptLabels.size ? await supabase.from('wo_photos')
+    .select('id, wo_id, taken_at, contractor_name').in('id', [...receiptLabels.keys()]).in('wo_id', invoice.work_order_ids)
+    .order('taken_at') as { data: ReceiptPhoto[] | null } : { data: [] as ReceiptPhoto[] };
+  const supportingCount = (expenses.data ?? []).length + (receiptPhotos.data ?? []).length;
 
   const paid = (payments ?? []).reduce((s, p) => s + Number(p.amount), 0);
   const balance = Math.max(0, Number(invoice.total) - paid);
@@ -54,7 +80,7 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
             <div className="display" style={{ fontSize: 20, fontWeight: 700, color: '#0E1B2E', letterSpacing: 3 }}>FAJ SOLUTIONS</div>
             <div style={{ fontSize: 11, color: '#8a6d2f', fontWeight: 700, letterSpacing: 2 }}>FIELD SERVICES · NETWORKING · LLC</div>
           </div>
-          <PrintButton />
+          <PrintButton token={token} />
         </div>
 
         {/* Invoice card */}
@@ -134,6 +160,37 @@ export default async function PublicInvoicePage({ params }: { params: Promise<{ 
             {invoice.notes && (
               <div style={{ background: '#f8f6f1', borderRadius: 12, padding: '12px 16px', marginTop: 18, fontSize: 13, color: '#555' }}>
                 <b style={{ color: '#8a6d2f' }}>Notes: </b>{invoice.notes}
+              </div>
+            )}
+
+            {supportingCount > 0 && (
+              <div className="no-print" style={{ marginTop: 22, borderTop: '1px solid #eee8dc', paddingTop: 18 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, color: '#999', marginBottom: 8 }}>SUPPORTING EXPENSE RECEIPTS</div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {(expenses.data ?? []).map((expense) => (
+                    <a key={expense.id} href={`/invoice/${encodeURIComponent(token)}/expense/${encodeURIComponent(expense.id)}`}
+                      style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: '1px solid #e5dfd2', borderRadius: 10, padding: '10px 12px', color: '#0E1B2E', textDecoration: 'none', fontSize: 13 }}>
+                      <span>
+                        <b>{expense.vendor || expense.category.replace(/[_-]+/g, ' ')}</b>
+                        <span style={{ color: '#777', marginLeft: 8 }}>{fmtDate(expense.expense_date)}</span>
+                      </span>
+                      <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{money(Number(expense.amount))} · Download</span>
+                    </a>
+                  ))}
+                  {(receiptPhotos.data ?? []).map((photo) => {
+                    const label = receiptLabels.get(photo.id);
+                    return (
+                      <a key={photo.id} href={`/invoice/${encodeURIComponent(token)}/photo/${encodeURIComponent(photo.id)}`}
+                        style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: '1px solid #e5dfd2', borderRadius: 10, padding: '10px 12px', color: '#0E1B2E', textDecoration: 'none', fontSize: 13 }}>
+                        <span>
+                          <b>{label?.kind === 'hotel' ? 'Hotel receipt' : label?.kind === 'rental' ? 'Vehicle rental receipt' : label?.kind === 'fuel' ? 'Fuel receipt' : 'Receipt photo'}{label?.vendor ? `, ${label.vendor}` : ''}</b>
+                          <span style={{ color: '#777', marginLeft: 8 }}>{fmtDate(photo.taken_at)}</span>
+                        </span>
+                        <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>Download</span>
+                      </a>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

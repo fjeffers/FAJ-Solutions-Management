@@ -1,0 +1,19 @@
+name: SimplySub Friday sync
+
+on:
+  schedule:
+    # GitHub cron is UTC. The endpoint accepts only the 3 PM America/New_York run,
+    # so this remains correct through daylight-saving changes.
+    - cron: '0 * * * 5'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync SimplySub into FAJ
+        run: |
+          curl --fail --silent --show-error \
+            --retry 3 \
+            -H "Authorization: Bearer ${{ secrets.SIMPLYSUB_SYNC_SECRET }}" \
+            "https://app.fajsolutions.com/api/cron/simplysub-sync${{ github.event_name == 'workflow_dispatch' && '?force=1' || '' }}"

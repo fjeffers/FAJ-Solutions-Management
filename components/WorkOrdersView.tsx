@@ -57,7 +57,7 @@ export default function WorkOrdersView({
   workOrders, stats, onAdd, onCreate, onAddFromAI, onEdit, onDelete, onDuplicate, onPay, onSendPortal, contractors,
   initialSearch = '',
   siteVisits = [],
-  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed, home,
+  onArchive, onUnarchive, onCloseJob, onReassign, payments = [], onRefresh, ownerFirstName = 'Fred', startOpenId, onJobClosed, homeTop, home,
   onPatch, onAddField, automations, onCloseJobs,
 }: {
   /** Close old jobs: close these in one go; returns how many closed. */
@@ -101,6 +101,8 @@ export default function WorkOrdersView({
   ownerFirstName?: string;
   /** Home's blocks (the old Dashboard's), under the greeting. */
   home?: ReactNode;
+  /** Home's branded first section, above all work-order controls. */
+  homeTop?: ReactNode;
 }) {
   // The jobs screen is Primio's Dispatch board (Fred, 2026-10-04: "i asked for
   // every to mirror primio"); a card opens the job screen.
@@ -272,7 +274,7 @@ export default function WorkOrdersView({
           right={<>
             {onCloseJobs && <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setClosingOld(true)}><Archive size={15} /> Old jobs</button>}
             <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setAiOpen(true)}><Sparkles size={15} /> Generate with AI</button>
-            <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={onAdd}><Plus size={16} /> New order</button>
+            {!homeTop && <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={onAdd}><Plus size={16} /> New order</button>}
             {onCreate && (
               <CreateMenu items={[
                 { label: 'New job', icon: <Wrench size={16} />, onClick: onAdd },
@@ -283,7 +285,8 @@ export default function WorkOrdersView({
               ]} />
             )}
           </>}
-          title={home ? 'Home' : undefined}
+          title={homeTop ? 'Manage work' : home ? 'Home' : undefined}
+          before={homeTop}
           sheet={onPatch ? (jobs) => (
             <JobSheet rows={jobs.map((j) => woById.get(j.id)).filter((w): w is EnrichedWorkOrder => !!w)} contractors={contractors}
               fields={activeFields('jobs')} onPatch={(ids, make) => onPatch(ids, make)} onOpen={openJob}

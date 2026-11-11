@@ -12,6 +12,7 @@ import { useMemo } from 'react';
 import { fmtMoney } from '@/lib/utils';
 import { moneyTotals } from '@/lib/payables';
 import type { Invoice, InvoicePayment, Payment, WorkOrder } from '@/lib/types';
+import QuickBooksReceivablesView from '@/components/QuickBooksReceivablesView';
 
 export const MONEY_TABS = [
   { view: 'financials', label: 'Overview' },
@@ -57,6 +58,7 @@ export function MoneyHub({ view, onGo, invoices, invoicePayments, payments, work
           </button>
         ))}
       </div>
+      {view === 'financials' && <QuickBooksReceivablesView workOrders={workOrders} payments={payments} />}
     </div>
   );
 }

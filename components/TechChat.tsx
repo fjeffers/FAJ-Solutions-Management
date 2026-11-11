@@ -4,6 +4,7 @@ import { Send, MessageSquare, ChevronLeft, Loader2, Building2, Users } from 'luc
 import { fetchTechMessages, sendTechMessage, jobLocation } from '@/lib/tech-portal';
 import { toastError } from '@/lib/toast';
 import TechDirectChat from '@/components/TechDirectChat';
+import TechOwnerChat from '@/components/TechOwnerChat';
 import type { TechJob, TechMessage } from '@/lib/types';
 
 /**
@@ -19,18 +20,21 @@ import type { TechJob, TechMessage } from '@/lib/types';
 export default function TechChat({ jobs, onRead }: { jobs: TechJob[]; onRead: () => void }) {
   const [mode, setMode] = useState<'office' | 'techs'>('office');
   const [openJob, setOpenJob] = useState<TechJob | null>(null);
+  const [ownerOpen, setOwnerOpen] = useState(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('office') === '1');
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 4, background: '#f4f1ea', borderRadius: 999, padding: 3, marginBottom: 16 }}>
         <ModeBtn active={mode === 'office'} onClick={() => { setMode('office'); setOpenJob(null); }}
-          icon={<Building2 size={13} />} label="Job messages" />
+          icon={<Building2 size={13} />} label="FAJ & job messages" />
         <ModeBtn active={mode === 'techs'} onClick={() => setMode('techs')}
           icon={<Users size={13} />} label="Other techs" />
       </div>
       {mode === 'techs'
         ? <TechDirectChat onRead={onRead} />
-        : <OfficeChat jobs={jobs} openJob={openJob} setOpenJob={setOpenJob} />}
+        : <OfficeChat jobs={jobs} openJob={openJob} setOpenJob={setOpenJob}
+            ownerOpen={ownerOpen} setOwnerOpen={setOwnerOpen} onRead={onRead} />}
     </div>
   );
 }
@@ -53,25 +57,37 @@ function ModeBtn({ active, onClick, icon, label }: {
   );
 }
 
-function OfficeChat({ jobs, openJob, setOpenJob }: {
+function OfficeChat({ jobs, openJob, setOpenJob, ownerOpen, setOwnerOpen, onRead }: {
   jobs: TechJob[];
   openJob: TechJob | null;
   setOpenJob: (j: TechJob | null) => void;
+  ownerOpen: boolean;
+  setOwnerOpen: (open: boolean) => void;
+  onRead: () => void;
 }) {
-  if (jobs.length === 0) {
-    return (
-      <div className="glass card" style={{ textAlign: 'center', padding: '30px 20px', color: '#aaa', fontSize: 13 }}>
-        <MessageSquare size={22} color="#ddd" style={{ marginBottom: 7 }} />
-        <div>No active jobs to message about.</div>
-        <div style={{ fontSize: 12, marginTop: 5 }}>A thread opens for each job you&apos;re assigned.</div>
-      </div>
-    );
-  }
-
+  if (ownerOpen) return (
+    <div>
+      <button onClick={() => setOwnerOpen(false)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--teal)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, marginBottom: 12, padding: 0 }}>
+        <ChevronLeft size={15} /> All conversations
+      </button>
+      <TechOwnerChat onRead={onRead} />
+    </div>
+  );
   if (openJob) return <Thread job={openJob} onBack={() => setOpenJob(null)} />;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <button onClick={() => setOwnerOpen(true)} className="glass card" style={{
+        padding: 14, textAlign: 'left', cursor: 'pointer', border: '1px solid rgba(14,86,103,.22)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+      }}>
+        <div>
+          <div style={{ fontWeight: 750, fontSize: 14 }}>FAJ Solutions</div>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Message the office directly</div>
+        </div>
+        <Building2 size={17} color="var(--teal)" />
+      </button>
       {jobs.map((j) => (
         <button
           key={j.id} onClick={() => setOpenJob(j)}
@@ -92,6 +108,12 @@ function OfficeChat({ jobs, openJob, setOpenJob }: {
           <MessageSquare size={16} color="var(--teal)" style={{ flexShrink: 0 }} />
         </button>
       ))}
+      {jobs.length === 0 && (
+        <div className="glass card" style={{ textAlign: 'center', padding: '22px 20px', color: '#aaa', fontSize: 13 }}>
+          <MessageSquare size={22} color="#ddd" style={{ marginBottom: 7 }} />
+          <div>No active job conversations.</div>
+        </div>
+      )}
     </div>
   );
 }

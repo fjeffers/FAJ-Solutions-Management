@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  SCREENS, STANDARD_LAYOUT, addSection, isStandard, moveScreen, normalizeLayout, placeOf, removeSection,
+  SCREENS, STANDARD_HOME_LOOK, STANDARD_LAYOUT, addSection, isStandard, moveScreen, normalizeHomeLook, normalizeLayout, placeOf, removeSection,
   renameScreen, renameSection, resolveLayout, searchSections, sectionOfView, setHidden, setPartShown, shiftScreen,
   shiftSection, visibleLayout,
 } from './app-layout';
@@ -10,6 +10,31 @@ const std = () => normalizeLayout(STANDARD_LAYOUT);
 const keysOf = (l: ReturnType<typeof std>) => [...l.main, ...l.sections.flatMap((s) => s.items)];
 
 describe('menu layout (Settings -> Menu & screens)', () => {
+  it('keeps Home branding safe and gives old saved layouts the new FAJ look', () => {
+    expect(normalizeLayout({}).home).toEqual(STANDARD_HOME_LOOK);
+    expect(normalizeHomeLook({
+      brand: '  FAJ   Field Team  ',
+      title: 'Control every job',
+      subtitle: 'One place for the whole company.',
+      theme: 'violet',
+    })).toEqual({
+      brand: 'FAJ Field Team',
+      title: 'Control every job',
+      subtitle: 'One place for the whole company.',
+      theme: 'violet',
+      tiles: STANDARD_HOME_LOOK.tiles,
+    });
+    expect(normalizeHomeLook({ brand: '', title: '', subtitle: '', theme: 'neon' })).toEqual(STANDARD_HOME_LOOK);
+    expect(normalizeHomeLook({
+      ...STANDARD_HOME_LOOK,
+      tiles: ['financials', 'bad-tile', 'financials', 'workorders'],
+    }).tiles).toEqual(['financials', 'workorders']);
+    expect(normalizeHomeLook({
+      ...STANDARD_HOME_LOOK,
+      tiles: ['customers', 'financials'],
+    }).tiles).toEqual(['simplysub', 'financials']);
+  });
+
   it('the standard menu: Home (Dashboard is part of it), Schedule, Messages, Office, Settings — everything else in Office', () => {
     const r = visibleLayout(resolveLayout(std()));
     expect(r.main.map((s) => s.label)).toEqual(['Home', 'Schedule', 'Messages', 'Office', 'Settings']);

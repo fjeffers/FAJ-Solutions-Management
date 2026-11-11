@@ -15,7 +15,7 @@ import { PrimioBar } from '@/components/wf/PrimioScreens';
 const ICONS: Record<string, LucideIcon> = {
   'new-order': SquarePlus,
   dashboard: BarChart3, sitelog: Timer, workorders: KanbanSquare, office: LayoutGrid, messages: MessageSquare,
-  payables: Wallet, team: UserCog, support: LifeBuoy, 'import-queue': Inbox,
+  payables: Wallet, team: UserCog, support: LifeBuoy, simplysub: ClipboardList, 'import-queue': Inbox,
   payments: CreditCard, financials: TrendingUp, ledger: BookOpen,
   customers: Building2, quickbooks: TrendingUp, netview: FileText, invoices: Receipt,
   contractors: Users, 'contractor-analytics': Award, 'portal-admin': ShieldCheck,

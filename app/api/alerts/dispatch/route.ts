@@ -4,7 +4,7 @@ import webpush from 'web-push';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { vapidKeys } from '@/lib/push-keys';
 import {
-  alertEmailHtml, alertMessage, canOpenApp, recipientsForAlert, toE164,
+  alertEmailHtml, alertMessage, canOpenApp, isHeldWorkOrder, recipientsForAlert, toE164,
   type AlertJob, type AlertPerson, type AlertRow,
 } from '@/lib/project-alerts';
 import { loadSheet, sheetTokenFor } from '@/lib/project-sheet-load';
@@ -72,8 +72,15 @@ async function run() {
     const result: Record<string, number | string> = { email: 0, push: 0, text: 0 };
     try {
       const { data: wo } = a.wo_id
-        ? await admin.from('work_orders').select('title, site_name, site_city, site_state').eq('id', a.wo_id).maybeSingle()
+        ? await admin.from('work_orders').select('title, site_name, site_city, site_state, wo_status, board_stage').eq('id', a.wo_id).maybeSingle()
         : { data: null };
+      if (isHeldWorkOrder(wo)) {
+        await admin.from('project_alerts').update({
+          status: 'skipped',
+          result: { why: 'work order on hold' },
+        }).eq('id', a.id);
+        continue;
+      }
       const job: AlertJob | null = wo ? {
         title: String(wo.title ?? ''), site: String(wo.site_name ?? ''), city: String(wo.site_city ?? ''), state: String(wo.site_state ?? ''),
       } : null;

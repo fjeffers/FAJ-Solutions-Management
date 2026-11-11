@@ -12,10 +12,15 @@ import { CreditCard, Users, FileText, TrendingUp, LogOut, Menu, X, BookOpen, Cli
 import TechInstall from '@/components/TechInstall';
 import { OFFICE_APP_URL } from '@/lib/install-help';
 
-import DashboardView from '@/components/DashboardView';
+import BusinessCommandCenter from '@/components/BusinessCommandCenter';
+import AttentionPanel from '@/components/AttentionPanel';
+import BillingToSend from '@/components/BillingToSend';
+import OneInbox from '@/components/OneInbox';
+import SimplySubJobsHome from '@/components/SimplySubJobsHome';
+import { FieldAttention, ComingUp } from '@/components/FieldToday';
 import FinancialDashboardView from '@/components/FinancialDashboardView';
 import { MoneyHub, isMoneyView } from '@/components/MoneyHub';
-import WorkOrdersView, { type LinkedVisit } from '@/components/WorkOrdersView';
+import WorkOrdersView, { AIGenerateModal, type LinkedVisit } from '@/components/WorkOrdersView';
 import PaymentsView from '@/components/PaymentsView';
 import ContractorsView from '@/components/ContractorsView';
 import ContractorAnalyticsView from '@/components/ContractorAnalyticsView';
@@ -26,10 +31,6 @@ import MaterialsView from '@/components/MaterialsView';
 import QuotesView, { nextQuoteNumber } from '@/components/QuotesView';
 import SurveysView from '@/components/SurveysView';
 import ContractsView from '@/components/ContractsView';
-import AttentionPanel from '@/components/AttentionPanel';
-import BillingToSend from '@/components/BillingToSend';
-import OneInbox from '@/components/OneInbox';
-import { FieldAttention, ComingUp } from '@/components/FieldToday';
 import InvoicesView from '@/components/InvoicesView';
 import NetworkView from '@/components/NetworkView';
 import TeamView from '@/components/TeamView';
@@ -69,14 +70,13 @@ import { splitMore } from '@/lib/office-menu';
 import HoursTabs, { isHoursView } from '@/components/HoursTabs';
 import OfficeHub, { OfficeIcon } from '@/components/OfficeHub';
 import MessagesView from '@/components/MessagesView';
-import { sectionOfView, type ResolvedLayout, screenLabel } from '@/lib/app-layout';
+import { sectionOfView, type ResolvedLayout } from '@/lib/app-layout';
 import { useAppLayout } from '@/components/useAppLayout';
 import { useAppLists } from '@/components/useAppLists';
 import { useCustomFields } from '@/components/useCustomFields';
 import { useAutomations, type AutoPatch } from '@/components/useAutomations';
 import AutomationsCard from '@/components/wf/Automations';
 import { describeChanges } from '@/lib/job-sheet';
-import { shown } from '@/lib/screen-parts';
 import SketchesPanel from '@/components/sketch/SketchesPanel';
 import { PrimioBar } from '@/components/wf/PrimioScreens';
 import { ProjectsView } from '@/components/wf/ProjectOffice';
@@ -84,8 +84,8 @@ import FieldSheetView from '@/components/FieldSheetView';
 import HoursView from '@/components/HoursView';
 
 const VIEWS = [
-  'dashboard', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
-  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'import-queue',
+  'dashboard', 'attention', 'followups', 'field', 'financials', 'customers', 'workorders', 'payments', 'payables', 'ledger', 'invoices', 'contractors',
+  'contractor-analytics', 'scheduling', 'dispatch', 'materials', 'quotes', 'network', 'sitelog', 'simplysub', 'import-queue',
   'maintenance', 'statements', '1099', 'w9', 'quickbooks', 'portal-admin', 'settings', 'surveys', 'contracts',
   'team', 'support', 'office', 'messages', 'sketches', 'projects', 'fieldsheet', 'hours',
 ] as const;
@@ -98,11 +98,9 @@ function woFromUrlParam(): string {
 }
 
 function viewFromUrl(): View {
-  // Dashboard and Dispatch are one Home screen now (Fred, 2026-10-31): the job board, with the
-  // Dashboard's Waiting on you, Today in the field, notes and shortcuts under the greeting.
-  if (typeof window === 'undefined') return 'workorders';
+  if (typeof window === 'undefined') return 'dashboard';
   const v = new URLSearchParams(window.location.search).get('view');
-  return VIEWS.includes(v as View) && v !== 'dashboard' ? (v as View) : 'workorders';
+  return VIEWS.includes(v as View) ? (v as View) : 'dashboard';
 }
 
 
@@ -123,10 +121,10 @@ export default function HomePage() {
   // Dispatch -> Create: which screen should open with a new, blank form.
   const [createIntent, setCreateIntent] = useState<'customer' | 'quote' | 'invoice' | null>(null);
   const setView = (to: View) => {
-    const v: View = to === 'dashboard' ? 'workorders' : to;
+    const v: View = to;
     setViewState(v);
     openOfficeFor(v);
-    const url = v === 'workorders' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
+    const url = v === 'dashboard' ? window.location.pathname : `${window.location.pathname}?view=${v}`;
     window.history.pushState(null, '', url);
   };
   useEffect(() => {
@@ -155,6 +153,7 @@ export default function HomePage() {
       .then(({ count }) => setMessageCount(count ?? 0));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once on load; the Messages screen keeps it current
   const [searchOpen, setSearchOpen] = useState(false);
+  const [homeAiOpen, setHomeAiOpen] = useState(false);
   // Fred's own menu: names, order, sections, hidden screens (Settings ->
   // Menu & screens, migration 107). The standard one is lib/office-menu.ts.
   const appLayout = useAppLayout();
@@ -188,12 +187,11 @@ export default function HomePage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
-  // Tech receipts waiting for Fred to approve or decline (on Dispatch).
   const [receiptCount, setReceiptCount] = useState(0);
   useEffect(() => {
     void supabase.from('job_expenses').select('id', { count: 'exact', head: true }).eq('status', 'submitted')
       .then(({ count }) => setReceiptCount(count ?? 0));
-  }, [workOrders]); // eslint-disable-line react-hooks/exhaustive-deps -- recount when the jobs reload
+  }, [workOrders]); // eslint-disable-line react-hooks/exhaustive-deps
   const [payments, setPayments] = useState<Payment[]>([]);
   const [questionTemplates, setQuestionTemplates] = useState<QuestionTemplate[]>([]);
   const [deliverableTemplates, setDeliverableTemplates] = useState<DeliverableTemplate[]>([]);
@@ -1577,9 +1575,7 @@ Go ahead?`)) return;
     const job = wfJobFromOwner(w);
     return { job, updatedAt: w.updated_at ?? '', payNotSet: job.techs.length > 0 && !w.pay_set && job.status !== 'closed' };
   }), [enrichedWOs, appLists.lists]); // eslint-disable-line react-hooks/exhaustive-deps -- lists changes the names inside each job
-  // The Dashboard's field blocks read the same jobs Dispatch does.
   const dashJobs = useMemo(() => scheduleRows.map((r) => r.job), [scheduleRows]);
-
   /** The number shown beside a screen in the menu: things waiting there. */
   const badgeFor = (v: string | null): number =>
     v === 'support' ? supportCount : v === 'import-queue' ? pendingImportCount : v === 'messages' ? messageCount : 0;
@@ -1627,7 +1623,7 @@ Go ahead?`)) return;
       <Toaster />
       {/* Mobile header — hidden on desktop via CSS, shown on mobile via media query */}
       <div
-        className="no-print"
+        className={`no-print ${view === 'dashboard' ? 'dashboard-hidden' : ''}`}
         id="mobile-header"
         style={{ position: 'sticky', top: 0, zIndex: 50, padding: '12px 16px', background: 'linear-gradient(135deg, #13284A 0%, #0E1B2E 100%)', color: 'white', alignItems: 'center', justifyContent: 'space-between' }}
       >
@@ -1639,9 +1635,9 @@ Go ahead?`)) return;
       </div>
 
       {/* Sidebar — .mobile-open beats the mobile display:none in CSS */}
-      {mobileNavOpen && <div className="mobile-nav-backdrop no-print" onClick={() => setMobileNavOpen(false)} />}
+      {mobileNavOpen && view !== 'dashboard' && <div className="mobile-nav-backdrop no-print" onClick={() => setMobileNavOpen(false)} />}
       <aside
-        className={`no-print glass-dark sidebar-desktop ${mobileNavOpen ? 'mobile-open' : ''}`}
+        className={`no-print glass-dark sidebar-desktop ${mobileNavOpen ? 'mobile-open' : ''} ${view === 'dashboard' ? 'dashboard-hidden' : ''}`}
         style={{ width: 250, padding: '24px 16px', position: 'sticky', top: 0, height: '100vh', flexDirection: 'column', gap: 2 }}
       >
         <div style={{ padding: '0 12px 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 12 }}>
@@ -1651,26 +1647,30 @@ Go ahead?`)) return;
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', gap: 2 }}>
+          <button className="nav-btn" onClick={() => navigate('dashboard')}>
+            <OfficeIcon k="dashboard" size={15} /> Home
+          </button>
           {/* Fred, 2026-10-04: "the only thing i should see is dashboard,
               dispatcher, schedule and office, and everything else should go
               under office with its own drop down page". Every other screen
               is on the Office page, in sections that open and close. */}
           {/* Fred can rename, reorder, hide and move these in Settings ->
               Menu & screens; Office always stays (lib/app-layout.ts). */}
-          {menu.main.map((m) => {
+          {menu.main.filter((m) => m.key !== 'dashboard').map((m) => {
             const count = badgeFor(m.view);
+            const menuLabel = m.key === 'workorders' ? 'Jobs' : m.label;
             if (m.key !== 'office') {
               if (!m.view) {
                 return (
                   <a key={m.key} className="nav-btn" href={NETVIEW_FORM_URL} target="_blank" rel="noopener noreferrer"
                     style={{ textDecoration: 'none' }} onClick={() => setMobileNavOpen(false)}>
-                    <OfficeIcon k={m.key} size={15} /> {m.label}
+                    <OfficeIcon k={m.key} size={15} /> {menuLabel}
                   </a>
                 );
               }
               return (
                 <button key={m.key} className={`nav-btn ${view === m.view ? 'active' : ''}`} onClick={() => navigate(m.view as View)}>
-                  <OfficeIcon k={m.key} size={15} /> {m.label}
+                  <OfficeIcon k={m.key} size={15} /> {menuLabel}
                   {count > 0 && (
                     <span style={{ background: 'var(--gold)', color: '#0E1B2E', borderRadius: 999, fontSize: 9, fontWeight: 800, padding: '1px 6px', marginLeft: 4 }}>{count}</span>
                   )}
@@ -1818,7 +1818,9 @@ Go ahead?`)) return;
 
       {/* ── Main Content ── */}
       <main className="main-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
-        <TechInstall appUrl={OFFICE_APP_URL} dismissKey="faj-office-install-dismissed" title="Install the FAJ app" style={{ margin: '16px 16px 0' }} />
+        {view !== 'workorders' && view !== 'dashboard' && (
+          <TechInstall appUrl={OFFICE_APP_URL} dismissKey="faj-office-install-dismissed" title="Install the FAJ app" style={{ margin: '16px 16px 0' }} />
+        )}
         {/* The Financials dashboard: the money in and out on top, a tab for each money screen below. */}
         {isMoneyView(view) && (
           <MoneyHub view={view} onGo={navigate} invoices={invoices} invoicePayments={invoicePayments} payments={payments} workOrders={enrichedWOs} />
@@ -1938,14 +1940,73 @@ Go ahead?`)) return;
             }}
           />
         )}
+        {view === 'simplysub' && (
+          <div className="view-inner wf" style={{ maxWidth: 1200, margin: '0 auto' }}>
+            <SimplySubJobsHome
+              onOpenJob={(id) => openJobFrom(id, 'simplysub')}
+              onOpenImports={() => setView('import-queue')}
+            />
+          </div>
+        )}
         {view === 'import-queue' && (
           <ImportQueueView
             items={importQueue}
             connection={gmailConnection}
+            workOrders={workOrders}
             onApprove={approveImportItem}
             onReject={rejectImportItem}
             onImported={loadAll}
           />
+        )}
+        {view === 'dashboard' && (
+          <div className="faj-enterprise-home">
+            <BusinessCommandCenter
+              workOrders={enrichedWOs}
+              contractors={contractors}
+              materials={materials}
+              quotes={quotes}
+              invoices={invoices}
+              invoicePayments={invoicePayments}
+              home={appLayout.layout.home}
+              onGo={(v) => setView(v as typeof view)}
+              onNewJob={openNewOrder}
+              onAI={() => setHomeAiOpen(true)}
+              onSearch={() => setSearchOpen(true)}
+            />
+            <div className="view-inner wf" style={{ maxWidth: 1200, margin: '14px auto 0' }}>
+              <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'dashboard')}
+                onGo={(v) => setView(v as typeof view)} onTechRead={(n) => setMessageCount((c) => Math.max(0, c - n))} />
+            </div>
+          </div>
+        )}
+        {view === 'attention' && (
+          <div className="view-inner wf" style={{ maxWidth: 1200, margin: '0 auto' }}>
+            <PrimioBar title="Waiting on you" />
+            <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'attention')}
+              onGo={(v) => setView(v as typeof view)} onTechRead={(n) => setMessageCount((c) => Math.max(0, c - n))} />
+            <AttentionPanel
+              data={{
+                surveys, quotes, contracts, workOrders: enrichedWOs,
+                invoices, invoicePayments, siteVisits: dashboardVisits,
+                waiting: { receipts: receiptCount },
+              }}
+              onGo={(v) => setView(v as typeof view)}
+            />
+            <BillingToSend jobs={enrichedWOs} onOpenJob={(id) => openJobFrom(id, 'attention')} />
+          </div>
+        )}
+        {view === 'followups' && (
+          <div className="view-inner wf" style={{ maxWidth: 1200, margin: '0 auto' }}>
+            <PrimioBar title="Follow-up" />
+            <FollowUps invoices={invoices} invoicePayments={invoicePayments} quotes={quotes} jobs={enrichedWOs} techs={contractors} />
+          </div>
+        )}
+        {view === 'field' && (
+          <div className="view-inner wf" style={{ maxWidth: 1200, margin: '0 auto' }}>
+            <PrimioBar title="In the field" />
+            <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'field')} onGo={(v) => setView(v as typeof view)} />
+            <ComingUp jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'field')} />
+          </div>
         )}
         {view === 'workorders' && (
           <WorkOrdersView
@@ -1987,49 +2048,6 @@ Go ahead?`)) return;
             onAddField={(label, kind, options) => customFields.update({ ...customFields.fields,
               jobs: [...customFields.fields.jobs, { id: `f${Date.now().toString(36)}`, label, kind, options, hidden: false }] })}
             automations={(open) => <AutomationsCard rules={autoRules.rules} onChange={autoRules.update} workOrders={workOrders} onOpenJob={open} saveError={autoRules.saveError} />}
-            home={(
-              <DashboardView
-                home
-                stats={stats}
-                workOrders={enrichedWOs}
-                payments={payments}
-                onView={(v) => setView(v as typeof view)}
-                // Placed and sized like any other block (Settings -> Screen designer).
-                attention={shown('dash.attention') ? (
-                  <section aria-label="Today's command center">
-                    <div style={{ marginBottom: 14 }}>
-                      <h2 className="serif" style={{ fontSize: 27, fontWeight: 600, margin: 0 }}>Today</h2>
-                      <p style={{ margin: '4px 0 0', color: '#777', fontSize: 13.5 }}>Messages, jobs, billing and follow-ups that need you.</p>
-                    </div>
-                    <button onClick={() => setSearchOpen(true)} style={{
-                      display: 'flex', alignItems: 'center', gap: 10, width: '100%', marginBottom: 14, padding: '12px 14px', cursor: 'text',
-                      borderRadius: 13, background: 'white', border: '1px solid #eae5d8', color: '#8a8578', fontSize: 14, textAlign: 'left',
-                    }}>
-                      <Search size={16} color="var(--teal)" /> Ask FAJ: pay Paul for 191, what do I owe, new job…
-                    </button>
-                    <OneInbox jobs={enrichedWOs} imports={importQueue} onOpenJob={(id) => openJobFrom(id, 'workorders')}
-                      onGo={(v) => setView(v as typeof view)} onTechRead={(n) => setMessageCount((c) => Math.max(0, c - n))} />
-                    <AttentionPanel
-                      flush
-                      data={{
-                        surveys, quotes, contracts, workOrders: enrichedWOs,
-                        invoices, invoicePayments, siteVisits: dashboardVisits,
-                        // Messages, emails and imports are listed one by one in the Inbox above.
-                        waiting: { receipts: receiptCount },
-                      }}
-                      onGo={(v) => setView(v as typeof view)}
-                    />
-                    <BillingToSend jobs={enrichedWOs} onOpenJob={(id) => openJobFrom(id, 'workorders')} />
-                    <FollowUps invoices={invoices} invoicePayments={invoicePayments} quotes={quotes} jobs={enrichedWOs} techs={contractors} />
-                  </section>
-                ) : undefined}
-                field={shown('dash.field') ? (
-                  <FieldAttention jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'workorders')} onGo={(v) => setView(v as typeof view)} />
-                ) : undefined}
-                coming={shown('dash.coming') ? <ComingUp jobs={dashJobs} onOpenJob={(id) => openJobFrom(id, 'workorders')} /> : undefined}
-                screenName={(k) => screenLabel(appLayout.layout, k)}
-              />
-            )}
           />
         )}
         {view === 'payments' && (
@@ -2135,6 +2153,17 @@ Go ahead?`)) return;
       </main>
 
       {/* ── Modals ── */}
+      {homeAiOpen && (
+        <div className="wf">
+          <AIGenerateModal
+            onClose={() => setHomeAiOpen(false)}
+            onGenerated={(fields) => {
+              setHomeAiOpen(false);
+              setModal({ type: 'wo', item: null, prefill: fields });
+            }}
+          />
+        </div>
+      )}
       {modal?.type === 'wo' && (
         <WorkOrderModal
           item={modal.item}

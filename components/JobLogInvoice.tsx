@@ -13,7 +13,7 @@ import { Plus, X } from 'lucide-react';
 import { NumBox } from '@/components/JobSheetEditor';
 import { mileRateShown, mileRateTyped } from '@/lib/job-log-rates';
 import type { TimeRow } from '@/lib/job-log-sheet';
-import { dueDate, FAJ, type Invoice, type InvoiceHead, type InvoiceLine, type InvoiceMeta, type InvoiceSection, type InvoiceTech } from '@/lib/job-log-invoice';
+import { dueDate, FAJ, type AddableItem, type Invoice, type InvoiceHead, type InvoiceLine, type InvoiceMeta, type InvoiceSection, type InvoiceTech } from '@/lib/job-log-invoice';
 
 const line = '1px solid #000';
 const td: CSSProperties = { padding: '2px 6px', verticalAlign: 'top' };
@@ -35,7 +35,7 @@ export type InvoiceEditor = {
   setRate: (tech: string, k: 'hour' | 'mile', v: number | null) => void;
   change: (l: InvoiceLine, p: { day?: string; qty?: number | null; amount?: number | null; description?: string; in?: string; out?: string }) => void;
   remove: (l: InvoiceLine) => void;
-  add: (tech: string, item: 'Labor' | 'Mileage' | 'Material' | 'Hotel') => void;
+  add: (tech: string, item: AddableItem) => void;
 };
 
 /** 10/19/2026 */
@@ -95,11 +95,13 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
           ? <NumBox label={`${l.item === 'Labor' ? 'Hours' : 'Miles'}, ${at}`} value={l.qty} onChange={(n) => edit.change(l, { qty: n })} />
           : qty(l.qty, l.item === 'Labor');
         const rateCell = edit && l.item === 'Meal' ? <NumBox label={`Meals, ${at}`} value={l.spent || null} onChange={(n) => edit.change(l, { amount: n })} />
-          : edit && (l.item === 'Hotel' || l.item === 'Material') ? <NumBox label={`${l.item}, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
+          : edit && (l.item === 'Hotel' || l.item === 'Vehicle' || l.item === 'Material') ? <NumBox label={`${l.item}, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
             : <Money n={l.rate} rate />;
-        // A material's store, as typed.
+        // A material's store and a hotel's name, as typed.
         const description = edit && l.item === 'Material'
           ? <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
+          : edit && l.item === 'Hotel' && l.row
+            ? <input aria-label={`Hotel name, ${at}`} style={input} value={(l.row as { store?: string }).store ?? ''} placeholder="Hotel name" onChange={(e) => edit.change(l, { description: e.target.value })} />
           : edit && l.item === 'Labor' ? <>{l.description}<InOut l={l} at={at} edit={edit} /></>
             : l.description;
         return (
@@ -161,7 +163,10 @@ function Tech({ t, edit }: { t: InvoiceTech; edit?: InvoiceEditor }) {
           add={edit && <AddRow name={`Add a material, ${t.tech}`} onClick={() => edit.add(t.tech, 'Material')}>Add a material</AddRow>} />
       )}
       <Section s={t.travel} tech={t.tech} edit={edit}
-        add={edit && <AddRow name={`Add a hotel, ${t.tech}`} onClick={() => edit.add(ownerOf(t.travel), 'Hotel')}>Add a hotel</AddRow>} />
+        add={edit && <>
+          <AddRow name={`Add a hotel, ${t.tech}`} onClick={() => edit.add(ownerOf(t.travel), 'Hotel')}>Add a hotel</AddRow>
+          <AddRow name={`Add a vehicle rental, ${t.tech}`} onClick={() => edit.add(t.tech, 'Vehicle')}>Add a vehicle rental</AddRow>
+        </>} />
       <tr>
         <td style={td} colSpan={3} />
         <td style={{ ...center, fontWeight: 700, textDecoration: 'underline', borderTop: line }}>{t.role} Total</td>
@@ -230,7 +235,7 @@ function EditTop({ edit, techs }: { edit: InvoiceEditor; techs: InvoiceTech[] })
 }
 
 /** On a phone, while it's edited: each tech's days as simple rows to type in, the hours, meals, miles, materials and
- *  hotel, with the finished invoice under them (Fred, 2026-11-06: "once I click on that edit button, I should see
+ *  hotel (its date, name and amount), with the finished invoice under them (Fred, 2026-11-06: "once I click on that edit button, I should see
  *  basically all that right there"). */
 function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor }) {
   const row: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.9fr) 28px', gap: 6, alignItems: 'center' };
@@ -243,14 +248,21 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
         const at = `${tech}, ${day(l.date)}`;
         const value = l.item === 'Labor' || l.item === 'Mileage' ? l.qty : l.item === 'Meal' ? (l.spent || null) : l.rate;
         const name = l.item === 'Labor' ? 'Hours' : l.item === 'Mileage' ? 'Miles' : l.item === 'Meal' ? 'Meals' : l.item;
+        const hotel = l.item === 'Hotel' && l.row;
         return (
           <div key={`${l.item}-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={row}>
+            <div data-hotel-row={hotel ? '' : undefined} style={hotel
+              ? { ...row, gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 0.8fr) 28px' }
+              : row}>
               {l.item === 'Meal' ? <span style={{ fontSize: 13 }}>{day(l.date)}</span>
                 : <DayBox value={l.date} label={`${l.item} day, ${at}`} onChange={(d) => edit.change(l, { day: d })} />}
-              <NumBox label={`${name}, ${at}`} value={value}
-                onChange={(n) => edit.change(l, l.item === 'Labor' || l.item === 'Mileage' ? { qty: n } : { amount: n })} />
-              <span style={{ textAlign: 'right', fontSize: 13 }}>{amount(l.amount)}</span>
+              {hotel
+                ? <input aria-label={`Hotel name, ${at}`} style={input} value={(l.row as { store?: string }).store ?? ''} placeholder="Hotel name" onChange={(e) => edit.change(l, { description: e.target.value })} />
+                : <NumBox label={`${name}, ${at}`} value={value}
+                    onChange={(n) => edit.change(l, l.item === 'Labor' || l.item === 'Mileage' ? { qty: n } : { amount: n })} />}
+              {hotel
+                ? <NumBox label={`Hotel amount, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
+                : <span style={{ textAlign: 'right', fontSize: 13 }}>{amount(l.amount)}</span>}
               {(l.item !== 'Meal' || (l.spent ?? 0) > 0) ? <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} /> : <span />}
             </div>
             {l.item === 'Labor' && <InOut l={l} at={at} edit={edit} />}
@@ -281,7 +293,10 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
             {part('Meals', t.meals.lines, t.tech, 'Receipts $')}
             {part('Mileage', t.mileage.lines, t.tech, 'Miles', addBtn(`Add mileage, ${t.tech}`, () => edit.add(t.tech, 'Mileage'), 'Add mileage'))}
             {t.materials && part('Materials', t.materials.lines, t.tech, '$', addBtn(`Add a material, ${t.tech}`, () => edit.add(t.tech, 'Material'), 'Add a material'))}
-            {part('Hotel / travel', t.travel.lines, t.tech, '$', addBtn(`Add a hotel, ${t.tech}`, () => edit.add(hotelOwner, 'Hotel'), 'Add a hotel'))}
+            {part('Hotel / travel', t.travel.lines, t.tech, '$', <>
+              {addBtn(`Add a hotel, ${t.tech}`, () => edit.add(hotelOwner, 'Hotel'), 'Add a hotel')}
+              {addBtn(`Add a vehicle rental, ${t.tech}`, () => edit.add(t.tech, 'Vehicle'), 'Add a vehicle rental')}
+            </>)}
           </section>
         );
       })}

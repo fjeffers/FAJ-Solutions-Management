@@ -1017,6 +1017,23 @@ export type InvoicePayment = {
   created_at: string;
 };
 
+export type QuickBooksReceivable = {
+  work_order_id: string | null;
+  source_type: 'job_log' | 'field_sheet' | 'quickbooks';
+  qbo_invoice_id: string;
+  qbo_invoice_number: string | null;
+  customer_name: string | null;
+  total: number;
+  balance: number;
+  status: 'sent' | 'partial' | 'paid' | 'void';
+  sent_at: string | null;
+  due_date: string | null;
+  paid_at: string | null;
+  last_payment_at: string | null;
+  email_status: string | null;
+  synced_at: string;
+};
+
 // ─── Work Order Messages (pre-existing table, built outside this repo) ───────
 
 export type MessageSenderRole = 'admin' | 'contractor' | 'client'; // client: a PM or client on the live project sheet (migration 121)
@@ -1063,12 +1080,19 @@ export type ParsedNetviewFields = {
   city?: string;
   state?: string;
   zip?: string;
+  /** Rich fields supplied by the SimplySub package importer. */
+  wo_tasks?: WoTask[];
+  custom_qa?: CustomQAItem[];
+  client_links?: string[];
+  deliverable_link?: string | null;
+  deliverables?: string | null;
+  source_documents?: { name: string; url: string; category?: string }[];
 };
 
 export type ImportQueueItem = {
   id: string;
   user_id: string;
-  source: 'netview_smartsheet' | 'field_nation' | 'google_sheets' | 'google_docs';
+  source: 'netview_smartsheet' | 'field_nation' | 'google_sheets' | 'google_docs' | 'simplysub';
   external_dedupe_key: string;
   parsed_fields: ParsedNetviewFields;
   raw_snippet: string | null;

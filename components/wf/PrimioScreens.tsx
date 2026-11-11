@@ -5,8 +5,8 @@
 //   PrimioBar       Primio's app bar: ivory, title centred, actions right
 //   DispatchBoard   lib/screens/dispatch_screen.dart — number tiles, search,
 //                   a column per stage, a card per job
-//   ScheduleBoard   lib/screens/schedule_screen.dart — month / week calendar,
-//                   the chosen day's jobs underneath
+//   ScheduleBoard   lib/screens/schedule_screen.dart — job cards by day
+//                   (default), week / month calendar, or a card per day
 // The office sees money (the client price) on a card; techs never see these.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Columns3, GanttChart, Table2, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck, CalendarDays, Users, MessageSquare, Camera, GripVertical, Clock } from 'lucide-react';
@@ -20,6 +20,7 @@ import { boardColumns, columnOf, moveTo, type BoardColumn, type Move } from '@/l
 import { shown as partShown } from '@/lib/screen-parts';
 import { Empty } from './WfUi';
 import WeekCalendar from './WeekCalendar';
+import { scheduleCardGroups } from '@/lib/schedule-cards';
 import type { Span } from '@/lib/week-view';
 
 // ── App bar ─────────────────────────────────────────────────────────────────
@@ -238,7 +239,7 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
   );
 }
 
-export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'Dispatch board', sheet, query: queryProp, onQuery }: {
+export function DispatchBoard({ rows, onOpen, right, before, between, onMove, title = 'Dispatch board', sheet, query: queryProp, onQuery }: {
   title?: string;
   /** The search, when the screen around keeps it (so it's still there after a job is opened and closed). */
   query?: string;
@@ -251,6 +252,8 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'D
   onMove?: (job: WfJob, move: Move, target: BoardColumn) => void;
   /** App bar buttons (New order). */
   right?: ReactNode;
+  /** Branded Home content that must appear before the work-order app bar. */
+  before?: ReactNode;
   /** Anything that needs Fred, between the numbers and the search (expenses, time asks). */
   between?: ReactNode;
 }) {
@@ -305,6 +308,25 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'D
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {before}
+      {before && between && (
+        <section aria-label="Today at FAJ" style={{
+          padding: 'clamp(16px, 2.5vw, 26px)', borderRadius: 20,
+          background: 'linear-gradient(145deg, rgba(255,255,255,.98), rgba(244,247,248,.96))',
+          border: '1px solid rgba(14,86,103,.12)', boxShadow: '0 14px 34px rgba(14,27,46,.07)',
+        }}>
+          <div style={{ marginBottom: 17 }}>
+            <div className="wf-p-label" style={{ color: 'var(--wf-gold)', letterSpacing: 2 }}>TODAY AT FAJ</div>
+            <div className="serif" style={{ fontSize: 27, fontWeight: 650, marginTop: 3 }}>What needs your attention</div>
+          </div>
+          {between}
+        </section>
+      )}
+      <section aria-label={before ? 'Live work operations' : undefined} style={before ? {
+        padding: 'clamp(16px, 2.5vw, 26px)', borderRadius: 20, background: 'var(--wf-card)',
+        border: '1px solid var(--wf-line)', boxShadow: '0 14px 34px rgba(14,27,46,.07)',
+        display: 'flex', flexDirection: 'column', gap: 16,
+      } : { display: 'flex', flexDirection: 'column', gap: 16 }}>
       <PrimioBar title={title} right={right} />
       {partShown('dispatch.tiles') && <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
         <StatTile label="Total jobs" value={live.length} color="var(--wf-navy)" onClick={() => setFocus(null)} active={focus === null} />
@@ -320,7 +342,7 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'D
           <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setFocus(null)}>Show all</button>
         </div>
       )}
-      {between}
+      {!before && between}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 280px' }}>
           <Search size={18} color="var(--wf-subtle)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
@@ -401,6 +423,7 @@ export function DispatchBoard({ rows, onOpen, right, between, onMove, title = 'D
       )}
       {view === 'sheet' && sheet?.([...new Map(groups.flatMap((g) => g.list).map((r) => [r.job.id, r.job])).values()])}
       {view === 'list' && <DispatchTable groups={groups} onOpen={onOpen} onStage={toggle} focus={focus} />}
+      </section>
     </div>
   );
 }
@@ -492,6 +515,22 @@ export function calendarDays(focused: Date, format: 'month' | 'week'): Date[] {
 
 const startMinutes = (j: WfJob) => { const t = parseClockTime(j.startTime); return t ? t[0] * 60 + t[1] : 24 * 60; };
 
+const SCHEDULE_SHAPES = [
+  ['cards', 'Cards', <LayoutGrid key="c" size={15} />],
+  ['week', 'Week', <CalendarDays key="w" size={15} />],
+  ['days', 'Day cards', <Columns3 key="d" size={15} />],
+  ['month', 'Month', <CalendarDays key="m" size={15} />],
+] as const;
+type ScheduleShape = (typeof SCHEDULE_SHAPES)[number][0];
+const SCHEDULE_SHAPE_KEY = 'faj.schedule.shape';
+const cardGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 } as const;
+
+function WhenLabel({ job, withDay }: { job: WfJob; withDay?: boolean }) {
+  const t = parseClockTime(job.startTime);
+  const text = [withDay && job.date ? shortDay(job.date) : '', t ? fmtClock12(t) : ''].filter(Boolean).join(' · ');
+  return text ? <div className="wf-p-label" style={{ margin: '0 0 4px 4px' }}>{text}</div> : null;
+}
+
 export function ScheduleBoard({ rows, onOpen, right }: {
   rows: BoardRow[];
   onOpen: (job: WfJob) => void;
@@ -500,7 +539,15 @@ export function ScheduleBoard({ rows, onOpen, right }: {
   const today = todayISO();
   const [selected, setSelected] = useState(today);
   const [focused, setFocused] = useState(() => fromYmd(today));
-  const [format, setFormat] = useState<'month' | 'week'>('month');
+  const [shape, setShape] = useState<ScheduleShape>('cards');
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SCHEDULE_SHAPE_KEY);
+      if (SCHEDULE_SHAPES.some(([k]) => k === saved)) setShape(saved as ScheduleShape);
+    } catch { /* private window */ }
+  }, []);
+  const pick = (v: ScheduleShape) => { setShape(v); try { localStorage.setItem(SCHEDULE_SHAPE_KEY, v); } catch { /* private window */ } };
+  const format = shape === 'month' ? 'month' : 'week';
 
   // Every job with a date, except ones every tech turned down (as in Primio).
   const byDay = useMemo(() => {
@@ -515,6 +562,11 @@ export function ScheduleBoard({ rows, onOpen, right }: {
     return m;
   }, [rows]);
 
+  const cardGroups = useMemo(() => {
+    const sorted = [...byDay.keys()].sort().flatMap((d) => byDay.get(d) ?? []);
+    return scheduleCardGroups(sorted, today, (r) => r.job.date, (r) => r.job.status !== 'closed' && r.job.status !== 'workDone');
+  }, [byDay, today]);
+
   const days = calendarDays(focused, format);
   const dayRows = byDay.get(selected) ?? [];
   const sel = fromYmd(selected);
@@ -523,64 +575,115 @@ export function ScheduleBoard({ rows, onOpen, right }: {
     ? (() => { const s = days[0], e = days[6]; return s.getMonth() === e.getMonth() ? `${MONTHS[s.getMonth()]} ${s.getFullYear()}` : `${MONTHS[s.getMonth()].slice(0, 3)} – ${MONTHS[e.getMonth()].slice(0, 3)} ${e.getFullYear()}`; })()
     : `${MONTHS[focused.getMonth()]} ${focused.getFullYear()}`;
 
+  const pager = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => page(-1)} aria-label="Previous"><ChevronLeft size={20} /></button>
+      <div className="wf-p-title" style={{ flex: 1, textAlign: 'center', fontSize: 16 }}>{title}</div>
+      <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => page(1)} aria-label="Next"><ChevronRight size={20} /></button>
+    </div>
+  );
+
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <PrimioBar title="Schedule" right={right} />
-      <div className="wf-card" style={{ padding: '12px 12px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => page(-1)} aria-label="Previous"><ChevronLeft size={20} /></button>
-          <div className="wf-p-title" style={{ flex: 1, textAlign: 'center', fontSize: 16 }}>{title}</div>
-          <button className="wf-btn wf-btn-outline wf-btn-sm" onClick={() => setFormat((f) => (f === 'month' ? 'week' : 'month'))}
-            aria-label="Switch between month and week" style={{ borderRadius: 12 }}>
-            {format === 'month' ? 'Month' : 'Week'}
-          </button>
-          <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => page(1)} aria-label="Next"><ChevronRight size={20} /></button>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 4 }}>
-          {DOW.map((d) => <div key={d} className="wf-p-small wf-subtle" style={{ textAlign: 'center', padding: '6px 0' }}>{d}</div>)}
-          {days.map((d) => {
-            const key = ymd(d);
-            const isSel = key === selected;
-            const isToday = key === today;
-            const outside = format === 'month' && d.getMonth() !== focused.getMonth();
-            const n = byDay.get(key)?.length ?? 0;
-            return (
-              <button key={key} onClick={() => { setSelected(key); if (outside) setFocused(new Date(d.getFullYear(), d.getMonth(), 1)); }}
-                aria-label={`${d.toDateString()}${n ? `, ${n} job${n === 1 ? '' : 's'}` : ''}`} aria-pressed={isSel}
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, font: 'inherit' }}>
-                <span style={{
-                  width: 36, height: 36, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
-                  background: isSel ? 'var(--wf-navy)' : isToday ? 'var(--wf-gold)' : 'transparent',
-                  color: isSel ? '#fff' : isToday ? 'var(--wf-gold-ink)' : outside ? '#B9B4AA' : 'var(--wf-text)',
-                  fontWeight: isSel || isToday ? 700 : 500,
-                }}>{d.getDate()}</span>
-                <span style={{ display: 'flex', gap: 2, height: 6 }}>
-                  {Array.from({ length: Math.min(n, 4) }, (_, i) => (
-                    <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--wf-gold)' }} />
-                  ))}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+      <div className="wf-filters" role="group" aria-label="Show schedule as">
+        {SCHEDULE_SHAPES.map(([v, label, icon]) => (
+          <button key={v} className="wf-filter" aria-pressed={shape === v} onClick={() => pick(v)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{icon}{label}</button>
+        ))}
       </div>
-      <div className="wf-p-title" style={{ fontSize: 16 }}>
-        {dayRows.length} job{dayRows.length === 1 ? '' : 's'} on {sel.getMonth() + 1}/{sel.getDate()}/{sel.getFullYear()}
-      </div>
-      {dayRows.length === 0 ? (
-        <Empty icon={<CalendarCheck size={34} />} title="Nothing scheduled" message="No jobs on this day. Create one from New order." />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {dayRows.map((r) => {
-            const t = parseClockTime(r.job.startTime);
-            return (
+
+      {shape === 'cards' && (cardGroups.length === 0 ? (
+        <Empty icon={<CalendarCheck size={34} />} title="Nothing scheduled" message="No upcoming jobs. Create one from New order." />
+      ) : cardGroups.map((g) => (
+        <section key={g.key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="wf-p-title" style={{ fontSize: 16 }}>{g.label} <span className="wf-subtle" style={{ fontWeight: 500 }}>· {g.items.length}</span></div>
+          <div style={cardGrid}>
+            {g.items.map((r) => (
               <div key={r.job.id}>
-                {t && <div className="wf-p-label" style={{ margin: '0 0 4px 4px' }}>{fmtClock12(t)}</div>}
+                <WhenLabel job={r.job} withDay={g.key !== 'today' && g.key !== 'tomorrow'} />
                 <DispatchCard row={r} onOpen={() => onOpen(r.job)} />
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        </section>
+      )))}
+
+      {shape === 'days' && (
+        <>
+          {pager}
+          <div style={{ ...cardGrid, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', alignItems: 'start' }}>
+            {days.map((d) => {
+              const key = ymd(d);
+              const list = byDay.get(key) ?? [];
+              return (
+                <div key={key} className="wf-card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8,
+                  outline: key === today ? '2px solid var(--wf-gold)' : undefined }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <div className="wf-p-title" style={{ fontSize: 15 }}>{DOW[d.getDay()]} {d.getMonth() + 1}/{d.getDate()}</div>
+                    <div className="wf-p-small wf-subtle">{list.length ? `${list.length} job${list.length === 1 ? '' : 's'}` : 'No jobs'}</div>
+                  </div>
+                  {list.map((r) => (
+                    <div key={r.job.id}>
+                      <WhenLabel job={r.job} />
+                      <DispatchCard row={r} onOpen={() => onOpen(r.job)} />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {(shape === 'week' || shape === 'month') && (
+        <>
+          <div className="wf-card" style={{ padding: '12px 12px 16px' }}>
+            <div style={{ marginBottom: 8 }}>{pager}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 4 }}>
+              {DOW.map((d) => <div key={d} className="wf-p-small wf-subtle" style={{ textAlign: 'center', padding: '6px 0' }}>{d}</div>)}
+              {days.map((d) => {
+                const key = ymd(d);
+                const isSel = key === selected;
+                const isToday = key === today;
+                const outside = format === 'month' && d.getMonth() !== focused.getMonth();
+                const n = byDay.get(key)?.length ?? 0;
+                return (
+                  <button key={key} onClick={() => { setSelected(key); if (outside) setFocused(new Date(d.getFullYear(), d.getMonth(), 1)); }}
+                    aria-label={`${d.toDateString()}${n ? `, ${n} job${n === 1 ? '' : 's'}` : ''}`} aria-pressed={isSel}
+                    style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, font: 'inherit' }}>
+                    <span style={{
+                      width: 36, height: 36, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+                      background: isSel ? 'var(--wf-navy)' : isToday ? 'var(--wf-gold)' : 'transparent',
+                      color: isSel ? '#fff' : isToday ? 'var(--wf-gold-ink)' : outside ? '#B9B4AA' : 'var(--wf-text)',
+                      fontWeight: isSel || isToday ? 700 : 500,
+                    }}>{d.getDate()}</span>
+                    <span style={{ display: 'flex', gap: 2, height: 6 }}>
+                      {Array.from({ length: Math.min(n, 4) }, (_, i) => (
+                        <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--wf-gold)' }} />
+                      ))}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="wf-p-title" style={{ fontSize: 16 }}>
+            {dayRows.length} job{dayRows.length === 1 ? '' : 's'} on {sel.getMonth() + 1}/{sel.getDate()}/{sel.getFullYear()}
+          </div>
+          {dayRows.length === 0 ? (
+            <Empty icon={<CalendarCheck size={34} />} title="Nothing scheduled" message="No jobs on this day. Create one from New order." />
+          ) : (
+            <div style={cardGrid}>
+              {dayRows.map((r) => (
+                <div key={r.job.id}>
+                  <WhenLabel job={r.job} />
+                  <DispatchCard row={r} onOpen={() => onOpen(r.job)} />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

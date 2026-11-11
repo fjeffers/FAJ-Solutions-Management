@@ -214,6 +214,7 @@ body {
 
 /* ── App root layout ── */
 #mobile-header { display: none; }
+.dashboard-hidden { display: none !important; }
 
 .app-root {
   display: flex;
@@ -224,6 +225,13 @@ body {
 .sidebar-desktop { display: flex; }
 
 @media (max-width: 768px) {
+  .job-accounting-row { grid-template-columns: 1fr auto !important; }
+  .job-accounting-row > span { grid-column: 1 / -1; }
+  .faj-system-grid { grid-template-columns: 1fr !important; }
+  .faj-enterprise-topbar { grid-template-columns: 1fr !important; }
+  .faj-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .faj-enterprise-grid { grid-template-columns: 1fr !important; }
+  .faj-app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
   .app-root { flex-direction: column !important; }
   .sidebar-desktop { display: none !important; }
   /* Hamburger-opened menu: must out-specific the display:none above,
@@ -271,6 +279,64 @@ body {
      under 16px, so every tap on a field jumped the layout and left the user
      pinching back out. 16px is the threshold that stops it. */
   .input, .select, textarea.input { font-size: 16px; }
+}
+
+.faj-enterprise-home {
+  min-height: 100%;
+  padding: clamp(6px, .8vw, 10px);
+  background:
+    radial-gradient(circle at 78% 2%, rgba(0, 155, 255, .15), transparent 30%),
+    linear-gradient(145deg, #020D1A 0%, #031326 52%, #061D31 100%);
+}
+.faj-summit-flag {
+  position: absolute;
+  left: 67%;
+  top: 34%;
+  width: 46px;
+  height: 40px;
+  z-index: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .55));
+}
+.faj-summit-flag-pole {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 40px;
+  border-radius: 2px;
+  background: linear-gradient(#e6edf5, #687d91);
+}
+.faj-summit-flag-cloth {
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  width: 40px;
+  height: 22px;
+  overflow: hidden;
+  transform-origin: left center;
+  clip-path: polygon(0 0, 100% 8%, 91% 52%, 100% 95%, 0 100%);
+  background: linear-gradient(110deg, #031a38, #07507c 63%, #d9af55);
+  animation: faj-flag-wave 2.3s ease-in-out infinite;
+}
+.faj-summit-flag-cloth img {
+  width: 35px;
+  height: 18px;
+  margin: 1px 0 0 1px;
+  object-fit: contain;
+  filter: brightness(1.2) contrast(1.08);
+}
+@keyframes faj-flag-wave {
+  0%, 100% { transform: perspective(90px) rotateY(-8deg) skewY(-2deg); }
+  50% { transform: perspective(90px) rotateY(22deg) skewY(3deg) scaleX(.88); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .faj-summit-flag-cloth { animation: none; }
+}
+
+@media (max-width: 520px) {
+  .faj-enterprise-home { padding: 0; }
+  .faj-kpi-grid, .faj-app-grid { gap: 6px !important; }
 }
 
 /* ── Dark mode ── */

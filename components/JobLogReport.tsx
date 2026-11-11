@@ -45,9 +45,11 @@
 // his workbook's layout with the log's rows, the numbers as formulas (lib/job-log-xlsx.ts). No billable
 // total ("No, keep it off"). The names, Fred, 2026-10-30: "Keep the Name Job Log with the pictures of the
 // receipts, odometer the one i edit is the time sheet that reflect on the job log".
+import { parseHotel } from '@/lib/hotel';
+import { isJobLogPhotoLabel, jobLogPhotoLabel, jobLogPhotoLabelKey, type JobLogPhotoKind } from '@/lib/job-log-photo-label';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Download, ExternalLink, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, X } from 'lucide-react';
+import { Check, Download, ExternalLink, FileSpreadsheet, FileText, Pencil, Plus, Printer, Send, Share2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { expenseCategoryLabel } from '@/lib/expenses';
 import { fmtMoney } from '@/lib/utils';
@@ -57,7 +59,7 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave,
+  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave, withHotelBooking,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
@@ -69,7 +71,8 @@ import {
 import JobSheetEditor, { NumBox } from '@/components/JobSheetEditor';
 import JobLogInvoice, { InvoicePhoneEdit, type InvoiceEditor } from '@/components/JobLogInvoice';
 import {
-  addLine, buildInvoice, downloadInvoiceXlsx, editLine, invoiceCharges, invoiceImportRows, jobLogInvoiceNumber, jobLogMemo, parseInvoiceMeta, qbLinesTotal,
+  type AddableItem,
+  addLine, buildInvoice, downloadInvoiceXlsx, dueDate, editLine, invoiceCharges, invoiceImportRows, jobLogInvoiceNumber, jobLogMemo, parseInvoiceMeta, qbLinesTotal,
   quickBooksLines, removeLine, type InvoiceHead, type InvoiceMeta, type InvoiceSent,
 } from '@/lib/job-log-invoice';
 import { downloadCSVText } from '@/lib/export';
@@ -100,10 +103,6 @@ type Pic = {
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
 /** What a site photo is on the log. Saved in work_orders.job_log_receipt_photos: '<id>' a receipt, 'hotel:<id>' a
  *  hotel's receipt, 'odo:<id>' an odometer; none of them, a photo. */
-type PhotoKind = 'photo' | 'odometer' | 'receipt' | 'hotel';
-const kindKey: Record<Exclude<PhotoKind, 'photo'>, (id: string) => string> = { receipt: (id) => id, hotel: (id) => `hotel:${id}`, odometer: (id) => `odo:${id}` };
-const photoKind = (labels: Set<string>, id: string): PhotoKind =>
-  labels.has(id) ? 'receipt' : labels.has(`hotel:${id}`) ? 'hotel' : labels.has(`odo:${id}`) ? 'odometer' : 'photo';
 type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean; materials: boolean; otherReceipts: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
 
 const TZ = 'America/New_York';
@@ -170,10 +169,10 @@ function useLogChoices(woId: string, left: string[] | null | undefined, receiptI
   const savedOut = (key: string) => kept.current.leftOut.has(key);
   /** Label a site photo a photo, an odometer, a receipt or a hotel's receipt (Fred, 2026-10-31: "any pictures i
    *  added also it need to be edited"). */
-  const label = (photoId: string, kind: PhotoKind) => {
+  const label = (photoId: string, kind: JobLogPhotoKind, vendor?: string | null) => {
     const r = new Set(tapped.current.receiptPhotos);
-    for (const k of Object.values(kindKey)) r.delete(k(photoId));
-    if (kind !== 'photo') r.add(kindKey[kind](photoId));
+    for (const value of r) if (isJobLogPhotoLabel(value, photoId)) r.delete(value);
+    if (kind !== 'photo') r.add(jobLogPhotoLabelKey(kind, photoId, vendor));
     void choose({ ...tapped.current, receiptPhotos: r });
   };
   return { ...now, loaded, flip, label, savedOut };
@@ -206,6 +205,8 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const [draft, setDraft] = useState<JobSheet | null>(null);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const netview = isNetviewJob(w, w.customer_name);
   const [me, setMe] = useState({ name: '', email: '' });
   useEffect(() => {
@@ -252,6 +253,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   // among the others (Fred, 2026-10-26: "when i add a photo it not saving on the job log").
   const [added, setAdded] = useState(0);
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  const [readingReceipt, setReadingReceipt] = useState<string | null>(null);
   const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, meals: true, materials: true, otherReceipts: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
 
   useEffect(() => {
@@ -329,15 +331,19 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
     return () => document.body.classList.remove('job-log-open');
   }, []);
 
-  const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => ({
-    key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
-    caption: ({ photo: undefined, receipt: 'Receipt photo', hotel: 'Hotel receipt photo', odometer: 'Odometer photo' } as const)[photoKind(receiptPhotos, p.id)],
-    hotel: photoKind(receiptPhotos, p.id) === 'hotel',
-  }));
-  const sitePicsOf = (...kinds: PhotoKind[]) => sitePics.filter((p) => kinds.includes(photoKind(receiptPhotos, p.photoId!)));
+  const sitePics: Pic[] = photos.filter((p) => inRange(dayOf(p.taken_at, TZ), from, to)).map((p) => {
+    const meta = jobLogPhotoLabel(receiptPhotos, p.id);
+    const base = ({ photo: undefined, receipt: 'Receipt photo', hotel: 'Hotel receipt photo', rental: 'Vehicle rental receipt photo', fuel: 'Fuel receipt photo', odometer: 'Odometer photo' } as const)[meta.kind];
+    return {
+      key: `photo:${p.id}`, src: p.url, day: dayOf(p.taken_at, TZ), stamp: fmtStamp(p.taken_at), tech: p.contractor_name, photoId: p.id,
+      caption: base && meta.vendor ? `${base}, ${meta.vendor}` : base,
+      hotel: meta.kind === 'hotel',
+    };
+  });
+  const sitePicsOf = (...kinds: JobLogPhotoKind[]) => sitePics.filter((p) => kinds.includes(jobLogPhotoLabel(receiptPhotos, p.photoId!).kind));
   const shownPhotos = sitePicsOf('photo');
   // The receipts, then the site photos labeled receipts, by day.
-  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('receipt', 'hotel')]
+  const shownReceipts = [...receipts.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('receipt', 'hotel', 'rental', 'fuel')]
     .sort((a, b) => a.day.localeCompare(b.day));
   const shownOdometer = [...odometer.filter((p) => inRange(p.day, from, to)), ...sitePicsOf('odometer')]
     .sort((a, b) => a.day.localeCompare(b.day));
@@ -365,11 +371,15 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
     hoursScreen: hoursScreenDays(days),
     timeZone: TZ,
   }), [punches, logs, days, spent]);
-  const sheet = savedSheet ?? appSheet;
+  const crew = leadFirst(w);
+  const jobHotel = parseHotel(w.hotel);
+  // A hotel entered on the work order is already attached to this site. Put it
+  // on the invoice with its check-in date and name even when the receipt/amount
+  // has not been uploaded yet; Edit invoice is where the office fills it in.
+  const sheet = withHotelBooking(savedSheet ?? appSheet, jobHotel, crew[0] ?? '', w.start_date ?? '');
   const shown = sheetSorted(sheetInDates(sheet, from, to));
   // Each tech's own days and total, then the next tech (Fred, 2026-10-29: "Paul and Kendall separated grouping"),
   // the lead tech first and then the helpers ("Lead tech first and then helper tech").
-  const crew = leadFirst(w);
   const timeGroups = byTechGroups(shown.time, (r) => r.tech, crew);
   const mileGroups = byTechGroups(shown.miles, (r) => r.tech, crew);
   const dayCount = (days: string[]) => { const n = new Set(days).size; return `${n} day${n === 1 ? '' : 's'}`; };
@@ -464,12 +474,13 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const currentInvoiceMeta: InvoiceMeta = { ...invMeta, date: todayDay, billTo: invoiceBillTo };
   const invoiceHead: InvoiceHead = { billTo: invoiceBillTo, shipTo: [w.title ?? '', where].filter(Boolean), meta: currentInvoiceMeta };
   const place = [w.site_city, w.site_state].filter(Boolean).join(' ');
-  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, currentInvoiceMeta, place) : null;
+  const hotelName = jobHotel?.name ?? '';
+  const invoice = copy === 'invoice' ? buildInvoice(invSheet, invRates, crew, currentInvoiceMeta, place, hotelName) : null;
   // The client copy's charges are the invoice's, so the two always have the same total (Fred, 2026-10-31: "the job log
   // and invoice is not matching up"): with the rates saved, and as they're typed.
-  const clientInvoice = buildInvoice(shown, billRates, crew, savedMeta, place);
+  const clientInvoice = buildInvoice(shown, billRates, crew, savedMeta, place, hotelName);
   const clientCharges = invoiceCharges(clientInvoice, savedAll);
-  const typedTotal = invoiceCharges(buildInvoice(shown, typedRates, crew, savedMeta, place), typedAll).total;
+  const typedTotal = invoiceCharges(buildInvoice(shown, typedRates, crew, savedMeta, place, hotelName), typedAll).total;
   // The total under the table as the rates are typed; the page, the print and Excel with the rates saved, so a
   // print (the button, or the browser's own) is never of rates that aren't kept (CodeRabbit on PR #40).
   const charges = chargesByTech(shown, billRates, crew);
@@ -511,10 +522,10 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   // Editing on the invoice: each change is to the time sheet under it, a tech's rates or the invoice's own boxes.
   const plusDay = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   /** A new line's day: the day after the tech's last (a day worked, a drive), or their first day (a hotel, a material). */
-  const newDay = (s: JobSheet, tech: string, item: 'Labor' | 'Mileage' | 'Material' | 'Hotel') => {
+  const newDay = (s: JobSheet, tech: string, item: AddableItem) => {
     const worked = s.time.filter((r) => r.tech === tech).map((r) => r.day).sort();
     const all = [...worked, ...(item === 'Mileage' ? s.miles.filter((r) => r.tech === tech).map((r) => r.day) : [])].sort();
-    const day = item === 'Hotel' || item === 'Material' ? worked[0] ?? (from || todayDay) : all.length ? plusDay(all.at(-1)!, 1) : (from || todayDay);
+    const day = item === 'Hotel' || item === 'Vehicle' || item === 'Material' ? worked[0] ?? (from || todayDay) : all.length ? plusDay(all.at(-1)!, 1) : (from || todayDay);
     // In the dates picked, so the line added shows to be filled in (Greptile on PR #44).
     return to && day > to ? to : from && day < from ? from : day;
   };
@@ -611,6 +622,86 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
       toastError("Couldn't reach the app. Check your connection and try again.");
     } finally {
       setSending(false);
+    }
+  };
+  // The client link and direct PDF download use the same saved invoice row, so
+  // either action always has the current Job Log breakdown and keeps an older
+  // client link working after the office updates the invoice.
+  const saveClientInvoice = async () => {
+    if (!invoice || !qbLines.length) throw new Error('Nothing on the invoice is charged yet. Edit invoice and type the rates first.');
+    const db = createClient();
+    const { data: { user } } = await db.auth.getUser();
+    if (!user) throw new Error('Sign in again, then try the invoice download.');
+    const { data: existing } = await db.from('invoices')
+      .select('id, share_token').contains('work_order_ids', [w.id]).eq('invoice_number', qbNumber)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    const token = (existing?.share_token as string | null) || (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+    const memo = jobLogMemo(w, qbLines);
+    const payload = {
+      user_id: user.id,
+      invoice_number: qbNumber,
+      client_name: invoiceHead.billTo || w.customer_name || null,
+      client_email: null,
+      client_phone: null,
+      title: w.site_name || w.title || `WO ${w.wo_number}`,
+      description: memo,
+      line_items: qbLines.map((line, index) => ({
+        id: `job-log-${index + 1}`,
+        description: [line.date, line.description].filter(Boolean).join(' · '),
+        quantity: line.qty,
+        rate: line.rate,
+      })),
+      subtotal: qbTotal,
+      tax_rate: 0,
+      tax_amount: 0,
+      total: qbTotal,
+      due_date: dueDate(savedMeta.date, savedMeta.terms),
+      notes: `Work order ${w.wo_number}`,
+      work_order_ids: [w.id],
+      share_token: token,
+      updated_at: new Date().toISOString(),
+    };
+    const saved = existing?.id
+      ? await db.from('invoices').update(payload).eq('id', existing.id)
+      : await db.from('invoices').insert({ ...payload, status: 'draft' });
+    if (saved.error) throw new Error(`The invoice wasn't saved: ${saved.error.message}`);
+    return token;
+  };
+  const shareClientInvoice = async () => {
+    setSharing(true);
+    try {
+      const token = await saveClientInvoice();
+      const url = `${window.location.origin}/invoice/${token}`;
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: `${qbNumber} - ${w.site_name || w.title || 'FAJ Solutions invoice'}`, url });
+          return;
+        } catch { /* The share sheet was closed; copy the link instead. */ }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        toastSuccess('Client invoice link copied. It is read-only and includes the PDF and expense receipts.');
+      } catch {
+        window.prompt('Copy this client invoice link:', url);
+      }
+    } catch (error) {
+      toastError((error as Error).message || "The client link couldn't be created. Check your connection and try again.");
+    } finally {
+      setSharing(false);
+    }
+  };
+  const downloadClientInvoicePdf = async () => {
+    setDownloadingInvoice(true);
+    try {
+      const token = await saveClientInvoice();
+      const link = document.createElement('a');
+      link.href = `/invoice/${encodeURIComponent(token)}/pdf`;
+      link.click();
+      toastSuccess('Downloading the client-ready invoice PDF.');
+    } catch (error) {
+      toastError((error as Error).message || "The invoice PDF couldn't be downloaded. Check your connection and try again.");
+    } finally {
+      setDownloadingInvoice(false);
     }
   };
   // Marked by hand: in QuickBooks by the import file or typed in, and sent on NetView's form. Home lists an invoice
@@ -769,7 +860,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
           // Taken out with its ✗; a declined receipt can be too, though it never prints either way.
           const taken = leftOut.has(p.key);
           const what = `${p.caption ?? 'Photo'} ${p.stamp}`;
-          const kind = p.photoId ? photoKind(receiptPhotos, p.photoId) : null;
+          const kind = p.photoId ? jobLogPhotoLabel(receiptPhotos, p.photoId).kind : null;
           return (
             <div key={p.key} className={out ? 'jl-avoid no-print' : 'jl-avoid'} style={{ position: 'relative' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -821,11 +912,27 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
               })()}
               {p.photoId && (
                 <div className="no-print" role="group" aria-label={`Label ${what}`} style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  {([['photo', 'Photo'], ['odometer', 'Odometer'], ['receipt', 'Receipt'], ['hotel', 'Hotel']] as const).map(([r, text]) => (
-                    <button key={text} type="button" aria-pressed={kind === r} onClick={() => { if (kind !== r) label(p.photoId!, r); }}
+                  {([['photo', 'Photo'], ['odometer', 'Odometer'], ['receipt', 'Receipt'], ['hotel', 'Hotel'], ['rental', 'Rental'], ['fuel', 'Fuel']] as const).map(([r, text]) => (
+                    <button key={text} type="button" aria-pressed={kind === r} disabled={readingReceipt === p.photoId}
+                      onClick={() => {
+                        if (r !== 'hotel' && r !== 'rental' && r !== 'fuel') {
+                          if (kind !== r) label(p.photoId!, r);
+                          return;
+                        }
+                        setReadingReceipt(p.photoId!);
+                        void fetch(p.src).then((response) => response.blob()).then(async (blob) => {
+                          const form = new FormData();
+                          form.set('wo_id', w.id);
+                          form.set('kind', 'receipt');
+                          form.set('file', blob, 'receipt.jpg');
+                          const response = await fetch('/api/jobs/read-photo', { method: 'POST', body: form });
+                          const body = await response.json().catch(() => ({})) as { result?: { vendor?: string | null } };
+                          label(p.photoId!, r, body.result?.vendor ?? null);
+                        }).catch(() => label(p.photoId!, r)).finally(() => setReadingReceipt(null));
+                      }}
                       style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '3px 2px', borderRadius: 8, cursor: 'pointer',
                         border: `1px solid ${kind === r ? '#0E1B2E' : '#D8D3C8'}`, background: kind === r ? '#0E1B2E' : '#fff', color: kind === r ? '#fff' : '#1B1C1F' }}>
-                      {text}
+                      {readingReceipt === p.photoId && (r === 'hotel' || r === 'rental' || r === 'fuel') ? 'Reading…' : text}
                     </button>
                   ))}
                 </div>
@@ -865,6 +972,10 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
         )}
         {copy === 'invoice' && !invDraft && (
           <>
+            <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || clientBlocked || sharing || saving} onClick={() => void shareClientInvoice()}
+              title="Copy a read-only client link with the invoice PDF and downloadable expense receipts">
+              <Share2 size={16} /> {sharing ? 'Creating link…' : 'Share client invoice'}
+            </button>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || clientBlocked || sending || saving} onClick={() => void sendToQuickBooks()}
               title="Make this invoice in QuickBooks, line by line"><Send size={16} /> {sending ? 'Sending…' : 'Send to QuickBooks'}</button>
             {netview && (
@@ -1001,6 +1112,14 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
             {inc.receipts && pictures('Hotels', hotelPics, true)}
             {inc.photos && pictures('Photos', shownPhotos)}
           </div>
+          {!invDraft && (
+            <div className="no-print" style={{ padding: '0 28px 28px', display: 'flex', justifyContent: 'center' }}>
+              <button type="button" className="wf-btn wf-btn-gold" disabled={clientBlocked || downloadingInvoice || saving}
+                onClick={() => void downloadClientInvoicePdf()} title="Save this invoice breakdown as a client-ready PDF attachment">
+                <Download size={16} /> {downloadingInvoice ? 'Downloading…' : 'Download invoice PDF'}
+              </button>
+            </div>
+          )}
         </div>
       ) : (
       <div className="jl-page" style={{ maxWidth: 850, margin: '0 auto', background: '#fff', color: '#1B1C1F', borderRadius: 14, overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)', fontSize: 13 }}>

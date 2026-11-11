@@ -1,4 +1,4 @@
--- Migration 154: a helper link only works for a tech the link's creator owns.
+-- Migration 157: a helper link only works for a tech the link's creator owns.
 --
 -- portal_grants checked that user_id was the caller, but never that the
 -- contractor_id belonged to that same owner. Any signed-in login (a tech can
@@ -14,7 +14,7 @@
 --                         to_jsonb(c) minus a deny list; helper links get only
 --                         id and name
 --
--- Safe to run more than once, after migration 153.
+-- Safe to run more than once, after migration 156.
 
 ALTER TABLE portal_grants ALTER COLUMN user_id SET DEFAULT auth.uid();
 

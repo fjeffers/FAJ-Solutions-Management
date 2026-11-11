@@ -6,7 +6,8 @@
 -- another tech and read that tech's profile through get_portal_data.
 --
 --   portal_grants policy  WITH CHECK also requires the contractor to be owned
---                         by auth.uid(); user_id now defaults to auth.uid()
+--                         by auth.uid() (portal_owns_contractor); user_id now
+--                         defaults to auth.uid()
 --   existing bad grants   revoked
 --   portal_resolve        a grant resolves only when c.user_id = g.user_id
 --   get_portal_data       returns an explicit contractor column list instead of
@@ -17,18 +18,23 @@
 
 ALTER TABLE portal_grants ALTER COLUMN user_id SET DEFAULT auth.uid();
 
+-- SECURITY DEFINER so the check doesn't depend on RLS on contractors. It only
+-- answers for the caller's own contractors, so it reveals nothing else.
+CREATE OR REPLACE FUNCTION public.portal_owns_contractor(p_contractor_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+AS $$
+  SELECT auth.uid() IS NOT NULL AND EXISTS (
+    SELECT 1 FROM contractors c
+    WHERE c.id = p_contractor_id
+      AND c.user_id = auth.uid()
+  );
+$$;
+
 DROP POLICY IF EXISTS "Users manage own portal grants" ON portal_grants;
 CREATE POLICY "Users manage own portal grants"
   ON portal_grants FOR ALL
   USING (auth.uid() = user_id)
-  WITH CHECK (
-    auth.uid() = user_id
-    AND EXISTS (
-      SELECT 1 FROM contractors c
-      WHERE c.id = contractor_id
-        AND c.user_id = auth.uid()
-    )
-  );
+  WITH CHECK (auth.uid() = user_id AND portal_owns_contractor(contractor_id));
 
 UPDATE portal_grants g
    SET revoked_at = NOW(), updated_at = NOW()

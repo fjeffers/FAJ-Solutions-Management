@@ -1,4 +1,4 @@
--- Migration 154: customer_resolve_or_create only writes into the caller's own account.
+-- Migration 156: customer_resolve_or_create only writes into the caller's own account.
 --
 -- Migration 049 trusted the p_user_id argument, and the function is SECURITY DEFINER, so
 -- anyone holding the public anon key and the owner's id could add customers and aliases

@@ -1315,13 +1315,16 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
                 </div>
               )}
 
-              {/* The job's hours and miles in one line, as on Fred's workbook. No money on it: no billable total ("No, keep it off"),
-                  and the receipts' dollars stay in their own tables (Fred, 2026-10-30: "i dont want it mix"). */}
-              {(siteHours > 0 || totalMiles > 0) && (
+              {/* One clean bottom summary for either copy, so every category above can be checked without hunting through the report. */}
+              {(siteHours > 0 || totalMiles > 0 || mealReceipts.length > 0 || materialReceipts.length > 0 || hotelReceipts.length > 0 || otherReceipts.length > 0) && (
                 <div className="jl-band jl-avoid" style={{ marginTop: 16, background: '#0E1B2E', color: '#fff', borderRadius: 8, padding: '9px 14px', display: 'flex', flexWrap: 'wrap', gap: '4px 22px', alignItems: 'baseline', fontSize: 13 }}>
                   <b style={{ color: '#E3C987', letterSpacing: 1 }}>JOB TOTAL</b>
-                  <span>Hours <b>{hrs(siteHours)}</b></span>
-                  <span>Miles <b>{totalMiles.toLocaleString('en-US')}</b></span>
+                  {siteHours > 0 && <span>Hours <b>{hrs(siteHours)}</b></span>}
+                  {totalMiles > 0 && <span>Mileage <b>{totalMiles.toLocaleString('en-US')}</b></span>}
+                  {hotelReceipts.length > 0 && <span>Hotels <b>{fmtMoney(moneyTotal(hotelReceipts))}</b></span>}
+                  {mealReceipts.length > 0 && <span>Meals <b>{fmtMoney(moneyTotal(mealReceipts))}</b></span>}
+                  {materialReceipts.length > 0 && <span>Materials <b>{fmtMoney(moneyTotal(materialReceipts))}</b></span>}
+                  {otherReceipts.length > 0 && <span>Other receipts <b>{fmtMoney(moneyTotal(otherReceipts))}</b></span>}
                 </div>
               )}
 

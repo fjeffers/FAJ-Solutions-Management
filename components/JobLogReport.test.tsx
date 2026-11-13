@@ -420,6 +420,8 @@ describe('Job log meals, materials and other receipts', () => {
       expect(screen.getByText('Materials', { selector: 'div' }).nextElementSibling!.textContent).toBe('$151.65');
       expect(screen.getByText('Hotels', { selector: 'div' }).nextElementSibling!.textContent).toBe('$701.48');
       expect(screen.getByText('Other receipts', { selector: 'div' }).nextElementSibling!.textContent).toBe('$76.75');
+      expect(screen.getByText('JOB TOTAL').parentElement!.textContent)
+        .toBe('JOB TOTALMileage 18Hotels $701.48Meals $30.75Materials $151.65Other receipts $76.75');
       // Only some days picked: the line speaks for those dates, not the whole job (Greptile on PR #38).
       fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
       expect(await screen.findByText('Kendell Newbold: no materials in these dates.')).toBeTruthy();
@@ -722,8 +724,8 @@ describe('Job log edited by the office', () => {
       ['Materials', '$104.17'],
     ]);
     expect(screen.getByText('OVERALL TOTAL').parentElement!.textContent).toBe('OVERALL TOTAL$701.77');
-    // The hours and miles band stays as it was.
-    expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Miles 18');
+    // The bottom band now explains every category included in the copy.
+    expect(screen.getByText('JOB TOTAL').parentElement!.textContent).toBe('JOB TOTALHours 9Mileage 18Materials $104.17');
 
     fireEvent.click(screen.getByRole('button', { name: /excel/i }));
     expect(downloadJobLogXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Client time sheet\.xlsx$/), expect.anything(), expect.anything(),

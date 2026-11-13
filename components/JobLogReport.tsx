@@ -103,7 +103,7 @@ type Pic = {
 type Choices = { leftOut: Set<string>; receiptPhotos: Set<string> };
 /** What a site photo is on the log. Saved in work_orders.job_log_receipt_photos: '<id>' a receipt, 'hotel:<id>' a
  *  hotel's receipt, 'odo:<id>' an odometer; none of them, a photo. */
-type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean; materials: boolean; otherReceipts: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
+type Include = { gaps: boolean; time: boolean; mileage: boolean; meals: boolean; materials: boolean; hotels: boolean; otherReceipts: boolean; checklist: boolean; answers: boolean; notes: boolean; photos: boolean; receipts: boolean; odometer: boolean; scope: boolean; leftOut: boolean };
 
 const TZ = 'America/New_York';
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -254,7 +254,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   const [added, setAdded] = useState(0);
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
   const [readingReceipt, setReadingReceipt] = useState<string | null>(null);
-  const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, meals: true, materials: true, otherReceipts: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
+  const [inc, setInc] = useState<Include>({ gaps: true, time: true, mileage: true, meals: true, materials: true, hotels: true, otherReceipts: true, checklist: true, answers: true, notes: true, photos: true, receipts: true, odometer: true, scope: false, leftOut: false });
 
   useEffect(() => {
     const db = createClient();
@@ -400,7 +400,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   // Shared lodging is paid for every assigned tech. The invoice already gives a
   // helper the lead's hotel when they have no hotel row of their own; the Tech
   // and Client copies must show the same two charges instead of only the lead's.
-  const otherReceipts = (() => {
+  const allOtherReceipts = (() => {
     const lead = crew[0];
     const leadHotels = shown.other.filter((row) => row.tech === lead && isHotel(row));
     if (!leadHotels.length) return shown.other;
@@ -411,6 +411,8 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
     );
     return [...shown.other, ...shared];
   })();
+  const hotelReceipts = allOtherReceipts.filter(isHotel);
+  const otherReceipts = allOtherReceipts.filter((row) => !isHotel(row));
   const receiptCount = (n: number) => `${n} receipt${n === 1 ? '' : 's'}`;
   // A tech on the job with nothing in a table gets a line under it, so the client sees why.
   const without = (groups: { tech: string }[]) => crew.filter((t) => !groups.some((g) => g.tech === t));
@@ -1078,7 +1080,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
         )}
         <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px 16px', color: '#5E6470' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: '#1B1C1F' }}>Show:</span>
-          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{shown.miles.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
+          {gaps.length > 0 && toggle('gaps', 'Not completed')}{toggle('time', 'Hours')}{shown.miles.length > 0 && toggle('mileage', 'Mileage')}{mealReceipts.length > 0 && toggle('meals', 'Meals')}{materialReceipts.length > 0 && toggle('materials', 'Materials')}{hotelReceipts.length > 0 && toggle('hotels', 'Hotels')}{otherReceipts.length > 0 && toggle('otherReceipts', 'Other receipts')}{tasks.length > 0 && toggle('checklist', 'Checklist')}{toggle('answers', 'Answers')}
           {toggle('notes', "Tech's notes")}{toggle('scope', 'Scope of work')}
           {/* The pictures are on the invoice only (Fred, 2026-10-31: "the pictures are only for the invioce nothing else"). */}
           {copy === 'invoice' && <>{(receipts.length > 0 || sitePicsOf('receipt', 'hotel').length > 0) && toggle('receipts', 'Receipts')}{(odometer.length > 0 || sitePicsOf('odometer').length > 0) && toggle('odometer', 'Odometer')}
@@ -1164,6 +1166,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
               ...(totalMiles > 0 ? [['Miles', totalMiles.toLocaleString('en-US')]] : []),
               ...(mealReceipts.length ? [['Meals', fmtMoney(moneyTotal(mealReceipts))]] : []),
               ...(materialReceipts.length ? [['Materials', fmtMoney(moneyTotal(materialReceipts))]] : []),
+              ...(hotelReceipts.length ? [['Hotels', fmtMoney(moneyTotal(hotelReceipts))]] : []),
               ...(otherReceipts.length ? [['Other receipts', fmtMoney(moneyTotal(otherReceipts))]] : []),
               ...(tasks.length ? [['Checklist', `${tasks.filter((t) => t.completed).length} of ${tasks.length}`]] : []),
               ...(qa.length ? [['Questions', `${qa.filter((q) => (q.answer ?? '').trim()).length} of ${qa.length}`]] : []),
@@ -1295,6 +1298,13 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
                   <H>Materials</H>
                   {receiptTable(materialReceipts, 'materials', false)}
                   {noneLine(without(byTechGroups(materialReceipts, (r) => r.tech, crew)), 'materials')}
+                </div>
+              )}
+
+              {inc.hotels && hotelReceipts.length > 0 && (
+                <div className="jl-sec">
+                  <H>Hotels</H>
+                  {receiptTable(hotelReceipts, 'hotels', false)}
                 </div>
               )}
 

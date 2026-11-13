@@ -403,18 +403,23 @@ describe('Job log meals, materials and other receipts', () => {
         ['Overall total materials', '$151.65'],
       ]);
       expect(screen.getByText('Kendell Newbold: no materials on this job.')).toBeTruthy();
+      expect(await rows('Hotels')).toEqual([
+        ['Paul Gibbs', '10/18/2026', 'Quality Inn', '$350.74'],
+        ['Paul Gibbs total hotels · 1 receipt', '$350.74'],
+        ['Kendell Newbold', '10/18/2026', 'Quality Inn', '$350.74'],
+        ['Kendell Newbold total hotels · 1 receipt', '$350.74'],
+        ['Overall total hotels', '$701.48'],
+      ]);
       expect(await rows('Other receipts')).toEqual([
-        ['Paul Gibbs', '10/18/2026', 'Lodging', 'Quality Inn', '$350.74'],
         ['Paul Gibbs', '10/21/2026', 'Fuel · Van, drive home', '—', '$76.75'],
-        ['Paul Gibbs total · 2 receipts', '$427.49'],
-        ['Kendell Newbold', '10/18/2026', 'Lodging', 'Quality Inn', '$350.74'],
-        ['Kendell Newbold total · 1 receipt', '$350.74'],
-        ['Overall total other receipts', '$778.23'],
+        ['Paul Gibbs total · 1 receipt', '$76.75'],
+        ['Overall total other receipts', '$76.75'],
       ]);
       // The same totals at the top.
       expect(screen.getByText('Meals', { selector: 'div' }).nextElementSibling!.textContent).toBe('$30.75');
       expect(screen.getByText('Materials', { selector: 'div' }).nextElementSibling!.textContent).toBe('$151.65');
-      expect(screen.getByText('Other receipts', { selector: 'div' }).nextElementSibling!.textContent).toBe('$778.23');
+      expect(screen.getByText('Hotels', { selector: 'div' }).nextElementSibling!.textContent).toBe('$701.48');
+      expect(screen.getByText('Other receipts', { selector: 'div' }).nextElementSibling!.textContent).toBe('$76.75');
       // Only some days picked: the line speaks for those dates, not the whole job (Greptile on PR #38).
       fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
       expect(await screen.findByText('Kendell Newbold: no materials in these dates.')).toBeTruthy();

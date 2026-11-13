@@ -59,7 +59,7 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave, withHotelBooking,
+  hoursScreenDays, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave, withHotelBooking,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
@@ -397,7 +397,20 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   // uploading it (Fred, 2026-10-30: "meals get entered by receipt so does materials").
   const mealReceipts = shown.meals;
   const materialReceipts = shown.materials;
-  const otherReceipts = shown.other;
+  // Shared lodging is paid for every assigned tech. The invoice already gives a
+  // helper the lead's hotel when they have no hotel row of their own; the Tech
+  // and Client copies must show the same two charges instead of only the lead's.
+  const otherReceipts = (() => {
+    const lead = crew[0];
+    const leadHotels = shown.other.filter((row) => row.tech === lead && isHotel(row));
+    if (!leadHotels.length) return shown.other;
+    const shared = crew.slice(1).flatMap((tech) =>
+      shown.other.some((row) => row.tech === tech && isHotel(row))
+        ? []
+        : leadHotels.map((row) => ({ ...row, tech })),
+    );
+    return [...shown.other, ...shared];
+  })();
   const receiptCount = (n: number) => `${n} receipt${n === 1 ? '' : 's'}`;
   // A tech on the job with nothing in a table gets a line under it, so the client sees why.
   const without = (groups: { tech: string }[]) => crew.filter((t) => !groups.some((g) => g.tech === t));
@@ -957,6 +970,11 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
         {/* And the rates saved first on the client's copy, so what's printed is what's kept. */}
         <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={!loaded || !!draft || clientBlocked} onClick={() => window.print()}><Printer size={16} /> Print / Save as PDF</button>
         <button className="wf-btn wf-btn-ghost wf-btn-sm" disabled={!loaded || !!draft || clientBlocked} onClick={downloadExcel}><FileSpreadsheet size={16} /> Time sheet in Excel</button>
+        {onPayTech && techs.length > 0 && (
+          <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={saving} onClick={onPayTech}>
+            Record tech pay{techOwed > 0.005 ? ` (${fmtMoney(techOwed)} owed)` : ''}
+          </button>
+        )}
         {invDraft ? (
           <>
             <button className="wf-btn wf-btn-gold wf-btn-sm" disabled={saving} onClick={() => void saveInvoice()}><Check size={16} /> {saving ? 'Saving…' : 'Save invoice'}</button>
@@ -1008,11 +1026,6 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
               <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '6px 18px' }}>
                 {!savedMeta.qbo && markBox('billed', 'Billed in QuickBooks')}
                 {netview && markBox('netview', 'Sent to NetView')}
-                {netview && savedMeta.netview && onPayTech && techOwed > 0.005 && (
-                  <button className="wf-btn wf-btn-outline wf-btn-sm" disabled={saving} onClick={onPayTech}>
-                    Record tech pay ({fmtMoney(techOwed)} owed)
-                  </button>
-                )}
               </div>
             )}
           </div>

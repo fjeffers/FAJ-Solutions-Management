@@ -3,7 +3,7 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { enrichWorkOrders, woPayoutTotal, fmtMoney, techPayToShow } from '@/lib/utils';
+import { contractorOwedOnWO, enrichWorkOrders, woPayoutTotal, fmtMoney, techPayToShow } from '@/lib/utils';
 import { scheduleLine as woScheduleLine } from '@/lib/email-templates';
 import { geocodeAddress } from '@/lib/geocode';
 import { useDarkMode } from '@/lib/useDarkMode';
@@ -1020,7 +1020,12 @@ Go ahead?`)) return;
   };
 
   const handlePayWO = (w: EnrichedWorkOrder) => {
-    const contractor = contractors.find((c) => c.name === w.contractor_name);
+    const tech = w.contractor_name || w.contractor_names?.[0] || '';
+    const contractor = contractors.find((c) => c.name === tech);
+    const paidToTech = payments
+      .filter((payment) => payment.wo_number === w.wo_number && payment.contractor_name === tech)
+      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const amount = Math.max(0, contractorOwedOnWO(w, tech) - paidToTech);
     // Zelle is the house default; direct deposit only when Zelle isn't on file
     const method = contractor?.zelle_phone
       ? 'Zelle'
@@ -1032,8 +1037,8 @@ Go ahead?`)) return;
       item: null,
       prefill: {
         wo_number: w.wo_number,
-        contractor_name: w.contractor_name,
-        amount: w.remaining,
+        contractor_name: tech,
+        amount,
         method,
         payment_date: new Date().toISOString().split('T')[0],
       },
@@ -2190,6 +2195,10 @@ Go ahead?`)) return;
           onSavePayment={savePayment}
           onDeletePayment={deletePayment}
           onEditPayment={(p) => setModal({ type: 'payment', item: p })}
+          onPayTech={modal.item?.id ? () => {
+            const workOrder = enrichedWOs.find((row) => row.id === modal.item!.id);
+            if (workOrder) handlePayWO(workOrder);
+          } : undefined}
           materials={materials}
           kits={materialKits}
           onSaveKit={saveMaterialKit}

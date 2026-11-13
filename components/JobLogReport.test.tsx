@@ -355,6 +355,16 @@ describe('Job log pictures', () => {
   });
 });
 
+describe('Job log tech pay', () => {
+  it('always offers Record tech pay even when the work order has no calculated pay', async () => {
+    const onPayTech = vi.fn();
+    renderLog(<JobLogReport w={wo} deliverables={[]} onClose={() => {}} onPayTech={onPayTech} />);
+    const button = await screen.findByRole('button', { name: 'Record tech pay' });
+    fireEvent.click(button);
+    expect(onPayTech).toHaveBeenCalledOnce();
+  });
+});
+
 describe('Job log meals, materials and other receipts', () => {
   // Fred, 2026-10-30: below the hours and the mileage, "the same with ... food then materials etc",
   // and "meals get entered by receipt so does materials": what the tech said the receipt was for.
@@ -397,12 +407,14 @@ describe('Job log meals, materials and other receipts', () => {
         ['Paul Gibbs', '10/18/2026', 'Lodging', 'Quality Inn', '$350.74'],
         ['Paul Gibbs', '10/21/2026', 'Fuel · Van, drive home', '—', '$76.75'],
         ['Paul Gibbs total · 2 receipts', '$427.49'],
-        ['Overall total other receipts', '$427.49'],
+        ['Kendell Newbold', '10/18/2026', 'Lodging', 'Quality Inn', '$350.74'],
+        ['Kendell Newbold total · 1 receipt', '$350.74'],
+        ['Overall total other receipts', '$778.23'],
       ]);
       // The same totals at the top.
       expect(screen.getByText('Meals', { selector: 'div' }).nextElementSibling!.textContent).toBe('$30.75');
       expect(screen.getByText('Materials', { selector: 'div' }).nextElementSibling!.textContent).toBe('$151.65');
-      expect(screen.getByText('Other receipts', { selector: 'div' }).nextElementSibling!.textContent).toBe('$427.49');
+      expect(screen.getByText('Other receipts', { selector: 'div' }).nextElementSibling!.textContent).toBe('$778.23');
       // Only some days picked: the line speaks for those dates, not the whole job (Greptile on PR #38).
       fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-20' } });
       expect(await screen.findByText('Kendell Newbold: no materials in these dates.')).toBeTruthy();

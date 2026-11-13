@@ -62,9 +62,13 @@ export default function PaymentModal({ item, workOrders, contractors = [], payme
 
   const handleTechChange = (name: string) => {
     const c = contractors.find((x) => x.name === name);
+    const amount = !item && selectedWO && name ? techRemaining(selectedWO, name) : null;
     setForm((f) => ({
       ...f,
       contractor_name: name,
+      // Recalculate the selected tech's own share; a job without pay set stays
+      // at zero so the office can type the payment manually.
+      ...(!item && amount != null ? { amount } : {}),
       // New payments default to how this tech usually gets paid; edits keep the recorded method
       method: item ? f.method : preferredMethod(c),
     }));

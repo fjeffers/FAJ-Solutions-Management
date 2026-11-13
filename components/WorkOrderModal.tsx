@@ -295,12 +295,13 @@ type Props = {
   onSavePayment?: (p: Partial<Payment>) => Promise<void>;
   onDeletePayment?: (id: string) => Promise<void>;
   onEditPayment?: (p: Payment) => void;
+  onPayTech?: () => void;
   materials?: Material[];
   kits?: MaterialKit[];
   onSaveKit?: (k: Partial<MaterialKit>) => Promise<void>;
 };
 
-export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], invoiced = false, payments = [], onSave, onClose, onDelete, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, materials = [], kits = [], onSaveKit }: Props) {
+export default function WorkOrderModal({ item, nextWoNumber, prefill, contractors, questionTemplates, deliverableTemplates = [], invoiced = false, payments = [], onSave, onClose, onDelete, onSaveTemplate, onUploadDoc, onSavePayment, onDeletePayment, onEditPayment, onPayTech, materials = [], kits = [], onSaveKit }: Props) {
   const [tab, setTab] = useState<Tab>('details');
   const [askDelete, setAskDelete] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
@@ -1037,7 +1038,8 @@ export default function WorkOrderModal({ item, nextWoNumber, prefill, contractor
     <div className="modal-overlay">
       {logOpen && item?.id && (
         <JobLogReport w={{ ...item, ...form } as EnrichedWorkOrder}
-          deliverables={listFor([], form.title ?? '', form.description ?? '').items} onClose={() => setLogOpen(false)} />
+          deliverables={listFor([], form.title ?? '', form.description ?? '').items} onClose={() => setLogOpen(false)}
+          onPayTech={onPayTech ? () => { setLogOpen(false); onPayTech(); } : undefined} />
       )}
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
         {/* Header: what it is, its status, and when, once (Fred, 2026-10-18:

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { splitPastedEmail } from '@/lib/email-parsers/pasted';
 import { fileSupportTicket } from '@/lib/support-intake';
+import { ownerOnly } from '@/lib/security';
 
 // POST /api/support/from-email — paste an email (or drop a .eml) into the
 // Support inbox. The bot sorts it and files it as a new ticket for Fred to
@@ -14,6 +15,8 @@ export async function POST(req: Request) {
   const supabase = await createClient('admin');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const denied = await ownerOnly(supabase);
+  if (denied) return denied;
 
   let raw = '';
   if ((req.headers.get('content-type') ?? '').includes('application/json')) {

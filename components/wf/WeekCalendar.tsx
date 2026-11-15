@@ -6,7 +6,7 @@
 // The dates and the grouping are lib/week-view.ts.
 import { useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, MapPin, UserX, Users } from 'lucide-react';
-import { WF_STATUS_COLOR, parseClockTime, fmtClock12, type WfJob } from '@/lib/wf';
+import { WF_STATUS_COLOR, parseClockTime, fmtClock12, isOnHold, type WfJob } from '@/lib/wf';
 import { todayISO } from '@/lib/utils';
 import { dayOfJob, periodDays, periodJobs, periodLabel, periodStart, shiftPeriod, spanOf, undated, weekJobs, weekStartOf, type Span } from '@/lib/week-view';
 import { StatusChip } from './WfUi';
@@ -19,13 +19,14 @@ const ANCHOR_KEY = 'home-period-day';
 const dayNum = (d: string) => Number(d.slice(8, 10));
 
 function WeekCard({ job, day, onOpen }: { job: WfJob; day: string | null; onOpen: () => void }) {
-  const accent = WF_STATUS_COLOR[job.status];
+  const held = isOnHold(job);
+  const accent = held ? '#6B7280' : WF_STATUS_COLOR[job.status];
   const t = parseClockTime(job.startTime);
   const part = day ? dayOfJob(job, day) : null;
   const where = [job.city, job.state].filter(Boolean).join(', ');
   return (
     <button type="button" onClick={onOpen} className="wf-week-card" aria-label={`Open WO ${job.number}: ${job.title}`}
-      style={{ borderLeft: `4px solid ${accent}`, opacity: job.status === 'closed' ? 0.6 : 1 }}>
+      style={{ borderLeft: `4px solid ${accent}`, opacity: held ? 0.55 : job.status === 'closed' ? 0.6 : 1, filter: held ? 'grayscale(1)' : undefined }}>
       <span className="wf-subtle" style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {job.highPriority && <AlertTriangle size={12} color="var(--wf-danger)" style={{ verticalAlign: '-2px', marginRight: 3 }} aria-label="High priority" />}
         WO {job.number}

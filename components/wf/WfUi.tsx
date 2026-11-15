@@ -5,7 +5,7 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, CalendarClock, ChevronRight, Clock, Inbox, UserX, Users, X } from 'lucide-react';
 import {
-  WF_STATUS_COLOR, WF_BUCKETS, wfStatusLabel, whenText, place, tasksDone, isClockedIn, jobImage, requestWhen,
+  WF_STATUS_COLOR, WF_BUCKETS, wfStatusLabel, whenText, place, tasksDone, isClockedIn, isOnHold, jobImage, requestWhen,
   type WfBucket, type WfJob, type WfStatus,
 } from '@/lib/wf';
 import { waitingRequests } from '@/lib/closeout';
@@ -122,7 +122,7 @@ export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet =
   /** A line of what the job is (the Projects list). */
   brief?: boolean;
 }) {
-  const held = job.officeStatus === 'On Hold' || job.hold?.trim().toLowerCase() === 'on hold';
+  const held = isOnHold(job);
   const accent = held ? '#6B7280' : WF_STATUS_COLOR[job.status];
   const done = tasksDone(job);
   const where = [job.client, place(job)].filter(Boolean).join(' · ');
@@ -130,7 +130,7 @@ export function JobCard({ job, ownerView = false, onOpen, index = 0, payNotSet =
     <button
       className="wf-card wf-card-click wf-rise"
       onClick={onOpen}
-      style={{ display: 'block', overflow: 'hidden', animationDelay: `${Math.min(index, 12) * 45}ms` }}
+      style={{ display: 'block', overflow: 'hidden', animationDelay: `${Math.min(index, 12) * 45}ms`, ...(held ? { opacity: 0.55, filter: 'grayscale(1)' } : {}) }}
       aria-label={`WO ${job.number}: ${job.title}`}
     >
       <div style={{ display: 'flex', gap: 12, padding: 12, borderLeft: `4px solid ${accent}` }}>

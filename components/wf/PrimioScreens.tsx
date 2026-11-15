@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Columns3, GanttChart, Table2, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck, CalendarDays, Users, MessageSquare, Camera, GripVertical, Clock } from 'lucide-react';
 import {
-  WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12,
+  WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12, isOnHold,
   type WfJob, type WfStatus,
 } from '@/lib/wf';
 import { fmtMoney, todayISO } from '@/lib/utils';
@@ -149,7 +149,7 @@ export function DispatchCard({ row, onOpen, move, dragging, onDragStart, onDragE
   const pctDone = job.tasks.length ? Math.round((tasksDone / job.tasks.length) * 100) : null;
   const counts = (row.messages ?? 0) > 0 || (row.photos ?? 0) > 0 || hours > 0 || pctDone !== null;
   return (
-    <div style={{ position: 'relative', opacity: dragging ? 0.45 : 1 }}
+    <div style={{ position: 'relative', opacity: dragging ? 0.45 : isOnHold(job) ? 0.55 : 1, filter: isOnHold(job) ? 'grayscale(1)' : undefined }}
       draggable={!!onDragStart}
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', job.id); onDragStart?.(); }}
       onDragEnd={onDragEnd}>

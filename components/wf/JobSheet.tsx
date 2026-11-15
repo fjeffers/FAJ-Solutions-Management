@@ -219,7 +219,7 @@ export default function JobSheet({ rows, contractors, fields, onPatch, onOpen, o
                 <tr><td colSpan={cols.length + 3} style={{ ...cell, background: '#F4F2EC', fontWeight: 700 }}>{g.label} <span className="wf-subtle" style={{ fontWeight: 500 }}>· {g.totals.jobs} job{g.totals.jobs === 1 ? '' : 's'}</span></td></tr>
               )}
               {g.rows.map((w) => (
-                <tr key={`${g.key}:${w.id}`} style={{ background: sel.has(w.id) ? 'rgba(201,162,39,0.10)' : undefined, opacity: w.wo_status === 'On Hold' ? 0.55 : 1 }}>
+                <tr key={`${g.key}:${w.id}`} style={{ background: sel.has(w.id) ? 'rgba(201,162,39,0.10)' : undefined, ...(w.wo_status === 'On Hold' || w.board_stage?.trim().toLowerCase() === 'on hold' ? { opacity: 0.55, filter: 'grayscale(1)' } : {}) }}>
                   <td style={cell}><input type="checkbox" aria-label={`Tick WO ${w.wo_number}`} checked={sel.has(w.id)}
                     onChange={() => setSel((s) => { const n = new Set(s); if (n.has(w.id)) n.delete(w.id); else n.add(w.id); return n; })} /></td>
                   <td style={{ ...cell, fontWeight: 700 }}><button type="button" className="wf-sheet-link" onClick={() => onOpen(w.id)}>{w.wo_number}</button></td>

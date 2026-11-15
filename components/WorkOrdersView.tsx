@@ -423,7 +423,7 @@ function WOCard({
 
   const isArchived = w.archived_at !== null;
   // On hold (Fred, 2026-10-31: "add hold on work orders and it gray out").
-  const isHeld = w.wo_status === 'On Hold';
+  const isHeld = w.wo_status === 'On Hold' || w.board_stage?.trim().toLowerCase() === 'on hold';
 
   return (
     <div

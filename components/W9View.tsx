@@ -9,6 +9,7 @@ export default function W9View({ contractors, onEdit }: { contractors: Contracto
   const [companyW9, setCompanyW9] = useState<{ onFile: boolean; url: string | null }>({ onFile: false, url: null });
   const [clientEmail, setClientEmail] = useState('');
   const [companyMsg, setCompanyMsg] = useState('');
+  const [shareUrl, setShareUrl] = useState('');
   const [busy, setBusy] = useState(false);
 
   const loadCompanyW9 = () => fetch('/api/owner/company-w9').then((r) => r.json()).then((data) => setCompanyW9(data)).catch(() => {});
@@ -18,32 +19,47 @@ export default function W9View({ contractors, onEdit }: { contractors: Contracto
     if (!file || busy) return;
     setBusy(true);
     setCompanyMsg('Saving securely…');
-    const form = new FormData();
-    form.set('file', file);
-    const response = await fetch('/api/owner/company-w9', { method: 'POST', body: form });
-    const body = await response.json().catch(() => ({}));
-    setBusy(false);
-    setCompanyMsg(response.ok ? 'Company W-9 saved.' : body.error ?? 'Could not save the W-9.');
-    if (response.ok) void loadCompanyW9();
+    setShareUrl('');
+    try {
+      const form = new FormData();
+      form.set('file', file);
+      const response = await fetch('/api/owner/company-w9', { method: 'POST', body: form });
+      const body = await response.json().catch(() => ({}));
+      setCompanyMsg(response.ok ? 'Company W-9 saved.' : body.error ?? 'Could not save the W-9.');
+      if (response.ok) void loadCompanyW9();
+    } catch {
+      setCompanyMsg('Could not reach the server. Try the upload again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const sendCompanyW9 = async () => {
     if (!clientEmail.trim() || busy) return;
     setBusy(true);
     setCompanyMsg('Sending secure link…');
-    const response = await fetch('/api/owner/company-w9', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: clientEmail }),
-    });
-    const body = await response.json().catch(() => ({}));
-    setBusy(false);
-    if (response.ok) {
-      setClientEmail('');
-      setCompanyMsg('W-9 sent. The secure link expires in 7 days.');
-    } else {
-      if (body.url) await navigator.clipboard.writeText(body.url).catch(() => {});
-      setCompanyMsg(body.url ? `${body.error} Secure link copied instead.` : body.error ?? 'Could not send the W-9.');
+    setShareUrl('');
+    try {
+      const response = await fetch('/api/owner/company-w9', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: clientEmail }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setClientEmail('');
+        setCompanyMsg('W-9 sent. The secure link expires in 7 days.');
+      } else if (body.url) {
+        const copied = await navigator.clipboard.writeText(body.url).then(() => true, () => false);
+        setShareUrl(body.url);
+        setCompanyMsg(copied ? `${body.error} Secure link copied instead.` : `${body.error} Use the secure link below.`);
+      } else {
+        setCompanyMsg(body.error ?? 'Could not send the W-9.');
+      }
+    } catch {
+      setCompanyMsg('Could not reach the server. Try sending again.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -72,7 +88,7 @@ export default function W9View({ contractors, onEdit }: { contractors: Contracto
             <div style={{ fontSize: 12, color: '#777' }}>{companyW9.onFile ? 'Stored privately and ready to send to clients.' : 'Upload the completed company W-9 PDF once, then reuse it.'}</div>
           </div>
           {companyW9.url && <a className="btn btn-ghost" href={companyW9.url} target="_blank" rel="noreferrer">Open</a>}
-          <label className="btn btn-primary" style={{ cursor: busy ? 'wait' : 'pointer' }}><Upload size={13} /> {companyW9.onFile ? 'Replace' : 'Upload PDF'}<input type="file" accept="application/pdf" hidden disabled={busy} onChange={(e) => void uploadCompanyW9(e.target.files?.[0])} /></label>
+          <label className="btn btn-primary" style={{ cursor: busy ? 'wait' : 'pointer' }}><Upload size={13} /> {companyW9.onFile ? 'Replace' : 'Upload PDF'}<input type="file" accept="application/pdf" hidden disabled={busy} onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ''; void uploadCompanyW9(file); }} /></label>
         </div>
         {companyW9.onFile && (
           <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
@@ -81,6 +97,7 @@ export default function W9View({ contractors, onEdit }: { contractors: Contracto
           </div>
         )}
         {companyMsg && <div style={{ marginTop: 10, fontSize: 12, fontWeight: 650 }}>{companyMsg}</div>}
+        {shareUrl && <a className="btn btn-ghost" style={{ marginTop: 10 }} href={shareUrl} target="_blank" rel="noreferrer">Open secure link</a>}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>

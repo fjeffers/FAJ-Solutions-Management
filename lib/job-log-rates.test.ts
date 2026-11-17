@@ -1,6 +1,7 @@
 // Each tech's rates on the client's copy of the job log (Fred, 2026-10-30: "i need a copy i can entered how much
 // per an hour the milage for each tech"; "Rates and the dollars").
 import { describe, it, expect } from 'vitest';
+import { sheetFromApp } from './job-log-sheet';
 import { chargesByTech, chargesTotal, mileRateShown, mileRateTyped, notCharged, parseRate, parseRates, rateRows, ratesFromRows, ratesToSave, sameRates, withAllHoursRate } from './job-log-rates';
 import type { JobSheet } from './job-log-sheet';
 
@@ -95,5 +96,30 @@ describe('the client copy charges', () => {
     expect([0.5, 0.652, 0.6, 0.1234567, 0, 1.25, 1].map(mileRateShown)).toEqual(['.50', '.652', '.60', '.1234567', '0', '125', '100']);
     // Whatever's kept reads back the same from its box.
     for (const d of [0.5, 0.652, 0.57, 0.005, 0.1234567, 0, 1, 1.5, 1.6, 2.25]) expect(mileRateTyped(Number(mileRateShown(d)))).toBe(d);
+  });
+});
+
+describe('a tech whose name the app has with a stray space', () => {
+  it('is charged their hours and miles at the rates set for their name', () => {
+    const sheet = sheetFromApp({
+      visits: [{ tech: 'Paul Gibbs ', day: '2026-10-19', inAt: '2026-10-19T12:00:00Z', outAt: '2026-10-19T20:00:00Z', inGps: null, outGps: null, open: false, ms: 288e5 }],
+      mileage: [{ tech: 'Paul Gibbs ', day: '2026-10-19', start: null, end: null, miles: 100 }],
+      receipts: [], timeZone: 'America/New_York',
+    });
+    expect(chargesByTech(sheet, parseRates({ 'Paul Gibbs': { hour: 65, mile: 0.7 } }), ['Paul Gibbs'])).toEqual([
+      { tech: 'Paul Gibbs', hours: 8, hourRate: 65, labor: 520, miles: 100, mileRate: 0.7, mileage: 70 },
+    ]);
+  });
+
+  it('keeps the other spelling\'s clock-in when the Hours screen corrects one of them', () => {
+    const sheet = sheetFromApp({
+      visits: [
+        { tech: 'Paul Gibbs ', day: '2026-10-19', inAt: '2026-10-19T12:00:00Z', outAt: '2026-10-19T16:00:00Z', inGps: null, outGps: null, open: false, ms: 144e5 },
+        { tech: 'Paul Gibbs', day: '2026-10-19', inAt: '2026-10-19T17:00:00Z', outAt: '2026-10-19T21:00:00Z', inGps: null, outGps: null, open: false, ms: 144e5 },
+      ],
+      mileage: [], receipts: [], timeZone: 'America/New_York',
+      hoursScreen: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '13:00', out: '16:00', brk: 0 }],
+    });
+    expect(chargesByTech(sheet, parseRates({ 'Paul Gibbs': { hour: 65, mile: null } }), ['Paul Gibbs'])[0]).toMatchObject({ hours: 7, labor: 455 });
   });
 });

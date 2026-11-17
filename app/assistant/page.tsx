@@ -14,12 +14,14 @@ import { backdropClose } from '@/lib/backdrop';
 import { useInactivityLogout } from '@/lib/useInactivityLogout';
 import { toastError, toastSuccess } from '@/lib/toast';
 import Toaster from '@/components/Toaster';
+import TeamMessenger from '@/components/TeamMessenger';
+import { useTeamUnread } from '@/lib/use-team-unread';
 import {
   ClipboardList, LogOut, CheckCircle2, Circle, Briefcase, Users, Search, MapPin, Phone, Mail,
   X, Save, RotateCcw, CalendarDays,
 } from 'lucide-react';
 
-type Tab = 'tasks' | 'work' | 'techs';
+type Tab = 'tasks' | 'work' | 'techs' | 'messages';
 
 export default function AssistantPage() {
   const router = useRouter();
@@ -29,6 +31,7 @@ export default function AssistantPage() {
   const [denied, setDenied] = useState(false);
   const [tab, setTab] = useState<Tab>('tasks');
   const [me, setMe] = useState<AssistantMe | null>(null);
+  const teamUnread = useTeamUnread(!!me);
   const [jobs, setJobs] = useState<AssistantJob[]>([]);
   const [sites, setSites] = useState<AssistantCrewSite[]>([]);
   const [techs, setTechs] = useState<AssistantTech[]>([]);
@@ -102,7 +105,7 @@ export default function AssistantPage() {
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <ClipboardList size={15} color="var(--gold-light)" />
-              <span className="display" style={{ fontSize: 10, color: 'var(--gold-light)', fontWeight: 700, letterSpacing: 1.5 }}>FAJ SOLUTIONS · ASSISTANT</span>
+              <span className="display" style={{ fontSize: 10, color: 'var(--gold-light)', fontWeight: 700, letterSpacing: 1.5 }}>FAJ SOLUTIONS · {me?.role === 'project_manager' ? 'PROJECT MANAGER' : 'ASSISTANT'}</span>
             </div>
             <div className="serif" style={{ fontSize: 21, fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {me?.name}
@@ -119,6 +122,7 @@ export default function AssistantPage() {
           <TabBtn active={tab === 'tasks'} onClick={() => setTab('tasks')} icon={<CheckCircle2 size={15} />} label="To-do" badge={openTasks} />
           <TabBtn active={tab === 'work'} onClick={() => setTab('work')} icon={<Briefcase size={15} />} label="Work" />
           <TabBtn active={tab === 'techs'} onClick={() => setTab('techs')} icon={<Users size={15} />} label="Techs" />
+          <TabBtn active={tab === 'messages'} onClick={() => setTab('messages')} icon={<Mail size={15} />} label="Messages" badge={teamUnread} />
         </nav>
       </header>
 
@@ -126,6 +130,7 @@ export default function AssistantPage() {
         {tab === 'tasks' && <TasksTab tasks={tasks} onChanged={async () => setTasks(await fetchAssistantTasks())} />}
         {tab === 'work' && <WorkTab jobs={jobs} sites={sites} onSaved={async () => setJobs(await fetchAssistantJobs())} />}
         {tab === 'techs' && <TechsTab techs={techs} />}
+        {tab === 'messages' && <TeamMessenger />}
       </main>
     </div>
   );

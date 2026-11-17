@@ -5,6 +5,8 @@ import { cookieOptionsFor, hasAdminSessionCookie, sideForApiRequest, sideForPath
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
+  // This self-contained preview uses fictional browser-local data, never Supabase.
+  if (request.nextUrl.pathname === '/messaging-demo') return response;
 
   // The office and the tech portal have separate sign-ins (lib/supabase/side.ts).
   // A page goes by its address; an /api call by the page that made it.

@@ -533,7 +533,7 @@ const gcalNext = (iso: string) => {
 };
 function gcalHref(job: WfJob) {
   if (!job.date) return '';
-  const last = job.endDate || job.date;
+  const last = job.endDate && job.endDate >= job.date ? job.endDate : job.date;
   const params = new URLSearchParams({
     action: 'TEMPLATE',
     text: `WO ${job.number} · ${job.title}`,

@@ -5,6 +5,7 @@ import { fetchTechMessages, sendTechMessage, jobLocation } from '@/lib/tech-port
 import { toastError } from '@/lib/toast';
 import TechDirectChat from '@/components/TechDirectChat';
 import TechOwnerChat from '@/components/TechOwnerChat';
+import TeamMessenger from '@/components/TeamMessenger';
 import type { TechJob, TechMessage } from '@/lib/types';
 
 /**
@@ -18,7 +19,7 @@ import type { TechJob, TechMessage } from '@/lib/types';
  * a closed job is not a thing to still be arranging.
  */
 export default function TechChat({ jobs, onRead }: { jobs: TechJob[]; onRead: () => void }) {
-  const [mode, setMode] = useState<'office' | 'techs'>('office');
+  const [mode, setMode] = useState<'team' | 'office' | 'techs'>('team');
   const [openJob, setOpenJob] = useState<TechJob | null>(null);
   const [ownerOpen, setOwnerOpen] = useState(() =>
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('office') === '1');
@@ -26,12 +27,14 @@ export default function TechChat({ jobs, onRead }: { jobs: TechJob[]; onRead: ()
   return (
     <div>
       <div style={{ display: 'flex', gap: 4, background: '#f4f1ea', borderRadius: 999, padding: 3, marginBottom: 16 }}>
+        <ModeBtn active={mode === 'team'} onClick={() => setMode('team')}
+          icon={<MessageSquare size={13} />} label="Team & availability" />
         <ModeBtn active={mode === 'office'} onClick={() => { setMode('office'); setOpenJob(null); }}
           icon={<Building2 size={13} />} label="FAJ & job messages" />
         <ModeBtn active={mode === 'techs'} onClick={() => setMode('techs')}
           icon={<Users size={13} />} label="Other techs" />
       </div>
-      {mode === 'techs'
+      {mode === 'team' ? <TeamMessenger /> : mode === 'techs'
         ? <TechDirectChat onRead={onRead} />
         : <OfficeChat jobs={jobs} openJob={openJob} setOpenJob={setOpenJob}
             ownerOpen={ownerOpen} setOwnerOpen={setOwnerOpen} onRead={onRead} />}

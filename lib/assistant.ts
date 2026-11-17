@@ -15,7 +15,7 @@ export interface AssistantMe {
   name: string;
   email: string;
   owner_id: string;
-  role: 'assistant';
+  role: 'assistant' | 'project_manager';
 }
 
 /** A work order as the assistant sees it: the work, never the price or pay. */
@@ -190,7 +190,7 @@ export const addStaffMember = (name: string, email: string, role: StaffRole = 'a
  * `canAdd: true`. A role becomes addable only when its section exists — the
  * database (staff_role_allowed, migration-094) refuses any other.
  */
-export type StaffRole = 'assistant' | 'accountant';
+export type StaffRole = 'assistant' | 'accountant' | 'project_manager';
 export interface RoleInfo {
   key: 'owner' | 'tech' | StaffRole | 'accountant' | 'developer';
   label: string;
@@ -203,6 +203,7 @@ export const ROLES: RoleInfo[] = [
   { key: 'owner', label: 'Owner', sees: 'Everything, including all money. That is you.', canAdd: false },
   { key: 'tech', label: 'Tech', sees: "Only their own jobs and their own pay. Never anyone else's.", canAdd: false, addedWhere: 'Contractors screen' },
   { key: 'assistant', label: 'Assistant', sees: 'All jobs, the schedule, tech contacts and their to-do list. No money.', canAdd: true },
+  { key: 'project_manager', label: 'Project manager', sees: 'Jobs, schedule, tech contacts, individual messaging and availability requests. No money.', canAdd: true },
   { key: 'accountant', label: 'Accountant', sees: 'Audit and taxes, read-only: 1099s and W-9s, what techs were paid, income, and each job\'s revenue and profit. Tax IDs show the last 4 until they press Show, and you see every Show.', canAdd: true },
   { key: 'developer', label: 'Developer', sees: 'No login to your live app. They get the code and a practice copy with fake data.', canAdd: false },
 ];
@@ -211,6 +212,7 @@ export const ROLES: RoleInfo[] = [
 export function sectionForRole(role: string | null | undefined): string | null {
   switch (role) {
     case 'assistant': return '/assistant';
+    case 'project_manager': return '/assistant';
     case 'accountant': return '/accountant';
     default: return null;
   }

@@ -14,6 +14,7 @@ import {
   type InboxJob, type InboxMessage, type TechDm,
 } from '@/lib/messages-inbox';
 import type { Contractor, WorkOrder } from '@/lib/types';
+import TeamMessenger from '@/components/TeamMessenger';
 
 type Tab = 'people' | 'jobs' | 'techs';
 
@@ -26,6 +27,7 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [tab, setTab] = useState<Tab>('people');
+  const [teamMode, setTeamMode] = useState(true);
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [dms, setDms] = useState<TechDm[]>([]);
   const [loading, setLoading] = useState(true);
@@ -342,6 +344,11 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" aria-pressed={teamMode} onClick={() => setTeamMode(true)}>Team messenger & availability</button>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" aria-pressed={!teamMode} onClick={() => setTeamMode(false)}>Existing conversations</button>
+      </div>
+      {teamMode ? <TeamMessenger /> : <>
       <PrimioBar title="Messenger" right={tab === 'jobs' ? (
         <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => { setOpenWo(null); setPicking(true); }}>
           <MessageSquarePlus size={16} /> New message
@@ -382,6 +389,7 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
           <section className="wf-card wf-msg-thread" style={{ overflow: 'hidden', alignSelf: 'start' }}>{threadPane}</section>
         </div>
       )}
+      </>}
     </div>
   );
 }

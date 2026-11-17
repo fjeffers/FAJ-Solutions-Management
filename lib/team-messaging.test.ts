@@ -36,6 +36,12 @@ describe('team messaging workflow', () => {
     expect(response.availability).toBe(status);
     expect(response.response_note).toBe('After 10 AM');
     expect(response.responded_at).toBeTruthy();
+    const reply = (await pm.load()).messages.find((m) => m.sender_id === 'tech-alex' && m.content.includes('for WO 1052'))!;
+    expect(reply.mine).toBe(false);
+    expect(reply.read_at).toBeNull();
+    expect(unreadMessages([reply], 'tech-alex')).toBe(1);
+    await pm.read('tech-alex');
+    expect((await pm.load()).messages.find((m) => m.id === reply.id)?.read_at).toBeTruthy();
     await expect(tech.respond(request.id, status, '')).rejects.toThrow('already answered');
   });
   it('rejects invalid requests and technician-originated availability enquiries', async () => {

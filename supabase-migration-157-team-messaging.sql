@@ -126,13 +126,21 @@ END; $$;
 
 CREATE FUNCTION public.messaging_respond(p_id uuid, p_status text, p_note text DEFAULT '')
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
-AS $$ DECLARE v jsonb := tech_ctx(); BEGIN
+AS $$ DECLARE v jsonb := tech_ctx(); r team_messages%ROWTYPE; BEGIN
   IF v IS NULL THEN RAISE EXCEPTION 'Technician access required' USING ERRCODE = '42501'; END IF;
   IF p_status NOT IN ('available', 'unavailable') OR p_status IS NULL OR length(coalesce(p_note, '')) > 1000 THEN RAISE EXCEPTION 'Invalid availability reply'; END IF;
   UPDATE team_messages m SET availability = p_status, response_note = nullif(btrim(p_note), ''), responded_at = now()
     WHERE m.id = p_id AND m.owner_id = (v->>'owner_id')::uuid
-      AND m.contractor_id = (v->>'contractor_id')::uuid AND m.availability = 'pending';
+      AND m.contractor_id = (v->>'contractor_id')::uuid AND m.availability = 'pending'
+    RETURNING m.* INTO r;
   IF NOT FOUND THEN RAISE EXCEPTION 'Request already answered or not available'; END IF;
+  -- A reply is incoming activity for the office, not merely an edit to its
+  -- outgoing request: it needs its own unread state and activity timestamp.
+  INSERT INTO team_messages(owner_id, office_id, contractor_id, sender_id, sender_name, content)
+  VALUES (r.owner_id, r.office_id, r.contractor_id, auth.uid(), v->>'contractor_name',
+    CASE p_status WHEN 'available' THEN 'Available' ELSE 'Unavailable' END
+      || ' for WO ' || coalesce(r.job_number, '') || ' on ' || r.proposed_date::text
+      || CASE WHEN nullif(btrim(p_note), '') IS NOT NULL THEN E'\n' || btrim(p_note) ELSE '' END);
 END; $$;
 
 REVOKE ALL ON FUNCTION public.messaging_ctx() FROM PUBLIC, anon, authenticated;

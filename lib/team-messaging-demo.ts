@@ -70,7 +70,14 @@ export function createDemoAdapter(personId: string, storage: Pick<Storage, 'getI
     respond: async (id, status, note) => {
       const all = readAll(); const request = all.find((m) => m.id === id && belongs(m));
       if (!tech || !request || request.availability !== 'pending') throw new Error('Request already answered or not available.');
-      save(all.map((m) => m.id === id ? { ...m, availability: status, response_note: note.trim() || null, responded_at: new Date().toISOString() } : m));
+      const now = new Date().toISOString();
+      save([...all.map((m) => m.id === id ? { ...m, availability: status, response_note: note.trim() || null, responded_at: now } : m), {
+        ...request, id: crypto.randomUUID(), sender_id: me.id, sender_name: me.name,
+        content: `${status === 'available' ? 'Available' : 'Unavailable'} for WO ${request.job_number} on ${request.proposed_date}${note.trim() ? `\n${note.trim()}` : ''}`,
+        created_at: now, read_at: null, mine: true, peer_id: request.office_id,
+        job_id: null, job_number: null, job_title: null, job_place: null, proposed_date: null,
+        availability: null, response_note: null, responded_at: null,
+      }]);
     },
   };
 }

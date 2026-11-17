@@ -39,8 +39,9 @@ describe('TeamMessenger refresh ownership', () => {
     let resolveOld!: (data: MessagingSnapshot) => void;
     const previous = adapter(() => new Promise((resolve) => { resolveOld = resolve; }));
     const current = adapter(vi.fn().mockImplementation(async () => structuredClone(latest)));
+    let contentWhenAcknowledged: string | null | undefined;
     vi.mocked(current.read).mockImplementation(async () => {
-      expect(screen.getByLabelText('Conversation with Alex Carter').textContent).toContain('Current identity');
+      contentWhenAcknowledged = screen.queryByLabelText('Conversation with Alex Carter')?.textContent;
     });
     const { rerender } = render(<TeamMessenger adapter={previous} />);
     rerender(<TeamMessenger adapter={current} />);
@@ -49,6 +50,7 @@ describe('TeamMessenger refresh ownership', () => {
     expect(screen.queryByText('Previous identity')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Alex Carter/ }));
     await waitFor(() => expect(current.read).toHaveBeenCalledWith('tech-alex', [latest.messages[0].id]));
+    expect(contentWhenAcknowledged).toContain('Current identity');
     expect(previous.read).not.toHaveBeenCalled();
   });
 
@@ -67,5 +69,26 @@ describe('TeamMessenger refresh ownership', () => {
     await act(async () => { resolveLatest(latest); });
     expect(screen.getByText('Newest completed snapshot')).toBeTruthy();
     expect(screen.queryByText('First completed snapshot')).toBeNull();
+  });
+
+  it('ignores a previous adapter send completing after the identity changes', async () => {
+    const snapshot = await fixture('Identity test');
+    const previous = adapter(vi.fn().mockResolvedValue(snapshot));
+    let finishSend!: () => void;
+    vi.mocked(previous.send).mockImplementation(() => new Promise<void>((resolve) => { finishSend = resolve; }));
+    const current = adapter(vi.fn().mockResolvedValue(structuredClone(snapshot)));
+    const { rerender } = render(<TeamMessenger adapter={previous} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Alex Carter/ }));
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Previous draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(previous.send).toHaveBeenCalled());
+    rerender(<TeamMessenger adapter={current} />);
+    await screen.findByLabelText('Message');
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Keep current draft' } });
+    const priorLoads = vi.mocked(previous.load).mock.calls.length;
+    await act(async () => { finishSend(); });
+    expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('Keep current draft');
+    expect(vi.mocked(previous.load).mock.calls.length).toBe(priorLoads);
+    expect(screen.queryByText('Opening your conversations…')).toBeNull();
   });
 });

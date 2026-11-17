@@ -56,6 +56,7 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
   }, [adapter, supplied]);
   useEffect(() => {
     let mounted = true;
+    setBusy(false);
     const load = () => { if (document.visibilityState === 'visible') void refresh().catch((e: Error) => { if (mounted) setError(e.message || 'Could not refresh messages.'); }); };
     load();
     const timer = setInterval(load, 10000);
@@ -110,20 +111,27 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
 
   const send = async () => {
     if (!contact || busy || !draft.trim() || (requesting && (!job || !date))) return;
+    const epoch = refreshEpoch.current;
     setBusy(true); setError(''); setNotice('');
     try {
       await adapter.send(contact.id, draft.trim(), requesting ? job : null, requesting ? date : null);
+      if (epoch !== refreshEpoch.current) return;
       setDraft(''); setRequesting(false); setJob(''); setDate('');
       setNotice(requesting ? 'Availability request sent. This does not assign the work order.' : 'Message sent.');
       await refresh();
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not send. Your draft has been kept.'); }
-    finally { setBusy(false); }
+    } catch (e) { if (epoch === refreshEpoch.current) setError(e instanceof Error ? e.message : 'Could not send. Your draft has been kept.'); }
+    finally { if (epoch === refreshEpoch.current) setBusy(false); }
   };
   const respond = async (id: string, status: 'available' | 'unavailable', note: string) => {
+    const epoch = refreshEpoch.current;
     setBusy(true); setError('');
-    try { await adapter.respond(id, status, note); setNotice('Your availability reply was sent.'); await refresh(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not send your reply.'); }
-    finally { setBusy(false); }
+    try {
+      await adapter.respond(id, status, note);
+      if (epoch !== refreshEpoch.current) return;
+      setNotice('Your availability reply was sent.'); await refresh();
+    }
+    catch (e) { if (epoch === refreshEpoch.current) setError(e instanceof Error ? e.message : 'Could not send your reply.'); }
+    finally { if (epoch === refreshEpoch.current) setBusy(false); }
   };
 
   return <section className="tm" aria-label="Team messaging">

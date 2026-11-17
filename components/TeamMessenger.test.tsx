@@ -39,6 +39,9 @@ describe('TeamMessenger refresh ownership', () => {
     let resolveOld!: (data: MessagingSnapshot) => void;
     const previous = adapter(() => new Promise((resolve) => { resolveOld = resolve; }));
     const current = adapter(vi.fn().mockImplementation(async () => structuredClone(latest)));
+    vi.mocked(current.read).mockImplementation(async () => {
+      expect(screen.getByLabelText('Conversation with Alex Carter').textContent).toContain('Current identity');
+    });
     const { rerender } = render(<TeamMessenger adapter={previous} />);
     rerender(<TeamMessenger adapter={current} />);
     await screen.findByText('Current identity');
@@ -47,5 +50,22 @@ describe('TeamMessenger refresh ownership', () => {
     fireEvent.click(screen.getByRole('button', { name: /Alex Carter/ }));
     await waitFor(() => expect(current.read).toHaveBeenCalledWith('tech-alex', [latest.messages[0].id]));
     expect(previous.read).not.toHaveBeenCalled();
+  });
+
+  it('publishes a completed poll even while a newer slow poll is still pending', async () => {
+    const first = await fixture('First completed snapshot');
+    const latest = await fixture('Newest completed snapshot');
+    let resolveFirst!: (data: MessagingSnapshot) => void;
+    let resolveLatest!: (data: MessagingSnapshot) => void;
+    const load = vi.fn()
+      .mockImplementationOnce(() => new Promise<MessagingSnapshot>((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise<MessagingSnapshot>((resolve) => { resolveLatest = resolve; }));
+    render(<TeamMessenger adapter={adapter(load)} />);
+    fireEvent.focus(window);
+    await act(async () => { resolveFirst(first); });
+    expect(screen.getByText('First completed snapshot')).toBeTruthy();
+    await act(async () => { resolveLatest(latest); });
+    expect(screen.getByText('Newest completed snapshot')).toBeTruthy();
+    expect(screen.queryByText('First completed snapshot')).toBeNull();
   });
 });

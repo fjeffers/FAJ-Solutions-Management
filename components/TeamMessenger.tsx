@@ -23,7 +23,8 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
       respond: (id, status, note) => rpc<void>('messaging_respond', { p_id: id, p_status: status, p_note: note }),
     };
   })(), [supplied]);
-  const [snapshot, setSnapshot] = useState<MessagingSnapshot | null>(null);
+  const [loaded, setLoaded] = useState<{ adapter: MessagingAdapter; snapshot: MessagingSnapshot } | null>(null);
+  const snapshot = loaded?.adapter === adapter ? loaded.snapshot : null;
   const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread' | 'requests'>('all');
@@ -35,26 +36,22 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const bottom = useRef<HTMLDivElement>(null);
-  const activePeer = useRef<string | null>(null);
   const refreshVersion = useRef(0);
-  activePeer.current = selected;
+  const appliedVersion = useRef(0);
+  const refreshEpoch = useRef(0);
   const refresh = useCallback(async () => {
     const version = ++refreshVersion.current;
+    const epoch = refreshEpoch.current;
     try {
       const next = await adapter.load();
-      if (version !== refreshVersion.current) return;
-      const peer = activePeer.current;
-      const observed = next.messages.filter((m) => m.peer_id === peer && !m.mine && !m.read_at);
-      if (peer && observed.length && document.visibilityState === 'visible') {
-        await adapter.read(peer, observed.map((m) => m.id));
-        if (version !== refreshVersion.current) return;
-        const ids = new Set(observed.map((m) => m.id));
-        next.messages = next.messages.map((m) => ids.has(m.id) ? { ...m, read_at: new Date().toISOString() } : m);
-      }
-      setSnapshot(next);
+      // A slower successful poll may publish while a newer request is pending;
+      // only an already-applied newer result or a changed identity invalidates it.
+      if (epoch !== refreshEpoch.current || version < appliedVersion.current) return;
+      appliedVersion.current = version;
+      setLoaded({ adapter, snapshot: next });
       if (!supplied) window.dispatchEvent(new Event('team-messages-changed'));
     } catch (e) {
-      if (version === refreshVersion.current) throw e;
+      if (epoch === refreshEpoch.current && version >= appliedVersion.current) throw e;
     }
   }, [adapter, supplied]);
   useEffect(() => {
@@ -63,9 +60,27 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
     load();
     const timer = setInterval(load, 10000);
     window.addEventListener('focus', load);
-    return () => { mounted = false; refreshVersion.current++; clearInterval(timer); window.removeEventListener('focus', load); };
+    return () => { mounted = false; refreshEpoch.current++; clearInterval(timer); window.removeEventListener('focus', load); };
   }, [refresh]);
   useEffect(() => { if (selected) void refresh().catch((e: Error) => setError(e.message)); }, [selected, refresh]);
+  // Acknowledge only after this snapshot has committed into the visible thread.
+  useEffect(() => {
+    if (!snapshot || !selected || document.visibilityState !== 'visible'
+      || !snapshot.contacts.some((c) => c.id === selected)) return;
+    const observed = snapshot.messages.filter((m) => m.peer_id === selected && !m.mine && !m.read_at);
+    if (!observed.length) return;
+    let active = true;
+    const ids = new Set(observed.map((m) => m.id));
+    void adapter.read(selected, [...ids]).then(() => {
+      if (!active) return;
+      setLoaded((current) => current?.adapter !== adapter ? current : {
+        adapter,
+        snapshot: { ...current.snapshot, messages: current.snapshot.messages.map((m) => ids.has(m.id) ? { ...m, read_at: m.read_at ?? new Date().toISOString() } : m) },
+      });
+      if (!supplied) window.dispatchEvent(new Event('team-messages-changed'));
+    }).catch((e: Error) => { if (active) setError(e.message || 'Could not mark messages read.'); });
+    return () => { active = false; };
+  }, [adapter, selected, snapshot, supplied]);
   const threads = useMemo(() => {
     const grouped = new Map<string, TeamMessage[]>();
     for (const message of snapshot?.messages ?? []) {

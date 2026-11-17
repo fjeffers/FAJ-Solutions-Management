@@ -27,7 +27,8 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [tab, setTab] = useState<Tab>('people');
-  const [teamMode, setTeamMode] = useState(true);
+  // Existing /admin?view=messages notification links belong to the legacy store.
+  const [teamMode, setTeamMode] = useState(false);
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [dms, setDms] = useState<TechDm[]>([]);
   const [loading, setLoading] = useState(true);

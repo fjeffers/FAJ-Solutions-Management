@@ -19,7 +19,8 @@ import type { TechJob, TechMessage } from '@/lib/types';
  * a closed job is not a thing to still be arranging.
  */
 export default function TechChat({ jobs, onRead }: { jobs: TechJob[]; onRead: () => void }) {
-  const [mode, setMode] = useState<'team' | 'office' | 'techs'>('team');
+  const [mode, setMode] = useState<'team' | 'office' | 'techs'>(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('office') === '1' ? 'office' : 'team');
   const [openJob, setOpenJob] = useState<TechJob | null>(null);
   const [ownerOpen, setOwnerOpen] = useState(() =>
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('office') === '1');

@@ -37,6 +37,16 @@ describe('timesheet', () => {
     expect(timesheetTotals(lines).miles).toBe(314.4);
   });
 
+  it('counts only the days with hours or miles, as the by-tech breakdown does', () => {
+    const lines = timesheetLines([
+      row('2026-10-19', 'Paul Gibbs', { arrived: '07:37', leftSite: '17:37' }),
+      row('2026-10-20', 'Paul Gibbs', { note: 'Rain day, no work' }),
+      row('2026-10-21', 'Paul Gibbs', { miles: 40 }),
+    ]);
+    expect(lines).toHaveLength(3);
+    expect(timesheetTotals(lines)).toMatchObject({ days: 2, hours: 10, miles: 40 });
+  });
+
   it('makes the spreadsheet: header, the lines, the total', () => {
     const t = timesheetTable(head, timesheetLines(rows));
     expect(t[0]).toEqual(['FAJ Solutions · Timesheet']);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mileageReimbursement, totalMiles, mileageAcrossWOs } from './mileage';
+import { mileageReimbursement, totalMiles, mileageAcrossWOs, mileageForTech } from './mileage';
 import type { MileageLog } from './types';
 
 const log = (over: Partial<MileageLog>): MileageLog =>
@@ -25,5 +25,11 @@ describe('mileage math', () => {
     ]);
     expect(result.miles).toBe(50);
     expect(result.amount).toBeCloseTo(20 * 0.7 + 30 * 0.6, 2);
+  });
+
+  it('pays a tech the miles logged under their name with stray spaces', () => {
+    const logs = [log({ contractor_name: 'Paul Gibbs ', miles: 10, rate: 0.5 }), log({ id: 'm2', contractor_name: 'Paul Gibbs', miles: 20, rate: 0.5 }), log({ id: 'm3', contractor_name: 'Kendell Newbold', miles: 99, rate: 0.5 })];
+    expect(mileageForTech(logs, 'Paul Gibbs')).toBe(15);
+    expect(mileageForTech(logs, ' Paul Gibbs')).toBe(15);
   });
 });

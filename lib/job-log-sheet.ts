@@ -170,7 +170,7 @@ export function sheetFromApp(input: {
     ...(withFor ? { for: [expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ') } : {}),
   });
   const office = input.hoursScreen ?? [];
-  const key = (d: { day: string; tech: string }) => `${d.day}|${d.tech.trim()}`;
+  const key = (d: { day: string; tech: string }) => `${d.day}|${d.tech}`;
   // The days the Hours screen sets or takes off: their clock-ins give way. A lunch alone goes on the day's first one.
   const setDays = new Set(office.filter((d) => !d.breakOnly).map(key));
   // A lunch alone comes off the day's clock-ins in turn, as much as each can take, so a short first one never

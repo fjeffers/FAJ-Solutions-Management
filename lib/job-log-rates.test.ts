@@ -110,4 +110,16 @@ describe('a tech whose name the app has with a stray space', () => {
       { tech: 'Paul Gibbs', hours: 8, hourRate: 65, labor: 520, miles: 100, mileRate: 0.7, mileage: 70 },
     ]);
   });
+
+  it('keeps the other spelling\'s clock-in when the Hours screen corrects one of them', () => {
+    const sheet = sheetFromApp({
+      visits: [
+        { tech: 'Paul Gibbs ', day: '2026-10-19', inAt: '2026-10-19T12:00:00Z', outAt: '2026-10-19T16:00:00Z', inGps: null, outGps: null, open: false, ms: 144e5 },
+        { tech: 'Paul Gibbs', day: '2026-10-19', inAt: '2026-10-19T17:00:00Z', outAt: '2026-10-19T21:00:00Z', inGps: null, outGps: null, open: false, ms: 144e5 },
+      ],
+      mileage: [], receipts: [], timeZone: 'America/New_York',
+      hoursScreen: [{ tech: 'Paul Gibbs', day: '2026-10-19', in: '13:00', out: '16:00', brk: 0 }],
+    });
+    expect(chargesByTech(sheet, parseRates({ 'Paul Gibbs': { hour: 65, mile: null } }), ['Paul Gibbs'])[0]).toMatchObject({ hours: 7, labor: 455 });
+  });
 });

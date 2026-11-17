@@ -125,12 +125,12 @@ AS $$ DECLARE v jsonb := messaging_ctx(); o uuid; office uuid; tech uuid; w work
     p_date, CASE WHEN p_job IS NOT NULL THEN 'pending' END);
 END; $$;
 
-CREATE FUNCTION public.messaging_read(p_peer uuid)
+CREATE FUNCTION public.messaging_read(p_peer uuid, p_ids uuid[])
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
 AS $$ DECLARE v jsonb := messaging_ctx(); BEGIN
   IF v IS NULL THEN RAISE EXCEPTION 'Messaging access denied' USING ERRCODE = '42501'; END IF;
   UPDATE team_messages m SET read_at = now() WHERE m.owner_id = (v->>'owner_id')::uuid
-    AND m.sender_id <> auth.uid() AND m.read_at IS NULL AND (
+    AND m.id = ANY(p_ids) AND m.sender_id <> auth.uid() AND m.read_at IS NULL AND (
       (v->>'role' = 'technician' AND m.contractor_id = (v->>'contractor_id')::uuid AND m.office_id = p_peer)
       OR (v->>'role' <> 'technician' AND m.office_id = auth.uid() AND m.contractor_id = p_peer));
 END; $$;
@@ -156,7 +156,7 @@ END; $$;
 
 REVOKE ALL ON FUNCTION public.messaging_ctx() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.messaging_snapshot(), public.messaging_unread(), public.messaging_send(uuid,text,uuid,date),
-  public.messaging_read(uuid), public.messaging_respond(uuid,text,text) FROM PUBLIC, anon;
+  public.messaging_read(uuid,uuid[]), public.messaging_respond(uuid,text,text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.messaging_snapshot(), public.messaging_unread(), public.messaging_send(uuid,text,uuid,date),
-  public.messaging_read(uuid), public.messaging_respond(uuid,text,text) TO authenticated;
+  public.messaging_read(uuid,uuid[]), public.messaging_respond(uuid,text,text) TO authenticated;
 COMMIT;

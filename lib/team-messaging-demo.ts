@@ -66,7 +66,10 @@ export function createDemoAdapter(personId: string, storage: Pick<Storage, 'getI
         availability: job ? 'pending' : null, response_note: null, responded_at: null,
       }]);
     },
-    read: async (peer) => save(readAll().map((m) => belongs(m) && m.sender_id !== me.id && (tech ? m.office_id : m.contractor_id) === peer ? { ...m, read_at: m.read_at ?? new Date().toISOString() } : m)),
+    read: async (peer, observedIds) => {
+      const observed = new Set(observedIds);
+      save(readAll().map((m) => observed.has(m.id) && belongs(m) && m.sender_id !== me.id && (tech ? m.office_id : m.contractor_id) === peer ? { ...m, read_at: m.read_at ?? new Date().toISOString() } : m));
+    },
     respond: async (id, status, note) => {
       const all = readAll(); const request = all.find((m) => m.id === id && belongs(m));
       if (!tech || !request || request.availability !== 'pending') throw new Error('Request already answered or not available.');

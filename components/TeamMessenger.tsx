@@ -19,7 +19,7 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
     return {
       load: () => rpc<MessagingSnapshot>('messaging_snapshot'),
       send: (peer, content, job, date) => rpc<void>('messaging_send', { p_peer: peer, p_content: content, p_job: job, p_date: date }),
-      read: (peer) => rpc<void>('messaging_read', { p_peer: peer }),
+      read: (peer, observedIds) => rpc<void>('messaging_read', { p_peer: peer, p_ids: observedIds }),
       respond: (id, status, note) => rpc<void>('messaging_respond', { p_id: id, p_status: status, p_note: note }),
     };
   })(), [supplied]);
@@ -36,16 +36,26 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
   const [notice, setNotice] = useState('');
   const bottom = useRef<HTMLDivElement>(null);
   const activePeer = useRef<string | null>(null);
+  const refreshVersion = useRef(0);
   activePeer.current = selected;
   const refresh = useCallback(async () => {
-    const next = await adapter.load();
-    const peer = activePeer.current;
-    if (peer && unreadMessages(next.messages, peer)) {
-      await adapter.read(peer);
-      next.messages = next.messages.map((m) => m.peer_id === peer && !m.mine ? { ...m, read_at: new Date().toISOString() } : m);
+    const version = ++refreshVersion.current;
+    try {
+      const next = await adapter.load();
+      if (version !== refreshVersion.current) return;
+      const peer = activePeer.current;
+      const observed = next.messages.filter((m) => m.peer_id === peer && !m.mine && !m.read_at);
+      if (peer && observed.length && document.visibilityState === 'visible') {
+        await adapter.read(peer, observed.map((m) => m.id));
+        if (version !== refreshVersion.current) return;
+        const ids = new Set(observed.map((m) => m.id));
+        next.messages = next.messages.map((m) => ids.has(m.id) ? { ...m, read_at: new Date().toISOString() } : m);
+      }
+      setSnapshot(next);
+      if (!supplied) window.dispatchEvent(new Event('team-messages-changed'));
+    } catch (e) {
+      if (version === refreshVersion.current) throw e;
     }
-    setSnapshot(next);
-    if (!supplied) window.dispatchEvent(new Event('team-messages-changed'));
   }, [adapter, supplied]);
   useEffect(() => {
     let mounted = true;
@@ -53,10 +63,20 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
     load();
     const timer = setInterval(load, 10000);
     window.addEventListener('focus', load);
-    return () => { mounted = false; clearInterval(timer); window.removeEventListener('focus', load); };
+    return () => { mounted = false; refreshVersion.current++; clearInterval(timer); window.removeEventListener('focus', load); };
   }, [refresh]);
   useEffect(() => { if (selected) void refresh().catch((e: Error) => setError(e.message)); }, [selected, refresh]);
-  const messages = snapshot ? threadMessages(snapshot.messages, selected ?? '') : [];
+  const threads = useMemo(() => {
+    const grouped = new Map<string, TeamMessage[]>();
+    for (const message of snapshot?.messages ?? []) {
+      const thread = grouped.get(message.peer_id) ?? [];
+      thread.push(message);
+      grouped.set(message.peer_id, thread);
+    }
+    for (const [peer, thread] of grouped) grouped.set(peer, threadMessages(thread, peer));
+    return grouped;
+  }, [snapshot]);
+  const messages = threads.get(selected ?? '') ?? [];
   const pendingCount = snapshot?.messages.filter((m) => m.availability === 'pending').length ?? 0;
   const responseVersion = messages.map((m) => m.availability).join(',');
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [messages.length, responseVersion]);
@@ -64,12 +84,12 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
   const isTech = snapshot?.me.role === 'technician';
   const contacts = (snapshot?.contacts ?? []).filter((c) => {
     if (!`${c.name} ${roleLabel(c.role)}`.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filter === 'unread') return unreadMessages(snapshot!.messages, c.id) > 0;
-    if (filter === 'requests') return snapshot!.messages.some((m) => m.peer_id === c.id && m.availability === 'pending');
+    if (filter === 'unread') return unreadMessages(threads.get(c.id) ?? []) > 0;
+    if (filter === 'requests') return (threads.get(c.id) ?? []).some((m) => m.availability === 'pending');
     return true;
   }).sort((a, b) => {
-    const lastA = threadMessages(snapshot!.messages, a.id).at(-1)?.created_at ?? '';
-    const lastB = threadMessages(snapshot!.messages, b.id).at(-1)?.created_at ?? '';
+    const lastA = threads.get(a.id)?.at(-1)?.created_at ?? '';
+    const lastB = threads.get(b.id)?.at(-1)?.created_at ?? '';
     return lastB.localeCompare(lastA) || a.name.localeCompare(b.name);
   });
 
@@ -98,7 +118,7 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
     {!snapshot ? <div className="tm-loading"><Loader2 size={22} />{error ? 'Messaging could not be loaded.' : 'Opening your conversations…'}</div> : <div className={`tm-shell ${selected ? 'tm-open' : ''}`}>
       <aside className="tm-sidebar"><div className="tm-sidebar-top"><h2>Conversations <span>{snapshot.contacts.length}</span></h2><label className="tm-search"><Search size={16} /><input aria-label="Search people" placeholder="Search people…" value={search} onChange={(e) => setSearch(e.target.value)} /></label><div className="tm-filters">{(['all', 'unread', 'requests'] as const).map((f) => <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === 'all' ? 'All people' : f === 'unread' ? 'Unread' : 'Requests'}</button>)}</div></div>
         <div className="tm-contacts">{contacts.map((c) => {
-          const thread = threadMessages(snapshot.messages, c.id); const last = thread.at(-1); const unread = unreadMessages(snapshot.messages, c.id);
+          const thread = threads.get(c.id) ?? []; const last = thread.at(-1); const unread = unreadMessages(thread);
           return <button key={c.id} className={`tm-contact ${selected === c.id ? 'tm-selected' : ''}`} onClick={() => { setSelected(c.id); setDraft(''); setRequesting(false); setJob(''); setDate(''); setNotice(''); }}><span className={`tm-avatar tm-${c.role}`}>{initials(c.name)}</span><span className="tm-contact-copy"><span className="tm-contact-name">{c.name}{unread > 0 && <span className="tm-unread">{unread}</span>}</span><span className="tm-role">{roleLabel(c.role)}</span><span className="tm-preview">{last ? `${last.mine ? 'You: ' : ''}${last.availability ? `${requestLabel(last.availability)} · ` : ''}${last.content}` : c.connected ? 'Start a conversation' : 'Portal login needed'}</span></span><ChevronRight size={14} /></button>;
         })}{contacts.length === 0 && <p className="tm-no-results">No people match this view.</p>}</div>
         <div className="tm-sidebar-foot"><ShieldCheck size={15} /><span>Individual conversations.<br />Only you and your contact.</span></div>

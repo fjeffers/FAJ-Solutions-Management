@@ -85,7 +85,7 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
 
   // Opening a job's thread marks the tech's messages in it as read.
   useEffect(() => {
-    if (!openWo) return;
+    if (teamMode || tab !== 'jobs' || !openWo) return;
     const waiting = messages.filter((m) => m.work_order_id === openWo && fromTech(m) && !m.read_at);
     if (waiting.length === 0) return;
     const now = new Date().toISOString();
@@ -99,11 +99,11 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
         onCount(unreadFromTechs(next));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openWo, messages]);
+  }, [openWo, messages, teamMode, tab]);
 
   // Opening one technician marks their private replies read for the office.
   useEffect(() => {
-    if (!openPerson) return;
+    if (teamMode || tab !== 'people' || !openPerson) return;
     const key = directThreadId(openPerson);
     const waiting = messages.filter((m) => m.work_order_id === key && fromTech(m) && !m.read_at);
     if (waiting.length === 0) return;
@@ -118,7 +118,7 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
         onCount(unreadFromTechs(next));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPerson, messages]);
+  }, [openPerson, messages, teamMode, tab]);
 
   const unread = unreadFromTechs(messages);
   const thread = threads.find((t) => t.woNumber === openWo) ?? null;

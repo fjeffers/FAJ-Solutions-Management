@@ -14,10 +14,11 @@ export type MessagingSnapshot = {
 export type MessagingAdapter = {
   load: () => Promise<MessagingSnapshot>;
   send: (peer: string, content: string, job: string | null, date: string | null) => Promise<void>;
-  read: (peer: string) => Promise<void>;
+  read: (peer: string, observedIds: string[]) => Promise<void>;
   respond: (id: string, status: 'available' | 'unavailable', note: string) => Promise<void>;
 };
-export const roleLabel = (role: string) => ({ admin: 'Administrator', project_manager: 'Project manager', assistant: 'Assistant', technician: 'Technician' })[role] ?? role;
+const ROLE_LABELS: Record<string, string> = { admin: 'Administrator', project_manager: 'Project manager', assistant: 'Assistant', technician: 'Technician' };
+export const roleLabel = (role: string) => ROLE_LABELS[role] ?? role;
 export const requestLabel = (status: TeamMessage['availability']) => ({ pending: 'Awaiting reply', available: 'Available', unavailable: 'Unavailable' })[status ?? 'pending'];
 export function threadMessages(messages: TeamMessage[], peer: string) {
   return messages.filter((m) => m.peer_id === peer).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));

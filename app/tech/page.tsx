@@ -190,6 +190,16 @@ export default function TechPortalPage() {
     const t = window.setInterval(() => { void check(); }, 20_000);
     return () => window.clearInterval(t);
   }, [uid, changeNotes]);
+  const lastTeamUnread = useRef(0);
+  useEffect(() => {
+    if (uid && phase === 'ready' && teamUnread > lastTeamUnread.current) {
+      const more = teamUnread - lastTeamUnread.current;
+      buzz();
+      toastInfo(more === 1 ? 'New team message. Open Messenger to read it.' : `${more} new team messages.`);
+      changeNotes((list) => addNotes(list, [messageNote(more, new Date().toISOString())]));
+    }
+    lastTeamUnread.current = uid ? teamUnread : 0;
+  }, [uid, phase, teamUnread, changeNotes]);
   // Live updates (Fred, 2026-10-14: "implement live update between admin and
   // tech portal"): while the app is open, re-read the jobs every 30 seconds
   // and whenever the tech comes back to it, and say what changed: a new

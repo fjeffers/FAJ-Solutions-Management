@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Columns3, GanttChart, Table2, LayoutGrid, List as ListIcon, MapPin, Search, CalendarCheck, CalendarDays, Users, MessageSquare, Camera, GripVertical, Clock } from 'lucide-react';
 import {
-  WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12, isOnHold,
+  WF_STATUS_COLOR, WF_WORK_TYPE_LABEL, workTypeFor, matchesWf, parseClockTime, fmtClock12, isOnHold, fullAddress,
   type WfJob, type WfStatus,
 } from '@/lib/wf';
 import { fmtMoney, todayISO } from '@/lib/utils';
@@ -525,10 +525,35 @@ type ScheduleShape = (typeof SCHEDULE_SHAPES)[number][0];
 const SCHEDULE_SHAPE_KEY = 'faj.schedule.shape';
 const cardGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 } as const;
 
+const gcalDay = (iso: string) => iso.replace(/-/g, '');
+const gcalNext = (iso: string) => {
+  const day = new Date(`${iso}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + 1);
+  return gcalDay(day.toISOString().slice(0, 10));
+};
+function gcalHref(job: WfJob) {
+  if (!job.date) return '';
+  const last = job.endDate || job.date;
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: `WO ${job.number} · ${job.title}`,
+    dates: `${gcalDay(job.date)}/${gcalNext(last)}`,
+    details: [job.client, job.startTime ? `Start ${job.startTime}` : '', job.endTime ? `End ${job.endTime}` : ''].filter(Boolean).join('\n'),
+    location: fullAddress(job),
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 function WhenLabel({ job, withDay }: { job: WfJob; withDay?: boolean }) {
   const t = parseClockTime(job.startTime);
   const text = [withDay && job.date ? shortDay(job.date) : '', t ? fmtClock12(t) : ''].filter(Boolean).join(' · ');
-  return text ? <div className="wf-p-label" style={{ margin: '0 0 4px 4px' }}>{text}</div> : null;
+  if (!job.date) return text ? <div className="wf-p-label" style={{ margin: '0 0 4px 4px' }}>{text}</div> : null;
+  return (
+    <div className="wf-p-label" style={{ margin: '0 0 4px 4px', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      {text && <span>{text}</span>}
+      <a href={gcalHref(job)} target="_blank" rel="noreferrer" style={{ color: 'var(--wf-gold)', fontWeight: 700, textDecoration: 'none' }}>Google Cal</a>
+    </div>
+  );
 }
 
 export function ScheduleBoard({ rows, onOpen, right }: {

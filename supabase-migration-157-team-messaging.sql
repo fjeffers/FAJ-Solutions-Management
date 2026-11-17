@@ -84,6 +84,17 @@ AS $$ DECLARE v jsonb := messaging_ctx(); o uuid; contacts jsonb; jobs jsonb; ms
     'contacts', coalesce(contacts, '[]'::jsonb), 'jobs', coalesce(jobs, '[]'::jsonb), 'messages', coalesce(msgs, '[]'::jsonb));
 END; $$;
 
+CREATE FUNCTION public.messaging_unread()
+RETURNS integer LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path TO 'public'
+AS $$ DECLARE v jsonb := messaging_ctx(); n integer; BEGIN
+  IF v IS NULL THEN RETURN 0; END IF;
+  SELECT count(*) INTO n FROM team_messages m WHERE m.owner_id = (v->>'owner_id')::uuid
+    AND m.sender_id <> auth.uid() AND m.read_at IS NULL AND (
+      (v->>'role' = 'technician' AND m.contractor_id = (v->>'contractor_id')::uuid)
+      OR (v->>'role' <> 'technician' AND m.office_id = auth.uid()));
+  RETURN n;
+END; $$;
+
 CREATE FUNCTION public.messaging_send(p_peer uuid, p_content text, p_job uuid DEFAULT NULL, p_date date DEFAULT NULL)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
 AS $$ DECLARE v jsonb := messaging_ctx(); o uuid; office uuid; tech uuid; w work_orders%ROWTYPE; BEGIN
@@ -144,8 +155,8 @@ AS $$ DECLARE v jsonb := tech_ctx(); r team_messages%ROWTYPE; BEGIN
 END; $$;
 
 REVOKE ALL ON FUNCTION public.messaging_ctx() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.messaging_snapshot(), public.messaging_send(uuid,text,uuid,date),
+REVOKE ALL ON FUNCTION public.messaging_snapshot(), public.messaging_unread(), public.messaging_send(uuid,text,uuid,date),
   public.messaging_read(uuid), public.messaging_respond(uuid,text,text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.messaging_snapshot(), public.messaging_send(uuid,text,uuid,date),
+GRANT EXECUTE ON FUNCTION public.messaging_snapshot(), public.messaging_unread(), public.messaging_send(uuid,text,uuid,date),
   public.messaging_read(uuid), public.messaging_respond(uuid,text,text) TO authenticated;
 COMMIT;

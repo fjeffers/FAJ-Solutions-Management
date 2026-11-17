@@ -3,6 +3,7 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useTeamUnread } from '@/lib/use-team-unread';
 import { contractorOwedOnWO, enrichWorkOrders, woPayoutTotal, fmtMoney, techPayToShow } from '@/lib/utils';
 import { scheduleLine as woScheduleLine } from '@/lib/email-templates';
 import { geocodeAddress } from '@/lib/geocode';
@@ -147,6 +148,7 @@ export default function HomePage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once on load; the inbox keeps it current
   // Tech messages not read yet — the number beside Messages in the left menu.
   const [messageCount, setMessageCount] = useState(0);
+  const teamUnread = useTeamUnread();
   useEffect(() => {
     void supabase.from('work_order_messages').select('id', { count: 'exact', head: true })
       .eq('sender_role', 'contractor').is('read_at', null)
@@ -1583,7 +1585,7 @@ Go ahead?`)) return;
   const dashJobs = useMemo(() => scheduleRows.map((r) => r.job), [scheduleRows]);
   /** The number shown beside a screen in the menu: things waiting there. */
   const badgeFor = (v: string | null): number =>
-    v === 'support' ? supportCount : v === 'import-queue' ? pendingImportCount : v === 'messages' ? messageCount : 0;
+    v === 'support' ? supportCount : v === 'import-queue' ? pendingImportCount : v === 'messages' ? messageCount + teamUnread : 0;
   const officeWaiting = menu.sections.reduce((n, g) => n + g.items.reduce((k, i) => k + badgeFor(i.view), 0), 0);
 
 
@@ -1912,7 +1914,7 @@ Go ahead?`)) return;
             onOpen={(v) => navigate(v as View)}
             onNewOrder={openNewOrder}
             netviewUrl={NETVIEW_FORM_URL}
-            badges={{ support: supportCount, 'import-queue': pendingImportCount, messages: messageCount }}
+            badges={{ support: supportCount, 'import-queue': pendingImportCount, messages: messageCount + teamUnread }}
           />
         )}
         {view === 'sketches' && (
@@ -1929,6 +1931,7 @@ Go ahead?`)) return;
         )}
         {view === 'messages' && (
           <MessagesView
+            teamUnread={teamUnread}
             workOrders={workOrders}
             contractors={contractors}
             onOpenJob={(id) => openJobFrom(id, 'messages')}

@@ -45,7 +45,8 @@ export default function TeamMessenger({ adapter: supplied }: { adapter?: Messagi
       next.messages = next.messages.map((m) => m.peer_id === peer && !m.mine ? { ...m, read_at: new Date().toISOString() } : m);
     }
     setSnapshot(next);
-  }, [adapter]);
+    if (!supplied) window.dispatchEvent(new Event('team-messages-changed'));
+  }, [adapter, supplied]);
   useEffect(() => {
     let mounted = true;
     const load = () => { if (document.visibilityState === 'visible') void refresh().catch((e: Error) => { if (mounted) setError(e.message || 'Could not refresh messages.'); }); };

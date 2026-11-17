@@ -18,7 +18,7 @@ import type { TechJob, TechMessage } from '@/lib/types';
  * Only active jobs are listed: once a job is approved or paid it is closed, and
  * a closed job is not a thing to still be arranging.
  */
-export default function TechChat({ jobs, onRead }: { jobs: TechJob[]; onRead: () => void }) {
+export default function TechChat({ jobs, onRead, teamUnread = 0 }: { jobs: TechJob[]; onRead: () => void; teamUnread?: number }) {
   const [mode, setMode] = useState<'team' | 'office' | 'techs'>(() =>
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('office') === '1' ? 'office' : 'team');
   const [openJob, setOpenJob] = useState<TechJob | null>(null);
@@ -29,7 +29,7 @@ export default function TechChat({ jobs, onRead }: { jobs: TechJob[]; onRead: ()
     <div>
       <div style={{ display: 'flex', gap: 4, background: '#f4f1ea', borderRadius: 999, padding: 3, marginBottom: 16 }}>
         <ModeBtn active={mode === 'team'} onClick={() => setMode('team')}
-          icon={<MessageSquare size={13} />} label="Team & availability" />
+          icon={<MessageSquare size={13} />} label={`Team & availability${teamUnread > 0 ? ` (${teamUnread})` : ''}`} />
         <ModeBtn active={mode === 'office'} onClick={() => { setMode('office'); setOpenJob(null); }}
           icon={<Building2 size={13} />} label="FAJ & job messages" />
         <ModeBtn active={mode === 'techs'} onClick={() => setMode('techs')}

@@ -1111,8 +1111,8 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add hours, Paul Gibbs' }));
       fireEvent.change(screen.getByLabelText('Hours, Paul Gibbs, 10/20/2026'), { target: { value: '6' } });
       // A material added on the lead's part, before the hotel (Fred: "under lead tech before hotel").
+      expect((screen.getByLabelText('Material store, Paul Gibbs, 10/21/2026') as HTMLInputElement).value).toBe("Lowe's");
       fireEvent.click(screen.getByRole('button', { name: 'Add a material, Paul Gibbs' }));
-      expect((screen.getByLabelText('Material store, Paul Gibbs, 10/19/2026') as HTMLInputElement).value).toBe("Lowe's");
       fireEvent.change(screen.getByLabelText('Material store, Paul Gibbs, 10/19/2026'), { target: { value: 'Home Depot' } });
       fireEvent.change(screen.getByLabelText('Material, Paul Gibbs, 10/19/2026'), { target: { value: '25' } });
       const cells = (label: string) => [...screen.getByLabelText(label).closest('tr')!.querySelectorAll('td')].map((c) => c.textContent);

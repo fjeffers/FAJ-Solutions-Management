@@ -99,6 +99,10 @@ describe('the invoice', () => {
       description: 'Paul Gibbs (Lead): Meal allowance up to $50.00 with Receipts · Waffle House · receipt $61.61 · reimbursed $50.00',
       qty: 1, rate: 50, amount: 50,
     });
+    expect(quickBooksLines(overCap).find((l) => l.description.includes("Lowe's · receipt $47.48"))).toMatchObject({
+      description: "Paul Gibbs (Lead): Lowe's · receipt $47.48 · reimbursed $47.48",
+      qty: 1, rate: 47.48, amount: 47.48,
+    });
   });
 
   it('keeps a helper\'s own drives and hotel when they have them', () => {

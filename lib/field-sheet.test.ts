@@ -280,7 +280,7 @@ describe('billing any client', () => {
       { kind: 'labor', date: null, description: 'Hours on site: 19.29 h', qty: 19.29, rate: 100, amount: 1929 },
       { kind: 'travel', date: null, description: 'Travel: 0.77 h', qty: 0.77, rate: 45, amount: 34.65 },
       { kind: 'mileage', date: null, description: 'Mileage: 25.4 mi', qty: 25.4, rate: 0.6, amount: 15.24 },
-      { kind: 'meals', date: null, description: 'Meals (receipts, up to $50 a tech-day)', qty: 1, rate: 80, amount: 80 },
+      { kind: 'meals', date: null, description: 'Meals (receipts $80.00, up to $50 a tech-day)', qty: 1, rate: 80, amount: 80 },
     ]);
     expect(t.bill).toBe(2058.89);
     expect(sheetTotals(rows, [], bill({ labor: 'blended', rate: 75 })).lines.map((l) => [l.description, l.amount])).toEqual([['Hours on site and travel: 20.06 h', 1504.5]]);
@@ -343,7 +343,7 @@ describe('what was spent each day', () => {
 
   it('bills the day’s other spending as it is, with the day’s note', () => {
     const t = sheetTotals(rows, [], bill({}));
-    expect(t.lines.map((l) => [l.description, l.amount])).toEqual([['Wed, Oct 21 · Dwayne · spending — Zip ties', 12], ['Meals (receipts)', 99.5]]);
+    expect(t.lines.map((l) => [l.description, l.amount])).toEqual([['Wed, Oct 21 · Dwayne · spending — Zip ties', 12], ['Meals (receipts $99.50)', 99.5]]);
     const dwayne = rows.find((r) => r.tech === 'Dwayne')!;
     expect(dayBill(dayCalc(dwayne.values, 0), bill({}), dwayne.values)).toBe(50.5);
   });
@@ -590,7 +590,7 @@ describe('by tech', () => {
     const t = sheetTotals(one, [], r);
     const out = byTechRows(byTech(one, [], r), r.mileRate, t.lines);
     expect(out).toContainEqual(['All techs', '', '', '', 80]);
-    expect(out).toContainEqual(['On the bill: Meals (receipts, up to $50 a tech-day)', '', '', '', 50]);
+    expect(out).toContainEqual(['On the bill: Meals (receipts $80.00, up to $50 a tech-day)', '', '', '', 50]);
     expect(out).toContainEqual(['On the bill: Hotel: 1 nights × 1 rooms × $113', '', '', '', 113]);
     // When the bill charges what was spent, there's nothing to explain.
     expect(byTechRows(list, s.mileRate, sheetTotals(rows, receipts, s).lines).some((x) => String(x[0]).startsWith('On the bill'))).toBe(false);

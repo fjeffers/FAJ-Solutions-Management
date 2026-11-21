@@ -53,7 +53,7 @@ describe('the invoice', () => {
       { date: '2026-10-20', item: 'Labor', description: 'Installation of Cabling for refresh project', qty: 6.32, rate: 50, amount: 316 },
     ]);
     // The receipt row shows the vendor, actual spend and reimbursed amount in separate columns.
-    expect({ ...paul.meals, lines: read(paul.meals.lines) }).toEqual({ title: 'Meal reimbursement', spent: 58.97, amount: 50, lines: [
+    expect({ ...paul.meals, lines: read(paul.meals.lines) }).toEqual({ title: 'Meal receipts', spent: 58.97, amount: 50, lines: [
       { date: '2026-10-19', item: 'Meal', description: 'Waffle House, Subway', qty: null, rate: 58.97, amount: 50 },
     ] });
     // The drive there the day before, the days on site, and the drive home on the last day.
@@ -67,7 +67,7 @@ describe('the invoice', () => {
       { date: '2026-10-20', item: 'Fuel', description: 'Rental vehicle fuel, Circle K', qty: 1, rate: 40, amount: 40 },
     ] });
     // The materials, once, under the lead before the hotel (Fred: "under lead tech before hotel").
-    expect({ ...paul.materials!, lines: read(paul.materials!.lines) }).toEqual({ title: 'Total Materials', spent: 47.48, amount: 47.48, lines: [
+    expect({ ...paul.materials!, lines: read(paul.materials!.lines) }).toEqual({ title: 'Materials receipts', spent: 47.48, amount: 47.48, lines: [
       { date: '2026-10-19', item: 'Material', description: "Lowe's", qty: null, rate: 47.48, amount: 47.48 },
     ] });
     expect(paul.total).toBe(1745.58);
@@ -286,7 +286,7 @@ describe('the invoice in Excel', () => {
     expect(cell(paul, 4)).toMatchObject({ v: 12.64, f: `SUM(E${paul + 1}:E${paul + 2})` });
     expect(cell(paul, 6)).toMatchObject({ v: 632, f: `SUM(G${paul + 1}:G${paul + 2})` });
     expect(cell(paul + 1, 6)).toMatchObject({ v: 316, f: `IF(F${paul + 1}="","",IF(E${paul + 1}="",0,ROUND(E${paul + 1}*F${paul + 1},2)))` });
-    const meals = at('Meal reimbursement'), miles = at('Total Milage'), mats = at('Total Materials'), travel = at('Total Travel');
+    const meals = at('Meal receipts'), miles = at('Total Milage'), mats = at('Materials receipts'), travel = at('Total Travel');
     const mealLine = rows.findIndex((r) => r[1] === 'Meal receipt') + 1;
     expect(rows[mealLine - 1]?.slice(2, 7)).toMatchObject(['Waffle House, Subway', null, null, { t: 'n', v: 58.97 }, { t: 'n', v: 50 }]);
     expect(rows[meals - 1][5]).toMatchObject({ v: 58.97 });
@@ -294,7 +294,7 @@ describe('the invoice in Excel', () => {
     // The materials between the mileage and the hotel, the lead's only.
     expect(mats).toBeGreaterThan(miles);
     expect(travel).toBeGreaterThan(mats);
-    expect(rows.filter((r) => r[3] === 'Total Materials')).toHaveLength(1);
+    expect(rows.filter((r) => r[3] === 'Materials receipts')).toHaveLength(1);
     expect(cell(mats, 6)).toMatchObject({ v: 47.48, f: `SUM(G${mats + 1}:G${mats + 1})` });
     expect(cell(mats + 1, 6)).toMatchObject({ f: `IF(F${mats + 1}="","",ROUND(F${mats + 1},2))` });
     expect(cell(meals, 6)).toMatchObject({ v: 50, f: `SUM(G${meals + 1}:G${meals + 1})` });

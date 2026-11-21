@@ -193,6 +193,13 @@ describe('the invoice', () => {
     // A day's meals as one amount: Paul's two receipts on the 19th become $45.
     const meals = editLine(sheet, paul.meals.lines[0], { amount: 45 });
     expect(meals.meals.filter((r) => r.tech === 'Paul Gibbs')).toEqual([{ tech: 'Paul Gibbs', day: '2026-10-19', store: 'Waffle House, Subway', amount: 45 }]);
+    const namedMeals = editLine(sheet, paul.meals.lines[0], { description: 'Ale House' });
+    expect(namedMeals.meals.filter((r) => r.tech === 'Paul Gibbs')).toEqual([
+      { tech: 'Paul Gibbs', day: '2026-10-19', store: 'Ale House', amount: 18.97 },
+      { tech: 'Paul Gibbs', day: '2026-10-19', store: 'Ale House', amount: 40 },
+    ]);
+    const typingSpace = editLine(sheet, paul.meals.lines[0], { description: 'Ale ' });
+    expect(buildInvoice(typingSpace, rates, crew, meta, '').techs[0].meals.lines[0].description).toBe('Ale ');
     const clearedMeals = editLine(sheet, paul.meals.lines[0], { amount: null });
     expect(buildInvoice(clearedMeals, rates, crew, meta, '').techs[0].meals.lines[0]).toMatchObject({
       date: '2026-10-19', description: 'Waffle House, Subway', rate: null, amount: 0,

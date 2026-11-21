@@ -178,7 +178,8 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     const mealDays = [...new Set(sheet.meals.filter((r) => r.tech === tech).map((r) => r.day))].sort();
     const mealLines = mealDays.map((d): InvoiceLine => {
       const spent = mealsOf(d), charged = meta.meal == null ? spent : Math.min(spent, meta.meal);
-      const stores = [...new Set(mealRows(d).map((r) => r.store.trim()).filter(Boolean))];
+      // Keep the value exactly as typed while editing. `sheetToSave` trims it once the invoice is saved.
+      const stores = [...new Set(mealRows(d).map((r) => r.store).filter((store) => store.trim()))];
       return spent > 0 ? {
         date: d, item: 'Meal',
         description: stores.join(', ') || 'Meal',
@@ -351,6 +352,9 @@ export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty
   }
   if (l.item === 'Meal') {
     if (p.day) return { ...sheet, meals: sheet.meals.map((r) => (theirs(tech, l.date)(r) ? { ...r, day: p.day! } : r)) };
+    if (p.description != null) {
+      return { ...sheet, meals: sheet.meals.map((r) => (theirs(tech, l.date)(r) ? { ...r, store: p.description! } : r)) };
+    }
     return 'amount' in p ? { ...sheet, meals: dayMeals(sheet.meals, tech, l.date, p.amount ?? null) } : sheet;
   }
   if (l.item === 'Mileage') {

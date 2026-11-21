@@ -112,7 +112,7 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
             <td style={right}>{qtyCell}</td>
             <td style={right}>{rateCell}</td>
             <td style={right}><Money n={l.amount} /></td>
-            {edit && <td style={td}>{(l.item !== 'Meal' || (l.spent ?? 0) > 0) && <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} />}</td>}
+            {edit && <td style={td}><Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} /></td>}
           </tr>
         );
       })}
@@ -127,7 +127,12 @@ function Section({ s, tech, edit, add }: { s: InvoiceSection; tech: string; edit
       <tr>
         <td style={td} colSpan={3} />
         <td style={{ ...center, fontWeight: 700, borderTop: line, whiteSpace: 'nowrap' }}>{s.title}</td>
-        <td style={{ ...td, borderTop: line }} colSpan={2} />
+        {s.spent == null
+          ? <td style={{ ...td, borderTop: line }} colSpan={2} />
+          : <>
+            <td style={{ ...td, borderTop: line }} />
+            <td style={{ ...right, borderTop: line }}><Money n={s.spent} bold /></td>
+          </>}
         <td style={{ ...right, borderTop: line }}><Money n={s.amount} bold /></td>
         {edit && <td style={td} />}
       </tr>
@@ -263,7 +268,7 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
               {hotel
                 ? <NumBox label={`Hotel amount, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
                 : <span style={{ textAlign: 'right', fontSize: 13 }}>{amount(l.amount)}</span>}
-              {(l.item !== 'Meal' || (l.spent ?? 0) > 0) ? <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} /> : <span />}
+              <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} />
             </div>
             {l.item === 'Labor' && <InOut l={l} at={at} edit={edit} />}
             {l.item === 'Material' && (
@@ -356,10 +361,9 @@ export default function JobLogInvoice({ invoice, head, edit }: { invoice: Invoic
         {invoice.techs.map((t) => <Tech key={t.tech} t={t} edit={edit} />)}
         <tbody className="jl-avoid">
           <tr><td colSpan={7} style={{ ...center, fontWeight: 700, textDecoration: 'underline', borderBottom: '2px solid #000', paddingTop: 12 }}>Totals</td></tr>
-          {([['Labor', invoice.totals.labor], ['Mileage', invoice.totals.mileage], ['Meal receipts (actual spent)', invoice.totals.mealReceipts],
-            ['Meals reimbursed', invoice.totals.meals],
+          {([['Labor', invoice.totals.labor], ['Mileage', invoice.totals.mileage], ['Meals', invoice.totals.meals],
             ...(invoice.techs.some((t) => t.materials?.lines.length)
-              ? [['Materials receipts (actual spent)', invoice.totals.materialReceipts] as const, ['Materials reimbursed', invoice.totals.materials] as const]
+              ? [['Materials', invoice.totals.materials] as const]
               : []),
             ['Travel', invoice.totals.travel]] as const).map(([k, v]) => (
             <tr key={k}><td colSpan={5} style={right}>{k}</td><td style={td} /><td style={right}><Money n={v} /></td></tr>

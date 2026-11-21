@@ -102,10 +102,10 @@ export function dueDate(date: string, days: number): string {
  */
 export type InvoiceLine = {
   date: string; item: string; description: string; qty: number | null; rate: number | null; amount: number | null;
-  tech?: string; row?: TimeRow | MoneyRow; spent?: number;
+  tech?: string; row?: TimeRow | MoneyRow; spent?: number; cap?: number | null;
 };
 /** A section of a tech's: its title's line ("Meal reimbursement" and its amount) and its lines. */
-export type InvoiceSection = { title: string; amount: number; lines: InvoiceLine[] };
+export type InvoiceSection = { title: string; amount: number; spent?: number; lines: InvoiceLine[] };
 export type InvoiceTech = {
   role: 'Lead' | 'Helper';
   tech: string;
@@ -159,8 +159,8 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     const store = r.store.trim();
     return {
       date: r.day, item: 'Material',
-      description: `${store ? `${store} · ` : ''}receipt ${money(amount)} · reimbursed ${money(amount)}`,
-      qty: 1, rate: amount, amount, tech: r.tech, row: r,
+      description: store || 'Materials',
+      qty: null, rate: amount, amount, tech: r.tech, row: r,
     };
   });
   const techs = order.map((tech): InvoiceTech => {
@@ -172,21 +172,21 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
       const qty = rowHours(r) ?? 0;
       return { date: r.day, item: 'Labor', description: meta.labor, qty, rate: hour, amount: lineAmount(qty, hour), tech, row: r };
     });
-    // Meal reimbursement: a line a day worked (or a meal bought), the day's receipts up to the allowance; a day with
-    // none has no quantity or rate and nothing charged, as theirs.
+    // Meal reimbursement: only days with a receipt, with the day's actual spend and the amount reimbursed.
     const mealRows = (d: string) => sheet.meals.filter((r) => r.tech === tech && r.day === d);
     const mealsOf = (d: string) => r2(mealRows(d).reduce((t, r) => t + (r.amount || 0), 0));
-    const mealDays = [...new Set([...laborDays, ...sheet.meals.filter((r) => r.tech === tech).map((r) => r.day)])].sort();
-    const allowance = meta.meal == null ? 'Meal allowance with Receipts' : `Meal allowance up to ${money(meta.meal)} with Receipts`;
+    const mealDays = [...new Set(sheet.meals.filter((r) => r.tech === tech).map((r) => r.day))].sort();
     const mealLines = mealDays.map((d): InvoiceLine => {
       const spent = mealsOf(d), charged = meta.meal == null ? spent : Math.min(spent, meta.meal);
       const stores = [...new Set(mealRows(d).map((r) => r.store.trim()).filter(Boolean))];
-      const receipt = `${stores.length ? `${stores.join(', ')} · ` : ''}receipt ${money(spent)}`;
       return spent > 0 ? {
-        date: d, item: 'Meal', description: `${allowance} · ${receipt} · reimbursed ${money(charged)}`,
-        qty: 1, rate: charged, amount: charged, tech, spent,
-      }
-        : { date: d, item: 'Meal', description: allowance, qty: null, rate: null, amount: 0, tech, spent: 0 };
+        date: d, item: 'Meal',
+        description: stores.join(', ') || 'Meal',
+        qty: null, rate: spent, amount: charged, tech, spent, cap: meta.meal,
+      } : {
+        date: d, item: 'Meal', description: stores.join(', ') || 'Meal',
+        qty: null, rate: null, amount: 0, tech, spent: 0, cap: meta.meal,
+      };
     });
     // Total Milage: a line a day, from the drive there to the drive home, at the tech's mileage rate; the first drive
     // is from home to the site, the last one home, when they're before and after the days worked.
@@ -226,10 +226,18 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
       qty: 1, rate: r.amount, amount: r2(r.amount || 0), tech: r.tech, row: r,
     })));
     const hours = { title: 'Total Hours', qty: hoursTotal(time), rate: hour, amount: sum(hourLines), lines: hourLines };
-    const meals = { title: 'Meal reimbursement', amount: sum(mealLines), lines: mealLines };
+    const meals = {
+      title: 'Meal reimbursement',
+      spent: r2(mealLines.reduce((total, line) => total + (line.spent ?? 0), 0)),
+      amount: sum(mealLines),
+      lines: mealLines,
+    };
     const mileage = { title: 'Total Milage', amount: sum(mileLines), lines: mileLines };
     const travel = { title: 'Total Travel', amount: sum(travelLines), lines: travelLines };
-    const materials = tech === host ? { title: 'Total Materials', amount: sum(materialLines), lines: materialLines } : undefined;
+    const materialsAmount = sum(materialLines);
+    const materials = tech === host
+      ? { title: 'Total Materials', spent: materialsAmount, amount: materialsAmount, lines: materialLines }
+      : undefined;
     return { role: tech === crew[0] ? 'Lead' : 'Helper', tech, hours, meals, mileage, ...(materials ? { materials } : {}), travel,
       total: r2(hours.amount + meals.amount + mileage.amount + (materials?.amount ?? 0) + travel.amount) };
   });
@@ -293,12 +301,11 @@ export function invoiceCharges(inv: Invoice, allHoursRate: number | null): Invoi
 const swap = <T>(rows: T[], from: T, to: T | null) => rows.flatMap((r) => (r === from ? (to ? [to] : []) : [r]));
 const theirs = (tech: string, day: string) => (r: { tech: string; day: string }) => r.tech === tech && r.day === day;
 
-/** A day's meals as one amount: the one receipt changed, or the receipts made one; none takes them out. */
+/** A day's meals as one amount: the one receipt changed, or the receipts made one; an empty edit stays until removed. */
 function dayMeals(rows: MoneyRow[], tech: string, day: string, amount: number | null): MoneyRow[] {
   const mine = rows.filter(theirs(tech, day)), rest = rows.filter((r) => !theirs(tech, day)(r));
-  if (!amount) return rest;
-  if (mine.length === 1) return swap(rows, mine[0], { ...mine[0], amount });
-  return [...rest, { tech, day, store: mine.map((r) => r.store).filter(Boolean).join(', '), amount }];
+  if (mine.length === 1) return swap(rows, mine[0], { ...mine[0], amount: amount ?? 0 });
+  return [...rest, { tech, day, store: mine.map((r) => r.store).filter(Boolean).join(', '), amount: amount ?? 0 }];
 }
 /** A day's miles as one number: the one drive changed, or the drives made one; none takes them out. */
 function dayMiles(rows: MileRow[], tech: string, day: string, miles: number | null): MileRow[] {
@@ -414,15 +421,19 @@ export function invoiceCells(inv: Invoice, head: InvoiceHead): XCell[][] {
     const at = next();
     // With no rate yet, blank, and worked out when one's typed in Excel.
     const f = `IF(F${at}="","",IF(E${at}="",0,ROUND(E${at}*F${at},2)))`;
+    const receipt = l.item === 'Meal' || l.item === 'Material';
+    const receiptAmount = l.item === 'Meal' && l.cap != null
+      ? `IF(F${at}="","",ROUND(MIN(F${at},${l.cap}),2))`
+      : `IF(F${at}="","",ROUND(F${at},2))`;
     rows.push([num(dayNumber(l.date), DATE), l.item === 'Material' ? 'Materials receipt' : l.item === 'Meal' && l.spent ? 'Meal receipt' : l.item, l.description || null, null,
-      l.qty == null ? null : num(l.qty, qtyFmt), l.rate == null ? null : num(l.rate, ACCT),
-      l.amount == null ? { t: 's', v: '', f } : num(l.amount, ACCT, f)]);
+      receipt || l.qty == null ? null : num(l.qty, qtyFmt), l.rate == null ? null : num(l.rate, ACCT),
+      l.amount == null ? { t: 's', v: '', f } : num(l.amount, ACCT, receipt ? receiptAmount : f)]);
     return at;
   };
   /** A section's lines under its title's line; gives the title's row. */
   const section = (s: InvoiceSection, qtyFmt: string) => {
     const at = next();
-    rows.push([null, null, null, s.title, null, null, null]);
+    rows.push([null, null, null, s.title, null, s.spent == null ? null : num(s.spent, ACCT), null]);
     const first = next();
     for (const l of s.lines) line(l, qtyFmt);
     rows[at - 1][6] = num(s.amount, ACCT, s.lines.length ? `SUM(G${first}:G${next() - 1})` : '0');
@@ -459,11 +470,9 @@ export function invoiceCells(inv: Invoice, head: InvoiceHead): XCell[][] {
   };
   total('Labor', inv.totals.labor, of('hours'));
   total('Mileage', inv.totals.mileage, of('mileage'));
-  total('Meal receipts (actual spent)', inv.totals.mealReceipts, `${inv.totals.mealReceipts}`, false);
-  total('Meals reimbursed', inv.totals.meals, of('meals'));
+  total('Meals', inv.totals.meals, of('meals'));
   if (techAt.some((t) => t.materials)) {
-    total('Materials receipts (actual spent)', inv.totals.materialReceipts, `${inv.totals.materialReceipts}`, false);
-    total('Materials reimbursed', inv.totals.materials, of('materials'));
+    total('Materials', inv.totals.materials, of('materials'));
   }
   total('Travel', inv.totals.travel, of('travel'));
   rows.push([null, null, null, null, 'Total Invoice', null, num(inv.totals.total, ACCT, countedRows.map((at) => `G${at}`).join('+'))]);
@@ -498,9 +507,12 @@ export function quickBooksLines(inv: Invoice): QbJobLine[] {
     .flatMap((s) => s.lines)
     .filter((l) => (l.amount ?? 0) > 0)
     .map((l) => {
-      const qty = l.qty ?? 1, rate = l.rate ?? l.amount ?? 0;
+      const qty = l.qty ?? 1, rate = l.item === 'Meal' ? (l.amount ?? 0) : (l.rate ?? l.amount ?? 0);
       const who = `${t.tech}${t.role === 'Lead' ? ' (Lead)' : ''}`;
-      return { date: l.date, item: qboItemFor(QBO_KIND[l.item]), description: `${who}: ${l.description || l.item}`.slice(0, 4000), qty, rate, amount: r2(l.amount ?? 0) };
+      const description = l.item === 'Meal' && l.spent != null
+        ? `${l.description || l.item} · receipt ${money(l.spent)}`
+        : l.description || l.item;
+      return { date: l.date, item: qboItemFor(QBO_KIND[l.item]), description: `${who}: ${description}`.slice(0, 4000), qty, rate, amount: r2(l.amount ?? 0) };
     }));
 }
 

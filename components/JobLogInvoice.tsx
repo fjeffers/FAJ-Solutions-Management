@@ -107,7 +107,7 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
         return (
           <tr key={`${l.item}-${i}`}>
             <td style={td}>{dateCell}</td>
-            <td style={center}>{l.item === 'Material' ? 'Material receipt' : l.item}</td>
+            <td style={center}>{l.item === 'Material' ? 'Materials receipt' : l.item === 'Meal' && l.spent ? 'Meal receipt' : l.item}</td>
             <td style={td} colSpan={2}>{description}</td>
             <td style={right}>{qtyCell}</td>
             <td style={right}>{rateCell}</td>

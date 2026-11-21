@@ -118,6 +118,22 @@ describe('Mileage from odometer photos on the phone (Fred, 2026-11-02)', () => {
 });
 
 describe('Add receipt or miles, in the office', () => {
+  it('reads the store and total from an uploaded receipt while keeping the file for save', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ vendor: 'Home Depot', amount: 161.64, items: [] }),
+    } as never);
+    render(<OfficeReceiptDialog woId="wo-1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    const receipt = new File(['receipt'], 'home-depot.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByLabelText('Receipt photo or PDF (optional)'), { target: { files: [receipt] } });
+    await waitFor(() => expect((screen.getByLabelText('Store / hotel') as HTMLInputElement).value).toBe('Home Depot'));
+    expect((screen.getByLabelText('Amount') as HTMLInputElement).value).toBe('161.64');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { body: FormData }];
+    expect(url).toBe('/api/materials/from-receipt');
+    expect(init.body.get('file')).toBe(receipt);
+    expect(init.body.get('mode')).toBe('summary');
+  });
+
   it("asks for the tech, the miles and the day, and adds the miles to that tech's day on Hours", async () => {
     const onSaved = vi.fn();
     const changed = vi.fn();

@@ -154,9 +154,15 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
   // The materials, whoever bought them, once, under the lead before the hotel (Fred, 2026-10-30: "under lead tech
   // before hotel"); the first tech's when the lead has no lines in the dates.
   const host = order.includes(lead) ? lead : order[0];
-  const materialLines = [...sheet.materials].sort((a, b) => a.day.localeCompare(b.day)).map((r): InvoiceLine => ({
-    date: r.day, item: 'Material', description: r.store || '', qty: 1, rate: r.amount, amount: r2(r.amount || 0), tech: r.tech, row: r,
-  }));
+  const materialLines = [...sheet.materials].sort((a, b) => a.day.localeCompare(b.day)).map((r): InvoiceLine => {
+    const amount = r2(r.amount || 0);
+    const store = r.store.trim();
+    return {
+      date: r.day, item: 'Material',
+      description: `${store ? `${store} · ` : ''}receipt ${money(amount)} · reimbursed ${money(amount)}`,
+      qty: 1, rate: amount, amount, tech: r.tech, row: r,
+    };
+  });
   const techs = order.map((tech): InvoiceTech => {
     const { hour = null, mile = null } = rates[tech] ?? {};
     const time = sheet.time.filter((r) => r.tech === tech).sort((a, b) => a.day.localeCompare(b.day));
@@ -168,12 +174,18 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     });
     // Meal reimbursement: a line a day worked (or a meal bought), the day's receipts up to the allowance; a day with
     // none has no quantity or rate and nothing charged, as theirs.
-    const mealsOf = (d: string) => r2(sheet.meals.filter((r) => r.tech === tech && r.day === d).reduce((t, r) => t + (r.amount || 0), 0));
+    const mealRows = (d: string) => sheet.meals.filter((r) => r.tech === tech && r.day === d);
+    const mealsOf = (d: string) => r2(mealRows(d).reduce((t, r) => t + (r.amount || 0), 0));
     const mealDays = [...new Set([...laborDays, ...sheet.meals.filter((r) => r.tech === tech).map((r) => r.day)])].sort();
     const allowance = meta.meal == null ? 'Meal allowance with Receipts' : `Meal allowance up to ${money(meta.meal)} with Receipts`;
     const mealLines = mealDays.map((d): InvoiceLine => {
       const spent = mealsOf(d), charged = meta.meal == null ? spent : Math.min(spent, meta.meal);
-      return spent > 0 ? { date: d, item: 'Meal', description: `${allowance} · receipt ${money(spent)}`, qty: 1, rate: charged, amount: charged, tech, spent }
+      const stores = [...new Set(mealRows(d).map((r) => r.store.trim()).filter(Boolean))];
+      const receipt = `${stores.length ? `${stores.join(', ')} · ` : ''}receipt ${money(spent)}`;
+      return spent > 0 ? {
+        date: d, item: 'Meal', description: `${allowance} · ${receipt} · reimbursed ${money(charged)}`,
+        qty: 1, rate: charged, amount: charged, tech, spent,
+      }
         : { date: d, item: 'Meal', description: allowance, qty: null, rate: null, amount: 0, tech, spent: 0 };
     });
     // Total Milage: a line a day, from the drive there to the drive home, at the tech's mileage rate; the first drive
@@ -402,7 +414,7 @@ export function invoiceCells(inv: Invoice, head: InvoiceHead): XCell[][] {
     const at = next();
     // With no rate yet, blank, and worked out when one's typed in Excel.
     const f = `IF(F${at}="","",IF(E${at}="",0,ROUND(E${at}*F${at},2)))`;
-    rows.push([num(dayNumber(l.date), DATE), l.item === 'Material' ? 'Material receipt' : l.item, l.description || null, null,
+    rows.push([num(dayNumber(l.date), DATE), l.item === 'Material' ? 'Materials receipt' : l.item === 'Meal' && l.spent ? 'Meal receipt' : l.item, l.description || null, null,
       l.qty == null ? null : num(l.qty, qtyFmt), l.rate == null ? null : num(l.rate, ACCT),
       l.amount == null ? { t: 's', v: '', f } : num(l.amount, ACCT, f)]);
     return at;

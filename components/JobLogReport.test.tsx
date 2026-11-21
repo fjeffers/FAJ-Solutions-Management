@@ -913,11 +913,11 @@ describe('Job log edited by the office', () => {
         ['Lead', 'Paul Gibbs', 'Total Hours', '9.00', '$50.00', '$450.00'],
         ['10/19/2026', 'Labor', 'Installation of Cabling for refresh project', '9.00', '$50.00', '$450.00'],
         ['', 'Meal reimbursement', '', '$18.97'],
-        ['10/19/2026', 'Meal', 'Meal allowance up to $50.00 with Receipts · receipt $18.97', '1', '$18.97', '$18.97'],
+        ['10/19/2026', 'Meal receipt', 'Meal allowance up to $50.00 with Receipts · Waffle House · receipt $18.97 · reimbursed $18.97', '1', '$18.97', '$18.97'],
         ['', 'Total Milage', '', '$10.80'],
         ['10/19/2026', 'Mileage', 'Mileage from Home to Goldsboro NC', '18', '$0.60', '$10.80'],
         ['', 'Total Materials', '', '$104.17'],
-        ['10/21/2026', 'Material receipt', "Lowe's", '1', '$104.17', '$104.17'],
+        ['10/21/2026', 'Materials receipt', "Lowe's · receipt $104.17 · reimbursed $104.17", '1', '$104.17', '$104.17'],
         ['', 'Total Travel', '', '$402.50'],
         ['10/19/2026', 'Hotel', 'Quality Inn – Hotel charge for the week', '1', '$402.50', '$402.50'],
         ['', 'Lead Total', '', '$986.44'],
@@ -1133,7 +1133,7 @@ describe('Job log edited by the office', () => {
         ['10/19/2026', 'Labor', 'Installation of Cabling for refresh project', '8.00', '$50.00', '$400.00'],
         ['10/20/2026', 'Labor', 'Installation of Cabling for refresh project', '6.00', '$50.00', '$300.00'],
         ['', 'Meal reimbursement', '', '$50.00'],
-        ['10/19/2026', 'Meal', 'Meal allowance up to $50.00 with Receipts · receipt $60.00', '1', '$50.00', '$50.00'],
+        ['10/19/2026', 'Meal receipt', 'Meal allowance up to $50.00 with Receipts · Waffle House · receipt $60.00 · reimbursed $50.00', '1', '$50.00', '$50.00'],
       ]);
       fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
       expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0][5]).toBe('8');

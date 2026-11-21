@@ -26,9 +26,10 @@ function sanitizeItems(raw: unknown): ReceiptItem[] {
 const PROMPT = `Read this store receipt and extract the purchased line items. Return ONLY valid JSON (no markdown fences):
 {
   "vendor": string | null (store name),
+  "amount": number | null (the final total charged, including tax),
   "items": [ { "name": string (item description, cleaned up), "quantity": number, "unit_cost": number (price PER UNIT in dollars) } ]
 }
-Rules: exclude subtotal/tax/total/payment/change lines. If a line shows quantity and extended price, divide to get unit_cost. Never invent items that are not on the receipt.`;
+Rules: exclude subtotal/tax/total/payment/change lines from items. If a line shows quantity and extended price, divide to get unit_cost. Use the receipt's final charged total for amount. Never invent values that are not clearly shown.`;
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient('admin');
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData().catch(() => null);
   const file = form?.get('file');
+  const summaryOnly = form?.get('mode') === 'summary';
   if (!(file instanceof File)) return NextResponse.json({ error: 'No file received.' }, { status: 400 });
   if (file.size > 15 * 1024 * 1024) return NextResponse.json({ error: 'That file is over 15MB — try a smaller photo.' }, { status: 413 });
 
@@ -86,14 +88,19 @@ export async function POST(req: NextRequest) {
   }
   const data = await res.json();
   const text: string = data.content?.[0]?.text ?? '{}';
-  let parsed: { vendor?: unknown; items?: unknown } = {};
+  let parsed: { vendor?: unknown; amount?: unknown; items?: unknown } = {};
   try {
     parsed = JSON.parse(text.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim());
   } catch { /* fall through to empty */ }
   const items = sanitizeItems(parsed.items);
-  if (items.length === 0) {
+  const vendor = typeof parsed.vendor === 'string' ? parsed.vendor.slice(0, 60) : null;
+  const parsedAmount = Number(parsed.amount);
+  const amount = Number.isFinite(parsedAmount) && parsedAmount >= 0 ? Math.round(parsedAmount * 100) / 100 : null;
+  if (items.length === 0 && !summaryOnly) {
     return NextResponse.json({ error: "Couldn't read any items off that receipt — try a clearer photo, or paste the text." }, { status: 422 });
   }
-  const vendor = typeof parsed.vendor === 'string' ? parsed.vendor.slice(0, 60) : null;
-  return NextResponse.json({ vendor, items, source: 'ai' });
+  if (summaryOnly && !vendor && amount == null) {
+    return NextResponse.json({ error: "Couldn't read the store or total — try a clearer photo, or type them in." }, { status: 422 });
+  }
+  return NextResponse.json({ vendor, amount, items, source: 'ai' });
 }

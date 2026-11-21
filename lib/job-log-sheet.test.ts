@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   clockOf, hoursScreenDays, hoursTotal, isHotel, milesFromOdometer, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours,
-  sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetToSave, withHotelBooking, type JobSheet, type TimeRow,
+  sheetByTech, sheetFromApp, sheetInDates, sheetProblems, sheetToSave, withHotelBooking, withReceiptVendors, type JobSheet, type TimeRow,
 } from './job-log-sheet';
 import type { Visit } from './job-log';
 import { sheetRows } from './field-sheet';
@@ -82,6 +82,30 @@ describe('the sheet from the app', () => {
 });
 
 describe('the saved sheet', () => {
+  it('restores receipt vendors over generic labels without replacing office descriptions', () => {
+    const saved: JobSheet = {
+      time: [], miles: [], other: [],
+      meals: [
+        { tech: 'Paul Gibbs', day: '2026-11-09', store: 'Meal', amount: 61.61 },
+        { tech: 'Paul Gibbs', day: '2026-11-10', store: 'Office lunch', amount: 64.55 },
+      ],
+      materials: [{ tech: 'Paul Gibbs', day: '2026-11-09', store: 'materials for the site', amount: 161.64 }],
+    };
+    const app: JobSheet = {
+      time: [], miles: [], other: [],
+      meals: [
+        { tech: 'Paul Gibbs', day: '2026-11-09', store: 'Ale House', amount: 61.61 },
+        { tech: 'Paul Gibbs', day: '2026-11-10', store: 'Waffle House', amount: 64.55 },
+      ],
+      materials: [{ tech: 'Paul Gibbs', day: '2026-11-09', store: 'Home Depot', amount: 161.64 }],
+    };
+
+    expect(withReceiptVendors(saved, app)).toMatchObject({
+      meals: [{ store: 'Ale House' }, { store: 'Office lunch' }],
+      materials: [{ store: 'Home Depot' }],
+    });
+  });
+
   const sheet: JobSheet = {
     time: [t('Paul Gibbs', '2026-10-20', '07:50', '18:09', 0.5), { ...t('Paul Gibbs', '2026-10-19', '07:37', ''), open: true, ms: 3 * 3_600_000 }],
     miles: [{ tech: 'Paul Gibbs', day: '2026-10-19', start: 142109, end: 142117, miles: 8 }],

@@ -1,8 +1,10 @@
 // Burns the job, date, time and GPS into a photo (Fred, 2026-10-02: "time and
 // date and GPS location on the pictures"). Browser only: it draws the picture
-// onto a canvas, adds a dark band along the bottom with the lines from
-// stampLines() (lib/geo.ts), and returns a JPEG. The stamp is part of the
-// image itself, so it travels with the photo wherever it is sent or printed.
+// onto a canvas, writes the lines from stampLines() (lib/geo.ts) as small white
+// text in the lower-right corner, and returns a JPEG. No band behind the text:
+// Fred, 2026-11-16, sending photos to a client: "I don't want it big and broad
+// … just in the little spot, in a corner." The stamp is part of the image
+// itself, so it travels with the photo wherever it is sent or printed.
 
 const MAX_SIDE = 1920; // big enough to read a label, small enough to send on one bar
 
@@ -35,20 +37,37 @@ export async function stampPhoto(file: Blob, lines: string[]): Promise<Blob> {
     if (!ctx) throw new Error('This phone could not prepare the photo.');
     ctx.drawImage(src.img, 0, 0, w, h);
 
-    const font = Math.max(15, Math.round(Math.min(w, h) / 34));
-    const lineH = Math.round(font * 1.35);
-    const pad = Math.round(font * 0.7);
-    const band = pad * 2 + lineH * lines.length;
-    ctx.fillStyle = 'rgba(2, 4, 9, 0.66)';
-    ctx.fillRect(0, h - band, w, band);
-    ctx.fillStyle = '#C9A24B';
-    ctx.fillRect(0, h - band, Math.max(4, Math.round(font / 4)), band);
-
-    ctx.textBaseline = 'top';
+    const font = Math.max(13, Math.min(28, Math.round(w / 44)));
+    const lineH = Math.round(font * 1.18);
+    const margin = Math.max(10, Math.round(Math.min(w, h) * 0.018));
+    const maxWidth = Math.round(w * 0.5);
+    const weight = (i: number) => `${i === 0 ? 700 : 500} ${font}px Inter, "Segoe UI", Arial, sans-serif`;
+    // A long first line ("FAJ Solutions · WO … · job name") breaks at its dots
+    // rather than stretching across the picture.
+    const rows: { text: string; bold: boolean }[] = [];
     lines.forEach((line, i) => {
-      ctx.font = `${i === 0 ? 700 : 500} ${font}px Inter, "Segoe UI", Arial, sans-serif`;
-      ctx.fillStyle = i === 0 ? '#E3C987' : '#FFFFFF';
-      ctx.fillText(line, pad * 1.6, h - band + pad + i * lineH, w - pad * 3);
+      ctx.font = weight(i);
+      let row = '';
+      for (const part of line.split(' · ')) {
+        const next = row ? `${row} · ${part}` : part;
+        if (row && ctx.measureText(next).width > maxWidth) { rows.push({ text: row, bold: i === 0 }); row = part; }
+        else row = next;
+      }
+      rows.push({ text: row, bold: i === 0 });
+    });
+
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.82)';
+    ctx.lineWidth = Math.max(3, font * 0.16);
+    ctx.fillStyle = '#FFFFFF';
+    rows.forEach((row, i) => {
+      ctx.font = weight(row.bold ? 0 : 1);
+      const y = h - margin - lineH * (rows.length - i - 0.5);
+      // The dark outline keeps white text readable on a bright wall or ceiling.
+      ctx.strokeText(row.text, w - margin, y, maxWidth);
+      ctx.fillText(row.text, w - margin, y, maxWidth);
     });
 
     return await new Promise<Blob>((resolve, reject) =>

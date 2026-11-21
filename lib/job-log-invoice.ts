@@ -161,7 +161,7 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     const allowance = meta.meal == null ? 'Meal allowance with Receipts' : `Meal allowance up to ${money(meta.meal)} with Receipts`;
     const mealLines = mealDays.map((d): InvoiceLine => {
       const spent = mealsOf(d), charged = meta.meal == null ? spent : Math.min(spent, meta.meal);
-      return spent > 0 ? { date: d, item: 'Meal', description: allowance, qty: 1, rate: charged, amount: charged, tech, spent }
+      return spent > 0 ? { date: d, item: 'Meal', description: `${allowance} · receipt ${money(spent)}`, qty: 1, rate: charged, amount: charged, tech, spent }
         : { date: d, item: 'Meal', description: allowance, qty: null, rate: null, amount: 0, tech, spent: 0 };
     });
     // Total Milage: a line a day, from the drive there to the drive home, at the tech's mileage rate; the first drive

@@ -270,7 +270,7 @@ describe('Field Sheet', () => {
       lines: [
         { kind: 'labor', date: '2026-10-21', description: 'Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h', qty: 9.57, rate: 100, amount: 957 },
         { kind: 'mileage', date: '2026-10-21', description: 'Wed, Oct 21 · Dwayne Cudjoe · mileage 4.4 mi', qty: 4.4, rate: 0.6, amount: 2.64 },
-        { kind: 'meals', date: null, description: 'Meals (receipts, up to $50 a tech-day)', qty: 1, rate: 20, amount: 20 },
+        { kind: 'meals', date: null, description: 'Meals (receipts $20.00, up to $50 a tech-day)', qty: 1, rate: 20, amount: 20 },
       ],
       total: 979.64,
     }), { status: 200 });

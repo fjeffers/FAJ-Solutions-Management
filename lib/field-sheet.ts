@@ -559,10 +559,11 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
   const mealAllowed = s.mealRate != null ? r2(techDays * s.mealRate) : null;
   const hotelAllowed = s.hotelRate != null && s.nights != null && s.rooms != null ? r2(s.hotelRate * s.nights * s.rooms) : null;
   const meals = { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed == null ? mealRcpt : Math.min(mealAllowed, mealRcpt) };
+  const actualMeals = mealRcpt.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
   const hotel = s.hotelMode === 'per_night'
     ? { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed ?? 0 }
     : { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed == null ? hotelRcpt : Math.min(hotelAllowed, hotelRcpt) };
-  if (meals.claim > 0) lines.push(line('meals', null, `Meals (receipts${mealAllowed != null ? `, up to $${s.mealRate} a tech-day` : ''})`, 1, meals.claim));
+  if (meals.claim > 0) lines.push(line('meals', null, `Meals (receipts ${actualMeals}${mealAllowed != null ? `, up to $${s.mealRate} a tech-day` : ''})`, 1, meals.claim));
   if (hotel.claim > 0) lines.push(s.hotelMode === 'per_night'
     ? line('hotel', null, `Hotel: ${s.nights} nights × ${s.rooms} rooms × $${s.hotelRate}`, (s.nights ?? 0) * (s.rooms ?? 0), s.hotelRate ?? 0)
     : line('hotel', null, `Hotel (receipts${hotelAllowed != null ? `, up to $${s.hotelRate} a room-night` : ''})`, 1, hotel.claim));

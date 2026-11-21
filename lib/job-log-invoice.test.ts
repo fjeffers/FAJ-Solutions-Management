@@ -54,7 +54,7 @@ describe('the invoice', () => {
     ]);
     // A meal a day worked, up to the $50 allowance: $58.97 of receipts on the 19th is $50; nothing on the 20th.
     expect({ ...paul.meals, lines: read(paul.meals.lines) }).toEqual({ title: 'Total Meal Allowance', amount: 50, lines: [
-      { date: '2026-10-19', item: 'Meal', description: 'Meal allowance up to $50.00 with Receipts', qty: 1, rate: 50, amount: 50 },
+      { date: '2026-10-19', item: 'Meal', description: 'Meal allowance up to $50.00 with Receipts · receipt $58.97', qty: 1, rate: 50, amount: 50 },
       { date: '2026-10-20', item: 'Meal', description: 'Meal allowance up to $50.00 with Receipts', qty: null, rate: null, amount: 0 },
     ] });
     // The drive there the day before, the days on site, and the drive home on the last day.
@@ -80,6 +80,22 @@ describe('the invoice', () => {
     expect(raja).toMatchObject({ meals: { amount: 12.54 }, mileage: { amount: 0 }, travel: { amount: 402.5 }, total: 731.04 });
     expect(raja.materials).toBeUndefined();
     expect(inv.totals).toEqual({ labor: 948, mileage: 573.6, meals: 62.54, materials: 47.48, travel: 845, total: 2476.62 });
+  });
+
+  it('shows the full receipt while keeping the meal charge capped, including in QuickBooks', () => {
+    const overCap = buildInvoice({ ...sheet, meals: [
+      { tech: 'Paul Gibbs', day: '2026-10-19', store: 'Waffle House', amount: 61.61 },
+      ...sheet.meals.filter((r) => r.tech !== 'Paul Gibbs' || r.day !== '2026-10-19'),
+    ] }, rates, crew, meta, 'Goldsboro NC');
+    const meal = overCap.techs[0].meals.lines.find((l) => l.date === '2026-10-19')!;
+    expect(meal).toMatchObject({
+      description: 'Meal allowance up to $50.00 with Receipts · receipt $61.61',
+      qty: 1, rate: 50, amount: 50, spent: 61.61,
+    });
+    expect(quickBooksLines(overCap).find((l) => l.item === 'Meals' && l.description.includes('receipt $61.61'))).toMatchObject({
+      description: 'Paul Gibbs (Lead): Meal allowance up to $50.00 with Receipts · receipt $61.61',
+      qty: 1, rate: 50, amount: 50,
+    });
   });
 
   it('keeps a helper\'s own drives and hotel when they have them', () => {
@@ -193,7 +209,7 @@ describe('the invoice', () => {
     expect(none.techs[1].hours).toMatchObject({ rate: null, amount: 0 });
     expect(none.techs[1].hours.lines[0]).toMatchObject({ rate: null, amount: null });
     // No allowance: the receipts as they are.
-    expect(none.techs[0].meals.lines[0]).toMatchObject({ description: 'Meal allowance with Receipts', rate: 58.97, amount: 58.97 });
+    expect(none.techs[0].meals.lines[0]).toMatchObject({ description: 'Meal allowance with Receipts · receipt $58.97', rate: 58.97, amount: 58.97 });
     expect(none.techs[0].mileage.lines[0].description).toBe('Mileage from Home to the site');
   });
 
@@ -261,6 +277,7 @@ describe('the invoice in Excel', () => {
     expect(cell(paul, 6)).toMatchObject({ v: 632, f: `SUM(G${paul + 1}:G${paul + 2})` });
     expect(cell(paul + 1, 6)).toMatchObject({ v: 316, f: `IF(F${paul + 1}="","",IF(E${paul + 1}="",0,ROUND(E${paul + 1}*F${paul + 1},2)))` });
     const meals = at('Total Meal Allowance'), miles = at('Total Milage'), mats = at('Total Materials'), travel = at('Total Travel');
+    expect(rows.find((r) => r[1] === 'Meal')?.[2]).toBe('Meal allowance up to $50.00 with Receipts · receipt $58.97');
     // The materials between the mileage and the hotel, the lead's only.
     expect(mats).toBeGreaterThan(miles);
     expect(travel).toBeGreaterThan(mats);

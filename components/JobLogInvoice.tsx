@@ -112,7 +112,7 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
             <td style={right}>{qtyCell}</td>
             <td style={right}>{rateCell}</td>
             <td style={right}><Money n={l.amount} /></td>
-            {edit && <td style={td}>{(l.item !== 'Meal' || (l.spent ?? 0) > 0) && <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} />}</td>}
+            {edit && <td style={td}><Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} /></td>}
           </tr>
         );
       })}
@@ -268,7 +268,7 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
               {hotel
                 ? <NumBox label={`Hotel amount, ${at}`} value={l.rate} onChange={(n) => edit.change(l, { amount: n })} />
                 : <span style={{ textAlign: 'right', fontSize: 13 }}>{amount(l.amount)}</span>}
-              {(l.item !== 'Meal' || (l.spent ?? 0) > 0) ? <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} /> : <span />}
+              <Remove name={`${l.item} ${at}`} onClick={() => edit.remove(l)} />
             </div>
             {l.item === 'Labor' && <InOut l={l} at={at} edit={edit} />}
             {l.item === 'Material' && (

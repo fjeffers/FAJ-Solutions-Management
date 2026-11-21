@@ -127,7 +127,12 @@ function Section({ s, tech, edit, add }: { s: InvoiceSection; tech: string; edit
       <tr>
         <td style={td} colSpan={3} />
         <td style={{ ...center, fontWeight: 700, borderTop: line, whiteSpace: 'nowrap' }}>{s.title}</td>
-        <td style={{ ...td, borderTop: line }} colSpan={2} />
+        {s.spent == null
+          ? <td style={{ ...td, borderTop: line }} colSpan={2} />
+          : <>
+            <td style={{ ...td, borderTop: line }} />
+            <td style={{ ...right, borderTop: line }}><Money n={s.spent} bold /></td>
+          </>}
         <td style={{ ...right, borderTop: line }}><Money n={s.amount} bold /></td>
         {edit && <td style={td} />}
       </tr>

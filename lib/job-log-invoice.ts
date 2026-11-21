@@ -386,7 +386,7 @@ const num = (v: number, z: string, f?: string): XCell => ({ t: 'n', v, z, ...(f 
 const dayNumber = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86_400_000 + 25_569;
 
 /** The columns: Date, Item, Description (and its totals' names), Qty, Rate, Amount. */
-export const INVOICE_WIDTHS = [10, 7, 24, 13, 6, 9, 11];
+export const INVOICE_WIDTHS = [10, 14, 24, 13, 6, 9, 11];
 
 /**
  * The invoice as a workbook's rows, in the client's columns. Each line's amount is its quantity × its rate, each

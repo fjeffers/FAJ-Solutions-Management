@@ -226,6 +226,39 @@ export function parseSheet(raw: unknown): JobSheet | null {
   };
 }
 
+const RECEIPT_PLACEHOLDERS = new Set([
+  '', 'meal', 'meals', 'meal receipt', 'material', 'materials', 'material receipt', 'materials receipt',
+  'materials for the site',
+]);
+
+/**
+ * A saved office sheet remains authoritative, but an older generic receipt label should not hide the vendor
+ * that was later read from the attached approved receipt.
+ */
+export function withReceiptVendors(saved: JobSheet, app: JobSheet): JobSheet {
+  const fill = (rows: MoneyRow[], receipts: MoneyRow[]) => {
+    const used = new Set<number>();
+    return rows.map((row) => {
+      if (!RECEIPT_PLACEHOLDERS.has(row.store.trim().toLowerCase())) return row;
+      const at = receipts.findIndex((candidate, index) =>
+        !used.has(index)
+        && candidate.tech === row.tech
+        && candidate.day === row.day
+        && Math.abs(candidate.amount - row.amount) < 0.005
+        && candidate.store.trim(),
+      );
+      const receipt = at < 0 ? null : receipts[at];
+      if (receipt) used.add(at);
+      return receipt ? { ...row, store: receipt.store.trim() } : row;
+    });
+  };
+  return {
+    ...saved,
+    meals: fill(saved.meals, app.meals),
+    materials: fill(saved.materials, app.materials),
+  };
+}
+
 const byDay = <T extends { day: string }>(rows: T[], then?: (a: T, b: T) => number) =>
   [...rows].sort((a, b) => a.day.localeCompare(b.day) || (then ? then(a, b) : 0));
 

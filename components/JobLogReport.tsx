@@ -59,7 +59,7 @@ import { loadEvents } from '@/components/wf/ProjectOffice';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { buildVisits, byTechGroups, inRange, dayOf, jobLogName, siteNumber, type Punch } from '@/lib/job-log';
 import {
-  hoursScreenDays, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave, withHotelBooking,
+  hoursScreenDays, hoursTotal, isHotel, milesTotal, minutesOf, moneyTotal, parseSheet, rowHours, sheetFromApp, sheetInDates, sheetProblems, sheetSorted, sheetToSave, withHotelBooking, withReceiptVendors,
   type JobSheet, type MoneyRow,
 } from '@/lib/job-log-sheet';
 import { downloadJobLogXlsx } from '@/lib/job-log-xlsx';
@@ -376,7 +376,7 @@ export default function JobLogReport({ w, deliverables, onClose, onPayTech }: {
   // A hotel entered on the work order is already attached to this site. Put it
   // on the invoice with its check-in date and name even when the receipt/amount
   // has not been uploaded yet; Edit invoice is where the office fills it in.
-  const sheet = withHotelBooking(savedSheet ?? appSheet, jobHotel, crew[0] ?? '', w.start_date ?? '');
+  const sheet = withHotelBooking(savedSheet ? withReceiptVendors(savedSheet, appSheet) : appSheet, jobHotel, crew[0] ?? '', w.start_date ?? '');
   const shown = sheetSorted(sheetInDates(sheet, from, to));
   // Each tech's own days and total, then the next tech (Fred, 2026-10-29: "Paul and Kendall separated grouping"),
   // the lead tech first and then the helpers ("Lead tech first and then helper tech").

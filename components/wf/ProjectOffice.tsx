@@ -496,6 +496,23 @@ export function OfficeReceiptDialog({ woId, techs = [], onClose, onSaved }: {
   const [date, setDate] = useState(todayNY);
   const [note, setNote] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [reading, setReading] = useState(false);
+  const readReceipt = async (receipt: File) => {
+    setFile(receipt);
+    setReading(true);
+    const fd = new FormData();
+    fd.append('file', receipt);
+    fd.append('mode', 'summary');
+    try {
+      const res = await fetch('/api/materials/from-receipt', { method: 'POST', body: fd });
+      const body = await res.json().catch(() => ({})) as { vendor?: string | null; amount?: number | null };
+      if (!res.ok) return;
+      if (body.vendor) setVendor(body.vendor);
+      if (body.amount != null) setAmount(body.amount.toFixed(2));
+    } finally {
+      setReading(false);
+    }
+  };
   const [busy, setBusy] = useState(false);
   const amt = parseExpenseAmount(amount);
   const saveMiles = async () => {
@@ -578,7 +595,13 @@ export function OfficeReceiptDialog({ woId, techs = [], onClose, onSaved }: {
           <input className="wf-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder="2 nights, 2 rooms" />
         </label>
         <label style={{ display: 'block', marginTop: 10 }}>{label('Receipt photo or PDF (optional)')}
-          <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+            onChange={(e) => {
+              const picked = e.target.files?.[0] ?? null;
+              if (picked) void readReceipt(picked);
+              else setFile(null);
+            }} />
+          {reading && <span className="wf-subtle" role="status" style={{ display: 'block', marginTop: 4 }}>Reading store and total…</span>}
         </label>
       </>}
     </Dialog>

@@ -99,7 +99,7 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
             : <Money n={l.rate} rate />;
         // A material's store and a hotel's name, as typed.
         const description = edit && l.item === 'Material'
-          ? <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
+          ? <input aria-label={`Material store, ${at}`} style={input} value={(l.row as { store?: string } | undefined)?.store ?? ''} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
           : edit && l.item === 'Hotel' && l.row
             ? <input aria-label={`Hotel name, ${at}`} style={input} value={(l.row as { store?: string }).store ?? ''} placeholder="Hotel name" onChange={(e) => edit.change(l, { description: e.target.value })} />
           : edit && l.item === 'Labor' ? <>{l.description}<InOut l={l} at={at} edit={edit} /></>
@@ -107,7 +107,7 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
         return (
           <tr key={`${l.item}-${i}`}>
             <td style={td}>{dateCell}</td>
-            <td style={center}>{l.item}</td>
+            <td style={center}>{l.item === 'Material' ? 'Materials receipt' : l.item === 'Meal' && l.spent ? 'Meal receipt' : l.item}</td>
             <td style={td} colSpan={2}>{description}</td>
             <td style={right}>{qtyCell}</td>
             <td style={right}>{rateCell}</td>
@@ -120,7 +120,7 @@ function Lines({ lines, tech, edit }: { lines: InvoiceLine[]; tech: string; edit
   );
 }
 
-/** A section's title's line ("Total Meal Allowance … $ 106.02") with a rule over it, then its lines. */
+/** A section's title's line ("Meal reimbursement … $ 106.02") with a rule over it, then its lines. */
 function Section({ s, tech, edit, add }: { s: InvoiceSection; tech: string; edit?: InvoiceEditor; add?: ReactNode }) {
   return (
     <>
@@ -356,8 +356,11 @@ export default function JobLogInvoice({ invoice, head, edit }: { invoice: Invoic
         {invoice.techs.map((t) => <Tech key={t.tech} t={t} edit={edit} />)}
         <tbody className="jl-avoid">
           <tr><td colSpan={7} style={{ ...center, fontWeight: 700, textDecoration: 'underline', borderBottom: '2px solid #000', paddingTop: 12 }}>Totals</td></tr>
-          {([['Labor', invoice.totals.labor], ['Mileage', invoice.totals.mileage], ['Meals', invoice.totals.meals],
-            ...(invoice.techs.some((t) => t.materials?.lines.length) ? [['Materials', invoice.totals.materials] as const] : []),
+          {([['Labor', invoice.totals.labor], ['Mileage', invoice.totals.mileage], ['Meal receipts (actual spent)', invoice.totals.mealReceipts],
+            ['Meals reimbursed', invoice.totals.meals],
+            ...(invoice.techs.some((t) => t.materials?.lines.length)
+              ? [['Materials receipts (actual spent)', invoice.totals.materialReceipts] as const, ['Materials reimbursed', invoice.totals.materials] as const]
+              : []),
             ['Travel', invoice.totals.travel]] as const).map(([k, v]) => (
             <tr key={k}><td colSpan={5} style={right}>{k}</td><td style={td} /><td style={right}><Money n={v} /></td></tr>
           ))}

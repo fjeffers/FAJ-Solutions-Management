@@ -912,22 +912,27 @@ describe('Job log edited by the office', () => {
         ['Date', 'Item', 'Description', 'Qty', 'Rate', 'Amount'],
         ['Lead', 'Paul Gibbs', 'Total Hours', '9.00', '$50.00', '$450.00'],
         ['10/19/2026', 'Labor', 'Installation of Cabling for refresh project', '9.00', '$50.00', '$450.00'],
-        ['', 'Total Meal Allowance', '', '$18.97'],
-        ['10/19/2026', 'Meal', 'Meal allowance up to $50.00 with Receipts · receipt $18.97', '1', '$18.97', '$18.97'],
+        ['', 'Meal reimbursement', '', '$18.97'],
+        ['10/19/2026', 'Meal receipt', 'Meal allowance up to $50.00 with Receipts · Waffle House · receipt $18.97 · reimbursed $18.97', '1', '$18.97', '$18.97'],
         ['', 'Total Milage', '', '$10.80'],
         ['10/19/2026', 'Mileage', 'Mileage from Home to Goldsboro NC', '18', '$0.60', '$10.80'],
         ['', 'Total Materials', '', '$104.17'],
-        ['10/21/2026', 'Material', "Lowe's", '1', '$104.17', '$104.17'],
+        ['10/21/2026', 'Materials receipt', "Lowe's · receipt $104.17 · reimbursed $104.17", '1', '$104.17', '$104.17'],
         ['', 'Total Travel', '', '$402.50'],
         ['10/19/2026', 'Hotel', 'Quality Inn – Hotel charge for the week', '1', '$402.50', '$402.50'],
         ['', 'Lead Total', '', '$986.44'],
         ['Totals'],
-        ['Labor', '', '$450.00'], ['Mileage', '', '$10.80'], ['Meals', '', '$18.97'], ['Materials', '', '$104.17'], ['Travel', '', '$402.50'], ['Total Invoice', '', '$986.44'],
+        ['Labor', '', '$450.00'], ['Mileage', '', '$10.80'], ['Meal receipts (actual spent)', '', '$18.97'], ['Meals reimbursed', '', '$18.97'],
+        ['Materials receipts (actual spent)', '', '$104.17'], ['Materials reimbursed', '', '$104.17'],
+        ['Travel', '', '$402.50'], ['Total Invoice', '', '$986.44'],
       ]);
       // Not the job log: the invoice alone.
       expect(screen.queryByText('JOB LOG')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: /excel/i }));
-      expect(downloadInvoiceXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Invoice 1240\.xlsx$/), expect.objectContaining({ totals: { labor: 450, mileage: 10.8, meals: 18.97, materials: 104.17, travel: 402.5, total: 986.44 } }),
+      expect(downloadInvoiceXlsx).toHaveBeenCalledWith(expect.stringMatching(/ · Invoice 1240\.xlsx$/), expect.objectContaining({ totals: {
+        labor: 450, mileage: 10.8, mealReceipts: 18.97, meals: 18.97,
+        materialReceipts: 104.17, materials: 104.17, travel: 402.5, total: 986.44,
+      } }),
         expect.objectContaining({ billTo: 'TeamNetView', shipTo: ['LDS1106 Site 5006643 — Goldsboro, NC', '1000 Eleventh Street, Goldsboro, NC 27530'] }));
       // The tech's copy is the job log again.
       fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
@@ -1106,6 +1111,7 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add hours, Paul Gibbs' }));
       fireEvent.change(screen.getByLabelText('Hours, Paul Gibbs, 10/20/2026'), { target: { value: '6' } });
       // A material added on the lead's part, before the hotel (Fred: "under lead tech before hotel").
+      expect((screen.getByLabelText('Material store, Paul Gibbs, 10/21/2026') as HTMLInputElement).value).toBe("Lowe's");
       fireEvent.click(screen.getByRole('button', { name: 'Add a material, Paul Gibbs' }));
       fireEvent.change(screen.getByLabelText('Material store, Paul Gibbs, 10/19/2026'), { target: { value: 'Home Depot' } });
       fireEvent.change(screen.getByLabelText('Material, Paul Gibbs, 10/19/2026'), { target: { value: '25' } });
@@ -1127,8 +1133,8 @@ describe('Job log edited by the office', () => {
         ['Lead', 'Paul Gibbs', 'Total Hours', '14.00', '$50.00', '$700.00'],
         ['10/19/2026', 'Labor', 'Installation of Cabling for refresh project', '8.00', '$50.00', '$400.00'],
         ['10/20/2026', 'Labor', 'Installation of Cabling for refresh project', '6.00', '$50.00', '$300.00'],
-        ['', 'Total Meal Allowance', '', '$50.00'],
-        ['10/19/2026', 'Meal', 'Meal allowance up to $50.00 with Receipts · receipt $60.00', '1', '$50.00', '$50.00'],
+        ['', 'Meal reimbursement', '', '$50.00'],
+        ['10/19/2026', 'Meal receipt', 'Meal allowance up to $50.00 with Receipts · Waffle House · receipt $60.00 · reimbursed $50.00', '1', '$50.00', '$50.00'],
       ]);
       fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
       expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0][5]).toBe('8');

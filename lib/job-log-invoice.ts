@@ -104,7 +104,7 @@ export type InvoiceLine = {
   date: string; item: string; description: string; qty: number | null; rate: number | null; amount: number | null;
   tech?: string; row?: TimeRow | MoneyRow; spent?: number;
 };
-/** A section of a tech's: its title's line ("Total Meal Allowance" and its amount) and its lines. */
+/** A section of a tech's: its title's line ("Meal reimbursement" and its amount) and its lines. */
 export type InvoiceSection = { title: string; amount: number; lines: InvoiceLine[] };
 export type InvoiceTech = {
   role: 'Lead' | 'Helper';
@@ -118,7 +118,19 @@ export type InvoiceTech = {
   travel: InvoiceSection;
   total: number;
 };
-export type Invoice = { techs: InvoiceTech[]; totals: { labor: number; mileage: number; meals: number; materials: number; travel: number; total: number } };
+export type Invoice = {
+  techs: InvoiceTech[];
+  totals: {
+    labor: number;
+    mileage: number;
+    mealReceipts: number;
+    meals: number;
+    materialReceipts: number;
+    materials: number;
+    travel: number;
+    total: number;
+  };
+};
 
 const r2 = (n: number) => Math.round(n * 100 + 1e-9) / 100;
 const sum = (lines: InvoiceLine[]) => r2(lines.reduce((t, l) => t + (l.amount ?? 0), 0));
@@ -142,9 +154,15 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
   // The materials, whoever bought them, once, under the lead before the hotel (Fred, 2026-10-30: "under lead tech
   // before hotel"); the first tech's when the lead has no lines in the dates.
   const host = order.includes(lead) ? lead : order[0];
-  const materialLines = [...sheet.materials].sort((a, b) => a.day.localeCompare(b.day)).map((r): InvoiceLine => ({
-    date: r.day, item: 'Material', description: r.store || '', qty: 1, rate: r.amount, amount: r2(r.amount || 0), tech: r.tech, row: r,
-  }));
+  const materialLines = [...sheet.materials].sort((a, b) => a.day.localeCompare(b.day)).map((r): InvoiceLine => {
+    const amount = r2(r.amount || 0);
+    const store = r.store.trim();
+    return {
+      date: r.day, item: 'Material',
+      description: `${store ? `${store} · ` : ''}receipt ${money(amount)} · reimbursed ${money(amount)}`,
+      qty: 1, rate: amount, amount, tech: r.tech, row: r,
+    };
+  });
   const techs = order.map((tech): InvoiceTech => {
     const { hour = null, mile = null } = rates[tech] ?? {};
     const time = sheet.time.filter((r) => r.tech === tech).sort((a, b) => a.day.localeCompare(b.day));
@@ -154,14 +172,20 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
       const qty = rowHours(r) ?? 0;
       return { date: r.day, item: 'Labor', description: meta.labor, qty, rate: hour, amount: lineAmount(qty, hour), tech, row: r };
     });
-    // Total Meal Allowance: a line a day worked (or a meal bought), the day's receipts up to the allowance; a day with
+    // Meal reimbursement: a line a day worked (or a meal bought), the day's receipts up to the allowance; a day with
     // none has no quantity or rate and nothing charged, as theirs.
-    const mealsOf = (d: string) => r2(sheet.meals.filter((r) => r.tech === tech && r.day === d).reduce((t, r) => t + (r.amount || 0), 0));
+    const mealRows = (d: string) => sheet.meals.filter((r) => r.tech === tech && r.day === d);
+    const mealsOf = (d: string) => r2(mealRows(d).reduce((t, r) => t + (r.amount || 0), 0));
     const mealDays = [...new Set([...laborDays, ...sheet.meals.filter((r) => r.tech === tech).map((r) => r.day)])].sort();
     const allowance = meta.meal == null ? 'Meal allowance with Receipts' : `Meal allowance up to ${money(meta.meal)} with Receipts`;
     const mealLines = mealDays.map((d): InvoiceLine => {
       const spent = mealsOf(d), charged = meta.meal == null ? spent : Math.min(spent, meta.meal);
-      return spent > 0 ? { date: d, item: 'Meal', description: `${allowance} · receipt ${money(spent)}`, qty: 1, rate: charged, amount: charged, tech, spent }
+      const stores = [...new Set(mealRows(d).map((r) => r.store.trim()).filter(Boolean))];
+      const receipt = `${stores.length ? `${stores.join(', ')} · ` : ''}receipt ${money(spent)}`;
+      return spent > 0 ? {
+        date: d, item: 'Meal', description: `${allowance} · ${receipt} · reimbursed ${money(charged)}`,
+        qty: 1, rate: charged, amount: charged, tech, spent,
+      }
         : { date: d, item: 'Meal', description: allowance, qty: null, rate: null, amount: 0, tech, spent: 0 };
     });
     // Total Milage: a line a day, from the drive there to the drive home, at the tech's mileage rate; the first drive
@@ -202,7 +226,7 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
       qty: 1, rate: r.amount, amount: r2(r.amount || 0), tech: r.tech, row: r,
     })));
     const hours = { title: 'Total Hours', qty: hoursTotal(time), rate: hour, amount: sum(hourLines), lines: hourLines };
-    const meals = { title: 'Total Meal Allowance', amount: sum(mealLines), lines: mealLines };
+    const meals = { title: 'Meal reimbursement', amount: sum(mealLines), lines: mealLines };
     const mileage = { title: 'Total Milage', amount: sum(mileLines), lines: mileLines };
     const travel = { title: 'Total Travel', amount: sum(travelLines), lines: travelLines };
     const materials = tech === host ? { title: 'Total Materials', amount: sum(materialLines), lines: materialLines } : undefined;
@@ -210,7 +234,12 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
       total: r2(hours.amount + meals.amount + mileage.amount + (materials?.amount ?? 0) + travel.amount) };
   });
   const of = (k: 'hours' | 'meals' | 'mileage' | 'materials' | 'travel') => r2(techs.reduce((t, x) => t + (x[k]?.amount ?? 0), 0));
-  const totals = { labor: of('hours'), mileage: of('mileage'), meals: of('meals'), materials: of('materials'), travel: of('travel'), total: 0 };
+  const mealReceipts = r2(techs.reduce((total, tech) => total + tech.meals.lines.reduce((spent, meal) => spent + (meal.spent ?? 0), 0), 0));
+  const materials = of('materials');
+  const totals = {
+    labor: of('hours'), mileage: of('mileage'), mealReceipts, meals: of('meals'),
+    materialReceipts: materials, materials, travel: of('travel'), total: 0,
+  };
   totals.total = r2(totals.labor + totals.mileage + totals.meals + totals.materials + totals.travel);
   return { techs, totals };
 }
@@ -357,7 +386,7 @@ const num = (v: number, z: string, f?: string): XCell => ({ t: 'n', v, z, ...(f 
 const dayNumber = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86_400_000 + 25_569;
 
 /** The columns: Date, Item, Description (and its totals' names), Qty, Rate, Amount. */
-export const INVOICE_WIDTHS = [10, 7, 24, 13, 6, 9, 11];
+export const INVOICE_WIDTHS = [10, 14, 24, 13, 6, 9, 11];
 
 /**
  * The invoice as a workbook's rows, in the client's columns. Each line's amount is its quantity × its rate, each
@@ -385,7 +414,7 @@ export function invoiceCells(inv: Invoice, head: InvoiceHead): XCell[][] {
     const at = next();
     // With no rate yet, blank, and worked out when one's typed in Excel.
     const f = `IF(F${at}="","",IF(E${at}="",0,ROUND(E${at}*F${at},2)))`;
-    rows.push([num(dayNumber(l.date), DATE), l.item, l.description || null, null,
+    rows.push([num(dayNumber(l.date), DATE), l.item === 'Material' ? 'Materials receipt' : l.item === 'Meal' && l.spent ? 'Meal receipt' : l.item, l.description || null, null,
       l.qty == null ? null : num(l.qty, qtyFmt), l.rate == null ? null : num(l.rate, ACCT),
       l.amount == null ? { t: 's', v: '', f } : num(l.amount, ACCT, f)]);
     return at;
@@ -418,17 +447,26 @@ export function invoiceCells(inv: Invoice, head: InvoiceHead): XCell[][] {
     techAt.push({ hours: at, meals, mileage, ...(materials ? { materials } : {}), travel });
   }
   rows.push([null, null, 'Totals']);
-  const totalsAt = next();
   const of = (k: keyof (typeof techAt)[number]) => {
     const cells = techAt.flatMap((t) => (t[k] ? [`G${t[k]}`] : []));
     return cells.length ? cells.join('+') : '0';
   };
-  rows.push([null, null, null, null, 'Labor', null, num(inv.totals.labor, ACCT, of('hours'))]);
-  rows.push([null, null, null, null, 'Mileage', null, num(inv.totals.mileage, ACCT, of('mileage'))]);
-  rows.push([null, null, null, null, 'Meals', null, num(inv.totals.meals, ACCT, of('meals'))]);
-  if (techAt.some((t) => t.materials)) rows.push([null, null, null, null, 'Materials', null, num(inv.totals.materials, ACCT, of('materials'))]);
-  rows.push([null, null, null, null, 'Travel', null, num(inv.totals.travel, ACCT, of('travel'))]);
-  rows.push([null, null, null, null, 'Total Invoice', null, num(inv.totals.total, ACCT, `SUM(G${totalsAt}:G${next() - 1})`)]);
+  const countedRows: number[] = [];
+  const total = (label: string, value: number, formula: string, counted = true) => {
+    const at = next();
+    rows.push([null, null, null, null, label, null, num(value, ACCT, formula)]);
+    if (counted) countedRows.push(at);
+  };
+  total('Labor', inv.totals.labor, of('hours'));
+  total('Mileage', inv.totals.mileage, of('mileage'));
+  total('Meal receipts (actual spent)', inv.totals.mealReceipts, `${inv.totals.mealReceipts}`, false);
+  total('Meals reimbursed', inv.totals.meals, of('meals'));
+  if (techAt.some((t) => t.materials)) {
+    total('Materials receipts (actual spent)', inv.totals.materialReceipts, `${inv.totals.materialReceipts}`, false);
+    total('Materials reimbursed', inv.totals.materials, of('materials'));
+  }
+  total('Travel', inv.totals.travel, of('travel'));
+  rows.push([null, null, null, null, 'Total Invoice', null, num(inv.totals.total, ACCT, countedRows.map((at) => `G${at}`).join('+'))]);
   return rows;
 }
 

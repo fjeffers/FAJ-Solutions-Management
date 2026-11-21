@@ -787,7 +787,10 @@ export function byTechRows(list: TechBreakdown[], mileRate: number | null, bill:
   const onBill = (kind: LineKind, spent: number) => {
     const l = bill.filter((x) => x.kind === kind);
     const billed = r2(l.reduce((x, b) => x + b.amount, 0));
-    if (l.length && billed !== r2(spent)) out.push([`On the bill: ${l.map((b) => b.description).join('; ')}`, '', '', '', billed]);
+    if (l.length && billed !== r2(spent)) {
+      const description = l.length === 1 ? l[0].description : `${kind === 'meals' ? 'Meals' : 'Hotel'}, ${l.length} days`;
+      out.push([`On the bill: ${description}`, '', '', '', billed]);
+    }
   };
   const money = workers.some((t) => t.labor != null);
   const out: (string | number)[][] = [['By tech']];

@@ -664,10 +664,7 @@ describe('by tech', () => {
     const t = sheetTotals(twoDays, [], s);
     const out = byTechRows(byTech(twoDays, [], s), s.mileRate, t.lines);
     expect(out).toContainEqual(['All techs', '', '', '', 90]);
-    expect(out).toContainEqual([
-      'On the bill: Mon, Oct 19 · Paul Gibbs · meals, receipt $70.00, up to $50 a day; Tue, Oct 20 · Paul Gibbs · meals, receipt $20.00, up to $50 a day',
-      '', '', '', 70,
-    ]);
+    expect(out).toContainEqual(['On the bill: Meals, 2 days', '', '', '', 70]);
   });
 
   it('keeps the note on a day with no hours, so it still reaches the client', () => {

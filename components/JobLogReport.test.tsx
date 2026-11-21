@@ -1107,6 +1107,7 @@ describe('Job log edited by the office', () => {
       // The day's hours: 8 at $50; the day's meals: $60 of receipts, $50 allowed.
       fireEvent.change(screen.getByLabelText('Hours, Paul Gibbs, 10/19/2026'), { target: { value: '8' } });
       fireEvent.change(screen.getByLabelText('Meals, Paul Gibbs, 10/19/2026'), { target: { value: '60' } });
+      fireEvent.change(screen.getByLabelText('Meal restaurant, Paul Gibbs, 10/19/2026'), { target: { value: 'Ale House' } });
       // A day added, then its hours.
       fireEvent.click(screen.getByRole('button', { name: 'Add hours, Paul Gibbs' }));
       fireEvent.change(screen.getByLabelText('Hours, Paul Gibbs, 10/20/2026'), { target: { value: '6' } });
@@ -1123,9 +1124,9 @@ describe('Job log edited by the office', () => {
       fireEvent.click(screen.getByRole('button', { name: /save invoice/i }));
       await waitFor(() => expect(print.disabled).toBe(false));
       // Saved as the job log's time sheet: the tech's copy shows it too.
-      const saved = updates.find((u) => 'job_log_sheet' in u)!.job_log_sheet as { time: { day: string; hours?: number }[]; meals: { amount: number }[] };
+      const saved = updates.find((u) => 'job_log_sheet' in u)!.job_log_sheet as { time: { day: string; hours?: number }[]; meals: { amount: number; store: string }[] };
       expect(saved.time.map((r) => [r.day, r.hours])).toEqual([['2026-10-19', 8], ['2026-10-20', 6]]);
-      expect(saved.meals.map((r) => r.amount)).toEqual([60]);
+      expect(saved.meals.map((r) => [r.store, r.amount])).toEqual([['Ale House', 60]]);
       expect((saved as unknown as { materials: { day: string; store: string; amount: number }[] }).materials.map((r) => [r.day, r.store, r.amount]))
         .toEqual([['2026-10-19', 'Home Depot', 25], ['2026-10-21', "Lowe's", 104.17]]);
       const rows = [...screen.getByRole('table').querySelectorAll('tr')].map((tr) => [...tr.querySelectorAll('th, td')].map((c) => c.textContent));
@@ -1134,7 +1135,7 @@ describe('Job log edited by the office', () => {
         ['10/19/2026', 'Labor', 'Installation of Cabling for refresh project', '8.00', '$50.00', '$400.00'],
         ['10/20/2026', 'Labor', 'Installation of Cabling for refresh project', '6.00', '$50.00', '$300.00'],
         ['', 'Meal receipts', '', '$60.00', '$50.00'],
-        ['10/19/2026', 'Meal receipt', 'Waffle House', '', '$60.00', '$50.00'],
+        ['10/19/2026', 'Meal receipt', 'Ale House', '', '$60.00', '$50.00'],
       ]);
       fireEvent.click(screen.getByRole('button', { name: 'Tech copy (no rates)' }));
       expect(rowsOf(screen.getByRole('heading', { name: 'Time on site' }))[0][5]).toBe('8');

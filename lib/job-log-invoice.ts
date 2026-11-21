@@ -351,6 +351,9 @@ export function editLine(sheet: JobSheet, l: InvoiceLine, p: { day?: string; qty
   }
   if (l.item === 'Meal') {
     if (p.day) return { ...sheet, meals: sheet.meals.map((r) => (theirs(tech, l.date)(r) ? { ...r, day: p.day! } : r)) };
+    if (p.description != null) {
+      return { ...sheet, meals: sheet.meals.map((r) => (theirs(tech, l.date)(r) ? { ...r, store: p.description! } : r)) };
+    }
     return 'amount' in p ? { ...sheet, meals: dayMeals(sheet.meals, tech, l.date, p.amount ?? null) } : sheet;
   }
   if (l.item === 'Mileage') {

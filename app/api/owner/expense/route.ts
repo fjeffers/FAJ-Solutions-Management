@@ -15,7 +15,13 @@ import { ownerOnly } from '@/lib/security';
 // DELETE /api/owner/expense?id= — removes a receipt the office added (a typo),
 // and its file. Tech receipts are declined, never removed.
 const MAX_BYTES = 4 * 1024 * 1024;
-const TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'application/pdf': 'pdf' };
+const TYPES: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'application/pdf': 'pdf',
+};
 
 async function owner() {
   const supabase = await createClient('admin');
@@ -49,7 +55,7 @@ export async function POST(req: Request) {
   if (file instanceof Blob && file.size > 0) {
     if (file.size > MAX_BYTES) return NextResponse.json({ ok: false, error: 'That receipt file is too large (4 MB at most).' }, { status: 413 });
     const ext = TYPES[file.type];
-    if (!ext) return NextResponse.json({ ok: false, error: 'The receipt must be a photo (JPG or PNG) or a PDF.' }, { status: 415 });
+    if (!ext) return NextResponse.json({ ok: false, error: 'The receipt must be a photo (JPG, PNG, WebP or GIF) or a PDF.' }, { status: 415 });
     path = `${wo.id}/office_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const { error: upErr } = await admin.storage.from('job-receipts').upload(path, new Uint8Array(await file.arrayBuffer()), {
       contentType: file.type, upsert: false,

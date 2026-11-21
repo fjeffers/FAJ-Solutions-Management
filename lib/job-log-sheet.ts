@@ -236,16 +236,22 @@ const RECEIPT_PLACEHOLDERS = new Set([
  * that was later read from the attached approved receipt.
  */
 export function withReceiptVendors(saved: JobSheet, app: JobSheet): JobSheet {
-  const fill = (rows: MoneyRow[], receipts: MoneyRow[]) => rows.map((row) => {
-    if (!RECEIPT_PLACEHOLDERS.has(row.store.trim().toLowerCase())) return row;
-    const receipt = receipts.find((candidate) =>
-      candidate.tech === row.tech
-      && candidate.day === row.day
-      && Math.abs(candidate.amount - row.amount) < 0.005
-      && candidate.store.trim(),
-    );
-    return receipt ? { ...row, store: receipt.store.trim() } : row;
-  });
+  const fill = (rows: MoneyRow[], receipts: MoneyRow[]) => {
+    const used = new Set<number>();
+    return rows.map((row) => {
+      if (!RECEIPT_PLACEHOLDERS.has(row.store.trim().toLowerCase())) return row;
+      const at = receipts.findIndex((candidate, index) =>
+        !used.has(index)
+        && candidate.tech === row.tech
+        && candidate.day === row.day
+        && Math.abs(candidate.amount - row.amount) < 0.005
+        && candidate.store.trim(),
+      );
+      const receipt = at < 0 ? null : receipts[at];
+      if (receipt) used.add(at);
+      return receipt ? { ...row, store: receipt.store.trim() } : row;
+    });
+  };
   return {
     ...saved,
     meals: fill(saved.meals, app.meals),

@@ -87,6 +87,7 @@ describe('the saved sheet', () => {
       time: [], miles: [], other: [],
       meals: [
         { tech: 'Paul Gibbs', day: '2026-11-09', store: 'Meal', amount: 61.61 },
+        { tech: 'Paul Gibbs', day: '2026-11-09', store: 'Meal', amount: 61.61 },
         { tech: 'Paul Gibbs', day: '2026-11-10', store: 'Office lunch', amount: 64.55 },
       ],
       materials: [{ tech: 'Paul Gibbs', day: '2026-11-09', store: 'materials for the site', amount: 161.64 }],
@@ -95,13 +96,14 @@ describe('the saved sheet', () => {
       time: [], miles: [], other: [],
       meals: [
         { tech: 'Paul Gibbs', day: '2026-11-09', store: 'Ale House', amount: 61.61 },
+        { tech: 'Paul Gibbs', day: '2026-11-09', store: 'Waffle House', amount: 61.61 },
         { tech: 'Paul Gibbs', day: '2026-11-10', store: 'Waffle House', amount: 64.55 },
       ],
       materials: [{ tech: 'Paul Gibbs', day: '2026-11-09', store: 'Home Depot', amount: 161.64 }],
     };
 
     expect(withReceiptVendors(saved, app)).toMatchObject({
-      meals: [{ store: 'Ale House' }, { store: 'Office lunch' }],
+      meals: [{ store: 'Ale House' }, { store: 'Waffle House' }, { store: 'Office lunch' }],
       materials: [{ store: 'Home Depot' }],
     });
   });

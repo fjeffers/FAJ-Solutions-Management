@@ -70,6 +70,21 @@ const wo = {
 afterEach(() => { cleanup(); upserts.length = 0; rpc.mockClear(); downloadCSVText.mockClear(); downloadXLSXBook.mockClear(); vi.unstubAllGlobals(); vi.useRealTimers(); tables.job_punches = []; });
 
 describe('Field Sheet', () => {
+  it('shows the meal allowance as a per-day cap', async () => {
+    const user = userEvent.setup();
+    const before = tables.field_sheets;
+    tables.field_sheets = [{ settings: { mileRate: 0.6, mealRate: 50 } }];
+    try {
+      render(<FieldSheetView workOrders={[wo]} />);
+      await user.type(screen.getByLabelText(/work order number/i), '19101402{Enter}');
+      expect(await screen.findByText('LDS Site 5006643')).toBeTruthy();
+      expect(screen.getByLabelText('Up to $ a day')).toBeTruthy();
+      expect(document.body.textContent).toContain('Meals: – actual, up to $50.00 a day → –');
+    } finally {
+      tables.field_sheets = before;
+    }
+  });
+
   it('pulls the job by the client ticket and shows the day from the drives, with the guess marked', async () => {
     const user = userEvent.setup();
     render(<FieldSheetView workOrders={[wo]} />);
@@ -270,7 +285,7 @@ describe('Field Sheet', () => {
       lines: [
         { kind: 'labor', date: '2026-10-21', description: 'Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h', qty: 9.57, rate: 100, amount: 957 },
         { kind: 'mileage', date: '2026-10-21', description: 'Wed, Oct 21 · Dwayne Cudjoe · mileage 4.4 mi', qty: 4.4, rate: 0.6, amount: 2.64 },
-        { kind: 'meals', date: null, description: 'Meals (receipts $20.00, up to $50 a tech-day)', qty: 1, rate: 20, amount: 20 },
+        { kind: 'meals', date: null, description: 'Meals (receipts $20.00, up to $50 a day)', qty: 1, rate: 20, amount: 20 },
       ],
       total: 979.64,
     }), { status: 200 });

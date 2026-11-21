@@ -717,7 +717,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
         <ReceiptList title="Declined: off the bill" list={declined} urls={urls} onZoom={setZoom} declined
           actions={(e) => <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void decide(e, true)}>Approve</button>} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 12, fontSize: 13 }}>
-          <div>Meals: {money(totals.meals.receipts)} actual{totals.meals.allowed != null ? `, up to ${money(totals.meals.allowed)} (${totals.techDays} tech-days)` : ''} → <b>{money(totals.meals.claim)}</b></div>
+          <div>Meals: {money(totals.meals.receipts)} actual{totals.meals.allowed != null ? `, up to ${money(totals.meals.allowed)} a day` : ''} → <b>{money(totals.meals.claim)}</b></div>
           <div>Hotel: {money(totals.hotel.receipts)} in receipts{totals.hotel.allowed != null ? `, up to ${money(totals.hotel.allowed)}` : ''} → <b>{money(totals.hotel.claim)}</b></div>
           <div className="wf-subtle">
             Not on the bill: fuel and mileage {money((totals.byCategory.fuel ?? 0) + (totals.byCategory.mileage ?? 0))} (in the mileage)
@@ -899,7 +899,7 @@ function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: Enri
         )}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
-          <NumBox id="fs-meal-rate" label="Up to $ per tech-day" value={s.mealRate} onSave={(v) => onSave({ mealRate: v })} placeholder="no cap" />
+          <NumBox id="fs-meal-rate" label="Up to $ a day" value={s.mealRate} onSave={(v) => onSave({ mealRate: v })} placeholder="no cap" />
           <label htmlFor="fs-hotel" style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Hotel</span>
             <select id="fs-hotel" className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={s.hotelMode} onChange={(e) => onSave({ hotelMode: e.target.value as SheetSettings['hotelMode'] })}>
               <option value="receipts">The hotel receipts</option>

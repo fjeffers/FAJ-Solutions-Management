@@ -493,21 +493,24 @@ const dayWord = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en
 
 /**
  * What one line of the sheet bills for its day: labor at an hourly or blended
- * rate, its miles, its actual meal amount and the
- * day's other spending. The week's meals are capped as a whole on the bill, so
- * this is the day's share before any cap.
+ * rate, its miles, meals up to the daily cap, and the day's other spending.
  */
 export function dayBill(c: DayCalc, s: SheetSettings, v?: Pick<Values, 'meals' | 'spend'>): number {
   const labor = s.labor === 'hourly' ? r2(c.hours * (s.rate ?? 0)) + r2(c.travel * (s.travelRate ?? 0))
     : s.labor === 'blended' ? r2(c.total * (s.rate ?? 0)) : 0;
-  const meal = v?.meals ?? 0;
+  const meal = s.mealRate == null ? (v?.meals ?? 0) : Math.min(v?.meals ?? 0, s.mealRate);
   return r2(labor + c.mileage + meal + (v?.spend ?? 0));
 }
 
 export type SheetTotals = {
   hours: number; travel: number; total: number; miles: number; mileage: number; techDays: number;
   labor: number;
-  meals: { allowed: number | null; receipts: number; claim: number };
+  meals: {
+    /** The per-tech-day cap; null means no cap. */
+    allowed: number | null;
+    receipts: number;
+    claim: number;
+  };
   hotel: { allowed: number | null; receipts: number; claim: number };
   atCost: number;
   bill: number;
@@ -552,18 +555,45 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
     if (r.values.spend && r.values.spend > 0) lines.push(line('receipt', r.day, `${dayWord(r.day)} · ${r.tech} · spending${r.values.note ? ` — ${r.values.note}` : ''}`, 1, r.values.spend));
   }
 
-  // Meals and hotel: the receipts in the app plus what the office typed on each day.
-  // An allowance of 0 is set (bill nothing); only an empty one means no cap.
-  const typedMeals = r2(live.reduce((t, { r }) => t + (r.values.meals ?? 0), 0));
-  const mealRcpt = r2((byCategory.meals ?? 0) + typedMeals), hotelRcpt = byCategory.hotel ?? 0;
-  const mealAllowed = s.mealRate != null ? r2(techDays * s.mealRate) : null;
+  // Meals combine receipts with the office's amount for the same tech and day; receipts without both stay separate.
+  const mealGroups = new Map<string, { tech: string; day: string; total: number }>();
+  const addMeal = (key: string, tech: string, day: string, amount: number) => {
+    const group = mealGroups.get(key);
+    if (group) group.total += amount;
+    else mealGroups.set(key, { tech, day, total: amount });
+  };
+  for (const { r } of live) addMeal(`${r.tech}|${r.day}`, r.tech, r.day, r.values.meals ?? 0);
+  for (const r of approved) {
+    if (r.category !== 'meals' || !isNum(r.amount)) continue;
+    const tech = r.tech ?? '', day = r.date ?? '';
+    addMeal(tech && day ? `${tech}|${day}` : `receipt:${r.id}`, tech, day, r.amount);
+  }
+  const mealGroupsWithCharges = [...mealGroups.values()].map((group) => {
+    const spent = r2(group.total);
+    const charged = s.mealRate == null ? spent : Math.min(spent, s.mealRate);
+    return { ...group, spent, charged };
+  });
+  const billableMeals = mealGroupsWithCharges.filter((group) => group.charged > 0);
+  const mealRcpt = r2(mealGroupsWithCharges.reduce((total, group) => total + group.spent, 0));
+  const meals = {
+    allowed: s.mealRate,
+    receipts: mealRcpt,
+    claim: r2(billableMeals.reduce((total, group) => total + group.charged, 0)),
+  };
+  const hotelRcpt = byCategory.hotel ?? 0;
   const hotelAllowed = s.hotelRate != null && s.nights != null && s.rooms != null ? r2(s.hotelRate * s.nights * s.rooms) : null;
-  const meals = { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed == null ? mealRcpt : Math.min(mealAllowed, mealRcpt) };
-  const actualMeals = mealRcpt.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  const money = (amount: number) => amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
   const hotel = s.hotelMode === 'per_night'
     ? { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed ?? 0 }
     : { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed == null ? hotelRcpt : Math.min(hotelAllowed, hotelRcpt) };
-  if (meals.claim > 0) lines.push(line('meals', null, `Meals (receipts ${actualMeals}${mealAllowed != null ? `, up to $${s.mealRate} a tech-day` : ''})`, 1, meals.claim));
+  if (s.byDay) {
+    for (const { tech, day, spent, charged } of billableMeals) {
+      const description = `${day ? `${dayWord(day)} · ` : ''}${tech ? `${tech} · ` : ''}meals, receipt ${money(spent)}${s.mealRate != null ? `, up to $${s.mealRate} a day` : ''}`;
+      lines.push(line('meals', day || null, description, 1, charged));
+    }
+  } else if (meals.claim > 0) {
+    lines.push(line('meals', null, `Meals (receipts ${money(meals.receipts)}${s.mealRate != null ? `, up to $${s.mealRate} a day` : ''})`, 1, meals.claim));
+  }
   if (hotel.claim > 0) lines.push(s.hotelMode === 'per_night'
     ? line('hotel', null, `Hotel: ${s.nights} nights × ${s.rooms} rooms × $${s.hotelRate}`, (s.nights ?? 0) * (s.rooms ?? 0), s.hotelRate ?? 0)
     : line('hotel', null, `Hotel (receipts${hotelAllowed != null ? `, up to $${s.hotelRate} a room-night` : ''})`, 1, hotel.claim));
@@ -757,7 +787,10 @@ export function byTechRows(list: TechBreakdown[], mileRate: number | null, bill:
   const onBill = (kind: LineKind, spent: number) => {
     const l = bill.filter((x) => x.kind === kind);
     const billed = r2(l.reduce((x, b) => x + b.amount, 0));
-    if (l.length && billed !== r2(spent)) out.push([`On the bill: ${l.map((b) => b.description).join('; ')}`, '', '', '', billed]);
+    if (l.length && billed !== r2(spent)) {
+      const description = l.length === 1 ? l[0].description : `${kind === 'meals' ? 'Meals' : 'Hotel'}, ${l.length} days`;
+      out.push([`On the bill: ${description}`, '', '', '', billed]);
+    }
   };
   const money = workers.some((t) => t.labor != null);
   const out: (string | number)[][] = [['By tech']];
@@ -793,7 +826,7 @@ export function byTechRows(list: TechBreakdown[], mileRate: number | null, bill:
     if (kind) onBill(kind, sum(who, total));
   };
   receipts('Hotel', (t) => t.hotels, (t) => t.hotelTotal, 'hotel');
-  // Meals: the days' meals (a flat rate a day, or what was typed) and the meal receipts.
+  // Meals: what was typed for each day and the meal receipts.
   const eaters = list.filter((t) => t.meals > 0);
   if (eaters.length) {
     out.push([], ['Meals'], ['Technician', 'Day', 'For', 'Store', 'Amount']);

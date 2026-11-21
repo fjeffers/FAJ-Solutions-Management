@@ -141,10 +141,10 @@ describe('the totals', () => {
   it('bills miles, and meals and hotel from approved receipts up to the allowance; leaves out hidden lines and declined receipts', () => {
     const t = sheetTotals(rows, receipts, bill({ mileRate: 0.6, mealRate: 50, hotelRate: 113, nights: 5, rooms: 2 }));
     expect(t.techDays).toBe(4);
-    expect(t.meals).toEqual({ allowed: 200, receipts: 80, claim: 80 });
+    expect(t.meals).toEqual({ allowed: 50, receipts: 80, claim: 50 });
     expect(t.hotel).toEqual({ allowed: 1130, receipts: 900, claim: 900 });
     expect(t.miles).toBe(480.6);
-    expect(t.bill).toBe(Math.round((t.mileage + 80 + 900) * 100) / 100);
+    expect(t.bill).toBe(Math.round((t.mileage + 50 + 900) * 100) / 100);
     expect(t.byCategory).toEqual({ fuel: 64, meals: 80, hotel: 900 });
     expect(t.declined).toBe(76.75);
     expect(t.waiting).toBe(1);
@@ -231,12 +231,69 @@ describe('review fixes', () => {
       bill({ mileRate: 0, mealRate: 0, hotelRate: 113, nights: 0, rooms: 2 }));
     expect(t.meals.claim).toBe(0);
     expect(t.hotel.claim).toBe(0);
+    expect(t.lines.filter((l) => l.kind === 'meals')).toHaveLength(0);
     expect(t.bill).toBe(0);
   });
 
   it('does not cap actual meals when the allowance is unset', () => {
     const t = sheetTotals([], [{ id: 'm', category: 'meals', amount: 80, status: 'approved' }], bill({ mealRate: null }));
     expect(t.meals).toEqual({ allowed: null, receipts: 80, claim: 80 });
+    expect(t.lines.filter((l) => l.kind === 'meals')).toEqual([
+      { kind: 'meals', date: null, description: 'Meals (receipts $80.00)', qty: 1, rate: 80, amount: 80 },
+    ]);
+  });
+});
+
+describe('meals capped per tech-day', () => {
+  const withMeals = (items: { id: string; day: string; tech: string; amount: number }[]) => sheetRows({
+    app: [], techs: [], days: [],
+    saved: items.map(({ id, day, tech, amount }) => ({ id, day, tech, edits: { meals: amount }, added: false, hidden: false })),
+  });
+
+  it('caps each day separately and prints daily lines or one totals line', () => {
+    const rows = withMeals([
+      { id: 'a', day: '2026-10-19', tech: 'Paul Gibbs', amount: 70 },
+      { id: 'b', day: '2026-10-20', tech: 'Paul Gibbs', amount: 20 },
+    ]);
+    const byDay = sheetTotals(rows, [], bill({ mealRate: 50, byDay: true }));
+    expect(byDay.meals).toEqual({ allowed: 50, receipts: 90, claim: 70 });
+    expect(byDay.lines.filter((l) => l.kind === 'meals').map((l) => [l.date, l.description, l.amount])).toEqual([
+      ['2026-10-19', 'Mon, Oct 19 · Paul Gibbs · meals, receipt $70.00, up to $50 a day', 50],
+      ['2026-10-20', 'Tue, Oct 20 · Paul Gibbs · meals, receipt $20.00, up to $50 a day', 20],
+    ]);
+
+    const totals = sheetTotals(rows, [], bill({ mealRate: 50 }));
+    expect(totals.meals).toEqual({ allowed: 50, receipts: 90, claim: 70 });
+    expect(totals.lines.filter((l) => l.kind === 'meals')).toEqual([
+      { kind: 'meals', date: null, description: 'Meals (receipts $90.00, up to $50 a day)', qty: 1, rate: 70, amount: 70 },
+    ]);
+  });
+
+  it('adds an app receipt to the typed amount for the same tech-day before capping', () => {
+    const rows = withMeals([{ id: 'a', day: '2026-10-19', tech: 'Paul Gibbs', amount: 20 }]);
+    const t = sheetTotals(rows, [{
+      id: 'receipt', category: 'meals', amount: 40, status: 'approved', tech: 'Paul Gibbs', date: '2026-10-19',
+    }], bill({ mealRate: 50, byDay: true }));
+    expect(t.meals).toEqual({ allowed: 50, receipts: 60, claim: 50 });
+    expect(t.lines.filter((l) => l.kind === 'meals').map((l) => [l.description, l.amount])).toEqual([
+      ['Mon, Oct 19 · Paul Gibbs · meals, receipt $60.00, up to $50 a day', 50],
+    ]);
+  });
+
+  it('keeps receipts missing a date or tech in separate capped groups', () => {
+    const t = sheetTotals([], [
+      { id: 'no-date-70', category: 'meals', amount: 70, status: 'approved', tech: 'Paul Gibbs' },
+      { id: 'no-date-20', category: 'meals', amount: 20, status: 'approved', tech: 'Paul Gibbs' },
+      { id: 'no-tech-70', category: 'meals', amount: 70, status: 'approved', date: '2026-10-19' },
+      { id: 'no-tech-20', category: 'meals', amount: 20, status: 'approved', date: '2026-10-19' },
+    ], bill({ mealRate: 50, byDay: true }));
+    expect(t.meals).toEqual({ allowed: 50, receipts: 180, claim: 140 });
+    expect(t.lines.filter((l) => l.kind === 'meals').map((l) => [l.date, l.description, l.amount])).toEqual([
+      ['2026-10-19', 'Mon, Oct 19 · meals, receipt $70.00, up to $50 a day', 50],
+      ['2026-10-19', 'Mon, Oct 19 · meals, receipt $20.00, up to $50 a day', 20],
+      [null, 'Paul Gibbs · meals, receipt $70.00, up to $50 a day', 50],
+      [null, 'Paul Gibbs · meals, receipt $20.00, up to $50 a day', 20],
+    ]);
   });
 });
 
@@ -280,9 +337,9 @@ describe('billing any client', () => {
       { kind: 'labor', date: null, description: 'Hours on site: 19.29 h', qty: 19.29, rate: 100, amount: 1929 },
       { kind: 'travel', date: null, description: 'Travel: 0.77 h', qty: 0.77, rate: 45, amount: 34.65 },
       { kind: 'mileage', date: null, description: 'Mileage: 25.4 mi', qty: 25.4, rate: 0.6, amount: 15.24 },
-      { kind: 'meals', date: null, description: 'Meals (receipts $80.00, up to $50 a tech-day)', qty: 1, rate: 80, amount: 80 },
+      { kind: 'meals', date: null, description: 'Meals (receipts $80.00, up to $50 a day)', qty: 1, rate: 50, amount: 50 },
     ]);
-    expect(t.bill).toBe(2058.89);
+    expect(t.bill).toBe(2028.89);
     expect(sheetTotals(rows, [], bill({ labor: 'blended', rate: 75 })).lines.map((l) => [l.description, l.amount])).toEqual([['Hours on site and travel: 20.06 h', 1504.5]]);
   });
 
@@ -322,6 +379,8 @@ describe('billing any client', () => {
     const s = bill({ labor: 'hourly', rate: 85, mileRate: 0.7, mealRate: 50 });
     const values = { ...dwayne.values, meals: 25 };
     expect(dayBill(dayCalc(values, 0.7), s, values)).toBe(r2(813.45 + 3.08 + 25));
+    const overAllowance = { ...values, meals: 80 };
+    expect(dayBill(dayCalc(overAllowance, 0.7), s, overAllowance)).toBe(r2(813.45 + 3.08 + 50));
   });
 });
 
@@ -336,9 +395,9 @@ describe('what was spent each day', () => {
     ],
   }).filter((r) => r.key === '2026-10-21|Dwayne' || r.key === '2026-10-20|Raja');
 
-  it('adds the meals typed on each day to the meal receipts, capped by the daily allowance for the week', () => {
+  it('adds the meals typed on each day to the meal receipts, capped by the daily allowance per tech-day', () => {
     const t = sheetTotals(rows, [{ id: 'm', category: 'meals', amount: 20, status: 'approved' }], bill({ mealRate: 50 }));
-    expect(t.meals).toEqual({ allowed: 100, receipts: 119.5, claim: 100 });
+    expect(t.meals).toEqual({ allowed: 50, receipts: 119.5, claim: 108.5 });
   });
 
   it('bills the day’s other spending as it is, with the day’s note', () => {
@@ -590,10 +649,22 @@ describe('by tech', () => {
     const t = sheetTotals(one, [], r);
     const out = byTechRows(byTech(one, [], r), r.mileRate, t.lines);
     expect(out).toContainEqual(['All techs', '', '', '', 80]);
-    expect(out).toContainEqual(['On the bill: Meals (receipts $80.00, up to $50 a tech-day)', '', '', '', 50]);
+    expect(out).toContainEqual(['On the bill: Meals (receipts $80.00, up to $50 a day)', '', '', '', 50]);
     expect(out).toContainEqual(['On the bill: Hotel: 1 nights × 1 rooms × $113', '', '', '', 113]);
     // When the bill charges what was spent, there's nothing to explain.
     expect(byTechRows(list, s.mileRate, sheetTotals(rows, receipts, s).lines).some((x) => String(x[0]).startsWith('On the bill'))).toBe(false);
+  });
+
+  it('reconciles several daily meal lines against the actual tech-copy total', () => {
+    const twoDays = sheetRows({ app: [], techs: [], days: [], saved: [
+      { id: 'a', day: '2026-10-19', tech: 'Paul Gibbs', edits: { meals: 70 }, added: false, hidden: false },
+      { id: 'b', day: '2026-10-20', tech: 'Paul Gibbs', edits: { meals: 20 }, added: false, hidden: false },
+    ] });
+    const s = bill({ mealRate: 50, byDay: true });
+    const t = sheetTotals(twoDays, [], s);
+    const out = byTechRows(byTech(twoDays, [], s), s.mileRate, t.lines);
+    expect(out).toContainEqual(['All techs', '', '', '', 90]);
+    expect(out).toContainEqual(['On the bill: Meals, 2 days', '', '', '', 70]);
   });
 
   it('keeps the note on a day with no hours, so it still reaches the client', () => {

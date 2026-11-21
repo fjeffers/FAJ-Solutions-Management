@@ -717,7 +717,7 @@ function Sheet({ wo, week, onOpened }: { wo: EnrichedWorkOrder; week?: { from: s
         <ReceiptList title="Declined: off the bill" list={declined} urls={urls} onZoom={setZoom} declined
           actions={(e) => <button className="wf-btn wf-btn-ghost wf-btn-sm" onClick={() => void decide(e, true)}>Approve</button>} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 12, fontSize: 13 }}>
-          <div>Meals: {money(totals.meals.receipts)} in receipts{totals.meals.allowed != null ? `, up to ${money(totals.meals.allowed)} (${totals.techDays} tech-days)` : ''} → <b>{money(totals.meals.claim)}</b></div>
+          <div>Meals: {money(totals.meals.receipts)} actual{totals.meals.allowed != null ? `, up to ${money(totals.meals.allowed)} (${totals.techDays} tech-days)` : ''} → <b>{money(totals.meals.claim)}</b></div>
           <div>Hotel: {money(totals.hotel.receipts)} in receipts{totals.hotel.allowed != null ? `, up to ${money(totals.hotel.allowed)}` : ''} → <b>{money(totals.hotel.claim)}</b></div>
           <div className="wf-subtle">
             Not on the bill: fuel and mileage {money((totals.byCategory.fuel ?? 0) + (totals.byCategory.mileage ?? 0))} (in the mileage)
@@ -899,13 +899,7 @@ function BillingPanel({ s, wo, customers, onSave }: { s: SheetSettings; wo: Enri
         )}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
-          <label htmlFor="fs-meals" style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Meals</span>
-            <select id="fs-meals" className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={s.mealMode} onChange={(e) => onSave({ mealMode: e.target.value as SheetSettings['mealMode'] })}>
-              <option value="receipts">What was spent (receipts)</option>
-              <option value="per_day">A flat amount per tech-day</option>
-            </select>
-          </label>
-          <NumBox id="fs-meal-rate" label={s.mealMode === 'per_day' ? '$ per tech-day' : 'Up to $ per tech-day'} value={s.mealRate} onSave={(v) => onSave({ mealRate: v })} placeholder={s.mealMode === 'per_day' ? '–' : 'no cap'} />
+          <NumBox id="fs-meal-rate" label="Up to $ per tech-day" value={s.mealRate} onSave={(v) => onSave({ mealRate: v })} placeholder="no cap" />
           <label htmlFor="fs-hotel" style={{ display: 'grid', gap: 3, fontSize: 12 }}><span className="wf-label">Hotel</span>
             <select id="fs-hotel" className="wf-input" style={{ minHeight: 34, padding: '4px 8px' }} value={s.hotelMode} onChange={(e) => onSave({ hotelMode: e.target.value as SheetSettings['hotelMode'] })}>
               <option value="receipts">The hotel receipts</option>
@@ -1269,7 +1263,7 @@ function DayLine({ r, s, onSet, onUndo, onHide }: {
       {number('miles', c.milesAuto.toFixed(1), 68)}
       {number('extraMiles', '0', 64)}
       <td style={TDN}>{money(c.mileage)}</td>
-      {number('meals', s.mealMode === 'per_day' ? (c.worked && s.mealRate ? String(s.mealRate) : '') : '0.00', 76)}
+      {number('meals', '0.00', 76)}
       {number('spend', '0.00', 76)}
       <td style={{ ...TDN, fontWeight: 600 }}>{money(dayBill(c, s, v))}</td>
       <td style={{ ...TD, minWidth: 280, background: bg('note') }}>

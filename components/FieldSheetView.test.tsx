@@ -264,15 +264,15 @@ describe('Field Sheet', () => {
   const dryRun = (posted: unknown[], customer = 'LDS') => vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: string }) => {
     const body = JSON.parse(init.body) as { imported?: boolean };
     posted.push(body);
-    if (body.imported) return new Response(JSON.stringify({ ok: true, imported: true, invoice_number: 'WO-19101402-1021', total: 1009.64 }), { status: 200 });
+    if (body.imported) return new Response(JSON.stringify({ ok: true, imported: true, invoice_number: 'WO-19101402-1021', total: 979.64 }), { status: 200 });
     return new Response(JSON.stringify({
       dry_run: true, customer, from: '2026-10-21', to: '2026-10-21', memo: 'LDS Site 5006643 — Goldsboro, NC · WO 19101402',
       lines: [
         { kind: 'labor', date: '2026-10-21', description: 'Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h', qty: 9.57, rate: 100, amount: 957 },
         { kind: 'mileage', date: '2026-10-21', description: 'Wed, Oct 21 · Dwayne Cudjoe · mileage 4.4 mi', qty: 4.4, rate: 0.6, amount: 2.64 },
-        { kind: 'meals', date: null, description: 'Meals: 1 tech-days × $50', qty: 1, rate: 50, amount: 50 },
+        { kind: 'meals', date: null, description: 'Meals (receipts, up to $50 a tech-day)', qty: 1, rate: 20, amount: 20 },
       ],
-      total: 1009.64,
+      total: 979.64,
     }), { status: 200 });
   }));
   const netviewAnswer = (href: string, entry: number) => new URL(href).searchParams.get(`entry.${entry}`);
@@ -293,7 +293,7 @@ describe('Field Sheet', () => {
     expect(csv).toContain('"Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h","9.57","100.00","957.00","10/21/2026"');
     const form = await screen.findByRole('link', { name: /fill netview form/i });
     expect(netviewAnswer(form.getAttribute('href')!, 1582831326)).toBe('WO-19101402-1021');
-    expect(netviewAnswer(form.getAttribute('href')!, 1510356417)).toBe('1009.64');
+    expect(netviewAnswer(form.getAttribute('href')!, 1510356417)).toBe('979.64');
     // Only the full total: QuickBooks has the breakdown.
     expect(netviewAnswer(form.getAttribute('href')!, 1719028500)).toBeNull();
     expect(netviewAnswer(form.getAttribute('href')!, 2058828780)).toBeNull();
@@ -314,7 +314,7 @@ describe('Field Sheet', () => {
     expect(name).toBe('QuickBooks import 2026-10-18 to 2026-10-24.csv');
     expect(csv).toContain('"WO-19101402-1021","NetView","10/25/2026","11/24/2026","Net 30"');
     const made = (await screen.findByText('WO-19101402-1021')).closest('div')!;
-    expect(within(made).getByText(/\$1,009\.64/)).toBeTruthy();
+    expect(within(made).getByText(/\$979\.64/)).toBeTruthy();
     // The form has the file's number and date, even a day later.
     vi.setSystemTime(new Date('2026-10-26T15:00:00Z'));
     const form = within(made).getByRole('link', { name: /fill netview form/i }).getAttribute('href')!;
@@ -322,7 +322,7 @@ describe('Field Sheet', () => {
     expect(netviewAnswer(form, 270691041)).toBe('2026-10-25');
     // Downloading marks nothing; Imported does, for the bill's own dates and total.
     await user.click(within(made).getByRole('button', { name: 'Imported' }));
-    expect(posted.at(-1)).toEqual({ wo_id: 'wo', from: '2026-10-21', to: '2026-10-21', imported: true, total: 1009.64, date: '2026-10-25' });
+    expect(posted.at(-1)).toEqual({ wo_id: 'wo', from: '2026-10-21', to: '2026-10-21', imported: true, total: 979.64, date: '2026-10-25' });
     expect(await within(made).findByText('Billed')).toBeTruthy();
   });
 
@@ -342,7 +342,7 @@ describe('Field Sheet', () => {
     expect(book.map((t) => t.name)).toEqual(['Goldsboro', 'All sites']);
     expect(book[0].rows[0]).toEqual(['FAJ Solutions', 'Invoice WO-19101402-1021']);
     expect(book[0].rows).toContainEqual(['Cabling', 'Wed, Oct 21 · Dwayne Cudjoe · on site 9.57 h', 9.57, 100, 957]);
-    expect(book[0].rows.at(-1)).toEqual(['', '', '', 'Total', 1009.64]);
+    expect(book[0].rows.at(-1)).toEqual(['', '', '', 'Total', 979.64]);
   });
 
   it('puts the tabs in the order the sites were first worked that week, not by WO number', async () => {

@@ -415,8 +415,8 @@ export type SheetSettings = {
   items: BillItem[];
   /** $ per mile the client pays. */
   mileRate: number | null;
-  /** Meals: a flat amount per tech-day, or the receipts (up to that much a day when it's set). */
-  mealMode: 'receipts' | 'per_day'; mealRate: number | null;
+  /** Meals: actual receipts and amounts typed on each day, up to the daily allowance when set. */
+  mealRate: number | null;
   /** Hotel: a flat nightly rate × nights × rooms, or the receipts (up to that when it's set). */
   hotelMode: 'receipts' | 'per_night'; hotelRate: number | null; nights: number | null; rooms: number | null;
   /** Bill the other approved receipts (materials, tolls, equipment, other) at cost. Fuel is in the mileage. */
@@ -441,7 +441,7 @@ export function parseSettings(raw: unknown): SheetSettings {
     client: str(o.client, 200), email: str(o.email, 200), site: str(o.site),
     labor, rate: num(o.rate), travelRate: num(o.travelRate), fixed: num(o.fixed), items,
     mileRate: num(o.mileRate),
-    mealMode: o.mealMode === 'per_day' ? 'per_day' : 'receipts', mealRate: num(o.mealRate),
+    mealRate: num(o.mealRate),
     hotelMode: o.hotelMode === 'per_night' ? 'per_night' : 'receipts', hotelRate: num(o.hotelRate), nights: num(o.nights), rooms: num(o.rooms),
     receiptsAtCost: o.receiptsAtCost === true,
     byDay: o.byDay === true,
@@ -493,14 +493,14 @@ const dayWord = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en
 
 /**
  * What one line of the sheet bills for its day: labor at an hourly or blended
- * rate, its miles, its meal (the flat daily amount, or what was spent) and the
+ * rate, its miles, its actual meal amount and the
  * day's other spending. The week's meals are capped as a whole on the bill, so
  * this is the day's share before any cap.
  */
 export function dayBill(c: DayCalc, s: SheetSettings, v?: Pick<Values, 'meals' | 'spend'>): number {
   const labor = s.labor === 'hourly' ? r2(c.hours * (s.rate ?? 0)) + r2(c.travel * (s.travelRate ?? 0))
     : s.labor === 'blended' ? r2(c.total * (s.rate ?? 0)) : 0;
-  const meal = s.mealMode === 'per_day' ? (c.worked ? s.mealRate ?? 0 : 0) : v?.meals ?? 0;
+  const meal = v?.meals ?? 0;
   return r2(labor + c.mileage + meal + (v?.spend ?? 0));
 }
 
@@ -558,15 +558,11 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
   const mealRcpt = r2((byCategory.meals ?? 0) + typedMeals), hotelRcpt = byCategory.hotel ?? 0;
   const mealAllowed = s.mealRate != null ? r2(techDays * s.mealRate) : null;
   const hotelAllowed = s.hotelRate != null && s.nights != null && s.rooms != null ? r2(s.hotelRate * s.nights * s.rooms) : null;
-  const meals = s.mealMode === 'per_day'
-    ? { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed ?? 0 }
-    : { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed == null ? mealRcpt : Math.min(mealAllowed, mealRcpt) };
+  const meals = { allowed: mealAllowed, receipts: mealRcpt, claim: mealAllowed == null ? mealRcpt : Math.min(mealAllowed, mealRcpt) };
   const hotel = s.hotelMode === 'per_night'
     ? { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed ?? 0 }
     : { allowed: hotelAllowed, receipts: hotelRcpt, claim: hotelAllowed == null ? hotelRcpt : Math.min(hotelAllowed, hotelRcpt) };
-  if (meals.claim > 0) lines.push(s.mealMode === 'per_day'
-    ? line('meals', null, `Meals: ${techDays} tech-days × $${s.mealRate}`, techDays, s.mealRate ?? 0)
-    : line('meals', null, `Meals (receipts${mealAllowed != null ? `, up to $${s.mealRate} a tech-day` : ''})`, 1, meals.claim));
+  if (meals.claim > 0) lines.push(line('meals', null, `Meals (receipts${mealAllowed != null ? `, up to $${s.mealRate} a tech-day` : ''})`, 1, meals.claim));
   if (hotel.claim > 0) lines.push(s.hotelMode === 'per_night'
     ? line('hotel', null, `Hotel: ${s.nights} nights × ${s.rooms} rooms × $${s.hotelRate}`, (s.nights ?? 0) * (s.rooms ?? 0), s.hotelRate ?? 0)
     : line('hotel', null, `Hotel (receipts${hotelAllowed != null ? `, up to $${s.hotelRate} a room-night` : ''})`, 1, hotel.claim));
@@ -581,7 +577,7 @@ export function sheetTotals(rows: SheetRow[], receipts: SheetReceipt[], s: Sheet
   // By the day, the client reads each day's labor, travel, miles and spending together, then the
   // lines for the whole week (a fixed price, items, meals, hotel). The sort is stable within a day.
   // Otherwise the totals: the hours, the mileage, the meals (Fred, 2026-10-25: "i dont need the
-  // days i need the total hours then the total milage and the total meals 50 a day").
+  // days i need the total hours then the total milage and the total meals").
   const ORDER: LineKind[] = ['labor', 'travel', 'mileage', 'receipt', 'fixed', 'item', 'meals', 'hotel'];
   if (!s.byDay) lines = totalLines(lines, s.labor);
   lines.sort((x, y) => (s.byDay ? (x.date ? 0 : 1) - (y.date ? 0 : 1) || (x.date ?? '').localeCompare(y.date ?? '') : 0) || ORDER.indexOf(x.kind) - ORDER.indexOf(y.kind));
@@ -608,7 +604,7 @@ export type TechDay = {
   odoStart: number | null; odoEnd: number | null;
   /** The day's billed miles: the odometer's, or the drives' when that's more, plus miles added. */
   miles: number;
-  /** The meal billed for the day: the flat daily rate, or what the office typed. */
+  /** The amount typed for meals on this day. */
   meals: number;
   note: string;
 };
@@ -690,7 +686,7 @@ export function byTech(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSetti
     // with only a note, so what the office wrote for the client still reaches them (Greptile on PR #33).
     const days = mine.map((r) => {
       const c = dayCalc(r.values, s.mileRate ?? 0);
-      const meals = s.mealMode === 'per_day' ? (c.worked ? s.mealRate ?? 0 : 0) : r.values.meals ?? 0;
+      const meals = r.values.meals ?? 0;
       return { r, c, meals };
     }).filter(({ r, c, meals }) => c.worked || meals > 0 || r.values.note.trim());
     if (!days.length) continue;
@@ -723,8 +719,7 @@ export function byTech(rows: SheetRow[], receipts: SheetReceipt[], s: SheetSetti
     const item: TechMaterial = { id: e.id, date: e.date ?? null, category: e.category, vendor: e.vendor ?? null, amount: e.amount };
     const who = e.tech?.trim() || OFFICE;
     if (e.category === 'hotel') { const t = get(who); t.hotels.push(item); t.hotelTotal += e.amount; }
-    // Meal receipts count when the meals are billed from receipts, not at a flat rate a day.
-    else if (e.category === 'meals') { if (s.mealMode !== 'per_day') { const t = get(who); t.mealReceipts.push(item); t.meals += e.amount; } }
+    else if (e.category === 'meals') { const t = get(who); t.mealReceipts.push(item); t.meals += e.amount; }
     else if (atCost(e.category)) { const t = get(who); t.materials.push(item); t.materialsTotal += e.amount; }
   }
   const byDate = (a: TechMaterial, b: TechMaterial) => (a.date ?? '').localeCompare(b.date ?? '');

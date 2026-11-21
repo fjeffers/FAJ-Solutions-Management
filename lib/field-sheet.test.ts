@@ -122,8 +122,9 @@ describe('the lines and the office’s edits', () => {
 
   it('keeps only known fields of the right type from the database', () => {
     expect(parseEdits({ arrived: '7:45', back: 'soon', hours: '9', miles: 12, note: 3, ask: true, junk: 1 })).toEqual({ arrived: '7:45', miles: 12, ask: true });
-    expect(parseSettings({ mileRate: 0.6, mealRate: -1, nights: 5, rooms: '2', labor: 'nonsense', items: [{ desc: 'Drop', qty: 3, price: 85 }, { qty: 'x' }] }))
-      .toMatchObject({ mileRate: 0.6, mealRate: null, hotelRate: null, nights: 5, rooms: null, labor: 'hourly', items: [{ desc: 'Drop', qty: 3, price: 85 }], mealMode: 'receipts', receiptsAtCost: false });
+    const settings = parseSettings({ mileRate: 0.6, mealMode: 'per_day', mealRate: -1, nights: 5, rooms: '2', labor: 'nonsense', items: [{ desc: 'Drop', qty: 3, price: 85 }, { qty: 'x' }] });
+    expect(settings).toMatchObject({ mileRate: 0.6, mealRate: null, hotelRate: null, nights: 5, rooms: null, labor: 'hourly', items: [{ desc: 'Drop', qty: 3, price: 85 }], receiptsAtCost: false });
+    expect(settings).not.toHaveProperty('mealMode');
   });
 });
 
@@ -232,6 +233,11 @@ describe('review fixes', () => {
     expect(t.hotel.claim).toBe(0);
     expect(t.bill).toBe(0);
   });
+
+  it('does not cap actual meals when the allowance is unset', () => {
+    const t = sheetTotals([], [{ id: 'm', category: 'meals', amount: 80, status: 'approved' }], bill({ mealRate: null }));
+    expect(t.meals).toEqual({ allowed: null, receipts: 80, claim: 80 });
+  });
 });
 
 describe('billing any client', () => {
@@ -266,16 +272,17 @@ describe('billing any client', () => {
     expect(t.lines.map((l) => [l.qty, l.amount])).toEqual([[10.24, 768], [9.82, 736.5]]);
   });
 
-  // Fred, 2026-10-25: "i dont need the days i need the total hours then the total milage and the total meals 50 a day".
-  it('bills the totals unless the sheet asks for each day: the hours, the mileage, then the meals', () => {
-    const t = sheetTotals(rows, receipts, bill({ labor: 'hourly', rate: 100, travelRate: 45, mileRate: 0.6, mealMode: 'per_day', mealRate: 50 }));
+  // Fred, 2026-10-25: "i dont need the days i need the total hours then the total milage and the total meals".
+  it('bills actual meals up to the allowance with the totals for hours and mileage', () => {
+    const mealReceipts = [...receipts, { id: 'meal', category: 'meals', amount: 80, status: 'approved' as const }];
+    const t = sheetTotals(rows, mealReceipts, bill({ labor: 'hourly', rate: 100, travelRate: 45, mileRate: 0.6, mealRate: 50 }));
     expect(t.lines).toEqual([
       { kind: 'labor', date: null, description: 'Hours on site: 19.29 h', qty: 19.29, rate: 100, amount: 1929 },
       { kind: 'travel', date: null, description: 'Travel: 0.77 h', qty: 0.77, rate: 45, amount: 34.65 },
       { kind: 'mileage', date: null, description: 'Mileage: 25.4 mi', qty: 25.4, rate: 0.6, amount: 15.24 },
-      { kind: 'meals', date: null, description: 'Meals: 2 tech-days × $50', qty: 2, rate: 50, amount: 100 },
+      { kind: 'meals', date: null, description: 'Meals (receipts, up to $50 a tech-day)', qty: 1, rate: 80, amount: 80 },
     ]);
-    expect(t.bill).toBe(2078.89);
+    expect(t.bill).toBe(2058.89);
     expect(sheetTotals(rows, [], bill({ labor: 'blended', rate: 75 })).lines.map((l) => [l.description, l.amount])).toEqual([['Hours on site and travel: 20.06 h', 1504.5]]);
   });
 
@@ -286,9 +293,13 @@ describe('billing any client', () => {
     expect(t.labor).toBe(1180);
   });
 
-  it('bills meals per tech-day and hotel per night when the client pays flat rates', () => {
-    const t = sheetTotals(rows, [], bill({ mealMode: 'per_day', mealRate: 50, hotelMode: 'per_night', hotelRate: 113, nights: 5, rooms: 2 }));
-    expect(t.lines.map((l) => [l.kind, l.qty, l.amount])).toEqual([['meals', 2, 100], ['hotel', 10, 1130]]);
+  it('bills the actual typed meal amount and keeps hotel per-night billing', () => {
+    const one = sheetRows({ app: [], techs: [], days: [], saved: [
+      { id: 'meal', day: '2026-10-19', tech: 'Paul Gibbs', edits: { arrived: '08:00', leftSite: '16:00', meals: 20 }, added: false, hidden: false },
+    ] });
+    const t = sheetTotals(one, [], bill({ mealRate: 50, hotelMode: 'per_night', hotelRate: 113, nights: 5, rooms: 2 }));
+    expect(t.meals).toEqual({ allowed: 50, receipts: 20, claim: 20 });
+    expect(t.lines.map((l) => [l.kind, l.qty, l.amount])).toEqual([['meals', 1, 20], ['hotel', 10, 1130]]);
   });
 
   it('bills other receipts at cost when asked, never fuel and never declined ones', () => {
@@ -308,8 +319,9 @@ describe('billing any client', () => {
 
   it('gives each day what it bills', () => {
     const dwayne = rows.find((r) => r.tech === 'Dwayne')!;
-    const s = bill({ labor: 'hourly', rate: 85, mileRate: 0.7, mealMode: 'per_day', mealRate: 50 });
-    expect(dayBill(dayCalc(dwayne.values, 0.7), s)).toBe(r2(813.45 + 3.08 + 50));
+    const s = bill({ labor: 'hourly', rate: 85, mileRate: 0.7, mealRate: 50 });
+    const values = { ...dwayne.values, meals: 25 };
+    expect(dayBill(dayCalc(values, 0.7), s, values)).toBe(r2(813.45 + 3.08 + 25));
   });
 });
 
@@ -350,10 +362,10 @@ describe('the QuickBooks invoice', () => {
       .toEqual([['2026-10-21', 9.57, 85, 813.45], ['2026-10-21', 4.4, 0.6, 2.64]]);
     for (const l of inv.Line) expect(l.Amount).toBe(Math.round(l.SalesItemLineDetail.Qty * l.SalesItemLineDetail.UnitPrice * 100) / 100);
     // The totals go with no date, still Amount = Qty × Rate.
-    const totals = fieldSheetInvoice(sheetTotals(rows, [{ id: 'h', category: 'hotel', amount: 701.48, status: 'approved' }], bill({ labor: 'hourly', rate: 85, mileRate: 0.6, mealMode: 'per_day', mealRate: 50 })).lines,
+    const totals = fieldSheetInvoice(sheetTotals(rows, [{ id: 'h', category: 'hotel', amount: 701.48, status: 'approved' }], bill({ labor: 'hourly', rate: 85, mileRate: 0.6, mealRate: 50 })).lines,
       { customerId: 'c1', itemIds, memo: '', note: '', email: null, txnDate: '2026-10-24' });
     expect(totals.Line.map((l) => [l.SalesItemLineDetail.ServiceDate, l.SalesItemLineDetail.ItemRef.value, l.SalesItemLineDetail.Qty, l.SalesItemLineDetail.UnitPrice, l.Amount]))
-      .toEqual([[undefined, 'i-cab', 9.57, 85, 813.45], [undefined, 'i-trav', 4.4, 0.6, 2.64], [undefined, 'i-meal', 1, 50, 50], [undefined, 'i-lodge', 1, 701.48, 701.48]]);
+      .toEqual([[undefined, 'i-cab', 9.57, 85, 813.45], [undefined, 'i-trav', 4.4, 0.6, 2.64], [undefined, 'i-lodge', 1, 701.48, 701.48]]);
   });
 
   it('knows when two weeks share a day, and which days are in the dates picked', () => {
@@ -564,11 +576,11 @@ describe('by tech', () => {
     expect(byTech(typed([['Paul Gibbs', 2, 1]]), [], bill({ labor: 'hourly', travelRate: 45 }))[0].labor).toBe(45);
   });
 
-  it('has no labor dollars when the job isn’t billed by the hour, and a flat meal a day when meals are billed that way', () => {
+  it('has no labor dollars when the job isn’t billed by the hour, and reports actual meals by tech', () => {
     expect(byTech(rows, [], bill({ labor: 'fixed', fixed: 2400 })).map((b) => b.labor)).toEqual([null, null]);
-    const flat = byTech(rows, receipts, bill({ mealMode: 'per_day', mealRate: 50 }));
-    expect(flat.map((b) => [b.tech, b.meals])).toEqual([['Kendell Newbold', 100], ['Paul Gibbs', 100], ['Office', 0]]);
-    expect(flat.reduce((x, b) => x + b.meals, 0)).toBe(sheetTotals(rows, receipts, bill({ mealMode: 'per_day', mealRate: 50 })).meals.claim);
+    const actual = byTech(rows, receipts, bill({ mealRate: 50 }));
+    expect(actual.map((b) => [b.tech, b.meals])).toEqual([['Kendell Newbold', 50], ['Paul Gibbs', 18.5], ['Office', 0]]);
+    expect(actual.reduce((x, b) => x + b.meals, 0)).toBe(sheetTotals(rows, receipts, bill({ mealRate: 50 })).meals.claim);
   });
 
   // Greptile on PR #33: what the bill charges when that isn't what was spent, and notes on days with no hours.

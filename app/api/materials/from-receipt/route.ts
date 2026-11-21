@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
   } catch { /* fall through to empty */ }
   const items = sanitizeItems(parsed.items);
   const vendor = typeof parsed.vendor === 'string' ? parsed.vendor.slice(0, 60) : null;
-  const parsedAmount = Number(parsed.amount);
+  const parsedAmount = typeof parsed.amount === 'number' ? parsed.amount : NaN;
   const amount = Number.isFinite(parsedAmount) && parsedAmount >= 0 ? Math.round(parsedAmount * 100) / 100 : null;
   if (items.length === 0 && !summaryOnly) {
     return NextResponse.json({ error: "Couldn't read any items off that receipt — try a clearer photo, or paste the text." }, { status: 422 });

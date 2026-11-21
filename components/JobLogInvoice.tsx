@@ -356,10 +356,9 @@ export default function JobLogInvoice({ invoice, head, edit }: { invoice: Invoic
         {invoice.techs.map((t) => <Tech key={t.tech} t={t} edit={edit} />)}
         <tbody className="jl-avoid">
           <tr><td colSpan={7} style={{ ...center, fontWeight: 700, textDecoration: 'underline', borderBottom: '2px solid #000', paddingTop: 12 }}>Totals</td></tr>
-          {([['Labor', invoice.totals.labor], ['Mileage', invoice.totals.mileage], ['Meal receipts (actual spent)', invoice.totals.mealReceipts],
-            ['Meals reimbursed', invoice.totals.meals],
+          {([['Labor', invoice.totals.labor], ['Mileage', invoice.totals.mileage], ['Meals', invoice.totals.meals],
             ...(invoice.techs.some((t) => t.materials?.lines.length)
-              ? [['Materials receipts (actual spent)', invoice.totals.materialReceipts] as const, ['Materials reimbursed', invoice.totals.materials] as const]
+              ? [['Materials', invoice.totals.materials] as const]
               : []),
             ['Travel', invoice.totals.travel]] as const).map(([k, v]) => (
             <tr key={k}><td colSpan={5} style={right}>{k}</td><td style={td} /><td style={right}><Money n={v} /></td></tr>

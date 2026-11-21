@@ -227,7 +227,7 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     })));
     const hours = { title: 'Total Hours', qty: hoursTotal(time), rate: hour, amount: sum(hourLines), lines: hourLines };
     const meals = {
-      title: 'Meal reimbursement',
+      title: 'Meal receipts',
       spent: r2(mealLines.reduce((total, line) => total + (line.spent ?? 0), 0)),
       amount: sum(mealLines),
       lines: mealLines,
@@ -236,7 +236,7 @@ export function buildInvoice(sheet: JobSheet, rates: JobRates, crew: string[], m
     const travel = { title: 'Total Travel', amount: sum(travelLines), lines: travelLines };
     const materialsAmount = sum(materialLines);
     const materials = tech === host
-      ? { title: 'Total Materials', spent: materialsAmount, amount: materialsAmount, lines: materialLines }
+      ? { title: 'Materials receipts', spent: materialsAmount, amount: materialsAmount, lines: materialLines }
       : undefined;
     return { role: tech === crew[0] ? 'Lead' : 'Helper', tech, hours, meals, mileage, ...(materials ? { materials } : {}), travel,
       total: r2(hours.amount + meals.amount + mileage.amount + (materials?.amount ?? 0) + travel.amount) };

@@ -276,6 +276,9 @@ function PhoneEdit({ techs, edit }: { techs: InvoiceTech[]; edit: InvoiceEditor 
             {l.item === 'Material' && (
               <input aria-label={`Material store, ${at}`} style={input} value={l.description} placeholder="Store" onChange={(e) => edit.change(l, { description: e.target.value })} />
             )}
+            {l.item === 'Meal' && (
+              <input aria-label={`Meal restaurant, ${at}`} style={input} value={l.description === 'Meal' ? '' : l.description} placeholder="Restaurant" onChange={(e) => edit.change(l, { description: e.target.value })} />
+            )}
           </div>
         );
       })}

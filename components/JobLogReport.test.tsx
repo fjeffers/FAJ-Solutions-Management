@@ -1031,6 +1031,9 @@ describe('Job log edited by the office', () => {
 
   it('shrinks the invoice to a phone\'s screen, or shows it full size to swipe (Fred: "This my phone view", "Both")', () => withPunches(async () => {
     tables.job_log_rates = [{ rates: { 'Paul Gibbs': { hour: 50, mile: 0.6 } } }];
+    const beforeExpenses = tables.job_expenses;
+    tables.job_expenses = [...beforeExpenses,
+      { id: 'phone-meal', contractor_name: 'Paul Gibbs', category: 'meals', vendor: 'Waffle House', amount: 18.97, expense_date: '2026-10-19', status: 'approved', receipt_path: 'r/meal.jpg' }];
     // A phone: 428px for the invoice's 856.
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 428 });
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -1052,9 +1055,12 @@ describe('Job log edited by the office', () => {
       expect(screen.queryByRole('button', { name: /fit to screen|full size/i })).toBeNull();
       const days = screen.getByRole('region', { name: 'Days, Paul Gibbs' });
       const hours = within(days).getByLabelText('Hours, Paul Gibbs, 10/19/2026');
+      const restaurant = within(days).getByLabelText('Meal restaurant, Paul Gibbs, 10/19/2026');
       expect(document.querySelector('.jl-invoice input')).toBeNull();
       fireEvent.change(hours, { target: { value: '8' } });
+      fireEvent.change(restaurant, { target: { value: 'Ale House' } });
       expect(document.querySelector('.jl-invoice')!.textContent).toContain('400.00');
+      expect(document.querySelector('.jl-invoice')!.textContent).toContain('Ale House');
       // 07:00 in, 09:00 out: 2 hours, $100 at $50, and the invoice shows only the hours (Fred, 2026-11-06).
       fireEvent.change(within(days).getByLabelText('In time, Paul Gibbs, 10/19/2026'), { target: { value: '07:00' } });
       fireEvent.change(within(days).getByLabelText('Out time, Paul Gibbs, 10/19/2026'), { target: { value: '09:00' } });
@@ -1074,6 +1080,7 @@ describe('Job log edited by the office', () => {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
       vi.unstubAllGlobals();
       delete tables.job_log_rates;
+      tables.job_expenses = beforeExpenses;
     }
   }));
 

@@ -198,6 +198,8 @@ describe('the invoice', () => {
       { tech: 'Paul Gibbs', day: '2026-10-19', store: 'Ale House', amount: 18.97 },
       { tech: 'Paul Gibbs', day: '2026-10-19', store: 'Ale House', amount: 40 },
     ]);
+    const typingSpace = editLine(sheet, paul.meals.lines[0], { description: 'Ale ' });
+    expect(buildInvoice(typingSpace, rates, crew, meta, '').techs[0].meals.lines[0].description).toBe('Ale ');
     const clearedMeals = editLine(sheet, paul.meals.lines[0], { amount: null });
     expect(buildInvoice(clearedMeals, rates, crew, meta, '').techs[0].meals.lines[0]).toMatchObject({
       date: '2026-10-19', description: 'Waffle House, Subway', rate: null, amount: 0,

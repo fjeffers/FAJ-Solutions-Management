@@ -166,7 +166,7 @@ export function sheetFromApp(input: {
 }): JobSheet {
   const approved = input.receipts.filter((e) => e.status === 'approved');
   const money = (e: SheetReceipt, withFor: boolean): MoneyRow => ({
-    tech: e.contractor_name || 'Office', day: e.expense_date, store: e.vendor ?? '', amount: Number(e.amount) || 0,
+    tech: e.contractor_name?.trim() || 'Office', day: e.expense_date, store: e.vendor ?? '', amount: Number(e.amount) || 0,
     ...(withFor ? { for: [expenseCategoryLabel(e.category), (e.note ?? '').trim()].filter(Boolean).join(' · ') } : {}),
   });
   const office = input.hoursScreen ?? [];
@@ -180,7 +180,7 @@ export function sheetFromApp(input: {
     time: [
       ...input.visits.filter((v) => !setDays.has(key(v))).map((v): TimeRow => {
         const row: TimeRow = {
-          tech: v.tech, day: v.day, in: clockOf(v.inAt, input.timeZone),
+          tech: v.tech.trim(), day: v.day, in: clockOf(v.inAt, input.timeZone),
           out: v.outAt ? clockOf(v.outAt, input.timeZone) : '', brk: 0,
           ...(v.open ? { open: true, ms: v.ms } : {}),
         };
@@ -190,9 +190,9 @@ export function sheetFromApp(input: {
         lunchLeft.set(key(v), r2(owed - take));
         return { ...row, brk: take };
       }),
-      ...office.filter((d) => !d.hidden && !d.breakOnly).map((d): TimeRow => ({ tech: d.tech, day: d.day, in: d.in, out: d.out, brk: d.brk, ...(d.hours != null ? { hours: d.hours } : {}) })),
+      ...office.filter((d) => !d.hidden && !d.breakOnly).map((d): TimeRow => ({ tech: d.tech.trim(), day: d.day, in: d.in, out: d.out, brk: d.brk, ...(d.hours != null ? { hours: d.hours } : {}) })),
     ],
-    miles: input.mileage.map((m) => ({ ...m })),
+    miles: input.mileage.map((m) => ({ ...m, tech: m.tech.trim() })),
     meals: approved.filter((e) => e.category === 'meals').map((e) => money(e, false)),
     materials: approved.filter((e) => e.category === 'materials').map((e) => money(e, false)),
     other: approved.filter((e) => e.category !== 'meals' && e.category !== 'materials').map((e) => money(e, true)),

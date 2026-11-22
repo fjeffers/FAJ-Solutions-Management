@@ -60,7 +60,8 @@ export function timesheetByTech(lines: TimesheetLine[]): { tech: string; lines: 
 export function timesheetTotals(lines: TimesheetLine[]) {
   const t = lines.reduce((s, l) => ({ hours: s.hours + l.hours, travel: s.travel + l.travel, total: s.total + l.total, miles: s.miles + l.miles, meals: s.meals + l.meals }),
     { hours: 0, travel: 0, total: 0, miles: 0, meals: 0 });
-  return { days: new Set(lines.map((l) => l.day)).size, hours: r2(t.hours), travel: r2(t.travel), total: r2(t.total), miles: Math.round(t.miles * 10) / 10, meals: r2(t.meals) };
+  // A day counts once it has hours or miles on it, as the Field Sheet's by-tech breakdown counts them.
+  return { days: new Set(lines.filter((l) => l.total > 0 || l.miles > 0).map((l) => l.day)).size, hours: r2(t.hours), travel: r2(t.travel), total: r2(t.total), miles: Math.round(t.miles * 10) / 10, meals: r2(t.meals) };
 }
 
 /** 'Mon, Oct 20, 2026' (dates are calendar days, so read in UTC). */

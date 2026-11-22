@@ -15,7 +15,7 @@ export function totalMiles(logs: MileageLog[] | null | undefined): number {
 // One tech's mileage reimbursement on a job
 export function mileageForTech(logs: MileageLog[] | null | undefined, name: string): number {
   return (logs ?? [])
-    .filter((l) => l.contractor_name === name)
+    .filter((l) => (l.contractor_name ?? '').trim() === name.trim())
     .reduce((s, l) => s + (Number(l.miles) || 0) * (Number(l.rate) || 0), 0);
 }
 

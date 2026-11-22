@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useRouter } from 'next/navigation';
 import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import { useTeamUnread } from '@/lib/use-team-unread';
 import {
   fetchTechProfile, fetchTechUnread, fetchTechDmUnread,
   fetchTechPortalToken, saveTechProfile, saveTechEmergency, fetchTechMessages, sendTechMessage, claimTechAccount,
@@ -144,6 +145,7 @@ export default function TechPortalPage() {
   const [profile, setProfile] = useState<TechProfile | null>(null);
   const [officeJobs, setOfficeJobs] = useState<WfJob[]>([]);
   const [unread, setUnread] = useState(0);
+  const teamUnread = useTeamUnread(!!uid);
   const [portalToken, setPortalToken] = useState<string | null>(null);
   const [lists, setLists] = useState<CloseoutList[]>([]);
   /** When the lists on screen are the phone's saved copy, when it was saved. */
@@ -188,6 +190,16 @@ export default function TechPortalPage() {
     const t = window.setInterval(() => { void check(); }, 20_000);
     return () => window.clearInterval(t);
   }, [uid, changeNotes]);
+  const lastTeamUnread = useRef(0);
+  useEffect(() => {
+    if (uid && phase === 'ready' && teamUnread > lastTeamUnread.current) {
+      const more = teamUnread - lastTeamUnread.current;
+      buzz();
+      toastInfo(more === 1 ? 'New team message. Open Messenger to read it.' : `${more} new team messages.`);
+      changeNotes((list) => addNotes(list, [messageNote(more, new Date().toISOString())]));
+    }
+    lastTeamUnread.current = uid ? teamUnread : 0;
+  }, [uid, phase, teamUnread, changeNotes]);
   // Live updates (Fred, 2026-10-14: "implement live update between admin and
   // tech portal"): while the app is open, re-read the jobs every 30 seconds
   // and whenever the tech comes back to it, and say what changed: a new
@@ -498,7 +510,7 @@ export default function TechPortalPage() {
   const small = collapsed && !drawer;
   const navItems: { key: Tab; label: string; icon: string; count: number }[] = [
     { key: 'project', label: 'Work orders', icon: 'clipboard', count: jobs.filter(canWork).length },
-    { key: 'chat', label: 'Messenger', icon: 'chat', count: unread },
+    { key: 'chat', label: 'Messenger', icon: 'chat', count: unread + teamUnread },
     { key: 'schedule', label: 'My Schedule', icon: 'calendar', count: 0 },
     { key: 'profile', label: 'Profile', icon: 'person', count: offers.length + paperworkDue },
   ];
@@ -605,7 +617,7 @@ export default function TechPortalPage() {
             </>
           ) : tab === 'project' ? (
             <ProjectTab jobs={jobs} uid={uid ?? ''} onOpen={openFromList} onCheckIn={setCheckIn} onArrive={(j) => void arriveFrom(j)} busy={dayBusy} act={act}
-              alerts={<TechAlerts jobs={jobs} unread={unread} onOpen={openFromList} onChat={() => go('chat')} />} />
+              alerts={<TechAlerts jobs={jobs} unread={unread + teamUnread} onOpen={openFromList} onChat={() => go('chat')} />} />
           ) : underProfile ? (
             <>
               <button type="button" className="fs-back-link" onClick={() => go('profile')}><FsIcon name="back" size={16} />Profile</button>
@@ -633,6 +645,7 @@ export default function TechPortalPage() {
             <>
               <FsPageHeader title="Messenger" subtitle="Talk about your work orders." />
               <TechChat
+                teamUnread={teamUnread}
                 jobs={jobs.filter((j) => !isOnHold(j) && !isFinished(j) && j.status !== 'declined').map(toChatJob)}
                 onRead={async () => {
                   const [u1, u2] = await Promise.all([fetchTechUnread(), fetchTechDmUnread()]);

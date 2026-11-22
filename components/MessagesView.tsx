@@ -14,10 +14,12 @@ import {
   type InboxJob, type InboxMessage, type TechDm,
 } from '@/lib/messages-inbox';
 import type { Contractor, WorkOrder } from '@/lib/types';
+import TeamMessenger from '@/components/TeamMessenger';
 
 type Tab = 'people' | 'jobs' | 'techs';
 
-export default function MessagesView({ workOrders, contractors, onOpenJob, onCount }: {
+export default function MessagesView({ workOrders, contractors, onOpenJob, onCount, teamUnread = 0 }: {
+  teamUnread?: number;
   workOrders: WorkOrder[];
   contractors: Contractor[];
   onOpenJob: (id: string) => void;
@@ -26,6 +28,8 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [tab, setTab] = useState<Tab>('people');
+  // Existing /admin?view=messages notification links belong to the legacy store.
+  const [teamMode, setTeamMode] = useState(false);
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [dms, setDms] = useState<TechDm[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,7 +85,7 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
 
   // Opening a job's thread marks the tech's messages in it as read.
   useEffect(() => {
-    if (!openWo) return;
+    if (teamMode || tab !== 'jobs' || !openWo) return;
     const waiting = messages.filter((m) => m.work_order_id === openWo && fromTech(m) && !m.read_at);
     if (waiting.length === 0) return;
     const now = new Date().toISOString();
@@ -95,11 +99,11 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
         onCount(unreadFromTechs(next));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openWo, messages]);
+  }, [openWo, messages, teamMode, tab]);
 
   // Opening one technician marks their private replies read for the office.
   useEffect(() => {
-    if (!openPerson) return;
+    if (teamMode || tab !== 'people' || !openPerson) return;
     const key = directThreadId(openPerson);
     const waiting = messages.filter((m) => m.work_order_id === key && fromTech(m) && !m.read_at);
     if (waiting.length === 0) return;
@@ -114,7 +118,7 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
         onCount(unreadFromTechs(next));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPerson, messages]);
+  }, [openPerson, messages, teamMode, tab]);
 
   const unread = unreadFromTechs(messages);
   const thread = threads.find((t) => t.woNumber === openWo) ?? null;
@@ -342,6 +346,11 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
 
   return (
     <div className="wf" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" aria-pressed={teamMode} onClick={() => setTeamMode(true)}>Team messenger & availability{teamUnread > 0 ? ` (${teamUnread})` : ''}</button>
+        <button className="wf-btn wf-btn-outline wf-btn-sm" aria-pressed={!teamMode} onClick={() => setTeamMode(false)}>Existing conversations</button>
+      </div>
+      {teamMode ? <TeamMessenger /> : <>
       <PrimioBar title="Messenger" right={tab === 'jobs' ? (
         <button className="wf-btn wf-btn-gold wf-btn-sm" onClick={() => { setOpenWo(null); setPicking(true); }}>
           <MessageSquarePlus size={16} /> New message
@@ -382,6 +391,7 @@ export default function MessagesView({ workOrders, contractors, onOpenJob, onCou
           <section className="wf-card wf-msg-thread" style={{ overflow: 'hidden', alignSelf: 'start' }}>{threadPane}</section>
         </div>
       )}
+      </>}
     </div>
   );
 }

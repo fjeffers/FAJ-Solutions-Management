@@ -140,6 +140,6 @@ describe('roles', () => {
     }
   });
   it('lists owner, tech, assistant, accountant and developer', () => {
-    expect(ROLES.map((r) => r.key)).toEqual(['owner', 'tech', 'assistant', 'accountant', 'developer']);
+    expect(ROLES.map((r) => r.key)).toEqual(['owner', 'tech', 'assistant', 'project_manager', 'accountant', 'developer']);
   });
 });

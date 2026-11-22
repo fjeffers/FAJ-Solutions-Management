@@ -4,6 +4,9 @@
 // The folder key is generated when the survey modal opens rather than taken
 // from the survey id, so photos can be taken on a survey that has never been
 // saved — which is the normal case standing in a building with a phone.
+//
+// Every object sits under the uploader's user id (migration 154): storage only
+// lets a login write, replace or delete files in its own folder.
 import { createClient } from '@/lib/supabase/client';
 
 const BUCKET = 'survey-docs';
@@ -15,9 +18,9 @@ export function newFolderKey(): string {
 }
 
 /** Storage-safe object name; the original file name is kept in the record. */
-export function storagePath(folderKey: string, fileName: string): string {
+export function storagePath(ownerId: string, folderKey: string, fileName: string): string {
   const safe = fileName.replace(/[^\w.\-]+/g, '_');
-  return `${folderKey}/${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${safe}`;
+  return `${ownerId}/${folderKey}/${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${safe}`;
 }
 
 export type UploadResult = { url: string; file: File };
@@ -28,7 +31,9 @@ export type UploadResult = { url: string; file: File };
  */
 export async function uploadSurveyFile(folderKey: string, file: File): Promise<string> {
   const supabase = createClient();
-  const path = storagePath(folderKey, file.name);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Sign in again to upload files');
+  const path = storagePath(user.id, folderKey, file.name);
   const { error } = await supabase.storage.from(BUCKET).upload(path, file);
   if (error) throw new Error(error.message);
   return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;

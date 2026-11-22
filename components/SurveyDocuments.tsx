@@ -1,7 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import { Upload, X, FileText, Image as ImageIcon, Loader2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { uploadSurveyFile, deleteSurveyFile } from '@/lib/survey-upload';
 import { documentKindFor, isImageDocument, formatFileSize } from '@/lib/surveys';
 import { toastError } from '@/lib/toast';
 import type { SurveyDocument, SurveyDocumentKind } from '@/lib/types';
@@ -26,7 +26,6 @@ export default function SurveyDocuments({
   folderKey: string;
   onChange: (next: SurveyDocument[]) => void;
 }) {
-  const supabase = createClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -36,14 +35,16 @@ export default function SurveyDocuments({
     const added: SurveyDocument[] = [];
 
     for (const file of Array.from(files)) {
-      const safe = file.name.replace(/[^\w.\-]+/g, '_');
-      const path = `${folderKey}/${Date.now()}-${safe}`;
-      const { error } = await supabase.storage.from('survey-docs').upload(path, file);
-      if (error) { toastError(`Couldn't upload ${file.name}: ${error.message}`); continue; }
-      const { data } = supabase.storage.from('survey-docs').getPublicUrl(path);
+      let url: string;
+      try {
+        url = await uploadSurveyFile(folderKey, file);
+      } catch (e) {
+        toastError(`Couldn't upload ${file.name}: ${(e as Error).message}`);
+        continue;
+      }
       added.push({
         id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        url: data.publicUrl,
+        url,
         name: file.name,
         kind: documentKindFor(file.name, file.type),
         size: file.size,
@@ -64,12 +65,7 @@ export default function SurveyDocuments({
     if (!confirm(`Remove ${d.name}?`)) return;
     // Best-effort storage cleanup; the record goes either way so a failed
     // delete never leaves a broken row in the survey.
-    const marker = '/survey-docs/';
-    const i = d.url.indexOf(marker);
-    if (i >= 0) {
-      const path = decodeURIComponent(d.url.slice(i + marker.length));
-      await supabase.storage.from('survey-docs').remove([path]);
-    }
+    await deleteSurveyFile(d.url);
     onChange(documents.filter((x) => x.id !== d.id));
   };
 

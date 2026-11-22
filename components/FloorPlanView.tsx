@@ -240,7 +240,9 @@ export default function FloorPlanView({ site, drops, projectName, onSaved }: {
 
   const uploadPhoto = async (item: PlanItem, file: File) => {
     setUploading(true);
-    const path = `${site.id}/${item.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setUploading(false); toastError('Sign in again to upload photos'); return; }
+    const path = `${user.id}/${site.id}/${item.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
     const { error } = await supabase.storage.from('network-photos').upload(path, file);
     if (error) { setUploading(false); toastError(`Upload failed: ${error.message}`); return; }
     const { data } = supabase.storage.from('network-photos').getPublicUrl(path);
@@ -257,7 +259,9 @@ export default function FloorPlanView({ site, drops, projectName, onSaved }: {
 
   const uploadBg = async (file: File) => {
     setUploading(true);
-    const path = `${site.id}/background/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setUploading(false); toastError('Sign in again to upload photos'); return; }
+    const path = `${user.id}/${site.id}/background/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
     const { error } = await supabase.storage.from('network-photos').upload(path, file);
     if (error) { setUploading(false); toastError(`Upload failed: ${error.message}`); return; }
     const { data } = supabase.storage.from('network-photos').getPublicUrl(path);

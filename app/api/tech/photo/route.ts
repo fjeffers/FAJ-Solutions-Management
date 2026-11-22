@@ -55,5 +55,6 @@ export async function POST(req: Request) {
     await admin.storage.from('portal-uploads').remove([path]);
     return NextResponse.json({ ok: false, error: "Couldn't add the photo to the job." }, { status: 400 });
   }
-  return NextResponse.json({ ok: true, url: publicUrl });
+  // The database builds the stored link from the path (migration 154).
+  return NextResponse.json({ ok: true, url: (rec as { url?: string }).url ?? publicUrl });
 }
